@@ -1,0 +1,52 @@
+syntax = "proto2";
+package internal;
+
+message WriteShardRequest {
+    required uint64 ShardID = 1;
+    repeated bytes  Points  = 2;
+    optional string Database = 3;
+    optional string TimeToLive = 4;
+}
+
+message WriteShardResponse {
+    required int32  Code    = 1;
+    optional string Message = 2;
+}
+
+message ExecuteStatementRequest {
+    required string Statement = 1;
+    required string Database  = 2;
+}
+
+message ExecuteStatementResponse {
+    required int32  Code    = 1;
+    optional string Message = 2;
+}
+
+message CreateIteratorRequest {
+    repeated uint64 ShardIDs  = 1;
+    required bytes  Opt       = 2;
+    required bytes Database   = 3;
+    required bytes TimeToLive = 4;
+    required bytes MetricName = 5;
+}
+
+message CreateIteratorResponse {
+    optional string Err      = 1;
+    optional int32  DataType = 2;
+    optional int32  SeriesN  = 3;
+    optional int32  PointN   = 4;
+}
+
+message FieldDimensionsRequest {
+    repeated uint64 ShardIDs = 1;
+    required bytes  Metric   = 2;
+}
+
+message FieldDimensionsResponse {
+    required bytes  Fields     = 1;
+    repeated string Dimensions = 2;
+    optional string Err        = 3;
+}
+
+

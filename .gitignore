@@ -1,0 +1,33 @@
+# All files that end or start in '~'
+*~
+~*
+
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build destination directories
+/bin/
+
+# Test binary, built with `go test -c`
+*.test
+/.test
+
+# Test files
+#/*.config
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories
+vendor/
+
+# go sum
+go.sum
+
+# IDE
+.vscode/
+.idea/
+*.iml
