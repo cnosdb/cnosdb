@@ -40,7 +40,6 @@ func init() {
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "cnosdb-cli",
-		Short:   "cnosdb-cli [Short]",
 		Long:    description,
 		Example: examples,
 		CompletionOptions: cobra.CompletionOptions{
@@ -67,27 +66,22 @@ func GetCommand() *cobra.Command {
 		},
 	}
 
-	pFlags := c.PersistentFlags()
-	pFlags.StringVar(&commandLine.Host, "host", client.DEFAULT_HOST, "Host of the CnosDB instance to connect to.")
-	pFlags.IntVar(&commandLine.Port, "port", client.DEFAULT_PORT, "Port of the CnosDB instance to connect to.")
-	pFlags.StringVarP(&commandLine.clientConfig.Username, "username", "u", "", "Username to login to the server.")
-	pFlags.StringVarP(&commandLine.clientConfig.Password, "password", "p", "", `Password to login to the server. If password is not given, it's the same as using (--password="").`)
-	pFlags.BoolVar(&commandLine.Ssl, "ssl", false, "Use https for connecting to cluster.")
-
-	lFlags := c.LocalFlags()
-	lFlags.StringVar(&commandLine.Format, "format", defaultFormat, "The format of the server responses:  json, csv, or column.")
-	lFlags.StringVar(&commandLine.pointConfig.Precision, "precision", defaultPrecision, "The format of the timestamp:  rfc3339,h,m,s,ms,u or ns.")
+	flags := c.Flags()
+	flags.StringVar(&commandLine.Host, "host", client.DEFAULT_HOST, "Host of the CnosDB instance to connect to.")
+	flags.IntVar(&commandLine.Port, "port", client.DEFAULT_PORT, "Port of the CnosDB instance to connect to.")
+	flags.StringVarP(&commandLine.clientConfig.Username, "username", "u", "", "Username to login to the server.")
+	flags.StringVarP(&commandLine.clientConfig.Password, "password", "p", "", `Password to login to the server. If password is not given, it's the same as using (--password="").`)
+	flags.BoolVar(&commandLine.Ssl, "ssl", false, "Use https for connecting to cluster.")
+	flags.StringVar(&commandLine.Format, "format", defaultFormat, "The format of the server responses:  json, csv, or column.")
+	flags.BoolVar(&commandLine.Pretty, "pretty", false, "Turns on pretty print for the json format.")
+	flags.StringVar(&commandLine.pointConfig.Precision, "precision", defaultPrecision, "The format of the timestamp:  rfc3339,h,m,s,ms,u or ns.")
 
 	return c
 }
 
-var description = `The Kubernetes API server validates and configures data
-for the api objects which include pods, services, replicationcontrollers, and
-others. The API Server services REST operations and provides the frontend to the
-cluster's shared state through which all other components interact.`
+var description = `CnosDB shell`
 
-var examples = `$ cnos
-$ cnos -format=json -pretty
-$ cnos -execute 'SHOW DATABASES'
-$ cnos -execute 'SELECT * FROM "h2o_feet" LIMIT 3' -database="NOAA_water_database" -precision=rfc3339
-$ cnos -import -path=data.txt -precision=s`
+var examples = `  cnosdb-cli
+  cnosdb-cli --format=json --pretty
+  cnosdb-cli import --path dba-export.txt
+  cnosdb-cli export --database dba --out dba-export.txt`
