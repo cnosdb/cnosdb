@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cnosdatabase/cnosdb/server"
 	"github.com/BurntSushi/toml"
+	"github.com/cnosdatabase/cnosdb/server"
 	"github.com/spf13/cobra"
 )
 

@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
 	"github.com/BurntSushi/toml"
+	"github.com/cnosdatabase/cnosdb/pkg/logger"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/cnosdatabase/cnosdb/meta"
 	"github.com/cnosdatabase/cnosdb/monitor"
 	"github.com/cnosdatabase/cnosdb/pkg/logger"
@@ -22,7 +23,6 @@ import (
 	"github.com/cnosdatabase/cnosdb/server/ttl"
 	itoml "github.com/cnosdatabase/common/pkg/toml"
 	"github.com/cnosdatabase/db/tsdb"
-	"github.com/BurntSushi/toml"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )
