@@ -65,7 +65,7 @@ Header只有一行，包含三个字段：`type`（必需），`scope`（可选�
 
 如何确定一个 commit 所属的 `type`：
 
-![img](https://github.com/cnosdatabase/cnosdb/blob/master/doc/assets/commit_scope.png)
+![img](https://github.com/cnosdatabase/cnosdb/blob/main/doc/assets/commit_scope.png)
 
 `scope`用于说明commit影响的范围，scope 如下：
 
