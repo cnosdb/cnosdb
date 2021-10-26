@@ -220,7 +220,7 @@ func (c *CommandLine) connect(cmd string) error {
 
 	cli1, err := client.NewHTTPClient(*cfg)
 	if err != nil {
-		return fmt.Errorf("could not create client %s", err)
+		return fmt.Errorf("could not create client: %s", err)
 	}
 	c.client = cli1
 

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/BurntSushi/toml"
 	"github.com/cnosdatabase/cnosdb/meta"
 	"github.com/cnosdatabase/cnosdb/pkg/logger"
-	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 )
 

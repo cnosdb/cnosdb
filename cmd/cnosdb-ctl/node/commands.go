@@ -11,8 +11,8 @@ import (
 func GetShowCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "show",
-		Short:   "show [Short]",
-		Long:    `description`,
+		Short:   "shows cluster nodes",
+		Long:    `Shows all meta nodes and data nodes that are part of the cluster.`,
 		Example: `examples`,
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
