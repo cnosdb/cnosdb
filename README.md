@@ -1,12 +1,19 @@
-# cnosdb
+# CnosDB
 
-一个开源时序数据库。
+一款高性能、高压缩率、高可玩性的开源时序数据库。
 
 ## 功能特性
 
 - 快速的批量写入
 - 数据高压缩比
 - 丰富的计算函数
+
+## 加入社区
+欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
+
+入群前请查看[入群须知](./CnosDBWeChatUserGroupGuidelines.md)
+
+![](https://github.com/cnosdatabase/cnosdb/blob/main/doc/assets/u.jpg)
 
 ## 快速开始
 
@@ -66,8 +73,4 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 
 ## 许可证
 
-<!-- 这里链接上该项目的开源许可证 -->
-
-## 联系我们
-
-<!-- 这里添加社区、博客和微信二维码 -->
+[MIT License](./LICENSE)
