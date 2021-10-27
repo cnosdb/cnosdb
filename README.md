@@ -1,76 +1,80 @@
 # CnosDB
 
-一款高性能、高压缩率、高可玩性的开源时序数据库。
+English | [简体中文](./README.cn.md)
 
-## 功能特性
+An Open Source Time Series Database with high performance, high compression ratio and high playability.
 
-- 快速的批量写入
-- 数据高压缩比
-- 丰富的计算函数
+## Features
 
-## 加入社区
-欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
+- High batch writing throughput.
 
-入群前请查看[入群须知](./CnosDBWeChatUserGroupGuidelines.md)
+- High compression ratio.
+
+- Rich calculation algorithms.
+
+## Join the community
+All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR code below and add CC to join the group.
+
+Please check [Instructions for joining the group](./CnosDBWeChatUserGroupGuidelines.md) beforehand.
 
 ![](https://github.com/cnosdatabase/cnosdb/blob/main/doc/assets/u.jpg)
 
-## 快速开始
+## Quick start
 
-> 如果需要完整的入门指南，请查看[入门指南](https://cnosdatabase.github.io/)
+> If you need a complete getting started guide, please check the [Quickstart Guide](https://cnosdatabase.github.io/)
 
-### 构建
+### Construct
 
-1. 克隆项目
+1. Clone
 
    ```
    git clone https://github.com/cnosdatabase/cnosdb.git
    ```
 
-2. 编译
+2. Compile
 
    ```
    go install ./...
    ```
 
-### 运行
+### Operation
 
-1. 启动
+1. Start
 
    ```bash
    $GOPATH/bin/cnosdb
    ```
 
-2. 使用
+2. Use
 
    ```bash
    $GOPATH/bin/cnosdb-cli
    ```
 
-## 使用指南
+## User's Guide
 
-### 创建数据库
+### Create database
 
 ```
 curl -i -XPOST http://localhost:8086/query --data-urlencode "q=CREATE DATABASE mydb"
 ```
 
-### 写入数据
+### Insert data
 
 ```
 curl -i -XPOST 'http://localhost:8086/write?db=db' --data-binary 'cpu,host=server01,region=Beijing idle=0.72 1434055562000000000'
 ```
 
-### 查询数据
+### Query
 
 ```
 curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --data-urlencode "q=SELECT \"idle\" FROM \"cpu\" WHERE \"region\"='Beijing'"
 ```
 
-## 如何贡献
+## How to contribute
 
-请参照[贡献指南](./CONTRIBUTING.md)为CnosDB做贡献。
+Please refer to [Contribution Guide](./CONTRIBUTING.md) to contribute to CnosDB.
 
-## 许可证
+## License
 
 [MIT License](./LICENSE)
