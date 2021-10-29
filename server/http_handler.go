@@ -171,6 +171,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 
 	h.AddRoutes([]route{
 		{
+			"query-options", http.MethodOptions, "/query", false, true,
+			h.serveOptions,
+		},
+		{
 			"query", http.MethodPost, "/query", false, true,
 			h.serveQuery,
 		},
@@ -181,6 +185,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		{
 			"ping", http.MethodGet, "/ping", false, true,
 			h.servePing,
+		},
+		{
+			"write-options", http.MethodOptions, "/write", false, true,
+			h.serveOptions,
 		},
 		{
 			"write", http.MethodPost, "/write", true, true,
@@ -198,6 +206,11 @@ func (h *Handler) Open() {
 // 响应 HTTP 请求
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.router.ServeHTTP(w, r)
+}
+
+// serveOptions returns an empty response to comply with OPTIONS pre-flight requests
+func (h *Handler) serveOptions(w http.ResponseWriter, r *http.Request) {
+	writeHeader(w, http.StatusNoContent)
 }
 
 // serveQuery parses an incoming query and, if valid, executes the query.
@@ -760,7 +773,7 @@ func (h *Handler) AddRoutes(routes ...route) {
 			handler = WrapWithGzipResponseWriter(handler)
 		}
 
-		handler = WrapWithCors(handler, "")
+		handler = WrapWithCors(handler)
 		handler = WrapWithRequestID(handler)
 
 		if h.config.LogEnabled && r.LoggingEnabled {
@@ -773,35 +786,33 @@ func (h *Handler) AddRoutes(routes ...route) {
 }
 
 // WrapWithCors responds to incoming requests and adds the appropriate cors headers
-func WrapWithCors(inner http.Handler, cors string) http.Handler {
+func WrapWithCors(inner http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cors != "" {
-			if origin := r.Header.Get("Origin"); origin != "" {
-				w.Header().Set(`Access-Control-Allow-Origin`, origin)
-				w.Header().Set(`Access-Control-Allow-Methods`, strings.Join([]string{
-					`DELETE`,
-					`GET`,
-					`OPTIONS`,
-					`POST`,
-					`PUT`,
-				}, ", "))
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set(`Access-Control-Allow-Origin`, origin)
+			w.Header().Set(`Access-Control-Allow-Methods`, strings.Join([]string{
+				`DELETE`,
+				`GET`,
+				`OPTIONS`,
+				`POST`,
+				`PUT`,
+			}, ", "))
 
-				w.Header().Set(`Access-Control-Allow-Headers`, strings.Join([]string{
-					`Accept`,
-					`Accept-Encoding`,
-					`Authorization`,
-					`Content-Length`,
-					`Content-Type`,
-					`X-CSRF-Token`,
-					`X-HTTPD-Method-Override`,
-				}, ", "))
+			w.Header().Set(`Access-Control-Allow-Headers`, strings.Join([]string{
+				`Accept`,
+				`Accept-Encoding`,
+				`Authorization`,
+				`Content-Length`,
+				`Content-Type`,
+				`X-CSRF-Token`,
+				`X-HTTPD-Method-Override`,
+			}, ", "))
 
-				w.Header().Set(`Access-Control-Expose-Headers`, strings.Join([]string{
-					`Date`,
-					`X-CnosDB-Version`,
-					`X-CnosDB-Build`,
-				}, ", "))
-			}
+			w.Header().Set(`Access-Control-Expose-Headers`, strings.Join([]string{
+				`Date`,
+				`X-CnosDB-Version`,
+				`X-CnosDB-Build`,
+			}, ", "))
 		}
 
 		if r.Method == "OPTIONS" {
