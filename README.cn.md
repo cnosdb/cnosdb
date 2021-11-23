@@ -1,3 +1,6 @@
+<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
+![GitHub](https://img.shields.io/github/license/cnosdatabase/cnosdb)
+
 # CnosDB
 
 [English](./README.md) | 简体中文
