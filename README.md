@@ -5,7 +5,7 @@
 
 English | [简体中文](./README.cn.md)
 
-An Open Source Time Series Database with high performance, high compression ratio and high playability.
+An Open Source Distributed Time Series Database with high performance, high compression ratio and high usability.
 
 ## Features
 
