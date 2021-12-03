@@ -315,7 +315,7 @@ func (s *Server) openServices() error {
 
 func (s *Server) initMetaClient() error {
 	var metaCli meta.MetaClient
-	if s.Config.Meta.HTTPD == nil {
+	if s.Config.Cluster == false {
 		metaCli = meta.NewClient(s.Config.Meta)
 	} else {
 		s.logger.Info("waiting to be added to cluster")
