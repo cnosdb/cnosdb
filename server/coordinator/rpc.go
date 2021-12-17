@@ -18,7 +18,7 @@ import (
 // WritePointsRequest represents a request to write point data to the cluster.
 type WritePointsRequest struct {
 	Database         string
-	TimeToLive       string
+	RetentionPolicy  string
 	ConsistencyLevel models.ConsistencyLevel
 	Points           []models.Point
 }
@@ -52,11 +52,11 @@ func (w *WriteShardRequest) ShardID() uint64 { return w.pb.GetShardID() }
 
 func (w *WriteShardRequest) SetDatabase(db string) { w.pb.Database = &db }
 
-func (w *WriteShardRequest) SetTimeToLive(ttl string) { w.pb.TimeToLive = &ttl }
+func (w *WriteShardRequest) SetRetentionPolicy(rp string) { w.pb.RetentionPolicy = &rp }
 
 func (w *WriteShardRequest) Database() string { return w.pb.GetDatabase() }
 
-func (w *WriteShardRequest) TimeToLive() string { return w.pb.GetTimeToLive() }
+func (w *WriteShardRequest) RetentionPolicy() string { return w.pb.GetRetentionPolicy() }
 
 // Points returns the time series Points
 func (w *WriteShardRequest) Points() []models.Point { return w.unmarshalPoints() }
@@ -206,9 +206,9 @@ func (w *ExecuteStatementResponse) UnmarshalBinary(buf []byte) error {
 
 // CreateIteratorRequest represents a request to create a remote iterator.
 type CreateIteratorRequest struct {
-	ShardIDs []uint64
-	Metric   cnosql.Metric
-	Opt      query.IteratorOptions
+	ShardIDs    []uint64
+	Measurement cnosql.Measurement
+	Opt         query.IteratorOptions
 }
 
 // MarshalBinary encodes r to a binary format.
@@ -218,11 +218,11 @@ func (r *CreateIteratorRequest) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 	return proto.Marshal(&internal.CreateIteratorRequest{
-		ShardIDs:   r.ShardIDs,
-		Database:   []byte(r.Metric.Database),
-		TimeToLive: []byte(r.Metric.TimeToLive),
-		MetricName: []byte(r.Metric.Name),
-		Opt:        buf,
+		ShardIDs:        r.ShardIDs,
+		Database:        []byte(r.Measurement.Database),
+		RetentionPolicy: []byte(r.Measurement.RetentionPolicy),
+		MeasurementName: []byte(r.Measurement.Name),
+		Opt:             buf,
 	})
 }
 
@@ -234,9 +234,9 @@ func (r *CreateIteratorRequest) UnmarshalBinary(data []byte) error {
 	}
 
 	r.ShardIDs = pb.GetShardIDs()
-	r.Metric.Database = string(pb.GetDatabase()[:])
-	r.Metric.TimeToLive = string(pb.GetTimeToLive()[:])
-	r.Metric.Name = string(pb.GetMetricName()[:])
+	r.Measurement.Database = string(pb.GetDatabase()[:])
+	r.Measurement.RetentionPolicy = string(pb.GetRetentionPolicy()[:])
+	r.Measurement.Name = string(pb.GetMeasurementName()[:])
 	if err := r.Opt.UnmarshalBinary(pb.GetOpt()); err != nil {
 		return err
 	}
@@ -279,19 +279,19 @@ func (r *CreateIteratorResponse) UnmarshalBinary(data []byte) error {
 
 // FieldDimensionsRequest represents a request to retrieve unique fields & dimensions.
 type FieldDimensionsRequest struct {
-	ShardIDs []uint64
-	Metric   cnosql.Metric
+	ShardIDs    []uint64
+	Measurement cnosql.Measurement
 }
 
 // MarshalBinary encodes r to a binary format.
 func (r *FieldDimensionsRequest) MarshalBinary() ([]byte, error) {
-	buf, err := r.Metric.MarshalBinary()
+	buf, err := r.Measurement.MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 	return proto.Marshal(&internal.FieldDimensionsRequest{
-		ShardIDs: r.ShardIDs,
-		Metric:   buf,
+		ShardIDs:    r.ShardIDs,
+		Measurement: buf,
 	})
 }
 
@@ -303,7 +303,7 @@ func (r *FieldDimensionsRequest) UnmarshalBinary(data []byte) error {
 	}
 
 	r.ShardIDs = pb.GetShardIDs()
-	if err := r.Metric.UnmarshalBinary(pb.GetMetric()); err != nil {
+	if err := r.Measurement.UnmarshalBinary(pb.GetMeasurement()); err != nil {
 		return err
 	}
 

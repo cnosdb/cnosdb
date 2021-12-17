@@ -18,7 +18,7 @@ message Tag {
   string Value = 2;
 }
 
-message MetricFields {
+message MeasurementFields {
   bytes Name = 1;
   repeated Field Fields = 2;
 }
@@ -28,6 +28,6 @@ message Field {
   int32 Type = 2;
 }
 
-message MetricFieldSet {
-	repeated MetricFields Metrics = 1;
+message MeasurementFieldSet {
+	repeated MeasurementFields Measurements = 1;
 }

@@ -21,7 +21,7 @@ var (
 	ErrNodeNotFound = errors.New("node not found")
 
 	// ErrNodesRequired is returned when at least one node is required for an operation.
-	// This occurs when creating a region.
+	// This occurs when creating a shard group.
 	ErrNodesRequired = errors.New("at least one node required")
 
 	// ErrNodeIDRequired is returned when using a zero node id.
@@ -43,47 +43,47 @@ var (
 	ErrDatabaseNameRequired = errors.New("database name required")
 
 	// ErrNameTooLong is returned when attempting to create a database or
-	// time-to-live with a name that is too long.
+	// retention policy with a name that is too long.
 	ErrNameTooLong = errors.New("name too long")
 
-	// ErrInvalidName is returned when attempting to create a database or time-to-live with an invalid name
+	// ErrInvalidName is returned when attempting to create a database or retention policy with an invalid name
 	ErrInvalidName = errors.New("invalid name")
 )
 
 var (
-	// ErrTimeToLiveExists is returned when creating an already existing time-to-live.
-	ErrTimeToLiveExists = errors.New("time-to-live already exists")
+	// ErrRetentionPolicyExists is returned when creating an already existing retention policy.
+	ErrRetentionPolicyExists = errors.New("retention policy already exists")
 
-	// ErrTimeToLiveNotFound is returned when an expected time-to-live wasn't found.
-	ErrTimeToLiveNotFound = errors.New("time-to-live not found")
+	// ErrRetentionPolicyNotFound is returned when an expected retention policy wasn't found.
+	ErrRetentionPolicyNotFound = errors.New("retention policy not found")
 
-	// ErrTimeToLiveDefault is returned when attempting a prohibited operation
-	// on a default time-to-live.
-	ErrTimeToLiveDefault = errors.New("time-to-live is default")
+	// ErrRetentionPolicyDefault is returned when attempting a prohibited operation
+	// on a default retention policy.
+	ErrRetentionPolicyDefault = errors.New("retention policy is default")
 
-	// ErrTimeToLiveRequired is returned when a time-to-live is required
-	// by an operation, but a nil time-to-live was passed.
-	ErrTimeToLiveRequired = errors.New("time-to-live required")
+	// ErrRetentionPolicyRequired is returned when a retention policy is required
+	// by an operation, but a nil retention policy was passed.
+	ErrRetentionPolicyRequired = errors.New("retention policy required")
 
-	// ErrTimeToLiveNameRequired is returned when creating a time-to-live without a name.
-	ErrTimeToLiveNameRequired = errors.New("time-to-live name required")
+	// ErrRetentionPolicyNameRequired is returned when creating a retention policy without a name.
+	ErrRetentionPolicyNameRequired = errors.New("retention policy name required")
 
-	// ErrTimeToLiveNameExists is returned when renaming a time-to-live to
-	// the same name as another existing time-to-live.
-	ErrTimeToLiveNameExists = errors.New("time-to-live name already exists")
+	// ErrRetentionPolicyNameExists is returned when renaming a retention policy to
+	// the same name as another existing retention policy.
+	ErrRetentionPolicyNameExists = errors.New("retention policy name already exists")
 
-	// ErrTimeToLiveDurationTooLow is returned when updating a time-to-live
+	// ErrRetentionPolicyDurationTooLow is returned when updating a retention policy
 	// that has a duration lower than the allowed minimum.
-	ErrTimeToLiveDurationTooLow = fmt.Errorf("time-to-live duration must be at least %s", MinTimeToLiveDuration)
+	ErrRetentionPolicyDurationTooLow = fmt.Errorf("retention policy duration must be at least %s", MinRetentionPolicyDuration)
 
-	// ErrTimeToLiveConflict is returned when creating a time-to-live conflicts
-	// with an existing time-to-live.
-	ErrTimeToLiveConflict = errors.New("time-to-live conflicts with an existing time-to-live")
+	// ErrRetentionPolicyConflict is returned when creating a retention policy conflicts
+	// with an existing retention policy.
+	ErrRetentionPolicyConflict = errors.New("retention policy conflicts with an existing retention policy")
 
 	// ErrIncompatibleDurations is returned when creating or updating a
-	// time-to-live that has a duration lower than the current shard
+	// retention policy that has a duration lower than the current shard
 	// duration.
-	ErrIncompatibleDurations = errors.New("time-to-live duration must be greater than the shard duration")
+	ErrIncompatibleDurations = errors.New("retention policy duration must be greater than the shard duration")
 
 	// ErrReplicationFactorTooLow is returned when the replication factor is not in an
 	// acceptable range.
@@ -91,11 +91,11 @@ var (
 )
 
 var (
-	// ErrRegionExists is returned when creating an already existing region.
-	ErrRegionExists = errors.New("region already exists")
+	// ErrShardGroupExists is returned when creating an already existing shard group.
+	ErrShardGroupExists = errors.New("shard group already exists")
 
-	// ErrRegionNotFound is returned when mutating a region that doesn't exist.
-	ErrRegionNotFound = errors.New("region not found")
+	// ErrShardGroupNotFound is returned when mutating a shard group that doesn't exist.
+	ErrShardGroupNotFound = errors.New("shard group not found")
 
 	// ErrShardNotReplicated is returned if the node requested to be dropped has
 	// the last copy of a shard present and the force keyword was not used

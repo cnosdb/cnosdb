@@ -41,22 +41,22 @@ func init() {
 	})
 }
 
-// Index is the in memory index of a collection of metrics, time
-// series, and their tags. Exported functions are goroutine safe while
+// Index is the in memory index of a collection of measurements, time
+// series, and their tags. Exported functions are goroutine safe while
 // un-exported functions assume the caller will use the appropriate locks.
 type Index struct {
 	mu sync.RWMutex
 
 	database string
 	sfile    *tsdb.SeriesFile
-	fieldset *tsdb.MetricFieldSet
+	fieldset *tsdb.MeasurementFieldSet
 
 	// In-memory metadata index, built on load and updated when new series come in
-	metrics map[string]*metric // metric name to object and index
-	series  map[string]*series // map series key to the Series object
+	measurements map[string]*measurement // measurement name to object and index
+	series       map[string]*series      // map series key to the Series object
 
-	seriesSketch, seriesTSSketch   estimator.Sketch
-	metricsSketch, metricsTSSketch estimator.Sketch
+	seriesSketch, seriesTSSketch             estimator.Sketch
+	measurementsSketch, measurementsTSSketch estimator.Sketch
 
 	// Mutex to control rebuilds of the index
 	rebuildQueue sync.Mutex
@@ -65,16 +65,16 @@ type Index struct {
 // NewIndex returns a new initialized Index.
 func NewIndex(database string, sfile *tsdb.SeriesFile) *Index {
 	index := &Index{
-		database: database,
-		sfile:    sfile,
-		metrics:  make(map[string]*metric),
-		series:   make(map[string]*series),
+		database:     database,
+		sfile:        sfile,
+		measurements: make(map[string]*measurement),
+		series:       make(map[string]*series),
 	}
 
 	index.seriesSketch = hll.NewDefaultPlus()
 	index.seriesTSSketch = hll.NewDefaultPlus()
-	index.metricsSketch = hll.NewDefaultPlus()
-	index.metricsTSSketch = hll.NewDefaultPlus()
+	index.measurementsSketch = hll.NewDefaultPlus()
+	index.measurementsTSSketch = hll.NewDefaultPlus()
 
 	return index
 }
@@ -94,11 +94,11 @@ func (i *Index) Bytes() int {
 		b += int(unsafe.Sizeof(i.fieldset)) + i.fieldset.Bytes()
 	}
 	b += int(unsafe.Sizeof(i.fieldset))
-	for k, v := range i.metrics {
+	for k, v := range i.measurements {
 		b += int(unsafe.Sizeof(k)) + len(k)
 		b += int(unsafe.Sizeof(v)) + v.bytes()
 	}
-	b += int(unsafe.Sizeof(i.metrics))
+	b += int(unsafe.Sizeof(i.measurements))
 	for k, v := range i.series {
 		b += int(unsafe.Sizeof(k)) + len(k)
 		b += int(unsafe.Sizeof(v)) + v.bytes()
@@ -106,8 +106,8 @@ func (i *Index) Bytes() int {
 	b += int(unsafe.Sizeof(i.series))
 	b += int(unsafe.Sizeof(i.seriesSketch)) + i.seriesSketch.Bytes()
 	b += int(unsafe.Sizeof(i.seriesTSSketch)) + i.seriesTSSketch.Bytes()
-	b += int(unsafe.Sizeof(i.metricsSketch)) + i.metricsSketch.Bytes()
-	b += int(unsafe.Sizeof(i.metricsTSSketch)) + i.metricsTSSketch.Bytes()
+	b += int(unsafe.Sizeof(i.measurementsSketch)) + i.measurementsSketch.Bytes()
+	b += int(unsafe.Sizeof(i.measurementsTSSketch)) + i.measurementsTSSketch.Bytes()
 	b += 8 // rebuildQueue Mutex is 8 bytes
 	i.mu.RUnlock()
 	return b
@@ -139,54 +139,54 @@ func (i *Index) SeriesSketches() (estimator.Sketch, estimator.Sketch, error) {
 	return i.seriesSketch.Clone(), i.seriesTSSketch.Clone(), nil
 }
 
-// Metric returns the metric object from the index by the name
-func (i *Index) Metric(name []byte) (*metric, error) {
+// Measurement returns the measurement object from the index by the name
+func (i *Index) Measurement(name []byte) (*measurement, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.metrics[string(name)], nil
+	return i.measurements[string(name)], nil
 }
 
-// MetricExists returns true if the metric exists.
-func (i *Index) MetricExists(name []byte) (bool, error) {
+// MeasurementExists returns true if the measurement exists.
+func (i *Index) MeasurementExists(name []byte) (bool, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.metrics[string(name)] != nil, nil
+	return i.measurements[string(name)] != nil, nil
 }
 
-// MetricsSketches returns the sketches for the metrics.
-func (i *Index) MetricsSketches() (estimator.Sketch, estimator.Sketch, error) {
+// MeasurementsSketches returns the sketches for the measurements.
+func (i *Index) MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return i.metricsSketch.Clone(), i.metricsTSSketch.Clone(), nil
+	return i.measurementsSketch.Clone(), i.measurementsTSSketch.Clone(), nil
 }
 
-// MetricsByName returns a list of metrics.
-func (i *Index) MetricsByName(names [][]byte) ([]*metric, error) {
+// MeasurementsByName returns a list of measurements.
+func (i *Index) MeasurementsByName(names [][]byte) ([]*measurement, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	a := make([]*metric, 0, len(names))
+	a := make([]*measurement, 0, len(names))
 	for _, name := range names {
-		if m := i.metrics[string(name)]; m != nil {
+		if m := i.measurements[string(name)]; m != nil {
 			a = append(a, m)
 		}
 	}
 	return a, nil
 }
 
-// MetricIterator returns an iterator over all metrics in the index.
-// MetricIterator does not support authorization.
-func (i *Index) MetricIterator() (tsdb.MetricIterator, error) {
-	names, err := i.MetricNamesByExpr(nil, nil)
+// MeasurementIterator returns an iterator over all measurements in the index.
+// MeasurementIterator does not support authorization.
+func (i *Index) MeasurementIterator() (tsdb.MeasurementIterator, error) {
+	names, err := i.MeasurementNamesByExpr(nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	return tsdb.NewMetricSliceIterator(names), nil
+	return tsdb.NewMeasurementSliceIterator(names), nil
 }
 
-// CreateSeriesListIfNotExists adds the series for the given metric to the
+// CreateSeriesListIfNotExists adds the series for the given measurement to the
 // index and sets its ID or returns the existing series object
-func (i *Index) CreateSeriesListIfNotExists(seriesIDSet *tsdb.SeriesIDSet, metrics map[string]int,
+func (i *Index) CreateSeriesListIfNotExists(seriesIDSet *tsdb.SeriesIDSet, measurements map[string]int,
 	keys, names [][]byte, tagsSlice []models.Tags, opt *tsdb.EngineOptions, ignoreLimits bool) error {
 
 	// Verify that the series will not exceed limit.
@@ -224,7 +224,7 @@ func (i *Index) CreateSeriesListIfNotExists(seriesIDSet *tsdb.SeriesIDSet, metri
 		seriesIDSet.Lock()
 		if !seriesIDSet.ContainsNoLock(ss.ID) {
 			seriesIDSet.AddNoLock(ss.ID)
-			metrics[ss.Metric.Name]++
+			measurements[ss.Measurement.Name]++
 		}
 		seriesIDSet.Unlock()
 	}
@@ -232,10 +232,10 @@ func (i *Index) CreateSeriesListIfNotExists(seriesIDSet *tsdb.SeriesIDSet, metri
 		return nil
 	}
 
-	// get or create the metric index
-	mms := make([]*metric, len(names))
+	// get or create the measurement index
+	mms := make([]*measurement, len(names))
 	for j, name := range names {
-		mms[j] = i.CreateMetricIndexIfNotExists(name)
+		mms[j] = i.CreateMeasurementIndexIfNotExists(name)
 	}
 
 	i.mu.Lock()
@@ -260,7 +260,7 @@ func (i *Index) CreateSeriesListIfNotExists(seriesIDSet *tsdb.SeriesIDSet, metri
 		seriesIDSet.Lock()
 		if !seriesIDSet.ContainsNoLock(ss.ID) {
 			seriesIDSet.AddNoLock(ss.ID)
-			metrics[ss.Metric.Name]++
+			measurements[ss.Measurement.Name]++
 		}
 		seriesIDSet.Unlock()
 	}
@@ -290,21 +290,21 @@ func (i *Index) CreateSeriesListIfNotExists(seriesIDSet *tsdb.SeriesIDSet, metri
 		// This series needs to be added to the bitset tracking undeleted series IDs.
 		seriesIDSet.Lock()
 		seriesIDSet.AddNoLock(seriesIDs[j])
-		metrics[mms[j].Name]++
+		measurements[mms[j].Name]++
 		seriesIDSet.Unlock()
 	}
 
 	return nil
 }
 
-// CreateMetricIndexIfNotExists creates or retrieves an in memory index
-// object for the metric
-func (i *Index) CreateMetricIndexIfNotExists(name []byte) *metric {
+// CreateMeasurementIndexIfNotExists creates or retrieves an in memory index
+// object for the measurement
+func (i *Index) CreateMeasurementIndexIfNotExists(name []byte) *measurement {
 	name = escape.Unescape(name)
 
-	// See if the metric exists using a read-lock
+	// See if the measurement exists using a read-lock
 	i.mu.RLock()
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m != nil {
 		i.mu.RUnlock()
 		return m
@@ -317,13 +317,13 @@ func (i *Index) CreateMetricIndexIfNotExists(name []byte) *metric {
 
 	// Make sure it was created in between the time we released our read-lock
 	// and acquire the write lock
-	m = i.metrics[string(name)]
+	m = i.measurements[string(name)]
 	if m == nil {
-		m = newMetric(i.database, string(name))
-		i.metrics[string(name)] = m
+		m = newMeasurement(i.database, string(name))
+		i.measurements[string(name)] = m
 
-		// Add the metric to the metrics sketch.
-		i.metricsSketch.Add([]byte(name))
+		// Add the measurement to the measurements sketch.
+		i.measurementsSketch.Add([]byte(name))
 	}
 	return m
 }
@@ -331,7 +331,7 @@ func (i *Index) CreateMetricIndexIfNotExists(name []byte) *metric {
 // HasTagKey returns true if tag key exists.
 func (i *Index) HasTagKey(name, key []byte) (bool, error) {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -343,7 +343,7 @@ func (i *Index) HasTagKey(name, key []byte) (bool, error) {
 // HasTagValue returns true if tag value exists.
 func (i *Index) HasTagValue(name, key, value []byte) (bool, error) {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -355,7 +355,7 @@ func (i *Index) HasTagValue(name, key, value []byte) (bool, error) {
 // TagValueN returns the cardinality of a tag value.
 func (i *Index) TagValueN(name, key []byte) int {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -364,10 +364,10 @@ func (i *Index) TagValueN(name, key []byte) int {
 	return mm.CardinalityBytes(key)
 }
 
-// MetricTagKeysByExpr returns an ordered set of tag keys filtered by an expression.
-func (i *Index) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+// MeasurementTagKeysByExpr returns an ordered set of tag keys filtered by an expression.
+func (i *Index) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -377,10 +377,10 @@ func (i *Index) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]s
 }
 
 // TagKeyHasAuthorizedSeries determines if there exists an authorized series for
-// the provided metric name and tag key.
+// the provided measurement name and tag key.
 func (i *Index) TagKeyHasAuthorizedSeries(auth query.FineAuthorizer, name []byte, key string) bool {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -390,7 +390,7 @@ func (i *Index) TagKeyHasAuthorizedSeries(auth query.FineAuthorizer, name []byte
 	// TODO: This looks like it's inefficient. Since a series can have multiple
 	// tag key/value pairs on it, it's possible that the same unauthorised series
 	// will be checked multiple times. It would be more efficient if it were
-	// possible to get the set of unique series IDs for a given metric name
+	// possible to get the set of unique series IDs for a given measurement name
 	// and tag key.
 	var authorized bool
 	mm.SeriesByTagKeyValue(key).Range(func(_ string, sIDs seriesIDs) bool {
@@ -418,13 +418,13 @@ func (i *Index) TagKeyHasAuthorizedSeries(auth query.FineAuthorizer, name []byte
 	return authorized
 }
 
-// MetricTagKeyValuesByExpr returns a set of tag values filtered by an expression.
+// MeasurementTagKeyValuesByExpr returns a set of tag values filtered by an expression.
 //
-// See tsm1.Engine.MetricTagKeyValuesByExpr for a fuller description of this
+// See tsm1.Engine.MeasurementTagKeyValuesByExpr for a fuller description of this
 // method.
-func (i *Index) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte, keys []string, expr cnosql.Expr, keysSorted bool) ([][]string, error) {
+func (i *Index) MeasurementTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte, keys []string, expr cnosql.Expr, keysSorted bool) ([][]string, error) {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil || len(keys) == 0 {
@@ -468,7 +468,7 @@ func (i *Index) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte,
 		if s == nil {
 			continue
 		}
-		if auth != nil && !auth.AuthorizeSeriesRead(i.database, s.Metric.NameBytes, s.Tags) {
+		if auth != nil && !auth.AuthorizeSeriesRead(i.database, s.Measurement.NameBytes, s.Tags) {
 			continue
 		}
 
@@ -489,13 +489,13 @@ func (i *Index) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte,
 	return results, nil
 }
 
-// ForEachMetricTagKey iterates over all tag keys for a metric.
-func (i *Index) ForEachMetricTagKey(name []byte, fn func(key []byte) error) error {
+// ForEachMeasurementTagKey iterates over all tag keys for a measurement.
+func (i *Index) ForEachMeasurementTagKey(name []byte, fn func(key []byte) error) error {
 	// Ensure we do not hold a lock on the index while fn executes in case fn tries
 	// to acquire a lock on the index again.  If another goroutine has Lock, this will
 	// deadlock.
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -511,10 +511,10 @@ func (i *Index) ForEachMetricTagKey(name []byte, fn func(key []byte) error) erro
 	return nil
 }
 
-// TagKeyCardinality returns the number of values for a metric/tag key.
+// TagKeyCardinality returns the number of values for a measurement/tag key.
 func (i *Index) TagKeyCardinality(name, key []byte) int {
 	i.mu.RLock()
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	i.mu.RUnlock()
 
 	if mm == nil {
@@ -535,19 +535,19 @@ func (i *Index) TagsForSeries(key string) (models.Tags, error) {
 	return ss.Tags, nil
 }
 
-// MetricNamesByExpr takes an expression containing only tags and returns a
-// list of matching metric names.
+// MeasurementNamesByExpr takes an expression containing only tags and returns a
+// list of matching measurement names.
 //
 // TODO: Remove authorisation from these methods. There shouldn't need to
 // be any auth passed down into the index.
-func (i *Index) MetricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
+func (i *Index) MeasurementNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	// Return all metric names if no expression is provided.
+	// Return all measurement names if no expression is provided.
 	if expr == nil {
-		a := make([][]byte, 0, len(i.metrics))
-		for _, m := range i.metrics {
+		a := make([][]byte, 0, len(i.measurements))
+		for _, m := range i.measurements {
 			if m.Authorized(auth) {
 				a = append(a, m.NameBytes)
 			}
@@ -556,10 +556,10 @@ func (i *Index) MetricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) (
 		return a, nil
 	}
 
-	return i.metricNamesByExpr(auth, expr)
+	return i.measurementNamesByExpr(auth, expr)
 }
 
-func (i *Index) metricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
+func (i *Index) measurementNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
 	if expr == nil {
 		return nil, nil
 	}
@@ -594,19 +594,19 @@ func (i *Index) metricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) (
 
 			// Match on name, if specified.
 			if tag.Val == "_name" {
-				return i.metricNamesByNameFilter(auth, tf.Op, tf.Value, tf.Regex), nil
+				return i.measurementNamesByNameFilter(auth, tf.Op, tf.Value, tf.Regex), nil
 			} else if cnosql.IsSystemName(tag.Val) {
 				return nil, nil
 			}
 
-			return i.metricNamesByTagFilters(auth, tf), nil
+			return i.measurementNamesByTagFilters(auth, tf), nil
 		case cnosql.OR, cnosql.AND:
-			lhs, err := i.metricNamesByExpr(auth, e.LHS)
+			lhs, err := i.measurementNamesByExpr(auth, e.LHS)
 			if err != nil {
 				return nil, err
 			}
 
-			rhs, err := i.metricNamesByExpr(auth, e.RHS)
+			rhs, err := i.measurementNamesByExpr(auth, e.RHS)
 			if err != nil {
 				return nil, err
 			}
@@ -619,15 +619,15 @@ func (i *Index) metricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) (
 			return nil, fmt.Errorf("invalid tag comparison operator")
 		}
 	case *cnosql.ParenExpr:
-		return i.metricNamesByExpr(auth, e.Expr)
+		return i.measurementNamesByExpr(auth, e.Expr)
 	}
 	return nil, fmt.Errorf("%#v", expr)
 }
 
-// metricNamesByNameFilter returns the sorted metrics matching a name.
-func (i *Index) metricNamesByNameFilter(auth query.FineAuthorizer, op cnosql.Token, val string, regex *regexp.Regexp) [][]byte {
+// measurementNamesByNameFilter returns the sorted measurements matching a name.
+func (i *Index) measurementNamesByNameFilter(auth query.FineAuthorizer, op cnosql.Token, val string, regex *regexp.Regexp) [][]byte {
 	var names [][]byte
-	for _, m := range i.metrics {
+	for _, m := range i.measurements {
 		var matched bool
 		switch op {
 		case cnosql.EQ:
@@ -648,9 +648,9 @@ func (i *Index) metricNamesByNameFilter(auth query.FineAuthorizer, op cnosql.Tok
 	return names
 }
 
-// metricNamesByTagFilters returns the sorted metrics matching the filters on tag values.
-func (i *Index) metricNamesByTagFilters(auth query.FineAuthorizer, filter *TagFilter) [][]byte {
-	// Build a list of metrics matching the filters.
+// measurementNamesByTagFilters returns the sorted measurements matching the filters on tag values.
+func (i *Index) measurementNamesByTagFilters(auth query.FineAuthorizer, filter *TagFilter) [][]byte {
+	// Build a list of measurements matching the filters.
 	var names [][]byte
 	var tagMatch bool
 	var authorized bool
@@ -660,8 +660,8 @@ func (i *Index) metricNamesByTagFilters(auth query.FineAuthorizer, filter *TagFi
 		valEqual = func(s string) bool { return filter.Value == s }
 	}
 
-	// Iterate through all metrics in the database.
-	for _, m := range i.metrics {
+	// Iterate through all measurements in the database.
+	for _, m := range i.measurements {
 		tagVals := m.SeriesByTagKeyValue(filter.Key)
 		if tagVals == nil {
 			continue
@@ -706,14 +706,14 @@ func (i *Index) metricNamesByTagFilters(auth query.FineAuthorizer, filter *TagFi
 			return filter.Op == cnosql.EQREGEX
 		})
 
-		// For negation operators, to determine if the metric is authorized,
-		// an authorized series belonging to the metric must be located.
-		// Then, the metric can be added iff !tagMatch && authorized.
+		// For negation operators, to determine if the measurement is authorized,
+		// an authorized series belonging to the measurement must be located.
+		// Then, the measurement can be added iff !tagMatch && authorized.
 		if auth != nil && !tagMatch && (filter.Op == cnosql.NEQREGEX || filter.Op == cnosql.NEQ) {
 			authorized = m.Authorized(auth)
 		}
 
-		// tags match | operation is EQ | metric matches
+		// tags match | operation is EQ | measurement matches
 		// --------------------------------------------------
 		//     True   |       True      |      True
 		//     True   |       False     |      False
@@ -728,13 +728,13 @@ func (i *Index) metricNamesByTagFilters(auth query.FineAuthorizer, filter *TagFi
 	return names
 }
 
-// MetricNamesByRegex returns the metrics that match the regex.
-func (i *Index) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
+// MeasurementNamesByRegex returns the measurements that match the regex.
+func (i *Index) MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
 	var matches [][]byte
-	for _, m := range i.metrics {
+	for _, m := range i.measurements {
 		if re.MatchString(m.Name) {
 			matches = append(matches, m.NameBytes)
 		}
@@ -742,24 +742,24 @@ func (i *Index) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
 	return matches, nil
 }
 
-// DropMetric removes the metric and all of its underlying
+// DropMeasurement removes the measurement and all of its underlying
 // series from the database index
-func (i *Index) DropMetric(name []byte) error {
+func (i *Index) DropMeasurement(name []byte) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	return i.dropMetric(string(name))
+	return i.dropMeasurement(string(name))
 }
 
-func (i *Index) dropMetric(name string) error {
+func (i *Index) dropMeasurement(name string) error {
 	// Update the tombstone sketch.
-	i.metricsTSSketch.Add([]byte(name))
+	i.measurementsTSSketch.Add([]byte(name))
 
-	m := i.metrics[name]
+	m := i.measurements[name]
 	if m == nil {
 		return nil
 	}
 
-	delete(i.metrics, name)
+	delete(i.measurements, name)
 	for _, s := range m.SeriesByIDMap() {
 		delete(i.series, s.Key)
 		i.seriesTSSketch.Add([]byte(s.Key))
@@ -767,13 +767,13 @@ func (i *Index) dropMetric(name string) error {
 	return nil
 }
 
-// DropMetricIfSeriesNotExist drops a metric only if there are no more
-// series for the metric.
-func (i *Index) DropMetricIfSeriesNotExist(name []byte) (bool, error) {
+// DropMeasurementIfSeriesNotExist drops a measurement only if there are no more
+// series for the measurement.
+func (i *Index) DropMeasurementIfSeriesNotExist(name []byte) (bool, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return false, nil
 	}
@@ -782,7 +782,7 @@ func (i *Index) DropMetricIfSeriesNotExist(name []byte) (bool, error) {
 		return false, nil
 	}
 
-	return true, i.dropMetric(string(name))
+	return true, i.dropMeasurement(string(name))
 }
 
 // DropSeriesGlobal removes the series key and its tags from the index.
@@ -806,14 +806,14 @@ func (i *Index) DropSeriesGlobal(key []byte) error {
 	// Remove from the index.
 	delete(i.series, k)
 
-	// Remove the metric's reference.
-	series.Metric.DropSeries(series)
+	// Remove the measurement's reference.
+	series.Measurement.DropSeries(series)
 	// Mark the series as deleted.
 	series.Delete()
 
-	// If the metric no longer has any series, remove it as well.
-	if !series.Metric.HasSeries() {
-		i.dropMetric(series.Metric.Name)
+	// If the measurement no longer has any series, remove it as well.
+	if !series.Measurement.HasSeries() {
+		i.dropMeasurement(series.Measurement.Name)
 	}
 
 	return nil
@@ -824,7 +824,7 @@ func (i *Index) TagSets(shardSeriesIDs *tsdb.SeriesIDSet, name []byte, opt query
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	mm := i.metrics[string(name)]
+	mm := i.measurements[string(name)]
 	if mm == nil {
 		return nil, nil
 	}
@@ -849,30 +849,30 @@ func (i *Index) SeriesKeys() []string {
 }
 
 // SetFieldSet sets a shared field set from the engine.
-func (i *Index) SetFieldSet(fieldset *tsdb.MetricFieldSet) {
+func (i *Index) SetFieldSet(fieldset *tsdb.MeasurementFieldSet) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.fieldset = fieldset
 }
 
 // FieldSet returns the assigned fieldset.
-func (i *Index) FieldSet() *tsdb.MetricFieldSet {
+func (i *Index) FieldSet() *tsdb.MeasurementFieldSet {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	return i.fieldset
 }
 
-// SetFieldName adds a field name to a metric.
-func (i *Index) SetFieldName(metric []byte, name string) {
-	m := i.CreateMetricIndexIfNotExists(metric)
+// SetFieldName adds a field name to a measurement.
+func (i *Index) SetFieldName(measurement []byte, name string) {
+	m := i.CreateMeasurementIndexIfNotExists(measurement)
 	m.SetFieldName(name)
 }
 
-// ForEachMetricName iterates over each metric name.
-func (i *Index) ForEachMetricName(fn func(name []byte) error) error {
+// ForEachMeasurementName iterates over each measurement name.
+func (i *Index) ForEachMeasurementName(fn func(name []byte) error) error {
 	i.mu.RLock()
-	mms := make(metrics, 0, len(i.metrics))
-	for _, m := range i.metrics {
+	mms := make(measurements, 0, len(i.measurements))
+	for _, m := range i.measurements {
 		mms = append(mms, m)
 	}
 	sort.Sort(mms)
@@ -886,15 +886,15 @@ func (i *Index) ForEachMetricName(fn func(name []byte) error) error {
 	return nil
 }
 
-func (i *Index) MetricSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, error) {
-	return i.MetricSeriesKeysByExprIterator(name, nil)
+func (i *Index) MeasurementSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, error) {
+	return i.MeasurementSeriesKeysByExprIterator(name, nil)
 }
 
 func (i *Index) TagKeySeriesIDIterator(name, key []byte) (tsdb.SeriesIDIterator, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return nil, nil
 	}
@@ -905,7 +905,7 @@ func (i *Index) TagValueSeriesIDIterator(name, key, value []byte) (tsdb.SeriesID
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return nil, nil
 	}
@@ -916,7 +916,7 @@ func (i *Index) TagKeyIterator(name []byte) (tsdb.TagKeyIterator, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return nil, nil
 	}
@@ -931,14 +931,14 @@ func (i *Index) TagKeyIterator(name []byte) (tsdb.TagKeyIterator, error) {
 }
 
 // TagValueIterator provides an iterator over all the tag values belonging to
-// series with the provided metric name and tag key.
+// series with the provided measurement name and tag key.
 //
 // TagValueIterator does not currently support authorization.
 func (i *Index) TagValueIterator(name, key []byte) (tsdb.TagValueIterator, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return nil, nil
 	}
@@ -952,11 +952,11 @@ func (i *Index) TagValueIterator(name, key []byte) (tsdb.TagValueIterator, error
 	return tsdb.NewTagValueSliceIterator(a), nil
 }
 
-func (i *Index) MetricSeriesKeysByExprIterator(name []byte, condition cnosql.Expr) (tsdb.SeriesIDIterator, error) {
+func (i *Index) MeasurementSeriesKeysByExprIterator(name []byte, condition cnosql.Expr) (tsdb.SeriesIDIterator, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return nil, nil
 	}
@@ -985,11 +985,11 @@ func (i *Index) MetricSeriesKeysByExprIterator(name []byte, condition cnosql.Exp
 	return tsdb.NewSeriesIDSliceIterator([]uint64(ids)), nil
 }
 
-func (i *Index) MetricSeriesKeysByExpr(name []byte, condition cnosql.Expr) ([][]byte, error) {
+func (i *Index) MeasurementSeriesKeysByExpr(name []byte, condition cnosql.Expr) ([][]byte, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	m := i.metrics[string(name)]
+	m := i.measurements[string(name)]
 	if m == nil {
 		return nil, nil
 	}
@@ -1023,9 +1023,9 @@ func (i *Index) SeriesIDIterator(opt query.IteratorOptions) (tsdb.SeriesIDIterat
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 
-	// Read and sort all metrics.
-	mms := make(metrics, 0, len(i.metrics))
-	for _, mm := range i.metrics {
+	// Read and sort all measurements.
+	mms := make(measurements, 0, len(i.measurements))
+	for _, mm := range i.measurements {
 		mms = append(mms, mm)
 	}
 	sort.Sort(mms)
@@ -1040,18 +1040,18 @@ func (i *Index) SeriesIDIterator(opt query.IteratorOptions) (tsdb.SeriesIDIterat
 // DiskSizeBytes always returns zero bytes, since this is an in-memory index.
 func (i *Index) DiskSizeBytes() int64 { return 0 }
 
-// Rebuild recreates the metric indexes to allow deleted series to be removed
+// Rebuild recreates the measurement indexes to allow deleted series to be removed
 // and garbage collected.
 func (i *Index) Rebuild() {
 	// Only allow one rebuild at a time.  This will cause all subsequent rebuilds
-	// to queue.  The metric rebuild is idempotent and will not be rebuilt if
+	// to queue.  The measurement rebuild is idempotent and will not be rebuilt if
 	// it does not need to be.
 	i.rebuildQueue.Lock()
 	defer i.rebuildQueue.Unlock()
 
-	i.ForEachMetricName(func(name []byte) error {
-		// Metric never returns an error
-		m, _ := i.Metric(name)
+	i.ForEachMeasurementName(func(name []byte) error {
+		// Measurement never returns an error
+		m, _ := i.Measurement(name)
 		if m == nil {
 			return nil
 		}
@@ -1059,7 +1059,7 @@ func (i *Index) Rebuild() {
 		i.mu.Lock()
 		nm := m.Rebuild()
 
-		i.metrics[string(name)] = nm
+		i.measurements[string(name)] = nm
 		i.mu.Unlock()
 		return nil
 	})
@@ -1067,7 +1067,7 @@ func (i *Index) Rebuild() {
 
 // assignExistingSeries assigns the existing series to shardID and returns the series, names and tags that
 // do not exists yet.
-func (i *Index) assignExistingSeries(shardID uint64, seriesIDSet *tsdb.SeriesIDSet, metrics map[string]int,
+func (i *Index) assignExistingSeries(shardID uint64, seriesIDSet *tsdb.SeriesIDSet, measurements map[string]int,
 	keys, names [][]byte, tagsSlice []models.Tags) ([][]byte, [][]byte, []models.Tags) {
 
 	i.mu.RLock()
@@ -1085,7 +1085,7 @@ func (i *Index) assignExistingSeries(shardID uint64, seriesIDSet *tsdb.SeriesIDS
 				seriesIDSet.Lock()
 				if !seriesIDSet.ContainsNoLock(ss.ID) {
 					seriesIDSet.AddNoLock(ss.ID)
-					metrics[string(names[j])]++
+					measurements[string(names[j])]++
 				}
 				seriesIDSet.Unlock()
 			}
@@ -1109,9 +1109,9 @@ type ShardIndex struct {
 	// Bitset storing all undeleted series IDs associated with this shard.
 	seriesIDSet *tsdb.SeriesIDSet
 
-	// mapping of metrics to the count of series ids in the set. protected
+	// mapping of measurements to the count of series ids in the set. protected
 	// by the seriesIDSet lock.
-	metrics map[string]int
+	measurements map[string]int
 
 	opt tsdb.EngineOptions
 }
@@ -1125,35 +1125,35 @@ func (idx *ShardIndex) DropSeries(seriesID uint64, key []byte, _ bool) error {
 		idx.seriesIDSet.RemoveNoLock(seriesID)
 
 		name := models.ParseName(key)
-		if curr := idx.metrics[string(name)]; curr <= 1 {
-			delete(idx.metrics, string(name))
+		if curr := idx.measurements[string(name)]; curr <= 1 {
+			delete(idx.measurements, string(name))
 		} else {
-			idx.metrics[string(name)] = curr - 1
+			idx.measurements[string(name)] = curr - 1
 		}
 	}
 	idx.seriesIDSet.Unlock()
 	return nil
 }
 
-// DropMetricIfSeriesNotExist drops a metric only if there are no more
-// series for the metric.
-func (idx *ShardIndex) DropMetricIfSeriesNotExist(name []byte) (bool, error) {
+// DropMeasurementIfSeriesNotExist drops a measurement only if there are no more
+// series for the measurement.
+func (idx *ShardIndex) DropMeasurementIfSeriesNotExist(name []byte) (bool, error) {
 	idx.seriesIDSet.Lock()
-	curr := idx.metrics[string(name)]
+	curr := idx.measurements[string(name)]
 	idx.seriesIDSet.Unlock()
 	if curr > 0 {
 		return false, nil
 	}
 
-	// we always report the metric was dropped if it does not exist in our
-	// metrics mapping.
-	_, err := idx.Index.DropMetricIfSeriesNotExist(name)
+	// we always report the measurement was dropped if it does not exist in our
+	// measurements mapping.
+	_, err := idx.Index.DropMeasurementIfSeriesNotExist(name)
 	return err == nil, err
 }
 
 // CreateSeriesListIfNotExists creates a list of series if they doesn't exist in bulk.
 func (idx *ShardIndex) CreateSeriesListIfNotExists(keys, names [][]byte, tagsSlice []models.Tags) error {
-	keys, names, tagsSlice = idx.assignExistingSeries(idx.id, idx.seriesIDSet, idx.metrics, keys, names, tagsSlice)
+	keys, names, tagsSlice = idx.assignExistingSeries(idx.id, idx.seriesIDSet, idx.measurements, keys, names, tagsSlice)
 	if len(keys) == 0 {
 		return nil
 	}
@@ -1183,7 +1183,7 @@ func (idx *ShardIndex) CreateSeriesListIfNotExists(keys, names [][]byte, tagsSli
 				}
 
 				if reason == "" {
-					reason = fmt.Sprintf("max-values-per-tag limit exceeded (%d/%d): metric=%q tag=%q value=%q",
+					reason = fmt.Sprintf("max-values-per-tag limit exceeded (%d/%d): measurement=%q tag=%q value=%q",
 						n, maxValuesPerTag, name, string(tag.Key), string(tag.Value))
 				}
 
@@ -1202,7 +1202,7 @@ func (idx *ShardIndex) CreateSeriesListIfNotExists(keys, names [][]byte, tagsSli
 		keys, names, tagsSlice = keys[:n], names[:n], tagsSlice[:n]
 	}
 
-	if err := idx.Index.CreateSeriesListIfNotExists(idx.seriesIDSet, idx.metrics, keys, names, tagsSlice, &idx.opt, idx.opt.Config.MaxSeriesPerDatabase == 0); err != nil {
+	if err := idx.Index.CreateSeriesListIfNotExists(idx.seriesIDSet, idx.measurements, keys, names, tagsSlice, &idx.opt, idx.opt.Config.MaxSeriesPerDatabase == 0); err != nil {
 		reason = err.Error()
 		droppedKeys = append(droppedKeys, keys...)
 	}
@@ -1231,13 +1231,13 @@ func (idx *ShardIndex) SeriesN() int64 {
 // InitializeSeries is called during start-up.
 // This works the same as CreateSeriesListIfNotExists except it ignore limit errors.
 func (idx *ShardIndex) InitializeSeries(keys, names [][]byte, tags []models.Tags) error {
-	return idx.Index.CreateSeriesListIfNotExists(idx.seriesIDSet, idx.metrics, keys, names, tags, &idx.opt, true)
+	return idx.Index.CreateSeriesListIfNotExists(idx.seriesIDSet, idx.measurements, keys, names, tags, &idx.opt, true)
 }
 
 // CreateSeriesIfNotExists creates the provided series on the index if it is not
 // already present.
 func (idx *ShardIndex) CreateSeriesIfNotExists(key, name []byte, tags models.Tags) error {
-	return idx.Index.CreateSeriesListIfNotExists(idx.seriesIDSet, idx.metrics, [][]byte{key}, [][]byte{name}, []models.Tags{tags}, &idx.opt, false)
+	return idx.Index.CreateSeriesListIfNotExists(idx.seriesIDSet, idx.measurements, [][]byte{key}, [][]byte{name}, []models.Tags{tags}, &idx.opt, false)
 }
 
 // TagSets returns a list of tag sets based on series filtering.
@@ -1253,18 +1253,18 @@ func (idx *ShardIndex) SeriesIDSet() *tsdb.SeriesIDSet {
 // NewShardIndex returns a new index for a shard.
 func NewShardIndex(id uint64, seriesIDSet *tsdb.SeriesIDSet, opt tsdb.EngineOptions) tsdb.Index {
 	return &ShardIndex{
-		Index:       opt.InmemIndex.(*Index),
-		id:          id,
-		seriesIDSet: seriesIDSet,
-		metrics:     make(map[string]int),
-		opt:         opt,
+		Index:        opt.InmemIndex.(*Index),
+		id:           id,
+		seriesIDSet:  seriesIDSet,
+		measurements: make(map[string]int),
+		opt:          opt,
 	}
 }
 
 // seriesIDIterator emits series ids.
 type seriesIDIterator struct {
 	database string
-	mms      metrics
+	mms      measurements
 	keys     struct {
 		buf []*series
 		i   int
@@ -1281,7 +1281,7 @@ func (itr *seriesIDIterator) Close() error { return nil }
 // Next emits the next point in the iterator.
 func (itr *seriesIDIterator) Next() (tsdb.SeriesIDElem, error) {
 	for {
-		// Load next metric's keys if there are no more remaining.
+		// Load next measurement's keys if there are no more remaining.
 		if itr.keys.i >= len(itr.keys.buf) {
 			if err := itr.nextKeys(); err != nil {
 				return tsdb.SeriesIDElem{}, err
@@ -1295,7 +1295,7 @@ func (itr *seriesIDIterator) Next() (tsdb.SeriesIDElem, error) {
 		series := itr.keys.buf[itr.keys.i]
 		itr.keys.i++
 
-		if !itr.opt.Authorizer.AuthorizeSeriesRead(itr.database, series.Metric.NameBytes, series.Tags) {
+		if !itr.opt.Authorizer.AuthorizeSeriesRead(itr.database, series.Measurement.NameBytes, series.Tags) {
 			continue
 		}
 
@@ -1303,13 +1303,13 @@ func (itr *seriesIDIterator) Next() (tsdb.SeriesIDElem, error) {
 	}
 }
 
-// nextKeys reads all keys for the next metric.
+// nextKeys reads all keys for the next measurement.
 func (itr *seriesIDIterator) nextKeys() error {
 	for {
 		// Ensure previous keys are cleared out.
 		itr.keys.i, itr.keys.buf = 0, itr.keys.buf[:0]
 
-		// Read next metric.
+		// Read next measurement.
 		if len(itr.mms) == 0 {
 			return nil
 		}

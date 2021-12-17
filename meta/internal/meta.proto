@@ -20,7 +20,7 @@ message Data {
 	repeated UserInfo Users = 6;
 
 	required uint64 MaxNodeID = 7;
-	required uint64 MaxRegionID = 8;
+	required uint64 MaxShardGroupID = 8;
 	required uint64 MaxShardID = 9;
 
 	// added for 0.10.0
@@ -36,28 +36,28 @@ message NodeInfo {
 
 message DatabaseInfo {
 	required string Name = 1;
-	required string DefaultTimeToLive = 2;
-	repeated TimeToLiveInfo TimeToLives = 3;
+	required string DefaultRetentionPolicy = 2;
+	repeated RetentionPolicyInfo RetentionPolicies = 3;
 	repeated ContinuousQueryInfo ContinuousQueries = 4;
 }
 
-message TimeToLiveSpec {
+message RetentionPolicySpec {
 	optional string Name               = 1;
 	optional int64  Duration           = 2;
-	optional int64  RegionDuration = 3;
+	optional int64  ShardGroupDuration = 3;
 	optional uint32 ReplicaN           = 4;
 }
 
-message TimeToLiveInfo {
+message RetentionPolicyInfo {
 	required string Name = 1;
 	required int64 Duration = 2;
-	required int64 RegionDuration = 3;
+	required int64 ShardGroupDuration = 3;
 	required uint32 ReplicaN = 4;
-	repeated RegionInfo Regions = 5;
+	repeated ShardGroupInfo ShardGroups = 5;
 	repeated SubscriptionInfo Subscriptions = 6;
 }
 
-message RegionInfo {
+message ShardGroupInfo {
 	required uint64 ID = 1;
 	required int64 StartTime = 2;
 	required int64 EndTime = 3;
@@ -114,12 +114,12 @@ message Command {
 		DeleteNodeCommand                = 2;
 		CreateDatabaseCommand            = 3;
 		DropDatabaseCommand              = 4;
-		CreateTimeToLiveCommand     = 5;
-		DropTimeToLiveCommand       = 6;
-		SetDefaultTimeToLiveCommand = 7;
-		UpdateTimeToLiveCommand     = 8;
-		CreateRegionCommand          = 9;
-		DeleteRegionCommand          = 10;
+		CreateRetentionPolicyCommand     = 5;
+		DropRetentionPolicyCommand       = 6;
+		SetDefaultRetentionPolicyCommand = 7;
+		UpdateRetentionPolicyCommand     = 8;
+		CreateShardGroupCommand          = 9;
+		DeleteShardGroupCommand          = 10;
 		CreateContinuousQueryCommand     = 11;
 		DropContinuousQueryCommand       = 12;
 		CreateUserCommand                = 13;
@@ -167,7 +167,7 @@ message CreateDatabaseCommand {
 		optional CreateDatabaseCommand command = 103;
 	}
 	required string Name = 1;
-	optional TimeToLiveInfo TimeToLive = 2;
+	optional RetentionPolicyInfo RetentionPolicy = 2;
 }
 
 message DropDatabaseCommand {
@@ -177,34 +177,34 @@ message DropDatabaseCommand {
 	required string Name = 1;
 }
 
-message CreateTimeToLiveCommand {
+message CreateRetentionPolicyCommand {
 	extend Command {
-		optional CreateTimeToLiveCommand command = 105;
+		optional CreateRetentionPolicyCommand command = 105;
 	}
 	required string Database = 1;
-	required TimeToLiveInfo TimeToLive = 2;
+	required RetentionPolicyInfo RetentionPolicy = 2;
 	required bool Default = 3;
 }
 
-message DropTimeToLiveCommand {
+message DropRetentionPolicyCommand {
 	extend Command {
-		optional DropTimeToLiveCommand command = 106;
+		optional DropRetentionPolicyCommand command = 106;
 	}
 	required string Database = 1;
 	required string Name = 2;
 }
 
-message SetDefaultTimeToLiveCommand {
+message SetDefaultRetentionPolicyCommand {
 	extend Command {
-		optional SetDefaultTimeToLiveCommand command = 107;
+		optional SetDefaultRetentionPolicyCommand command = 107;
 	}
 	required string Database = 1;
 	required string Name = 2;
 }
 
-message UpdateTimeToLiveCommand {
+message UpdateRetentionPolicyCommand {
 	extend Command {
-		optional UpdateTimeToLiveCommand command = 108;
+		optional UpdateRetentionPolicyCommand command = 108;
 	}
 	required string Database = 1;
 	required string Name = 2;
@@ -214,22 +214,22 @@ message UpdateTimeToLiveCommand {
 	required bool Default = 6;
 }
 
-message CreateRegionCommand {
+message CreateShardGroupCommand {
 	extend Command {
-		optional CreateRegionCommand command = 109;
+		optional CreateShardGroupCommand command = 109;
 	}
 	required string Database = 1;
-	required string TimeToLive = 2;
+	required string RetentionPolicy = 2;
 	required int64 Timestamp = 3;
 }
 
-message DeleteRegionCommand {
+message DeleteShardGroupCommand {
 	extend Command {
-		optional DeleteRegionCommand command = 110;
+		optional DeleteShardGroupCommand command = 110;
 	}
 	required string Database = 1;
-	required string TimeToLive = 2;
-	required uint64 RegionID = 3;
+	required string RetentionPolicy = 2;
+	required uint64 ShardGroupID = 3;
 }
 
 message CreateContinuousQueryCommand {
@@ -311,7 +311,7 @@ message CreateSubscriptionCommand {
 	}
 	required string Name = 1;
 	required string Database = 2;
-	required string TimeToLive = 3;
+	required string RetentionPolicy = 3;
 	required string Mode = 4;
 	repeated string Destinations = 5;
 
@@ -323,7 +323,7 @@ message DropSubscriptionCommand {
 	}
 	required string Name = 1;
 	required string Database = 2;
-	required string TimeToLive = 3;
+	required string RetentionPolicy = 3;
 }
 
 message RemovePeerCommand {

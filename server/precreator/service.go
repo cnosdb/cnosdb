@@ -1,5 +1,5 @@
 // Package precreator provides the shard precreation service.
-package region
+package precreator
 
 import (
 	"sync"
@@ -20,7 +20,7 @@ type Service struct {
 	wg   sync.WaitGroup
 
 	MetaClient interface {
-		PrecreateRegions(now, cutoff time.Time) error
+		PrecreateShardGroups(now, cutoff time.Time) error
 	}
 }
 
@@ -88,5 +88,5 @@ func (s *Service) runPrecreation() {
 // precreate performs actual resource precreation.
 func (s *Service) precreate(now time.Time) error {
 	cutoff := now.Add(s.advancePeriod).UTC()
-	return s.MetaClient.PrecreateRegions(now, cutoff)
+	return s.MetaClient.PrecreateShardGroups(now, cutoff)
 }

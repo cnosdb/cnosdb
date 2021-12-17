@@ -58,12 +58,12 @@ type PointsWriter struct {
 
 	MetaClient interface {
 		Database(name string) (di *meta.DatabaseInfo)
-		TimeToLive(database, ttl string) (*meta.TimeToLiveInfo, error)
-		CreateRegion(database, ttl string, timestamp time.Time) (*meta.RegionInfo, error)
+		RetentionPolicy(database, rp string) (*meta.RetentionPolicyInfo, error)
+		CreateShardGroup(database, rp string, timestamp time.Time) (*meta.ShardGroupInfo, error)
 	}
 
 	TSDBStore interface {
-		CreateShard(database, timeToLive string, shardID uint64, enabled bool) error
+		CreateShard(database, retentionPolicy string, shardID uint64, enabled bool) error
 		WriteToShard(shardID uint64, points []models.Point) error
 	}
 
@@ -191,49 +191,49 @@ func (w *PointsWriter) Statistics(tags map[string]string) []models.Statistic {
 }
 
 // MapShards maps the points contained in wp to a ShardMapping.  If a point
-// maps to a region or shard that does not currently exist, it will be
+// maps to a shard group or shard that does not currently exist, it will be
 // created before returning the mapping.
 func (w *PointsWriter) MapShards(wp *WritePointsRequest) (*ShardMapping, error) {
-	ttl, err := w.MetaClient.TimeToLive(wp.Database, wp.TimeToLive)
+	rp, err := w.MetaClient.RetentionPolicy(wp.Database, wp.RetentionPolicy)
 	if err != nil {
 		return nil, err
-	} else if ttl == nil {
-		return nil, cnosdb.ErrTimeToLiveNotFound(wp.TimeToLive)
+	} else if rp == nil {
+		return nil, cnosdb.ErrRetentionPolicyNotFound(wp.RetentionPolicy)
 	}
 
-	// Holds all the regions and shards that are required for writes.
-	list := sgList{items: make(meta.RegionInfos, 0, 8)}
+	// Holds all the shard groups and shards that are required for writes.
+	list := sgList{items: make(meta.ShardGroupInfos, 0, 8)}
 	min := time.Unix(0, models.MinNanoTime)
-	if ttl.Duration > 0 {
-		min = time.Now().Add(-ttl.Duration)
+	if rp.Duration > 0 {
+		min = time.Now().Add(-rp.Duration)
 	}
 
 	for _, p := range wp.Points {
-		// Either the point is outside the scope of the time-to-live, or we already have
-		// a suitable region for the point.
+		// Either the point is outside the scope of the retention policy, or we already have
+		// a suitable shard group for the point.
 		if p.Time().Before(min) || list.Covers(p.Time()) {
 			continue
 		}
 
-		// No regions overlap with the point's time, so we will create
-		// a new region for this point.
-		rg, err := w.MetaClient.CreateRegion(wp.Database, wp.TimeToLive, p.Time())
+		// No shard groups overlap with the point's time, so we will create
+		// a new shard group for this point.
+		rg, err := w.MetaClient.CreateShardGroup(wp.Database, wp.RetentionPolicy, p.Time())
 		if err != nil {
 			return nil, err
 		}
 
 		if rg == nil {
-			return nil, errors.New("nil region")
+			return nil, errors.New("nil shard group")
 		}
 		list.Add(*rg)
 	}
 
 	mapping := NewShardMapping(len(wp.Points))
 	for _, p := range wp.Points {
-		rg := list.RegionAt(p.Time())
+		rg := list.ShardGroupAt(p.Time())
 		if rg == nil {
-			// We didn't create a region because the point was outside the
-			// scope of the time-to-live.
+			// We didn't create a shard group because the point was outside the
+			// scope of the retention policy.
 			mapping.Dropped = append(mapping.Dropped, p)
 			atomic.AddInt64(&w.stats.WriteDropped, 1)
 			continue
@@ -245,10 +245,10 @@ func (w *PointsWriter) MapShards(wp *WritePointsRequest) (*ShardMapping, error) 
 	return mapping, nil
 }
 
-// sgList is a wrapper around a meta.RegionInfos where we can also check
-// if a given time is covered by any of the regions in the list.
+// sgList is a wrapper around a meta.ShardGroupInfos where we can also check
+// if a given time is covered by any of the shard groups in the list.
 type sgList struct {
-	items meta.RegionInfos
+	items meta.ShardGroupInfos
 
 	// needsSort indicates if items has been modified without a sort operation.
 	needsSort bool
@@ -264,24 +264,24 @@ func (l sgList) Covers(t time.Time) bool {
 	if len(l.items) == 0 {
 		return false
 	}
-	return l.RegionAt(t) != nil
+	return l.ShardGroupAt(t) != nil
 }
 
-// RegionAt attempts to find a region that could contain a point
+// ShardGroupAt attempts to find a shard group that could contain a point
 // at the given time.
 //
-// Regions are sorted first according to end time, and then according
-// to start time. Therefore, if there are multiple regions that match
+// ShardGroups are sorted first according to end time, and then according
+// to start time. Therefore, if there are multiple shard groups that match
 // this point's time they will be preferred in this order:
 //
-//  - a region with the earliest end time;
-//  - (assuming identical end times) the region with the earliest start time.
-func (l sgList) RegionAt(t time.Time) *meta.RegionInfo {
+//  - a shard group with the earliest end time;
+//  - (assuming identical end times) the shard group with the earliest start time.
+func (l sgList) ShardGroupAt(t time.Time) *meta.ShardGroupInfo {
 	if l.items.Len() == 0 {
 		return nil
 	}
 
-	// find the earliest region that could contain this point using binary search.
+	// find the earliest shard group that could contain this point using binary search.
 	if l.needsSort {
 		sort.Sort(l.items)
 		l.needsSort = false
@@ -320,8 +320,8 @@ func (l sgList) RegionAt(t time.Time) *meta.RegionInfo {
 	return &l.items[idx]
 }
 
-// Add appends a region to the list, updating the earliest/latest times of the list if needed.
-func (l *sgList) Add(sgi meta.RegionInfo) {
+// Add appends a shard group to the list, updating the earliest/latest times of the list if needed.
+func (l *sgList) Add(sgi meta.ShardGroupInfo) {
 	l.items = append(l.items, sgi)
 	l.needsSort = true
 
@@ -337,29 +337,29 @@ func (l *sgList) Add(sgi meta.RegionInfo) {
 // WritePointsInto is a copy of WritePoints that uses a tsdb structure instead of
 // a cluster structure for information. This is to avoid a circular dependency.
 func (w *PointsWriter) WritePointsInto(p *IntoWriteRequest) error {
-	return w.WritePointsPrivileged(p.Database, p.TimeToLive, models.ConsistencyLevelOne, p.Points)
+	return w.WritePointsPrivileged(p.Database, p.RetentionPolicy, models.ConsistencyLevelOne, p.Points)
 }
 
-// WritePoints writes data to the underlying storage. consitencyLevel and user are only used for clustered scenarios.
-func (w *PointsWriter) WritePoints(database, timeToLive string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error {
-	return w.WritePointsPrivileged(database, timeToLive, consistencyLevel, points)
+// WritePoints writes data to the underlying storage. consistencyLevel and user are only used for clustered scenarios.
+func (w *PointsWriter) WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error {
+	return w.WritePointsPrivileged(database, retentionPolicy, consistencyLevel, points)
 }
 
 // WritePointsPrivileged writes the data to the underlying storage,
-// consitencyLevel is only used for clustered scenarios
-func (w *PointsWriter) WritePointsPrivileged(database, timeToLive string, consistencyLevel models.ConsistencyLevel, points []models.Point) error {
+// consistencyLevel is only used for clustered scenarios
+func (w *PointsWriter) WritePointsPrivileged(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, points []models.Point) error {
 	atomic.AddInt64(&w.stats.WriteReq, 1)
 	atomic.AddInt64(&w.stats.PointWriteReq, int64(len(points)))
 
-	if timeToLive == "" {
+	if retentionPolicy == "" {
 		db := w.MetaClient.Database(database)
 		if db == nil {
 			return cnosdb.ErrDatabaseNotFound(database)
 		}
-		timeToLive = db.DefaultTimeToLive
+		retentionPolicy = db.DefaultRetentionPolicy
 	}
 
-	shardMappings, err := w.MapShards(&WritePointsRequest{Database: database, TimeToLive: timeToLive, Points: points})
+	shardMappings, err := w.MapShards(&WritePointsRequest{Database: database, RetentionPolicy: retentionPolicy, Points: points})
 	if err != nil {
 		return err
 	}
@@ -367,18 +367,18 @@ func (w *PointsWriter) WritePointsPrivileged(database, timeToLive string, consis
 	// Write each shard in it's own goroutine and return as soon as one fails.
 	ch := make(chan error, len(shardMappings.Points))
 	for shardID, points := range shardMappings.Points {
-		go func(shard *meta.ShardInfo, database, timeToLive string, points []models.Point) {
-			err := w.writeToShard(shard, database, timeToLive, consistencyLevel, points)
+		go func(shard *meta.ShardInfo, database, retentionPolicy string, points []models.Point) {
+			err := w.writeToShard(shard, database, retentionPolicy, consistencyLevel, points)
 			if err == tsdb.ErrShardDeletion {
 				err = tsdb.PartialWriteError{Reason: fmt.Sprintf("shard %d is pending deletion", shard.ID), Dropped: len(points)}
 			}
 			ch <- err
-		}(shardMappings.Shards[shardID], database, timeToLive, points)
+		}(shardMappings.Shards[shardID], database, retentionPolicy, points)
 	}
 
 	// Send points to subscriptions if possible.
 	var ok, dropped int64
-	pts := &WritePointsRequest{Database: database, TimeToLive: timeToLive, Points: points}
+	pts := &WritePointsRequest{Database: database, RetentionPolicy: retentionPolicy, Points: points}
 	// We need to lock just in case the channel is about to be nil'ed
 	w.mu.RLock()
 	for _, ch := range w.subPoints {
@@ -400,7 +400,7 @@ func (w *PointsWriter) WritePointsPrivileged(database, timeToLive string, consis
 	}
 
 	if err == nil && len(shardMappings.Dropped) > 0 {
-		err = tsdb.PartialWriteError{Reason: "points beyond time-to-live", Dropped: len(shardMappings.Dropped)}
+		err = tsdb.PartialWriteError{Reason: "points beyond retention policy", Dropped: len(shardMappings.Dropped)}
 
 	}
 	timeout := time.NewTimer(w.WriteTimeout)
@@ -424,7 +424,7 @@ func (w *PointsWriter) WritePointsPrivileged(database, timeToLive string, consis
 
 // writeToShard writes points to a shard and ensures a write consistency level has been met.  If the write
 // partially succeeds, ErrPartialWrite is returned.
-func (w *PointsWriter) writeToShard(shard *meta.ShardInfo, database, timeToLive string, consistency models.ConsistencyLevel, points []models.Point) error {
+func (w *PointsWriter) writeToShard(shard *meta.ShardInfo, database, retentionPolicy string, consistency models.ConsistencyLevel, points []models.Point) error {
 	// The required number of writes to achieve the requested consistency level
 	required := len(shard.Owners)
 	switch consistency {
@@ -449,7 +449,7 @@ func (w *PointsWriter) writeToShard(shard *meta.ShardInfo, database, timeToLive 
 				// If we've written to shard that should exist on the current node, but the store has
 				// not actually created this shard, tell it to create it and retry the write
 				if err == tsdb.ErrShardNotFound {
-					err = w.TSDBStore.CreateShard(database, timeToLive, shardID, true)
+					err = w.TSDBStore.CreateShard(database, retentionPolicy, shardID, true)
 					if err != nil {
 						ch <- &AsyncWriteResult{owner, err}
 						return

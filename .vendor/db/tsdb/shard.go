@@ -45,7 +45,7 @@ const (
 )
 
 var (
-	// ErrFieldOverflow is returned when too many fields are created on a metric.
+	// ErrFieldOverflow is returned when too many fields are created on a measurement.
 	ErrFieldOverflow = errors.New("field overflow")
 
 	// ErrFieldTypeConflict is returned when a new field already exists with a different type.
@@ -78,7 +78,7 @@ var (
 	ErrShardNotIdle = errors.New("shard not idle")
 
 	// fieldsIndexMagicNumber is the file magic number for the fields index file.
-	fieldsIndexMagicNumber = []byte{0, 5, 1, 4}  //guess what
+	fieldsIndexMagicNumber = []byte{0, 5, 1, 4} //guess what
 )
 
 var (
@@ -121,7 +121,7 @@ func (e PartialWriteError) Error() string {
 }
 
 // Shard represents a self-contained time series database. An inverted index of
-// the metric and tag data is kept along with the raw time series data.
+// the measurement and tag data is kept along with the raw time series data.
 // Data can be split across many shards. The query engine in TSDB is responsible
 // for combining the output of many shards into a single query result.
 type Shard struct {
@@ -130,7 +130,7 @@ type Shard struct {
 	id      uint64
 
 	database   string
-	timeToLive string
+	retentionPolicy string
 
 	sfile   *SeriesFile
 	options EngineOptions
@@ -156,7 +156,7 @@ type Shard struct {
 
 // NewShard returns a new initialized Shard. walPath doesn't apply to the b1 type index
 func NewShard(id uint64, path string, walPath string, sfile *SeriesFile, opt EngineOptions) *Shard {
-	db, ttl := decodeStorePath(path)
+	db, rp :=decodeStorePath(path)
 	logger := zap.NewNop()
 	if opt.FieldValidator == nil {
 		opt.FieldValidator = defaultFieldValidator{}
@@ -175,12 +175,12 @@ func NewShard(id uint64, path string, walPath string, sfile *SeriesFile, opt Eng
 			"walPath":    walPath,
 			"id":         fmt.Sprintf("%d", id),
 			"database":   db,
-			"timeToLive": ttl,
+			"retentionPolicy": rp,
 			"engine":     opt.EngineVersion,
 		},
 
 		database:   db,
-		timeToLive: ttl,
+		retentionPolicy: rp,
 
 		logger:       logger,
 		baseLogger:   logger,
@@ -232,9 +232,9 @@ func (s *Shard) Database() string {
 	return s.database
 }
 
-// TimeToLive returns the time-to-live of the shard.
-func (s *Shard) TimeToLive() string {
-	return s.timeToLive
+// RetentionPolicy returns the retention policy of the shard.
+func (s *Shard) RetentionPolicy() string {
+	return s.retentionPolicy
 }
 
 // ShardStatistics maintains statistics for a shard.
@@ -486,9 +486,9 @@ func (s *Shard) DiskSize() (int64, error) {
 	return size, nil
 }
 
-// FieldCreate holds information for a field to create on a metric.
+// FieldCreate holds information for a field to create on a measurement.
 type FieldCreate struct {
-	Metric []byte
+	Measurement []byte
 	Field       *Field
 }
 
@@ -517,7 +517,7 @@ func (s *Shard) WritePoints(points []models.Point) error {
 	atomic.AddInt64(&s.stats.FieldsCreated, int64(len(fieldsToCreate)))
 
 	// add any new fields and keep track of what needs to be saved
-	if err := s.createFieldsAndMetrics(fieldsToCreate); err != nil {
+	if err := s.createFieldsAndMeasurements(fieldsToCreate); err != nil {
 		return err
 	}
 
@@ -559,7 +559,7 @@ func (s *Shard) validateSeriesAndFields(points []models.Point) ([]models.Point, 
 			dropped++
 			if reason == "" {
 				reason = fmt.Sprintf(
-					"invalid tag key: input tag \"%s\" on metric \"%s\" is invalid",
+					"invalid tag key: input tag \"%s\" on measurement \"%s\" is invalid",
 					"time", string(p.Name()))
 			}
 			continue
@@ -619,7 +619,7 @@ func (s *Shard) validateSeriesAndFields(points []models.Point) ([]models.Point, 
 		if !validField {
 			if reason == "" {
 				reason = fmt.Sprintf(
-					"invalid field name: input field \"%s\" on metric \"%s\" is invalid",
+					"invalid field name: input field \"%s\" on measurement \"%s\" is invalid",
 					"time", string(p.Name()))
 			}
 			dropped++
@@ -632,7 +632,7 @@ func (s *Shard) validateSeriesAndFields(points []models.Point) ([]models.Point, 
 		}
 
 		name := p.Name()
-		mf := engine.MetricFields(name)
+		mf := engine.MeasurementFields(name)
 
 		// Check with the field validator.
 		if err := s.options.FieldValidator.Validate(mf, p); err != nil {
@@ -672,7 +672,7 @@ func (s *Shard) validateSeriesAndFields(points []models.Point) ([]models.Point, 
 			}
 
 			fieldsToCreate = append(fieldsToCreate, &FieldCreate{
-				Metric: name,
+				Measurement: name,
 				Field: &Field{
 					Name: string(fieldKey),
 					Type: dataType,
@@ -688,7 +688,7 @@ func (s *Shard) validateSeriesAndFields(points []models.Point) ([]models.Point, 
 	return points[:j], fieldsToCreate, err
 }
 
-func (s *Shard) createFieldsAndMetrics(fieldsToCreate []*FieldCreate) error {
+func (s *Shard) createFieldsAndMeasurements(fieldsToCreate []*FieldCreate) error {
 	if len(fieldsToCreate) == 0 {
 		return nil
 	}
@@ -700,16 +700,16 @@ func (s *Shard) createFieldsAndMetrics(fieldsToCreate []*FieldCreate) error {
 
 	// add fields
 	for _, f := range fieldsToCreate {
-		mf := engine.MetricFields(f.Metric)
+		mf := engine.MeasurementFields(f.Measurement)
 		if err := mf.CreateFieldIfNotExists([]byte(f.Field.Name), f.Field.Type); err != nil {
 			return err
 		}
 
-		s.index.SetFieldName(f.Metric, f.Field.Name)
+		s.index.SetFieldName(f.Measurement, f.Field.Name)
 	}
 
 	if len(fieldsToCreate) > 0 {
-		return engine.MetricFieldSet().Save()
+		return engine.MeasurementFieldSet().Save()
 	}
 
 	return nil
@@ -741,13 +741,13 @@ func (s *Shard) DeleteSeriesRangeWithPredicate(itr SeriesIterator, predicate fun
 	return engine.DeleteSeriesRangeWithPredicate(itr, predicate)
 }
 
-// DeleteMetric deletes a metric and all underlying series.
-func (s *Shard) DeleteMetric(name []byte) error {
+// DeleteMeasurement deletes a measurement and all underlying series.
+func (s *Shard) DeleteMeasurement(name []byte) error {
 	engine, err := s.Engine()
 	if err != nil {
 		return err
 	}
-	return engine.DeleteMetric(name)
+	return engine.DeleteMeasurement(name)
 }
 
 // SeriesN returns the unique number of series in the shard.
@@ -759,7 +759,7 @@ func (s *Shard) SeriesN() int64 {
 	return engine.SeriesN()
 }
 
-// SeriesSketches returns the metric sketches for the shard.
+// SeriesSketches returns the measurement sketches for the shard.
 func (s *Shard) SeriesSketches() (estimator.Sketch, estimator.Sketch, error) {
 	engine, err := s.Engine()
 	if err != nil {
@@ -768,62 +768,62 @@ func (s *Shard) SeriesSketches() (estimator.Sketch, estimator.Sketch, error) {
 	return engine.SeriesSketches()
 }
 
-// MetricsSketches returns the metric sketches for the shard.
-func (s *Shard) MetricsSketches() (estimator.Sketch, estimator.Sketch, error) {
+// MeasurementsSketches returns the measurement sketches for the shard.
+func (s *Shard) MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error) {
 	engine, err := s.Engine()
 	if err != nil {
 		return nil, nil, err
 	}
-	return engine.MetricsSketches()
+	return engine.MeasurementsSketches()
 }
 
-// MetricNamesByRegex returns names of metrics matching the regular expression.
-func (s *Shard) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
+// MeasurementNamesByRegex returns names of measurements matching the regular expression.
+func (s *Shard) MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
 	engine, err := s.Engine()
 	if err != nil {
 		return nil, err
 	}
-	return engine.MetricNamesByRegex(re)
+	return engine.MeasurementNamesByRegex(re)
 }
 
-// MetricTagKeysByExpr returns all the tag keys for the provided expression.
-func (s *Shard) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+// MeasurementTagKeysByExpr returns all the tag keys for the provided expression.
+func (s *Shard) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
 	engine, err := s.Engine()
 	if err != nil {
 		return nil, err
 	}
-	return engine.MetricTagKeysByExpr(name, expr)
+	return engine.MeasurementTagKeysByExpr(name, expr)
 }
 
-// MetricTagKeyValuesByExpr returns all the tag keys values for the
+// MeasurementTagKeyValuesByExpr returns all the tag keys values for the
 // provided expression.
-func (s *Shard) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte, key []string, expr cnosql.Expr, keysSorted bool) ([][]string, error) {
+func (s *Shard) MeasurementTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte, key []string, expr cnosql.Expr, keysSorted bool) ([][]string, error) {
 	index, err := s.Index()
 	if err != nil {
 		return nil, err
 	}
 	indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: s.sfile}
-	return indexSet.MetricTagKeyValuesByExpr(auth, name, key, expr, keysSorted)
+	return indexSet.MeasurementTagKeyValuesByExpr(auth, name, key, expr, keysSorted)
 }
 
-// MetricFields returns fields for a metric.
-func (s *Shard) MetricFields(name []byte) *MetricFields {
+// MeasurementFields returns fields for a measurement.
+func (s *Shard) MeasurementFields(name []byte) *MeasurementFields {
 	engine, err := s.Engine()
 	if err != nil {
 		return nil
 	}
-	return engine.MetricFields(name)
+	return engine.MeasurementFields(name)
 }
 
-// MetricExists returns true if the shard contains name.
+// MeasurementExists returns true if the shard contains name.
 // TODO: This method is currently only being called from tests; do we
 // really need it?
-func (s *Shard) MetricExists(name []byte) (bool, error) {
+func (s *Shard) MeasurementExists(name []byte) (bool, error) {
 	engine, err := s.Engine()
 	if err != nil {
 		return false, err
 	}
-	return engine.MetricExists(name)
+	return engine.MeasurementExists(name)
 }
 
 // WriteTo writes the shard's data to w.
@@ -838,7 +838,7 @@ func (s *Shard) WriteTo(w io.Writer) (int64, error) {
 }
 
 // CreateIterator returns an iterator for the data in the shard.
-func (s *Shard) CreateIterator(ctx context.Context, m *cnosql.Metric, opt query.IteratorOptions) (query.Iterator, error) {
+func (s *Shard) CreateIterator(ctx context.Context, m *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error) {
 	engine, err := s.Engine()
 	if err != nil {
 		return nil, err
@@ -883,7 +883,7 @@ func (s *Shard) CreateCursorIterator(ctx context.Context) (CursorIterator, error
 }
 
 // FieldDimensions returns unique sets of fields and dimensions across a list of sources.
-func (s *Shard) FieldDimensions(metrics []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+func (s *Shard) FieldDimensions(measurements []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
 	engine, err := s.Engine()
 	if err != nil {
 		return nil, nil, err
@@ -896,7 +896,7 @@ func (s *Shard) FieldDimensions(metrics []string) (fields map[string]cnosql.Data
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, name := range metrics {
+	for _, name := range measurements {
 		// Handle system sources.
 		if strings.HasPrefix(name, "_") {
 			var keys []string
@@ -917,18 +917,18 @@ func (s *Shard) FieldDimensions(metrics []string) (fields map[string]cnosql.Data
 				}
 				continue
 			}
-			// Unknown system source so default to looking for a metric.
+			// Unknown system source so default to looking for a measurement.
 		}
 
-		// Retrieve metric.
-		if exists, err := engine.MetricExists([]byte(name)); err != nil {
+		// Retrieve measurement.
+		if exists, err := engine.MeasurementExists([]byte(name)); err != nil {
 			return nil, nil, err
 		} else if !exists {
 			continue
 		}
 
 		// Append fields and dimensions.
-		mf := engine.MetricFields([]byte(name))
+		mf := engine.MeasurementFields([]byte(name))
 		if mf != nil {
 			for k, typ := range mf.FieldSet() {
 				if fields[k].LessThan(typ) {
@@ -938,7 +938,7 @@ func (s *Shard) FieldDimensions(metrics []string) (fields map[string]cnosql.Data
 		}
 
 		indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: s.sfile}
-		if err := indexSet.ForEachMetricTagKey([]byte(name), func(key []byte) error {
+		if err := indexSet.ForEachMeasurementTagKey([]byte(name), func(key []byte) error {
 			dimensions[string(key)] = struct{}{}
 			return nil
 		}); err != nil {
@@ -949,8 +949,8 @@ func (s *Shard) FieldDimensions(metrics []string) (fields map[string]cnosql.Data
 	return fields, dimensions, nil
 }
 
-// mapType returns the data type for the field within the metric.
-func (s *Shard) mapType(metric, field string) (cnosql.DataType, error) {
+// mapType returns the data type for the field within the measurement.
+func (s *Shard) mapType(measurement, field string) (cnosql.DataType, error) {
 	engine, err := s.engineNoLock()
 	if err != nil {
 		return 0, err
@@ -961,8 +961,8 @@ func (s *Shard) mapType(metric, field string) (cnosql.DataType, error) {
 		return cnosql.String, nil
 	}
 
-	// Process system metrics.
-	switch metric {
+	// Process system measurements.
+	switch measurement {
 	case "_fieldKeys":
 		if field == "fieldKey" || field == "fieldType" {
 			return cnosql.String, nil
@@ -979,13 +979,13 @@ func (s *Shard) mapType(metric, field string) (cnosql.DataType, error) {
 		}
 		return cnosql.Unknown, nil
 	}
-	// Unknown system source so default to looking for a metric.
+	// Unknown system source so default to looking for a measurement.
 
-	if exists, _ := engine.MetricExists([]byte(metric)); !exists {
+	if exists, _ := engine.MeasurementExists([]byte(measurement)); !exists {
 		return cnosql.Unknown, nil
 	}
 
-	mf := engine.MetricFields([]byte(metric))
+	mf := engine.MeasurementFields([]byte(measurement))
 	if mf != nil {
 		f := mf.Field(field)
 		if f != nil {
@@ -993,7 +993,7 @@ func (s *Shard) mapType(metric, field string) (cnosql.DataType, error) {
 		}
 	}
 
-	if exists, _ := engine.HasTagKey([]byte(metric), []byte(field)); exists {
+	if exists, _ := engine.HasTagKey([]byte(measurement), []byte(field)); exists {
 		return cnosql.Tag, nil
 	}
 
@@ -1001,7 +1001,7 @@ func (s *Shard) mapType(metric, field string) (cnosql.DataType, error) {
 }
 
 // expandSources expands regex sources and removes duplicates.
-// NOTE: sources must be normalized (db and ttl set) before calling this function.
+// NOTE: sources must be normalized (db and rp set) before calling this function.
 func (s *Shard) expandSources(sources cnosql.Sources) (cnosql.Sources, error) {
 	engine, err := s.engineNoLock()
 	if err != nil {
@@ -1014,23 +1014,23 @@ func (s *Shard) expandSources(sources cnosql.Sources) (cnosql.Sources, error) {
 	// Iterate all sources, expanding regexes when they're found.
 	for _, source := range sources {
 		switch src := source.(type) {
-		case *cnosql.Metric:
-			// Add non-regex metrics directly to the set.
+		case *cnosql.Measurement:
+			// Add non-regex measurements directly to the set.
 			if src.Regex == nil {
 				set[src.String()] = src
 				continue
 			}
 
-			// Loop over matching metrics.
-			names, err := engine.MetricNamesByRegex(src.Regex.Val)
+			// Loop over matching measurements.
+			names, err := engine.MeasurementNamesByRegex(src.Regex.Val)
 			if err != nil {
 				return nil, err
 			}
 
 			for _, name := range names {
-				other := &cnosql.Metric{
+				other := &cnosql.Measurement{
 					Database:   src.Database,
-					TimeToLive: src.TimeToLive,
+					RetentionPolicy: src.RetentionPolicy,
 					Name:       string(name),
 				}
 				set[other.String()] = other
@@ -1130,13 +1130,13 @@ func (s *Shard) CreateSnapshot() (string, error) {
 	return engine.CreateSnapshot()
 }
 
-// ForEachMetricName iterates over each metric in the shard.
-func (s *Shard) ForEachMetricName(fn func(name []byte) error) error {
+// ForEachMeasurementName iterates over each measurement in the shard.
+func (s *Shard) ForEachMeasurementName(fn func(name []byte) error) error {
 	engine, err := s.Engine()
 	if err != nil {
 		return err
 	}
-	return engine.ForEachMetricName(fn)
+	return engine.ForEachMeasurementName(fn)
 }
 
 func (s *Shard) TagKeyCardinality(name, key []byte) int {
@@ -1186,13 +1186,13 @@ func (s *Shard) engineNoLock() (Engine, error) {
 	return s._engine, nil
 }
 
-type Region interface {
-	MetricsByRegex(re *regexp.Regexp) []string
-	FieldKeysByMetric(name []byte) []string
-	FieldDimensions(metrics []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error)
-	MapType(metric, field string) cnosql.DataType
-	CreateIterator(ctx context.Context, metric *cnosql.Metric, opt query.IteratorOptions) (query.Iterator, error)
-	IteratorCost(metric string, opt query.IteratorOptions) (query.IteratorCost, error)
+type ShardGroup interface {
+	MeasurementsByRegex(re *regexp.Regexp) []string
+	FieldKeysByMeasurement(name []byte) []string
+	FieldDimensions(measurements []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error)
+	MapType(measurement, field string) cnosql.DataType
+	CreateIterator(ctx context.Context, measurement *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error)
+	IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error)
 	ExpandSources(sources cnosql.Sources) (cnosql.Sources, error)
 }
 
@@ -1208,12 +1208,12 @@ func (a Shards) Less(i, j int) bool { return a[i].id < a[j].id }
 // Swap implements sort.Interface.
 func (a Shards) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-// MetricsByRegex returns the unique set of metrics matching the
+// MeasurementsByRegex returns the unique set of measurements matching the
 // provided regex, for all the shards.
-func (a Shards) MetricsByRegex(re *regexp.Regexp) []string {
+func (a Shards) MeasurementsByRegex(re *regexp.Regexp) []string {
 	var m map[string]struct{}
 	for _, sh := range a {
-		names, err := sh.MetricNamesByRegex(re)
+		names, err := sh.MeasurementNamesByRegex(re)
 		if err != nil {
 			continue // Skip this shard's results—previous behaviour.
 		}
@@ -1239,11 +1239,11 @@ func (a Shards) MetricsByRegex(re *regexp.Regexp) []string {
 	return names
 }
 
-// FieldKeysByMetric returns a de-duplicated, sorted, set of field keys for
-// the provided metric name.
-func (a Shards) FieldKeysByMetric(name []byte) []string {
+// FieldKeysByMeasurement returns a de-duplicated, sorted, set of field keys for
+// the provided measurement name.
+func (a Shards) FieldKeysByMeasurement(name []byte) []string {
 	if len(a) == 1 {
-		mf := a[0].MetricFields(name)
+		mf := a[0].MeasurementFields(name)
 		if mf == nil {
 			return nil
 		}
@@ -1252,7 +1252,7 @@ func (a Shards) FieldKeysByMetric(name []byte) []string {
 
 	all := make([][]string, 0, len(a))
 	for _, shard := range a {
-		mf := shard.MetricFields(name)
+		mf := shard.MeasurementFields(name)
 		if mf == nil {
 			continue
 		}
@@ -1261,12 +1261,12 @@ func (a Shards) FieldKeysByMetric(name []byte) []string {
 	return slices.MergeSortedStrings(all...)
 }
 
-func (a Shards) FieldDimensions(metrics []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+func (a Shards) FieldDimensions(measurements []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
 	fields = make(map[string]cnosql.DataType)
 	dimensions = make(map[string]struct{})
 
 	for _, sh := range a {
-		f, d, err := sh.FieldDimensions(metrics)
+		f, d, err := sh.FieldDimensions(measurements)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1282,11 +1282,11 @@ func (a Shards) FieldDimensions(metrics []string) (fields map[string]cnosql.Data
 	return
 }
 
-func (a Shards) MapType(metric, field string) cnosql.DataType {
+func (a Shards) MapType(measurement, field string) cnosql.DataType {
 	var typ cnosql.DataType
 	for _, sh := range a {
 		sh.mu.RLock()
-		if t, err := sh.mapType(metric, field); err == nil && typ.LessThan(t) {
+		if t, err := sh.mapType(measurement, field); err == nil && typ.LessThan(t) {
 			typ = t
 		}
 		sh.mu.RUnlock()
@@ -1299,15 +1299,15 @@ func (a Shards) CallType(name string, args []cnosql.DataType) (cnosql.DataType, 
 	return typmap.CallType(name, args)
 }
 
-func (a Shards) CreateIterator(ctx context.Context, metric *cnosql.Metric, opt query.IteratorOptions) (query.Iterator, error) {
-	switch metric.SystemIterator {
+func (a Shards) CreateIterator(ctx context.Context, measurement *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error) {
+	switch measurement.SystemIterator {
 	case "_series":
 		return a.createSeriesIterator(ctx, opt)
 	}
 
 	itrs := make([]query.Iterator, 0, len(a))
 	for _, sh := range a {
-		itr, err := sh.CreateIterator(ctx, metric, opt)
+		itr, err := sh.CreateIterator(ctx, measurement, opt)
 		if err != nil {
 			query.Iterators(itrs).Close()
 			return nil, err
@@ -1357,7 +1357,7 @@ func (a Shards) createSeriesIterator(ctx context.Context, opt query.IteratorOpti
 	return NewSeriesPointIterator(IndexSet{Indexes: idxs, SeriesFile: sfile}, opt)
 }
 
-func (a Shards) IteratorCost(metric string, opt query.IteratorOptions) (query.IteratorCost, error) {
+func (a Shards) IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error) {
 	var costs query.IteratorCost
 	var costerr error
 	var mu sync.RWMutex
@@ -1393,7 +1393,7 @@ func (a Shards) IteratorCost(metric string, opt query.IteratorOptions) (query.It
 				return
 			}
 
-			cost, err := engine.IteratorCost(metric, opt)
+			cost, err := engine.IteratorCost(measurement, opt)
 			if err != nil {
 				setErr(err)
 				return
@@ -1445,7 +1445,7 @@ func (a Shards) ExpandSources(sources cnosql.Sources) (cnosql.Sources, error) {
 
 		for _, src := range expanded {
 			switch src := src.(type) {
-			case *cnosql.Metric:
+			case *cnosql.Measurement:
 				set[src.String()] = src
 			default:
 				return nil, fmt.Errorf("Store.ExpandSources: unsupported source type: %T", src)
@@ -1468,22 +1468,22 @@ func (a Shards) ExpandSources(sources cnosql.Sources) (cnosql.Sources, error) {
 	return sorted, nil
 }
 
-// MetricFields holds the fields of a metric and their codec.
-type MetricFields struct {
+// MeasurementFields holds the fields of a measurement and their codec.
+type MeasurementFields struct {
 	mu sync.Mutex
 
 	fields atomic.Value // map[string]*Field
 }
 
-// NewMetricFields returns an initialised *MetricFields value.
-func NewMetricFields() *MetricFields {
+// NewMeasurementFields returns an initialised *MeasurementFields value.
+func NewMeasurementFields() *MeasurementFields {
 	fields := make(map[string]*Field)
-	mf := &MetricFields{}
+	mf := &MeasurementFields{}
 	mf.fields.Store(fields)
 	return mf
 }
 
-func (m *MetricFields) FieldKeys() []string {
+func (m *MeasurementFields) FieldKeys() []string {
 	fields := m.fields.Load().(map[string]*Field)
 	a := make([]string, 0, len(fields))
 	for key := range fields {
@@ -1493,8 +1493,8 @@ func (m *MetricFields) FieldKeys() []string {
 	return a
 }
 
-// bytes estimates the memory footprint of this MetricFields, in bytes.
-func (m *MetricFields) bytes() int {
+// bytes estimates the memory footprint of this MeasurementFields, in bytes.
+func (m *MeasurementFields) bytes() int {
 	var b int
 	b += 24 // mu RWMutex is 24 bytes
 	fields := m.fields.Load().(map[string]*Field)
@@ -1507,9 +1507,9 @@ func (m *MetricFields) bytes() int {
 }
 
 // CreateFieldIfNotExists creates a new field with an autoincrementing ID.
-// Returns an error if 255 fields have already been created on the metric or
+// Returns an error if 255 fields have already been created on the measurement or
 // the fields already exists with a different type.
-func (m *MetricFields) CreateFieldIfNotExists(name []byte, typ cnosql.DataType) error {
+func (m *MeasurementFields) CreateFieldIfNotExists(name []byte, typ cnosql.DataType) error {
 	fields := m.fields.Load().(map[string]*Field)
 
 	// Ignore if the field already exists.
@@ -1548,18 +1548,18 @@ func (m *MetricFields) CreateFieldIfNotExists(name []byte, typ cnosql.DataType) 
 	return nil
 }
 
-func (m *MetricFields) FieldN() int {
+func (m *MeasurementFields) FieldN() int {
 	n := len(m.fields.Load().(map[string]*Field))
 	return n
 }
 
 // Field returns the field for name, or nil if there is no field for name.
-func (m *MetricFields) Field(name string) *Field {
+func (m *MeasurementFields) Field(name string) *Field {
 	f := m.fields.Load().(map[string]*Field)[name]
 	return f
 }
 
-func (m *MetricFields) HasField(name string) bool {
+func (m *MeasurementFields) HasField(name string) bool {
 	if m == nil {
 		return false
 	}
@@ -1571,13 +1571,13 @@ func (m *MetricFields) HasField(name string) bool {
 // FieldBytes should be preferred to Field when the caller has a []byte, because
 // it avoids a string allocation, which can't be avoided if the caller converts
 // the []byte to a string and calls Field.
-func (m *MetricFields) FieldBytes(name []byte) *Field {
+func (m *MeasurementFields) FieldBytes(name []byte) *Field {
 	f := m.fields.Load().(map[string]*Field)[string(name)]
 	return f
 }
 
-// FieldSet returns the set of fields and their types for the metric.
-func (m *MetricFields) FieldSet() map[string]cnosql.DataType {
+// FieldSet returns the set of fields and their types for the measurement.
+func (m *MeasurementFields) FieldSet() map[string]cnosql.DataType {
 	fields := m.fields.Load().(map[string]*Field)
 	fieldTypes := make(map[string]cnosql.DataType)
 	for name, f := range fields {
@@ -1586,7 +1586,7 @@ func (m *MetricFields) FieldSet() map[string]cnosql.DataType {
 	return fieldTypes
 }
 
-func (m *MetricFields) ForEachField(fn func(name string, typ cnosql.DataType) bool) {
+func (m *MeasurementFields) ForEachField(fn func(name string, typ cnosql.DataType) bool) {
 	fields := m.fields.Load().(map[string]*Field)
 	for name, f := range fields {
 		if !fn(name, f.Type) {
@@ -1595,20 +1595,20 @@ func (m *MetricFields) ForEachField(fn func(name string, typ cnosql.DataType) bo
 	}
 }
 
-// MetricFieldSet represents a collection of fields by metric.
+// MeasurementFieldSet represents a collection of fields by measurement.
 // This safe for concurrent use.
-type MetricFieldSet struct {
+type MeasurementFieldSet struct {
 	mu     sync.RWMutex
-	fields map[string]*MetricFields
+	fields map[string]*MeasurementFields
 
 	// path is the location to persist field sets
 	path string
 }
 
-// NewMetricFieldSet returns a new instance of MetricFieldSet.
-func NewMetricFieldSet(path string) (*MetricFieldSet, error) {
-	fs := &MetricFieldSet{
-		fields: make(map[string]*MetricFields),
+// NewMeasurementFieldSet returns a new instance of MeasurementFieldSet.
+func NewMeasurementFieldSet(path string) (*MeasurementFieldSet, error) {
+	fs := &MeasurementFieldSet{
+		fields: make(map[string]*MeasurementFields),
 		path:   path,
 	}
 
@@ -1617,8 +1617,8 @@ func NewMetricFieldSet(path string) (*MetricFieldSet, error) {
 	return fs, fs.load()
 }
 
-// Bytes estimates the memory footprint of this MetricFieldSet, in bytes.
-func (fs *MetricFieldSet) Bytes() int {
+// Bytes estimates the memory footprint of this MeasurementFieldSet, in bytes.
+func (fs *MeasurementFieldSet) Bytes() int {
 	var b int
 	fs.mu.RLock()
 	b += 24 // mu RWMutex is 24 bytes
@@ -1632,24 +1632,24 @@ func (fs *MetricFieldSet) Bytes() int {
 	return b
 }
 
-// Fields returns fields for a metric by name.
-func (fs *MetricFieldSet) Fields(name []byte) *MetricFields {
+// Fields returns fields for a measurement by name.
+func (fs *MeasurementFieldSet) Fields(name []byte) *MeasurementFields {
 	fs.mu.RLock()
 	mf := fs.fields[string(name)]
 	fs.mu.RUnlock()
 	return mf
 }
 
-// FieldsByString returns fields for a metric by name.
-func (fs *MetricFieldSet) FieldsByString(name string) *MetricFields {
+// FieldsByString returns fields for a measurement by name.
+func (fs *MeasurementFieldSet) FieldsByString(name string) *MeasurementFields {
 	fs.mu.RLock()
 	mf := fs.fields[name]
 	fs.mu.RUnlock()
 	return mf
 }
 
-// CreateFieldsIfNotExists returns fields for a metric by name.
-func (fs *MetricFieldSet) CreateFieldsIfNotExists(name []byte) *MetricFields {
+// CreateFieldsIfNotExists returns fields for a measurement by name.
+func (fs *MeasurementFieldSet) CreateFieldsIfNotExists(name []byte) *MeasurementFields {
 	fs.mu.RLock()
 	mf := fs.fields[string(name)]
 	fs.mu.RUnlock()
@@ -1661,22 +1661,22 @@ func (fs *MetricFieldSet) CreateFieldsIfNotExists(name []byte) *MetricFields {
 	fs.mu.Lock()
 	mf = fs.fields[string(name)]
 	if mf == nil {
-		mf = NewMetricFields()
+		mf = NewMeasurementFields()
 		fs.fields[string(name)] = mf
 	}
 	fs.mu.Unlock()
 	return mf
 }
 
-// Delete removes a field set for a metric.
-func (fs *MetricFieldSet) Delete(name string) {
+// Delete removes a field set for a measurement.
+func (fs *MeasurementFieldSet) Delete(name string) {
 	fs.mu.Lock()
 	delete(fs.fields, name)
 	fs.mu.Unlock()
 }
 
-// DeleteWithLock executes fn and removes a field set from a metric under lock.
-func (fs *MetricFieldSet) DeleteWithLock(name string, fn func() error) error {
+// DeleteWithLock executes fn and removes a field set from a measurement under lock.
+func (fs *MeasurementFieldSet) DeleteWithLock(name string, fn func() error) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -1688,20 +1688,20 @@ func (fs *MetricFieldSet) DeleteWithLock(name string, fn func() error) error {
 	return nil
 }
 
-func (fs *MetricFieldSet) IsEmpty() bool {
+func (fs *MeasurementFieldSet) IsEmpty() bool {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	return len(fs.fields) == 0
 }
 
-func (fs *MetricFieldSet) Save() error {
+func (fs *MeasurementFieldSet) Save() error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	return fs.saveNoLock()
 }
 
-func (fs *MetricFieldSet) saveNoLock() error {
+func (fs *MeasurementFieldSet) saveNoLock() error {
 	// No fields left, remove the fields index file
 	if len(fs.fields) == 0 {
 		return os.RemoveAll(fs.path)
@@ -1719,11 +1719,11 @@ func (fs *MetricFieldSet) saveNoLock() error {
 		return err
 	}
 
-	pb := internal.MetricFieldSet{
-		Metrics: make([]*internal.MetricFields, 0, len(fs.fields)),
+	pb := internal.MeasurementFieldSet{
+		Measurements: make([]*internal.MeasurementFields, 0, len(fs.fields)),
 	}
 	for name, mf := range fs.fields {
-		fs := &internal.MetricFields{
+		fs := &internal.MeasurementFields{
 			Name:   []byte(name),
 			Fields: make([]*internal.Field, 0, mf.FieldN()),
 		}
@@ -1733,7 +1733,7 @@ func (fs *MetricFieldSet) saveNoLock() error {
 			return true
 		})
 
-		pb.Metrics = append(pb.Metrics, fs)
+		pb.Measurements = append(pb.Measurements, fs)
 	}
 
 	b, err := proto.Marshal(&pb)
@@ -1761,7 +1761,7 @@ func (fs *MetricFieldSet) saveNoLock() error {
 	return file.SyncDir(filepath.Dir(fs.path))
 }
 
-func (fs *MetricFieldSet) load() error {
+func (fs *MeasurementFieldSet) load() error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -1782,7 +1782,7 @@ func (fs *MetricFieldSet) load() error {
 		return ErrUnknownFieldsFormat
 	}
 
-	var pb internal.MetricFieldSet
+	var pb internal.MeasurementFieldSet
 	b, err := ioutil.ReadAll(fd)
 	if err != nil {
 		return err
@@ -1792,23 +1792,23 @@ func (fs *MetricFieldSet) load() error {
 		return err
 	}
 
-	fs.fields = make(map[string]*MetricFields, len(pb.GetMetrics()))
-	for _, metric := range pb.GetMetrics() {
-		fields := make(map[string]*Field, len(metric.GetFields()))
-		for _, field := range metric.GetFields() {
+	fs.fields = make(map[string]*MeasurementFields, len(pb.GetMeasurements()))
+	for _, measurement := range pb.GetMeasurements() {
+		fields := make(map[string]*Field, len(measurement.GetFields()))
+		for _, field := range measurement.GetFields() {
 			fields[string(field.GetName())] = &Field{Name: string(field.GetName()), Type: cnosql.DataType(field.GetType())}
 		}
-		set := &MetricFields{}
+		set := &MeasurementFields{}
 		set.fields.Store(fields)
-		fs.fields[string(metric.GetName())] = set
+		fs.fields[string(measurement.GetName())] = set
 	}
 	return nil
 }
 
 // Field represents a series field. All of the fields must be hashable.
 type Field struct {
-	ID   uint8             `json:"id,omitempty"`
-	Name string            `json:"name,omitempty"`
+	ID   uint8           `json:"id,omitempty"`
+	Name string          `json:"name,omitempty"`
 	Type cnosql.DataType `json:"type,omitempty"`
 }
 
@@ -1822,11 +1822,11 @@ func NewFieldKeysIterator(sh *Shard, opt query.IteratorOptions) (query.Iterator,
 		return nil, err
 	}
 
-	// Retrieve metrics from shard. Filter if condition specified.
+	// Retrieve measurements from shard. Filter if condition specified.
 	//
 	// FGA is currently not supported when retrieving field keys.
 	indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: sh.sfile}
-	names, err := indexSet.MetricNamesByExpr(query.OpenAuthorizer, opt.Condition)
+	names, err := indexSet.MeasurementNamesByExpr(query.OpenAuthorizer, opt.Condition)
 	if err != nil {
 		return nil, err
 	}
@@ -1835,13 +1835,13 @@ func NewFieldKeysIterator(sh *Shard, opt query.IteratorOptions) (query.Iterator,
 	return itr, nil
 }
 
-// fieldKeysIterator iterates over metrics and gets field keys from each metric.
+// fieldKeysIterator iterates over measurements and gets field keys from each measurement.
 type fieldKeysIterator struct {
 	shard *Shard
-	names [][]byte // remaining metric names
+	names [][]byte // remaining measurement names
 	buf   struct {
-		name   []byte  // current metric name
-		fields []Field // current metric's fields
+		name   []byte  // current measurement name
+		fields []Field // current measurement's fields
 	}
 }
 
@@ -1854,14 +1854,14 @@ func (itr *fieldKeysIterator) Close() error { return nil }
 // Next emits the next tag key name.
 func (itr *fieldKeysIterator) Next() (*query.FloatPoint, error) {
 	for {
-		// If there are no more keys then move to the next metrics.
+		// If there are no more keys then move to the next measurements.
 		if len(itr.buf.fields) == 0 {
 			if len(itr.names) == 0 {
 				return nil, nil
 			}
 
 			itr.buf.name = itr.names[0]
-			mf := itr.shard.MetricFields(itr.buf.name)
+			mf := itr.shard.MeasurementFields(itr.buf.name)
 			if mf != nil {
 				fset := mf.FieldSet()
 				if len(fset) == 0 {
@@ -1906,7 +1906,7 @@ func NewTagKeysIterator(sh *Shard, opt query.IteratorOptions) (query.Iterator, e
 
 		indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: sh.sfile}
 		var keys [][]byte
-		if err := indexSet.ForEachMetricTagKey(name, func(key []byte) error {
+		if err := indexSet.ForEachMeasurementTagKey(name, func(key []byte) error {
 			keys = append(keys, key)
 			return nil
 		}); err != nil {
@@ -1914,21 +1914,21 @@ func NewTagKeysIterator(sh *Shard, opt query.IteratorOptions) (query.Iterator, e
 		}
 		return keys, nil
 	}
-	return newMetricKeysIterator(sh, fn, opt)
+	return newMeasurementKeysIterator(sh, fn, opt)
 }
 
-// metricKeyFunc is the function called by metricKeysIterator.
-type metricKeyFunc func(name []byte) ([][]byte, error)
+// measurementKeyFunc is the function called by measurementKeysIterator.
+type measurementKeyFunc func(name []byte) ([][]byte, error)
 
-func newMetricKeysIterator(sh *Shard, fn metricKeyFunc, opt query.IteratorOptions) (*metricKeysIterator, error) {
+func newMeasurementKeysIterator(sh *Shard, fn measurementKeyFunc, opt query.IteratorOptions) (*measurementKeysIterator, error) {
 	index, err := sh.Index()
 	if err != nil {
 		return nil, err
 	}
 
 	indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: sh.sfile}
-	itr := &metricKeysIterator{fn: fn}
-	names, err := indexSet.MetricNamesByExpr(opt.Authorizer, opt.Condition)
+	itr := &measurementKeysIterator{fn: fn}
+	names, err := indexSet.MeasurementNamesByExpr(opt.Authorizer, opt.Condition)
 	if err != nil {
 		return nil, err
 	}
@@ -1937,26 +1937,26 @@ func newMetricKeysIterator(sh *Shard, fn metricKeyFunc, opt query.IteratorOption
 	return itr, nil
 }
 
-// metricKeysIterator iterates over metrics and gets keys from each metric.
-type metricKeysIterator struct {
-	names [][]byte // remaining metric names
+// measurementKeysIterator iterates over measurements and gets keys from each measurement.
+type measurementKeysIterator struct {
+	names [][]byte // remaining measurement names
 	buf   struct {
-		name []byte   // current metric name
-		keys [][]byte // current metric's keys
+		name []byte   // current measurement name
+		keys [][]byte // current measurement's keys
 	}
-	fn metricKeyFunc
+	fn measurementKeyFunc
 }
 
 // Stats returns stats about the points processed.
-func (itr *metricKeysIterator) Stats() query.IteratorStats { return query.IteratorStats{} }
+func (itr *measurementKeysIterator) Stats() query.IteratorStats { return query.IteratorStats{} }
 
 // Close closes the iterator.
-func (itr *metricKeysIterator) Close() error { return nil }
+func (itr *measurementKeysIterator) Close() error { return nil }
 
 // Next emits the next tag key name.
-func (itr *metricKeysIterator) Next() (*query.FloatPoint, error) {
+func (itr *measurementKeysIterator) Next() (*query.FloatPoint, error) {
 	for {
-		// If there are no more keys then move to the next metrics.
+		// If there are no more keys then move to the next measurements.
 		if len(itr.buf.keys) == 0 {
 			if len(itr.names) == 0 {
 				return nil, nil

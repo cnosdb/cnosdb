@@ -43,8 +43,8 @@ type options struct {
 	datadir             string
 	destinationDatabase string
 	sourceDatabase      string
-	backupTimeToLive    string
-	restoreTimeToLive   string
+	backupRetention     string
+	restoreRetention    string
 	shard               uint64
 	portable            bool
 	online              bool
@@ -100,8 +100,8 @@ func GetCommand() *cobra.Command {
 					return fmt.Errorf("offline parameter datadir found, not compatible with -portable")
 				}
 
-				if env.restoreTimeToLive == "" {
-					env.restoreTimeToLive = env.backupTimeToLive
+				if env.restoreRetention == "" {
+					env.restoreRetention = env.backupRetention
 				}
 
 				if env.portable {
@@ -129,11 +129,11 @@ func GetCommand() *cobra.Command {
 					if env.destinationDatabase == "" {
 						return fmt.Errorf("-destinationDatabase is required to restore shard")
 					}
-					if env.backupTimeToLive == "" {
-						return fmt.Errorf("-time to live is required to restore shard")
+					if env.backupRetention == "" {
+						return fmt.Errorf("-retention policy is required to restore shard")
 					}
-				} else if env.backupTimeToLive != "" && env.destinationDatabase == "" {
-					return fmt.Errorf("-destinationDatabase is required to restore time to live")
+				} else if env.backupRetention != "" && env.destinationDatabase == "" {
+					return fmt.Errorf("-destinationDatabase is required to restore retention policy")
 				}
 			}
 
@@ -160,10 +160,10 @@ func GetCommand() *cobra.Command {
 	c.Flags().StringVar(&env.sourceDatabase, "db", "", "CnosDB database name to be restored from the backup. Optional. If not specified, all databases are backed up.")
 	c.Flags().StringVar(&env.destinationDatabase, "newdb", "", "Name of the CnosDB OSS database into which the archived data will be imported on the target system. Optional."+
 		" If not given, then the value of '--db <db_name>' is used.  The new database name must be unique to the target system.")
-	c.Flags().StringVar(&env.backupTimeToLive, "ttl", "", "Name of time-to-live from the backup that will be restored. Optional. Requires that '-db <db_name>' is specified.")
-	c.Flags().StringVar(&env.restoreTimeToLive, "newttl", "", "Name of the time to live to be created on the target system. Optional."+
-		" Requires that '-ttl <ttl_name>' is set. If not given, the '--ttl <ttl_name>' value is used.")
-	c.Flags().Uint64Var(&env.shard, "shard", 0, "Identifier of the shard to be restored. Optional. If specified, then '-db <db_name>' and '-0ttl <ttl_name>' are required.")
+	c.Flags().StringVar(&env.backupRetention, "rp", "", "Name of retention policy from the backup that will be restored. Optional. Requires that '-db <db_name>' is specified.")
+	c.Flags().StringVar(&env.restoreRetention, "newrp", "", "Name of the retention policy to be created on the target system. Optional."+
+		" Requires that '-rp <rp_name>' is set. If not given, the '--rp <rp_name>' value is used.")
+	c.Flags().Uint64Var(&env.shard, "shard", 0, "Identifier of the shard to be restored. Optional. If specified, then '-db <db_name>' and '-rp <rp_name>' are required.")
 	c.Flags().BoolVar(&env.online, "online", false, "")
 
 	// Continue on flag errors.
@@ -183,8 +183,8 @@ func (cmd *options) runOffline() error {
 
 	if cmd.shard != 0 {
 		return cmd.unpackShard(cmd.shard)
-	} else if cmd.restoreTimeToLive != "" {
-		return cmd.unpackTimeToLive()
+	} else if cmd.restoreRetention != "" {
+		return cmd.unpackRetention()
 	} else if cmd.datadir != "" {
 		return cmd.unpackDatabase()
 	}
@@ -334,12 +334,12 @@ func (cmd *options) updateMetaPortable() error {
 	metaBytes = ep.Data
 
 	req := &snapshotter.Request{
-		Type:              snapshotter.RequestMetaStoreUpdate,
-		BackupDatabase:    cmd.sourceDatabase,
-		RestoreDatabase:   cmd.destinationDatabase,
-		BackupTimeToLive:  cmd.backupTimeToLive,
-		RestoreTimeToLive: cmd.restoreTimeToLive,
-		UploadSize:        int64(len(metaBytes)),
+		Type:                   snapshotter.RequestMetaStoreUpdate,
+		BackupDatabase:         cmd.sourceDatabase,
+		RestoreDatabase:        cmd.destinationDatabase,
+		BackupRetentionPolicy:  cmd.backupRetention,
+		RestoreRetentionPolicy: cmd.restoreRetention,
+		UploadSize:             int64(len(metaBytes)),
 	}
 
 	shardIDMap, err := cmd.client.UpdateMeta(req, bytes.NewReader(metaBytes))
@@ -372,12 +372,12 @@ func (cmd *options) updateMetaLegacy() error {
 	}
 
 	req := &snapshotter.Request{
-		Type:              snapshotter.RequestMetaStoreUpdate,
-		BackupDatabase:    cmd.sourceDatabase,
-		RestoreDatabase:   cmd.destinationDatabase,
-		BackupTimeToLive:  cmd.backupTimeToLive,
-		RestoreTimeToLive: cmd.restoreTimeToLive,
-		UploadSize:        int64(len(metaBytes)),
+		Type:                   snapshotter.RequestMetaStoreUpdate,
+		BackupDatabase:         cmd.sourceDatabase,
+		RestoreDatabase:        cmd.destinationDatabase,
+		BackupRetentionPolicy:  cmd.backupRetention,
+		RestoreRetentionPolicy: cmd.restoreRetention,
+		UploadSize:             int64(len(metaBytes)),
 	}
 
 	shardIDMap, err := cmd.client.UpdateMeta(req, bytes.NewReader(metaBytes))
@@ -388,7 +388,7 @@ func (cmd *options) updateMetaLegacy() error {
 func (cmd *options) uploadShardsPortable() error {
 	for _, file := range cmd.manifestFiles {
 		if cmd.sourceDatabase == "" || cmd.sourceDatabase == file.Database {
-			if cmd.backupTimeToLive == "" || cmd.backupTimeToLive == file.Policy {
+			if cmd.backupRetention == "" || cmd.backupRetention == file.Policy {
 				if cmd.shard == 0 || cmd.shard == file.ShardID {
 					oldID := file.ShardID
 					// if newID not found then this shard's metadata was NOT imported
@@ -415,7 +415,7 @@ func (cmd *options) uploadShardsPortable() error {
 						targetDB = file.Database
 					}
 
-					if err := cmd.client.UploadShard(oldID, newID, targetDB, cmd.restoreTimeToLive, tr); err != nil {
+					if err := cmd.client.UploadShard(oldID, newID, targetDB, cmd.restoreRetention, tr); err != nil {
 						f.Close()
 						return err
 					}
@@ -463,7 +463,7 @@ func (cmd *options) uploadShardsLegacy() error {
 			return err
 		}
 		tr := tar.NewReader(f)
-		if err := cmd.client.UploadShard(shardID, newID, cmd.destinationDatabase, cmd.restoreTimeToLive, tr); err != nil {
+		if err := cmd.client.UploadShard(shardID, newID, cmd.destinationDatabase, cmd.restoreRetention, tr); err != nil {
 			f.Close()
 			return err
 		}
@@ -487,18 +487,18 @@ func (cmd *options) unpackDatabase() error {
 	return cmd.unpackFiles(pat + ".*")
 }
 
-// unpackTimeToLive will look for all backup files in the path matching this time to live
+// unpackRetention will look for all backup files in the path matching this retention
 // and restore them to the data dir
-func (cmd *options) unpackTimeToLive() error {
+func (cmd *options) unpackRetention() error {
 	// make sure the shard isn't already there so we don't clobber anything
-	restorePath := filepath.Join(cmd.datadir, cmd.sourceDatabase, cmd.backupTimeToLive)
+	restorePath := filepath.Join(cmd.datadir, cmd.sourceDatabase, cmd.backupRetention)
 	if _, err := os.Stat(restorePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("time to live already present: %s", restorePath)
+		return fmt.Errorf("retention already present: %s", restorePath)
 	}
 
-	// find the time to live backup files
+	// find the retention backup files
 	pat := filepath.Join(cmd.backupFilesPath, cmd.sourceDatabase)
-	return cmd.unpackFiles(fmt.Sprintf("%s.%s.*", pat, cmd.backupTimeToLive))
+	return cmd.unpackFiles(fmt.Sprintf("%s.%s.*", pat, cmd.backupRetention))
 }
 
 // unpackShard will look for all backup files in the path matching this shard ID
@@ -506,7 +506,7 @@ func (cmd *options) unpackTimeToLive() error {
 func (cmd *options) unpackShard(shard uint64) error {
 	shardID := strconv.FormatUint(shard, 10)
 	// make sure the shard isn't already there so we don't clobber anything
-	restorePath := filepath.Join(cmd.datadir, cmd.sourceDatabase, cmd.backupTimeToLive, shardID)
+	restorePath := filepath.Join(cmd.datadir, cmd.sourceDatabase, cmd.backupRetention, shardID)
 	if _, err := os.Stat(restorePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("shard already present: %s", restorePath)
 	}
@@ -517,7 +517,7 @@ func (cmd *options) unpackShard(shard uint64) error {
 	}
 
 	// find the shard backup files
-	pat := filepath.Join(cmd.backupFilesPath, fmt.Sprintf(backup_util.BackupFilePattern, cmd.sourceDatabase, cmd.backupTimeToLive, id))
+	pat := filepath.Join(cmd.backupFilesPath, fmt.Sprintf(backup_util.BackupFilePattern, cmd.sourceDatabase, cmd.backupRetention, id))
 	return cmd.unpackFiles(pat + ".*")
 }
 
@@ -551,7 +551,7 @@ func (cmd *options) unpackTar(tarFile string) error {
 	}
 	defer f.Close()
 
-	// should get us ["db","ttl", "00001", "00"]
+	// should get us ["db","rp", "00001", "00"]
 	pathParts := strings.Split(filepath.Base(tarFile), ".")
 	if len(pathParts) != 4 {
 		return fmt.Errorf("backup tarfile name incorrect format")
@@ -585,14 +585,14 @@ Options:
            Name of the CnosDB OSS database into which the archived data will be imported on the target system.
            Optional. If not given, then the value of '-db <db_name>' is used.  The new database name must be unique
            to the target system.
-   -ttl    <name>
-           Name of time to live from the backup that will be restored. Optional.
+   -rp    <name>
+           Name of retention policy from the backup that will be restored. Optional.
            Requires that '-db <db_name>' is specified.
-   -newttl <name>
-           Name of the time to live to be created on the target system. Optional. Requires that '-ttl <ttl_name>'
-           is set. If not given, the '-ttl <ttl_name>' value is used.
+   -newrp <name>
+           Name of the retention policy to be created on the target system. Optional. Requires that '-rp <rp_name>'
+           is set. If not given, the '-rp <rp_name>' value is used.
    -shard <id>
-           Identifier of the shard to be restored. Optional. If specified, then '-db <db_name>' and '-ttl <ttl_name>' are
+           Identifier of the shard to be restored. Optional. If specified, then '-db <db_name>' and '-rp <rp_name>' are
            required.
    PATH
            Path to directory containing the backup files.

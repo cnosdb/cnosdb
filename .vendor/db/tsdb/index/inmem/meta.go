@@ -8,19 +8,19 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/cnosdatabase/cnosql"
 	"github.com/cnosdatabase/db/models"
 	"github.com/cnosdatabase/db/pkg/bytesutil"
 	"github.com/cnosdatabase/db/pkg/radix"
 	"github.com/cnosdatabase/db/query"
 	"github.com/cnosdatabase/db/tsdb"
-	"github.com/cnosdatabase/cnosql"
 )
 
-// Metric represents a collection of time series in a database. It also
+// Measurement represents a collection of time series in a database. It also
 // contains in memory structures for indexing tags. Exported functions are
 // goroutine safe while un-exported functions assume the caller will use the
 // appropriate locks.
-type metric struct {
+type measurement struct {
 	Database  string
 	Name      string `json:"name,omitempty"`
 	NameBytes []byte // cached version as []byte
@@ -33,16 +33,16 @@ type metric struct {
 	seriesByTagKeyValue map[string]*tagKeyValue // map from tag key to value to sorted set of series ids
 
 	// lazyily created sorted series IDs
-	sortedSeriesIDs seriesIDs // sorted list of series IDs in this metric
+	sortedSeriesIDs seriesIDs // sorted list of series IDs in this measurement
 
 	// Indicates whether the seriesByTagKeyValueMap needs to be rebuilt as it contains deleted series
 	// that waste memory.
 	dirty bool
 }
 
-// newMetric allocates and initializes a new Metric.
-func newMetric(database, name string) *metric {
-	return &metric{
+// newMeasurement allocates and initializes a new Measurement.
+func newMeasurement(database, name string) *measurement {
+	return &measurement{
 		Database:  database,
 		Name:      name,
 		NameBytes: []byte(name),
@@ -53,8 +53,8 @@ func newMetric(database, name string) *metric {
 	}
 }
 
-// bytes estimates the memory footprint of this metric, in bytes.
-func (m *metric) bytes() int {
+// bytes estimates the memory footprint of this measurement, in bytes.
+func (m *measurement) bytes() int {
 	var b int
 	m.mu.RLock()
 	b += int(unsafe.Sizeof(m.Database)) + len(m.Database)
@@ -87,13 +87,13 @@ func (m *metric) bytes() int {
 	return b
 }
 
-// Authorized determines if this Metric is authorized to be read, according
-// to the provided Authorizer. A metric is authorized to be read if at
-// least one undeleted series from the metric is authorized to be read.
-func (m *metric) Authorized(auth query.FineAuthorizer) bool {
+// Authorized determines if this Measurement is authorized to be read, according
+// to the provided Authorizer. A measurement is authorized to be read if at
+// least one undeleted series from the measurement is authorized to be read.
+func (m *measurement) Authorized(auth query.FineAuthorizer) bool {
 	// Note(edd): the cost of this check scales linearly with the number of series
-	// belonging to a metric, which means it may become expensive when there
-	// are large numbers of series on a metric.
+	// belonging to a measurement, which means it may become expensive when there
+	// are large numbers of series on a measurement.
 	//
 	// In the future we might want to push the set of series down into the
 	// authorizer, but that will require an API change.
@@ -109,7 +109,7 @@ func (m *metric) Authorized(auth query.FineAuthorizer) bool {
 	return false
 }
 
-func (m *metric) HasField(name string) bool {
+func (m *measurement) HasField(name string) bool {
 	m.mu.RLock()
 	_, hasField := m.fieldNames[name]
 	m.mu.RUnlock()
@@ -117,21 +117,21 @@ func (m *metric) HasField(name string) bool {
 }
 
 // SeriesByID returns a series by identifier.
-func (m *metric) SeriesByID(id uint64) *series {
+func (m *measurement) SeriesByID(id uint64) *series {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.seriesByID[id]
 }
 
 // SeriesByIDMap returns the internal seriesByID map.
-func (m *metric) SeriesByIDMap() map[uint64]*series {
+func (m *measurement) SeriesByIDMap() map[uint64]*series {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.seriesByID
 }
 
 // SeriesByIDSlice returns a list of series by identifiers.
-func (m *metric) SeriesByIDSlice(ids []uint64) []*series {
+func (m *measurement) SeriesByIDSlice(ids []uint64) []*series {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	a := make([]*series, len(ids))
@@ -142,7 +142,7 @@ func (m *metric) SeriesByIDSlice(ids []uint64) []*series {
 }
 
 // AppendSeriesKeysByID appends keys for a list of series ids to a buffer.
-func (m *metric) AppendSeriesKeysByID(dst []string, ids []uint64) []string {
+func (m *measurement) AppendSeriesKeysByID(dst []string, ids []uint64) []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, id := range ids {
@@ -154,7 +154,7 @@ func (m *metric) AppendSeriesKeysByID(dst []string, ids []uint64) []string {
 }
 
 // SeriesKeysByID returns the a list of keys for a set of ids.
-func (m *metric) SeriesKeysByID(ids seriesIDs) [][]byte {
+func (m *measurement) SeriesKeysByID(ids seriesIDs) [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	keys := make([][]byte, 0, len(ids))
@@ -173,8 +173,8 @@ func (m *metric) SeriesKeysByID(ids seriesIDs) [][]byte {
 	return keys
 }
 
-// SeriesKeys returns the keys of every series in this metric
-func (m *metric) SeriesKeys() [][]byte {
+// SeriesKeys returns the keys of every series in this measurement
+func (m *measurement) SeriesKeys() [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	keys := make([][]byte, 0, len(m.seriesByID))
@@ -192,7 +192,7 @@ func (m *metric) SeriesKeys() [][]byte {
 	return keys
 }
 
-func (m *metric) SeriesIDs() seriesIDs {
+func (m *measurement) SeriesIDs() seriesIDs {
 	m.mu.RLock()
 	if len(m.sortedSeriesIDs) == len(m.seriesByID) {
 		s := m.sortedSeriesIDs
@@ -225,37 +225,37 @@ func (m *metric) SeriesIDs() seriesIDs {
 	return s
 }
 
-// HasTagKey returns true if at least one series in this metric has written a value for the passed in tag key
-func (m *metric) HasTagKey(k string) bool {
+// HasTagKey returns true if at least one series in this measurement has written a value for the passed in tag key
+func (m *measurement) HasTagKey(k string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	_, hasTag := m.seriesByTagKeyValue[k]
 	return hasTag
 }
 
-func (m *metric) HasTagKeyValue(k, v []byte) bool {
+func (m *measurement) HasTagKeyValue(k, v []byte) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.seriesByTagKeyValue[string(k)].Contains(string(v))
 }
 
-// HasSeries returns true if there is at least 1 series under this metric.
-func (m *metric) HasSeries() bool {
+// HasSeries returns true if there is at least 1 series under this measurement.
+func (m *measurement) HasSeries() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.seriesByID) > 0
 }
 
 // CardinalityBytes returns the number of values associated with the given tag key.
-func (m *metric) CardinalityBytes(key []byte) int {
+func (m *measurement) CardinalityBytes(key []byte) int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.seriesByTagKeyValue[string(key)].Cardinality()
 }
 
-// AddSeries adds a series to the metric's index.
+// AddSeries adds a series to the measurement's index.
 // It returns true if the series was added successfully or false if the series was already present.
-func (m *metric) AddSeries(s *series) bool {
+func (m *measurement) AddSeries(s *series) bool {
 	if s == nil {
 		return false
 	}
@@ -280,7 +280,7 @@ func (m *metric) AddSeries(s *series) bool {
 		m.sortedSeriesIDs = append(m.sortedSeriesIDs, s.ID)
 	}
 
-	// add this series id to the tag index on the metric
+	// add this series id to the tag index on the measurement
 	for _, t := range s.Tags {
 		valueMap := m.seriesByTagKeyValue[string(t.Key)]
 		if valueMap == nil {
@@ -293,8 +293,8 @@ func (m *metric) AddSeries(s *series) bool {
 	return true
 }
 
-// DropSeries removes a series from the metric's index.
-func (m *metric) DropSeries(series *series) {
+// DropSeries removes a series from the measurement's index.
+func (m *measurement) DropSeries(series *series) {
 	seriesID := series.ID
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -308,11 +308,11 @@ func (m *metric) DropSeries(series *series) {
 	// clear our lazily sorted set of ids
 	m.sortedSeriesIDs = m.sortedSeriesIDs[:0]
 
-	// Mark that this metrics tagValue map has stale entries that need to be rebuilt.
+	// Mark that this measurements tagValue map has stale entries that need to be rebuilt.
 	m.dirty = true
 }
 
-func (m *metric) Rebuild() *metric {
+func (m *measurement) Rebuild() *measurement {
 	m.mu.RLock()
 
 	// Nothing needs to be rebuilt.
@@ -321,13 +321,13 @@ func (m *metric) Rebuild() *metric {
 		return m
 	}
 
-	// Create a new metric from the state of the existing metric
-	nm := newMetric(m.Database, string(m.NameBytes))
+	// Create a new measurement from the state of the existing measurement
+	nm := newMeasurement(m.Database, string(m.NameBytes))
 	nm.fieldNames = m.fieldNames
 	m.mu.RUnlock()
 
-	// Re-add each series to allow the metric indexes to get re-created.  If there were
-	// deletes, the existing metric may have references to deleted series that need to be
+	// Re-add each series to allow the measurement indexes to get re-created.  If there were
+	// deletes, the existing measurement may have references to deleted series that need to be
 	// expunged.  Note: we're NOT using SeriesIDs which returns the series in sorted order because
 	// we need to do this under a write lock to prevent races.  The series are added in sorted
 	// order to prevent resorting them again after they are all re-added.
@@ -344,8 +344,8 @@ func (m *metric) Rebuild() *metric {
 
 	for _, id := range m.sortedSeriesIDs {
 		if s := m.seriesByID[id]; s != nil {
-			// Explicitly set the new metric on the series.
-			s.Metric = nm
+			// Explicitly set the new measurement on the series.
+			s.Measurement = nm
 			nm.AddSeries(s)
 		}
 	}
@@ -354,7 +354,7 @@ func (m *metric) Rebuild() *metric {
 
 // filters walks the where clause of a select statement and returns a map with all series ids
 // matching the where clause and any filter expression that should be applied to each
-func (m *metric) filters(condition cnosql.Expr) ([]uint64, map[uint64]cnosql.Expr, error) {
+func (m *measurement) filters(condition cnosql.Expr) ([]uint64, map[uint64]cnosql.Expr, error) {
 	if condition == nil {
 		return m.SeriesIDs(), nil, nil
 	}
@@ -369,7 +369,7 @@ func (m *metric) filters(condition cnosql.Expr) ([]uint64, map[uint64]cnosql.Exp
 // This will also populate the TagSet objects with the series IDs that match each tagset and any
 // cnosdb filter expression that goes with the series
 // TODO: this shouldn't be exported. However, until tx.go and the engine get refactored into tsdb, we need it.
-func (m *metric) TagSets(shardSeriesIDs *tsdb.SeriesIDSet, opt query.IteratorOptions) ([]*query.TagSet, error) {
+func (m *measurement) TagSets(shardSeriesIDs *tsdb.SeriesIDSet, opt query.IteratorOptions) ([]*query.TagSet, error) {
 	// get the unique set of series ids and the filters that should be applied to each
 	ids, filters, err := m.filters(opt.Condition)
 	if err != nil {
@@ -590,7 +590,7 @@ func unionSeriesFilters(lids, rids seriesIDs, lfilters, rfilters FilterExprs) (s
 }
 
 // SeriesIDsByTagKey returns a list of all series for a tag key.
-func (m *metric) SeriesIDsByTagKey(key []byte) seriesIDs {
+func (m *measurement) SeriesIDsByTagKey(key []byte) seriesIDs {
 	tagVals := m.seriesByTagKeyValue[string(key)]
 	if tagVals == nil {
 		return nil
@@ -605,7 +605,7 @@ func (m *metric) SeriesIDsByTagKey(key []byte) seriesIDs {
 }
 
 // SeriesIDsByTagValue returns a list of all series for a tag value.
-func (m *metric) SeriesIDsByTagValue(key, value []byte) seriesIDs {
+func (m *measurement) SeriesIDsByTagValue(key, value []byte) seriesIDs {
 	tagVals := m.seriesByTagKeyValue[string(key)]
 	if tagVals == nil {
 		return nil
@@ -614,14 +614,14 @@ func (m *metric) SeriesIDsByTagValue(key, value []byte) seriesIDs {
 }
 
 // IDsForExpr returns the series IDs that are candidates to match the given expression.
-func (m *metric) IDsForExpr(n *cnosql.BinaryExpr) seriesIDs {
+func (m *measurement) IDsForExpr(n *cnosql.BinaryExpr) seriesIDs {
 	ids, _, _ := m.idsForExpr(n)
 	return ids
 }
 
 // idsForExpr returns a collection of series ids and a filter expression that should
 // be used to filter points from those series.
-func (m *metric) idsForExpr(n *cnosql.BinaryExpr) (seriesIDs, cnosql.Expr, error) {
+func (m *measurement) idsForExpr(n *cnosql.BinaryExpr) (seriesIDs, cnosql.Expr, error) {
 	// If this binary expression has another binary expression, then this
 	// is some expression math and we should just pass it to the underlying query.
 	if _, ok := n.LHS.(*cnosql.BinaryExpr); ok {
@@ -643,7 +643,7 @@ func (m *metric) idsForExpr(n *cnosql.BinaryExpr) (seriesIDs, cnosql.Expr, error
 		value = n.LHS
 	}
 
-	// For fields, return all series IDs from this metric and return
+	// For fields, return all series IDs from this measurement and return
 	// the expression passed in, as the filter.
 	if name.Val != "_name" && ((name.Type == cnosql.Unknown && m.HasField(name.Val)) || name.Type == cnosql.AnyField || (name.Type != cnosql.Tag && name.Type != cnosql.Unknown)) {
 		return m.SeriesIDs(), n, nil
@@ -661,7 +661,7 @@ func (m *metric) idsForExpr(n *cnosql.BinaryExpr) (seriesIDs, cnosql.Expr, error
 	if str, ok := value.(*cnosql.StringLiteral); ok {
 		var ids seriesIDs
 
-		// Special handling for "_name" to match metric name.
+		// Special handling for "_name" to match measurement name.
 		if name.Val == "_name" {
 			if (n.Op == cnosql.EQ && str.Val == m.Name) || (n.Op == cnosql.NEQ && str.Val != m.Name) {
 				return m.SeriesIDs(), nil, nil
@@ -706,7 +706,7 @@ func (m *metric) idsForExpr(n *cnosql.BinaryExpr) (seriesIDs, cnosql.Expr, error
 	if re, ok := value.(*cnosql.RegexLiteral); ok {
 		var ids seriesIDs
 
-		// Special handling for "_name" to match metric name.
+		// Special handling for "_name" to match measurement name.
 		if name.Val == "_name" {
 			match := re.Val.MatchString(m.Name)
 			if (n.Op == cnosql.EQREGEX && match) || (n.Op == cnosql.NEQREGEX && !match) {
@@ -808,7 +808,7 @@ func (fe FilterExprs) Len() int {
 // WalkWhereForSeriesIds recursively walks the WHERE clause and returns an ordered set of series IDs and
 // a map from those series IDs to filter expressions that should be used to limit points returned in
 // the final query result.
-func (m *metric) WalkWhereForSeriesIds(expr cnosql.Expr) (seriesIDs, FilterExprs, error) {
+func (m *measurement) WalkWhereForSeriesIds(expr cnosql.Expr) (seriesIDs, FilterExprs, error) {
 	switch n := expr.(type) {
 	case *cnosql.BinaryExpr:
 		switch n.Op {
@@ -876,9 +876,9 @@ func (m *metric) WalkWhereForSeriesIds(expr cnosql.Expr) (seriesIDs, FilterExprs
 }
 
 // SeriesIDsAllOrByExpr walks an expressions for matching series IDs
-// or, if no expressions is given, returns all series IDs for the metric.
-func (m *metric) SeriesIDsAllOrByExpr(expr cnosql.Expr) (seriesIDs, error) {
-	// If no expression given or the metric has no series,
+// or, if no expressions is given, returns all series IDs for the measurement.
+func (m *measurement) SeriesIDsAllOrByExpr(expr cnosql.Expr) (seriesIDs, error) {
+	// If no expression given or the measurement has no series,
 	// we can take just return the ids or nil accordingly.
 	if expr == nil {
 		return m.SeriesIDs(), nil
@@ -900,8 +900,8 @@ func (m *metric) SeriesIDsAllOrByExpr(expr cnosql.Expr) (seriesIDs, error) {
 	return ids, nil
 }
 
-// tagKeysByExpr extracts the tag keys wanted by the expression.
-func (m *metric) TagKeysByExpr(expr cnosql.Expr) (map[string]struct{}, error) {
+// TagKeysByExpr extracts the tag keys wanted by the expression.
+func (m *measurement) TagKeysByExpr(expr cnosql.Expr) (map[string]struct{}, error) {
 	if expr == nil {
 		set := make(map[string]struct{})
 		for _, key := range m.TagKeys() {
@@ -968,8 +968,8 @@ func (m *metric) TagKeysByExpr(expr cnosql.Expr) (map[string]struct{}, error) {
 	return nil, fmt.Errorf("%#v", expr)
 }
 
-// tagKeysByFilter will filter the tag keys for the metric.
-func (m *metric) tagKeysByFilter(op cnosql.Token, val string, regex *regexp.Regexp) stringSet {
+// tagKeysByFilter will filter the tag keys for the measurement.
+func (m *measurement) tagKeysByFilter(op cnosql.Token, val string, regex *regexp.Regexp) stringSet {
 	ss := newStringSet()
 	for _, key := range m.TagKeys() {
 		var matched bool
@@ -992,37 +992,37 @@ func (m *metric) tagKeysByFilter(op cnosql.Token, val string, regex *regexp.Rege
 	return ss
 }
 
-// Metrics represents a list of *Metric.
-type metrics []*metric
+// Measurements represents a list of *Measurement.
+type measurements []*measurement
 
 // Len implements sort.Interface.
-func (a metrics) Len() int { return len(a) }
+func (a measurements) Len() int { return len(a) }
 
 // Less implements sort.Interface.
-func (a metrics) Less(i, j int) bool { return a[i].Name < a[j].Name }
+func (a measurements) Less(i, j int) bool { return a[i].Name < a[j].Name }
 
 // Swap implements sort.Interface.
-func (a metrics) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a measurements) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
-// series belong to a Metric and represent unique time series in a database.
+// series belong to a Measurement and represent unique time series in a database.
 type series struct {
 	mu      sync.RWMutex
 	deleted bool
 
 	// immutable
-	ID     uint64
-	Metric *metric
-	Key    string
-	Tags   models.Tags
+	ID          uint64
+	Measurement *measurement
+	Key         string
+	Tags        models.Tags
 }
 
 // newSeries returns an initialized series struct
-func newSeries(id uint64, m *metric, key string, tags models.Tags) *series {
+func newSeries(id uint64, m *measurement, key string, tags models.Tags) *series {
 	return &series{
-		ID:     id,
-		Metric: m,
-		Key:    key,
-		Tags:   tags,
+		ID:          id,
+		Measurement: m,
+		Key:         key,
+		Tags:        tags,
 	}
 }
 
@@ -1032,7 +1032,7 @@ func (s *series) bytes() int {
 	s.mu.RLock()
 	b += 24 // RWMutex uses 24 bytes
 	b += int(unsafe.Sizeof(s.deleted) + unsafe.Sizeof(s.ID))
-	// Do not count s.Metric to prevent double-counting in Index.Bytes.
+	// Do not count s.Measurement to prevent double-counting in Index.Bytes.
 	b += int(unsafe.Sizeof(s.Key)) + len(s.Key)
 	for _, tag := range s.Tags {
 		b += int(unsafe.Sizeof(tag)) + len(tag.Key) + len(tag.Value)
@@ -1402,7 +1402,7 @@ func (a *evictSeriesIDs) evict() (ids seriesIDs) {
 	return ids
 }
 
-// TagFilter represents a tag filter when looking up other tags or metrics.
+// TagFilter represents a tag filter when looking up other tags or measurements.
 type TagFilter struct {
 	Op    cnosql.Token
 	Key   string
@@ -1410,8 +1410,8 @@ type TagFilter struct {
 	Regex *regexp.Regexp
 }
 
-// TagKeys returns a list of the metric's tag names, in sorted order.
-func (m *metric) TagKeys() []string {
+// TagKeys returns a list of the measurement's tag names, in sorted order.
+func (m *measurement) TagKeys() []string {
 	m.mu.RLock()
 	keys := make([]string, 0, len(m.seriesByTagKeyValue))
 	for k := range m.seriesByTagKeyValue {
@@ -1423,7 +1423,7 @@ func (m *metric) TagKeys() []string {
 }
 
 // TagValues returns all the values for the given tag key, in an arbitrary order.
-func (m *metric) TagValues(auth query.FineAuthorizer, key string) []string {
+func (m *measurement) TagValues(auth query.FineAuthorizer, key string) []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	values := make([]string, 0, m.seriesByTagKeyValue[key].Cardinality())
@@ -1447,8 +1447,8 @@ func (m *metric) TagValues(auth query.FineAuthorizer, key string) []string {
 	return values
 }
 
-// SetFieldName adds the field name to the metric.
-func (m *metric) SetFieldName(name string) {
+// SetFieldName adds the field name to the measurement.
+func (m *measurement) SetFieldName(name string) {
 	m.mu.RLock()
 	_, ok := m.fieldNames[name]
 	m.mu.RUnlock()
@@ -1463,7 +1463,7 @@ func (m *metric) SetFieldName(name string) {
 }
 
 // SeriesByTagKeyValue returns the TagKeyValue for the provided tag key.
-func (m *metric) SeriesByTagKeyValue(key string) *tagKeyValue {
+func (m *measurement) SeriesByTagKeyValue(key string) *tagKeyValue {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.seriesByTagKeyValue[key]

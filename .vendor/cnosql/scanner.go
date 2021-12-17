@@ -353,7 +353,7 @@ func isWhitespace(ch rune) bool { return ch == ' ' || ch == '\t' || ch == '\n' }
 func isLetter(ch rune) bool { return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') }
 
 // isDigit returns true if the rune is a digit.
-func isDigit(ch rune) bool { return (ch >= '0' && ch <= '9') }
+func isDigit(ch rune) bool { return ch >= '0' && ch <= '9' }
 
 // isIdentChar returns true if the rune can be used in an unquoted identifier.
 func isIdentChar(ch rune) bool { return isLetter(ch) || isDigit(ch) || ch == '_' }

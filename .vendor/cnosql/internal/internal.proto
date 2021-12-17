@@ -1,14 +1,14 @@
 syntax = "proto2";
 package cnosql;
 
-message Metrics {
-    repeated Metric Items = 1;
+message Measurements {
+    repeated Measurement Items = 1;
 }
 
-message Metric {
-    optional string Database   = 1;
-    optional string TimeToLive = 2;
-    optional string Name       = 3;
-    optional string Regex      = 4;
-    optional bool   IsTarget   = 5;
+message Measurement {
+    optional string Database        = 1;
+    optional string RetentionPolicy = 2;
+    optional string Name            = 3;
+    optional string Regex           = 4;
+    optional bool   IsTarget        = 5;
 }
