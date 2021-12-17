@@ -78,7 +78,7 @@ import (
 const (
 	// MagicNumber is written as the first 4 bytes of a data file to
 	// identify the file as a tsm1 formatted file
-	MagicNumber uint32 = 0x5351482e //SQH.
+	MagicNumber uint32 = 0x16D116D1
 
 	// Version indicates the version of the TSM file format.
 	Version byte = 1
@@ -95,7 +95,7 @@ const (
 	// Max number of blocks for a given key that can exist in a single file
 	maxIndexEntries = (1 << (indexCountSize * 8)) - 1
 
-	// max length of a key in an index entry (metric + tags)
+	// max length of a key in an index entry (measurement + tags)
 	maxKeyLength = (1 << (2 * 8)) - 1
 
 	// The threshold amount data written before we periodically fsync a TSM file.  This helps avoid
@@ -259,20 +259,19 @@ type directIndex struct {
 
 	// The bytes written count of when we last fsync'd
 	lastSync uint32
-	fd       *os.File      // 缓存到磁盘文件
-	buf      *bytes.Buffer // 缓存到内存
+	fd       *os.File
+	buf      *bytes.Buffer
 
 	f syncer
 
 	w *bufio.Writer
 
-	// key 与 indexEntries 共同构成一条索引条目
 	key          []byte
 	indexEntries *indexEntries
 }
 
 func (d *directIndex) Add(key []byte, blockType byte, minTime, maxTime int64, offset int64, size uint32) {
-	// d.key 为空，需要写入新的索引条目 ，写入 key 的 length 和 key value
+	// Is this the first block being added?
 	if len(d.key) == 0 {
 		// size of the key stored in the index
 		d.size += uint32(2 + len(key))
@@ -300,7 +299,7 @@ func (d *directIndex) Add(key []byte, blockType byte, minTime, maxTime int64, of
 	// See if were still adding to the same series key.
 	cmp := bytes.Compare(d.key, key)
 	if cmp == 0 {
-		// key 相同，说明当前的索引条目的添加还没有结束
+		// The last block is still this key
 		d.indexEntries.entries = append(d.indexEntries.entries, IndexEntry{
 			MinTime: minTime,
 			MaxTime: maxTime,
@@ -312,8 +311,9 @@ func (d *directIndex) Add(key []byte, blockType byte, minTime, maxTime int64, of
 		d.size += indexEntrySize
 
 	} else if cmp < 0 {
-		// key 不同，说明上一个索引条目已添加完成，调用 flush() 并开启下一个 key 对应的索引条目的写入
 		d.flush(d.w)
+		// We have a new key that is greater than the last one so we need to add
+		// a new index block section.
 
 		// size of the key stored in the index
 		d.size += uint32(2 + len(key))
@@ -411,22 +411,18 @@ func copyBuffer(f syncer, dst io.Writer, src io.Reader, buf []byte) (written int
 }
 
 func (d *directIndex) WriteTo(w io.Writer) (int64, error) {
-	// flush 至 d.w
 	if _, err := d.flush(d.w); err != nil {
 		return 0, err
 	}
 
-	// 由 d.w flush 至内存或文件
 	if err := d.w.Flush(); err != nil {
 		return 0, err
 	}
 
-	// 缓存至内存
 	if d.fd == nil {
 		return copyBuffer(d.f, w, d.buf, nil)
 	}
 
-	// 缓存至磁盘
 	if _, err := d.fd.Seek(0, io.SeekStart); err != nil {
 		return 0, err
 	}
@@ -453,7 +449,6 @@ func (d *directIndex) flush(w io.Writer) (int64, error) {
 		return N, fmt.Errorf("key '%s' exceeds max index entries: %d > %d", key, entries.Len(), maxIndexEntries)
 	}
 
-	// 将这些 IndexEntry 按 MinTime 从小到大排序
 	if !sort.IsSorted(entries) {
 		sort.Sort(entries)
 	}
@@ -462,25 +457,24 @@ func (d *directIndex) flush(w io.Writer) (int64, error) {
 	buf[2] = entries.Type
 	binary.BigEndian.PutUint16(buf[3:5], uint16(entries.Len()))
 
-	// 写入 key length
+	// Append the key length and key
 	if n, err = w.Write(buf[0:2]); err != nil {
 		return int64(n) + N, fmt.Errorf("write: writer key length error: %v", err)
 	}
 	N += int64(n)
 
-	// 写入 key
 	if n, err = w.Write(key); err != nil {
 		return int64(n) + N, fmt.Errorf("write: writer key error: %v", err)
 	}
 	N += int64(n)
 
-	// 写入数据类型和 IndexEntry 的数量
+	// Append the block type and count
 	if n, err = w.Write(buf[2:5]); err != nil {
 		return int64(n) + N, fmt.Errorf("write: writer block type and count error: %v", err)
 	}
 	N += int64(n)
 
-	// 写入这些 IndexEntry
+	// Append each index entry for all blocks for this key
 	var n64 int64
 	if n64, err = entries.WriteTo(w); err != nil {
 		return n64 + N, fmt.Errorf("write: writer entries error: %v", err)
@@ -493,7 +487,6 @@ func (d *directIndex) flush(w io.Writer) (int64, error) {
 
 	// If this is a disk based index and we've written more than the fsync threshold,
 	// fsync the data to avoid long pauses later on.
-	// 如果基于磁盘缓存，那么新增部分到达阈值 25 * 1024 * 1024 后，同步到磁盘文件
 	if d.fd != nil && d.size-d.lastSync > fsyncEvery {
 		if err := d.fd.Sync(); err != nil {
 			return N, err

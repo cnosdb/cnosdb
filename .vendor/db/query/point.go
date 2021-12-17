@@ -8,12 +8,12 @@ import (
 	"math"
 	"sort"
 
-	internal "github.com/cnosdatabase/db/query/internal"
 	"github.com/cnosdatabase/cnosql"
+	internal "github.com/cnosdatabase/db/query/internal"
 	"github.com/gogo/protobuf/proto"
 )
 
-// ZeroTime is the Unix nanosecond timestamp for no time.
+// ZeroTime is the Unix nanosecond timestamp for no time.
 // This time is not used by the query engine or the storage engine as a valid time.
 const ZeroTime = int64(math.MinInt64)
 

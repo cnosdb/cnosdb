@@ -11,12 +11,12 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/cnosdatabase/cnosql"
 	"github.com/cnosdatabase/db/pkg/metrics"
 	"github.com/cnosdatabase/db/pkg/tracing"
 	"github.com/cnosdatabase/db/pkg/tracing/fields"
 	"github.com/cnosdatabase/db/query"
 	"github.com/cnosdatabase/db/tsdb"
-	"github.com/cnosdatabase/cnosql"
 	"go.uber.org/zap"
 )
 
@@ -195,6 +195,7 @@ type floatIterator struct {
 	statsLock sync.Mutex
 	stats     query.IteratorStats
 	statsBuf  query.IteratorStats
+	valuer    cnosql.ValuerEval
 }
 
 func newFloatIterator(name string, tags query.Tags, opt query.IteratorOptions, cur floatCursor, aux []cursorAt, conds []cursorAt, condNames []string) *floatIterator {
@@ -221,6 +222,13 @@ func newFloatIterator(name string, tags query.Tags, opt query.IteratorOptions, c
 	}
 	itr.conds.names = condNames
 	itr.conds.curs = conds
+
+	itr.valuer = cnosql.ValuerEval{
+		Valuer: cnosql.MultiValuer(
+			query.MathValuer{},
+			cnosql.MapValuer(itr.m),
+		),
+	}
 
 	return itr
 }
@@ -269,13 +277,7 @@ func (itr *floatIterator) Next() (*query.FloatPoint, error) {
 		}
 
 		// Evaluate condition, if one exists. Retry if it fails.
-		valuer := cnosql.ValuerEval{
-			Valuer: cnosql.MultiValuer(
-				query.MathValuer{},
-				cnosql.MapValuer(itr.m),
-			),
-		}
-		if itr.opt.Condition != nil && !valuer.EvalBool(itr.opt.Condition) {
+		if itr.opt.Condition != nil && !itr.valuer.EvalBool(itr.opt.Condition) {
 			continue
 		}
 
@@ -673,6 +675,7 @@ type integerIterator struct {
 	statsLock sync.Mutex
 	stats     query.IteratorStats
 	statsBuf  query.IteratorStats
+	valuer    cnosql.ValuerEval
 }
 
 func newIntegerIterator(name string, tags query.Tags, opt query.IteratorOptions, cur integerCursor, aux []cursorAt, conds []cursorAt, condNames []string) *integerIterator {
@@ -699,6 +702,13 @@ func newIntegerIterator(name string, tags query.Tags, opt query.IteratorOptions,
 	}
 	itr.conds.names = condNames
 	itr.conds.curs = conds
+
+	itr.valuer = cnosql.ValuerEval{
+		Valuer: cnosql.MultiValuer(
+			query.MathValuer{},
+			cnosql.MapValuer(itr.m),
+		),
+	}
 
 	return itr
 }
@@ -747,13 +757,7 @@ func (itr *integerIterator) Next() (*query.IntegerPoint, error) {
 		}
 
 		// Evaluate condition, if one exists. Retry if it fails.
-		valuer := cnosql.ValuerEval{
-			Valuer: cnosql.MultiValuer(
-				query.MathValuer{},
-				cnosql.MapValuer(itr.m),
-			),
-		}
-		if itr.opt.Condition != nil && !valuer.EvalBool(itr.opt.Condition) {
+		if itr.opt.Condition != nil && !itr.valuer.EvalBool(itr.opt.Condition) {
 			continue
 		}
 
@@ -1151,6 +1155,7 @@ type unsignedIterator struct {
 	statsLock sync.Mutex
 	stats     query.IteratorStats
 	statsBuf  query.IteratorStats
+	valuer    cnosql.ValuerEval
 }
 
 func newUnsignedIterator(name string, tags query.Tags, opt query.IteratorOptions, cur unsignedCursor, aux []cursorAt, conds []cursorAt, condNames []string) *unsignedIterator {
@@ -1177,6 +1182,13 @@ func newUnsignedIterator(name string, tags query.Tags, opt query.IteratorOptions
 	}
 	itr.conds.names = condNames
 	itr.conds.curs = conds
+
+	itr.valuer = cnosql.ValuerEval{
+		Valuer: cnosql.MultiValuer(
+			query.MathValuer{},
+			cnosql.MapValuer(itr.m),
+		),
+	}
 
 	return itr
 }
@@ -1225,13 +1237,7 @@ func (itr *unsignedIterator) Next() (*query.UnsignedPoint, error) {
 		}
 
 		// Evaluate condition, if one exists. Retry if it fails.
-		valuer := cnosql.ValuerEval{
-			Valuer: cnosql.MultiValuer(
-				query.MathValuer{},
-				cnosql.MapValuer(itr.m),
-			),
-		}
-		if itr.opt.Condition != nil && !valuer.EvalBool(itr.opt.Condition) {
+		if itr.opt.Condition != nil && !itr.valuer.EvalBool(itr.opt.Condition) {
 			continue
 		}
 
@@ -1629,6 +1635,7 @@ type stringIterator struct {
 	statsLock sync.Mutex
 	stats     query.IteratorStats
 	statsBuf  query.IteratorStats
+	valuer    cnosql.ValuerEval
 }
 
 func newStringIterator(name string, tags query.Tags, opt query.IteratorOptions, cur stringCursor, aux []cursorAt, conds []cursorAt, condNames []string) *stringIterator {
@@ -1655,6 +1662,13 @@ func newStringIterator(name string, tags query.Tags, opt query.IteratorOptions, 
 	}
 	itr.conds.names = condNames
 	itr.conds.curs = conds
+
+	itr.valuer = cnosql.ValuerEval{
+		Valuer: cnosql.MultiValuer(
+			query.MathValuer{},
+			cnosql.MapValuer(itr.m),
+		),
+	}
 
 	return itr
 }
@@ -1703,13 +1717,7 @@ func (itr *stringIterator) Next() (*query.StringPoint, error) {
 		}
 
 		// Evaluate condition, if one exists. Retry if it fails.
-		valuer := cnosql.ValuerEval{
-			Valuer: cnosql.MultiValuer(
-				query.MathValuer{},
-				cnosql.MapValuer(itr.m),
-			),
-		}
-		if itr.opt.Condition != nil && !valuer.EvalBool(itr.opt.Condition) {
+		if itr.opt.Condition != nil && !itr.valuer.EvalBool(itr.opt.Condition) {
 			continue
 		}
 
@@ -2107,6 +2115,7 @@ type booleanIterator struct {
 	statsLock sync.Mutex
 	stats     query.IteratorStats
 	statsBuf  query.IteratorStats
+	valuer    cnosql.ValuerEval
 }
 
 func newBooleanIterator(name string, tags query.Tags, opt query.IteratorOptions, cur booleanCursor, aux []cursorAt, conds []cursorAt, condNames []string) *booleanIterator {
@@ -2133,6 +2142,13 @@ func newBooleanIterator(name string, tags query.Tags, opt query.IteratorOptions,
 	}
 	itr.conds.names = condNames
 	itr.conds.curs = conds
+
+	itr.valuer = cnosql.ValuerEval{
+		Valuer: cnosql.MultiValuer(
+			query.MathValuer{},
+			cnosql.MapValuer(itr.m),
+		),
+	}
 
 	return itr
 }
@@ -2181,13 +2197,7 @@ func (itr *booleanIterator) Next() (*query.BooleanPoint, error) {
 		}
 
 		// Evaluate condition, if one exists. Retry if it fails.
-		valuer := cnosql.ValuerEval{
-			Valuer: cnosql.MultiValuer(
-				query.MathValuer{},
-				cnosql.MapValuer(itr.m),
-			),
-		}
-		if itr.opt.Condition != nil && !valuer.EvalBool(itr.opt.Condition) {
+		if itr.opt.Condition != nil && !itr.valuer.EvalBool(itr.opt.Condition) {
 			continue
 		}
 

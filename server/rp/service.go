@@ -1,5 +1,5 @@
-// Package ttl provides the time-to-live enforcement service.
-package ttl
+// Package rp provides the retention policy enforcement service.
+package rp
 
 import (
 	"sync"
@@ -10,12 +10,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// Service represents the time-to-live enforcement service.
+// Service represents the retention policy enforcement service.
 type Service struct {
 	MetaClient interface {
 		Databases() []meta.DatabaseInfo
-		DeleteRegion(database, ttl string, id uint64) error
-		PruneRegions() error
+		DeleteShardGroup(database, rp string, id uint64) error
+		PruneShardGroups() error
 	}
 	TSDBStore interface {
 		ShardIDs() []uint64
@@ -29,7 +29,7 @@ type Service struct {
 	logger *zap.Logger
 }
 
-// NewService returns a configured time-to-live enforcement service.
+// NewService returns a configured retention policy enforcement service.
 func NewService(c Config) *Service {
 	return &Service{
 		config: c,
@@ -37,13 +37,13 @@ func NewService(c Config) *Service {
 	}
 }
 
-// Open starts time-to-live enforcement.
+// Open starts retention policy enforcement.
 func (s *Service) Open() error {
 	if !s.config.Enabled || s.done != nil {
 		return nil
 	}
 
-	s.logger.Info("Starting time-to-live enforcement service",
+	s.logger.Info("Starting retention policy enforcement service",
 		logger.DurationLiteral("check_interval", time.Duration(s.config.CheckInterval)))
 	s.done = make(chan struct{})
 
@@ -52,13 +52,13 @@ func (s *Service) Open() error {
 	return nil
 }
 
-// Close stops time-to-live enforcement.
+// Close stops retention policy enforcement.
 func (s *Service) Close() error {
 	if !s.config.Enabled || s.done == nil {
 		return nil
 	}
 
-	s.logger.Info("Closing time-to-live enforcement service")
+	s.logger.Info("Closing retention policy enforcement service")
 	close(s.done)
 
 	s.wg.Wait()
@@ -68,7 +68,7 @@ func (s *Service) Close() error {
 
 // WithLogger sets the logger on the service.
 func (s *Service) WithLogger(log *zap.Logger) {
-	s.logger = log.With(zap.String("service", "ttl"))
+	s.logger = log.With(zap.String("service", "rp"))
 }
 
 func (s *Service) run() {
@@ -80,11 +80,11 @@ func (s *Service) run() {
 			return
 
 		case <-ticker.C:
-			log, logEnd := logger.NewOperation(s.logger, "Time-to-live deletion check", "ttl_delete_check")
+			log, logEnd := logger.NewOperation(s.logger, "Retention policy deletion check", "rp_delete_check")
 
 			type deletionInfo struct {
-				db  string
-				ttl string
+				db string
+				rp string
 			}
 			deletedShardIDs := make(map[uint64]deletionInfo)
 
@@ -95,34 +95,34 @@ func (s *Service) run() {
 			var retryNeeded bool
 			dbs := s.MetaClient.Databases()
 			for _, d := range dbs {
-				for _, r := range d.TimeToLives {
+				for _, r := range d.RetentionPolicies {
 					// Build list of already deleted shards.
-					for _, g := range r.DeletedRegions() {
+					for _, g := range r.DeletedShardGroups() {
 						for _, sh := range g.Shards {
-							deletedShardIDs[sh.ID] = deletionInfo{db: d.Name, ttl: r.Name}
+							deletedShardIDs[sh.ID] = deletionInfo{db: d.Name, rp: r.Name}
 						}
 					}
 
 					// Determine all shards that have expired and need to be deleted.
-					for _, g := range r.ExpiredRegions(time.Now().UTC()) {
-						if err := s.MetaClient.DeleteRegion(d.Name, r.Name, g.ID); err != nil {
-							log.Info("Failed to delete region",
+					for _, g := range r.ExpiredShardGroups(time.Now().UTC()) {
+						if err := s.MetaClient.DeleteShardGroup(d.Name, r.Name, g.ID); err != nil {
+							log.Info("Failed to delete shard group",
 								logger.Database(d.Name),
-								logger.Region(g.ID),
-								logger.TimeToLive(r.Name),
+								logger.ShardGroup(g.ID),
+								logger.RetentionPolicy(r.Name),
 								zap.Error(err))
 							retryNeeded = true
 							continue
 						}
 
-						log.Info("Deleted region",
+						log.Info("Deleted shard group",
 							logger.Database(d.Name),
-							logger.Region(g.ID),
-							logger.TimeToLive(r.Name))
+							logger.ShardGroup(g.ID),
+							logger.RetentionPolicy(r.Name))
 
 						// Store all the shard IDs that may possibly need to be removed locally.
 						for _, sh := range g.Shards {
-							deletedShardIDs[sh.ID] = deletionInfo{db: d.Name, ttl: r.Name}
+							deletedShardIDs[sh.ID] = deletionInfo{db: d.Name, rp: r.Name}
 						}
 					}
 				}
@@ -135,7 +135,7 @@ func (s *Service) run() {
 						log.Info("Failed to delete shard",
 							logger.Database(info.db),
 							logger.Shard(id),
-							logger.TimeToLive(info.ttl),
+							logger.RetentionPolicy(info.rp),
 							zap.Error(err))
 						retryNeeded = true
 						continue
@@ -143,12 +143,12 @@ func (s *Service) run() {
 					log.Info("Deleted shard",
 						logger.Database(info.db),
 						logger.Shard(id),
-						logger.TimeToLive(info.ttl))
+						logger.RetentionPolicy(info.rp))
 				}
 			}
 
-			if err := s.MetaClient.PruneRegions(); err != nil {
-				log.Info("Problem pruning regions", zap.Error(err))
+			if err := s.MetaClient.PruneShardGroups(); err != nil {
+				log.Info("Problem pruning shard groups", zap.Error(err))
 				retryNeeded = true
 			}
 

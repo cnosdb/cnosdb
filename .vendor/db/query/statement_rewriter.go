@@ -14,10 +14,10 @@ func RewriteStatement(stmt cnosql.Statement) (cnosql.Statement, error) {
 		return rewriteShowFieldKeysStatement(stmt)
 	case *cnosql.ShowFieldKeyCardinalityStatement:
 		return rewriteShowFieldKeyCardinalityStatement(stmt)
-	case *cnosql.ShowMetricsStatement:
-		return rewriteShowMetricsStatement(stmt)
-	case *cnosql.ShowMetricCardinalityStatement:
-		return rewriteShowMetricCardinalityStatement(stmt)
+	case *cnosql.ShowMeasurementsStatement:
+		return rewriteShowMeasurementsStatement(stmt)
+	case *cnosql.ShowMeasurementCardinalityStatement:
+		return rewriteShowMeasurementCardinalityStatement(stmt)
 	case *cnosql.ShowSeriesStatement:
 		return rewriteShowSeriesStatement(stmt)
 	case *cnosql.ShowSeriesCardinalityStatement:
@@ -61,7 +61,7 @@ func rewriteShowFieldKeyCardinalityStatement(stmt *cnosql.ShowFieldKeyCardinalit
 	// Use all field keys, if zero.
 	if len(stmt.Sources) == 0 {
 		stmt.Sources = cnosql.Sources{
-			&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
+			&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
 		}
 	}
 
@@ -89,25 +89,25 @@ func rewriteShowFieldKeyCardinalityStatement(stmt *cnosql.ShowFieldKeyCardinalit
 	}, nil
 }
 
-func rewriteShowMetricsStatement(stmt *cnosql.ShowMetricsStatement) (cnosql.Statement, error) {
+func rewriteShowMeasurementsStatement(stmt *cnosql.ShowMeasurementsStatement) (cnosql.Statement, error) {
 	var sources cnosql.Sources
 	if stmt.Source != nil {
 		sources = cnosql.Sources{stmt.Source}
 	}
 
-	// Currently time based SHOW METRIC queries can't be supported because
+	// Currently time based SHOW MEASUREMENT queries can't be supported because
 	// it's not possible to appropriate set operations such as a negated regex
 	// using the query engine.
 	if cnosql.HasTimeExpr(stmt.Condition) {
-		return nil, errors.New("SHOW METRICS doesn't support time in WHERE clause")
+		return nil, errors.New("SHOW MEASUREMENTS doesn't support time in WHERE clause")
 	}
 
-	// rewrite condition to push a source metric into a "_name" tag.
+	// rewrite condition to push a source measurement into a "_name" tag.
 	stmt.Condition = rewriteSourcesCondition(sources, stmt.Condition)
 	return stmt, nil
 }
 
-func rewriteShowMetricCardinalityStatement(stmt *cnosql.ShowMetricCardinalityStatement) (cnosql.Statement, error) {
+func rewriteShowMeasurementCardinalityStatement(stmt *cnosql.ShowMeasurementCardinalityStatement) (cnosql.Statement, error) {
 	// TODO: currently we only support cardinality estimation for certain
 	// types of query. As the estimation coverage is expanded, this condition
 	// will become less strict.
@@ -117,13 +117,13 @@ func rewriteShowMetricCardinalityStatement(stmt *cnosql.ShowMetricCardinalitySta
 
 	// Check for time in WHERE clause (not supported).
 	if cnosql.HasTimeExpr(stmt.Condition) {
-		return nil, errors.New("SHOW METRIC EXACT CARDINALITY doesn't support time in WHERE clause")
+		return nil, errors.New("SHOW MEASUREMENT EXACT CARDINALITY doesn't support time in WHERE clause")
 	}
 
-	// Use all metrics, if zero.
+	// Use all measurements, if zero.
 	if len(stmt.Sources) == 0 {
 		stmt.Sources = cnosql.Sources{
-			&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
+			&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
 		}
 	}
 
@@ -193,10 +193,10 @@ func rewriteShowSeriesCardinalityStatement(stmt *cnosql.ShowSeriesCardinalitySta
 		return nil, errors.New("SHOW SERIES EXACT CARDINALITY doesn't support time in WHERE clause")
 	}
 
-	// Use all metrics, if zero.
+	// Use all measurements, if zero.
 	if len(stmt.Sources) == 0 {
 		stmt.Sources = cnosql.Sources{
-			&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
+			&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
 		}
 	}
 
@@ -275,10 +275,10 @@ func rewriteShowTagValuesStatement(stmt *cnosql.ShowTagValuesStatement) (cnosql.
 }
 
 func rewriteShowTagValuesCardinalityStatement(stmt *cnosql.ShowTagValuesCardinalityStatement) (cnosql.Statement, error) {
-	// Use all metrics, if zero.
+	// Use all measurements, if zero.
 	if len(stmt.Sources) == 0 {
 		stmt.Sources = cnosql.Sources{
-			&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
+			&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
 		}
 	}
 
@@ -363,10 +363,10 @@ func rewriteShowTagKeyCardinalityStatement(stmt *cnosql.ShowTagKeyCardinalitySta
 		return nil, errors.New("SHOW TAG KEY EXACT CARDINALITY doesn't support time in WHERE clause")
 	}
 
-	// Use all metrics, if zero.
+	// Use all measurements, if zero.
 	if len(stmt.Sources) == 0 {
 		stmt.Sources = cnosql.Sources{
-			&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
+			&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`.+`)}},
 		}
 	}
 
@@ -403,7 +403,7 @@ func rewriteSources(sources cnosql.Sources, systemIterator, defaultDatabase stri
 		if src == nil {
 			continue
 		}
-		mm := src.(*cnosql.Metric)
+		mm := src.(*cnosql.Measurement)
 		database := mm.Database
 		if database == "" {
 			database = defaultDatabase
@@ -415,7 +415,7 @@ func rewriteSources(sources cnosql.Sources, systemIterator, defaultDatabase stri
 	}
 
 	if len(newSources) <= 0 {
-		return append(newSources, &cnosql.Metric{
+		return append(newSources, &cnosql.Measurement{
 			Database:       defaultDatabase,
 			SystemIterator: systemIterator,
 		})
@@ -433,9 +433,9 @@ func rewriteSourcesCondition(sources cnosql.Sources, cond cnosql.Expr) cnosql.Ex
 	// Generate an OR'd set of filters on source name.
 	var scond cnosql.Expr
 	for _, source := range sources {
-		mm := source.(*cnosql.Metric)
+		mm := source.(*cnosql.Measurement)
 
-		// Generate a filtering expression on the metric name.
+		// Generate a filtering expression on the measurement name.
 		var expr cnosql.Expr
 		if mm.Regex != nil {
 			expr = &cnosql.BinaryExpr{
@@ -480,11 +480,11 @@ func rewriteSourcesCondition(sources cnosql.Sources, cond cnosql.Expr) cnosql.Ex
 
 func rewriteSources2(sources cnosql.Sources, database string) cnosql.Sources {
 	if len(sources) == 0 {
-		sources = cnosql.Sources{&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: matchAllRegex.Copy()}}}
+		sources = cnosql.Sources{&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: matchAllRegex.Copy()}}}
 	}
 	for _, source := range sources {
 		switch source := source.(type) {
-		case *cnosql.Metric:
+		case *cnosql.Measurement:
 			if source.Database == "" {
 				source.Database = database
 			}

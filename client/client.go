@@ -181,10 +181,10 @@ type BatchPoints interface {
 	// SetWriteConsistency sets the write consistency of this Batch.
 	SetWriteConsistency(s string)
 
-	// TimeToLive returns the currently set time to live of this Batch.
-	TimeToLive() string
-	// SetTimeToLive sets the time to live of this Batch.
-	SetTimeToLive(s string)
+	// RetentionPolicy returns the currently set retention policy of this Batch.
+	RetentionPolicy() string
+	// SetRetentionPolicy sets the retention policy of this Batch.
+	SetRetentionPolicy(s string)
 }
 
 // NewBatchPoints returns a BatchPoints interface based on the given config.
@@ -198,7 +198,7 @@ func NewBatchPoints(conf BatchPointsConfig) (BatchPoints, error) {
 	bp := &batchpoints{
 		database:         conf.Database,
 		precision:        conf.Precision,
-		timeToLive:       conf.TimeToLive,
+		retentionPolicy:  conf.RetentionPolicy,
 		writeConsistency: conf.WriteConsistency,
 	}
 	return bp, nil
@@ -208,7 +208,7 @@ type batchpoints struct {
 	points           []*Point
 	database         string
 	precision        string
-	timeToLive       string
+	retentionPolicy  string
 	writeConsistency string
 }
 
@@ -236,8 +236,8 @@ func (bp *batchpoints) WriteConsistency() string {
 	return bp.writeConsistency
 }
 
-func (bp *batchpoints) TimeToLive() string {
-	return bp.timeToLive
+func (bp *batchpoints) RetentionPolicy() string {
+	return bp.retentionPolicy
 }
 
 func (bp *batchpoints) SetPrecision(p string) error {
@@ -256,8 +256,8 @@ func (bp *batchpoints) SetWriteConsistency(wc string) {
 	bp.writeConsistency = wc
 }
 
-func (bp *batchpoints) SetTimeToLive(ttl string) {
-	bp.timeToLive = ttl
+func (bp *batchpoints) SetRetentionPolicy(rp string) {
+	bp.retentionPolicy = rp
 }
 
 // Point represents a single data point.
@@ -300,7 +300,7 @@ func (p *Point) PrecisionString(precision string) string {
 	return p.pt.PrecisionString(precision)
 }
 
-// Name returns the metric name of the point.
+// Name returns the measurement name of the point.
 func (p *Point) Name() string {
 	return string(p.pt.Name())
 }
@@ -361,7 +361,7 @@ func (c *client) Write(bp BatchPoints) error {
 
 	params := req.URL.Query()
 	params.Set("db", bp.Database())
-	params.Set("ttl", bp.TimeToLive())
+	params.Set("rp", bp.RetentionPolicy())
 	params.Set("precision", bp.Precision())
 	params.Set("consistency", bp.WriteConsistency())
 	req.URL.RawQuery = params.Encode()
@@ -387,13 +387,13 @@ func (c *client) Write(bp BatchPoints) error {
 
 // Query defines a query to send to the server.
 type Query struct {
-	Command    string
-	Database   string
-	TimeToLive string
-	Precision  string
-	Chunked    bool
-	ChunkSize  int
-	Parameters map[string]interface{}
+	Command         string
+	Database        string
+	RetentionPolicy string
+	Precision       string
+	Chunked         bool
+	ChunkSize       int
+	Parameters      map[string]interface{}
 }
 
 // NewQuery returns a query object.
@@ -407,16 +407,16 @@ func NewQuery(command, database, precision string) Query {
 	}
 }
 
-// NewQueryWithTTL returns a query object.
-// The database, time to live, and precision arguments can be empty strings if they are not needed
-// for the query. Setting the time to live only works on CnosDB versions 1.6 or greater.
-func NewQueryWithTTL(command, database, timeToLive, precision string) Query {
+// NewQueryWithRP returns a query object.
+// The database, retention policy, and precision arguments can be empty strings if they are not needed
+// for the query.
+func NewQueryWithRP(command, database, retentionPolicy, precision string) Query {
 	return Query{
-		Command:    command,
-		Database:   database,
-		TimeToLive: timeToLive,
-		Precision:  precision,
-		Parameters: make(map[string]interface{}),
+		Command:         command,
+		Database:        database,
+		RetentionPolicy: retentionPolicy,
+		Precision:       precision,
+		Parameters:      make(map[string]interface{}),
 	}
 }
 
@@ -610,8 +610,8 @@ func (c *client) createDefaultRequest(q Query) (*http.Request, error) {
 	params := req.URL.Query()
 	params.Set("q", q.Command)
 	params.Set("db", q.Database)
-	if q.TimeToLive != "" {
-		params.Set("ttl", q.TimeToLive)
+	if q.RetentionPolicy != "" {
+		params.Set("rp", q.RetentionPolicy)
 	}
 	params.Set("params", string(jsonParameters))
 

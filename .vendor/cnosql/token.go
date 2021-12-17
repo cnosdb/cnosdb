@@ -96,6 +96,7 @@ const (
 	GRANT
 	GRANTS
 	GROUP
+	GROUPS
 	IN
 	INF
 	INSERT
@@ -104,21 +105,22 @@ const (
 	KEYS
 	KILL
 	LIMIT
-	METRIC
-	METRICS
+	MEASUREMENT
+	MEASUREMENTS
 	NAME
 	OFFSET
 	ON
 	ORDER
 	PASSWORD
+	POLICY
+	POLICIES
 	PRIVILEGES
 	QUERIES
 	QUERY
 	READ
-	REGION
-	REGIONS
 	REPLICATION
 	RESAMPLE
+	RETENTION
 	REVOKE
 	SELECT
 	SERIES
@@ -133,8 +135,6 @@ const (
 	SUBSCRIPTIONS
 	TAG
 	TO
-	TTL
-	TTLS
 	USER
 	USERS
 	VALUES
@@ -219,6 +219,7 @@ var tokens = [...]string{
 	GRANT:         "GRANT",
 	GRANTS:        "GRANTS",
 	GROUP:         "GROUP",
+	GROUPS:        "GROUPS",
 	IN:            "IN",
 	INF:           "INF",
 	INSERT:        "INSERT",
@@ -227,21 +228,22 @@ var tokens = [...]string{
 	KEYS:          "KEYS",
 	KILL:          "KILL",
 	LIMIT:         "LIMIT",
-	METRIC:        "METRIC",
-	METRICS:       "METRICS",
+	MEASUREMENT:   "MEASUREMENT",
+	MEASUREMENTS:  "MEASUREMENTS",
 	NAME:          "NAME",
 	OFFSET:        "OFFSET",
 	ON:            "ON",
 	ORDER:         "ORDER",
 	PASSWORD:      "PASSWORD",
+	POLICY:        "POLICY",
+	POLICIES:      "POLICIES",
 	PRIVILEGES:    "PRIVILEGES",
 	QUERIES:       "QUERIES",
 	QUERY:         "QUERY",
 	READ:          "READ",
-	REGION:        "REGION",
-	REGIONS:       "REGIONS",
 	REPLICATION:   "REPLICATION",
 	RESAMPLE:      "RESAMPLE",
+	RETENTION:     "RETENTION",
 	REVOKE:        "REVOKE",
 	SELECT:        "SELECT",
 	SERIES:        "SERIES",
@@ -256,8 +258,6 @@ var tokens = [...]string{
 	SUBSCRIPTIONS: "SUBSCRIPTIONS",
 	TAG:           "TAG",
 	TO:            "TO",
-	TTL:           "TTL",
-	TTLS:          "TTLS",
 	USER:          "USER",
 	USERS:         "USERS",
 	VALUES:        "VALUES",

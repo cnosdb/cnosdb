@@ -11,25 +11,25 @@ Continuous queries serve two purposes in CnosDB:
 
 The purpose of both types of continuous query is to duplicate or downsample data automatically in the background, to make querying their results fast and efficient. Think of them as another way to create indexes on data.
 
-Generally, there are continuous queries that create copies of data into another metric or tagset, and queries that downsample and aggregate data. The only difference between the two types is if the query has a `GROUP BY time` clause.
+Generally, there are continuous queries that create copies of data into another measurement or tagset, and queries that downsample and aggregate data. The only difference between the two types is if the query has a `GROUP BY time` clause.
 
 Before we get to the continuous query examples, we need to define the `INTO` syntax of queries.
 
 ### INTO
 
-`INTO` is a method for running a query and having it output into either another metric name, time-to-live, or database. The syntax looks like this:
+`INTO` is a method for running a query and having it output into either another measurement name, retention policy, or database. The syntax looks like this:
 
 ```sql
 SELECT *
-INTO [<time-to-live>.]<metric> [ON <database>]
-FROM <metric>
+INTO [<retention policy>.]<measurement> [ON <database>]
+FROM <measurement>
 [WHERE ...]
 [GROUP BY ...]
 ```
 
-The syntax states that the time-to-live, database, where clause, and group by clause are all optional. If a time-to-live isn't specified, the database's default time-to-live will be written into. If the database isn't specified, the database the query is running from will be written into.
+The syntax states that the retention policy, database, where clause, and group by clause are all optional. If a retention policy isn't specified, the database's default retention policy will be written into. If the database isn't specified, the database the query is running from will be written into.
 
-By selecting specific fields, `INTO` can merge many series into one that will go into either a new metric, time-to-live, or database. For example:
+By selecting specific fields, `INTO` can merge many series into one that will go into either a new measurement, retention policy, or database. For example:
 
 ```sql
 SELECT mean(value) as value, region
@@ -80,7 +80,7 @@ BEGIN
 END
 ```
 
-Or multiple aggregations from all series in a metric. This example assumes you have a time-to-live named `1h`.
+Or multiple aggregations from all series in a measurement. This example assumes you have a retention policy named `1h`.
 
 ```sql
 CREATE CONTINUOUS QUERY "1h_cpu_load"
@@ -115,7 +115,7 @@ To create or drop a continuous query, the user must be an admin.
 
 In order to prevent cycles and endless copying of data, the following limitation is enforced on continuous queries at create time:
 
-*The output of a continuous query must go to either a different metric or to a different time-to-live.*
+*The output of a continuous query must go to either a different measurement or to a different retention policy.*
 
 In theory they'd still be able to create a cycle with multiple continuous queries. We should check for these and disallow.
 
@@ -132,13 +132,13 @@ For CQs that have no `GROUP BY time` clause, they should be evaluated at the dat
 I imagine the process going something like this:
 
 1. Convert the data point into its compact form `<series id><time><values>`
-2. For each CQ on the metric and time-to-live without a `GROUP BY time`:
+2. For each CQ on the measurement and retention policy without a `GROUP BY time`:
     2.1. Run the data point through a special query engine that will output 0 or 1 data point.
     2.2. GOTO 1. for each newly generated data point
     2.3. Write all the data points in a single call to the brokers
     2.4. Return success to the user
 
-Note that for the generated data points, we need to go through and run this process against them since they can feed into different time-to-lives, metrics, and new tag-sets. On 2.2 I mention that the output will either be a data point or not. That's because of `WHERE` clauses on the query. However, it will never be more than a single data point.
+Note that for the generated data points, we need to go through and run this process against them since they can feed into different retention policies, measurements, and new tag-sets. On 2.2 I mention that the output will either be a data point or not. That's because of `WHERE` clauses on the query. However, it will never be more than a single data point.
 
 I mention that we'll need a special query engine for these types of queries. In this case, they never have an aggregate function. Any query with an aggregate function also has a group by time, and these queries by definition don't have that.
 
@@ -200,7 +200,7 @@ BEGIN
 END
 ```
 
-That would output one series into the `1h` time-to-live for the `cpu` metric for every series from the `raw` time-to-live and the `cpu` metric.
+That would output one series into the `1h` retention policy for the `cpu` measurement for every series from the `raw` retention policy and the `cpu` measurement.
 
 Both of these examples would be handled the same way despite one being a big merge of a bunch of series into one and the other being an aggregation of series in a 1-to-1 mapping.
 
@@ -219,9 +219,9 @@ The first CQ would have to create a new series:
 3 - cpu_by_region region=uswest
 ```
 
-The second CQ would use the same series id as the write, but would send it to another time-to-live (and thus shard).
+The second CQ would use the same series id as the write, but would send it to another retention policy (and thus shard).
 
-We'd need to keep track of which series + time-to-live combinations were the result of a CQ. When the data nodes get writes replicated downward, they would have to handle them like this:
+We'd need to keep track of which series + retention policy combinations were the result of a CQ. When the data nodes get writes replicated downward, they would have to handle them like this:
 
 1. If write is normal, write through
 2. If write is CQ write, compute based on existing values, write to DB
