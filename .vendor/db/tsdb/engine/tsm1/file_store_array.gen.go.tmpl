@@ -1,19 +1,22 @@
 package tsm1
 
+import (
+	"github.com/cnosdatabase/db/tsdb"
+)
 {{range .}}
-// Read{{.Name}}Block reads the next block as a set of {{.name}} values.
-func (c *KeyCursor) Read{{.Name}}Block(buf *[]{{.Name}}Value) ([]{{.Name}}Value, error) {
+// Read{{.Name}}ArrayBlock reads the next block as a set of {{.name}} values.
+func (c *KeyCursor) Read{{.Name}}ArrayBlock(values *tsdb.{{.Name}}Array) (*tsdb.{{.Name}}Array, error) {
 LOOP:
 	// No matching blocks to decode
 	if len(c.current) == 0 {
-		return nil, nil
+		values.Timestamps = values.Timestamps[:0]
+		values.Values = values.Values[:0]
+		return values, nil
 	}
 
 	// First block is the oldest block containing the points we're searching for.
 	first := c.current[0]
-	*buf = (*buf)[:0]
-	var values {{.Name}}Values
-	values, err := first.r.Read{{.Name}}BlockAt(&first.entry, buf)
+	err := first.r.Read{{.Name}}ArrayBlockAt(&first.entry, values)
 	if err != nil {
 		return nil, err
 	}
@@ -23,11 +26,11 @@ LOOP:
 	}
 
 	// Remove values we already read
-	values = values.Exclude(first.readMin, first.readMax)
+	values.Exclude(first.readMin, first.readMax)
 
 	// Remove any tombstones
 	tombstones := first.r.TombstoneRange(c.key)
-	values = excludeTombstones{{.Name}}Values(tombstones, values)
+	excludeTombstones{{.Name}}Array(tombstones, values)
 	// If there are no values in this first block (all tombstoned or previously read) and
 	// we have more potential blocks too search.  Try again.
 	if values.Len() == 0 && len(c.current) > 0 {
@@ -69,7 +72,7 @@ LOOP:
 				if cur.entry.MaxTime > maxT {
 					maxT = cur.entry.MaxTime
 				}
-				values = values.Include(minT, maxT)
+				values.Include(minT, maxT)
 				break
 			}
 		}
@@ -84,9 +87,8 @@ LOOP:
 				continue
 			}
 
-			var a []{{.Name}}Value
-			var v {{.Name}}Values
-			v, err := cur.r.Read{{.Name}}BlockAt(&cur.entry, &a)
+			v := &tsdb.{{.Name}}Array{}
+            err := cur.r.Read{{.Name}}ArrayBlockAt(&cur.entry, v)
 			if err != nil {
 				return nil, err
 			}
@@ -97,16 +99,16 @@ LOOP:
 
 			tombstones := cur.r.TombstoneRange(c.key)
 			// Remove any tombstoned values
-			v = excludeTombstones{{.Name}}Values(tombstones, v)
+			excludeTombstones{{.Name}}Array(tombstones, v)
 
 			// Remove values we already read
-			v = v.Exclude(cur.readMin, cur.readMax)
+			v.Exclude(cur.readMin, cur.readMax)
 
 			if v.Len() > 0 {
 				// Only use values in the overlapping window
-				v = v.Include(minT, maxT)
+				v.Include(minT, maxT)
 				// Merge the remaining values with the existing
-				values = values.Merge(v)
+				values.Merge(v)
 			}
 			cur.markRead(minT, maxT)
 		}
@@ -132,7 +134,7 @@ LOOP:
 				if cur.entry.MinTime < minT {
 					minT = cur.entry.MinTime
 				}
-				values = values.Include(minT, maxT)
+				values.Include(minT, maxT)
 				break
 			}
 		}
@@ -147,9 +149,8 @@ LOOP:
 				continue
 			}
 
-			var a []{{.Name}}Value
-			var v {{.Name}}Values
-			v, err := cur.r.Read{{.Name}}BlockAt(&cur.entry, &a)
+			v := &tsdb.{{.Name}}Array{}
+			err := cur.r.Read{{.Name}}ArrayBlockAt(&cur.entry, v)
 			if err != nil {
 				return nil, err
 			}
@@ -159,17 +160,18 @@ LOOP:
 			}
 			tombstones := cur.r.TombstoneRange(c.key)
 			// Remove any tombstoned values
-			v = excludeTombstones{{.Name}}Values(tombstones, v)
+			excludeTombstones{{.Name}}Array(tombstones, v)
 
 			// Remove values we already read
-			v = v.Exclude(cur.readMin, cur.readMax)
+			v.Exclude(cur.readMin, cur.readMax)
 
 			// If the block we decoded should have all of it's values included, mark it as read so we
 			// don't use it again.
 			if v.Len() > 0 {
-				v = v.Include(minT, maxT)
+				v.Include(minT, maxT)
 				// Merge the remaining values with the existing
-				values = v.Merge(values)
+				v.Merge(values)
+				*values = *v
 			}
 			cur.markRead(minT, maxT)
 		}
@@ -180,10 +182,9 @@ LOOP:
 	return values, err
 }
 
-func excludeTombstones{{.Name}}Values(t []TimeRange, values {{.Name}}Values) {{.Name}}Values {
+func excludeTombstones{{.Name}}Array(t []TimeRange, values *tsdb.{{.Name}}Array) {
 	for i := range t {
-		values = values.Exclude(t[i].Min, t[i].Max)
+		values.Exclude(t[i].Min, t[i].Max)
 	}
-	return values
 }
 {{ end }}

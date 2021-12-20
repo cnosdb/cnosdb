@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
 	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdatabase/db/models"
 	"go.uber.org/zap"
 )
 
@@ -88,10 +88,10 @@ var OpenCoarseAuthorizer openCoarseAuthorizer
 // It is only supported in CnosDB Enterprise. In OSS it always returns true.
 type FineAuthorizer interface {
 	// AuthorizeSeriesRead determines if a series is authorized for reading
-	AuthorizeSeriesRead(database string, metric []byte, tags models.Tags) bool
+	AuthorizeSeriesRead(database string, measurement []byte, tags models.Tags) bool
 
 	// AuthorizeSeriesWrite determines if a series is authorized for writing
-	AuthorizeSeriesWrite(database string, metric []byte, tags models.Tags) bool
+	AuthorizeSeriesWrite(database string, measurement []byte, tags models.Tags) bool
 
 	// IsOpen guarantees that the other methods of a FineAuthorizer always return true.
 	IsOpen() bool
@@ -105,12 +105,12 @@ type openAuthorizer struct{}
 var OpenAuthorizer = openAuthorizer{}
 
 // AuthorizeSeriesRead allows access to any series.
-func (a openAuthorizer) AuthorizeSeriesRead(database string, metric []byte, tags models.Tags) bool {
+func (a openAuthorizer) AuthorizeSeriesRead(database string, measurement []byte, tags models.Tags) bool {
 	return true
 }
 
 // AuthorizeSeriesWrite allows access to any series.
-func (a openAuthorizer) AuthorizeSeriesWrite(database string, metric []byte, tags models.Tags) bool {
+func (a openAuthorizer) AuthorizeSeriesWrite(database string, measurement []byte, tags models.Tags) bool {
 	return true
 }
 
@@ -132,8 +132,8 @@ type ExecutionOptions struct {
 	// The database the query is running against.
 	Database string
 
-	// The time-to-live the query is running against.
-	TimeToLive string
+	// The retention policy the query is running against.
+	RetentionPolicy string
 
 	// Authorizer handles series-level authorization
 	Authorizer FineAuthorizer
@@ -177,9 +177,9 @@ type StatementExecutor interface {
 
 // StatementNormalizer normalizes a statement before it is executed.
 type StatementNormalizer interface {
-	// NormalizeStatement adds a default database and time-to-live to the
-	// metrics in the statement.
-	NormalizeStatement(stmt cnosql.Statement, database, timeToLive string) error
+	// NormalizeStatement adds a default database and retention policy to the
+	// measurements in the statement.
+	NormalizeStatement(stmt cnosql.Statement, database, retentionPolicy string) error
 }
 
 // Executor executes every statement in an Query.
@@ -289,20 +289,20 @@ LOOP:
 			}
 		}
 
-		// Do not let queries manually use the system metrics. If we find
+		// Do not let queries manually use the system measurements. If we find
 		// one, return an error. This prevents a person from using the
-		// metric incorrectly and causing a panic.
+		// measurement incorrectly and causing a panic.
 		if stmt, ok := stmt.(*cnosql.SelectStatement); ok {
 			for _, s := range stmt.Sources {
 				switch s := s.(type) {
-				case *cnosql.Metric:
+				case *cnosql.Measurement:
 					if cnosql.IsSystemName(s.Name) {
 						command := "the appropriate meta command"
 						switch s.Name {
 						case "_fieldKeys":
 							command = "SHOW FIELD KEYS"
-						case "_metrics":
-							command = "SHOW METRICS"
+						case "_measurements":
+							command = "SHOW MEASUREMENTS"
 						case "_series":
 							command = "SHOW SERIES"
 						case "_tagKeys":
@@ -330,7 +330,7 @@ LOOP:
 
 		// Normalize each statement if possible.
 		if normalizer, ok := e.StatementExecutor.(StatementNormalizer); ok {
-			if err := normalizer.NormalizeStatement(stmt, defaultDB, opt.TimeToLive); err != nil {
+			if err := normalizer.NormalizeStatement(stmt, defaultDB, opt.RetentionPolicy); err != nil {
 				if err := ctx.send(&Result{Err: err}); err == ErrQueryAborted {
 					return
 				}

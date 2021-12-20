@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdatabase/db/query/internal/gota"
 	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdatabase/db/query/internal/gota"
 )
 
 /*

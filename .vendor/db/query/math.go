@@ -17,7 +17,7 @@ func isMathFunction(call *cnosql.Call) bool {
 
 type MathTypeMapper struct{}
 
-func (MathTypeMapper) MapType(metric *cnosql.Metric, field string) cnosql.DataType {
+func (MathTypeMapper) MapType(measurement *cnosql.Measurement, field string) cnosql.DataType {
 	return cnosql.Unknown
 }
 

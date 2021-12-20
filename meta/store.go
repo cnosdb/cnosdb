@@ -17,14 +17,14 @@ import (
 	"github.com/hashicorp/raft"
 )
 
-// Time to live settings.
+// Retention policy settings.
 const (
-	autoCreateTimeToLiveName   = "autogen"
-	autoCreateTimeToLivePeriod = 0
+	autoCreateRetentionPolicyName   = "autogen"
+	autoCreateRetentionPolicyPeriod = 0
 
-	// maxAutoCreatedTimeToLiveReplicaN is the maximum replication factor that will
-	// be set for auto-created time to lives.
-	maxAutoCreatedTimeToLiveReplicaN = 3
+	// maxAutoCreatedRetentionPolicyReplicaN is the maximum replication factor that will
+	// be set for auto-created retention policies.
+	maxAutoCreatedRetentionPolicyReplicaN = 3
 )
 
 // Raft configuration.

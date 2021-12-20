@@ -11,7 +11,7 @@ var NullFloat interface{} = (*float64)(nil)
 
 // Series represents the metadata about a series.
 type Series struct {
-	// Name is the metric name.
+	// Name is the measurement name.
 	Name string
 
 	// Tags for the series.

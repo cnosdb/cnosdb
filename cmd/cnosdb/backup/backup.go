@@ -29,7 +29,7 @@ const (
 	Metafile = "meta"
 
 	// BackupFilePattern is the beginning of the pattern for a backup
-	// file. They follow the scheme <database>.<ttl>.<shardID>.<increment>
+	// file. They follow the scheme <database>.<retention>.<shardID>.<increment>
 	BackupFilePattern = "%s.%s.%05d"
 )
 
@@ -45,11 +45,11 @@ type options struct {
 	Stderr io.Writer
 	Stdout io.Writer
 
-	host       string
-	path       string
-	database   string
-	timeToLive string
-	shardID    string
+	host            string
+	path            string
+	database        string
+	retentionPolicy string
+	shardID         string
 
 	startArg string
 	endArg   string
@@ -125,14 +125,14 @@ func GetCommand() *cobra.Command {
 				if err := env.backupMetastore(); err != nil {
 					return err
 				}
-				err = env.backupShard(env.database, env.timeToLive, env.shardID)
+				err = env.backupShard(env.database, env.retentionPolicy, env.shardID)
 
-			} else if env.timeToLive != "" {
+			} else if env.retentionPolicy != "" {
 				// always backup the metastore
 				if err := env.backupMetastore(); err != nil {
 					return err
 				}
-				err = env.backupTimeToLive()
+				err = env.backupRetentionPolicy()
 			} else if env.database != "" {
 				// always backup the metastore
 				if err := env.backupMetastore(); err != nil {
@@ -145,7 +145,7 @@ func GetCommand() *cobra.Command {
 					return err
 				}
 
-				env.StdoutLogger.Println("No database, time to live or shard ID given. Full meta store backed up.")
+				env.StdoutLogger.Println("No database, retention policy or shard ID given. Full meta store backed up.")
 				if env.portable {
 					env.StdoutLogger.Println("Backing up all databases in portable format")
 					if err := env.backupDatabase(); err != nil {
@@ -181,8 +181,8 @@ func GetCommand() *cobra.Command {
 
 	c.Flags().StringVar(&env.host, "host", "localhost:8088", "CnosDB host to back up from. Optional. Defaults to 127.0.0.1:8088.")
 	c.Flags().StringVar(&env.database, "db", "", "CnosDB database name to back up. Optional. If not specified, all databases are backed up.")
-	c.Flags().StringVar(&env.timeToLive, "ttl", "", "Time-to-live to use for the backup. Optional. If not specified, all time-to-lives are used by default.")
-	c.Flags().StringVar(&env.shardID, "shard", "", "The identifier of the shard to back up. Optional. If specified, '--ttl <ttl_name>' is required.")
+	c.Flags().StringVar(&env.retentionPolicy, "rp", "", "Retention Policy to use for the backup. Optional. If not specified, all retention policies are used by default.")
+	c.Flags().StringVar(&env.shardID, "shard", "", "The identifier of the shard to back up. Optional. If specified, '--rp <rp_name>' is required.")
 	c.Flags().StringVar(&env.startArg, "start", "", "Include all points starting with specified timestamp (RFC3339 format).")
 	c.Flags().StringVar(&env.endArg, "end", "", "Exclude all points after timestamp (RFC3339 format).")
 	c.Flags().BoolVar(&env.continueOnError, "skip-errors", false, "Optional flag to continue backing up the remaining shards when the current shard fails to backup.")
@@ -190,27 +190,27 @@ func GetCommand() *cobra.Command {
 	return c
 }
 
-func (cmd *options) backupShard(db, ttl, sid string) error {
+func (cmd *options) backupShard(db, rp, sid string) error {
 	id, err := strconv.ParseUint(sid, 10, 64)
 	if err != nil {
 		return err
 	}
 
-	shardArchivePath, err := cmd.nextPath(filepath.Join(cmd.path, fmt.Sprintf(backup_util.BackupFilePattern, db, ttl, id)))
+	shardArchivePath, err := cmd.nextPath(filepath.Join(cmd.path, fmt.Sprintf(backup_util.BackupFilePattern, db, rp, id)))
 	if err != nil {
 		return err
 	}
 
-	cmd.StdoutLogger.Printf("backing up db=%v ttl=%v shard=%v to %s with boundaries start=%s, end=%s",
-		db, ttl, sid, shardArchivePath, cmd.start.Format(time.RFC3339), cmd.end.Format(time.RFC3339))
+	cmd.StdoutLogger.Printf("backing up db=%v rp=%v shard=%v to %s with boundaries start=%s, end=%s",
+		db, rp, sid, shardArchivePath, cmd.start.Format(time.RFC3339), cmd.end.Format(time.RFC3339))
 
 	req := &snapshotter.Request{
-		Type:             snapshotter.RequestShardExport,
-		BackupDatabase:   db,
-		BackupTimeToLive: ttl,
-		ShardID:          id,
-		ExportStart:      cmd.start,
-		ExportEnd:        cmd.end,
+		Type:                  snapshotter.RequestShardExport,
+		BackupDatabase:        db,
+		BackupRetentionPolicy: rp,
+		ShardID:               id,
+		ExportStart:           cmd.start,
+		ExportEnd:             cmd.end,
 	}
 
 	// TODO: verify shard backup data
@@ -268,7 +268,7 @@ func (cmd *options) backupShard(db, ttl, sid string) error {
 		}
 		cmd.manifest.Files = append(cmd.manifest.Files, backup_util.Entry{
 			Database:     db,
-			Policy:       ttl,
+			Policy:       rp,
 			ShardID:      shardid,
 			FileName:     filename,
 			Size:         cw.Total,
@@ -290,7 +290,7 @@ func (cmd *options) backupShard(db, ttl, sid string) error {
 }
 
 // backupDatabase will request the database information from the server and then backup
-// every shard in every time to live in the database. Each shard will be written to a separate file.
+// every shard in every retention policy in the database. Each shard will be written to a separate file.
 func (cmd *options) backupDatabase() error {
 	cmd.StdoutLogger.Printf("backing up db=%s", cmd.database)
 
@@ -307,16 +307,16 @@ func (cmd *options) backupDatabase() error {
 	return cmd.backupResponsePaths(response)
 }
 
-// backupTimeToLive will request the time to live information from the server and then backup
-// every shard in the time to live. Each shard will be written to a separate file.
-func (cmd *options) backupTimeToLive() error {
-	cmd.StdoutLogger.Printf("backing up ttl=%s with boundaries start=%s, end=%s",
-		cmd.timeToLive, cmd.start.Format(time.RFC3339), cmd.end.Format(time.RFC3339))
+// backupRetentionPolicy will request the retention policy information from the server and then backup
+// every shard in the retention policy. Each shard will be written to a separate file.
+func (cmd *options) backupRetentionPolicy() error {
+	cmd.StdoutLogger.Printf("backing up rp=%s with boundaries start=%s, end=%s",
+		cmd.retentionPolicy, cmd.start.Format(time.RFC3339), cmd.end.Format(time.RFC3339))
 
 	req := &snapshotter.Request{
-		Type:             snapshotter.RequestTimeToLiveInfo,
-		BackupDatabase:   cmd.database,
-		BackupTimeToLive: cmd.timeToLive,
+		Type:                  snapshotter.RequestRetentionPolicyInfo,
+		BackupDatabase:        cmd.database,
+		BackupRetentionPolicy: cmd.retentionPolicy,
 	}
 
 	response, err := cmd.requestInfo(req)
@@ -332,15 +332,15 @@ func (cmd *options) backupResponsePaths(response *snapshotter.Response) error {
 
 	// loop through the returned paths and back up each shard
 	for _, path := range response.Paths {
-		db, ttl, id, err := backup_util.DBTimeToLiveAndShardFromPath(path)
+		db, rp, id, err := backup_util.DBRetentionAndShardFromPath(path)
 		if err != nil {
 			return err
 		}
 
-		err = cmd.backupShard(db, ttl, id)
+		err = cmd.backupShard(db, rp, id)
 
 		if err != nil && !cmd.continueOnError {
-			cmd.StderrLogger.Printf("error (%s) when backing up db: %s, ttl %s, shard %s. continuing backup on remaining shards", err, db, ttl, id)
+			cmd.StderrLogger.Printf("error (%s) when backing up db: %s, rp %s, shard %s. continuing backup on remaining shards", err, db, rp, id)
 			return err
 		}
 	}
@@ -518,7 +518,7 @@ func (cmd *options) download(req *snapshotter.Request, path string) error {
 	return err
 }
 
-// requestInfo will request the database or time to live information from the host
+// requestInfo will request the database or retention policy information from the host
 func (cmd *options) requestInfo(request *snapshotter.Request) (*snapshotter.Response, error) {
 	// Connect to snapshotter service.
 	var r snapshotter.Response
@@ -561,11 +561,11 @@ Usage: cnosdb backup [options] PATH
   -db <name>
           CnosDB OSS database name to back up. Optional. If not specified, all databases are backed up when
           using '-portable'.
-  -ttl <name>
-          Time to live to use for the backup. Optional. If not specified, all time to lives are used by
+  -rp <name>
+          Retention policy to use for the backup. Optional. If not specified, all retention policies are used by
           default.
   -shard <id>
-          The identifier of the shard to back up. Optional. If specified, '-ttl <ttl_name>' is required.
+          The identifier of the shard to back up. Optional. If specified, '-rp <rp_name>' is required.
   -start <2015-12-24T08:12:23Z>
           Include all points starting with specified timestamp (RFC3339 format).
           Not compatible with '-since <timestamp>'.

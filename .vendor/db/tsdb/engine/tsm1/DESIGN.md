@@ -64,7 +64,7 @@ The file system is organized a directory per shard where each shard is an intege
 
 * a wal directory - contains a set numerically increasing files WAL segment files named #####.wal.  The wal directory is separate from the directory containing the TSM files so that different types can be used if necessary.
 * .tsm files - a set of numerically increasing TSM files containing compressed series data.
-* .tombstone files - files named after the corresponding TSM file as #####.tombstone.  These contain metric and series keys that have been deleted.  These files are removed during compactions.
+* .tombstone files - files named after the corresponding TSM file as #####.tombstone.  These contain measurement and series keys that have been deleted.  These files are removed during compactions.
 
 # Data Flow
 
@@ -76,7 +76,7 @@ Queries are executed by constructing Cursors for keys.  The Cursors iterate over
 
 Updates (writing a newer value for a point that already exists) occur as normal writes.  Since cached values overwrite existing values, newer writes take precedence.
 
-Deletes occur by writing a delete entry for the metric or series to the WAL and then updating the Cache and FileStore.  The Cache evicts all relevant entries.  The FileStore writes a tombstone file for each TSM file that contains relevant data.  These tombstone files are used at startup time to ignore blocks as well as during compactions to remove deleted entries.
+Deletes occur by writing a delete entry for the measurement or series to the WAL and then updating the Cache and FileStore.  The Cache evicts all relevant entries.  The FileStore writes a tombstone file for each TSM file that contains relevant data.  These tombstone files are used at startup time to ignore blocks as well as during compactions to remove deleted entries.
 
 # Compactions
 
@@ -195,9 +195,9 @@ cpu,host=server2 value=2
 memory,host=server1 value=3
 ```
 
-Could be compressed by expanding the key into its respective parts: metric, tag keys, tag values and tag fields .  For each part a unique number is assigned.  e.g.
+Could be compressed by expanding the key into its respective parts: measurement, tag keys, tag values and tag fields .  For each part a unique number is assigned.  e.g.
 
-Metrics
+Measurements
 ```
 cpu = 1
 memory = 2
