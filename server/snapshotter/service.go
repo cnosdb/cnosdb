@@ -330,7 +330,7 @@ func (s *Service) writeDatabaseInfo(conn net.Conn, database string) error {
 	return nil
 }
 
-// writeDatabaseInfo will write the relative paths of all shards in the time to live on
+// writeDatabaseInfo will write the relative paths of all shards in the retention policy on
 // this server into the connection
 func (s *Service) writeRetentionPolicyInfo(conn net.Conn, database, retentionPolicy string) error {
 	res := Response{}
@@ -427,7 +427,7 @@ const (
 	// RequestDatabaseInfo represents a request for database info.
 	RequestDatabaseInfo
 
-	// RequestRetentionPolicyInfo represents a request for time to live info.
+	// RequestRetentionPolicyInfo represents a request for retention policy info.
 	RequestRetentionPolicyInfo
 
 	// RequestShardExport represents a request to export Shard data.  Similar to a backup, but shards
@@ -444,7 +444,7 @@ const (
 )
 
 // Request represents a request for a specific backup or for information
-// about the shards on this server for a database or time to live.
+// about the shards on this server for a database or retention policy.
 type Request struct {
 	Type                   RequestType
 	BackupDatabase         string
@@ -459,7 +459,7 @@ type Request struct {
 }
 
 // Response contains the relative paths for all the shards on this server
-// that are in the requested database or time to live.
+// that are in the requested database or retention policy.
 type Response struct {
 	Paths []string
 }

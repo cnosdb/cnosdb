@@ -39,7 +39,7 @@ type subEntry struct {
 
 // Service manages forking the incoming data from CnosDB
 // to defined third party destinations.
-// Subscriptions are defined per database and time to live.
+// Subscriptions are defined per database and retention policy.
 type Service struct {
 	MetaClient interface {
 		Databases() []meta.DatabaseInfo

@@ -435,7 +435,7 @@ func (c *Client) DropRetentionPolicy(database, name string) error {
 	return nil
 }
 
-// SetDefaultRetentionPolicy sets a database's default time to live.
+// SetDefaultRetentionPolicy sets a database's default retention policy.
 func (c *Client) SetDefaultRetentionPolicy(database, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

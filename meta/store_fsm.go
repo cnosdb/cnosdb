@@ -231,7 +231,7 @@ func (fsm *storeFSM) applyCreateDatabaseCommand(cmd *internal.Command) interface
 			replicaN = 1
 		}
 
-		// Create a time to live.
+		// Create a retention policy.
 		rpi := NewRetentionPolicyInfo(autoCreateRetentionPolicyName)
 		rpi.ReplicaN = replicaN
 		rpi.Duration = autoCreateRetentionPolicyPeriod

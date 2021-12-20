@@ -45,7 +45,7 @@ type BatchPointsConfig struct {
 	// Database is the database to write points to.
 	Database string
 
-	// RetentionPolicy is the time to live of the points.
+	// RetentionPolicy is the retention policy of the points.
 	RetentionPolicy string
 
 	// Write consistency is the number of servers required to confirm write.
