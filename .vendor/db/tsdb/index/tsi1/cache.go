@@ -87,8 +87,8 @@ func (c *TagValueSeriesIDCache) addToSet(name, key, value []byte, x uint64) {
 	}
 }
 
-// metricContainsSets returns true if there are sets cached for the provided metric.
-func (c *TagValueSeriesIDCache) metricContainsSets(name []byte) bool {
+// measurementContainsSets returns true if there are sets cached for the provided measurement.
+func (c *TagValueSeriesIDCache) measurementContainsSets(name []byte) bool {
 	_, ok := c.cache[string(name)]
 	return ok
 }
@@ -134,7 +134,7 @@ func (c *TagValueSeriesIDCache) Put(name, key, value []byte, ss *tsdb.SeriesIDSe
 		goto EVICT
 	}
 
-	// No map for the metric - first tag key for the metric.
+	// No map for the measurement - first tag key for the measurement.
 	c.cache[string(name)] = map[string]map[string]*list.Element{
 		string(key): map[string]*list.Element{string(value): listElement},
 	}
@@ -185,7 +185,7 @@ func (c *TagValueSeriesIDCache) checkEviction() {
 		delete(c.cache[string(name)], string(key))
 	}
 
-	// Check there are no more tag keys for the metric.
+	// Check there are no more tag keys for the measurement.
 	if len(c.cache[string(name)]) == 0 {
 		delete(c.cache, string(name))
 	}

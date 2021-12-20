@@ -68,11 +68,11 @@ func (e *StatementExecutor) ExecuteStatement(ctx *query.ExecutionContext, stmt c
 	var messages []*query.Message
 	var err error
 	switch stmt := stmt.(type) {
-	case *cnosql.AlterTimeToLiveStatement:
+	case *cnosql.AlterRetentionPolicyStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
-		err = e.executeAlterTimeToLiveStatement(stmt)
+		err = e.executeAlterRetentionPolicyStatement(stmt)
 	case *cnosql.CreateContinuousQueryStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
@@ -83,11 +83,11 @@ func (e *StatementExecutor) ExecuteStatement(ctx *query.ExecutionContext, stmt c
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
 		err = e.executeCreateDatabaseStatement(stmt)
-	case *cnosql.CreateTimeToLiveStatement:
+	case *cnosql.CreateRetentionPolicyStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
-		err = e.executeCreateTimeToLiveStatement(stmt)
+		err = e.executeCreateRetentionPolicyStatement(stmt)
 	case *cnosql.CreateSubscriptionStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
@@ -110,21 +110,21 @@ func (e *StatementExecutor) ExecuteStatement(ctx *query.ExecutionContext, stmt c
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
 		err = e.executeDropDatabaseStatement(stmt)
-	case *cnosql.DropMetricStatement:
+	case *cnosql.DropMeasurementStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
-		err = e.executeDropMetricStatement(stmt, ctx.Database)
+		err = e.executeDropMeasurementStatement(stmt, ctx.Database)
 	case *cnosql.DropSeriesStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
 		err = e.executeDropSeriesStatement(stmt, ctx.Database)
-	case *cnosql.DropTimeToLiveStatement:
+	case *cnosql.DropRetentionPolicyStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
 		}
-		err = e.executeDropTimeToLiveStatement(stmt)
+		err = e.executeDropRetentionPolicyStatement(stmt)
 	case *cnosql.DropShardStatement:
 		if ctx.ReadOnly {
 			messages = append(messages, query.ReadOnlyWarning(stmt.String()))
@@ -174,18 +174,18 @@ func (e *StatementExecutor) ExecuteStatement(ctx *query.ExecutionContext, stmt c
 		rows, err = e.executeShowDiagnosticsStatement(stmt)
 	case *cnosql.ShowGrantsForUserStatement:
 		rows, err = e.executeShowGrantsForUserStatement(stmt)
-	case *cnosql.ShowMetricsStatement:
-		return e.executeShowMetricsStatement(ctx, stmt)
-	case *cnosql.ShowMetricCardinalityStatement:
-		rows, err = e.executeShowMetricCardinalityStatement(ctx, stmt)
-	case *cnosql.ShowTimeToLivesStatement:
-		rows, err = e.executeShowTimeToLivesStatement(stmt)
+	case *cnosql.ShowMeasurementsStatement:
+		return e.executeShowMeasurementsStatement(ctx, stmt)
+	case *cnosql.ShowMeasurementCardinalityStatement:
+		rows, err = e.executeShowMeasurementCardinalityStatement(ctx, stmt)
+	case *cnosql.ShowRetentionPoliciesStatement:
+		rows, err = e.executeShowRetentionPoliciesStatement(stmt)
 	case *cnosql.ShowSeriesCardinalityStatement:
 		rows, err = e.executeShowSeriesCardinalityStatement(ctx, stmt)
 	case *cnosql.ShowShardsStatement:
 		rows, err = e.executeShowShardsStatement(stmt)
-	case *cnosql.ShowRegionsStatement:
-		rows, err = e.executeShowRegionsStatement(stmt)
+	case *cnosql.ShowShardGroupsStatement:
+		rows, err = e.executeShowShardGroupsStatement(stmt)
 	case *cnosql.ShowStatsStatement:
 		rows, err = e.executeShowStatsStatement(stmt)
 	case *cnosql.ShowSubscriptionsStatement:
@@ -218,38 +218,38 @@ func (e *StatementExecutor) ExecuteStatement(ctx *query.ExecutionContext, stmt c
 	})
 }
 
-func (e *StatementExecutor) executeAlterTimeToLiveStatement(stmt *cnosql.AlterTimeToLiveStatement) error {
-	ttlu := &meta.TimeToLiveUpdate{
-		Duration:       stmt.Duration,
-		ReplicaN:       stmt.Replication,
-		RegionDuration: stmt.RegionDuration,
+func (e *StatementExecutor) executeAlterRetentionPolicyStatement(stmt *cnosql.AlterRetentionPolicyStatement) error {
+	rpu := &meta.RetentionPolicyUpdate{
+		Duration:           stmt.Duration,
+		ReplicaN:           stmt.Replication,
+		ShardGroupDuration: stmt.ShardGroupDuration,
 	}
 
-	// Update the time-to-live.
-	return e.MetaClient.UpdateTimeToLive(stmt.Database, stmt.Name, ttlu, stmt.Default)
+	// Update the retention policy.
+	return e.MetaClient.UpdateRetentionPolicy(stmt.Database, stmt.Name, rpu, stmt.Default)
 }
 
 func (e *StatementExecutor) executeCreateContinuousQueryStatement(q *cnosql.CreateContinuousQueryStatement) error {
-	// Verify that time-to-lives exist.
+	// Verify that retention policies exist.
 	var err error
-	verifyTTLFn := func(n cnosql.Node) {
+	verifyRPFn := func(n cnosql.Node) {
 		if err != nil {
 			return
 		}
 		switch m := n.(type) {
-		case *cnosql.Metric:
-			var ttl *meta.TimeToLiveInfo
-			if ttl, err = e.MetaClient.TimeToLive(m.Database, m.TimeToLive); err != nil {
+		case *cnosql.Measurement:
+			var rp *meta.RetentionPolicyInfo
+			if rp, err = e.MetaClient.RetentionPolicy(m.Database, m.RetentionPolicy); err != nil {
 				return
-			} else if ttl == nil {
-				err = fmt.Errorf("%s: %s.%s", meta.ErrTimeToLiveNotFound, m.Database, m.TimeToLive)
+			} else if rp == nil {
+				err = fmt.Errorf("%s: %s.%s", meta.ErrRetentionPolicyNotFound, m.Database, m.RetentionPolicy)
 			}
 		default:
 			return
 		}
 	}
 
-	cnosql.WalkFunc(q, verifyTTLFn)
+	cnosql.WalkFunc(q, verifyRPFn)
 
 	if err != nil {
 		return err
@@ -265,50 +265,50 @@ func (e *StatementExecutor) executeCreateDatabaseStatement(stmt *cnosql.CreateDa
 		return meta.ErrInvalidName
 	}
 
-	if !stmt.TimeToLiveCreate {
+	if !stmt.RetentionPolicyCreate {
 		_, err := e.MetaClient.CreateDatabase(stmt.Name)
 		return err
 	}
 
 	// If we're doing, for example, CREATE DATABASE "db" WITH DURATION 1d then
 	// the name will not yet be set. We only need to validate non-empty
-	// time-to-live names, such as in the statement:
+	// retention policy names, such as in the statement:
 	// 	CREATE DATABASE "db" WITH DURATION 1d NAME "xyz"
-	if stmt.TimeToLiveName != "" && !meta.ValidName(stmt.TimeToLiveName) {
+	if stmt.RetentionPolicyName != "" && !meta.ValidName(stmt.RetentionPolicyName) {
 		return meta.ErrInvalidName
 	}
 
-	spec := meta.TimeToLiveSpec{
-		Name:           stmt.TimeToLiveName,
-		Duration:       stmt.TimeToLiveDuration,
-		ReplicaN:       stmt.TimeToLiveReplication,
-		RegionDuration: stmt.TimeToLiveRegionDuration,
+	spec := meta.RetentionPolicySpec{
+		Name:               stmt.RetentionPolicyName,
+		Duration:           stmt.RetentionPolicyDuration,
+		ReplicaN:           stmt.RetentionPolicyReplication,
+		ShardGroupDuration: stmt.RetentionPolicyShardGroupDuration,
 	}
-	_, err := e.MetaClient.CreateDatabaseWithTimeToLive(stmt.Name, &spec)
+	_, err := e.MetaClient.CreateDatabaseWithRetentionPolicy(stmt.Name, &spec)
 	return err
 }
 
-func (e *StatementExecutor) executeCreateTimeToLiveStatement(stmt *cnosql.CreateTimeToLiveStatement) error {
+func (e *StatementExecutor) executeCreateRetentionPolicyStatement(stmt *cnosql.CreateRetentionPolicyStatement) error {
 	if !meta.ValidName(stmt.Name) {
-		// TODO This should probably be in `(*meta.Data).CreateTimeToLive`
+		// TODO This should probably be in `(*meta.Data).CreateRetentionPolicy`
 		// but can't go there until 1.1 is used everywhere
 		return meta.ErrInvalidName
 	}
 
-	spec := meta.TimeToLiveSpec{
-		Name:           stmt.Name,
-		Duration:       &stmt.Duration,
-		ReplicaN:       &stmt.Replication,
-		RegionDuration: stmt.RegionDuration,
+	spec := meta.RetentionPolicySpec{
+		Name:               stmt.Name,
+		Duration:           &stmt.Duration,
+		ReplicaN:           &stmt.Replication,
+		ShardGroupDuration: stmt.ShardGroupDuration,
 	}
 
-	// Create new time-to-live.
-	_, err := e.MetaClient.CreateTimeToLive(stmt.Database, &spec, stmt.Default)
+	// Create new retention policy.
+	_, err := e.MetaClient.CreateRetentionPolicy(stmt.Database, &spec, stmt.Default)
 	return err
 }
 
 func (e *StatementExecutor) executeCreateSubscriptionStatement(q *cnosql.CreateSubscriptionStatement) error {
-	return e.MetaClient.CreateSubscription(q.Database, q.TimeToLive, q.Name, q.Mode, q.Destinations)
+	return e.MetaClient.CreateSubscription(q.Database, q.RetentionPolicy, q.Name, q.Mode, q.Destinations)
 }
 
 func (e *StatementExecutor) executeCreateUserStatement(q *cnosql.CreateUserStatement) error {
@@ -349,13 +349,13 @@ func (e *StatementExecutor) executeDropDatabaseStatement(stmt *cnosql.DropDataba
 	return e.MetaClient.DropDatabase(stmt.Name)
 }
 
-func (e *StatementExecutor) executeDropMetricStatement(stmt *cnosql.DropMetricStatement, database string) error {
+func (e *StatementExecutor) executeDropMeasurementStatement(stmt *cnosql.DropMeasurementStatement, database string) error {
 	if dbi := e.MetaClient.Database(database); dbi == nil {
 		return query.ErrDatabaseNotFound(database)
 	}
 
-	// Locally drop the metric
-	return e.TSDBStore.DeleteMetric(database, stmt.Name)
+	// Locally drop the measurement
+	return e.TSDBStore.DeleteMeasurement(database, stmt.Name)
 }
 
 func (e *StatementExecutor) executeDropSeriesStatement(stmt *cnosql.DropSeriesStatement, database string) error {
@@ -382,26 +382,26 @@ func (e *StatementExecutor) executeDropShardStatement(stmt *cnosql.DropShardStat
 	return e.MetaClient.DropShard(stmt.ID)
 }
 
-func (e *StatementExecutor) executeDropTimeToLiveStatement(stmt *cnosql.DropTimeToLiveStatement) error {
+func (e *StatementExecutor) executeDropRetentionPolicyStatement(stmt *cnosql.DropRetentionPolicyStatement) error {
 	dbi := e.MetaClient.Database(stmt.Database)
 	if dbi == nil {
 		return nil
 	}
 
-	if dbi.TimeToLive(stmt.Name) == nil {
+	if dbi.RetentionPolicy(stmt.Name) == nil {
 		return nil
 	}
 
-	// Locally drop the time-to-live.
-	if err := e.TSDBStore.DeleteTimeToLive(stmt.Database, stmt.Name); err != nil {
+	// Locally drop the retention policy.
+	if err := e.TSDBStore.DeleteRetentionPolicy(stmt.Database, stmt.Name); err != nil {
 		return err
 	}
 
-	return e.MetaClient.DropTimeToLive(stmt.Database, stmt.Name)
+	return e.MetaClient.DropRetentionPolicy(stmt.Database, stmt.Name)
 }
 
 func (e *StatementExecutor) executeDropSubscriptionStatement(q *cnosql.DropSubscriptionStatement) error {
-	return e.MetaClient.DropSubscription(q.Database, q.TimeToLive, q.Name)
+	return e.MetaClient.DropSubscription(q.Database, q.RetentionPolicy, q.Name)
 }
 
 func (e *StatementExecutor) executeDropUserStatement(q *cnosql.DropUserStatement) error {
@@ -485,7 +485,7 @@ CLEANUP:
 		return nil, err
 	}
 
-	// close auxiliary iterators deterministically to finalize any captured metrics
+	// close auxiliary iterators deterministically to finalize any captured measurements
 	aux.Close()
 
 	totalTime := time.Since(start)
@@ -554,7 +554,7 @@ func (e *StatementExecutor) executeSelectStatement(ctx *query.ExecutionContext, 
 
 	var pointsWriter *BufferedPointsWriter
 	if stmt.Target != nil {
-		pointsWriter = NewBufferedPointsWriter(e.PointsWriter, stmt.Target.Metric.Database, stmt.Target.Metric.TimeToLive, 10000)
+		pointsWriter = NewBufferedPointsWriter(e.PointsWriter, stmt.Target.Measurement.Database, stmt.Target.Measurement.RetentionPolicy, 10000)
 	}
 
 	for {
@@ -711,12 +711,12 @@ func (e *StatementExecutor) executeShowGrantsForUserStatement(q *cnosql.ShowGran
 	return []*models.Row{row}, nil
 }
 
-func (e *StatementExecutor) executeShowMetricsStatement(ctx *query.ExecutionContext, q *cnosql.ShowMetricsStatement) error {
+func (e *StatementExecutor) executeShowMeasurementsStatement(ctx *query.ExecutionContext, q *cnosql.ShowMeasurementsStatement) error {
 	if q.Database == "" {
 		return ErrDatabaseNameRequired
 	}
 
-	names, err := e.TSDBStore.MetricNames(ctx.Authorizer, q.Database, q.Condition)
+	names, err := e.TSDBStore.MeasurementNames(ctx.Authorizer, q.Database, q.Condition)
 	if err != nil || len(names) == 0 {
 		return ctx.Send(&query.Result{
 			Err: err,
@@ -748,19 +748,19 @@ func (e *StatementExecutor) executeShowMetricsStatement(ctx *query.ExecutionCont
 
 	return ctx.Send(&query.Result{
 		Series: []*models.Row{{
-			Name:    "metrics",
+			Name:    "measurements",
 			Columns: []string{"name"},
 			Values:  values,
 		}},
 	})
 }
 
-func (e *StatementExecutor) executeShowMetricCardinalityStatement(ctx *query.ExecutionContext, stmt *cnosql.ShowMetricCardinalityStatement) (models.Rows, error) {
+func (e *StatementExecutor) executeShowMeasurementCardinalityStatement(ctx *query.ExecutionContext, stmt *cnosql.ShowMeasurementCardinalityStatement) (models.Rows, error) {
 	if stmt.Database == "" {
 		return nil, ErrDatabaseNameRequired
 	}
 
-	n, err := e.TSDBStore.MetricsCardinality(stmt.Database)
+	n, err := e.TSDBStore.MeasurementsCardinality(stmt.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -771,7 +771,7 @@ func (e *StatementExecutor) executeShowMetricCardinalityStatement(ctx *query.Exe
 	}}, nil
 }
 
-func (e *StatementExecutor) executeShowTimeToLivesStatement(q *cnosql.ShowTimeToLivesStatement) (models.Rows, error) {
+func (e *StatementExecutor) executeShowRetentionPoliciesStatement(q *cnosql.ShowRetentionPoliciesStatement) (models.Rows, error) {
 	if q.Database == "" {
 		return nil, ErrDatabaseNameRequired
 	}
@@ -781,9 +781,9 @@ func (e *StatementExecutor) executeShowTimeToLivesStatement(q *cnosql.ShowTimeTo
 		return nil, cnosdb.ErrDatabaseNotFound(q.Database)
 	}
 
-	row := &models.Row{Columns: []string{"name", "duration", "regionDuration", "replicaN", "default"}}
-	for _, ttli := range di.TimeToLives {
-		row.Values = append(row.Values, []interface{}{ttli.Name, ttli.Duration.String(), ttli.RegionDuration.String(), ttli.ReplicaN, di.DefaultTimeToLive == ttli.Name})
+	row := &models.Row{Columns: []string{"name", "duration", "groupDuration", "replicaN", "default"}}
+	for _, rpi := range di.RetentionPolicies {
+		row.Values = append(row.Values, []interface{}{rpi.Name, rpi.Duration.String(), rpi.ShardGroupDuration.String(), rpi.ReplicaN, di.DefaultRetentionPolicy == rpi.Name})
 	}
 	return []*models.Row{row}, nil
 }
@@ -793,10 +793,10 @@ func (e *StatementExecutor) executeShowShardsStatement(stmt *cnosql.ShowShardsSt
 
 	rows := []*models.Row{}
 	for _, di := range dis {
-		row := &models.Row{Columns: []string{"id", "database", "ttl", "region", "start_time", "end_time", "expiry_time", "owners"}, Name: di.Name}
-		for _, ttli := range di.TimeToLives {
-			for _, sgi := range ttli.Regions {
-				// Shards associated with deleted regions are effectively deleted.
+		row := &models.Row{Columns: []string{"id", "database", "rp", "shard_group", "start_time", "end_time", "expiry_time", "owners"}, Name: di.Name}
+		for _, rpi := range di.RetentionPolicies {
+			for _, sgi := range rpi.ShardGroups {
+				// Shards associated with deleted shard groups are effectively deleted.
 				// Don't list them.
 				if sgi.Deleted() {
 					continue
@@ -811,11 +811,11 @@ func (e *StatementExecutor) executeShowShardsStatement(stmt *cnosql.ShowShardsSt
 					row.Values = append(row.Values, []interface{}{
 						si.ID,
 						di.Name,
-						ttli.Name,
+						rpi.Name,
 						sgi.ID,
 						sgi.StartTime.UTC().Format(time.RFC3339),
 						sgi.EndTime.UTC().Format(time.RFC3339),
-						sgi.EndTime.Add(ttli.Duration).UTC().Format(time.RFC3339),
+						sgi.EndTime.Add(rpi.Duration).UTC().Format(time.RFC3339),
 						joinUint64(ownerIDs),
 					})
 				}
@@ -842,14 +842,14 @@ func (e *StatementExecutor) executeShowSeriesCardinalityStatement(ctx *query.Exe
 	}}, nil
 }
 
-func (e *StatementExecutor) executeShowRegionsStatement(stmt *cnosql.ShowRegionsStatement) (models.Rows, error) {
+func (e *StatementExecutor) executeShowShardGroupsStatement(stmt *cnosql.ShowShardGroupsStatement) (models.Rows, error) {
 	dis := e.MetaClient.Databases()
 
-	row := &models.Row{Columns: []string{"id", "database", "ttl", "start_time", "end_time", "expiry_time"}, Name: "regions"}
+	row := &models.Row{Columns: []string{"id", "database", "rp", "start_time", "end_time", "expiry_time"}, Name: "shard groups"}
 	for _, di := range dis {
-		for _, ttli := range di.TimeToLives {
-			for _, sgi := range ttli.Regions {
-				// Shards associated with deleted regions are effectively deleted.
+		for _, rpi := range di.RetentionPolicies {
+			for _, sgi := range rpi.ShardGroups {
+				// Shards associated with deleted shard groups are effectively deleted.
 				// Don't list them.
 				if sgi.Deleted() {
 					continue
@@ -858,10 +858,10 @@ func (e *StatementExecutor) executeShowRegionsStatement(stmt *cnosql.ShowRegions
 				row.Values = append(row.Values, []interface{}{
 					sgi.ID,
 					di.Name,
-					ttli.Name,
+					rpi.Name,
 					sgi.StartTime.UTC().Format(time.RFC3339),
 					sgi.EndTime.UTC().Format(time.RFC3339),
-					sgi.EndTime.Add(ttli.Duration).UTC().Format(time.RFC3339),
+					sgi.EndTime.Add(rpi.Duration).UTC().Format(time.RFC3339),
 				})
 			}
 		}
@@ -874,7 +874,7 @@ func (e *StatementExecutor) executeShowStatsStatement(stmt *cnosql.ShowStatsStat
 	var rows []*models.Row
 
 	if _, ok := e.TSDBStore.(*tsdb.Store); stmt.Module == "indexes" && ok {
-		// The cost of collecting indexes metrics grows with the size of the indexes, so only collect this
+		// The cost of collecting indexes measurements grows with the size of the indexes, so only collect this
 		// stat when explicitly requested.
 		b := e.TSDBStore.(*tsdb.Store).IndexBytes()
 		row := &models.Row{
@@ -913,10 +913,10 @@ func (e *StatementExecutor) executeShowSubscriptionsStatement(stmt *cnosql.ShowS
 
 	rows := []*models.Row{}
 	for _, di := range dis {
-		row := &models.Row{Columns: []string{"ttl", "name", "mode", "destinations"}, Name: di.Name}
-		for _, ttli := range di.TimeToLives {
-			for _, si := range ttli.Subscriptions {
-				row.Values = append(row.Values, []interface{}{ttli.Name, si.Name, si.Mode, si.Destinations})
+		row := &models.Row{Columns: []string{"rp", "name", "mode", "destinations"}, Name: di.Name}
+		for _, rpi := range di.RetentionPolicies {
+			for _, si := range rpi.Subscriptions {
+				row.Values = append(row.Values, []interface{}{rpi.Name, si.Name, si.Mode, si.Destinations})
 			}
 		}
 		if len(row.Values) > 0 {
@@ -932,7 +932,7 @@ func (e *StatementExecutor) executeShowTagKeys(ctx *query.ExecutionContext, q *c
 	}
 
 	// Determine shard set based on database and time range.
-	// SHOW TAG KEYS returns all tag keys for the default time-to-live.
+	// SHOW TAG KEYS returns all tag keys for the default retention policy.
 	di := e.MetaClient.Database(q.Database)
 	if di == nil {
 		return fmt.Errorf("database not found: %s", q.Database)
@@ -946,10 +946,10 @@ func (e *StatementExecutor) executeShowTagKeys(ctx *query.ExecutionContext, q *c
 		return err
 	}
 
-	// Get all shards for all time-to-lives.
-	var allGroups []meta.RegionInfo
-	for _, ttli := range di.TimeToLives {
-		sgis, err := e.MetaClient.RegionsByTimeRange(q.Database, ttli.Name, timeRange.MinTime(), timeRange.MaxTime())
+	// Get all shards for all retention policies.
+	var allGroups []meta.ShardGroupInfo
+	for _, rpi := range di.RetentionPolicies {
+		sgis, err := e.MetaClient.ShardGroupsByTimeRange(q.Database, rpi.Name, timeRange.MinTime(), timeRange.MaxTime())
 		if err != nil {
 			return err
 		}
@@ -990,7 +990,7 @@ func (e *StatementExecutor) executeShowTagKeys(ctx *query.ExecutionContext, q *c
 		}
 
 		row := &models.Row{
-			Name:    m.Metric,
+			Name:    m.Measurement,
 			Columns: []string{"tagKey"},
 			Values:  make([][]interface{}, len(keys)),
 		}
@@ -1019,7 +1019,7 @@ func (e *StatementExecutor) executeShowTagValues(ctx *query.ExecutionContext, q 
 	}
 
 	// Determine shard set based on database and time range.
-	// SHOW TAG VALUES returns all tag values for the default time-to-live.
+	// SHOW TAG VALUES returns all tag values for the default retention policy.
 	di := e.MetaClient.Database(q.Database)
 	if di == nil {
 		return fmt.Errorf("database not found: %s", q.Database)
@@ -1033,10 +1033,10 @@ func (e *StatementExecutor) executeShowTagValues(ctx *query.ExecutionContext, q 
 		return err
 	}
 
-	// Get all shards for all time-to-lives.
-	var allGroups []meta.RegionInfo
-	for _, ttli := range di.TimeToLives {
-		sgis, err := e.MetaClient.RegionsByTimeRange(q.Database, ttli.Name, timeRange.MinTime(), timeRange.MaxTime())
+	// Get all shards for all retention policies.
+	var allGroups []meta.ShardGroupInfo
+	for _, rpi := range di.RetentionPolicies {
+		sgis, err := e.MetaClient.ShardGroupsByTimeRange(q.Database, rpi.Name, timeRange.MinTime(), timeRange.MaxTime())
 		if err != nil {
 			return err
 		}
@@ -1078,7 +1078,7 @@ func (e *StatementExecutor) executeShowTagValues(ctx *query.ExecutionContext, q 
 		}
 
 		row := &models.Row{
-			Name:    m.Metric,
+			Name:    m.Measurement,
 			Columns: []string{"key", "value"},
 			Values:  make([][]interface{}, len(values)),
 		}
@@ -1112,27 +1112,27 @@ func (e *StatementExecutor) executeShowUsersStatement(q *cnosql.ShowUsersStateme
 // BufferedPointsWriter adds buffering to a pointsWriter so that SELECT INTO queries
 // write their points to the destination in batches.
 type BufferedPointsWriter struct {
-	w          pointsWriter
-	buf        []models.Point
-	database   string
-	timeToLive string
+	w               pointsWriter
+	buf             []models.Point
+	database        string
+	retentionPolicy string
 }
 
 // NewBufferedPointsWriter returns a new BufferedPointsWriter.
-func NewBufferedPointsWriter(w pointsWriter, database, timeToLive string, capacity int) *BufferedPointsWriter {
+func NewBufferedPointsWriter(w pointsWriter, database, retentionPolicy string, capacity int) *BufferedPointsWriter {
 	return &BufferedPointsWriter{
-		w:          w,
-		buf:        make([]models.Point, 0, capacity),
-		database:   database,
-		timeToLive: timeToLive,
+		w:               w,
+		buf:             make([]models.Point, 0, capacity),
+		database:        database,
+		retentionPolicy: retentionPolicy,
 	}
 }
 
 // WritePointsInto implements pointsWriter for BufferedPointsWriter.
 func (w *BufferedPointsWriter) WritePointsInto(req *IntoWriteRequest) error {
 	// Make sure we're buffering points only for the expected destination.
-	if req.Database != w.database || req.TimeToLive != w.timeToLive {
-		return fmt.Errorf("writer for %s.%s can't write into %s.%s", w.database, w.timeToLive, req.Database, req.TimeToLive)
+	if req.Database != w.database || req.RetentionPolicy != w.retentionPolicy {
+		return fmt.Errorf("writer for %s.%s can't write into %s.%s", w.database, w.retentionPolicy, req.Database, req.RetentionPolicy)
 	}
 
 	for i := 0; i < len(req.Points); {
@@ -1169,9 +1169,9 @@ func (w *BufferedPointsWriter) Flush() error {
 	}
 
 	if err := w.w.WritePointsInto(&IntoWriteRequest{
-		Database:   w.database,
-		TimeToLive: w.timeToLive,
-		Points:     w.buf,
+		Database:        w.database,
+		RetentionPolicy: w.retentionPolicy,
+		Points:          w.buf,
 	}); err != nil {
 		return err
 	}
@@ -1189,7 +1189,7 @@ func (w *BufferedPointsWriter) Len() int { return len(w.buf) }
 func (w *BufferedPointsWriter) Cap() int { return cap(w.buf) }
 
 func (e *StatementExecutor) writeInto(w pointsWriter, stmt *cnosql.SelectStatement, row *models.Row) (n int64, err error) {
-	if stmt.Target.Metric.Database == "" {
+	if stmt.Target.Measurement.Database == "" {
 		return 0, errNoDatabaseInTarget
 	}
 
@@ -1200,7 +1200,7 @@ func (e *StatementExecutor) writeInto(w pointsWriter, stmt *cnosql.SelectStateme
 	// it might seem weird to have the write be in the Executor, but the interweaving of
 	// limitedRowWriter and ExecuteAggregate/Raw makes it ridiculously hard to make sure that the
 	// results will be the same as when queried normally.
-	name := stmt.Target.Metric.Name
+	name := stmt.Target.Measurement.Name
 	if name == "" {
 		name = row.Name
 	}
@@ -1211,9 +1211,9 @@ func (e *StatementExecutor) writeInto(w pointsWriter, stmt *cnosql.SelectStateme
 	}
 
 	if err := w.WritePointsInto(&IntoWriteRequest{
-		Database:   stmt.Target.Metric.Database,
-		TimeToLive: stmt.Target.Metric.TimeToLive,
-		Points:     points,
+		Database:        stmt.Target.Measurement.Database,
+		RetentionPolicy: stmt.Target.Measurement.RetentionPolicy,
+		Points:          points,
 	}); err != nil {
 		return 0, err
 	}
@@ -1224,7 +1224,7 @@ func (e *StatementExecutor) writeInto(w pointsWriter, stmt *cnosql.SelectStateme
 var errNoDatabaseInTarget = errors.New("no database in target")
 
 // convertRowToPoints will convert a query result Row into Points that can be written back in.
-func convertRowToPoints(metricName string, row *models.Row) ([]models.Point, error) {
+func convertRowToPoints(measurementName string, row *models.Row) ([]models.Point, error) {
 	// figure out which parts of the result are the time and which are the fields
 	timeIndex := -1
 	fieldIndexes := make(map[string]int)
@@ -1254,7 +1254,7 @@ func convertRowToPoints(metricName string, row *models.Row) ([]models.Point, err
 			}
 		}
 
-		p, err := models.NewPoint(metricName, models.NewTags(row.Tags), vals, v[timeIndex].(time.Time))
+		p, err := models.NewPoint(measurementName, models.NewTags(row.Tags), vals, v[timeIndex].(time.Time))
 		if err != nil {
 			// Drop points that can't be stored
 			continue
@@ -1266,19 +1266,19 @@ func convertRowToPoints(metricName string, row *models.Row) ([]models.Point, err
 	return points, nil
 }
 
-// NormalizeStatement adds a default database and time-to-live to the metrics in statement.
-// Parameter defaultTimeToLive can be "".
-func (e *StatementExecutor) NormalizeStatement(stmt cnosql.Statement, defaultDatabase, defaultTimeToLive string) (err error) {
+// NormalizeStatement adds a default database and retention policy to the measurements in statement.
+// Parameter defaultRetentionPolicy can be "".
+func (e *StatementExecutor) NormalizeStatement(stmt cnosql.Statement, defaultDatabase, defaultRetentionPolicy string) (err error) {
 	cnosql.WalkFunc(stmt, func(node cnosql.Node) {
 		if err != nil {
 			return
 		}
 		switch node := node.(type) {
-		case *cnosql.ShowTimeToLivesStatement:
+		case *cnosql.ShowRetentionPoliciesStatement:
 			if node.Database == "" {
 				node.Database = defaultDatabase
 			}
-		case *cnosql.ShowMetricsStatement:
+		case *cnosql.ShowMeasurementsStatement:
 			if node.Database == "" {
 				node.Database = defaultDatabase
 			}
@@ -1290,7 +1290,7 @@ func (e *StatementExecutor) NormalizeStatement(stmt cnosql.Statement, defaultDat
 			if node.Database == "" {
 				node.Database = defaultDatabase
 			}
-		case *cnosql.ShowMetricCardinalityStatement:
+		case *cnosql.ShowMeasurementCardinalityStatement:
 			if node.Database == "" {
 				node.Database = defaultDatabase
 			}
@@ -1298,27 +1298,27 @@ func (e *StatementExecutor) NormalizeStatement(stmt cnosql.Statement, defaultDat
 			if node.Database == "" {
 				node.Database = defaultDatabase
 			}
-		case *cnosql.Metric:
+		case *cnosql.Measurement:
 			switch stmt.(type) {
 			case *cnosql.DropSeriesStatement, *cnosql.DeleteSeriesStatement:
-				// DB and TTL not supported by these statements so don't rewrite into invalid
+				// DB and RP not supported by these statements so don't rewrite into invalid
 				// statements
 			default:
-				err = e.normalizeMetric(node, defaultDatabase, defaultTimeToLive)
+				err = e.normalizeMeasurement(node, defaultDatabase, defaultRetentionPolicy)
 			}
 		}
 	})
 	return
 }
 
-func (e *StatementExecutor) normalizeMetric(m *cnosql.Metric, defaultDatabase, defaultTimeToLive string) error {
-	// Targets (metrics in an INTO clause) can have blank names, which means it will be
-	// the same as the metric name it came from in the FROM clause.
+func (e *StatementExecutor) normalizeMeasurement(m *cnosql.Measurement, defaultDatabase, defaultRetentionPolicy string) error {
+	// Targets (measurements in an INTO clause) can have blank names, which means it will be
+	// the same as the measurement name it came from in the FROM clause.
 	if !m.IsTarget && m.Name == "" && m.SystemIterator == "" && m.Regex == nil {
-		return errors.New("invalid metric")
+		return errors.New("invalid measurement")
 	}
 
-	// Metric does not have an explicit database? Insert default.
+	// Measurement does not have an explicit database? Insert default.
 	if m.Database == "" {
 		m.Database = defaultDatabase
 	}
@@ -1334,14 +1334,14 @@ func (e *StatementExecutor) normalizeMetric(m *cnosql.Metric, defaultDatabase, d
 		return cnosdb.ErrDatabaseNotFound(m.Database)
 	}
 
-	// If no time-to-live was specified, use the default.
-	if m.TimeToLive == "" {
-		if defaultTimeToLive != "" {
-			m.TimeToLive = defaultTimeToLive
-		} else if di.DefaultTimeToLive != "" {
-			m.TimeToLive = di.DefaultTimeToLive
+	// If no retention policy was specified, use the default.
+	if m.RetentionPolicy == "" {
+		if defaultRetentionPolicy != "" {
+			m.RetentionPolicy = defaultRetentionPolicy
+		} else if di.DefaultRetentionPolicy != "" {
+			m.RetentionPolicy = di.DefaultRetentionPolicy
 		} else {
-			return fmt.Errorf("default time-to-live not set for: %s", di.Name)
+			return fmt.Errorf("default retention policy not set for: %s", di.Name)
 		}
 	}
 	return nil
@@ -1349,33 +1349,33 @@ func (e *StatementExecutor) normalizeMetric(m *cnosql.Metric, defaultDatabase, d
 
 // IntoWriteRequest is a partial copy of cluster.WriteRequest
 type IntoWriteRequest struct {
-	Database   string
-	TimeToLive string
-	Points     []models.Point
+	Database        string
+	RetentionPolicy string
+	Points          []models.Point
 }
 
 // TSDBStore is an interface for accessing the time series data store.
 type TSDBStore interface {
-	CreateShard(database, ttl string, shardID uint64, enabled bool) error
+	CreateShard(database, rp string, shardID uint64, enabled bool) error
 	WriteToShard(shardID uint64, points []models.Point) error
 
 	RestoreShard(id uint64, r io.Reader) error
 	BackupShard(id uint64, since time.Time, w io.Writer) error
 
 	DeleteDatabase(name string) error
-	DeleteMetric(database, name string) error
-	DeleteTimeToLive(database, name string) error
+	DeleteMeasurement(database, name string) error
+	DeleteRetentionPolicy(database, name string) error
 	DeleteSeries(database string, sources []cnosql.Source, condition cnosql.Expr) error
 	DeleteShard(id uint64) error
 
-	MetricNames(auth query.FineAuthorizer, database string, cond cnosql.Expr) ([][]byte, error)
+	MeasurementNames(auth query.FineAuthorizer, database string, cond cnosql.Expr) ([][]byte, error)
 	TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosql.Expr) ([]tsdb.TagKeys, error)
 	TagValues(auth query.FineAuthorizer, shardIDs []uint64, cond cnosql.Expr) ([]tsdb.TagValues, error)
 
 	SeriesCardinality(database string) (int64, error)
-	MetricsCardinality(database string) (int64, error)
+	MeasurementsCardinality(database string) (int64, error)
 
-	Region(ids []uint64) tsdb.Region
+	ShardGroup(ids []uint64) tsdb.ShardGroup
 }
 
 var _ TSDBStore = LocalTSDBStore{}

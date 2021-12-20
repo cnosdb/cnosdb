@@ -49,7 +49,7 @@ func TestParser_ParseQuery_SkipComments(t *testing.T) {
 
 /* create continuous query */
 CREATE CONTINUOUS QUERY cq0 ON db0 BEGIN
-	SELECT mean(*) INTO db1..:METRIC FROM cpu GROUP BY time(5m)
+	SELECT mean(*) INTO db1..:MEASUREMENT FROM cpu GROUP BY time(5m)
 END;
 
 /* just a multline comment
@@ -101,7 +101,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Wildcard{}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 		{
@@ -111,7 +111,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Wildcard{}},
 				},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{{Expr: &cnosql.Wildcard{}}},
 			},
 		},
@@ -123,7 +123,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.VarRef{Val: "field1"}},
 					{Expr: &cnosql.Wildcard{}},
 				},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{{Expr: &cnosql.Wildcard{}}},
 			},
 		},
@@ -135,7 +135,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Wildcard{}},
 					{Expr: &cnosql.VarRef{Val: "field1"}},
 				},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{{Expr: &cnosql.Wildcard{}}},
 			},
 		},
@@ -150,7 +150,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Call{Name: "sum", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field2"}}}},
 					{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field3"}}}, Alias: "field_x"},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Condition: &cnosql.BinaryExpr{
 					Op: cnosql.AND,
 					LHS: &cnosql.BinaryExpr{
@@ -179,7 +179,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.VarRef{Val: "foo.bar.baz"}, Alias: "foo"},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 		{
@@ -189,7 +189,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.VarRef{Val: "foo.bar.baz"}, Alias: "foo"},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "foo"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "foo"}},
 			},
 		},
 
@@ -201,7 +201,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "sample", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.IntegerLiteral{Val: 100}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -213,7 +213,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "derivative", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.DurationLiteral{Val: time.Hour}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -224,7 +224,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "derivative", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.DurationLiteral{Val: time.Hour}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -259,7 +259,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					},
 				},
 				Sources: []cnosql.Source{
-					&cnosql.Metric{Name: "myseries"},
+					&cnosql.Measurement{Name: "myseries"},
 				},
 			},
 		},
@@ -272,7 +272,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "difference", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -295,7 +295,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{
 					{
 						Expr: &cnosql.Call{
@@ -322,7 +322,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "non_negative_difference", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -345,7 +345,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{
 					{
 						Expr: &cnosql.Call{
@@ -372,7 +372,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "moving_average", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.IntegerLiteral{Val: 3}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -396,7 +396,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{
 					{
 						Expr: &cnosql.Call{
@@ -429,7 +429,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -456,7 +456,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{
 					{
 						Expr: &cnosql.Call{
@@ -505,7 +505,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -542,7 +542,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -571,7 +571,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{
 					{
 						Expr: &cnosql.Call{
@@ -611,7 +611,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				Dimensions: []*cnosql.Dimension{
 					{
 						Expr: &cnosql.Call{
@@ -636,7 +636,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.VarRef{Val: "my_field"}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -646,7 +646,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.StringLiteral{Val: "my_field"}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 			},
 		},
 
@@ -657,7 +657,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.VarRef{Val: "field1"}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				SortFields: []*cnosql.SortField{
 					{Ascending: true},
 					{Name: "field1"},
@@ -673,7 +673,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.VarRef{Val: "field1"}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				SLimit:     10,
 				SOffset:    5,
 			},
@@ -685,7 +685,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op: cnosql.AND,
 					LHS: &cnosql.BinaryExpr{
@@ -710,7 +710,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "percentile", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.NumberLiteral{Val: 2.0}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -722,7 +722,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Call{Name: "percentile", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.NumberLiteral{Val: 2.0}}}},
 					{Expr: &cnosql.VarRef{Val: "field2"}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -734,7 +734,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "top", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.IntegerLiteral{Val: 2}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -745,7 +745,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "top", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.IntegerLiteral{Val: 2}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -757,7 +757,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Call{Name: "top", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.IntegerLiteral{Val: 2}}}},
 					{Expr: &cnosql.VarRef{Val: "tag1"}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -769,7 +769,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Call{Name: "top", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}, &cnosql.VarRef{Val: "tag1"}, &cnosql.IntegerLiteral{Val: 2}}}},
 					{Expr: &cnosql.VarRef{Val: "tag1"}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -781,7 +781,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "distinct", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -792,7 +792,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Distinct{Val: "field2"}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "network"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "network"}},
 			},
 		},
 
@@ -803,7 +803,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.Distinct{Val: "field3"}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "metrics"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "metrics"}},
 			},
 		},
 
@@ -815,7 +815,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.Distinct{Val: "field3"}}}},
 					{Expr: &cnosql.Call{Name: "sum", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field4"}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "metrics"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "metrics"}},
 			},
 		},
 
@@ -827,7 +827,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.Call{Name: "distinct", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field3"}}}}}},
 					{Expr: &cnosql.Call{Name: "sum", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field4"}}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "metrics"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "metrics"}},
 			},
 		},
 
@@ -837,7 +837,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -852,7 +852,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "load"},
@@ -865,7 +865,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GTE,
 					LHS: &cnosql.VarRef{Val: "load"},
@@ -878,7 +878,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "load"},
@@ -891,7 +891,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LTE,
 					LHS: &cnosql.VarRef{Val: "load"},
@@ -904,7 +904,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LT,
 					LHS: &cnosql.VarRef{Val: "load"},
@@ -917,7 +917,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.NEQ,
 					LHS: &cnosql.VarRef{Val: "load"},
@@ -932,22 +932,22 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources: []cnosql.Source{&cnosql.Metric{
+				Sources: []cnosql.Source{&cnosql.Measurement{
 					Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}},
 				},
 			},
 		},
 
-		// SELECT * FROM "db"."ttl"./<regex>/
+		// SELECT * FROM "db"."rp"./<regex>/
 		{
-			s: `SELECT * FROM "db"."ttl"./cpu.*/`,
+			s: `SELECT * FROM "db"."rp"./cpu.*/`,
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources: []cnosql.Source{&cnosql.Metric{
-					Database:   `db`,
-					TimeToLive: `ttl`,
-					Regex:      &cnosql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}},
+				Sources: []cnosql.Source{&cnosql.Measurement{
+					Database:        `db`,
+					RetentionPolicy: `rp`,
+					Regex:           &cnosql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}},
 				},
 			},
 		},
@@ -958,22 +958,22 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources: []cnosql.Source{&cnosql.Metric{
+				Sources: []cnosql.Source{&cnosql.Measurement{
 					Database: `db`,
 					Regex:    &cnosql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}},
 				},
 			},
 		},
 
-		// SELECT * FROM "ttl"./<regex>/
+		// SELECT * FROM "rp"./<regex>/
 		{
-			s: `SELECT * FROM "ttl"./cpu.*/`,
+			s: `SELECT * FROM "rp"./cpu.*/`,
 			stmt: &cnosql.SelectStatement{
 				IsRawQuery: true,
 				Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-				Sources: []cnosql.Source{&cnosql.Metric{
-					TimeToLive: `ttl`,
-					Regex:      &cnosql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}},
+				Sources: []cnosql.Source{&cnosql.Measurement{
+					RetentionPolicy: `rp`,
+					Regex:           &cnosql.RegexLiteral{Val: regexp.MustCompile("cpu.*")}},
 				},
 			},
 		},
@@ -986,7 +986,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.Call{Name: "sum", Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}},
 				},
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "kbps"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "kbps"}},
 				Dimensions: []*cnosql.Dimension{{Expr: &cnosql.Call{Name: "time", Args: []cnosql.Expr{&cnosql.DurationLiteral{Val: 60 * time.Second}}}}},
 				Condition: &cnosql.BinaryExpr{ // 1
 					Op: cnosql.AND,
@@ -1023,7 +1023,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Expr: &cnosql.Call{
 						Name: "count",
 						Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -1041,7 +1041,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Expr: &cnosql.Call{
 						Name: "mean",
 						Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -1061,7 +1061,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Expr: &cnosql.Call{
 						Name: "mean",
 						Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -1080,7 +1080,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Expr: &cnosql.Call{
 						Name: "mean",
 						Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -1099,7 +1099,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Expr: &cnosql.Call{
 						Name: "mean",
 						Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.LT,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -1159,7 +1159,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1173,7 +1173,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				IsRawQuery: true,
 				Fields: []*cnosql.Field{{
 					Expr: &cnosql.VarRef{Val: "value"}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "value"},
@@ -1192,7 +1192,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				IsRawQuery: true,
 				Fields: []*cnosql.Field{{
 					Expr: &cnosql.VarRef{Val: "value"}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GT,
 					LHS: &cnosql.VarRef{Val: "value"},
@@ -1215,7 +1215,7 @@ func TestParser_ParseStatement(t *testing.T) {
 							&cnosql.VarRef{Val: "value"},
 						}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1233,7 +1233,7 @@ func TestParser_ParseStatement(t *testing.T) {
 							&cnosql.VarRef{Val: "value"},
 						}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1260,7 +1260,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						Val: regexp.MustCompile(`^server.*`),
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1279,7 +1279,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						Type: cnosql.Integer,
 					}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1305,7 +1305,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						Val: 2,
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1331,7 +1331,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						Val: 2,
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1357,7 +1357,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						Val: 2,
 					},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1384,7 +1384,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1411,7 +1411,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1438,7 +1438,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1465,7 +1465,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						},
 					},
 				}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1503,7 +1503,7 @@ func TestParser_ParseStatement(t *testing.T) {
 								Expr: &cnosql.VarRef{Val: "host"},
 							}},
 							Sources: []cnosql.Source{
-								&cnosql.Metric{Name: "cpu"},
+								&cnosql.Measurement{Name: "cpu"},
 							},
 						},
 					},
@@ -1550,7 +1550,7 @@ func TestParser_ParseStatement(t *testing.T) {
 								},
 							}},
 							Sources: []cnosql.Source{
-								&cnosql.Metric{Name: "cpu"},
+								&cnosql.Measurement{Name: "cpu"},
 							},
 						},
 					},
@@ -1606,7 +1606,7 @@ func TestParser_ParseStatement(t *testing.T) {
 								},
 							},
 							Sources: []cnosql.Source{
-								&cnosql.Metric{Name: "cpu"},
+								&cnosql.Measurement{Name: "cpu"},
 							},
 						},
 					},
@@ -1652,7 +1652,7 @@ func TestParser_ParseStatement(t *testing.T) {
 								Expr: &cnosql.VarRef{Val: "host"},
 							}},
 							Sources: []cnosql.Source{
-								&cnosql.Metric{Name: "cpu"},
+								&cnosql.Measurement{Name: "cpu"},
 							},
 						},
 					},
@@ -1677,7 +1677,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{
 					{Expr: &cnosql.VarRef{Val: "user"}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1689,7 +1689,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					{Expr: &cnosql.RegexLiteral{Val: regexp.MustCompile(`foo/*bar`)}},
 				},
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`foo/*bar*`)},
 					},
 				},
@@ -1711,7 +1711,7 @@ func TestParser_ParseStatement(t *testing.T) {
 						Args: []cnosql.Expr{
 							&cnosql.VarRef{Val: "value"}},
 					}}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.GTE,
 					LHS: &cnosql.VarRef{Val: "time"},
@@ -1739,7 +1739,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Fields: []*cnosql.Field{
 						{Expr: &cnosql.Wildcard{}},
 					},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				},
 			},
 		},
@@ -1753,7 +1753,7 @@ func TestParser_ParseStatement(t *testing.T) {
 					Fields: []*cnosql.Field{
 						{Expr: &cnosql.Wildcard{}},
 					},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				},
 				Analyze: true,
 			},
@@ -1781,7 +1781,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW SERIES FROM cpu`,
 			stmt: &cnosql.ShowSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1798,7 +1798,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW SERIES FROM /[cg]pu/`,
 			stmt: &cnosql.ShowSeriesStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -1859,7 +1859,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW SERIES EXACT CARDINALITY FROM cpu`,
 			stmt: &cnosql.ShowSeriesCardinalityStatement{
 				Exact:   true,
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -1878,7 +1878,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.ShowSeriesCardinalityStatement{
 				Exact: true,
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -1911,11 +1911,11 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// SHOW METRICS WHERE with ORDER BY and LIMIT
+		// SHOW MEASUREMENTS WHERE with ORDER BY and LIMIT
 		{
 			skip: true,
-			s:    `SHOW METRICS WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
-			stmt: &cnosql.ShowMetricsStatement{
+			s:    `SHOW MEASUREMENTS WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &cnosql.ShowMeasurementsStatement{
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "region"},
@@ -1930,104 +1930,104 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// SHOW METRICS ON db0
+		// SHOW MEASUREMENTS ON db0
 		{
-			s: `SHOW METRICS ON db0`,
-			stmt: &cnosql.ShowMetricsStatement{
+			s: `SHOW MEASUREMENTS ON db0`,
+			stmt: &cnosql.ShowMeasurementsStatement{
 				Database: "db0",
 			},
 		},
 
-		// SHOW METRICS WITH METRIC = cpu
+		// SHOW MEASUREMENTS WITH MEASUREMENT = cpu
 		{
-			s: `SHOW METRICS WITH METRIC = cpu`,
-			stmt: &cnosql.ShowMetricsStatement{
-				Source: &cnosql.Metric{Name: "cpu"},
+			s: `SHOW MEASUREMENTS WITH MEASUREMENT = cpu`,
+			stmt: &cnosql.ShowMeasurementsStatement{
+				Source: &cnosql.Measurement{Name: "cpu"},
 			},
 		},
 
-		// SHOW METRICS WITH METRIC =~ /regex/
+		// SHOW MEASUREMENTS WITH MEASUREMENT =~ /regex/
 		{
-			s: `SHOW METRICS WITH METRIC =~ /[cg]pu/`,
-			stmt: &cnosql.ShowMetricsStatement{
-				Source: &cnosql.Metric{
+			s: `SHOW MEASUREMENTS WITH MEASUREMENT =~ /[cg]pu/`,
+			stmt: &cnosql.ShowMeasurementsStatement{
+				Source: &cnosql.Measurement{
 					Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 				},
 			},
 		},
 
-		// SHOW METRIC CARDINALITY statement
+		// SHOW MEASUREMENT CARDINALITY statement
 		{
-			s:    `SHOW METRIC CARDINALITY`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{},
+			s:    `SHOW MEASUREMENT CARDINALITY`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{},
 		},
 
-		// SHOW METRIC CARDINALITY ON db0 statement
+		// SHOW MEASUREMENT CARDINALITY ON db0 statement
 		{
-			s: `SHOW METRIC CARDINALITY ON db0`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT CARDINALITY ON db0`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact:    false,
 				Database: "db0",
 			},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY statement
+		// SHOW MEASUREMENT EXACT CARDINALITY statement
 		{
-			s: `SHOW METRIC EXACT CARDINALITY`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact: true,
 			},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY FROM cpu
+		// SHOW MEASUREMENT EXACT CARDINALITY FROM cpu
 		{
-			s: `SHOW METRIC EXACT CARDINALITY FROM cpu`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY FROM cpu`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact:   true,
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY ON db0
+		// SHOW MEASUREMENT EXACT CARDINALITY ON db0
 		{
-			s: `SHOW METRIC EXACT CARDINALITY ON db0`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY ON db0`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact:    true,
 				Database: "db0",
 			},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY FROM /<regex>/
+		// SHOW MEASUREMENT EXACT CARDINALITY FROM /<regex>/
 		{
-			s: `SHOW METRIC EXACT CARDINALITY FROM /[cg]pu/`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY FROM /[cg]pu/`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact: true,
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
 			},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY with OFFSET 0
+		// SHOW MEASUREMENT EXACT CARDINALITY with OFFSET 0
 		{
-			s: `SHOW METRIC EXACT CARDINALITY OFFSET 0`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY OFFSET 0`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact: true, Offset: 0},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY with LIMIT 2 OFFSET 0
+		// SHOW MEASUREMENT EXACT CARDINALITY with LIMIT 2 OFFSET 0
 		{
-			s: `SHOW METRIC EXACT CARDINALITY LIMIT 2 OFFSET 0`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY LIMIT 2 OFFSET 0`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact: true, Offset: 0, Limit: 2},
 		},
 
-		// SHOW METRIC EXACT CARDINALITY WHERE with ORDER BY and LIMIT
+		// SHOW MEASUREMENT EXACT CARDINALITY WHERE with ORDER BY and LIMIT
 		{
-			s: `SHOW METRIC EXACT CARDINALITY WHERE region = 'order by desc' LIMIT 10`,
-			stmt: &cnosql.ShowMetricCardinalityStatement{
+			s: `SHOW MEASUREMENT EXACT CARDINALITY WHERE region = 'order by desc' LIMIT 10`,
+			stmt: &cnosql.ShowMeasurementCardinalityStatement{
 				Exact: true,
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
@@ -2061,16 +2061,16 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// SHOW TTLS
+		// SHOW RETENTION POLICIES
 		{
-			s:    `SHOW TTLS`,
-			stmt: &cnosql.ShowTimeToLivesStatement{},
+			s:    `SHOW RETENTION POLICIES`,
+			stmt: &cnosql.ShowRetentionPoliciesStatement{},
 		},
 
-		// SHOW TTLS ON db0
+		// SHOW RETENTION POLICIES ON db0
 		{
-			s: `SHOW TTLS ON db0`,
-			stmt: &cnosql.ShowTimeToLivesStatement{
+			s: `SHOW RETENTION POLICIES ON db0`,
+			stmt: &cnosql.ShowRetentionPoliciesStatement{
 				Database: "db0",
 			},
 		},
@@ -2084,7 +2084,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEY CARDINALITY FROM cpu`,
 			stmt: &cnosql.ShowTagKeyCardinalityStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -2101,7 +2101,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW TAG KEY CARDINALITY FROM /[cg]pu/`,
 			stmt: &cnosql.ShowTagKeyCardinalityStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2146,7 +2146,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW TAG KEY EXACT CARDINALITY FROM cpu`,
 			stmt: &cnosql.ShowTagKeyCardinalityStatement{
 				Exact:   true,
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -2165,7 +2165,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.ShowTagKeyCardinalityStatement{
 				Exact: true,
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2202,7 +2202,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 			},
 		},
 
@@ -2218,7 +2218,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src LIMIT 2`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Limit:   2,
 			},
 		},
@@ -2227,7 +2227,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src OFFSET 1`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Offset:  1,
 			},
 		},
@@ -2236,7 +2236,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src LIMIT 2 OFFSET 1`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Limit:   2,
 				Offset:  1,
 			},
@@ -2246,7 +2246,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src SLIMIT 2`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				SLimit:  2,
 			},
 		},
@@ -2255,7 +2255,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src SOFFSET 1`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				SOffset: 1,
 			},
 		},
@@ -2264,7 +2264,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src SLIMIT 2 SOFFSET 1`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				SLimit:  2,
 				SOffset: 1,
 			},
@@ -2274,7 +2274,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG KEYS FROM src LIMIT 4 OFFSET 3 SLIMIT 2 SOFFSET 1`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Limit:   4,
 				Offset:  3,
 				SLimit:  2,
@@ -2287,7 +2287,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW TAG KEYS FROM /[cg]pu/`,
 			stmt: &cnosql.ShowTagKeysStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2299,7 +2299,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			skip: true,
 			s:    `SHOW TAG KEYS FROM src WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
 			stmt: &cnosql.ShowTagKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "region"},
@@ -2319,7 +2319,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			skip: true,
 			s:    `SHOW TAG VALUES FROM src WITH KEY = region WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
 			stmt: &cnosql.ShowTagValuesStatement{
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Op:         cnosql.EQ,
 				TagKeyExpr: &cnosql.StringLiteral{Val: "region"},
 				Condition: &cnosql.BinaryExpr{
@@ -2340,7 +2340,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG VALUES FROM cpu WITH KEY IN (region, host) WHERE region = 'uswest'`,
 			stmt: &cnosql.ShowTagValuesStatement{
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Op:         cnosql.IN,
 				TagKeyExpr: &cnosql.ListLiteral{Vals: []string{"region", "host"}},
 				Condition: &cnosql.BinaryExpr{
@@ -2355,7 +2355,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG VALUES FROM cpu WITH KEY IN (region,service,host)WHERE region = 'uswest'`,
 			stmt: &cnosql.ShowTagValuesStatement{
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Op:         cnosql.IN,
 				TagKeyExpr: &cnosql.ListLiteral{Vals: []string{"region", "service", "host"}},
 				Condition: &cnosql.BinaryExpr{
@@ -2385,7 +2385,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW TAG VALUES FROM /[cg]pu/ WITH KEY = host`,
 			stmt: &cnosql.ShowTagValuesStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2440,7 +2440,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW TAG VALUES CARDINALITY FROM cpu WITH KEY =  host`,
 			stmt: &cnosql.ShowTagValuesCardinalityStatement{
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Op:         cnosql.EQ,
 				TagKeyExpr: &cnosql.StringLiteral{Val: "host"},
 			},
@@ -2461,7 +2461,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW TAG VALUES CARDINALITY FROM /[cg]pu/ WITH KEY = host`,
 			stmt: &cnosql.ShowTagValuesCardinalityStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2521,7 +2521,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW TAG VALUES EXACT CARDINALITY FROM cpu WITH KEY =  host`,
 			stmt: &cnosql.ShowTagValuesCardinalityStatement{
 				Exact:      true,
-				Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 				Op:         cnosql.EQ,
 				TagKeyExpr: &cnosql.StringLiteral{Val: "host"},
 			},
@@ -2544,7 +2544,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.ShowTagValuesCardinalityStatement{
 				Exact: true,
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2603,7 +2603,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			skip: true,
 			s:    `SHOW FIELD KEYS FROM src ORDER BY ASC, field1, field2 DESC LIMIT 10`,
 			stmt: &cnosql.ShowFieldKeysStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				SortFields: []*cnosql.SortField{
 					{Ascending: true},
 					{Name: "field1"},
@@ -2616,7 +2616,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW FIELD KEYS FROM /[cg]pu/`,
 			stmt: &cnosql.ShowFieldKeysStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2639,7 +2639,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `SHOW FIELD KEY CARDINALITY FROM cpu`,
 			stmt: &cnosql.ShowFieldKeyCardinalityStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -2656,7 +2656,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW FIELD KEY CARDINALITY FROM /[cg]pu/`,
 			stmt: &cnosql.ShowFieldKeyCardinalityStatement{
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2706,7 +2706,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `SHOW FIELD KEY EXACT CARDINALITY FROM cpu`,
 			stmt: &cnosql.ShowFieldKeyCardinalityStatement{
 				Exact:   true,
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 			},
 		},
 
@@ -2725,7 +2725,7 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.ShowFieldKeyCardinalityStatement{
 				Exact: true,
 				Sources: []cnosql.Source{
-					&cnosql.Metric{
+					&cnosql.Measurement{
 						Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`[cg]pu`)},
 					},
 				},
@@ -2767,7 +2767,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		// DELETE statement
 		{
 			s:    `DELETE FROM src`,
-			stmt: &cnosql.DeleteSeriesStatement{Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}}},
+			stmt: &cnosql.DeleteSeriesStatement{Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}}},
 		},
 		{
 			s: `DELETE WHERE host = 'hosta.cnosdb.org'`,
@@ -2782,7 +2782,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `DELETE FROM src WHERE host = 'hosta.cnosdb.org'`,
 			stmt: &cnosql.DeleteSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "host"},
@@ -2794,7 +2794,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		// DROP SERIES statement
 		{
 			s:    `DROP SERIES FROM src`,
-			stmt: &cnosql.DropSeriesStatement{Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}}},
+			stmt: &cnosql.DropSeriesStatement{Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}}},
 		},
 		{
 			s: `DROP SERIES WHERE host = 'hosta.cnosdb.org'`,
@@ -2809,7 +2809,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `DROP SERIES FROM src WHERE host = 'hosta.cnosdb.org'`,
 			stmt: &cnosql.DropSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "host"},
@@ -2824,16 +2824,16 @@ func TestParser_ParseStatement(t *testing.T) {
 			stmt: &cnosql.ShowContinuousQueriesStatement{},
 		},
 
-		// CREATE CONTINUOUS QUERY ... INTO <metric>
+		// CREATE CONTINUOUS QUERY ... INTO <measurement>
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb RESAMPLE EVERY 1m FOR 1h BEGIN SELECT count(field1) INTO metric1 FROM myseries GROUP BY time(5m) END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb RESAMPLE EVERY 1m FOR 1h BEGIN SELECT count(field1) INTO measure1 FROM myseries GROUP BY time(5m) END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
 				Source: &cnosql.SelectStatement{
 					Fields:  []*cnosql.Field{{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}}},
-					Target:  &cnosql.Target{Metric: &cnosql.Metric{Name: "metric1", IsTarget: true}},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+					Target:  &cnosql.Target{Measurement: &cnosql.Measurement{Name: "measure1", IsTarget: true}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 					Dimensions: []*cnosql.Dimension{
 						{
 							Expr: &cnosql.Call{
@@ -2851,14 +2851,14 @@ func TestParser_ParseStatement(t *testing.T) {
 		},
 
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb RESAMPLE FOR 1h BEGIN SELECT count(field1) INTO metric1 FROM myseries GROUP BY time(5m) END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb RESAMPLE FOR 1h BEGIN SELECT count(field1) INTO measure1 FROM myseries GROUP BY time(5m) END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
 				Source: &cnosql.SelectStatement{
 					Fields:  []*cnosql.Field{{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}}},
-					Target:  &cnosql.Target{Metric: &cnosql.Metric{Name: "metric1", IsTarget: true}},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+					Target:  &cnosql.Target{Measurement: &cnosql.Measurement{Name: "measure1", IsTarget: true}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 					Dimensions: []*cnosql.Dimension{
 						{
 							Expr: &cnosql.Call{
@@ -2875,14 +2875,14 @@ func TestParser_ParseStatement(t *testing.T) {
 		},
 
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb RESAMPLE EVERY 1m BEGIN SELECT count(field1) INTO metric1 FROM myseries GROUP BY time(5m) END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb RESAMPLE EVERY 1m BEGIN SELECT count(field1) INTO measure1 FROM myseries GROUP BY time(5m) END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
 				Source: &cnosql.SelectStatement{
 					Fields:  []*cnosql.Field{{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}}},
-					Target:  &cnosql.Target{Metric: &cnosql.Metric{Name: "metric1", IsTarget: true}},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+					Target:  &cnosql.Target{Measurement: &cnosql.Measurement{Name: "measure1", IsTarget: true}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 					Dimensions: []*cnosql.Dimension{
 						{
 							Expr: &cnosql.Call{
@@ -2899,31 +2899,31 @@ func TestParser_ParseStatement(t *testing.T) {
 		},
 
 		{
-			s: `create continuous query "this.is-a.test" on segments begin select * into metric1 from cpu_load_short end`,
+			s: `create continuous query "this.is-a.test" on segments begin select * into measure1 from cpu_load_short end`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "this.is-a.test",
 				Database: "segments",
 				Source: &cnosql.SelectStatement{
 					IsRawQuery: true,
 					Fields:     []*cnosql.Field{{Expr: &cnosql.Wildcard{}}},
-					Target:     &cnosql.Target{Metric: &cnosql.Metric{Name: "metric1", IsTarget: true}},
-					Sources:    []cnosql.Source{&cnosql.Metric{Name: "cpu_load_short"}},
+					Target:     &cnosql.Target{Measurement: &cnosql.Measurement{Name: "measure1", IsTarget: true}},
+					Sources:    []cnosql.Source{&cnosql.Measurement{Name: "cpu_load_short"}},
 				},
 			},
 		},
 
-		// CREATE CONTINUOUS QUERY ... INTO <time-to-live>.<metric>
+		// CREATE CONTINUOUS QUERY ... INTO <retention-policy>.<measurement>
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT count(field1) INTO "1h.ttl1"."cpu.load" FROM myseries GROUP BY time(5m) END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT count(field1) INTO "1h.policy1"."cpu.load" FROM myseries GROUP BY time(5m) END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
 				Source: &cnosql.SelectStatement{
 					Fields: []*cnosql.Field{{Expr: &cnosql.Call{Name: "count", Args: []cnosql.Expr{&cnosql.VarRef{Val: "field1"}}}}},
 					Target: &cnosql.Target{
-						Metric: &cnosql.Metric{TimeToLive: "1h.ttl1", Name: "cpu.load", IsTarget: true},
+						Measurement: &cnosql.Measurement{RetentionPolicy: "1h.policy1", Name: "cpu.load", IsTarget: true},
 					},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 					Dimensions: []*cnosql.Dimension{
 						{
 							Expr: &cnosql.Call{
@@ -2940,7 +2940,7 @@ func TestParser_ParseStatement(t *testing.T) {
 
 		// CREATE CONTINUOUS QUERY for non-aggregate SELECT stmts
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT value INTO "ttl1"."value" FROM myseries END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT value INTO "policy1"."value" FROM myseries END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
@@ -2948,16 +2948,16 @@ func TestParser_ParseStatement(t *testing.T) {
 					IsRawQuery: true,
 					Fields:     []*cnosql.Field{{Expr: &cnosql.VarRef{Val: "value"}}},
 					Target: &cnosql.Target{
-						Metric: &cnosql.Metric{TimeToLive: "ttl1", Name: "value", IsTarget: true},
+						Measurement: &cnosql.Measurement{RetentionPolicy: "policy1", Name: "value", IsTarget: true},
 					},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				},
 			},
 		},
 
 		// CREATE CONTINUOUS QUERY for non-aggregate SELECT stmts with multiple values
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT transmit_rx, transmit_tx INTO "ttl1"."network" FROM myseries END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT transmit_rx, transmit_tx INTO "policy1"."network" FROM myseries END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
@@ -2966,25 +2966,25 @@ func TestParser_ParseStatement(t *testing.T) {
 					Fields: []*cnosql.Field{{Expr: &cnosql.VarRef{Val: "transmit_rx"}},
 						{Expr: &cnosql.VarRef{Val: "transmit_tx"}}},
 					Target: &cnosql.Target{
-						Metric: &cnosql.Metric{TimeToLive: "ttl1", Name: "network", IsTarget: true},
+						Measurement: &cnosql.Measurement{RetentionPolicy: "policy1", Name: "network", IsTarget: true},
 					},
-					Sources: []cnosql.Source{&cnosql.Metric{Name: "myseries"}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Name: "myseries"}},
 				},
 			},
 		},
 
-		// CREATE CONTINUOUS QUERY with backreference metric name
+		// CREATE CONTINUOUS QUERY with backreference measurement name
 		{
-			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT mean(value) INTO "ttl1".:metric FROM /^[a-z]+.*/ GROUP BY time(1m) END`,
+			s: `CREATE CONTINUOUS QUERY myquery ON testdb BEGIN SELECT mean(value) INTO "policy1".:measurement FROM /^[a-z]+.*/ GROUP BY time(1m) END`,
 			stmt: &cnosql.CreateContinuousQueryStatement{
 				Name:     "myquery",
 				Database: "testdb",
 				Source: &cnosql.SelectStatement{
 					Fields: []*cnosql.Field{{Expr: &cnosql.Call{Name: "mean", Args: []cnosql.Expr{&cnosql.VarRef{Val: "value"}}}}},
 					Target: &cnosql.Target{
-						Metric: &cnosql.Metric{TimeToLive: "ttl1", IsTarget: true},
+						Measurement: &cnosql.Measurement{RetentionPolicy: "policy1", IsTarget: true},
 					},
-					Sources: []cnosql.Source{&cnosql.Metric{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`^[a-z]+.*`)}}},
+					Sources: []cnosql.Source{&cnosql.Measurement{Regex: &cnosql.RegexLiteral{Val: regexp.MustCompile(`^[a-z]+.*`)}}},
 					Dimensions: []*cnosql.Dimension{
 						{
 							Expr: &cnosql.Call{
@@ -3003,61 +3003,61 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `CREATE DATABASE testdb`,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:             "testdb",
-				TimeToLiveCreate: false,
+				Name:                  "testdb",
+				RetentionPolicyCreate: false,
 			},
 		},
 		{
 			s: `CREATE DATABASE testdb WITH DURATION 24h`,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:               "testdb",
-				TimeToLiveCreate:   true,
-				TimeToLiveDuration: duration(24 * time.Hour),
+				Name:                    "testdb",
+				RetentionPolicyCreate:   true,
+				RetentionPolicyDuration: duration(24 * time.Hour),
 			},
 		},
 		{
 			s: `CREATE DATABASE testdb WITH SHARD DURATION 30m`,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:                     "testdb",
-				TimeToLiveCreate:         true,
-				TimeToLiveRegionDuration: 30 * time.Minute,
+				Name:                              "testdb",
+				RetentionPolicyCreate:             true,
+				RetentionPolicyShardGroupDuration: 30 * time.Minute,
 			},
 		},
 		{
 			s: `CREATE DATABASE testdb WITH REPLICATION 2`,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:                  "testdb",
-				TimeToLiveCreate:      true,
-				TimeToLiveReplication: intptr(2),
+				Name:                       "testdb",
+				RetentionPolicyCreate:      true,
+				RetentionPolicyReplication: intptr(2),
 			},
 		},
 		{
 			s: `CREATE DATABASE testdb WITH NAME test_name`,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:             "testdb",
-				TimeToLiveCreate: true,
-				TimeToLiveName:   "test_name",
+				Name:                  "testdb",
+				RetentionPolicyCreate: true,
+				RetentionPolicyName:   "test_name",
 			},
 		},
 		{
 			s: `CREATE DATABASE testdb WITH DURATION 24h REPLICATION 2 NAME test_name`,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:                  "testdb",
-				TimeToLiveCreate:      true,
-				TimeToLiveDuration:    duration(24 * time.Hour),
-				TimeToLiveReplication: intptr(2),
-				TimeToLiveName:        "test_name",
+				Name:                       "testdb",
+				RetentionPolicyCreate:      true,
+				RetentionPolicyDuration:    duration(24 * time.Hour),
+				RetentionPolicyReplication: intptr(2),
+				RetentionPolicyName:        "test_name",
 			},
 		},
 		{
 			s: `CREATE DATABASE testdb WITH DURATION 24h REPLICATION 2 SHARD DURATION 10m NAME test_name `,
 			stmt: &cnosql.CreateDatabaseStatement{
-				Name:                     "testdb",
-				TimeToLiveCreate:         true,
-				TimeToLiveDuration:       duration(24 * time.Hour),
-				TimeToLiveReplication:    intptr(2),
-				TimeToLiveName:           "test_name",
-				TimeToLiveRegionDuration: 10 * time.Minute,
+				Name:                              "testdb",
+				RetentionPolicyCreate:             true,
+				RetentionPolicyDuration:           duration(24 * time.Hour),
+				RetentionPolicyReplication:        intptr(2),
+				RetentionPolicyName:               "test_name",
+				RetentionPolicyShardGroupDuration: 10 * time.Minute,
 			},
 		},
 
@@ -3103,16 +3103,16 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// DROP METRIC statement
+		// DROP MEASUREMENT statement
 		{
-			s:    `DROP METRIC cpu`,
-			stmt: &cnosql.DropMetricStatement{Name: "cpu"},
+			s:    `DROP MEASUREMENT cpu`,
+			stmt: &cnosql.DropMeasurementStatement{Name: "cpu"},
 		},
 
-		// DROP TTL
+		// DROP RETENTION POLICY
 		{
-			s: `DROP TTL "1h.cpu" ON mydb`,
-			stmt: &cnosql.DropTimeToLiveStatement{
+			s: `DROP RETENTION POLICY "1h.cpu" ON mydb`,
+			stmt: &cnosql.DropRetentionPolicyStatement{
 				Name:     `1h.cpu`,
 				Database: `mydb`,
 			},
@@ -3236,125 +3236,125 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// CREATE TTL
+		// CREATE RETENTION POLICY
 		{
-			s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 2`,
-			stmt: &cnosql.CreateTimeToLiveStatement{
-				Name:        "ttl1",
+			s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 2`,
+			stmt: &cnosql.CreateRetentionPolicyStatement{
+				Name:        "policy1",
 				Database:    "testdb",
 				Duration:    time.Hour,
 				Replication: 2,
 			},
 		},
 
-		// CREATE TTL with infinite duration
+		// CREATE RETENTION POLICY with infinite retention
 		{
-			s: `CREATE TTL ttl1 ON testdb DURATION INF REPLICATION 2`,
-			stmt: &cnosql.CreateTimeToLiveStatement{
-				Name:        "ttl1",
+			s: `CREATE RETENTION POLICY policy1 ON testdb DURATION INF REPLICATION 2`,
+			stmt: &cnosql.CreateRetentionPolicyStatement{
+				Name:        "policy1",
 				Database:    "testdb",
 				Duration:    0,
 				Replication: 2,
 			},
 		},
 
-		// CREATE TTL ... DEFAULT
+		// CREATE RETENTION POLICY ... DEFAULT
 		{
-			s: `CREATE TTL ttl1 ON testdb DURATION 2m REPLICATION 4 DEFAULT`,
-			stmt: &cnosql.CreateTimeToLiveStatement{
-				Name:        "ttl1",
+			s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 2m REPLICATION 4 DEFAULT`,
+			stmt: &cnosql.CreateRetentionPolicyStatement{
+				Name:        "policy1",
 				Database:    "testdb",
 				Duration:    2 * time.Minute,
 				Replication: 4,
 				Default:     true,
 			},
 		},
-		// CREATE TTL
+		// CREATE RETENTION POLICY
 		{
-			s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION 30m`,
-			stmt: &cnosql.CreateTimeToLiveStatement{
-				Name:           "ttl1",
-				Database:       "testdb",
-				Duration:       time.Hour,
-				Replication:    2,
-				RegionDuration: 30 * time.Minute,
+			s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION 30m`,
+			stmt: &cnosql.CreateRetentionPolicyStatement{
+				Name:               "policy1",
+				Database:           "testdb",
+				Duration:           time.Hour,
+				Replication:        2,
+				ShardGroupDuration: 30 * time.Minute,
 			},
 		},
 		{
-			s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION 0s`,
-			stmt: &cnosql.CreateTimeToLiveStatement{
-				Name:           "ttl1",
-				Database:       "testdb",
-				Duration:       time.Hour,
-				Replication:    2,
-				RegionDuration: 0,
+			s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION 0s`,
+			stmt: &cnosql.CreateRetentionPolicyStatement{
+				Name:               "policy1",
+				Database:           "testdb",
+				Duration:           time.Hour,
+				Replication:        2,
+				ShardGroupDuration: 0,
 			},
 		},
 		{
-			s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION 1s`,
-			stmt: &cnosql.CreateTimeToLiveStatement{
-				Name:           "ttl1",
-				Database:       "testdb",
-				Duration:       time.Hour,
-				Replication:    2,
-				RegionDuration: time.Second,
+			s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION 1s`,
+			stmt: &cnosql.CreateRetentionPolicyStatement{
+				Name:               "policy1",
+				Database:           "testdb",
+				Duration:           time.Hour,
+				Replication:        2,
+				ShardGroupDuration: time.Second,
 			},
 		},
 
-		// ALTER TTL
+		// ALTER RETENTION POLICY
 		{
-			s:    `ALTER TTL ttl1 ON testdb DURATION 1m REPLICATION 4 DEFAULT`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", time.Minute, -1, 4, true),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb DURATION 1m REPLICATION 4 DEFAULT`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", time.Minute, -1, 4, true),
 		},
 
-		// ALTER TTL with options in reverse order
+		// ALTER RETENTION POLICY with options in reverse order
 		{
-			s:    `ALTER TTL ttl1 ON testdb DEFAULT REPLICATION 4 DURATION 1m`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", time.Minute, -1, 4, true),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb DEFAULT REPLICATION 4 DURATION 1m`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", time.Minute, -1, 4, true),
 		},
 
-		// ALTER TTL with infinite duration
+		// ALTER RETENTION POLICY with infinite retention
 		{
-			s:    `ALTER TTL ttl1 ON testdb DEFAULT REPLICATION 4 DURATION INF`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", 0, -1, 4, true),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb DEFAULT REPLICATION 4 DURATION INF`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", 0, -1, 4, true),
 		},
 
-		// ALTER TTL without optional DURATION
+		// ALTER RETENTION POLICY without optional DURATION
 		{
-			s:    `ALTER TTL ttl1 ON testdb DEFAULT REPLICATION 4`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", -1, -1, 4, true),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb DEFAULT REPLICATION 4`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", -1, -1, 4, true),
 		},
 
-		// ALTER TTL without optional REPLICATION
+		// ALTER RETENTION POLICY without optional REPLICATION
 		{
-			s:    `ALTER TTL ttl1 ON testdb DEFAULT`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", -1, -1, -1, true),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb DEFAULT`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", -1, -1, -1, true),
 		},
 
-		// ALTER TTL without optional DEFAULT
+		// ALTER RETENTION POLICY without optional DEFAULT
 		{
-			s:    `ALTER TTL ttl1 ON testdb REPLICATION 4`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", -1, -1, 4, false),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb REPLICATION 4`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", -1, -1, 4, false),
 		},
-		// ALTER default time-to-live unquoted
+		// ALTER default retention policy unquoted
 		{
-			s:    `ALTER TTL default ON testdb REPLICATION 4`,
-			stmt: newAlterTimeToLiveStatement("default", "testdb", -1, -1, 4, false),
+			s:    `ALTER RETENTION POLICY default ON testdb REPLICATION 4`,
+			stmt: newAlterRetentionPolicyStatement("default", "testdb", -1, -1, 4, false),
 		},
-		// ALTER TTL with SHARD duration
+		// ALTER RETENTION POLICY with SHARD duration
 		{
-			s:    `ALTER TTL ttl1 ON testdb REPLICATION 4 SHARD DURATION 10m`,
-			stmt: newAlterTimeToLiveStatement("ttl1", "testdb", -1, 10*time.Minute, 4, false),
+			s:    `ALTER RETENTION POLICY policy1 ON testdb REPLICATION 4 SHARD DURATION 10m`,
+			stmt: newAlterRetentionPolicyStatement("policy1", "testdb", -1, 10*time.Minute, 4, false),
 		},
-		// ALTER TTL with all options
+		// ALTER RETENTION POLICY with all options
 		{
-			s:    `ALTER TTL default ON testdb DURATION 0s REPLICATION 4 SHARD DURATION 10m DEFAULT`,
-			stmt: newAlterTimeToLiveStatement("default", "testdb", time.Duration(0), 10*time.Minute, 4, true),
+			s:    `ALTER RETENTION POLICY default ON testdb DURATION 0s REPLICATION 4 SHARD DURATION 10m DEFAULT`,
+			stmt: newAlterRetentionPolicyStatement("default", "testdb", time.Duration(0), 10*time.Minute, 4, true),
 		},
-		// ALTER TTL with 0s shard duration
+		// ALTER RETENTION POLICY with 0s shard duration
 		{
-			s:    `ALTER TTL default ON testdb DURATION 0s REPLICATION 1 SHARD DURATION 0s`,
-			stmt: newAlterTimeToLiveStatement("default", "testdb", time.Duration(0), 0, 1, false),
+			s:    `ALTER RETENTION POLICY default ON testdb DURATION 0s REPLICATION 1 SHARD DURATION 0s`,
+			stmt: newAlterRetentionPolicyStatement("default", "testdb", time.Duration(0), 0, 1, false),
 		},
 
 		// SHOW STATS
@@ -3371,10 +3371,10 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// SHOW REGIONS
+		// SHOW SHARD GROUPS
 		{
-			s:    `SHOW REGIONS`,
-			stmt: &cnosql.ShowRegionsStatement{},
+			s:    `SHOW SHARD GROUPS`,
+			stmt: &cnosql.ShowShardGroupsStatement{},
 		},
 
 		// SHOW SHARDS
@@ -3397,23 +3397,23 @@ func TestParser_ParseStatement(t *testing.T) {
 
 		// CREATE SUBSCRIPTION
 		{
-			s: `CREATE SUBSCRIPTION "name" ON "db"."ttl" DESTINATIONS ANY 'udp://host1:9093', 'udp://host2:9093'`,
+			s: `CREATE SUBSCRIPTION "name" ON "db"."rp" DESTINATIONS ANY 'udp://host1:9093', 'udp://host2:9093'`,
 			stmt: &cnosql.CreateSubscriptionStatement{
-				Name:         "name",
-				Database:     "db",
-				TimeToLive:   "ttl",
-				Destinations: []string{"udp://host1:9093", "udp://host2:9093"},
-				Mode:         "ANY",
+				Name:            "name",
+				Database:        "db",
+				RetentionPolicy: "rp",
+				Destinations:    []string{"udp://host1:9093", "udp://host2:9093"},
+				Mode:            "ANY",
 			},
 		},
 
 		// DROP SUBSCRIPTION
 		{
-			s: `DROP SUBSCRIPTION "name" ON "db"."ttl"`,
+			s: `DROP SUBSCRIPTION "name" ON "db"."rp"`,
 			stmt: &cnosql.DropSubscriptionStatement{
-				Name:       "name",
-				Database:   "db",
-				TimeToLive: "ttl",
+				Name:            "name",
+				Database:        "db",
+				RetentionPolicy: "rp",
 			},
 		},
 
@@ -3454,20 +3454,20 @@ func TestParser_ParseStatement(t *testing.T) {
 		{s: `DELETE`, err: `found EOF, expected FROM, WHERE at line 1, char 8`},
 		{s: `DELETE FROM`, err: `found EOF, expected identifier at line 1, char 13`},
 		{s: `DELETE FROM myseries WHERE`, err: `found EOF, expected identifier, string, number, bool at line 1, char 28`},
-		{s: `DELETE FROM "foo".myseries`, err: `time-to-live not supported at line 1, char 1`},
+		{s: `DELETE FROM "foo".myseries`, err: `retention policy not supported at line 1, char 1`},
 		{s: `DELETE FROM foo..myseries`, err: `database not supported at line 1, char 1`},
-		{s: `DROP METRIC`, err: `found EOF, expected identifier at line 1, char 18`},
+		{s: `DROP MEASUREMENT`, err: `found EOF, expected identifier at line 1, char 18`},
 		{s: `DROP SERIES`, err: `found EOF, expected FROM, WHERE at line 1, char 13`},
 		{s: `DROP SERIES FROM`, err: `found EOF, expected identifier at line 1, char 18`},
 		{s: `DROP SERIES FROM src WHERE`, err: `found EOF, expected identifier, string, number, bool at line 1, char 28`},
-		{s: `DROP SERIES FROM "foo".myseries`, err: `time-to-live not supported at line 1, char 1`},
+		{s: `DROP SERIES FROM "foo".myseries`, err: `retention policy not supported at line 1, char 1`},
 		{s: `DROP SERIES FROM foo..myseries`, err: `database not supported at line 1, char 1`},
 		{s: `SHOW CONTINUOUS`, err: `found EOF, expected QUERIES at line 1, char 17`},
-		{s: `SHOW TTL`, err: `found EOF, expected Time-To-Lives at line 1, char 16`},
-		{s: `SHOW TTL ON`, err: `found ON, expected Time-To-Lives at line 1, char 16`},
-		{s: `SHOW TTLS ON`, err: `found EOF, expected identifier at line 1, char 28`},
+		{s: `SHOW RETENTION`, err: `found EOF, expected POLICIES at line 1, char 16`},
+		{s: `SHOW RETENTION ON`, err: `found ON, expected POLICIES at line 1, char 16`},
+		{s: `SHOW RETENTION POLICIES ON`, err: `found EOF, expected identifier at line 1, char 28`},
 		{s: `SHOW SHARD`, err: `found EOF, expected GROUPS at line 1, char 12`},
-		{s: `SHOW FOO`, err: `found FOO, expected CONTINUOUS, DATABASES, DIAGNOSTICS, FIELD, GRANTS, METRIC, METRICS, QUERIES, SERIES, SHARD, SHARDS, STATS, SUBSCRIPTIONS, TAG, TTL, USERS at line 1, char 6`},
+		{s: `SHOW FOO`, err: `found FOO, expected CONTINUOUS, DATABASES, DIAGNOSTICS, FIELD, GRANTS, MEASUREMENT, MEASUREMENTS, QUERIES, RETENTION, SERIES, SHARD, SHARDS, STATS, SUBSCRIPTIONS, TAG, USERS at line 1, char 6`},
 		{s: `SHOW STATS FOR`, err: `found EOF, expected string at line 1, char 16`},
 		{s: `SHOW DIAGNOSTICS FOR`, err: `found EOF, expected string at line 1, char 22`},
 		{s: `SHOW GRANTS`, err: `found EOF, expected FOR at line 1, char 13`},
@@ -3480,8 +3480,8 @@ func TestParser_ParseStatement(t *testing.T) {
 		{s: `CREATE CONTINUOUS QUERY`, err: `found EOF, expected identifier at line 1, char 25`},
 		{s: `CREATE CONTINUOUS QUERY cq ON db RESAMPLE FOR 5s BEGIN SELECT mean(value) INTO cpu_mean FROM cpu GROUP BY time(10s) END`, err: `FOR duration must be >= GROUP BY time duration: must be a minimum of 10s, got 5s`},
 		{s: `CREATE CONTINUOUS QUERY cq ON db RESAMPLE EVERY 10s FOR 5s BEGIN SELECT mean(value) INTO cpu_mean FROM cpu GROUP BY time(5s) END`, err: `FOR duration must be >= GROUP BY time duration: must be a minimum of 10s, got 5s`},
-		{s: `DROP FOO`, err: `found FOO, expected CONTINUOUS, DATABASE, METRIC, SERIES, SHARD, SUBSCRIPTION, TTL, USER at line 1, char 6`},
-		{s: `CREATE FOO`, err: `found FOO, expected CONTINUOUS, DATABASE, USER, SUBSCRIPTION, TTL at line 1, char 8`},
+		{s: `DROP FOO`, err: `found FOO, expected CONTINUOUS, DATABASE, MEASUREMENT, RETENTION, SERIES, SHARD, SUBSCRIPTION, USER at line 1, char 6`},
+		{s: `CREATE FOO`, err: `found FOO, expected CONTINUOUS, DATABASE, USER, RETENTION, SUBSCRIPTION at line 1, char 8`},
 		{s: `CREATE DATABASE`, err: `found EOF, expected identifier at line 1, char 17`},
 		{s: `CREATE DATABASE "testdb" WITH`, err: `found EOF, expected DURATION, NAME, REPLICATION, SHARD at line 1, char 31`},
 		{s: `CREATE DATABASE "testdb" WITH DURATION`, err: `found EOF, expected duration at line 1, char 40`},
@@ -3489,9 +3489,10 @@ func TestParser_ParseStatement(t *testing.T) {
 		{s: `CREATE DATABASE "testdb" WITH NAME`, err: `found EOF, expected identifier at line 1, char 36`},
 		{s: `CREATE DATABASE "testdb" WITH SHARD`, err: `found EOF, expected DURATION at line 1, char 37`},
 		{s: `DROP DATABASE`, err: `found EOF, expected identifier at line 1, char 15`},
-		{s: `DROP TTL`, err: `found EOF, expected identifier at line 1, char 23`},
-		{s: `DROP TTL "1h.cpu"`, err: `found EOF, expected ON at line 1, char 31`},
-		{s: `DROP TTL "1h.cpu" ON`, err: `found EOF, expected identifier at line 1, char 35`},
+		{s: `DROP RETENTION`, err: `found EOF, expected POLICY at line 1, char 16`},
+		{s: `DROP RETENTION POLICY`, err: `found EOF, expected identifier at line 1, char 23`},
+		{s: `DROP RETENTION POLICY "1h.cpu"`, err: `found EOF, expected ON at line 1, char 31`},
+		{s: `DROP RETENTION POLICY "1h.cpu" ON`, err: `found EOF, expected identifier at line 1, char 35`},
 		{s: `DROP USER`, err: `found EOF, expected identifier at line 1, char 11`},
 		{s: `DROP SUBSCRIPTION`, err: `found EOF, expected identifier at line 1, char 19`},
 		{s: `DROP SUBSCRIPTION "name"`, err: `found EOF, expected ON at line 1, char 25`},
@@ -3508,9 +3509,9 @@ func TestParser_ParseStatement(t *testing.T) {
 		{s: `CREATE SUBSCRIPTION "name" ON `, err: `found EOF, expected identifier at line 1, char 32`},
 		{s: `CREATE SUBSCRIPTION "name" ON "db"`, err: `found EOF, expected . at line 1, char 35`},
 		{s: `CREATE SUBSCRIPTION "name" ON "db".`, err: `found EOF, expected identifier at line 1, char 36`},
-		{s: `CREATE SUBSCRIPTION "name" ON "db"."ttl"`, err: `found EOF, expected DESTINATIONS at line 1, char 40`},
-		{s: `CREATE SUBSCRIPTION "name" ON "db"."ttl" DESTINATIONS`, err: `found EOF, expected ALL, ANY at line 1, char 54`},
-		{s: `CREATE SUBSCRIPTION "name" ON "db"."ttl" DESTINATIONS ALL `, err: `found EOF, expected string at line 1, char 59`},
+		{s: `CREATE SUBSCRIPTION "name" ON "db"."rp"`, err: `found EOF, expected DESTINATIONS at line 1, char 40`},
+		{s: `CREATE SUBSCRIPTION "name" ON "db"."rp" DESTINATIONS`, err: `found EOF, expected ALL, ANY at line 1, char 54`},
+		{s: `CREATE SUBSCRIPTION "name" ON "db"."rp" DESTINATIONS ALL `, err: `found EOF, expected string at line 1, char 59`},
 		{s: `GRANT`, err: `found EOF, expected READ, WRITE, ALL [PRIVILEGES] at line 1, char 7`},
 		{s: `GRANT BOGUS`, err: `found BOGUS, expected READ, WRITE, ALL [PRIVILEGES] at line 1, char 7`},
 		{s: `GRANT READ`, err: `found EOF, expected ON at line 1, char 12`},
@@ -3578,25 +3579,27 @@ func TestParser_ParseStatement(t *testing.T) {
 		{s: `REVOKE ALL PRIVILEGES ON testdb FROM`, err: `found EOF, expected identifier at line 1, char 38`},
 		{s: `REVOKE ALL FROM`, err: `found EOF, expected identifier at line 1, char 17`},
 		{s: `REVOKE ALL PRIVILEGES FROM`, err: `found EOF, expected identifier at line 1, char 28`},
-		{s: `CREATE TTL`, err: `found EOF, expected identifier at line 1, char 25`},
-		{s: `CREATE TTL ttl1`, err: `found EOF, expected ON at line 1, char 33`},
-		{s: `CREATE TTL ttl1 ON`, err: `found EOF, expected identifier at line 1, char 36`},
-		{s: `CREATE TTL ttl1 ON testdb`, err: `found EOF, expected DURATION at line 1, char 43`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION`, err: `found EOF, expected duration at line 1, char 52`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION bad`, err: `found bad, expected duration at line 1, char 52`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION 1h`, err: `found EOF, expected REPLICATION at line 1, char 54`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION`, err: `found EOF, expected integer at line 1, char 67`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 3.14`, err: `found 3.14, expected integer at line 1, char 67`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 0`, err: `invalid value 0: must be 1 <= n <= 2147483647 at line 1, char 67`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION bad`, err: `found bad, expected integer at line 1, char 67`},
-		{s: `CREATE TTL ttl1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION INF`, err: `invalid duration INF for shard duration at line 1, char 84`},
-		{s: `ALTER`, err: `found EOF, expected TTL at line 1, char 7`},
-		{s: `ALTER TTL`, err: `found EOF, expected identifier at line 1, char 24`},
-		{s: `ALTER TTL ttl1`, err: `found EOF, expected ON at line 1, char 32`}, {s: `ALTER TTL ttl1 ON`, err: `found EOF, expected identifier at line 1, char 35`},
-		{s: `ALTER TTL ttl1 ON testdb`, err: `found EOF, expected DURATION, REPLICATION, SHARD, DEFAULT at line 1, char 42`},
-		{s: `ALTER TTL ttl1 ON testdb REPLICATION 1 REPLICATION 2`, err: `found duplicate REPLICATION option at line 1, char 56`},
-		{s: `ALTER TTL ttl1 ON testdb DURATION 15251w`, err: `overflowed duration 15251w: choose a smaller duration or INF at line 1, char 51`},
-		{s: `ALTER TTL ttl1 ON testdb DURATION INF SHARD DURATION INF`, err: `invalid duration INF for shard duration at line 1, char 70`},
+		{s: `CREATE RETENTION`, err: `found EOF, expected POLICY at line 1, char 18`},
+		{s: `CREATE RETENTION POLICY`, err: `found EOF, expected identifier at line 1, char 25`},
+		{s: `CREATE RETENTION POLICY policy1`, err: `found EOF, expected ON at line 1, char 33`},
+		{s: `CREATE RETENTION POLICY policy1 ON`, err: `found EOF, expected identifier at line 1, char 36`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb`, err: `found EOF, expected DURATION at line 1, char 43`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION`, err: `found EOF, expected duration at line 1, char 52`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION bad`, err: `found bad, expected duration at line 1, char 52`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h`, err: `found EOF, expected REPLICATION at line 1, char 54`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION`, err: `found EOF, expected integer at line 1, char 67`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 3.14`, err: `found 3.14, expected integer at line 1, char 67`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 0`, err: `invalid value 0: must be 1 <= n <= 2147483647 at line 1, char 67`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION bad`, err: `found bad, expected integer at line 1, char 67`},
+		{s: `CREATE RETENTION POLICY policy1 ON testdb DURATION 1h REPLICATION 2 SHARD DURATION INF`, err: `invalid duration INF for shard duration at line 1, char 84`},
+		{s: `ALTER`, err: `found EOF, expected RETENTION at line 1, char 7`},
+		{s: `ALTER RETENTION`, err: `found EOF, expected POLICY at line 1, char 17`},
+		{s: `ALTER RETENTION POLICY`, err: `found EOF, expected identifier at line 1, char 24`},
+		{s: `ALTER RETENTION POLICY policy1`, err: `found EOF, expected ON at line 1, char 32`}, {s: `ALTER RETENTION POLICY policy1 ON`, err: `found EOF, expected identifier at line 1, char 35`},
+		{s: `ALTER RETENTION POLICY policy1 ON testdb`, err: `found EOF, expected DURATION, REPLICATION, SHARD, DEFAULT at line 1, char 42`},
+		{s: `ALTER RETENTION POLICY policy1 ON testdb REPLICATION 1 REPLICATION 2`, err: `found duplicate REPLICATION option at line 1, char 56`},
+		{s: `ALTER RETENTION POLICY policy1 ON testdb DURATION 15251w`, err: `overflowed duration 15251w: choose a smaller duration or INF at line 1, char 51`},
+		{s: `ALTER RETENTION POLICY policy1 ON testdb DURATION INF SHARD DURATION INF`, err: `invalid duration INF for shard duration at line 1, char 70`},
 		{s: `SET`, err: `found EOF, expected PASSWORD at line 1, char 5`},
 		{s: `SET PASSWORD`, err: `found EOF, expected FOR at line 1, char 14`},
 		{s: `SET PASSWORD something`, err: `found something, expected FOR at line 1, char 14`},
@@ -3618,12 +3621,12 @@ func TestParser_ParseStatement(t *testing.T) {
 			},
 		},
 
-		// Count records in a metric.
+		// Count records in a measurement.
 		{
 			s: `SELECT count($value) FROM $m`,
 			params: map[string]interface{}{
 				"value": map[string]interface{}{"identifier": "my_value"},
-				"m":     map[string]interface{}{"identifier": "my_metric"},
+				"m":     map[string]interface{}{"identifier": "my_measurement"},
 			},
 			stmt: &cnosql.SelectStatement{
 				Fields: []*cnosql.Field{{
@@ -3633,7 +3636,7 @@ func TestParser_ParseStatement(t *testing.T) {
 							&cnosql.VarRef{Val: "my_value"},
 						}}},
 				},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "my_metric"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "my_measurement"}},
 			},
 		},
 
@@ -3649,7 +3652,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{{
 					Expr: &cnosql.Wildcard{},
 				}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "shapes"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "shapes"}},
 				Limit:   10,
 			},
 		},
@@ -3666,7 +3669,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: []*cnosql.Field{{
 					Expr: &cnosql.Wildcard{},
 				}},
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "shapes"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "shapes"}},
 				Limit:   10,
 			},
 		},
@@ -4171,8 +4174,8 @@ func TestQuoteIdent(t *testing.T) {
 		{[]string{`foo`, ``, `bar`}, `"foo"..bar`},
 		{[]string{`foo bar`, `baz`}, `"foo bar".baz`},
 		{[]string{`foo.bar`, `baz`}, `"foo.bar".baz`},
-		{[]string{`foo.bar`, `ttl`, `baz`}, `"foo.bar"."ttl".baz`},
-		{[]string{`foo.bar`, `ttl`, `1baz`}, `"foo.bar"."ttl"."1baz"`},
+		{[]string{`foo.bar`, `rp`, `baz`}, `"foo.bar"."rp".baz`},
+		{[]string{`foo.bar`, `rp`, `1baz`}, `"foo.bar"."rp"."1baz"`},
 	} {
 		if s := cnosql.QuoteIdent(tt.ident...); tt.s != s {
 			t.Errorf("%d. %s: mismatch: %s != %s", i, tt.ident, tt.s, s)
@@ -4188,12 +4191,12 @@ func TestDeleteSeriesStatement_String(t *testing.T) {
 	}{
 		{
 			s:    `DELETE FROM src`,
-			stmt: &cnosql.DeleteSeriesStatement{Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}}},
+			stmt: &cnosql.DeleteSeriesStatement{Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}}},
 		},
 		{
 			s: `DELETE FROM src WHERE host = 'hosta.cnosdb.org'`,
 			stmt: &cnosql.DeleteSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "host"},
@@ -4204,7 +4207,7 @@ func TestDeleteSeriesStatement_String(t *testing.T) {
 		{
 			s: `DELETE FROM src WHERE host = 'hosta.cnosdb.org'`,
 			stmt: &cnosql.DeleteSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "host"},
@@ -4240,12 +4243,12 @@ func TestDropSeriesStatement_String(t *testing.T) {
 	}{
 		{
 			s:    `DROP SERIES FROM src`,
-			stmt: &cnosql.DropSeriesStatement{Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}}},
+			stmt: &cnosql.DropSeriesStatement{Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}}},
 		},
 		{
 			s: `DROP SERIES FROM src WHERE host = 'hosta.cnosdb.org'`,
 			stmt: &cnosql.DropSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "host"},
@@ -4256,7 +4259,7 @@ func TestDropSeriesStatement_String(t *testing.T) {
 		{
 			s: `DROP SERIES FROM src WHERE host = 'hosta.cnosdb.org'`,
 			stmt: &cnosql.DropSeriesStatement{
-				Sources: []cnosql.Source{&cnosql.Metric{Name: "src"}},
+				Sources: []cnosql.Source{&cnosql.Measurement{Name: "src"}},
 				Condition: &cnosql.BinaryExpr{
 					Op:  cnosql.EQ,
 					LHS: &cnosql.VarRef{Val: "host"},
@@ -4323,9 +4326,9 @@ func errstring(err error) string {
 	return ""
 }
 
-// newAlterTimeToLiveStatement creates an initialized AlterTimeToLiveStatement.
-func newAlterTimeToLiveStatement(name string, DB string, d, sd time.Duration, replication int, dfault bool) *cnosql.AlterTimeToLiveStatement {
-	stmt := &cnosql.AlterTimeToLiveStatement{
+// newAlterRetentionPolicyStatement creates an initialized AlterRetentionPolicyStatement.
+func newAlterRetentionPolicyStatement(name string, DB string, d, sd time.Duration, replication int, dfault bool) *cnosql.AlterRetentionPolicyStatement {
+	stmt := &cnosql.AlterRetentionPolicyStatement{
 		Name:     name,
 		Database: DB,
 		Default:  dfault,
@@ -4336,7 +4339,7 @@ func newAlterTimeToLiveStatement(name string, DB string, d, sd time.Duration, re
 	}
 
 	if sd > -1 {
-		stmt.RegionDuration = &sd
+		stmt.ShardGroupDuration = &sd
 	}
 
 	if replication > -1 {

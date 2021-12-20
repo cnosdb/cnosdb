@@ -166,7 +166,7 @@ var (
 	booleanBlocksSizeCounter     = metrics.MustRegisterCounter("boolean_blocks_size_bytes", metrics.WithGroup(tsmGroup))
 )
 
-// FileStore 管理多个 .tsm 文件，也就是多个 TSMReader
+// FileStore is an abstraction around multiple TSM files.
 type FileStore struct {
 	mu           sync.RWMutex
 	lastModified time.Time
@@ -175,9 +175,9 @@ type FileStore struct {
 	lastFileStats []FileStat
 
 	currentGeneration int
-	dir               string // .tsm 文件所在目录
+	dir               string // Directory of TSM fiel.
 
-	files           []TSMFile     // 所有 TSMReader
+	files           []TSMFile     // All TSMReader
 	tsmMMAPWillNeed bool          // If true then the kernel will be advised MMAP_WILLNEED for TSM files.
 	openLimiter     limiter.Fixed // limit the number of concurrent opening TSM files.
 
@@ -186,7 +186,7 @@ type FileStore struct {
 	traceLogging bool
 
 	stats  *FileStoreStatistics
-	purger *purger // 使用中的文件需要删除时，加入 purger 以延迟删除
+	purger *purger // When a file in use needs to be deleted, add purger to delay the deletion
 
 	currentTempDirID int
 
@@ -496,7 +496,7 @@ func (f *FileStore) Open() error {
 		}
 	}
 
-	// 获取目录下所有 .tsm 格式的文件
+	// Get all under the directory TSM file.
 	files, err := filepath.Glob(filepath.Join(f.dir, fmt.Sprintf("*.%s", TSMFileExtension)))
 	if err != nil {
 		return err
@@ -508,7 +508,7 @@ func (f *FileStore) Open() error {
 		err error
 	}
 
-	// channel readerC 用来通知文件加载结果
+	// readerC Used to notify file loading results
 	readerC := make(chan *res)
 	for i, fn := range files {
 		// Keep track of the latest ID
@@ -521,13 +521,13 @@ func (f *FileStore) Open() error {
 			f.currentGeneration = generation + 1
 		}
 
-		// 打开 .tsm 文件
+		// Open TSM file.
 		file, err := os.OpenFile(fn, os.O_RDONLY, 0666)
 		if err != nil {
 			return fmt.Errorf("error opening file %s: %v", fn, err)
 		}
 
-		// 使用单独的 go routine 加载 .tsm 文件
+		// Use a separate go routine to load TSM file.
 		go func(idx int, file *os.File) {
 			// Ensure a limited number of TSM files are loaded at once.
 			// Systems which have very large datasets (1TB+) can have thousands
@@ -619,7 +619,8 @@ func (f *FileStore) DiskSizeBytes() int64 {
 	return atomic.LoadInt64(&f.stats.DiskBytes)
 }
 
-// 读取指定 key 和 timestamp 对应的所有 Value
+// Read returns the slice of values for the given key and the given timestamp,
+// if any file matches those constraints.
 func (f *FileStore) Read(key []byte, t int64) ([]Value, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -636,7 +637,7 @@ func (f *FileStore) Read(key []byte, t int64) ([]Value, error) {
 			return nil, err
 		}
 
-		// 找到后直接返回
+		// Return directly after finding.
 		if len(v) > 0 {
 			return v, nil
 		}
@@ -978,7 +979,6 @@ func (f *FileStore) cost(key []byte, min, max int64) query.IteratorCost {
 // locations returns the files and index blocks for a key and time.  ascending indicates
 // whether the key will be scan in ascending time order or descenging time order.
 // This function assumes the read-lock has been taken.
-// 查找 key 对应的 location
 func (f *FileStore) locations(key []byte, t int64, ascending bool) []*location {
 	var cache []IndexEntry
 	locations := make([]*location, 0, len(f.files))
@@ -987,7 +987,6 @@ func (f *FileStore) locations(key []byte, t int64, ascending bool) []*location {
 
 		// If we ascending and the max time of the file is before where we want to start
 		// skip it.
-		// 按时间范围过滤 TSMFile
 		if ascending && maxTime < t {
 			continue
 			// If we are descending and the min time of the file is after where we want to start,
@@ -999,14 +998,12 @@ func (f *FileStore) locations(key []byte, t int64, ascending bool) []*location {
 
 		// This file could potential contain points we are looking for so find the blocks for
 		// the given key.
-		// 按 key 过滤 IndexEntry
 		entries := fd.ReadEntries(key, &cache)
 	LOOP:
 		for i := 0; i < len(entries); i++ {
 			ie := entries[i]
 
 			// Skip any blocks only contain values that are tombstoned.
-			// 按剔除标记过滤 IndexEntry
 			for _, t := range tombstones {
 				if t.Min <= ie.MinTime && t.Max >= ie.MaxTime {
 					continue LOOP
@@ -1015,7 +1012,6 @@ func (f *FileStore) locations(key []byte, t int64, ascending bool) []*location {
 
 			// If we ascending and the max time of a block is before where we are looking, skip
 			// it since the data is out of our range
-			// 按时间范围过滤 IndexEntry
 			if ascending && ie.MaxTime < t {
 				continue
 				// If we descending and the min time of a block is after where we are looking, skip
@@ -1024,13 +1020,11 @@ func (f *FileStore) locations(key []byte, t int64, ascending bool) []*location {
 				continue
 			}
 
-			// 构造 location
 			location := &location{
 				r:     fd,
 				entry: ie,
 			}
 
-			// 设置已读标记，便于查询时进行排除
 			if ascending {
 				// For an ascending cursor, mark everything before the seek time as read
 				// so we can filter it out at query time

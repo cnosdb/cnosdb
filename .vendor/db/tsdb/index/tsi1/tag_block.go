@@ -42,7 +42,7 @@ var (
 	ErrTagBlockSizeMismatch       = errors.New("tag block size mismatch")
 )
 
-// TagBlock represents tag key/value block for a single metric.
+// TagBlock represents tag key/value block for a single measurement.
 type TagBlock struct {
 	data []byte
 
