@@ -345,7 +345,7 @@ func (d *NodeDialer) DialNode(nodeID uint64) (net.Conn, error) {
 	return conn, nil
 }
 
-// Source contains the database and time to live source for data.
+// Source contains the database and retention policy source for data.
 type Source struct {
 	Database        string
 	RetentionPolicy string

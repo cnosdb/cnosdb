@@ -1270,7 +1270,7 @@ func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupRPN
 
 	}
 
-	// renumber the shard groups and shards for the new time to live(ies)
+	// renumber the shard groups and shards for the new retention policy(ies)
 	for _, rpImport := range dbImport.RetentionPolicies {
 		for j, sgImport := range rpImport.ShardGroups {
 			data.MaxShardGroupID++
