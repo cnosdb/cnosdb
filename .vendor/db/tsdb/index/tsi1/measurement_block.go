@@ -14,54 +14,54 @@ import (
 	"github.com/cnosdatabase/db/tsdb"
 )
 
-// MetricBlockVersion is the version of the metric block.
-const MetricBlockVersion = 1
+// MeasurementBlockVersion is the version of the measurement block.
+const MeasurementBlockVersion = 1
 
-// Metric flag constants.
+// Measurement flag constants.
 const (
-	MetricTombstoneFlag   = 0x01
-	MetricSeriesIDSetFlag = 0x02
+	MeasurementTombstoneFlag   = 0x01
+	MeasurementSeriesIDSetFlag = 0x02
 )
 
-// Metric field size constants.
+// Measurement field size constants.
 const (
 	// 1 byte offset for the block to ensure non-zero offsets.
-	MetricFillSize = 1
+	MeasurementFillSize = 1
 
-	// Metric trailer fields
-	MetricTrailerSize = 0 +
+	// Measurement trailer fields
+	MeasurementTrailerSize = 0 +
 		2 + // version
 		8 + 8 + // data offset/size
 		8 + 8 + // hash index offset/size
-		8 + 8 + // metric sketch offset/size
-		8 + 8 // tombstone metric sketch offset/size
+		8 + 8 + // measurement sketch offset/size
+		8 + 8 // tombstone measurement sketch offset/size
 
-	// Metric key block fields.
-	MetricNSize      = 8
-	MetricOffsetSize = 8
+	// Measurement key block fields.
+	MeasurementNSize      = 8
+	MeasurementOffsetSize = 8
 
 	SeriesIDSize = 8
 )
 
-// Metric errors.
+// Measurement errors.
 var (
-	ErrUnsupportedMetricBlockVersion = errors.New("unsupported metric block version")
-	ErrMetricBlockSizeMismatch       = errors.New("metric block size mismatch")
+	ErrUnsupportedMeasurementBlockVersion = errors.New("unsupported measurement block version")
+	ErrMeasurementBlockSizeMismatch       = errors.New("measurement block size mismatch")
 )
 
-// MetricBlock represents a collection of all metrics in an index.
-type MetricBlock struct {
+// MeasurementBlock represents a collection of all measurements in an index.
+type MeasurementBlock struct {
 	data     []byte
 	hashData []byte
 
-	// Metric sketch and tombstone sketch for cardinality estimation.
+	// Measurement sketch and tombstone sketch for cardinality estimation.
 	sketchData, tSketchData []byte
 
 	version int // block version
 }
 
-// bytes estimates the memory footprint of this MetricBlock, in bytes.
-func (blk *MetricBlock) bytes() int {
+// bytes estimates the memory footprint of this MeasurementBlock, in bytes.
+func (blk *MeasurementBlock) bytes() int {
 	var b int
 	// Do not count contents of blk.data or blk.hashData because they reference into an external []byte
 	b += int(unsafe.Sizeof(*blk))
@@ -70,27 +70,27 @@ func (blk *MetricBlock) bytes() int {
 
 // Version returns the encoding version parsed from the data.
 // Only valid after UnmarshalBinary() has been successfully invoked.
-func (blk *MetricBlock) Version() int { return blk.version }
+func (blk *MeasurementBlock) Version() int { return blk.version }
 
-// Elem returns an element for a metric.
-func (blk *MetricBlock) Elem(name []byte) (e MetricBlockElem, ok bool) {
-	n := int64(binary.BigEndian.Uint64(blk.hashData[:MetricNSize]))
+// Elem returns an element for a measurement.
+func (blk *MeasurementBlock) Elem(name []byte) (e MeasurementBlockElem, ok bool) {
+	n := int64(binary.BigEndian.Uint64(blk.hashData[:MeasurementNSize]))
 	hash := rhh.HashKey(name)
 	pos := hash % n
 
 	// Track current distance
 	var d int64
 	for {
-		// Find offset of metric.
-		offset := binary.BigEndian.Uint64(blk.hashData[MetricNSize+(pos*MetricOffsetSize):])
+		// Find offset of measurement.
+		offset := binary.BigEndian.Uint64(blk.hashData[MeasurementNSize+(pos*MeasurementOffsetSize):])
 		if offset == 0 {
-			return MetricBlockElem{}, false
+			return MeasurementBlockElem{}, false
 		}
 
 		// Evaluate name if offset is not empty.
 		if offset > 0 {
 			// Parse into element.
-			var e MetricBlockElem
+			var e MeasurementBlockElem
 			e.UnmarshalBinary(blk.data[offset:])
 
 			// Return if name match.
@@ -100,7 +100,7 @@ func (blk *MetricBlock) Elem(name []byte) (e MetricBlockElem, ok bool) {
 
 			// Check if we've exceeded the probe distance.
 			if d > rhh.Dist(rhh.HashKey(e.name), pos, n) {
-				return MetricBlockElem{}, false
+				return MeasurementBlockElem{}, false
 			}
 		}
 
@@ -109,16 +109,16 @@ func (blk *MetricBlock) Elem(name []byte) (e MetricBlockElem, ok bool) {
 		d++
 
 		if d > n {
-			return MetricBlockElem{}, false
+			return MeasurementBlockElem{}, false
 		}
 	}
 }
 
 // UnmarshalBinary unpacks data into the block. Block is not copied so data
 // should be retained and unchanged after being passed into this function.
-func (blk *MetricBlock) UnmarshalBinary(data []byte) error {
+func (blk *MeasurementBlock) UnmarshalBinary(data []byte) error {
 	// Read trailer.
-	t, err := ReadMetricBlockTrailer(data)
+	t, err := ReadMeasurementBlockTrailer(data)
 	if err != nil {
 		return err
 	}
@@ -138,14 +138,14 @@ func (blk *MetricBlock) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// Iterator returns an iterator over all metrics.
-func (blk *MetricBlock) Iterator() MetricIterator {
-	return &blockMetricIterator{data: blk.data[MetricFillSize:]}
+// Iterator returns an iterator over all measurements.
+func (blk *MeasurementBlock) Iterator() MeasurementIterator {
+	return &blockMeasurementIterator{data: blk.data[MeasurementFillSize:]}
 }
 
-// SeriesIDIterator returns an iterator for all series ids in a metric.
-func (blk *MetricBlock) SeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
-	// Find metric element.
+// SeriesIDIterator returns an iterator for all series ids in a measurement.
+func (blk *MeasurementBlock) SeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
+	// Find measurement element.
 	e, ok := blk.Elem(name)
 	if !ok {
 		return &rawSeriesIDIterator{}
@@ -156,8 +156,8 @@ func (blk *MetricBlock) SeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
 	return &rawSeriesIDIterator{n: e.series.n, data: e.series.data}
 }
 
-// Sketches returns existence and tombstone metric sketches.
-func (blk *MetricBlock) Sketches() (sketch, tSketch estimator.Sketch, err error) {
+// Sketches returns existence and tombstone measurement sketches.
+func (blk *MeasurementBlock) Sketches() (sketch, tSketch estimator.Sketch, err error) {
 	sketch = hll.NewDefaultPlus()
 	if err := sketch.UnmarshalBinary(blk.sketchData); err != nil {
 		return nil, nil, err
@@ -170,14 +170,14 @@ func (blk *MetricBlock) Sketches() (sketch, tSketch estimator.Sketch, err error)
 	return sketch, tSketch, nil
 }
 
-// blockMetricIterator iterates over a list metrics in a block.
-type blockMetricIterator struct {
-	elem MetricBlockElem
+// blockMeasurementIterator iterates over a list measurements in a block.
+type blockMeasurementIterator struct {
+	elem MeasurementBlockElem
 	data []byte
 }
 
-// Next returns the next metric. Returns nil when iterator is complete.
-func (itr *blockMetricIterator) Next() MetricElem {
+// Next returns the next measurement. Returns nil when iterator is complete.
+func (itr *blockMeasurementIterator) Next() MeasurementElem {
 	// Return nil when we run out of data.
 	if len(itr.data) == 0 {
 		return nil
@@ -234,8 +234,8 @@ func (itr *rawSeriesIDIterator) SeriesIDSet() *tsdb.SeriesIDSet {
 	return ss
 }
 
-// MetricBlockTrailer represents meta data at the end of a MetricBlock.
-type MetricBlockTrailer struct {
+// MeasurementBlockTrailer represents meta data at the end of a MeasurementBlock.
+type MeasurementBlockTrailer struct {
 	Version int // Encoding version
 
 	// Offset & size of data section.
@@ -250,45 +250,45 @@ type MetricBlockTrailer struct {
 		Size   int64
 	}
 
-	// Offset and size of cardinality sketch for metrics.
+	// Offset and size of cardinality sketch for measurements.
 	Sketch struct {
 		Offset int64
 		Size   int64
 	}
 
-	// Offset and size of cardinality sketch for tombstoned metrics.
+	// Offset and size of cardinality sketch for tombstoned measurements.
 	TSketch struct {
 		Offset int64
 		Size   int64
 	}
 }
 
-// ReadMetricBlockTrailer returns the block trailer from data.
-func ReadMetricBlockTrailer(data []byte) (MetricBlockTrailer, error) {
-	var t MetricBlockTrailer
+// ReadMeasurementBlockTrailer returns the block trailer from data.
+func ReadMeasurementBlockTrailer(data []byte) (MeasurementBlockTrailer, error) {
+	var t MeasurementBlockTrailer
 
 	// Read version (which is located in the last two bytes of the trailer).
 	t.Version = int(binary.BigEndian.Uint16(data[len(data)-2:]))
-	if t.Version != MetricBlockVersion {
+	if t.Version != MeasurementBlockVersion {
 		return t, ErrUnsupportedIndexFileVersion
 	}
 
 	// Slice trailer data.
-	buf := data[len(data)-MetricTrailerSize:]
+	buf := data[len(data)-MeasurementTrailerSize:]
 
 	// Read data section info.
 	t.Data.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 	t.Data.Size, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 
-	// Read metric block info.
+	// Read measurement block info.
 	t.HashIndex.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 	t.HashIndex.Size, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 
-	// Read metric sketch info.
+	// Read measurement sketch info.
 	t.Sketch.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 	t.Sketch.Size, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 
-	// Read tombstone metric sketch info.
+	// Read tombstone measurement sketch info.
 	t.TSketch.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 	t.TSketch.Size = int64(binary.BigEndian.Uint64(buf[0:8]))
 
@@ -296,7 +296,7 @@ func ReadMetricBlockTrailer(data []byte) (MetricBlockTrailer, error) {
 }
 
 // WriteTo writes the trailer to w.
-func (t *MetricBlockTrailer) WriteTo(w io.Writer) (n int64, err error) {
+func (t *MeasurementBlockTrailer) WriteTo(w io.Writer) (n int64, err error) {
 	// Write data section info.
 	if err := writeUint64To(w, uint64(t.Data.Offset), &n); err != nil {
 		return n, err
@@ -311,32 +311,32 @@ func (t *MetricBlockTrailer) WriteTo(w io.Writer) (n int64, err error) {
 		return n, err
 	}
 
-	// Write metric sketch info.
+	// Write measurement sketch info.
 	if err := writeUint64To(w, uint64(t.Sketch.Offset), &n); err != nil {
 		return n, err
 	} else if err := writeUint64To(w, uint64(t.Sketch.Size), &n); err != nil {
 		return n, err
 	}
 
-	// Write tombstone metric sketch info.
+	// Write tombstone measurement sketch info.
 	if err := writeUint64To(w, uint64(t.TSketch.Offset), &n); err != nil {
 		return n, err
 	} else if err := writeUint64To(w, uint64(t.TSketch.Size), &n); err != nil {
 		return n, err
 	}
 
-	// Write metric block version.
-	if err := writeUint16To(w, MetricBlockVersion, &n); err != nil {
+	// Write measurement block version.
+	if err := writeUint16To(w, MeasurementBlockVersion, &n); err != nil {
 		return n, err
 	}
 
 	return n, nil
 }
 
-// MetricBlockElem represents an internal metric element.
-type MetricBlockElem struct {
+// MeasurementBlockElem represents an internal measurement element.
+type MeasurementBlockElem struct {
 	flag byte   // flag
-	name []byte // metric name
+	name []byte // measurement name
 
 	tagBlock struct {
 		offset int64
@@ -354,38 +354,38 @@ type MetricBlockElem struct {
 	size int
 }
 
-// Name returns the metric name.
-func (e *MetricBlockElem) Name() []byte { return e.name }
+// Name returns the measurement name.
+func (e *MeasurementBlockElem) Name() []byte { return e.name }
 
 // Deleted returns true if the tombstone flag is set.
-func (e *MetricBlockElem) Deleted() bool {
-	return (e.flag & MetricTombstoneFlag) != 0
+func (e *MeasurementBlockElem) Deleted() bool {
+	return (e.flag & MeasurementTombstoneFlag) != 0
 }
 
-// TagBlockOffset returns the offset of the metric's tag block.
-func (e *MetricBlockElem) TagBlockOffset() int64 { return e.tagBlock.offset }
+// TagBlockOffset returns the offset of the measurement's tag block.
+func (e *MeasurementBlockElem) TagBlockOffset() int64 { return e.tagBlock.offset }
 
-// TagBlockSize returns the size of the metric's tag block.
-func (e *MetricBlockElem) TagBlockSize() int64 { return e.tagBlock.size }
+// TagBlockSize returns the size of the measurement's tag block.
+func (e *MeasurementBlockElem) TagBlockSize() int64 { return e.tagBlock.size }
 
 // SeriesData returns the raw series data.
-func (e *MetricBlockElem) SeriesData() []byte { return e.series.data }
+func (e *MeasurementBlockElem) SeriesData() []byte { return e.series.data }
 
-// SeriesN returns the number of series associated with the metric.
-func (e *MetricBlockElem) SeriesN() uint64 { return e.series.n }
+// SeriesN returns the number of series associated with the measurement.
+func (e *MeasurementBlockElem) SeriesN() uint64 { return e.series.n }
 
 // SeriesID returns series ID at an index.
-func (e *MetricBlockElem) SeriesID(i int) uint64 {
+func (e *MeasurementBlockElem) SeriesID(i int) uint64 {
 	return binary.BigEndian.Uint64(e.series.data[i*SeriesIDSize:])
 }
 
-func (e *MetricBlockElem) HasSeries() bool { return e.series.n > 0 }
+func (e *MeasurementBlockElem) HasSeries() bool { return e.series.n > 0 }
 
 // SeriesIDs returns a list of decoded series ids.
 //
 // NOTE: This should be used for testing and diagnostics purposes only.
 // It requires loading the entire list of series in-memory.
-func (e *MetricBlockElem) SeriesIDs() []uint64 {
+func (e *MeasurementBlockElem) SeriesIDs() []uint64 {
 	a := make([]uint64, 0, e.series.n)
 	e.ForEachSeriesID(func(id uint64) error {
 		a = append(a, id)
@@ -394,7 +394,7 @@ func (e *MetricBlockElem) SeriesIDs() []uint64 {
 	return a
 }
 
-func (e *MetricBlockElem) ForEachSeriesID(fn func(uint64) error) error {
+func (e *MeasurementBlockElem) ForEachSeriesID(fn func(uint64) error) error {
 	// Read from roaring, if available.
 	if e.seriesIDSet != nil {
 		itr := e.seriesIDSet.Iterator()
@@ -424,10 +424,10 @@ func (e *MetricBlockElem) ForEachSeriesID(fn func(uint64) error) error {
 }
 
 // Size returns the size of the element.
-func (e *MetricBlockElem) Size() int { return e.size }
+func (e *MeasurementBlockElem) Size() int { return e.size }
 
 // UnmarshalBinary unmarshals data into e.
-func (e *MetricBlockElem) UnmarshalBinary(data []byte) error {
+func (e *MeasurementBlockElem) UnmarshalBinary(data []byte) error {
 	start := len(data)
 
 	// Parse flag data.
@@ -459,7 +459,7 @@ func (e *MetricBlockElem) UnmarshalBinary(data []byte) error {
 	data = data[n:]
 
 	// Parse series data (original uvarint encoded or roaring bitmap).
-	if e.flag&MetricSeriesIDSetFlag == 0 {
+	if e.flag&MeasurementSeriesIDSetFlag == 0 {
 		e.series.data, data = data[:sz], data[sz:]
 	} else {
 		// data = memalign(data)
@@ -476,26 +476,26 @@ func (e *MetricBlockElem) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// MetricBlockWriter writes a metric block.
-type MetricBlockWriter struct {
+// MeasurementBlockWriter writes a measurement block.
+type MeasurementBlockWriter struct {
 	buf bytes.Buffer
-	mms map[string]metric
+	mms map[string]measurement
 
-	// Metric sketch and tombstoned metric sketch.
+	// Measurement sketch and tombstoned measurement sketch.
 	sketch, tSketch estimator.Sketch
 }
 
-// NewMetricBlockWriter returns a new MetricBlockWriter.
-func NewMetricBlockWriter() *MetricBlockWriter {
-	return &MetricBlockWriter{
-		mms:     make(map[string]metric),
+// NewMeasurementBlockWriter returns a new MeasurementBlockWriter.
+func NewMeasurementBlockWriter() *MeasurementBlockWriter {
+	return &MeasurementBlockWriter{
+		mms:     make(map[string]measurement),
 		sketch:  hll.NewDefaultPlus(),
 		tSketch: hll.NewDefaultPlus(),
 	}
 }
 
-// Add adds a metric with series and tag set offset/size.
-func (mw *MetricBlockWriter) Add(name []byte, deleted bool, offset, size int64, seriesIDs []uint64) {
+// Add adds a measurement with series and tag set offset/size.
+func (mw *MeasurementBlockWriter) Add(name []byte, deleted bool, offset, size int64, seriesIDs []uint64) {
 	mm := mw.mms[string(name)]
 	mm.deleted = deleted
 	mm.tagBlock.offset = offset
@@ -517,15 +517,15 @@ func (mw *MetricBlockWriter) Add(name []byte, deleted bool, offset, size int64, 
 	}
 }
 
-// WriteTo encodes the metrics to w.
-func (mw *MetricBlockWriter) WriteTo(w io.Writer) (n int64, err error) {
-	var t MetricBlockTrailer
+// WriteTo encodes the measurements to w.
+func (mw *MeasurementBlockWriter) WriteTo(w io.Writer) (n int64, err error) {
+	var t MeasurementBlockTrailer
 
 	// The sketches must be set before calling WriteTo.
 	if mw.sketch == nil {
-		return 0, errors.New("metric sketch not set")
+		return 0, errors.New("measurement sketch not set")
 	} else if mw.tSketch == nil {
-		return 0, errors.New("metric tombstone sketch not set")
+		return 0, errors.New("measurement tombstone sketch not set")
 	}
 
 	// Sort names.
@@ -545,13 +545,13 @@ func (mw *MetricBlockWriter) WriteTo(w io.Writer) (n int64, err error) {
 
 	// Encode key list.
 	for _, name := range names {
-		// Retrieve metric and save offset.
+		// Retrieve measurement and save offset.
 		mm := mw.mms[name]
 		mm.offset = n
 		mw.mms[name] = mm
 
-		// Write metric
-		if err := mw.writeMetricTo(w, []byte(name), &mm, &n); err != nil {
+		// Write measurement
+		if err := mw.writeMeasurementTo(w, []byte(name), &mm, &n); err != nil {
 			return n, err
 		}
 	}
@@ -579,7 +579,7 @@ func (mw *MetricBlockWriter) WriteTo(w io.Writer) (n int64, err error) {
 		_, v := m.Elem(i)
 
 		var offset int64
-		if mm, ok := v.(*metric); ok {
+		if mm, ok := v.(*measurement); ok {
 			offset = mm.offset
 		}
 
@@ -608,8 +608,8 @@ func (mw *MetricBlockWriter) WriteTo(w io.Writer) (n int64, err error) {
 	return n, err
 }
 
-// writeMetricTo encodes a single metric entry into w.
-func (mw *MetricBlockWriter) writeMetricTo(w io.Writer, name []byte, mm *metric, n *int64) error {
+// writeMeasurementTo encodes a single measurement entry into w.
+func (mw *MeasurementBlockWriter) writeMeasurementTo(w io.Writer, name []byte, mm *measurement, n *int64) error {
 	// Write flag & tag block offset.
 	if err := writeUint8To(w, mm.flag(), n); err != nil {
 		return err
@@ -620,7 +620,7 @@ func (mw *MetricBlockWriter) writeMetricTo(w io.Writer, name []byte, mm *metric,
 		return err
 	}
 
-	// Write metric name.
+	// Write measurement name.
 	if err := writeUvarintTo(w, uint64(len(name)), n); err != nil {
 		return err
 	}
@@ -669,7 +669,7 @@ func writeSketchTo(w io.Writer, s estimator.Sketch, n *int64) error {
 	return err
 }
 
-type metric struct {
+type measurement struct {
 	deleted  bool
 	tagBlock struct {
 		offset int64
@@ -679,10 +679,10 @@ type metric struct {
 	offset      int64
 }
 
-func (mm metric) flag() byte {
-	flag := byte(MetricSeriesIDSetFlag)
+func (mm measurement) flag() byte {
+	flag := byte(MeasurementSeriesIDSetFlag)
 	if mm.deleted {
-		flag |= MetricTombstoneFlag
+		flag |= MeasurementTombstoneFlag
 	}
 	return flag
 }

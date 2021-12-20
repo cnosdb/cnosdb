@@ -24,8 +24,8 @@ const (
 
 // Config represents the meta configuration.
 type Config struct {
-	Dir                  string `toml:"dir"`
-	TimeToLiveAutoCreate bool   `toml:"time-to-live-autocreate"`
+	Dir                 string `toml:"dir"`
+	RetentionAutoCreate bool   `toml:"retention-autocreate"`
 
 	HTTPD *ServerConfig
 	Log   *logger.Config
@@ -34,7 +34,7 @@ type Config struct {
 // NewConfig builds a new configuration with default values.
 func NewConfig() *Config {
 	return &Config{
-		TimeToLiveAutoCreate: true,
+		RetentionAutoCreate: true,
 	}
 }
 

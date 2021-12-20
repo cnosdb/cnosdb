@@ -12,7 +12,7 @@ import (
 )
 
 // buildFloatCursor creates a cursor for a float field.
-func (e *Engine) buildFloatCursor(ctx context.Context, metric, seriesKey, field string, opt query.IteratorOptions) floatCursor {
+func (e *Engine) buildFloatCursor(ctx context.Context, measurement, seriesKey, field string, opt query.IteratorOptions) floatCursor {
 	key := SeriesFieldKeyBytes(seriesKey, field)
 	cacheValues := e.Cache.Values(key)
 	keyCursor := e.KeyCursor(ctx, key, opt.SeekTime(), opt.Ascending)
@@ -20,7 +20,7 @@ func (e *Engine) buildFloatCursor(ctx context.Context, metric, seriesKey, field 
 }
 
 // buildIntegerCursor creates a cursor for a integer field.
-func (e *Engine) buildIntegerCursor(ctx context.Context, metric, seriesKey, field string, opt query.IteratorOptions) integerCursor {
+func (e *Engine) buildIntegerCursor(ctx context.Context, measurement, seriesKey, field string, opt query.IteratorOptions) integerCursor {
 	key := SeriesFieldKeyBytes(seriesKey, field)
 	cacheValues := e.Cache.Values(key)
 	keyCursor := e.KeyCursor(ctx, key, opt.SeekTime(), opt.Ascending)
@@ -28,7 +28,7 @@ func (e *Engine) buildIntegerCursor(ctx context.Context, metric, seriesKey, fiel
 }
 
 // buildUnsignedCursor creates a cursor for a unsigned field.
-func (e *Engine) buildUnsignedCursor(ctx context.Context, metric, seriesKey, field string, opt query.IteratorOptions) unsignedCursor {
+func (e *Engine) buildUnsignedCursor(ctx context.Context, measurement, seriesKey, field string, opt query.IteratorOptions) unsignedCursor {
 	key := SeriesFieldKeyBytes(seriesKey, field)
 	cacheValues := e.Cache.Values(key)
 	keyCursor := e.KeyCursor(ctx, key, opt.SeekTime(), opt.Ascending)
@@ -36,7 +36,7 @@ func (e *Engine) buildUnsignedCursor(ctx context.Context, metric, seriesKey, fie
 }
 
 // buildStringCursor creates a cursor for a string field.
-func (e *Engine) buildStringCursor(ctx context.Context, metric, seriesKey, field string, opt query.IteratorOptions) stringCursor {
+func (e *Engine) buildStringCursor(ctx context.Context, measurement, seriesKey, field string, opt query.IteratorOptions) stringCursor {
 	key := SeriesFieldKeyBytes(seriesKey, field)
 	cacheValues := e.Cache.Values(key)
 	keyCursor := e.KeyCursor(ctx, key, opt.SeekTime(), opt.Ascending)
@@ -44,7 +44,7 @@ func (e *Engine) buildStringCursor(ctx context.Context, metric, seriesKey, field
 }
 
 // buildBooleanCursor creates a cursor for a boolean field.
-func (e *Engine) buildBooleanCursor(ctx context.Context, metric, seriesKey, field string, opt query.IteratorOptions) booleanCursor {
+func (e *Engine) buildBooleanCursor(ctx context.Context, measurement, seriesKey, field string, opt query.IteratorOptions) booleanCursor {
 	key := SeriesFieldKeyBytes(seriesKey, field)
 	cacheValues := e.Cache.Values(key)
 	keyCursor := e.KeyCursor(ctx, key, opt.SeekTime(), opt.Ascending)

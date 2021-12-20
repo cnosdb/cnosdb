@@ -148,7 +148,7 @@ type Handler struct {
 	}
 
 	PointsWriter interface {
-		WritePoints(database, timeToLive string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error
+		WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error
 	}
 
 	requestTracker *RequestTracker
@@ -331,12 +331,12 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 	async := r.FormValue("async") == "true"
 
 	opts := query.ExecutionOptions{
-		Database:   db,
-		TimeToLive: r.FormValue("ttl"),
-		ChunkSize:  chunkSize,
-		ReadOnly:   r.Method == "GET",
-		NodeID:     nodeID,
-		Authorizer: fineAuthorizer,
+		Database:        db,
+		RetentionPolicy: r.FormValue("rp"),
+		ChunkSize:       chunkSize,
+		ReadOnly:        r.Method == "GET",
+		NodeID:          nodeID,
+		Authorizer:      fineAuthorizer,
 	}
 
 	if h.config.AuthEnabled {
@@ -562,7 +562,7 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 	}
 
 	database := r.URL.Query().Get("db")
-	timeToLive := r.URL.Query().Get("ttl")
+	retentionPolicy := r.URL.Query().Get("rp")
 
 	if database == "" {
 		writeError(w, "database is required")
@@ -658,7 +658,7 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 	}
 
 	// Write points.
-	if err := h.PointsWriter.WritePoints(database, timeToLive, consistency, user, points); cnosdb.IsClientError(err) {
+	if err := h.PointsWriter.WritePoints(database, retentionPolicy, consistency, user, points); cnosdb.IsClientError(err) {
 		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
 		writeError(w, err.Error())
 		return

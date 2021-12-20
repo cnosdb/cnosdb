@@ -5,7 +5,7 @@ message WriteShardRequest {
     required uint64 ShardID = 1;
     repeated bytes  Points  = 2;
     optional string Database = 3;
-    optional string TimeToLive = 4;
+    optional string RetentionPolicy = 4;
 }
 
 message WriteShardResponse {
@@ -27,8 +27,8 @@ message CreateIteratorRequest {
     repeated uint64 ShardIDs  = 1;
     required bytes  Opt       = 2;
     required bytes Database   = 3;
-    required bytes TimeToLive = 4;
-    required bytes MetricName = 5;
+    required bytes RetentionPolicy = 4;
+    required bytes MeasurementName = 5;
 }
 
 message CreateIteratorResponse {
@@ -40,7 +40,7 @@ message CreateIteratorResponse {
 
 message FieldDimensionsRequest {
     repeated uint64 ShardIDs = 1;
-    required bytes  Metric   = 2;
+    required bytes  Measurement   = 2;
 }
 
 message FieldDimensionsResponse {

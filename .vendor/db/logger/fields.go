@@ -25,11 +25,11 @@ const (
 	// DBInstanceKey is the logging context key used for identifying name of the relevant database.
 	DBInstanceKey = "db_instance"
 
-	// DBTimeToLiveKey is the logging context key used for identifying name of the relevant time-to-live.
-	DBTimeToLiveKey = "db_ttl"
+	// DBRetentionKey is the logging context key used for identifying name of the relevant retention policy.
+	DBRetentionKey = "db_rp"
 
-	// DBRegionKey is the logging context key used for identifying relevant region.
-	DBRegionKey = "db_region"
+	// DBShardGroupKey is the logging context key used for identifying relevant shard group.
+	DBShardGroupKey = "db_shard_group"
 
 	// DBShardIDKey is the logging context key used for identifying name of the relevant shard number.
 	DBShardIDKey = "db_shard_id"
@@ -77,14 +77,14 @@ func Database(name string) zapcore.Field {
 	return zap.String(DBInstanceKey, name)
 }
 
-// TimeToLive returns the time-to-live.
-func TimeToLive(name string) zapcore.Field {
-	return zap.String(DBTimeToLiveKey, name)
+// Database returns a field for tracking the name of a database.
+func RetentionPolicy(name string) zapcore.Field {
+	return zap.String(DBRetentionKey, name)
 }
 
-// Region returns a field for tracking the region identifier.
-func Region(id uint64) zapcore.Field {
-	return zap.Uint64(DBRegionKey, id)
+// ShardGroup returns a field for tracking the shard group identifier.
+func ShardGroup(id uint64) zapcore.Field {
+	return zap.Uint64(DBShardGroupKey, id)
 }
 
 // Shard returns a field for tracking the shard identifier.

@@ -94,7 +94,7 @@ func GetCommand() *cobra.Command {
 	fs.StringVar(&exportCmd.walDir, "waldir", homeDir+"/.cnosdb/wal", "WAL storage path")
 	fs.StringVar(&exportCmd.out, "out", os.Getenv("HOME")+"/.cnosdb/export", "Destination file to export to")
 	fs.StringVar(&exportCmd.database, "database", "", "Optional: the database to export")
-	fs.StringVar(&exportCmd.timeToLive, "ttl", "", "Optional: the time to live to export (requires -database)")
+	fs.StringVar(&exportCmd.RetentionPolicy, "rp", "", "Optional: the retention policy to export (requires -database)")
 	fs.StringVar(&start, "start", "", "Optional: the start time to export (RFC3339 format)")
 	fs.StringVar(&end, "end", "", "Optional: the end time to export (RFC3339 format)")
 	fs.BoolVar(&exportCmd.compress, "compress", false, "Compress the output")
@@ -108,14 +108,14 @@ type Command struct {
 	Stderr io.Writer
 	Stdout io.Writer
 
-	dataDir    string
-	walDir     string
-	out        string
-	database   string
-	timeToLive string
-	startTime  int64
-	endTime    int64
-	compress   bool
+	dataDir         string
+	walDir          string
+	out             string
+	database        string
+	RetentionPolicy string
+	startTime       int64
+	endTime         int64
+	compress        bool
 
 	manifest map[string]struct{}
 	tsmFiles map[string][]string
@@ -135,7 +135,7 @@ func NewCommand() *Command {
 }
 
 func (cmd *Command) validate() error {
-	if cmd.timeToLive != "" && cmd.database == "" {
+	if cmd.RetentionPolicy != "" && cmd.database == "" {
 		return fmt.Errorf("must specify a db")
 	}
 	if cmd.startTime != 0 && cmd.endTime != 0 && cmd.endTime < cmd.startTime {
@@ -174,7 +174,7 @@ func (cmd *Command) walkTSMFiles() error {
 			return fmt.Errorf("invalid directory structure for %s", path)
 		}
 		if dirs[0] == cmd.database || cmd.database == "" {
-			if dirs[1] == cmd.timeToLive || cmd.timeToLive == "" {
+			if dirs[1] == cmd.RetentionPolicy || cmd.RetentionPolicy == "" {
 				key := filepath.Join(dirs[0], dirs[1])
 				cmd.manifest[key] = struct{}{}
 				cmd.tsmFiles[key] = append(cmd.tsmFiles[key], path)
@@ -205,7 +205,7 @@ func (cmd *Command) walkWALFiles() error {
 			return fmt.Errorf("invalid directory structure for %s", path)
 		}
 		if dirs[0] == cmd.database || cmd.database == "" {
-			if dirs[1] == cmd.timeToLive || cmd.timeToLive == "" {
+			if dirs[1] == cmd.RetentionPolicy || cmd.RetentionPolicy == "" {
 				key := filepath.Join(dirs[0], dirs[1])
 				cmd.manifest[key] = struct{}{}
 				cmd.walFiles[key] = append(cmd.walFiles[key], path)
@@ -244,15 +244,15 @@ func (cmd *Command) write() error {
 	fmt.Fprintln(w, "# DDL")
 	for key := range cmd.manifest {
 		keys := strings.Split(key, string(os.PathSeparator))
-		db, ttl := cnosql.QuoteIdent(keys[0]), cnosql.QuoteIdent(keys[1])
-		fmt.Fprintf(w, "CREATE DATABASE %s WITH NAME %s\n", db, ttl)
+		db, rp := cnosql.QuoteIdent(keys[0]), cnosql.QuoteIdent(keys[1])
+		fmt.Fprintf(w, "CREATE DATABASE %s WITH NAME %s\n", db, rp)
 	}
 
 	fmt.Fprintln(w, "# DML")
 	for key := range cmd.manifest {
 		keys := strings.Split(key, string(os.PathSeparator))
 		fmt.Fprintf(w, "# CONTEXT-DATABASE:%s\n", keys[0])
-		fmt.Fprintf(w, "# CONTEXT-TTL:%s\n", keys[1])
+		fmt.Fprintf(w, "# CONTEXT-RP:%s\n", keys[1])
 		if files, ok := cmd.tsmFiles[key]; ok {
 			fmt.Fprintf(cmd.Stdout, "writing out tsm file data for %s...", key)
 			if err := cmd.writeTsmFiles(w, files); err != nil {
@@ -315,10 +315,10 @@ func (cmd *Command) exportTSMFile(tsmFilePath string, w io.Writer) error {
 			fmt.Fprintf(cmd.Stderr, "unable to read key %q in %s, skipping: %s\n", string(key), tsmFilePath, err.Error())
 			continue
 		}
-		metric, field := tsm1.SeriesAndFieldFromCompositeKey(key)
+		measurement, field := tsm1.SeriesAndFieldFromCompositeKey(key)
 		field = escape.Bytes(field)
 
-		if err := cmd.writeValues(w, metric, string(field), values); err != nil {
+		if err := cmd.writeValues(w, measurement, string(field), values); err != nil {
 			// An error from writeValues indicates an IO error, which should be returned.
 			return err
 		}
@@ -382,11 +382,11 @@ func (cmd *Command) exportWALFile(walFilePath string, w io.Writer, warnDelete fu
 			continue
 		case *tsm1.WriteWALEntry:
 			for key, values := range t.Values {
-				metric, field := tsm1.SeriesAndFieldFromCompositeKey([]byte(key))
-				// metrics are stored escaped, field names are not
+				measurement, field := tsm1.SeriesAndFieldFromCompositeKey([]byte(key))
+				// measurements are stored escaped, field names are not
 				field = escape.Bytes(field)
 
-				if err := cmd.writeValues(w, metric, string(field), values); err != nil {
+				if err := cmd.writeValues(w, measurement, string(field), values); err != nil {
 					// An error from writeValues indicates an IO error, which should be returned.
 					return err
 				}
