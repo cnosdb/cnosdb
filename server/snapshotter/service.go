@@ -47,7 +47,7 @@ type Service struct {
 		ShardRelativePath(id uint64) (string, error)
 		SetShardEnabled(shardID uint64, enabled bool) error
 		RestoreShard(id uint64, r io.Reader) error
-		CreateShard(database, timeToLive string, shardID uint64, enabled bool) error
+		CreateShard(database, retentionPolicy string, shardID uint64, enabled bool) error
 	}
 
 	Listener net.Listener
@@ -146,10 +146,10 @@ func (s *Service) handleConn(conn net.Conn) error {
 		}
 	case RequestDatabaseInfo:
 		return s.writeDatabaseInfo(conn, r.BackupDatabase)
-	case RequestTimeToLiveInfo:
-		return s.writeTimeToLiveInfo(conn, r.BackupDatabase, r.BackupTimeToLive)
+	case RequestRetentionPolicyInfo:
+		return s.writeRetentionPolicyInfo(conn, r.BackupDatabase, r.BackupRetentionPolicy)
 	case RequestMetaStoreUpdate:
-		return s.updateMetaStore(conn, bytes, r.BackupDatabase, r.RestoreDatabase, r.BackupTimeToLive, r.RestoreTimeToLive)
+		return s.updateMetaStore(conn, bytes, r.BackupDatabase, r.RestoreDatabase, r.BackupRetentionPolicy, r.RestoreRetentionPolicy)
 	default:
 		return fmt.Errorf("request type unknown: %v", r.Type)
 	}
@@ -173,7 +173,7 @@ func (s *Service) updateShardsLive(conn net.Conn) error {
 	return s.TSDBStore.RestoreShard(sid, conn)
 }
 
-func (s *Service) updateMetaStore(conn net.Conn, bits []byte, backupDBName, restoreDBName, backupTTLName, restoreTTLName string) error {
+func (s *Service) updateMetaStore(conn net.Conn, bits []byte, backupDBName, restoreDBName, backupRPName, restoreRPName string) error {
 	md := meta.Data{}
 	err := md.UnmarshalBinary(bits)
 	if err != nil {
@@ -185,7 +185,7 @@ func (s *Service) updateMetaStore(conn net.Conn, bits []byte, backupDBName, rest
 
 	data := s.MetaClient.(*meta.Client).Data()
 
-	IDMap, newDBs, err := data.ImportData(md, backupDBName, restoreDBName, backupTTLName, restoreTTLName)
+	IDMap, newDBs, err := data.ImportData(md, backupDBName, restoreDBName, backupRPName, restoreRPName)
 	if err != nil {
 		if err := s.respondIDMap(conn, map[uint64]uint64{}); err != nil {
 			return err
@@ -216,10 +216,10 @@ func (s *Service) createNewDBShards(data meta.Data, newDBs []string) error {
 		if dbi == nil {
 			return fmt.Errorf("db %s not found when creating new db shards", restoreDBName)
 		}
-		for _, ttli := range dbi.TimeToLives {
-			for _, sgi := range ttli.Regions {
+		for _, rpi := range dbi.RetentionPolicies {
+			for _, sgi := range rpi.ShardGroups {
 				for _, shard := range sgi.Shards {
-					err := s.TSDBStore.CreateShard(restoreDBName, ttli.Name, shard.ID, true)
+					err := s.TSDBStore.CreateShard(restoreDBName, rpi.Name, shard.ID, true)
 					if err != nil {
 						return err
 					}
@@ -305,8 +305,8 @@ func (s *Service) writeDatabaseInfo(conn net.Conn, database string) error {
 	}
 
 	for _, db := range dbs {
-		for _, ttl := range db.TimeToLives {
-			for _, sg := range ttl.Regions {
+		for _, rp := range db.RetentionPolicies {
+			for _, sg := range rp.ShardGroups {
 				for _, sh := range sg.Shards {
 					// ignore if the shard isn't on the server
 					if s.TSDBStore.Shard(sh.ID) == nil {
@@ -332,27 +332,27 @@ func (s *Service) writeDatabaseInfo(conn net.Conn, database string) error {
 
 // writeDatabaseInfo will write the relative paths of all shards in the time to live on
 // this server into the connection
-func (s *Service) writeTimeToLiveInfo(conn net.Conn, database, timeToLive string) error {
+func (s *Service) writeRetentionPolicyInfo(conn net.Conn, database, retentionPolicy string) error {
 	res := Response{}
 	db := s.MetaClient.Database(database)
 	if db == nil {
 		return cnosdb.ErrDatabaseNotFound(database)
 	}
 
-	var ret *meta.TimeToLiveInfo
+	var ret *meta.RetentionPolicyInfo
 
-	for _, ttl := range db.TimeToLives {
-		if ttl.Name == timeToLive {
-			ret = &ttl
+	for _, rp := range db.RetentionPolicies {
+		if rp.Name == retentionPolicy {
+			ret = &rp
 			break
 		}
 	}
 
 	if ret == nil {
-		return cnosdb.ErrTimeToLiveNotFound(timeToLive)
+		return cnosdb.ErrRetentionPolicyNotFound(retentionPolicy)
 	}
 
-	for _, sg := range ret.Regions {
+	for _, sg := range ret.ShardGroups {
 		for _, sh := range sg.Shards {
 			// ignore if the shard isn't on the server
 			if s.TSDBStore.Shard(sh.ID) == nil {
@@ -427,8 +427,8 @@ const (
 	// RequestDatabaseInfo represents a request for database info.
 	RequestDatabaseInfo
 
-	// RequestTimeToLiveInfo represents a request for time to live info.
-	RequestTimeToLiveInfo
+	// RequestRetentionPolicyInfo represents a request for time to live info.
+	RequestRetentionPolicyInfo
 
 	// RequestShardExport represents a request to export Shard data.  Similar to a backup, but shards
 	// may be filtered based on the start/end times on each block.
@@ -446,16 +446,16 @@ const (
 // Request represents a request for a specific backup or for information
 // about the shards on this server for a database or time to live.
 type Request struct {
-	Type              RequestType
-	BackupDatabase    string
-	RestoreDatabase   string
-	BackupTimeToLive  string
-	RestoreTimeToLive string
-	ShardID           uint64
-	Since             time.Time
-	ExportStart       time.Time
-	ExportEnd         time.Time
-	UploadSize        int64
+	Type                   RequestType
+	BackupDatabase         string
+	RestoreDatabase        string
+	BackupRetentionPolicy  string
+	RestoreRetentionPolicy string
+	ShardID                uint64
+	Since                  time.Time
+	ExportStart            time.Time
+	ExportEnd              time.Time
+	UploadSize             int64
 }
 
 // Response contains the relative paths for all the shards on this server

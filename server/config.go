@@ -18,9 +18,9 @@ import (
 	"github.com/cnosdatabase/cnosdb/server/continuous_querier"
 	"github.com/cnosdatabase/cnosdb/server/coordinator"
 	"github.com/cnosdatabase/cnosdb/server/hh"
-	"github.com/cnosdatabase/cnosdb/server/region"
+	"github.com/cnosdatabase/cnosdb/server/precreator"
+	"github.com/cnosdatabase/cnosdb/server/rp"
 	"github.com/cnosdatabase/cnosdb/server/subscriber"
-	"github.com/cnosdatabase/cnosdb/server/ttl"
 	itoml "github.com/cnosdatabase/common/pkg/toml"
 	"github.com/cnosdatabase/db/tsdb"
 	"golang.org/x/text/encoding/unicode"
@@ -38,11 +38,11 @@ type Config struct {
 	BindAddress string `toml:"bind-address"`
 	Cluster     bool   `toml:"cluster"`
 
-	Meta        *meta.Config
-	Data        tsdb.Config
-	Coordinator coordinator.Config
-	TimeToLive  ttl.Config
-	Precreator  region.Config
+	Meta            *meta.Config
+	Data            tsdb.Config
+	Coordinator     coordinator.Config
+	RetentionPolicy rp.Config
+	Precreator      precreator.Config
 
 	Monitor         monitor.Config
 	Subscriber      subscriber.Config
@@ -61,14 +61,14 @@ func NewConfig() *Config {
 	c.Meta = meta.NewConfig()
 	c.Data = tsdb.NewConfig()
 	c.Coordinator = coordinator.NewConfig()
-	c.Precreator = region.NewConfig()
+	c.Precreator = precreator.NewConfig()
 
 	c.Monitor = monitor.NewConfig()
 	c.HTTPD = NewHTTPConfig()
 	c.Log = logger.NewDefaultLogConfig()
 
 	c.ContinuousQuery = continuous_querier.NewConfig()
-	c.TimeToLive = ttl.NewConfig()
+	c.RetentionPolicy = rp.NewConfig()
 
 	return c
 }
@@ -146,7 +146,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if err := c.TimeToLive.Validate(); err != nil {
+	if err := c.RetentionPolicy.Validate(); err != nil {
 		return err
 	}
 

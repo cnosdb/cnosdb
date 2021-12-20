@@ -23,8 +23,8 @@ All statistical information is available at HTTP API endpoint `/debug/vars`, in 
 The `monitor` module allows the following configuration:
 
  * Whether to write statistical and diagnostic information to an CnosDB system. This is enabled by default.
- * The name of the database to where this information should be written. Defaults to `_internal`. The information is written to the default time-to-live for the given database.
- * The name of the time-to-live, along with full configuration control of the time-to-live, if the default time-to-live is not suitable.
+ * The name of the database to where this information should be written. Defaults to `_internal`. The information is written to the default retention policy for the given database.
+ * The name of the retention policy, along with full configuration control of the retention policy, if the default retention policy is not suitable.
  * The rate at which this information should be written. The default rate is once every 10 seconds.
 
 # Design and Implementation

@@ -127,23 +127,26 @@ func init() {
 		show.Group(GRANTS).Handle(FOR, func(p *Parser) (Statement, error) {
 			return p.parseGrantsForUserStatement()
 		})
-		show.Group(METRIC).Handle(EXACT, func(p *Parser) (Statement, error) {
-			return p.parseShowMetricCardinalityStatement(true)
+		show.Group(MEASUREMENT).Handle(EXACT, func(p *Parser) (Statement, error) {
+			return p.parseShowMeasurementCardinalityStatement(true)
 		})
-		show.Group(METRIC).Handle(CARDINALITY, func(p *Parser) (Statement, error) {
-			return p.parseShowMetricCardinalityStatement(false)
+		show.Group(MEASUREMENT).Handle(CARDINALITY, func(p *Parser) (Statement, error) {
+			return p.parseShowMeasurementCardinalityStatement(false)
 		})
-		show.Handle(METRICS, func(p *Parser) (Statement, error) {
-			return p.parseShowMetricsStatement()
+		show.Handle(MEASUREMENTS, func(p *Parser) (Statement, error) {
+			return p.parseShowMeasurementsStatement()
 		})
 		show.Handle(QUERIES, func(p *Parser) (Statement, error) {
 			return p.parseShowQueriesStatement()
 		})
-		show.Handle(REGIONS, func(p *Parser) (Statement, error) {
-			return p.parseShowRegionsStatement()
+		show.Group(RETENTION).Handle(POLICIES, func(p *Parser) (Statement, error) {
+			return p.parseShowRetentionPoliciesStatement()
 		})
 		show.Handle(SERIES, func(p *Parser) (Statement, error) {
 			return p.parseShowSeriesStatement()
+		})
+		show.Group(SHARD).Handle(GROUPS, func(p *Parser) (Statement, error) {
+			return p.parseShowShardGroupsStatement()
 		})
 		show.Handle(SHARDS, func(p *Parser) (Statement, error) {
 			return p.parseShowShardsStatement()
@@ -165,9 +168,6 @@ func init() {
 				return p.parseShowTagValuesStatement()
 			})
 		})
-		show.Handle(TTLS, func(p *Parser) (Statement, error) {
-			return p.parseShowTimeToLivesStatement()
-		})
 		show.Handle(USERS, func(p *Parser) (Statement, error) {
 			return p.parseShowUsersStatement()
 		})
@@ -182,11 +182,11 @@ func init() {
 		create.Handle(USER, func(p *Parser) (Statement, error) {
 			return p.parseCreateUserStatement()
 		})
+		create.Group(RETENTION).Handle(POLICY, func(p *Parser) (Statement, error) {
+			return p.parseCreateRetentionPolicyStatement()
+		})
 		create.Handle(SUBSCRIPTION, func(p *Parser) (Statement, error) {
 			return p.parseCreateSubscriptionStatement()
-		})
-		create.Handle(TTL, func(p *Parser) (Statement, error) {
-			return p.parseCreateTimeToLiveStatement()
 		})
 	})
 	Language.Group(DROP).With(func(drop *ParseTree) {
@@ -196,8 +196,11 @@ func init() {
 		drop.Handle(DATABASE, func(p *Parser) (Statement, error) {
 			return p.parseDropDatabaseStatement()
 		})
-		drop.Handle(METRIC, func(p *Parser) (Statement, error) {
-			return p.parseDropMetricStatement()
+		drop.Handle(MEASUREMENT, func(p *Parser) (Statement, error) {
+			return p.parseDropMeasurementStatement()
+		})
+		drop.Group(RETENTION).Handle(POLICY, func(p *Parser) (Statement, error) {
+			return p.parseDropRetentionPolicyStatement()
 		})
 		drop.Handle(SERIES, func(p *Parser) (Statement, error) {
 			return p.parseDropSeriesStatement()
@@ -207,9 +210,6 @@ func init() {
 		})
 		drop.Handle(SUBSCRIPTION, func(p *Parser) (Statement, error) {
 			return p.parseDropSubscriptionStatement()
-		})
-		drop.Handle(TTL, func(p *Parser) (Statement, error) {
-			return p.parseDropTimeToLiveStatement()
 		})
 		drop.Handle(USER, func(p *Parser) (Statement, error) {
 			return p.parseDropUserStatement()
@@ -224,8 +224,8 @@ func init() {
 	Language.Handle(REVOKE, func(p *Parser) (Statement, error) {
 		return p.parseRevokeStatement()
 	})
-	Language.Group(ALTER).Handle(TTL, func(p *Parser) (Statement, error) {
-		return p.parseAlterTimeToLiveStatement()
+	Language.Group(ALTER, RETENTION).Handle(POLICY, func(p *Parser) (Statement, error) {
+		return p.parseAlterRetentionPolicyStatement()
 	})
 	Language.Group(SET, PASSWORD).Handle(FOR, func(p *Parser) (Statement, error) {
 		return p.parseSetPasswordUserStatement()

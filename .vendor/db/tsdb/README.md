@@ -7,24 +7,24 @@ Multiple lines must be separated by the newline character `\n`. The format of th
 [key] [fields] [timestamp]
 ```
 
-Each section is separated by spaces.  The minimum required point consists of a metric name and at least one field. Points without a specified timestamp will be written using the server's local timestamp. Timestamps are assumed to be in nanoseconds unless a `precision` value is passed in the query string.
+Each section is separated by spaces.  The minimum required point consists of a measurement name and at least one field. Points without a specified timestamp will be written using the server's local timestamp. Timestamps are assumed to be in nanoseconds unless a `precision` value is passed in the query string.
 
 ## Key
 
-The key is the metric name and any optional tags separated by commas.  Metric names, tag keys, and tag values must escape any spaces or commas using a backslash (`\`). For example: `\ ` and `\,`.  All tag values are stored as strings and should not be surrounded in quotes. 
+The key is the measurement name and any optional tags separated by commas.  Measurement names, tag keys, and tag values must escape any spaces or commas using a backslash (`\`). For example: `\ ` and `\,`.  All tag values are stored as strings and should not be surrounded in quotes. 
 
 Tags should be sorted by key before being sent for best performance. The sort should match that from the Go `bytes.Compare` function (http://golang.org/pkg/bytes/#Compare).
 
 ### Examples
 
 ```
-# metric only
+# measurement only
 cpu
 
-# metric and tags
+# measurement and tags
 cpu,host=serverA,region=us-west
 
-# metric with commas
+# measurement with commas
 cpu\,01,host=serverA,region=us-west
 
 # tag value with spaces
@@ -33,9 +33,9 @@ cpu,host=server\ A,region=us\ west
 
 ## Fields
 
-Fields are key-value metrics associated with the metric.  Every line must have at least one field.  Multiple fields must be separated with commas and not spaces.
+Fields are key-value measurements associated with the measurement.  Every line must have at least one field.  Multiple fields must be separated with commas and not spaces.
 
-Field keys are always strings and follow the same syntactical rules as described above for tag keys and values. Field values can be one of four types.  The first value written for a given field on a given metric defines the type of that field for all series under that metric.
+Field keys are always strings and follow the same syntactical rules as described above for tag keys and values. Field values can be one of four types.  The first value written for a given field on a given measurement defines the type of that field for all series under that measurement.
 
 * _integer_ - Numeric values that do not include a decimal and are followed by a trailing i when inserted (e.g. 1i, 345i, 2015i, -10i). Note that all values must have a trailing i. If they do not they will be written as floats.
 * _float_ - Numeric values that are not followed by a trailing i. (e.g. 1, 1.0, -3.14, 6.0+e5, 10).
@@ -80,7 +80,7 @@ A full example is shown below.
 cpu,host=server01,region=uswest value=1 1434055562000000000
 cpu,host=server02,region=uswest value=3 1434055562000010000
 ```
-In this example the first line shows a `metric` of "cpu", there are two tags "host" and "region, the `value` is 1.0, and the `timestamp` is 1434055562000000000. Following this is a second line, also a point in the `metric` "cpu" but belonging to a different "host".
+In this example the first line shows a `measurement` of "cpu", there are two tags "host" and "region, the `value` is 1.0, and the `timestamp` is 1434055562000000000. Following this is a second line, also a point in the `measurement` "cpu" but belonging to a different "host".
 ```
 cpu,host=server\ 01,region=uswest value=1,msg="all systems nominal"
 cpu,host=server\ 01,region=us\,west value_int=1i

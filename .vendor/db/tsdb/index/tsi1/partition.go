@@ -14,12 +14,12 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cnosdatabase/cnosql"
 	"github.com/cnosdatabase/db/logger"
 	"github.com/cnosdatabase/db/models"
 	"github.com/cnosdatabase/db/pkg/bytesutil"
 	"github.com/cnosdatabase/db/pkg/estimator"
 	"github.com/cnosdatabase/db/tsdb"
-	"github.com/cnosdatabase/cnosql"
 	"go.uber.org/zap"
 )
 
@@ -60,7 +60,7 @@ type Partition struct {
 	closing chan struct{} // closing is used to inform iterators the partition is closing.
 
 	// Fieldset shared with engine.
-	fieldset *tsdb.MetricFieldSet
+	fieldset *tsdb.MeasurementFieldSet
 
 	currentCompactionN int // counter of in-progress compactions
 
@@ -425,14 +425,14 @@ func (p *Partition) WithLogger(logger *zap.Logger) {
 }
 
 // SetFieldSet sets a shared field set from the engine.
-func (p *Partition) SetFieldSet(fs *tsdb.MetricFieldSet) {
+func (p *Partition) SetFieldSet(fs *tsdb.MeasurementFieldSet) {
 	p.mu.Lock()
 	p.fieldset = fs
 	p.mu.Unlock()
 }
 
 // FieldSet returns the fieldset.
-func (p *Partition) FieldSet() *tsdb.MetricFieldSet {
+func (p *Partition) FieldSet() *tsdb.MeasurementFieldSet {
 	p.mu.Lock()
 	fs := p.fieldset
 	p.mu.Unlock()
@@ -482,15 +482,15 @@ func (p *Partition) prependActiveLogFile() error {
 	return nil
 }
 
-// ForEachMetricName iterates over all metric names in the index.
-func (p *Partition) ForEachMetricName(fn func(name []byte) error) error {
+// ForEachMeasurementName iterates over all measurement names in the index.
+func (p *Partition) ForEachMeasurementName(fn func(name []byte) error) error {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return err
 	}
 	defer fs.Release()
 
-	itr := fs.MetricIterator()
+	itr := fs.MeasurementIterator()
 	if itr == nil {
 		return nil
 	}
@@ -504,8 +504,8 @@ func (p *Partition) ForEachMetricName(fn func(name []byte) error) error {
 	return nil
 }
 
-// MetricHasSeries returns true if a metric has at least one non-tombstoned series.
-func (p *Partition) MetricHasSeries(name []byte) (bool, error) {
+// MeasurementHasSeries returns true if a measurement has at least one non-tombstoned series.
+func (p *Partition) MeasurementHasSeries(name []byte) (bool, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return false, err
@@ -513,7 +513,7 @@ func (p *Partition) MetricHasSeries(name []byte) (bool, error) {
 	defer fs.Release()
 
 	for _, f := range fs.files {
-		if f.MetricHasSeries(p.seriesIDSet, name) {
+		if f.MeasurementHasSeries(p.seriesIDSet, name) {
 			return true, nil
 		}
 	}
@@ -521,39 +521,39 @@ func (p *Partition) MetricHasSeries(name []byte) (bool, error) {
 	return false, nil
 }
 
-// MetricIterator returns an iterator over all metric names.
-func (p *Partition) MetricIterator() (tsdb.MetricIterator, error) {
+// MeasurementIterator returns an iterator over all measurement names.
+func (p *Partition) MeasurementIterator() (tsdb.MeasurementIterator, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return nil, err
 	}
-	itr := fs.MetricIterator()
+	itr := fs.MeasurementIterator()
 	if itr == nil {
 		fs.Release()
 		return nil, nil
 	}
-	return newFileSetMetricIterator(fs, NewTSDBMetricIteratorAdapter(itr)), nil
+	return newFileSetMeasurementIterator(fs, NewTSDBMeasurementIteratorAdapter(itr)), nil
 }
 
-// MetricExists returns true if a metric exists.
-func (p *Partition) MetricExists(name []byte) (bool, error) {
+// MeasurementExists returns true if a measurement exists.
+func (p *Partition) MeasurementExists(name []byte) (bool, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return false, err
 	}
 	defer fs.Release()
-	m := fs.Metric(name)
+	m := fs.Measurement(name)
 	return m != nil && !m.Deleted(), nil
 }
 
-func (p *Partition) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
+func (p *Partition) MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return nil, err
 	}
 	defer fs.Release()
 
-	itr := fs.MetricIterator()
+	itr := fs.MeasurementIterator()
 	if itr == nil {
 		return nil, nil
 	}
@@ -568,17 +568,17 @@ func (p *Partition) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
 	return a, nil
 }
 
-func (p *Partition) MetricSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, error) {
+func (p *Partition) MeasurementSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return nil, err
 	}
-	return newFileSetSeriesIDIterator(fs, fs.MetricSeriesIDIterator(name)), nil
+	return newFileSetSeriesIDIterator(fs, fs.MeasurementSeriesIDIterator(name)), nil
 }
 
-// DropMetric deletes a metric from the index. DropMetric does
+// DropMeasurement deletes a measurement from the index. DropMeasurement does
 // not remove any series from the index directly.
-func (p *Partition) DropMetric(name []byte) error {
+func (p *Partition) DropMeasurement(name []byte) error {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return err
@@ -617,7 +617,7 @@ func (p *Partition) DropMetric(name []byte) error {
 	}
 
 	// Delete all series.
-	if itr := fs.MetricSeriesIDIterator(name); itr != nil {
+	if itr := fs.MeasurementSeriesIDIterator(name); itr != nil {
 		defer itr.Close()
 		for {
 			elem, err := itr.Next()
@@ -635,11 +635,11 @@ func (p *Partition) DropMetric(name []byte) error {
 		}
 	}
 
-	// Mark metric as deleted.
+	// Mark measurement as deleted.
 	if err := func() error {
 		p.mu.RLock()
 		defer p.mu.RUnlock()
-		return p.activeLogFile.DeleteMetric(name)
+		return p.activeLogFile.DeleteMeasurement(name)
 	}(); err != nil {
 		return err
 	}
@@ -697,15 +697,15 @@ func (p *Partition) DropSeries(seriesID uint64) error {
 	return p.CheckLogFile()
 }
 
-// MetricsSketches returns the two sketches for the partition by merging all
+// MeasurementsSketches returns the two sketches for the partition by merging all
 // instances of the type sketch types in all the index files.
-func (p *Partition) MetricsSketches() (estimator.Sketch, estimator.Sketch, error) {
+func (p *Partition) MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return nil, nil, err
 	}
 	defer fs.Release()
-	return fs.MetricsSketches()
+	return fs.MeasurementsSketches()
 }
 
 // SeriesSketches returns the two sketches for the partition by merging all
@@ -739,7 +739,7 @@ func (p *Partition) HasTagValue(name, key, value []byte) (bool, error) {
 	return fs.HasTagValue(name, key, value), nil
 }
 
-// TagKeyIterator returns an iterator for all keys across a single metric.
+// TagKeyIterator returns an iterator for all keys across a single measurement.
 func (p *Partition) TagKeyIterator(name []byte) tsdb.TagKeyIterator {
 	fs, err := p.RetainFileSet()
 	if err != nil {
@@ -805,19 +805,19 @@ func (p *Partition) TagValueSeriesIDIterator(name, key, value []byte) (tsdb.Seri
 	return newFileSetSeriesIDIterator(fs, itr), nil
 }
 
-// MetricTagKeysByExpr extracts the tag keys wanted by the expression.
-func (p *Partition) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+// MeasurementTagKeysByExpr extracts the tag keys wanted by the expression.
+func (p *Partition) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return nil, err
 	}
 	defer fs.Release()
 
-	return fs.MetricTagKeysByExpr(name, expr)
+	return fs.MeasurementTagKeysByExpr(name, expr)
 }
 
-// ForEachMetricTagKey iterates over all tag keys in a metric.
-func (p *Partition) ForEachMetricTagKey(name []byte, fn func(key []byte) error) error {
+// ForEachMeasurementTagKey iterates over all tag keys in a measurement.
+func (p *Partition) ForEachMeasurementTagKey(name []byte, fn func(key []byte) error) error {
 	fs, err := p.RetainFileSet()
 	if err != nil {
 		return err
@@ -844,9 +844,9 @@ func (p *Partition) TagKeyCardinality(name, key []byte) int {
 	return 0
 }
 
-func (p *Partition) SetFieldName(metric []byte, name string) {}
-func (p *Partition) RemoveShard(shardID uint64)              {}
-func (p *Partition) AssignShard(k string, shardID uint64)    {}
+func (p *Partition) SetFieldName(measurement []byte, name string) {}
+func (p *Partition) RemoveShard(shardID uint64)                   {}
+func (p *Partition) AssignShard(k string, shardID uint64)         {}
 
 // Compact requests a compaction of log files.
 func (p *Partition) Compact() {

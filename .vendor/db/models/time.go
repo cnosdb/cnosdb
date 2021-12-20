@@ -27,7 +27,7 @@ const (
 	// 2262-04-11 23:47:16.854775806 +0000 UTC
 	//
 	// The highest time represented by a nanosecond needs to be used for an
-	// exclusive range in the region, so the maximum time needs to be one
+	// exclusive range in the shard group, so the maximum time needs to be one
 	// less than the possible maximum number of nanoseconds representable by an
 	// int64 so that we don't lose a point at that one time.
 	MaxNanoTime = int64(math.MaxInt64) - 1
