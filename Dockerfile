@@ -8,8 +8,8 @@ COPY . /go/src/github.com/cnosdatabase/cnosdb
 RUN go install ./...
 
 FROM debian:stretch
-COPY --from=builder /go/bin/* /usr/bin/
-COPY --from=builder /go/src/github.com/cnosdatabase/cnosdb/etc/config.sample.toml /etc/cnosdb/cnosdb.conf
+COPY --from=builder /go/bin/cnosdb /go/bin/cnosdb/cnosdb-cli /usr/bin/
+COPY --from=builder /go/src/github.com/cnosdatabase/cnosdb/etc/cnosdb.sample.toml /etc/cnosdb/cnosdb.conf
 
 EXPOSE 8086
 VOLUME /var/lib/cnosdb
