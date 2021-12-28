@@ -45,18 +45,18 @@ func (fsm *storeFSM) Apply(l *raft.Log) interface{} {
 			return fsm.applyCreateDatabaseCommand(&cmd)
 		case internal.Command_DropDatabaseCommand:
 			return fsm.applyDropDatabaseCommand(&cmd)
-		case internal.Command_CreateTimeToLiveCommand:
-			return fsm.applyCreateTimeToLiveCommand(&cmd)
-		case internal.Command_DropTimeToLiveCommand:
-			return fsm.applyDropTimeToLiveCommand(&cmd)
-		case internal.Command_SetDefaultTimeToLiveCommand:
-			return fsm.applySetDefaultTimeToLiveCommand(&cmd)
-		case internal.Command_UpdateTimeToLiveCommand:
-			return fsm.applyUpdateTimeToLiveCommand(&cmd)
-		case internal.Command_CreateRegionCommand:
-			return fsm.applyCreateRegionCommand(&cmd)
-		case internal.Command_DeleteRegionCommand:
-			return fsm.applyDeleteRegionCommand(&cmd)
+		case internal.Command_CreateRetentionPolicyCommand:
+			return fsm.applyCreateRetentionPolicyCommand(&cmd)
+		case internal.Command_DropRetentionPolicyCommand:
+			return fsm.applyDropRetentionPolicyCommand(&cmd)
+		case internal.Command_SetDefaultRetentionPolicyCommand:
+			return fsm.applySetDefaultRetentionPolicyCommand(&cmd)
+		case internal.Command_UpdateRetentionPolicyCommand:
+			return fsm.applyUpdateRetentionPolicyCommand(&cmd)
+		case internal.Command_CreateShardGroupCommand:
+			return fsm.applyCreateShardGroupCommand(&cmd)
+		case internal.Command_DeleteShardGroupCommand:
+			return fsm.applyDeleteShardGroupCommand(&cmd)
 		case internal.Command_CreateContinuousQueryCommand:
 			return fsm.applyCreateContinuousQueryCommand(&cmd)
 		case internal.Command_DropContinuousQueryCommand:
@@ -209,33 +209,33 @@ func (fsm *storeFSM) applyCreateDatabaseCommand(cmd *internal.Command) interface
 	}
 
 	s := (*store)(fsm)
-	if ttli := v.GetTimeToLive(); ttli != nil {
-		if err := other.CreateTimeToLive(v.GetName(), &TimeToLiveInfo{
-			Name:           ttli.GetName(),
-			ReplicaN:       int(ttli.GetReplicaN()),
-			Duration:       time.Duration(ttli.GetDuration()),
-			RegionDuration: time.Duration(ttli.GetRegionDuration()),
+	if rpi := v.GetRetentionPolicy(); rpi != nil {
+		if err := other.CreateRetentionPolicy(v.GetName(), &RetentionPolicyInfo{
+			Name:               rpi.GetName(),
+			ReplicaN:           int(rpi.GetReplicaN()),
+			Duration:           time.Duration(rpi.GetDuration()),
+			ShardGroupDuration: time.Duration(rpi.GetShardGroupDuration()),
 		}, true); err != nil {
-			if err == ErrTimeToLiveExists {
-				return ErrTimeToLiveConflict
+			if err == ErrRetentionPolicyExists {
+				return ErrRetentionPolicyConflict
 			}
 			return err
 		}
-	} else if s.config.TimeToLiveAutoCreate {
+	} else if s.config.RetentionAutoCreate {
 		// Read node count.
-		// Time to live must be fully replicated.
+		// Retention policy must be fully replicated.
 		replicaN := len(other.DataNodes)
-		if replicaN > maxAutoCreatedTimeToLiveReplicaN {
-			replicaN = maxAutoCreatedTimeToLiveReplicaN
+		if replicaN > maxAutoCreatedRetentionPolicyReplicaN {
+			replicaN = maxAutoCreatedRetentionPolicyReplicaN
 		} else if replicaN < 1 {
 			replicaN = 1
 		}
 
-		// Create a time to live.
-		ttli := NewTimeToLiveInfo(autoCreateTimeToLiveName)
-		ttli.ReplicaN = replicaN
-		ttli.Duration = autoCreateTimeToLivePeriod
-		if err := other.CreateTimeToLive(v.GetName(), ttli, true); err != nil {
+		// Create a retention policy.
+		rpi := NewRetentionPolicyInfo(autoCreateRetentionPolicyName)
+		rpi.ReplicaN = replicaN
+		rpi.Duration = autoCreateRetentionPolicyPeriod
+		if err := other.CreateRetentionPolicy(v.GetName(), rpi, true); err != nil {
 			return err
 		}
 	}
@@ -259,19 +259,19 @@ func (fsm *storeFSM) applyDropDatabaseCommand(cmd *internal.Command) interface{}
 	return nil
 }
 
-func (fsm *storeFSM) applyCreateTimeToLiveCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_CreateTimeToLiveCommand_Command)
-	v := ext.(*internal.CreateTimeToLiveCommand)
-	pb := v.GetTimeToLive()
+func (fsm *storeFSM) applyCreateRetentionPolicyCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_CreateRetentionPolicyCommand_Command)
+	v := ext.(*internal.CreateRetentionPolicyCommand)
+	pb := v.GetRetentionPolicy()
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.CreateTimeToLive(v.GetDatabase(),
-		&TimeToLiveInfo{
-			Name:           pb.GetName(),
-			ReplicaN:       int(pb.GetReplicaN()),
-			Duration:       time.Duration(pb.GetDuration()),
-			RegionDuration: time.Duration(pb.GetRegionDuration()),
+	if err := other.CreateRetentionPolicy(v.GetDatabase(),
+		&RetentionPolicyInfo{
+			Name:               pb.GetName(),
+			ReplicaN:           int(pb.GetReplicaN()),
+			Duration:           time.Duration(pb.GetDuration()),
+			ShardGroupDuration: time.Duration(pb.GetShardGroupDuration()),
 		}, false); err != nil {
 		return err
 	}
@@ -280,13 +280,13 @@ func (fsm *storeFSM) applyCreateTimeToLiveCommand(cmd *internal.Command) interfa
 	return nil
 }
 
-func (fsm *storeFSM) applyDropTimeToLiveCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_DropTimeToLiveCommand_Command)
-	v := ext.(*internal.DropTimeToLiveCommand)
+func (fsm *storeFSM) applyDropRetentionPolicyCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_DropRetentionPolicyCommand_Command)
+	v := ext.(*internal.DropRetentionPolicyCommand)
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.DropTimeToLive(v.GetDatabase(), v.GetName()); err != nil {
+	if err := other.DropRetentionPolicy(v.GetDatabase(), v.GetName()); err != nil {
 		return err
 	}
 	fsm.data = other
@@ -294,13 +294,13 @@ func (fsm *storeFSM) applyDropTimeToLiveCommand(cmd *internal.Command) interface
 	return nil
 }
 
-func (fsm *storeFSM) applySetDefaultTimeToLiveCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_SetDefaultTimeToLiveCommand_Command)
-	v := ext.(*internal.SetDefaultTimeToLiveCommand)
+func (fsm *storeFSM) applySetDefaultRetentionPolicyCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_SetDefaultRetentionPolicyCommand_Command)
+	v := ext.(*internal.SetDefaultRetentionPolicyCommand)
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.SetDefaultTimeToLive(v.GetDatabase(), v.GetName()); err != nil {
+	if err := other.SetDefaultRetentionPolicy(v.GetDatabase(), v.GetName()); err != nil {
 		return err
 	}
 	fsm.data = other
@@ -308,12 +308,12 @@ func (fsm *storeFSM) applySetDefaultTimeToLiveCommand(cmd *internal.Command) int
 	return nil
 }
 
-func (fsm *storeFSM) applyUpdateTimeToLiveCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_UpdateTimeToLiveCommand_Command)
-	v := ext.(*internal.UpdateTimeToLiveCommand)
+func (fsm *storeFSM) applyUpdateRetentionPolicyCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_UpdateRetentionPolicyCommand_Command)
+	v := ext.(*internal.UpdateRetentionPolicyCommand)
 
 	// Create update object.
-	rpu := TimeToLiveUpdate{Name: v.NewName}
+	rpu := RetentionPolicyUpdate{Name: v.NewName}
 	if v.Duration != nil {
 		value := time.Duration(v.GetDuration())
 		rpu.Duration = &value
@@ -325,7 +325,7 @@ func (fsm *storeFSM) applyUpdateTimeToLiveCommand(cmd *internal.Command) interfa
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.UpdateTimeToLive(v.GetDatabase(), v.GetName(), &rpu, false); err != nil {
+	if err := other.UpdateRetentionPolicy(v.GetDatabase(), v.GetName(), &rpu, false); err != nil {
 		return err
 	}
 	fsm.data = other
@@ -333,13 +333,13 @@ func (fsm *storeFSM) applyUpdateTimeToLiveCommand(cmd *internal.Command) interfa
 	return nil
 }
 
-func (fsm *storeFSM) applyCreateRegionCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_CreateRegionCommand_Command)
-	v := ext.(*internal.CreateRegionCommand)
+func (fsm *storeFSM) applyCreateShardGroupCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_CreateShardGroupCommand_Command)
+	v := ext.(*internal.CreateShardGroupCommand)
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.CreateRegion(v.GetDatabase(), v.GetTimeToLive(), time.Unix(0, v.GetTimestamp())); err != nil {
+	if err := other.CreateShardGroup(v.GetDatabase(), v.GetRetentionPolicy(), time.Unix(0, v.GetTimestamp())); err != nil {
 		return err
 	}
 	fsm.data = other
@@ -347,13 +347,13 @@ func (fsm *storeFSM) applyCreateRegionCommand(cmd *internal.Command) interface{}
 	return nil
 }
 
-func (fsm *storeFSM) applyDeleteRegionCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_DeleteRegionCommand_Command)
-	v := ext.(*internal.DeleteRegionCommand)
+func (fsm *storeFSM) applyDeleteShardGroupCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_DeleteShardGroupCommand_Command)
+	v := ext.(*internal.DeleteShardGroupCommand)
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.DeleteRegion(v.GetDatabase(), v.GetTimeToLive(), v.GetRegionID()); err != nil {
+	if err := other.DeleteShardGroup(v.GetDatabase(), v.GetRetentionPolicy(), v.GetShardGroupID()); err != nil {
 		return err
 	}
 	fsm.data = other
@@ -395,7 +395,7 @@ func (fsm *storeFSM) applyCreateSubscriptionCommand(cmd *internal.Command) inter
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.CreateSubscription(v.GetDatabase(), v.GetTimeToLive(), v.GetName(), v.GetMode(), v.GetDestinations()); err != nil {
+	if err := other.CreateSubscription(v.GetDatabase(), v.GetRetentionPolicy(), v.GetName(), v.GetMode(), v.GetDestinations()); err != nil {
 		return err
 	}
 	fsm.data = other
@@ -409,7 +409,7 @@ func (fsm *storeFSM) applyDropSubscriptionCommand(cmd *internal.Command) interfa
 
 	// Copy data and update.
 	other := fsm.data.Clone()
-	if err := other.DropSubscription(v.GetDatabase(), v.GetTimeToLive(), v.GetName()); err != nil {
+	if err := other.DropSubscription(v.GetDatabase(), v.GetRetentionPolicy(), v.GetName()); err != nil {
 		return err
 	}
 	fsm.data = other

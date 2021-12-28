@@ -1,5 +1,5 @@
 // Package meta provides control over meta data for CnosDB,
-// such as controlling databases, time-to-lives, users, etc.
+// such as controlling databases, retention policies, users, etc.
 package meta
 
 import (
@@ -31,9 +31,9 @@ const (
 
 	metaFile = "meta.db"
 
-	// RegionDeletedExpiration is the amount of time before a region info will be removed from cached
+	// ShardGroupDeletedExpiration is the amount of time before a shard group info will be removed from cached
 	// data after it has been marked deleted (2 weeks).
-	RegionDeletedExpiration = -2 * 7 * 24 * time.Hour
+	ShardGroupDeletedExpiration = -2 * 7 * 24 * time.Hour
 )
 
 var (
@@ -70,14 +70,14 @@ type MetaClient interface {
 	Database(name string) *DatabaseInfo
 	Databases() []DatabaseInfo
 	CreateDatabase(name string) (*DatabaseInfo, error)
-	CreateDatabaseWithTimeToLive(name string, spec *TimeToLiveSpec) (*DatabaseInfo, error)
+	CreateDatabaseWithRetentionPolicy(name string, spec *RetentionPolicySpec) (*DatabaseInfo, error)
 	DropDatabase(name string) error
 
-	CreateTimeToLive(database string, spec *TimeToLiveSpec, makeDefault bool) (*TimeToLiveInfo, error)
-	TimeToLive(database, name string) (ttli *TimeToLiveInfo, err error)
-	DropTimeToLive(database, name string) error
-	SetDefaultTimeToLive(database, name string) error
-	UpdateTimeToLive(database, name string, ttlu *TimeToLiveUpdate, makeDefault bool) error
+	CreateRetentionPolicy(database string, spec *RetentionPolicySpec, makeDefault bool) (*RetentionPolicyInfo, error)
+	RetentionPolicy(database, name string) (rpi *RetentionPolicyInfo, err error)
+	DropRetentionPolicy(database, name string) error
+	SetDefaultRetentionPolicy(database, name string) error
+	UpdateRetentionPolicy(database, name string, rpu *RetentionPolicyUpdate, makeDefault bool) error
 
 	Users() []UserInfo
 	UserCount() int
@@ -94,21 +94,21 @@ type MetaClient interface {
 	Authenticate(username, password string) (User, error)
 
 	ShardIDs() []uint64
-	RegionsByTimeRange(database, ttl string, min, max time.Time) (a []RegionInfo, err error)
+	ShardGroupsByTimeRange(database, rp string, min, max time.Time) (a []ShardGroupInfo, err error)
 	ShardsByTimeRange(sources cnosql.Sources, tmin, tmax time.Time) (a []ShardInfo, err error)
 	DropShard(id uint64) error
-	TruncateRegions(t time.Time) error
-	PruneRegions() error
-	CreateRegion(database, ttl string, timestamp time.Time) (*RegionInfo, error)
-	DeleteRegion(database, ttl string, id uint64) error
-	PrecreateRegions(from, to time.Time) error
-	ShardOwner(shardID uint64) (database, ttl string, sgi *RegionInfo)
+	TruncateShardGroups(t time.Time) error
+	PruneShardGroups() error
+	CreateShardGroup(database, rp string, timestamp time.Time) (*ShardGroupInfo, error)
+	DeleteShardGroup(database, rp string, id uint64) error
+	PrecreateShardGroups(from, to time.Time) error
+	ShardOwner(shardID uint64) (database, rp string, sgi *ShardGroupInfo)
 
 	CreateContinuousQuery(database, name, query string) error
 	DropContinuousQuery(database, name string) error
 
-	CreateSubscription(database, ttl, name, mode string, destinations []string) error
-	DropSubscription(database, ttl, name string) error
+	CreateSubscription(database, rp, name, mode string, destinations []string) error
+	DropSubscription(database, rp, name string) error
 
 	SetData(data *Data) error
 	Data() Data
@@ -137,7 +137,7 @@ type Client struct {
 
 	path string
 
-	timeToLiveAutoCreate bool
+	retentionPolicyAutoCreate bool
 }
 
 type authUser struct {
@@ -153,12 +153,12 @@ func NewClient(config *Config) *Client {
 			ClusterID: uint64(rand.Int63()),
 			Index:     1,
 		},
-		closing:              make(chan struct{}),
-		changed:              make(chan struct{}),
-		logger:               zap.NewNop(),
-		authCache:            make(map[string]authUser),
-		path:                 config.Dir,
-		timeToLiveAutoCreate: config.TimeToLiveAutoCreate,
+		closing:                   make(chan struct{}),
+		changed:                   make(chan struct{}),
+		logger:                    zap.NewNop(),
+		authCache:                 make(map[string]authUser),
+		path:                      config.Dir,
+		retentionPolicyAutoCreate: config.RetentionAutoCreate,
 	}
 }
 
@@ -279,10 +279,10 @@ func (c *Client) CreateDatabase(name string) (*DatabaseInfo, error) {
 		return nil, err
 	}
 
-	// create default time-to-live
-	if c.timeToLiveAutoCreate {
-		ttli := DefaultTimeToLiveInfo()
-		if err := data.CreateTimeToLive(name, ttli, true); err != nil {
+	// create default retention policy
+	if c.retentionPolicyAutoCreate {
+		rpi := DefaultRetentionPolicyInfo()
+		if err := data.CreateRetentionPolicy(name, rpi, true); err != nil {
 			return nil, err
 		}
 	}
@@ -296,21 +296,21 @@ func (c *Client) CreateDatabase(name string) (*DatabaseInfo, error) {
 	return db, nil
 }
 
-// CreateDatabaseWithTimeToLive creates a database with the specified
-// time-to-live.
+// CreateDatabaseWithRetentionPolicy creates a database with the specified
+// retention policy.
 //
-// When creating a database with a time-to-live, the time-to-live will
-// always be set to default. Therefore if the caller provides a time-to-live
-// that already exists on the database, but that time-to-live is not the
+// When creating a database with a retention policy, the retention policy will
+// always be set to default. Therefore if the caller provides a retention policy
+// that already exists on the database, but that retention policy is not the
 // default one, an error will be returned.
 //
 // This call is only idempotent when the caller provides the exact same
-// time-to-live, and that time-to-live is already the default for the
+// retention policy, and that retention policy is already the default for the
 // database.
 //
-func (c *Client) CreateDatabaseWithTimeToLive(name string, spec *TimeToLiveSpec) (*DatabaseInfo, error) {
+func (c *Client) CreateDatabaseWithRetentionPolicy(name string, spec *RetentionPolicySpec) (*DatabaseInfo, error) {
 	if spec == nil {
-		return nil, errors.New("CreateDatabaseWithTimeToLive called with nil spec")
+		return nil, errors.New("CreateDatabaseWithRetentionPolicy called with nil spec")
 	}
 
 	c.mu.Lock()
@@ -318,8 +318,8 @@ func (c *Client) CreateDatabaseWithTimeToLive(name string, spec *TimeToLiveSpec)
 
 	data := c.cacheData.Clone()
 
-	if spec.Duration != nil && *spec.Duration < MinTimeToLiveDuration && *spec.Duration != 0 {
-		return nil, ErrTimeToLiveDurationTooLow
+	if spec.Duration != nil && *spec.Duration < MinRetentionPolicyDuration && *spec.Duration != 0 {
+		return nil, ErrRetentionPolicyDurationTooLow
 	}
 
 	db := data.Database(name)
@@ -330,26 +330,26 @@ func (c *Client) CreateDatabaseWithTimeToLive(name string, spec *TimeToLiveSpec)
 		db = data.Database(name)
 	}
 
-	// No existing time-to-lives, so we can create the provided time-to-live as
-	// the new default ttl.
-	ttli := spec.NewTimeToLiveInfo()
-	if len(db.TimeToLives) == 0 {
-		if err := data.CreateTimeToLive(name, ttli, true); err != nil {
+	// No existing retention policies, so we can create the provided retention policy as
+	// the new default rp.
+	rpi := spec.NewRetentionPolicyInfo()
+	if len(db.RetentionPolicies) == 0 {
+		if err := data.CreateRetentionPolicy(name, rpi, true); err != nil {
 			return nil, err
 		}
-	} else if !spec.Matches(db.TimeToLive(ttli.Name)) {
-		// In this case we already have a time-to-live on the database and
-		// the provided time-to-live does not match it. Therefore, this call
+	} else if !spec.Matches(db.RetentionPolicy(rpi.Name)) {
+		// In this case we already have a retention policy on the database and
+		// the provided retention policy does not match it. Therefore, this call
 		// is not idempotent and we need to return an error.
-		return nil, ErrTimeToLiveConflict
+		return nil, ErrRetentionPolicyConflict
 	}
 
-	// If a non-default time-to-live was passed in that already exists then
-	// it's an error regardless of if the exact same time-to-live is
-	// provided. CREATE DATABASE WITH TTL should only be used to
-	// create DEFAULT time-to-lives.
-	if db.DefaultTimeToLive != ttli.Name {
-		return nil, ErrTimeToLiveConflict
+	// If a non-default retention policy was passed in that already exists then
+	// it's an error regardless of if the exact same retention policy is
+	// provided. CREATE DATABASE WITH RP should only be used to
+	// create DEFAULT retention policies.
+	if db.DefaultRetentionPolicy != rpi.Name {
+		return nil, ErrRetentionPolicyConflict
 	}
 
 	// Commit the changes.
@@ -381,19 +381,19 @@ func (c *Client) DropDatabase(name string) error {
 	return nil
 }
 
-// CreateTimeToLive creates a time-to-live on the specified database.
-func (c *Client) CreateTimeToLive(database string, spec *TimeToLiveSpec, makeDefault bool) (*TimeToLiveInfo, error) {
+// CreateRetentionPolicy creates a retention policy on the specified database.
+func (c *Client) CreateRetentionPolicy(database string, spec *RetentionPolicySpec, makeDefault bool) (*RetentionPolicyInfo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if spec.Duration != nil && *spec.Duration < MinTimeToLiveDuration && *spec.Duration != 0 {
-		return nil, ErrTimeToLiveDurationTooLow
+	if spec.Duration != nil && *spec.Duration < MinRetentionPolicyDuration && *spec.Duration != 0 {
+		return nil, ErrRetentionPolicyDurationTooLow
 	}
 
-	ttl := spec.NewTimeToLiveInfo()
-	if err := data.CreateTimeToLive(database, ttl, makeDefault); err != nil {
+	rp := spec.NewRetentionPolicyInfo()
+	if err := data.CreateRetentionPolicy(database, rp, makeDefault); err != nil {
 		return nil, err
 	}
 
@@ -401,11 +401,11 @@ func (c *Client) CreateTimeToLive(database string, spec *TimeToLiveSpec, makeDef
 		return nil, err
 	}
 
-	return ttl, nil
+	return rp, nil
 }
 
-// TimeToLive returns the requested time-to-live info.
-func (c *Client) TimeToLive(database, name string) (ttli *TimeToLiveInfo, err error) {
+// RetentionPolicy returns the requested retention policy info.
+func (c *Client) RetentionPolicy(database, name string) (rpi *RetentionPolicyInfo, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -414,17 +414,17 @@ func (c *Client) TimeToLive(database, name string) (ttli *TimeToLiveInfo, err er
 		return nil, cnosdb.ErrDatabaseNotFound(database)
 	}
 
-	return db.TimeToLive(name), nil
+	return db.RetentionPolicy(name), nil
 }
 
-// DropTimeToLive drops a time-to-live from a database.
-func (c *Client) DropTimeToLive(database, name string) error {
+// DropRetentionPolicy drops a retention policy from a database.
+func (c *Client) DropRetentionPolicy(database, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if err := data.DropTimeToLive(database, name); err != nil {
+	if err := data.DropRetentionPolicy(database, name); err != nil {
 		return err
 	}
 
@@ -435,14 +435,14 @@ func (c *Client) DropTimeToLive(database, name string) error {
 	return nil
 }
 
-// SetDefaultTimeToLive sets a database's default time to live.
-func (c *Client) SetDefaultTimeToLive(database, name string) error {
+// SetDefaultRetentionPolicy sets a database's default retention policy.
+func (c *Client) SetDefaultRetentionPolicy(database, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if err := data.SetDefaultTimeToLive(database, name); err != nil {
+	if err := data.SetDefaultRetentionPolicy(database, name); err != nil {
 		return err
 	}
 
@@ -453,14 +453,14 @@ func (c *Client) SetDefaultTimeToLive(database, name string) error {
 	return nil
 }
 
-// UpdateTimeToLive updates a time-to-live.
-func (c *Client) UpdateTimeToLive(database, name string, ttlu *TimeToLiveUpdate, makeDefault bool) error {
+// UpdateRetentionPolicy updates a retention policy.
+func (c *Client) UpdateRetentionPolicy(database, name string, rpu *RetentionPolicyUpdate, makeDefault bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if err := data.UpdateTimeToLive(database, name, ttlu, makeDefault); err != nil {
+	if err := data.UpdateRetentionPolicy(database, name, rpu, makeDefault); err != nil {
 		return err
 	}
 
@@ -714,8 +714,8 @@ func (c *Client) ShardIDs() []uint64 {
 
 	var a []uint64
 	for _, dbi := range c.cacheData.Databases {
-		for _, ttli := range dbi.TimeToLives {
-			for _, sgi := range ttli.Regions {
+		for _, rpi := range dbi.RetentionPolicies {
+			for _, sgi := range rpi.ShardGroups {
 				for _, si := range sgi.Shards {
 					a = append(a, si.ID)
 				}
@@ -727,21 +727,21 @@ func (c *Client) ShardIDs() []uint64 {
 	return a
 }
 
-// RegionsByTimeRange returns a list of all regions on a database and time-to-live that may contain data
-// for the specified time range. Regions are sorted by start time.
-func (c *Client) RegionsByTimeRange(database, ttl string, min, max time.Time) (a []RegionInfo, err error) {
+// ShardGroupsByTimeRange returns a list of all shard groups on a database and retention policy that may contain data
+// for the specified time range. ShardGroups are sorted by start time.
+func (c *Client) ShardGroupsByTimeRange(database, rp string, min, max time.Time) (a []ShardGroupInfo, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Find time-to-live.
-	ttli, err := c.cacheData.TimeToLive(database, ttl)
+	// Find retention policy.
+	rpi, err := c.cacheData.RetentionPolicy(database, rp)
 	if err != nil {
 		return nil, err
-	} else if ttli == nil {
-		return nil, cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
-	groups := make([]RegionInfo, 0, len(ttli.Regions))
-	for _, g := range ttli.Regions {
+	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
+	for _, g := range rpi.ShardGroups {
 		if g.Deleted() || !g.Overlaps(min, max) {
 			continue
 		}
@@ -753,8 +753,8 @@ func (c *Client) RegionsByTimeRange(database, ttl string, min, max time.Time) (a
 // ShardsByTimeRange returns a slice of shards that may contain data in the time range.
 func (c *Client) ShardsByTimeRange(sources cnosql.Sources, tmin, tmax time.Time) (a []ShardInfo, err error) {
 	m := make(map[*ShardInfo]struct{})
-	for _, mm := range sources.Metrics() {
-		groups, err := c.RegionsByTimeRange(mm.Database, mm.TimeToLive, tmin, tmax)
+	for _, mm := range sources.Measurements() {
+		groups, err := c.ShardGroupsByTimeRange(mm.Database, mm.RetentionPolicy, tmin, tmax)
 		if err != nil {
 			return nil, err
 		}
@@ -783,34 +783,34 @@ func (c *Client) DropShard(id uint64) error {
 	return c.commit(data)
 }
 
-// TruncateRegions truncates any region that could contain timestamps beyond t.
-func (c *Client) TruncateRegions(t time.Time) error {
+// TruncateShardGroups truncates any shard group that could contain timestamps beyond t.
+func (c *Client) TruncateShardGroups(t time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
-	data.TruncateRegions(t)
+	data.TruncateShardGroups(t)
 	return c.commit(data)
 }
 
-// PruneRegions remove deleted regions from the data store.
-func (c *Client) PruneRegions() error {
+// PruneShardGroups remove deleted shard groups from the data store.
+func (c *Client) PruneShardGroups() error {
 	var changed bool
-	expiration := time.Now().Add(RegionDeletedExpiration)
+	expiration := time.Now().Add(ShardGroupDeletedExpiration)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	data := c.cacheData.Clone()
 	for i, d := range data.Databases {
-		for j, ttl := range d.TimeToLives {
-			var remainingRegions []RegionInfo
-			for _, sgi := range ttl.Regions {
+		for j, rp := range d.RetentionPolicies {
+			var remainingShardGroups []ShardGroupInfo
+			for _, sgi := range rp.ShardGroups {
 				if sgi.DeletedAt.IsZero() || !expiration.After(sgi.DeletedAt) {
-					remainingRegions = append(remainingRegions, sgi)
+					remainingShardGroups = append(remainingShardGroups, sgi)
 					continue
 				}
 				changed = true
 			}
-			data.Databases[i].TimeToLives[j].Regions = remainingRegions
+			data.Databases[i].RetentionPolicies[j].ShardGroups = remainingShardGroups
 		}
 	}
 	if changed {
@@ -819,11 +819,11 @@ func (c *Client) PruneRegions() error {
 	return nil
 }
 
-// CreateRegion creates a region on a database and time-to-live for a given timestamp.
-func (c *Client) CreateRegion(database, ttl string, timestamp time.Time) (*RegionInfo, error) {
+// CreateShardGroup creates a shard group on a database and retention policy for a given timestamp.
+func (c *Client) CreateShardGroup(database, rp string, timestamp time.Time) (*ShardGroupInfo, error) {
 	// Check under a read-lock
 	c.mu.RLock()
-	if rg, _ := c.cacheData.RegionByTimestamp(database, ttl, timestamp); rg != nil {
+	if rg, _ := c.cacheData.ShardGroupByTimestamp(database, rp, timestamp); rg != nil {
 		c.mu.RUnlock()
 		return rg, nil
 	}
@@ -834,11 +834,11 @@ func (c *Client) CreateRegion(database, ttl string, timestamp time.Time) (*Regio
 
 	// Check again under the write lock
 	data := c.cacheData.Clone()
-	if rg, _ := data.RegionByTimestamp(database, ttl, timestamp); rg != nil {
+	if rg, _ := data.ShardGroupByTimestamp(database, rp, timestamp); rg != nil {
 		return rg, nil
 	}
 
-	sgi, err := createRegion(data, database, ttl, timestamp)
+	sgi, err := createShardGroup(data, database, rp, timestamp)
 	if err != nil {
 		return nil, err
 	}
@@ -850,35 +850,35 @@ func (c *Client) CreateRegion(database, ttl string, timestamp time.Time) (*Regio
 	return sgi, nil
 }
 
-func createRegion(data *Data, database, ttl string, timestamp time.Time) (*RegionInfo, error) {
+func createShardGroup(data *Data, database, rp string, timestamp time.Time) (*ShardGroupInfo, error) {
 	// It is the responsibility of the caller to check if it exists before calling this method.
-	if rg, _ := data.RegionByTimestamp(database, ttl, timestamp); rg != nil {
-		return nil, ErrRegionExists
+	if rg, _ := data.ShardGroupByTimestamp(database, rp, timestamp); rg != nil {
+		return nil, ErrShardGroupExists
 	}
 
-	if err := data.CreateRegion(database, ttl, timestamp); err != nil {
+	if err := data.CreateShardGroup(database, rp, timestamp); err != nil {
 		return nil, err
 	}
 
-	ttli, err := data.TimeToLive(database, ttl)
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return nil, err
-	} else if ttli == nil {
-		return nil, errors.New("time-to-live deleted after region created")
+	} else if rpi == nil {
+		return nil, errors.New("retention policy deleted after shard group created")
 	}
 
-	sgi := ttli.RegionByTimestamp(timestamp)
+	sgi := rpi.ShardGroupByTimestamp(timestamp)
 	return sgi, nil
 }
 
-// DeleteRegion removes a region from a database and time-to-live by id.
-func (c *Client) DeleteRegion(database, ttl string, id uint64) error {
+// DeleteShardGroup removes a shard group from a database and retention policy by id.
+func (c *Client) DeleteShardGroup(database, rp string, id uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if err := data.DeleteRegion(database, ttl, id); err != nil {
+	if err := data.DeleteShardGroup(database, rp, id); err != nil {
 		return err
 	}
 
@@ -889,49 +889,49 @@ func (c *Client) DeleteRegion(database, ttl string, id uint64) error {
 	return nil
 }
 
-// PrecreateRegions creates regions whose endtime is before the 'to' time passed in, but
+// PrecreateShardGroups creates shard groups whose endtime is before the 'to' time passed in, but
 // is yet to expire before 'from'. This is to avoid the need for these shards to be created when data
 // for the corresponding time range arrives. Shard creation involves Raft consensus, and precreation
 // avoids taking the hit at write-time.
-func (c *Client) PrecreateRegions(from, to time.Time) error {
+func (c *Client) PrecreateShardGroups(from, to time.Time) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	data := c.cacheData.Clone()
 	var changed bool
 
 	for _, di := range data.Databases {
-		for _, ttl := range di.TimeToLives {
-			if len(ttl.Regions) == 0 {
-				// No data was ever written to this region, or all groups have been deleted.
+		for _, rp := range di.RetentionPolicies {
+			if len(rp.ShardGroups) == 0 {
+				// No data was ever written to this shard group, or all groups have been deleted.
 				continue
 			}
-			g := ttl.Regions[len(ttl.Regions)-1] // Get the last region in time.
+			g := rp.ShardGroups[len(rp.ShardGroups)-1] // Get the last shard group in time.
 			if !g.Deleted() && g.EndTime.Before(to) && g.EndTime.After(from) {
-				// Region is not deleted, will end before the future time, but is still yet to expire.
+				// ShardGroup is not deleted, will end before the future time, but is still yet to expire.
 				// This last check is important, so the system doesn't create shards groups wholly
 				// in the past.
 
-				// Create successive region.
-				nextRegionTime := g.EndTime.Add(1 * time.Nanosecond)
+				// Create successive shard group.
+				nextShardGroupTime := g.EndTime.Add(1 * time.Nanosecond)
 				// if it already exists, continue
-				if rg, _ := data.RegionByTimestamp(di.Name, ttl.Name, nextRegionTime); rg != nil {
-					c.logger.Info("region already exists",
-						logger.Region(rg.ID),
+				if rg, _ := data.ShardGroupByTimestamp(di.Name, rp.Name, nextShardGroupTime); rg != nil {
+					c.logger.Info("shard group already exists",
+						logger.ShardGroup(rg.ID),
 						logger.Database(di.Name),
-						logger.TimeToLive(ttl.Name))
+						logger.RetentionPolicy(rp.Name))
 					continue
 				}
-				newGroup, err := createRegion(data, di.Name, ttl.Name, nextRegionTime)
+				newGroup, err := createShardGroup(data, di.Name, rp.Name, nextShardGroupTime)
 				if err != nil {
-					c.logger.Info("Failed to precreate successive region",
+					c.logger.Info("Failed to precreate successive shard group",
 						zap.Uint64("group_id", g.ID), zap.Error(err))
 					continue
 				}
 				changed = true
-				c.logger.Info("New region successfully precreated",
-					logger.Region(newGroup.ID),
+				c.logger.Info("New shard group successfully precreated",
+					logger.ShardGroup(newGroup.ID),
 					logger.Database(di.Name),
-					logger.TimeToLive(ttl.Name))
+					logger.RetentionPolicy(rp.Name))
 			}
 		}
 	}
@@ -945,14 +945,14 @@ func (c *Client) PrecreateRegions(from, to time.Time) error {
 	return nil
 }
 
-// ShardOwner returns the owning region info for a specific shard.
-func (c *Client) ShardOwner(shardID uint64) (database, ttl string, sgi *RegionInfo) {
+// ShardOwner returns the owning shard group info for a specific shard.
+func (c *Client) ShardOwner(shardID uint64) (database, rp string, sgi *ShardGroupInfo) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	for _, dbi := range c.cacheData.Databases {
-		for _, ttli := range dbi.TimeToLives {
-			for _, g := range ttli.Regions {
+		for _, rpi := range dbi.RetentionPolicies {
+			for _, g := range rpi.ShardGroups {
 				if g.Deleted() {
 					continue
 				}
@@ -960,7 +960,7 @@ func (c *Client) ShardOwner(shardID uint64) (database, ttl string, sgi *RegionIn
 				for _, sh := range g.Shards {
 					if sh.ID == shardID {
 						database = dbi.Name
-						ttl = ttli.Name
+						rp = rpi.Name
 						sgi = &g
 						return
 					}
@@ -1007,14 +1007,14 @@ func (c *Client) DropContinuousQuery(database, name string) error {
 	return nil
 }
 
-// CreateSubscription creates a subscription against the given database and time-to-live.
-func (c *Client) CreateSubscription(database, ttl, name, mode string, destinations []string) error {
+// CreateSubscription creates a subscription against the given database and retention policy.
+func (c *Client) CreateSubscription(database, rp, name, mode string, destinations []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if err := data.CreateSubscription(database, ttl, name, mode, destinations); err != nil {
+	if err := data.CreateSubscription(database, rp, name, mode, destinations); err != nil {
 		return err
 	}
 
@@ -1025,14 +1025,14 @@ func (c *Client) CreateSubscription(database, ttl, name, mode string, destinatio
 	return nil
 }
 
-// DropSubscription removes the named subscription from the given database and time-to-live.
-func (c *Client) DropSubscription(database, ttl, name string) error {
+// DropSubscription removes the named subscription from the given database and retention policy.
+func (c *Client) DropSubscription(database, rp, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	data := c.cacheData.Clone()
 
-	if err := data.DropSubscription(database, ttl, name); err != nil {
+	if err := data.DropSubscription(database, rp, name); err != nil {
 		return err
 	}
 

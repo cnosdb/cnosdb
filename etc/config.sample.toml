@@ -1,0 +1,121 @@
+bind-address = "127.0.0.1:8088"
+cluster = false
+
+[Meta]
+dir = "/var/lib/cnosdb/meta"
+retention-autocreate = true
+
+[Data]
+dir = "/var/lib/cnosdb/data"
+index-version = "inmem"
+wal-dir = "/var/lib/cnosdb/wal"
+wal-fsync-delay = "0s"
+validate-keys = false
+query-log-enabled = true
+cache-max-memory-size = 1073741824
+cache-snapshot-memory-size = 26214400
+cache-snapshot-write-cold-duration = "10m0s"
+compact-full-write-cold-duration = "4h0m0s"
+compact-throughput = 50331648
+compact-throughput-burst = 50331648
+max-series-per-database = 1000000
+max-values-per-tag = 100000
+max-concurrent-compactions = 0
+max-index-log-file-size = 1048576
+series-id-set-cache-size = 100
+trace-logging-enabled = false
+tsm-use-madv-willneed = false
+
+[Coordinator]
+force-remote-mapping = false
+write-timeout = "10s"
+shard-writer-timeout = "5s"
+max-remote-write-connections = 3
+shard-mapper-timeout = "5s"
+max-concurrent-queries = 0
+query-timeout = "0s"
+log-queries-after = "0s"
+max-select-point = 0
+max-select-series = 0
+max-select-buckets = 0
+
+[RetentionPolicy]
+enabled = true
+check-interval = "30m0s"
+
+[Precreator]
+enabled = true
+check-interval = "10m0s"
+advance-period = "30m0s"
+
+[Monitor]
+store-enabled = true
+store-database = "_internal"
+store-interval = "10s"
+
+[Subscriber]
+enabled = false
+http-timeout = "0s"
+insecure-skip-verify = false
+ca-certs = ""
+write-concurrency = 0
+write-buffer-size = 0
+
+[HTTPD]
+enabled = true
+bind-address = ":8086"
+auth-enabled = false
+log-enabled = true
+suppress-write-log = false
+write-tracing = false
+pprof-enabled = true
+debug-pprof-enabled = false
+https-enabled = false
+https-certificate = "/etc/ssl/cnosdb.pem"
+https-private-key = ""
+max-row-limit = 0
+max-connection-limit = 0
+shared-secret = ""
+realm = "CnosDB"
+unix-socket-enabled = false
+unix-socket-permissions = "0777"
+bind-socket = "/var/run/cnosdb.sock"
+max-body-size = 25000000
+access-log-path = ""
+max-concurrent-write-limit = 0
+max-enqueued-write-limit = 0
+enqueued-write-timeout = 30000000000
+
+[Log]
+level = "INFO"
+format = "text"
+disable-timestamp = false
+development = false
+disable-caller = false
+disable-stacktrace = false
+disable-error-verbose = false
+[Log.file]
+filename = ""
+max-size = 0
+max-days = 0
+max-backups = 0
+
+[ContinuousQuery]
+log-enabled = true
+enabled = true
+query-stats-enabled = false
+run-interval = "1s"
+
+[HintedHandoff]
+enabled = false
+dir = ""
+max-size = 0
+max-age = "0s"
+retry-rate-limit = 0
+retry-interval = "0s"
+retry-max-interval = "0s"
+purge-interval = "0s"
+
+[TLS]
+min-version = ""
+max-version = ""

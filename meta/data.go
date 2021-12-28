@@ -22,19 +22,19 @@ import (
 //go:generate protoc --gogo_out=. internal/meta.proto
 
 const (
-	// DefaultTimeToLiveReplicaN is the default value of TimeToLiveInfo.ReplicaN.
-	DefaultTimeToLiveReplicaN = 1
+	// DefaultRetentionPolicyReplicaN is the default value of RetentionPolicyInfo.ReplicaN.
+	DefaultRetentionPolicyReplicaN = 1
 
-	// DefaultTimeToLiveDuration is the default value of TimeToLiveInfo.Duration.
-	DefaultTimeToLiveDuration = time.Duration(0)
+	// DefaultRetentionPolicyDuration is the default value of RetentionPolicyInfo.Duration.
+	DefaultRetentionPolicyDuration = time.Duration(0)
 
-	// DefaultTimeToLiveName is the default name for auto generated time-to-lives.
-	DefaultTimeToLiveName = "autogen"
+	// DefaultRetentionPolicyName is the default name for auto generated retention policies.
+	DefaultRetentionPolicyName = "autogen"
 
-	// MinTimeToLiveDuration represents the minimum duration for a time-to-live.
-	MinTimeToLiveDuration = time.Hour
+	// MinRetentionPolicyDuration represents the minimum duration for a retention policy.
+	MinRetentionPolicyDuration = time.Hour
 
-	// MaxNameLen is the maximum length of a database or time-to-live name.
+	// MaxNameLen is the maximum length of a database or retention policy name.
 	// CnosDB uses the name for the directory name on disk.
 	MaxNameLen = 255
 )
@@ -53,9 +53,9 @@ type Data struct {
 	// if there is at least one admin user.
 	adminUserExists bool
 
-	MaxNodeID   uint64
-	MaxRegionID uint64
-	MaxShardID  uint64
+	MaxNodeID       uint64
+	MaxShardGroupID uint64
+	MaxShardID      uint64
 }
 
 // MetaNode returns a node by id.
@@ -234,19 +234,19 @@ func (data *Data) DeleteDataNode(id uint64) error {
 
 	// Remove node id from all shard infos
 	for di, db := range data.Databases {
-		for ti, ttl := range db.TimeToLives {
-			for ri, rg := range ttl.Regions {
+		for ti, rp := range db.RetentionPolicies {
+			for ri, rg := range rp.ShardGroups {
 				var (
 					nodeOwnerFreqs = make(map[int]int)
 					orphanedShards []ShardInfo
 				)
-				// Look through all shards in the region and
+				// Look through all shards in the shard group and
 				// determine (1) if a shard no longer has any owners
-				// (orphaned); (2) if all shards in the region
+				// (orphaned); (2) if all shards in the shard group
 				// are orphaned; and (3) the number of shards in this
-				// region owned by each data node in the cluster.
+				// shard group owned by each data node in the cluster.
 				for si, sh := range rg.Shards {
-					// Track of how many shards in the region are
+					// Track of how many shards in the shard group are
 					// owned by each data node in the cluster.
 					var nodeIdx = -1
 					for oi, owner := range sh.Owners {
@@ -260,7 +260,7 @@ func (data *Data) DeleteDataNode(id uint64) error {
 						// Data node owns shard, so relinquish ownership
 						// and set new owners on the shard.
 						sh.Owners = append(sh.Owners[:nodeIdx], sh.Owners[nodeIdx+1:]...)
-						data.Databases[di].TimeToLives[ti].Regions[ri].Shards[si].Owners = sh.Owners
+						data.Databases[di].RetentionPolicies[ti].ShardGroups[ri].Shards[si].Owners = sh.Owners
 					}
 
 					// Shard no longer owned. Will need reassigning
@@ -270,10 +270,10 @@ func (data *Data) DeleteDataNode(id uint64) error {
 					}
 				}
 
-				// Mark the region as deleted if it has no shards,
+				// Mark the shard group as deleted if it has no shards,
 				// or all of its shards are orphaned.
 				if len(rg.Shards) == 0 || len(orphanedShards) == len(rg.Shards) {
-					data.Databases[di].TimeToLives[ti].Regions[ri].DeletedAt = time.Now().UTC()
+					data.Databases[di].RetentionPolicies[ti].ShardGroups[ri].DeletedAt = time.Now().UTC()
 					continue
 				}
 
@@ -290,7 +290,7 @@ func (data *Data) DeleteDataNode(id uint64) error {
 					for si, s := range rg.Shards {
 						if s.ID == orphan.ID {
 							rg.Shards[si].Owners = append(rg.Shards[si].Owners, ShardOwner{NodeID: newOwnerID})
-							data.Databases[di].TimeToLives[ti].Regions[ri].Shards = rg.Shards
+							data.Databases[di].RetentionPolicies[ti].ShardGroups[ri].Shards = rg.Shards
 							break
 						}
 					}
@@ -372,41 +372,41 @@ func (data *Data) DropDatabase(name string) error {
 	return nil
 }
 
-// TimeToLive returns a time-to-live for a database by name.
-func (data *Data) TimeToLive(database, name string) (*TimeToLiveInfo, error) {
+// RetentionPolicy returns a retention policy for a database by name.
+func (data *Data) RetentionPolicy(database, name string) (*RetentionPolicyInfo, error) {
 	di := data.Database(database)
 	if di == nil {
 		return nil, cnosdb.ErrDatabaseNotFound(database)
 	}
 
-	for i := range di.TimeToLives {
-		if di.TimeToLives[i].Name == name {
-			return &di.TimeToLives[i], nil
+	for i := range di.RetentionPolicies {
+		if di.RetentionPolicies[i].Name == name {
+			return &di.RetentionPolicies[i], nil
 		}
 	}
 	return nil, nil
 }
 
-// CreateTimeToLive creates a new time-to-live on a database.
+// CreateRetentionPolicy creates a new retention policy on a database.
 // It returns an error if name is blank or if the database does not exist.
-func (data *Data) CreateTimeToLive(database string, ttli *TimeToLiveInfo, makeDefault bool) error {
-	// Validate time-to-live.
-	if ttli == nil {
-		return ErrTimeToLiveRequired
-	} else if ttli.Name == "" {
-		return ErrTimeToLiveNameRequired
-	} else if len(ttli.Name) > MaxNameLen {
+func (data *Data) CreateRetentionPolicy(database string, rpi *RetentionPolicyInfo, makeDefault bool) error {
+	// Validate retention policy.
+	if rpi == nil {
+		return ErrRetentionPolicyRequired
+	} else if rpi.Name == "" {
+		return ErrRetentionPolicyNameRequired
+	} else if len(rpi.Name) > MaxNameLen {
 		return ErrNameTooLong
-	} else if ttli.ReplicaN < 1 {
+	} else if rpi.ReplicaN < 1 {
 		return ErrReplicationFactorTooLow
 	}
 
 	// Normalise ShardDuration before comparing to any existing
-	// time-to-lives. The client is supposed to do this, but
+	// retention policies. The client is supposed to do this, but
 	// do it again to verify input.
-	ttli.RegionDuration = normalisedShardDuration(ttli.RegionDuration, ttli.Duration)
+	rpi.ShardGroupDuration = normalisedShardDuration(rpi.ShardGroupDuration, rpi.Duration)
 
-	if ttli.Duration > 0 && ttli.Duration < ttli.RegionDuration {
+	if rpi.Duration > 0 && rpi.Duration < rpi.ShardGroupDuration {
 		return ErrIncompatibleDurations
 	}
 
@@ -414,31 +414,31 @@ func (data *Data) CreateTimeToLive(database string, ttli *TimeToLiveInfo, makeDe
 	di := data.Database(database)
 	if di == nil {
 		return cnosdb.ErrDatabaseNotFound(database)
-	} else if ttl := di.TimeToLive(ttli.Name); ttl != nil {
-		// Time-to-live with that name already exists. Make sure they're the same.
-		if ttl.ReplicaN != ttli.ReplicaN || ttl.Duration != ttli.Duration || ttl.RegionDuration != ttli.RegionDuration {
-			return ErrTimeToLiveExists
+	} else if rp := di.RetentionPolicy(rpi.Name); rp != nil {
+		// Retention policy with that name already exists. Make sure they're the same.
+		if rp.ReplicaN != rpi.ReplicaN || rp.Duration != rpi.Duration || rp.ShardGroupDuration != rpi.ShardGroupDuration {
+			return ErrRetentionPolicyExists
 		}
 		// if they want to make it default, and it's not the default, it's not an identical command so it's an error
-		if makeDefault && di.DefaultTimeToLive != ttli.Name {
-			return ErrTimeToLiveConflict
+		if makeDefault && di.DefaultRetentionPolicy != rpi.Name {
+			return ErrRetentionPolicyConflict
 		}
 		return nil
 	}
 
-	// Append copy of new time-to-live.
-	di.TimeToLives = append(di.TimeToLives, *ttli)
+	// Append copy of new retention policy.
+	di.RetentionPolicies = append(di.RetentionPolicies, *rpi)
 
 	// Set the default if needed
 	if makeDefault {
-		di.DefaultTimeToLive = ttli.Name
+		di.DefaultRetentionPolicy = rpi.Name
 	}
 
 	return nil
 }
 
-// DropTimeToLive removes a time-to-live from a database by name.
-func (data *Data) DropTimeToLive(database, name string) error {
+// DropRetentionPolicy removes a retention policy from a database by name.
+func (data *Data) DropRetentionPolicy(database, name string) error {
 	// Find database.
 	di := data.Database(database)
 	if di == nil {
@@ -447,9 +447,9 @@ func (data *Data) DropTimeToLive(database, name string) error {
 	}
 
 	// Remove from list.
-	for i := range di.TimeToLives {
-		if di.TimeToLives[i].Name == name {
-			di.TimeToLives = append(di.TimeToLives[:i], di.TimeToLives[i+1:]...)
+	for i := range di.RetentionPolicies {
+		if di.RetentionPolicies[i].Name == name {
+			di.RetentionPolicies = append(di.RetentionPolicies[:i], di.RetentionPolicies[i+1:]...)
 			break
 		}
 	}
@@ -457,92 +457,92 @@ func (data *Data) DropTimeToLive(database, name string) error {
 	return nil
 }
 
-// TimeToLiveUpdate represents time-to-live fields to be updated.
-type TimeToLiveUpdate struct {
-	Name           *string
-	Duration       *time.Duration
-	ReplicaN       *int
-	RegionDuration *time.Duration
+// RetentionPolicyUpdate represents retention policy fields to be updated.
+type RetentionPolicyUpdate struct {
+	Name               *string
+	Duration           *time.Duration
+	ReplicaN           *int
+	ShardGroupDuration *time.Duration
 }
 
-// SetName sets the TimeToLiveUpdate.Name.
-func (ttlu *TimeToLiveUpdate) SetName(v string) { ttlu.Name = &v }
+// SetName sets the RetentionPolicyUpdate.Name.
+func (rpu *RetentionPolicyUpdate) SetName(v string) { rpu.Name = &v }
 
-// SetDuration sets the TimeToLiveUpdate.Duration.
-func (ttlu *TimeToLiveUpdate) SetDuration(v time.Duration) { ttlu.Duration = &v }
+// SetDuration sets the RetentionPolicyUpdate.Duration.
+func (rpu *RetentionPolicyUpdate) SetDuration(v time.Duration) { rpu.Duration = &v }
 
-// SetReplicaN sets the TimeToLiveUpdate.ReplicaN.
-func (ttlu *TimeToLiveUpdate) SetReplicaN(v int) { ttlu.ReplicaN = &v }
+// SetReplicaN sets the RetentionPolicyUpdate.ReplicaN.
+func (rpu *RetentionPolicyUpdate) SetReplicaN(v int) { rpu.ReplicaN = &v }
 
-// SetRegionDuration sets the TimeToLiveUpdate.RegionDuration.
-func (ttlu *TimeToLiveUpdate) SetRegionDuration(v time.Duration) { ttlu.RegionDuration = &v }
+// SetShardGroupDuration sets the RetentionPolicyUpdate.ShardGroupDuration.
+func (rpu *RetentionPolicyUpdate) SetShardGroupDuration(v time.Duration) { rpu.ShardGroupDuration = &v }
 
-// UpdateTimeToLive updates an existing time-to-live.
-func (data *Data) UpdateTimeToLive(database, name string, ttlu *TimeToLiveUpdate, makeDefault bool) error {
+// UpdateRetentionPolicy updates an existing retention policy.
+func (data *Data) UpdateRetentionPolicy(database, name string, rpu *RetentionPolicyUpdate, makeDefault bool) error {
 	// Find database.
 	di := data.Database(database)
 	if di == nil {
 		return cnosdb.ErrDatabaseNotFound(database)
 	}
 
-	// Find time-to-live.
-	ttli := di.TimeToLive(name)
-	if ttli == nil {
-		return cnosdb.ErrTimeToLiveNotFound(name)
+	// Find retention policy.
+	rpi := di.RetentionPolicy(name)
+	if rpi == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(name)
 	}
 
-	// Ensure new time-to-live doesn't match an existing time-to-live.
-	if ttlu.Name != nil && *ttlu.Name != name && di.TimeToLive(*ttlu.Name) != nil {
-		return ErrTimeToLiveNameExists
+	// Ensure new retention policy doesn't match an existing retention policy.
+	if rpu.Name != nil && *rpu.Name != name && di.RetentionPolicy(*rpu.Name) != nil {
+		return ErrRetentionPolicyNameExists
 	}
 
-	// Enforce duration of at least MinTimeToLiveDuration
-	if ttlu.Duration != nil && *ttlu.Duration < MinTimeToLiveDuration && *ttlu.Duration != 0 {
-		return ErrTimeToLiveDurationTooLow
+	// Enforce duration of at least MinRetentionPolicyDuration
+	if rpu.Duration != nil && *rpu.Duration < MinRetentionPolicyDuration && *rpu.Duration != 0 {
+		return ErrRetentionPolicyDurationTooLow
 	}
 
 	// Enforce duration is at least the shard duration
-	if (ttlu.Duration != nil && *ttlu.Duration > 0 &&
-		((ttlu.RegionDuration != nil && *ttlu.Duration < *ttlu.RegionDuration) ||
-			(ttlu.RegionDuration == nil && *ttlu.Duration < ttli.RegionDuration))) ||
-		(ttlu.Duration == nil && ttli.Duration > 0 &&
-			ttlu.RegionDuration != nil && ttli.Duration < *ttlu.RegionDuration) {
+	if (rpu.Duration != nil && *rpu.Duration > 0 &&
+		((rpu.ShardGroupDuration != nil && *rpu.Duration < *rpu.ShardGroupDuration) ||
+			(rpu.ShardGroupDuration == nil && *rpu.Duration < rpi.ShardGroupDuration))) ||
+		(rpu.Duration == nil && rpi.Duration > 0 &&
+			rpu.ShardGroupDuration != nil && rpi.Duration < *rpu.ShardGroupDuration) {
 		return ErrIncompatibleDurations
 	}
 
 	// Update fields.
-	if ttlu.Name != nil {
-		ttli.Name = *ttlu.Name
+	if rpu.Name != nil {
+		rpi.Name = *rpu.Name
 	}
-	if ttlu.Duration != nil {
-		ttli.Duration = *ttlu.Duration
+	if rpu.Duration != nil {
+		rpi.Duration = *rpu.Duration
 	}
-	if ttlu.ReplicaN != nil {
-		ttli.ReplicaN = *ttlu.ReplicaN
+	if rpu.ReplicaN != nil {
+		rpi.ReplicaN = *rpu.ReplicaN
 	}
-	if ttlu.RegionDuration != nil {
-		ttli.RegionDuration = normalisedShardDuration(*ttlu.RegionDuration, ttli.Duration)
+	if rpu.ShardGroupDuration != nil {
+		rpi.ShardGroupDuration = normalisedShardDuration(*rpu.ShardGroupDuration, rpi.Duration)
 	}
 
-	if di.DefaultTimeToLive != ttli.Name && makeDefault {
-		di.DefaultTimeToLive = ttli.Name
+	if di.DefaultRetentionPolicy != rpi.Name && makeDefault {
+		di.DefaultRetentionPolicy = rpi.Name
 	}
 
 	return nil
 }
 
-// SetDefaultTimeToLive sets the default time-to-live for a database.
-func (data *Data) SetDefaultTimeToLive(database, name string) error {
-	// Find database and verify time-to-live exists.
+// SetDefaultRetentionPolicy sets the default retention policy for a database.
+func (data *Data) SetDefaultRetentionPolicy(database, name string) error {
+	// Find database and verify retention policy exists.
 	di := data.Database(database)
 	if di == nil {
 		return cnosdb.ErrDatabaseNotFound(database)
-	} else if di.TimeToLive(name) == nil {
-		return cnosdb.ErrTimeToLiveNotFound(name)
+	} else if di.RetentionPolicy(name) == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(name)
 	}
 
-	// Set default time-to-live.
-	di.DefaultTimeToLive = name
+	// Set default retention policy.
+	di.DefaultRetentionPolicy = name
 
 	return nil
 }
@@ -555,8 +555,8 @@ func (data *Data) SetDefaultTimeToLive(database, name string) error {
 func (data *Data) DropShard(id uint64) {
 	found := -1
 	for dbidx, dbi := range data.Databases {
-		for ttlidx, ttli := range dbi.TimeToLives {
-			for sgidx, rg := range ttli.Regions {
+		for rpidx, rpi := range dbi.RetentionPolicies {
+			for sgidx, rg := range rpi.ShardGroups {
 				for sidx, s := range rg.Shards {
 					if s.ID == id {
 						found = sidx
@@ -566,11 +566,11 @@ func (data *Data) DropShard(id uint64) {
 
 				if found > -1 {
 					shards := rg.Shards
-					data.Databases[dbidx].TimeToLives[ttlidx].Regions[sgidx].Shards = append(shards[:found], shards[found+1:]...)
+					data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].Shards = append(shards[:found], shards[found+1:]...)
 
 					if len(shards) == 1 {
-						// We just deleted the last shard in the region.
-						data.Databases[dbidx].TimeToLives[ttlidx].Regions[sgidx].DeletedAt = time.Now()
+						// We just deleted the last shard in the shard group.
+						data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].DeletedAt = time.Now()
 					}
 					return
 				}
@@ -579,81 +579,81 @@ func (data *Data) DropShard(id uint64) {
 	}
 }
 
-// Regions returns a list of all regions on a database and time-to-live.
-func (data *Data) Regions(database, ttl string) ([]RegionInfo, error) {
-	// Find time-to-live.
-	ttli, err := data.TimeToLive(database, ttl)
+// ShardGroups returns a list of all shard groups on a database and retention policy.
+func (data *Data) ShardGroups(database, rp string) ([]ShardGroupInfo, error) {
+	// Find retention policy.
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return nil, err
-	} else if ttli == nil {
-		return nil, cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
-	regions := make([]RegionInfo, 0, len(ttli.Regions))
-	for _, g := range ttli.Regions {
+	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
+	for _, g := range rpi.ShardGroups {
 		if g.Deleted() {
 			continue
 		}
-		regions = append(regions, g)
+		groups = append(groups, g)
 	}
-	return regions, nil
+	return groups, nil
 }
 
-// RegionsByTimeRange returns a list of all regions on a database and time-to-live that may contain data
-// for the specified time range. Regions are sorted by start time.
-func (data *Data) RegionsByTimeRange(database, ttl string, tmin, tmax time.Time) ([]RegionInfo, error) {
-	// Find time-to-live.
-	ttli, err := data.TimeToLive(database, ttl)
+// ShardGroupsByTimeRange returns a list of all shard groups on a database and retention policy that may contain data
+// for the specified time range. ShardGroups are sorted by start time.
+func (data *Data) ShardGroupsByTimeRange(database, rp string, tmin, tmax time.Time) ([]ShardGroupInfo, error) {
+	// Find retention policy.
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return nil, err
-	} else if ttli == nil {
-		return nil, cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
-	regions := make([]RegionInfo, 0, len(ttli.Regions))
-	for _, g := range ttli.Regions {
+	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
+	for _, g := range rpi.ShardGroups {
 		if g.Deleted() || !g.Overlaps(tmin, tmax) {
 			continue
 		}
-		regions = append(regions, g)
+		groups = append(groups, g)
 	}
-	return regions, nil
+	return groups, nil
 }
 
-// RegionByTimestamp returns the region on a database and time-to-live for a given timestamp.
-func (data *Data) RegionByTimestamp(database, ttl string, timestamp time.Time) (*RegionInfo, error) {
-	// Find time-to-live.
-	ttli, err := data.TimeToLive(database, ttl)
+// ShardGroupByTimestamp returns the shard group on a database and retention policy for a given timestamp.
+func (data *Data) ShardGroupByTimestamp(database, rp string, timestamp time.Time) (*ShardGroupInfo, error) {
+	// Find retention policy.
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return nil, err
-	} else if ttli == nil {
-		return nil, cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
 
-	return ttli.RegionByTimestamp(timestamp), nil
+	return rpi.ShardGroupByTimestamp(timestamp), nil
 }
 
-// CreateRegion creates a region on a database and time-to-live for a given timestamp.
-func (data *Data) CreateRegionDeprecated(database, ttl string, timestamp time.Time) error {
-	// Find time-to-live.
-	ttli, err := data.TimeToLive(database, ttl)
+// CreateShardGroup creates a shard group on a database and retention policy for a given timestamp.
+func (data *Data) CreateShardGroupDeprecated(database, rp string, timestamp time.Time) error {
+	// Find retention policy.
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return err
-	} else if ttli == nil {
-		return cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
 
-	// Verify that region doesn't already exist for this timestamp.
-	if ttli.RegionByTimestamp(timestamp) != nil {
+	// Verify that shard group doesn't already exist for this timestamp.
+	if rpi.ShardGroupByTimestamp(timestamp) != nil {
 		return nil
 	}
 
-	// Create the region.
-	data.MaxRegionID++
-	sgi := RegionInfo{}
-	sgi.ID = data.MaxRegionID
-	sgi.StartTime = timestamp.Truncate(ttli.RegionDuration).UTC()
-	sgi.EndTime = sgi.StartTime.Add(ttli.RegionDuration).UTC()
+	// Create the shard group.
+	data.MaxShardGroupID++
+	sgi := ShardGroupInfo{}
+	sgi.ID = data.MaxShardGroupID
+	sgi.StartTime = timestamp.Truncate(rpi.ShardGroupDuration).UTC()
+	sgi.EndTime = sgi.StartTime.Add(rpi.ShardGroupDuration).UTC()
 	if sgi.EndTime.After(time.Unix(0, models.MaxNanoTime)) {
-		// Region range is [start, end) so add one to the max time.
+		// ShardGroup range is [start, end) so add one to the max time.
 		sgi.EndTime = time.Unix(0, models.MaxNanoTime+1)
 	}
 
@@ -662,17 +662,17 @@ func (data *Data) CreateRegionDeprecated(database, ttl string, timestamp time.Ti
 		{ID: data.MaxShardID},
 	}
 
-	// Time-to-live has a new region, so update the time-to-live. Regions
+	// Retention policy has a new shard group, so update the retention policy. ShardGroups
 	// must be stored in sorted order, as other parts of the system
 	// assume this to be the case.
-	ttli.Regions = append(ttli.Regions, sgi)
-	sort.Sort(RegionInfos(ttli.Regions))
+	rpi.ShardGroups = append(rpi.ShardGroups, sgi)
+	sort.Sort(ShardGroupInfos(rpi.ShardGroups))
 
 	return nil
 }
 
-// CreateRegion creates a region on a database and time-to-live for a given timestamp.
-func (data *Data) CreateRegion(database, ttl string, timestamp time.Time) error {
+// CreateShardGroup creates a shard group on a database and retention policy for a given timestamp.
+func (data *Data) CreateShardGroup(database, rp string, timestamp time.Time) error {
 	singleMode := false
 	dataNodeCount := len(data.DataNodes)
 	if dataNodeCount == 0 {
@@ -680,21 +680,21 @@ func (data *Data) CreateRegion(database, ttl string, timestamp time.Time) error 
 		singleMode = true
 	}
 
-	// Find time-to-live.
-	ttli, err := data.TimeToLive(database, ttl)
+	// Find retention policy.
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return err
-	} else if ttli == nil {
-		return cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
 
-	// Verify that region doesn't already exist for this timestamp.
-	if ttli.RegionByTimestamp(timestamp) != nil {
+	// Verify that shard group doesn't already exist for this timestamp.
+	if rpi.ShardGroupByTimestamp(timestamp) != nil {
 		return nil
 	}
 
 	// Require at least one replica but no more replicas than nodes.
-	replicaN := ttli.ReplicaN
+	replicaN := rpi.ReplicaN
 	if replicaN == 0 {
 		replicaN = 1
 	} else if replicaN > dataNodeCount {
@@ -706,14 +706,14 @@ func (data *Data) CreateRegion(database, ttl string, timestamp time.Time) error 
 	// replicated the correct number of times.
 	shardN := dataNodeCount / replicaN
 
-	// Create the region.
-	data.MaxRegionID++
-	sgi := RegionInfo{}
-	sgi.ID = data.MaxRegionID
-	sgi.StartTime = timestamp.Truncate(ttli.RegionDuration).UTC()
-	sgi.EndTime = sgi.StartTime.Add(ttli.RegionDuration).UTC()
+	// Create the shard group.
+	data.MaxShardGroupID++
+	sgi := ShardGroupInfo{}
+	sgi.ID = data.MaxShardGroupID
+	sgi.StartTime = timestamp.Truncate(rpi.ShardGroupDuration).UTC()
+	sgi.EndTime = sgi.StartTime.Add(rpi.ShardGroupDuration).UTC()
 	if sgi.EndTime.After(time.Unix(0, models.MaxNanoTime)) {
-		// Region range is [start, end) so add one to the max time.
+		// ShardGroup range is [start, end) so add one to the max time.
 		sgi.EndTime = time.Unix(0, models.MaxNanoTime+1)
 	}
 
@@ -750,34 +750,34 @@ func (data *Data) CreateRegion(database, ttl string, timestamp time.Time) error 
 		}
 	}
 
-	// Time-to-live has a new region, so update the time-to-live. Regions
+	// Retention policy has a new shard group, so update the retention policy. ShardGroups
 	// must be stored in sorted order, as other parts of the system
 	// assume this to be the case.
-	ttli.Regions = append(ttli.Regions, sgi)
-	sort.Sort(RegionInfos(ttli.Regions))
+	rpi.ShardGroups = append(rpi.ShardGroups, sgi)
+	sort.Sort(ShardGroupInfos(rpi.ShardGroups))
 
 	return nil
 }
 
-// DeleteRegion removes a region from a database and time-to-live by id.
-func (data *Data) DeleteRegion(database, ttl string, id uint64) error {
-	// Find time-to-live.
-	ttli, err := data.TimeToLive(database, ttl)
+// DeleteShardGroup removes a shard group from a database and retention policy by id.
+func (data *Data) DeleteShardGroup(database, rp string, id uint64) error {
+	// Find retention policy.
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return err
-	} else if ttli == nil {
-		return cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
 
-	// Find region by ID and set its deletion timestamp.
-	for i := range ttli.Regions {
-		if ttli.Regions[i].ID == id {
-			ttli.Regions[i].DeletedAt = time.Now().UTC()
+	// Find shard group by ID and set its deletion timestamp.
+	for i := range rpi.ShardGroups {
+		if rpi.ShardGroups[i].ID == id {
+			rpi.ShardGroups[i].DeletedAt = time.Now().UTC()
 			return nil
 		}
 	}
 
-	return ErrRegionNotFound
+	return ErrShardGroupNotFound
 }
 
 // CreateContinuousQuery adds a named continuous query to a database.
@@ -844,30 +844,30 @@ func validateURL(input string) error {
 	return nil
 }
 
-// CreateSubscription adds a named subscription to a database and time-to-live.
-func (data *Data) CreateSubscription(database, ttl, name, mode string, destinations []string) error {
+// CreateSubscription adds a named subscription to a database and retention policy.
+func (data *Data) CreateSubscription(database, rp, name, mode string, destinations []string) error {
 	for _, d := range destinations {
 		if err := validateURL(d); err != nil {
 			return err
 		}
 	}
 
-	ttli, err := data.TimeToLive(database, ttl)
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return err
-	} else if ttli == nil {
-		return cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
 
 	// Ensure the name doesn't already exist.
-	for i := range ttli.Subscriptions {
-		if ttli.Subscriptions[i].Name == name {
+	for i := range rpi.Subscriptions {
+		if rpi.Subscriptions[i].Name == name {
 			return ErrSubscriptionExists
 		}
 	}
 
 	// Append new query.
-	ttli.Subscriptions = append(ttli.Subscriptions, SubscriptionInfo{
+	rpi.Subscriptions = append(rpi.Subscriptions, SubscriptionInfo{
 		Name:         name,
 		Mode:         mode,
 		Destinations: destinations,
@@ -877,17 +877,17 @@ func (data *Data) CreateSubscription(database, ttl, name, mode string, destinati
 }
 
 // DropSubscription removes a subscription.
-func (data *Data) DropSubscription(database, ttl, name string) error {
-	ttli, err := data.TimeToLive(database, ttl)
+func (data *Data) DropSubscription(database, rp, name string) error {
+	rpi, err := data.RetentionPolicy(database, rp)
 	if err != nil {
 		return err
-	} else if ttli == nil {
-		return cnosdb.ErrTimeToLiveNotFound(ttl)
+	} else if rpi == nil {
+		return cnosdb.ErrRetentionPolicyNotFound(rp)
 	}
 
-	for i := range ttli.Subscriptions {
-		if ttli.Subscriptions[i].Name == name {
-			ttli.Subscriptions = append(ttli.Subscriptions[:i], ttli.Subscriptions[i+1:]...)
+	for i := range rpi.Subscriptions {
+		if rpi.Subscriptions[i].Name == name {
+			rpi.Subscriptions = append(rpi.Subscriptions[:i], rpi.Subscriptions[i+1:]...)
 			return nil
 		}
 	}
@@ -1074,9 +1074,9 @@ func (data *Data) marshal() *internal.Data {
 		Index:     proto.Uint64(data.Index),
 		ClusterID: proto.Uint64(data.ClusterID),
 
-		MaxNodeID:   proto.Uint64(data.MaxNodeID),
-		MaxRegionID: proto.Uint64(data.MaxRegionID),
-		MaxShardID:  proto.Uint64(data.MaxShardID),
+		MaxNodeID:       proto.Uint64(data.MaxNodeID),
+		MaxShardGroupID: proto.Uint64(data.MaxShardGroupID),
+		MaxShardID:      proto.Uint64(data.MaxShardID),
 	}
 
 	pb.DataNodes = make([]*internal.NodeInfo, len(data.DataNodes))
@@ -1109,7 +1109,7 @@ func (data *Data) unmarshal(pb *internal.Data) {
 	data.ClusterID = pb.GetClusterID()
 
 	data.MaxNodeID = pb.GetMaxNodeID()
-	data.MaxRegionID = pb.GetMaxRegionID()
+	data.MaxShardGroupID = pb.GetMaxShardGroupID()
 	data.MaxShardID = pb.GetMaxShardID()
 
 	data.DataNodes = make([]NodeInfo, len(pb.GetDataNodes()))
@@ -1152,23 +1152,23 @@ func (data *Data) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
-// TruncateRegions truncates any region that could contain timestamps beyond t.
-func (data *Data) TruncateRegions(t time.Time) {
+// TruncateShardGroups truncates any shard group that could contain timestamps beyond t.
+func (data *Data) TruncateShardGroups(t time.Time) {
 	for i := range data.Databases {
 		dbi := &data.Databases[i]
 
-		for j := range dbi.TimeToLives {
-			ttli := &dbi.TimeToLives[j]
+		for j := range dbi.RetentionPolicies {
+			rpi := &dbi.RetentionPolicies[j]
 
-			for k := range ttli.Regions {
-				sgi := &ttli.Regions[k]
+			for k := range rpi.ShardGroups {
+				sgi := &rpi.ShardGroups[k]
 
 				if !t.Before(sgi.EndTime) || sgi.Deleted() || (sgi.Truncated() && sgi.TruncatedAt.Before(t)) {
 					continue
 				}
 
 				if !t.After(sgi.StartTime) {
-					// future region
+					// future shard group
 					sgi.TruncatedAt = sgi.StartTime
 				} else {
 					sgi.TruncatedAt = t
@@ -1190,14 +1190,14 @@ func (data *Data) hasAdminUser() bool {
 }
 
 // ImportData imports selected data into the current metadata.
-// if non-empty, backupDBName, restoreDBName, backupTTLName, restoreTTLName can be used to select DB metadata from other,
+// if non-empty, backupDBName, restoreDBName, backupRPName, restoreRPName can be used to select DB metadata from other,
 // and to assign a new name to the imported data.  Returns a map of shard ID's in the old metadata to new shard ID's
 // in the new metadata, along with a list of new databases created, both of which can assist in the import of existing
 // shard data during a database restore.
-func (data *Data) ImportData(other Data, backupDBName, restoreDBName, backupTTLName, restoreTTLName string) (map[uint64]uint64, []string, error) {
+func (data *Data) ImportData(other Data, backupDBName, restoreDBName, backupRPName, restoreRPName string) (map[uint64]uint64, []string, error) {
 	shardIDMap := make(map[uint64]uint64)
 	if backupDBName != "" {
-		dbName, err := data.importOneDB(other, backupDBName, restoreDBName, backupTTLName, restoreTTLName, shardIDMap)
+		dbName, err := data.importOneDB(other, backupDBName, restoreDBName, backupRPName, restoreRPName, shardIDMap)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1221,8 +1221,8 @@ func (data *Data) ImportData(other Data, backupDBName, restoreDBName, backupTTLN
 	return shardIDMap, newDBs, nil
 }
 
-// importOneDB imports a single database/time-to-live from an external metadata object, renaming them if new names are provided.
-func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupTTLName, restoreTTLName string, shardIDMap map[uint64]uint64) (string, error) {
+// importOneDB imports a single database/retention policy from an external metadata object, renaming them if new names are provided.
+func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupRPName, restoreRPName string, shardIDMap map[uint64]uint64) (string, error) {
 
 	dbPtr := other.Database(backupDBName)
 	if dbPtr == nil {
@@ -1244,37 +1244,37 @@ func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupTTL
 	}
 	dbImport := data.Database(restoreDBName)
 
-	if backupTTLName != "" {
-		ttlPtr := dbPtr.TimeToLive(backupTTLName)
+	if backupRPName != "" {
+		rpPtr := dbPtr.RetentionPolicy(backupRPName)
 
-		if ttlPtr != nil {
-			ttlImport := ttlPtr.clone()
-			if restoreTTLName == "" {
-				restoreTTLName = backupTTLName
+		if rpPtr != nil {
+			rpImport := rpPtr.clone()
+			if restoreRPName == "" {
+				restoreRPName = backupRPName
 			}
-			ttlImport.Name = restoreTTLName
-			dbImport.TimeToLives = []TimeToLiveInfo{ttlImport}
-			dbImport.DefaultTimeToLive = restoreTTLName
+			rpImport.Name = restoreRPName
+			dbImport.RetentionPolicies = []RetentionPolicyInfo{rpImport}
+			dbImport.DefaultRetentionPolicy = restoreRPName
 		} else {
-			return "", fmt.Errorf("time to live not found in meta backup: %s.%s", backupDBName, backupTTLName)
+			return "", fmt.Errorf("retention policy not found in meta backup: %s.%s", backupDBName, backupRPName)
 		}
 
-	} else { // import all time-to-lives without renaming
-		dbImport.DefaultTimeToLive = dbPtr.DefaultTimeToLive
-		if dbPtr.TimeToLives != nil {
-			dbImport.TimeToLives = make([]TimeToLiveInfo, len(dbPtr.TimeToLives))
-			for i := range dbPtr.TimeToLives {
-				dbImport.TimeToLives[i] = dbPtr.TimeToLives[i].clone()
+	} else { // import all retention policies without renaming
+		dbImport.DefaultRetentionPolicy = dbPtr.DefaultRetentionPolicy
+		if dbPtr.RetentionPolicies != nil {
+			dbImport.RetentionPolicies = make([]RetentionPolicyInfo, len(dbPtr.RetentionPolicies))
+			for i := range dbPtr.RetentionPolicies {
+				dbImport.RetentionPolicies[i] = dbPtr.RetentionPolicies[i].clone()
 			}
 		}
 
 	}
 
-	// renumber the regions and shards for the new time to live(ies)
-	for _, ttlImport := range dbImport.TimeToLives {
-		for j, sgImport := range ttlImport.Regions {
-			data.MaxRegionID++
-			ttlImport.Regions[j].ID = data.MaxRegionID
+	// renumber the shard groups and shards for the new retention policy(ies)
+	for _, rpImport := range dbImport.RetentionPolicies {
+		for j, sgImport := range rpImport.ShardGroups {
+			data.MaxShardGroupID++
+			rpImport.ShardGroups[j].ID = data.MaxShardGroupID
 			for k := range sgImport.Shards {
 				data.MaxShardID++
 				shardIDMap[sgImport.Shards[k].ID] = data.MaxShardID
@@ -1329,24 +1329,24 @@ func (n *NodeInfo) unmarshal(pb *internal.NodeInfo) {
 
 // DatabaseInfo represents information about a database in the system.
 type DatabaseInfo struct {
-	Name              string
-	DefaultTimeToLive string
-	TimeToLives       []TimeToLiveInfo
-	ContinuousQueries []ContinuousQueryInfo
+	Name                   string
+	DefaultRetentionPolicy string
+	RetentionPolicies      []RetentionPolicyInfo
+	ContinuousQueries      []ContinuousQueryInfo
 }
 
-// TimeToLive returns a time-to-live by name.
-func (di DatabaseInfo) TimeToLive(name string) *TimeToLiveInfo {
+// RetentionPolicy returns a retention policy by name.
+func (di DatabaseInfo) RetentionPolicy(name string) *RetentionPolicyInfo {
 	if name == "" {
-		if di.DefaultTimeToLive == "" {
+		if di.DefaultRetentionPolicy == "" {
 			return nil
 		}
-		name = di.DefaultTimeToLive
+		name = di.DefaultRetentionPolicy
 	}
 
-	for i := range di.TimeToLives {
-		if di.TimeToLives[i].Name == name {
-			return &di.TimeToLives[i]
+	for i := range di.RetentionPolicies {
+		if di.RetentionPolicies[i].Name == name {
+			return &di.RetentionPolicies[i]
 		}
 	}
 	return nil
@@ -1355,15 +1355,15 @@ func (di DatabaseInfo) TimeToLive(name string) *TimeToLiveInfo {
 // ShardInfos returns a list of all shards' info for the database.
 func (di DatabaseInfo) ShardInfos() []ShardInfo {
 	shards := map[uint64]*ShardInfo{}
-	for i := range di.TimeToLives {
-		for j := range di.TimeToLives[i].Regions {
-			rg := di.TimeToLives[i].Regions[j]
-			// Skip deleted regions
+	for i := range di.RetentionPolicies {
+		for j := range di.RetentionPolicies[i].ShardGroups {
+			rg := di.RetentionPolicies[i].ShardGroups[j]
+			// Skip deleted shard groups
 			if rg.Deleted() {
 				continue
 			}
 			for k := range rg.Shards {
-				si := &di.TimeToLives[i].Regions[j].Shards[k]
+				si := &di.RetentionPolicies[i].ShardGroups[j].Shards[k]
 				shards[si.ID] = si
 			}
 		}
@@ -1381,10 +1381,10 @@ func (di DatabaseInfo) ShardInfos() []ShardInfo {
 func (di DatabaseInfo) clone() DatabaseInfo {
 	other := di
 
-	if di.TimeToLives != nil {
-		other.TimeToLives = make([]TimeToLiveInfo, len(di.TimeToLives))
-		for i := range di.TimeToLives {
-			other.TimeToLives[i] = di.TimeToLives[i].clone()
+	if di.RetentionPolicies != nil {
+		other.RetentionPolicies = make([]RetentionPolicyInfo, len(di.RetentionPolicies))
+		for i := range di.RetentionPolicies {
+			other.RetentionPolicies[i] = di.RetentionPolicies[i].clone()
 		}
 	}
 
@@ -1403,11 +1403,11 @@ func (di DatabaseInfo) clone() DatabaseInfo {
 func (di DatabaseInfo) marshal() *internal.DatabaseInfo {
 	pb := &internal.DatabaseInfo{}
 	pb.Name = proto.String(di.Name)
-	pb.DefaultTimeToLive = proto.String(di.DefaultTimeToLive)
+	pb.DefaultRetentionPolicy = proto.String(di.DefaultRetentionPolicy)
 
-	pb.TimeToLives = make([]*internal.TimeToLiveInfo, len(di.TimeToLives))
-	for i := range di.TimeToLives {
-		pb.TimeToLives[i] = di.TimeToLives[i].marshal()
+	pb.RetentionPolicies = make([]*internal.RetentionPolicyInfo, len(di.RetentionPolicies))
+	for i := range di.RetentionPolicies {
+		pb.RetentionPolicies[i] = di.RetentionPolicies[i].marshal()
 	}
 
 	pb.ContinuousQueries = make([]*internal.ContinuousQueryInfo, len(di.ContinuousQueries))
@@ -1420,12 +1420,12 @@ func (di DatabaseInfo) marshal() *internal.DatabaseInfo {
 // unmarshal deserializes from a protobuf representation.
 func (di *DatabaseInfo) unmarshal(pb *internal.DatabaseInfo) {
 	di.Name = pb.GetName()
-	di.DefaultTimeToLive = pb.GetDefaultTimeToLive()
+	di.DefaultRetentionPolicy = pb.GetDefaultRetentionPolicy()
 
-	if len(pb.GetTimeToLives()) > 0 {
-		di.TimeToLives = make([]TimeToLiveInfo, len(pb.GetTimeToLives()))
-		for i, x := range pb.GetTimeToLives() {
-			di.TimeToLives[i].unmarshal(x)
+	if len(pb.GetRetentionPolicies()) > 0 {
+		di.RetentionPolicies = make([]RetentionPolicyInfo, len(pb.GetRetentionPolicies()))
+		for i, x := range pb.GetRetentionPolicies() {
+			di.RetentionPolicies[i].unmarshal(x)
 		}
 	}
 
@@ -1437,50 +1437,50 @@ func (di *DatabaseInfo) unmarshal(pb *internal.DatabaseInfo) {
 	}
 }
 
-// TimeToLiveSpec represents the specification for a new time-to-live.
-type TimeToLiveSpec struct {
-	Name           string
-	ReplicaN       *int
-	Duration       *time.Duration
-	RegionDuration time.Duration
+// RetentionPolicySpec represents the specification for a new retention policy.
+type RetentionPolicySpec struct {
+	Name               string
+	ReplicaN           *int
+	Duration           *time.Duration
+	ShardGroupDuration time.Duration
 }
 
-// NewTimeToLiveInfo creates a new time-to-live info from the specification.
-func (s *TimeToLiveSpec) NewTimeToLiveInfo() *TimeToLiveInfo {
-	return DefaultTimeToLiveInfo().Apply(s)
+// NewRetentionPolicyInfo creates a new retention policy info from the specification.
+func (s *RetentionPolicySpec) NewRetentionPolicyInfo() *RetentionPolicyInfo {
+	return DefaultRetentionPolicyInfo().Apply(s)
 }
 
-// Matches checks if this time-to-live specification matches
-// an existing time-to-live.
-func (s *TimeToLiveSpec) Matches(ttli *TimeToLiveInfo) bool {
-	if ttli == nil {
+// Matches checks if this retention policy specification matches
+// an existing retention policy.
+func (s *RetentionPolicySpec) Matches(rpi *RetentionPolicyInfo) bool {
+	if rpi == nil {
 		return false
-	} else if s.Name != "" && s.Name != ttli.Name {
+	} else if s.Name != "" && s.Name != rpi.Name {
 		return false
-	} else if s.Duration != nil && *s.Duration != ttli.Duration {
+	} else if s.Duration != nil && *s.Duration != rpi.Duration {
 		return false
-	} else if s.ReplicaN != nil && *s.ReplicaN != ttli.ReplicaN {
+	} else if s.ReplicaN != nil && *s.ReplicaN != rpi.ReplicaN {
 		return false
 	}
 
-	// Normalise ShardDuration before comparing to any existing time-to-live.
-	// Normalize with the time-to-live info's duration instead of the spec
+	// Normalise ShardDuration before comparing to any existing retention policy.
+	// Normalize with the retention policy info's duration instead of the spec
 	// since they should be the same and we're performing a comparison.
-	sgDuration := normalisedShardDuration(s.RegionDuration, ttli.Duration)
-	return sgDuration == ttli.RegionDuration
+	sgDuration := normalisedShardDuration(s.ShardGroupDuration, rpi.Duration)
+	return sgDuration == rpi.ShardGroupDuration
 }
 
 // marshal serializes to a protobuf representation.
-func (s *TimeToLiveSpec) marshal() *internal.TimeToLiveSpec {
-	pb := &internal.TimeToLiveSpec{}
+func (s *RetentionPolicySpec) marshal() *internal.RetentionPolicySpec {
+	pb := &internal.RetentionPolicySpec{}
 	if s.Name != "" {
 		pb.Name = proto.String(s.Name)
 	}
 	if s.Duration != nil {
 		pb.Duration = proto.Int64(int64(*s.Duration))
 	}
-	if s.RegionDuration > 0 {
-		pb.RegionDuration = proto.Int64(int64(s.RegionDuration))
+	if s.ShardGroupDuration > 0 {
+		pb.ShardGroupDuration = proto.Int64(int64(s.ShardGroupDuration))
 	}
 	if s.ReplicaN != nil {
 		pb.ReplicaN = proto.Uint32(uint32(*s.ReplicaN))
@@ -1489,7 +1489,7 @@ func (s *TimeToLiveSpec) marshal() *internal.TimeToLiveSpec {
 }
 
 // unmarshal deserializes from a protobuf representation.
-func (s *TimeToLiveSpec) unmarshal(pb *internal.TimeToLiveSpec) {
+func (s *RetentionPolicySpec) unmarshal(pb *internal.RetentionPolicySpec) {
 	if pb.Name != nil {
 		s.Name = pb.GetName()
 	}
@@ -1497,8 +1497,8 @@ func (s *TimeToLiveSpec) unmarshal(pb *internal.TimeToLiveSpec) {
 		duration := time.Duration(pb.GetDuration())
 		s.Duration = &duration
 	}
-	if pb.RegionDuration != nil {
-		s.RegionDuration = time.Duration(pb.GetRegionDuration())
+	if pb.ShardGroupDuration != nil {
+		s.ShardGroupDuration = time.Duration(pb.GetShardGroupDuration())
 	}
 	if pb.ReplicaN != nil {
 		replicaN := int(pb.GetReplicaN())
@@ -1506,14 +1506,14 @@ func (s *TimeToLiveSpec) unmarshal(pb *internal.TimeToLiveSpec) {
 	}
 }
 
-// MarshalBinary encodes TimeToLiveSpec to a binary format.
-func (s *TimeToLiveSpec) MarshalBinary() ([]byte, error) {
+// MarshalBinary encodes RetentionPolicySpec to a binary format.
+func (s *RetentionPolicySpec) MarshalBinary() ([]byte, error) {
 	return proto.Marshal(s.marshal())
 }
 
-// UnmarshalBinary decodes TimeToLiveSpec from a binary format.
-func (s *TimeToLiveSpec) UnmarshalBinary(data []byte) error {
-	var pb internal.TimeToLiveSpec
+// UnmarshalBinary decodes RetentionPolicySpec from a binary format.
+func (s *RetentionPolicySpec) UnmarshalBinary(data []byte) error {
+	var pb internal.RetentionPolicySpec
 	if err := proto.Unmarshal(data, &pb); err != nil {
 		return err
 	}
@@ -1521,107 +1521,107 @@ func (s *TimeToLiveSpec) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// TimeToLiveInfo represents metadata about a time-to-live.
-type TimeToLiveInfo struct {
-	Name           string
-	ReplicaN       int
-	Duration       time.Duration
-	RegionDuration time.Duration
-	Regions        []RegionInfo
-	Subscriptions  []SubscriptionInfo
+// RetentionPolicyInfo represents metadata about a retention policy.
+type RetentionPolicyInfo struct {
+	Name               string
+	ReplicaN           int
+	Duration           time.Duration
+	ShardGroupDuration time.Duration
+	ShardGroups        []ShardGroupInfo
+	Subscriptions      []SubscriptionInfo
 }
 
-// NewTimeToLiveInfo returns a new instance of TimeToLiveInfo
+// NewRetentionPolicyInfo returns a new instance of RetentionPolicyInfo
 // with default replication and duration.
-func NewTimeToLiveInfo(name string) *TimeToLiveInfo {
-	return &TimeToLiveInfo{
+func NewRetentionPolicyInfo(name string) *RetentionPolicyInfo {
+	return &RetentionPolicyInfo{
 		Name:     name,
-		ReplicaN: DefaultTimeToLiveReplicaN,
-		Duration: DefaultTimeToLiveDuration,
+		ReplicaN: DefaultRetentionPolicyReplicaN,
+		Duration: DefaultRetentionPolicyDuration,
 	}
 }
 
-// DefaultTimeToLiveInfo returns a new instance of TimeToLiveInfo
+// DefaultRetentionPolicyInfo returns a new instance of RetentionPolicyInfo
 // with default name, replication, and duration.
-func DefaultTimeToLiveInfo() *TimeToLiveInfo {
-	return NewTimeToLiveInfo(DefaultTimeToLiveName)
+func DefaultRetentionPolicyInfo() *RetentionPolicyInfo {
+	return NewRetentionPolicyInfo(DefaultRetentionPolicyName)
 }
 
-// Apply applies a specification to the time-to-live info.
-func (ttli *TimeToLiveInfo) Apply(spec *TimeToLiveSpec) *TimeToLiveInfo {
-	ttl := &TimeToLiveInfo{
-		Name:           ttli.Name,
-		ReplicaN:       ttli.ReplicaN,
-		Duration:       ttli.Duration,
-		RegionDuration: ttli.RegionDuration,
+// Apply applies a specification to the retention policy info.
+func (rpi *RetentionPolicyInfo) Apply(spec *RetentionPolicySpec) *RetentionPolicyInfo {
+	rp := &RetentionPolicyInfo{
+		Name:               rpi.Name,
+		ReplicaN:           rpi.ReplicaN,
+		Duration:           rpi.Duration,
+		ShardGroupDuration: rpi.ShardGroupDuration,
 	}
 	if spec.Name != "" {
-		ttl.Name = spec.Name
+		rp.Name = spec.Name
 	}
 	if spec.ReplicaN != nil {
-		ttl.ReplicaN = *spec.ReplicaN
+		rp.ReplicaN = *spec.ReplicaN
 	}
 	if spec.Duration != nil {
-		ttl.Duration = *spec.Duration
+		rp.Duration = *spec.Duration
 	}
-	ttl.RegionDuration = normalisedShardDuration(spec.RegionDuration, ttl.Duration)
-	return ttl
+	rp.ShardGroupDuration = normalisedShardDuration(spec.ShardGroupDuration, rp.Duration)
+	return rp
 }
 
-// RegionByTimestamp returns the region in the time-to-live that contains the timestamp,
-// or nil if no region matches.
-func (ttli *TimeToLiveInfo) RegionByTimestamp(timestamp time.Time) *RegionInfo {
-	for i := range ttli.Regions {
-		sgi := &ttli.Regions[i]
+// ShardGroupByTimestamp returns the shard group in the retention policy that contains the timestamp,
+// or nil if no shard group matches.
+func (rpi *RetentionPolicyInfo) ShardGroupByTimestamp(timestamp time.Time) *ShardGroupInfo {
+	for i := range rpi.ShardGroups {
+		sgi := &rpi.ShardGroups[i]
 		if sgi.Contains(timestamp) && !sgi.Deleted() && (!sgi.Truncated() || timestamp.Before(sgi.TruncatedAt)) {
-			return &ttli.Regions[i]
+			return &rpi.ShardGroups[i]
 		}
 	}
 
 	return nil
 }
 
-// ExpiredRegions returns the Regions which are considered expired, for the given time.
-func (ttli *TimeToLiveInfo) ExpiredRegions(t time.Time) []*RegionInfo {
-	var regions = make([]*RegionInfo, 0)
-	for i := range ttli.Regions {
-		if ttli.Regions[i].Deleted() {
+// ExpiredShardGroups returns the ShardGroups which are considered expired, for the given time.
+func (rpi *RetentionPolicyInfo) ExpiredShardGroups(t time.Time) []*ShardGroupInfo {
+	var groups = make([]*ShardGroupInfo, 0)
+	for i := range rpi.ShardGroups {
+		if rpi.ShardGroups[i].Deleted() {
 			continue
 		}
-		if ttli.Duration != 0 && ttli.Regions[i].EndTime.Add(ttli.Duration).Before(t) {
-			regions = append(regions, &ttli.Regions[i])
+		if rpi.Duration != 0 && rpi.ShardGroups[i].EndTime.Add(rpi.Duration).Before(t) {
+			groups = append(groups, &rpi.ShardGroups[i])
 		}
 	}
-	return regions
+	return groups
 }
 
-// DeletedRegions returns the Regions which are marked as deleted.
-func (ttli *TimeToLiveInfo) DeletedRegions() []*RegionInfo {
-	var regions = make([]*RegionInfo, 0)
-	for i := range ttli.Regions {
-		if ttli.Regions[i].Deleted() {
-			regions = append(regions, &ttli.Regions[i])
+// DeletedShardGroups returns the ShardGroups which are marked as deleted.
+func (rpi *RetentionPolicyInfo) DeletedShardGroups() []*ShardGroupInfo {
+	var groups = make([]*ShardGroupInfo, 0)
+	for i := range rpi.ShardGroups {
+		if rpi.ShardGroups[i].Deleted() {
+			groups = append(groups, &rpi.ShardGroups[i])
 		}
 	}
-	return regions
+	return groups
 }
 
 // marshal serializes to a protobuf representation.
-func (ttli *TimeToLiveInfo) marshal() *internal.TimeToLiveInfo {
-	pb := &internal.TimeToLiveInfo{
-		Name:           proto.String(ttli.Name),
-		ReplicaN:       proto.Uint32(uint32(ttli.ReplicaN)),
-		Duration:       proto.Int64(int64(ttli.Duration)),
-		RegionDuration: proto.Int64(int64(ttli.RegionDuration)),
+func (rpi *RetentionPolicyInfo) marshal() *internal.RetentionPolicyInfo {
+	pb := &internal.RetentionPolicyInfo{
+		Name:               proto.String(rpi.Name),
+		ReplicaN:           proto.Uint32(uint32(rpi.ReplicaN)),
+		Duration:           proto.Int64(int64(rpi.Duration)),
+		ShardGroupDuration: proto.Int64(int64(rpi.ShardGroupDuration)),
 	}
 
-	pb.Regions = make([]*internal.RegionInfo, len(ttli.Regions))
-	for i, sgi := range ttli.Regions {
-		pb.Regions[i] = sgi.marshal()
+	pb.ShardGroups = make([]*internal.ShardGroupInfo, len(rpi.ShardGroups))
+	for i, sgi := range rpi.ShardGroups {
+		pb.ShardGroups[i] = sgi.marshal()
 	}
 
-	pb.Subscriptions = make([]*internal.SubscriptionInfo, len(ttli.Subscriptions))
-	for i, sub := range ttli.Subscriptions {
+	pb.Subscriptions = make([]*internal.SubscriptionInfo, len(rpi.Subscriptions))
+	for i, sub := range rpi.Subscriptions {
 		pb.Subscriptions[i] = sub.marshal()
 	}
 
@@ -1629,57 +1629,57 @@ func (ttli *TimeToLiveInfo) marshal() *internal.TimeToLiveInfo {
 }
 
 // unmarshal deserializes from a protobuf representation.
-func (ttli *TimeToLiveInfo) unmarshal(pb *internal.TimeToLiveInfo) {
-	ttli.Name = pb.GetName()
-	ttli.ReplicaN = int(pb.GetReplicaN())
-	ttli.Duration = time.Duration(pb.GetDuration())
-	ttli.RegionDuration = time.Duration(pb.GetRegionDuration())
+func (rpi *RetentionPolicyInfo) unmarshal(pb *internal.RetentionPolicyInfo) {
+	rpi.Name = pb.GetName()
+	rpi.ReplicaN = int(pb.GetReplicaN())
+	rpi.Duration = time.Duration(pb.GetDuration())
+	rpi.ShardGroupDuration = time.Duration(pb.GetShardGroupDuration())
 
-	if len(pb.GetRegions()) > 0 {
-		ttli.Regions = make([]RegionInfo, len(pb.GetRegions()))
-		for i, x := range pb.GetRegions() {
-			ttli.Regions[i].unmarshal(x)
+	if len(pb.GetShardGroups()) > 0 {
+		rpi.ShardGroups = make([]ShardGroupInfo, len(pb.GetShardGroups()))
+		for i, x := range pb.GetShardGroups() {
+			rpi.ShardGroups[i].unmarshal(x)
 		}
 	}
 	if len(pb.GetSubscriptions()) > 0 {
-		ttli.Subscriptions = make([]SubscriptionInfo, len(pb.GetSubscriptions()))
+		rpi.Subscriptions = make([]SubscriptionInfo, len(pb.GetSubscriptions()))
 		for i, x := range pb.GetSubscriptions() {
-			ttli.Subscriptions[i].unmarshal(x)
+			rpi.Subscriptions[i].unmarshal(x)
 		}
 	}
 }
 
-// clone returns a deep copy of ttli.
-func (ttli TimeToLiveInfo) clone() TimeToLiveInfo {
-	other := ttli
+// clone returns a deep copy of rpi.
+func (rpi RetentionPolicyInfo) clone() RetentionPolicyInfo {
+	other := rpi
 
-	if ttli.Regions != nil {
-		other.Regions = make([]RegionInfo, len(ttli.Regions))
-		for i := range ttli.Regions {
-			other.Regions[i] = ttli.Regions[i].clone()
+	if rpi.ShardGroups != nil {
+		other.ShardGroups = make([]ShardGroupInfo, len(rpi.ShardGroups))
+		for i := range rpi.ShardGroups {
+			other.ShardGroups[i] = rpi.ShardGroups[i].clone()
 		}
 	}
 
 	return other
 }
 
-// MarshalBinary encodes ttli to a binary format.
-func (ttli *TimeToLiveInfo) MarshalBinary() ([]byte, error) {
-	return proto.Marshal(ttli.marshal())
+// MarshalBinary encodes rpi to a binary format.
+func (rpi *RetentionPolicyInfo) MarshalBinary() ([]byte, error) {
+	return proto.Marshal(rpi.marshal())
 }
 
-// UnmarshalBinary decodes ttli from a binary format.
-func (ttli *TimeToLiveInfo) UnmarshalBinary(data []byte) error {
-	var pb internal.TimeToLiveInfo
+// UnmarshalBinary decodes rpi from a binary format.
+func (rpi *RetentionPolicyInfo) UnmarshalBinary(data []byte) error {
+	var pb internal.RetentionPolicyInfo
 	if err := proto.Unmarshal(data, &pb); err != nil {
 		return err
 	}
-	ttli.unmarshal(&pb)
+	rpi.unmarshal(&pb)
 	return nil
 }
 
-// regionDuration returns the default duration for a region based on a time-to-live duration.
-func regionDuration(d time.Duration) time.Duration {
+// groupDuration returns the default duration for a shard group based on a retention policy duration.
+func groupDuration(d time.Duration) time.Duration {
 	if d >= 180*24*time.Hour || d == 0 { // 6 months or 0
 		return 7 * 24 * time.Hour
 	} else if d >= 2*24*time.Hour { // 2 days
@@ -1688,25 +1688,25 @@ func regionDuration(d time.Duration) time.Duration {
 	return 1 * time.Hour
 }
 
-// normalisedShardDuration returns normalised shard duration based on a time-to-live duration.
+// normalisedShardDuration returns normalised shard duration based on a retention policy duration.
 func normalisedShardDuration(sgd, d time.Duration) time.Duration {
-	// If it is zero, it likely wasn't specified, so we default to the region duration
+	// If it is zero, it likely wasn't specified, so we default to the shard group duration
 	if sgd == 0 {
-		return regionDuration(d)
+		return groupDuration(d)
 	}
-	// If it was specified, but it's less than the MinTimeToLiveDuration, then normalize
-	// to the MinTimeToLiveDuration
-	if sgd < MinTimeToLiveDuration {
-		return regionDuration(MinTimeToLiveDuration)
+	// If it was specified, but it's less than the MinRetentionPolicyDuration, then normalize
+	// to the MinRetentionPolicyDuration
+	if sgd < MinRetentionPolicyDuration {
+		return groupDuration(MinRetentionPolicyDuration)
 	}
 	return sgd
 }
 
-// RegionInfo represents metadata about a region. The DeletedAt field is important
-// because it makes it clear that a Region has been marked as deleted, and allow the system
-// to be sure that a Region is not simply missing. If the DeletedAt is set, the system can
+// ShardGroupInfo represents metadata about a shard group. The DeletedAt field is important
+// because it makes it clear that a ShardGroup has been marked as deleted, and allow the system
+// to be sure that a ShardGroup is not simply missing. If the DeletedAt is set, the system can
 // safely delete any associated shards.
-type RegionInfo struct {
+type ShardGroupInfo struct {
 	ID          uint64
 	StartTime   time.Time
 	EndTime     time.Time
@@ -1715,18 +1715,18 @@ type RegionInfo struct {
 	TruncatedAt time.Time
 }
 
-// RegionInfos implements sort.Interface on []RegionInfo, based
+// ShardGroupInfos implements sort.Interface on []ShardGroupInfo, based
 // on the StartTime field.
-type RegionInfos []RegionInfo
+type ShardGroupInfos []ShardGroupInfo
 
 // Len implements sort.Interface.
-func (a RegionInfos) Len() int { return len(a) }
+func (a ShardGroupInfos) Len() int { return len(a) }
 
 // Swap implements sort.Interface.
-func (a RegionInfos) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ShardGroupInfos) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 // Less implements sort.Interface.
-func (a RegionInfos) Less(i, j int) bool {
+func (a ShardGroupInfos) Less(i, j int) bool {
 	iEnd := a[i].EndTime
 	if a[i].Truncated() {
 		iEnd = a[i].TruncatedAt
@@ -1745,27 +1745,27 @@ func (a RegionInfos) Less(i, j int) bool {
 }
 
 // Contains returns true iif StartTime ≤ t < EndTime.
-func (sgi *RegionInfo) Contains(t time.Time) bool {
+func (sgi *ShardGroupInfo) Contains(t time.Time) bool {
 	return !t.Before(sgi.StartTime) && t.Before(sgi.EndTime)
 }
 
-// Overlaps returns whether the region contains data for the time range between min and max
-func (sgi *RegionInfo) Overlaps(min, max time.Time) bool {
+// Overlaps returns whether the shard group contains data for the time range between min and max
+func (sgi *ShardGroupInfo) Overlaps(min, max time.Time) bool {
 	return !sgi.StartTime.After(max) && sgi.EndTime.After(min)
 }
 
-// Deleted returns whether this Region has been deleted.
-func (sgi *RegionInfo) Deleted() bool {
+// Deleted returns whether this ShardGroup has been deleted.
+func (sgi *ShardGroupInfo) Deleted() bool {
 	return !sgi.DeletedAt.IsZero()
 }
 
-// Truncated returns true if this Region has been truncated (no new writes).
-func (sgi *RegionInfo) Truncated() bool {
+// Truncated returns true if this ShardGroup has been truncated (no new writes).
+func (sgi *ShardGroupInfo) Truncated() bool {
 	return !sgi.TruncatedAt.IsZero()
 }
 
 // clone returns a deep copy of sgi.
-func (sgi RegionInfo) clone() RegionInfo {
+func (sgi ShardGroupInfo) clone() ShardGroupInfo {
 	other := sgi
 
 	if sgi.Shards != nil {
@@ -1783,7 +1783,7 @@ type hashIDer interface {
 }
 
 // ShardFor returns the ShardInfo for a Point or other hashIDer.
-func (sgi *RegionInfo) ShardFor(p hashIDer) ShardInfo {
+func (sgi *ShardGroupInfo) ShardFor(p hashIDer) ShardInfo {
 	if len(sgi.Shards) == 1 {
 		return sgi.Shards[0]
 	}
@@ -1791,8 +1791,8 @@ func (sgi *RegionInfo) ShardFor(p hashIDer) ShardInfo {
 }
 
 // marshal serializes to a protobuf representation.
-func (sgi *RegionInfo) marshal() *internal.RegionInfo {
-	pb := &internal.RegionInfo{
+func (sgi *ShardGroupInfo) marshal() *internal.ShardGroupInfo {
+	pb := &internal.ShardGroupInfo{
 		ID:        proto.Uint64(sgi.ID),
 		StartTime: proto.Int64(MarshalTime(sgi.StartTime)),
 		EndTime:   proto.Int64(MarshalTime(sgi.EndTime)),
@@ -1812,7 +1812,7 @@ func (sgi *RegionInfo) marshal() *internal.RegionInfo {
 }
 
 // unmarshal deserializes from a protobuf representation.
-func (sgi *RegionInfo) unmarshal(pb *internal.RegionInfo) {
+func (sgi *ShardGroupInfo) unmarshal(pb *internal.ShardGroupInfo) {
 	sgi.ID = pb.GetID()
 	if i := pb.GetStartTime(); i == 0 {
 		sgi.StartTime = time.Unix(0, 0).UTC()
@@ -2026,12 +2026,12 @@ func (ui *UserInfo) AuthorizeDatabase(privilege cnosql.Privilege, database strin
 }
 
 // AuthorizeSeriesRead is used to limit access per-series (enterprise only)
-func (u *UserInfo) AuthorizeSeriesRead(database string, metric []byte, tags models.Tags) bool {
+func (u *UserInfo) AuthorizeSeriesRead(database string, measurement []byte, tags models.Tags) bool {
 	return true
 }
 
 // AuthorizeSeriesWrite is used to limit access per-series (enterprise only)
-func (u *UserInfo) AuthorizeSeriesWrite(database string, metric []byte, tags models.Tags) bool {
+func (u *UserInfo) AuthorizeSeriesWrite(database string, measurement []byte, tags models.Tags) bool {
 	return true
 }
 
@@ -2157,7 +2157,7 @@ func UnmarshalTime(v int64) time.Time {
 	return time.Unix(0, v).UTC()
 }
 
-// ValidName checks to see if the given name can would be valid for DB/TTL name
+// ValidName checks to see if the given name can would be valid for DB/RP name
 func ValidName(name string) bool {
 	for _, r := range name {
 		if !unicode.IsPrint(r) {

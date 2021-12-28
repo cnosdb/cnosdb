@@ -52,7 +52,7 @@ type Service struct {
 	Listener net.Listener
 
 	MetaClient interface {
-		ShardOwner(shardID uint64) (string, string, *meta.RegionInfo)
+		ShardOwner(shardID uint64) (string, string, *meta.ShardGroupInfo)
 	}
 
 	TSDBStore TSDBStore
@@ -216,12 +216,12 @@ func (s *Service) executeStatement(stmt cnosql.Statement, database string) error
 	switch t := stmt.(type) {
 	case *cnosql.DropDatabaseStatement:
 		return s.TSDBStore.DeleteDatabase(t.Name)
-	case *cnosql.DropMetricStatement:
-		return s.TSDBStore.DeleteMetric(database, t.Name)
+	case *cnosql.DropMeasurementStatement:
+		return s.TSDBStore.DeleteMeasurement(database, t.Name)
 	case *cnosql.DropSeriesStatement:
 		return s.TSDBStore.DeleteSeries(database, t.Sources, t.Condition)
-	case *cnosql.DropTimeToLiveStatement:
-		return s.TSDBStore.DeleteTimeToLive(database, t.Name)
+	case *cnosql.DropRetentionPolicyStatement:
+		return s.TSDBStore.DeleteRetentionPolicy(database, t.Name)
 	default:
 		return fmt.Errorf("%q should not be executed across a cluster", stmt.String())
 	}
@@ -241,16 +241,16 @@ func (s *Service) processWriteShardRequest(buf []byte) error {
 	// We may have received a write for a shard that we don't have locally because the
 	// sending node may have just created the shard (via the metastore) and the write
 	// arrived before the local store could create the shard.  In this case, we need
-	// to check the metastore to determine what database and time-to-live this
+	// to check the metastore to determine what database and retention policy this
 	// shard should reside within.
 	if err == tsdb.ErrShardNotFound {
-		db, ttl := req.Database(), req.TimeToLive()
-		if db == "" || ttl == "" {
-			//s.Logger.Printf("drop write request: shard=%d. no database or time-to-live received", req.ShardID())
+		db, rp := req.Database(), req.RetentionPolicy()
+		if db == "" || rp == "" {
+			//s.Logger.Printf("drop write request: shard=%d. no database or retention policy received", req.ShardID())
 			return nil
 		}
 
-		err = s.TSDBStore.CreateShard(req.Database(), req.TimeToLive(), req.ShardID(), true)
+		err = s.TSDBStore.CreateShard(req.Database(), req.RetentionPolicy(), req.ShardID(), true)
 		if err != nil {
 			s.statMap.Add(writeShardFail, 1)
 			return fmt.Errorf("create shard %d: %s", req.ShardID(), err)
@@ -304,8 +304,8 @@ func (s *Service) processCreateIteratorRequest(conn net.Conn) {
 		if err := DecodeLV(conn, &req); err != nil {
 			return err
 		}
-		sg := s.TSDBStore.Region(req.ShardIDs)
-		ic, err := sg.CreateIterator(context.Background(), &req.Metric, req.Opt)
+		sg := s.TSDBStore.ShardGroup(req.ShardIDs)
+		ic, err := sg.CreateIterator(context.Background(), &req.Measurement, req.Opt)
 		if err != nil {
 			return err
 		}
@@ -366,15 +366,15 @@ func (s *Service) processFieldDimensionsRequest(conn net.Conn) {
 			return err
 		}
 
-		sg := s.TSDBStore.Region(req.ShardIDs)
+		sg := s.TSDBStore.ShardGroup(req.ShardIDs)
 		if sg != nil {
-			var metrics []string
-			if req.Metric.Regex != nil {
-				metrics = sg.MetricsByRegex(req.Metric.Regex.Val)
+			var measurements []string
+			if req.Measurement.Regex != nil {
+				measurements = sg.MeasurementsByRegex(req.Measurement.Regex.Val)
 			} else {
-				metrics = []string{req.Metric.Name}
+				measurements = []string{req.Measurement.Name}
 			}
-			f, d, err := sg.FieldDimensions(metrics)
+			f, d, err := sg.FieldDimensions(measurements)
 			if err != nil {
 				return err
 			}

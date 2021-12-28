@@ -44,8 +44,8 @@ func NewHTTPS(addr string, timeout time.Duration, unsafeSsl bool, caCerts string
 // WritePoints writes points over HTTP transport.
 func (h *HTTP) WritePoints(p *coordinator.WritePointsRequest) (err error) {
 	bp, _ := client.NewBatchPoints(client.BatchPointsConfig{
-		Database:   p.Database,
-		TimeToLive: p.TimeToLive,
+		Database:        p.Database,
+		RetentionPolicy: p.RetentionPolicy,
 	})
 	for _, pt := range p.Points {
 		bp.AddPoint(client.NewPointFrom(pt))

@@ -42,19 +42,19 @@ type SelectOptions struct {
 // ShardMapper retrieves and maps shards into an IteratorCreator that can later be
 // used for executing queries.
 type ShardMapper interface {
-	MapShards(sources cnosql.Sources, t cnosql.TimeRange, opt SelectOptions) (Region, error)
+	MapShards(sources cnosql.Sources, t cnosql.TimeRange, opt SelectOptions) (ShardGroup, error)
 }
 
-// Region represents a shard or a collection of shards that can be accessed
+// ShardGroup represents a shard or a collection of shards that can be accessed
 // for creating iterators.
 // When creating iterators, the resource used for reading the iterators should be
-// separate from the resource used to map the shards. When the Region is closed,
+// separate from the resource used to map the shards. When the ShardGroup is closed,
 // it should not close any resources associated with the created Iterator. Those
 // resources belong to the Iterator and will be closed when the Iterator itself is
 // closed.
-// The query engine operates under this assumption and will close the region
+// The query engine operates under this assumption and will close the shard group
 // after creating the iterators, but before the iterators are actually read.
-type Region interface {
+type ShardGroup interface {
 	IteratorCreator
 	cnosql.FieldMapper
 	io.Closer
@@ -170,7 +170,7 @@ func (b *exprIteratorBuilder) buildVarRefIterator(ctx context.Context, expr *cno
 	if err := func() error {
 		for _, source := range b.sources {
 			switch source := source.(type) {
-			case *cnosql.Metric:
+			case *cnosql.Measurement:
 				input, err := b.ic.CreateIterator(ctx, source, b.opt)
 				if err != nil {
 					return err
@@ -577,7 +577,7 @@ func (b *exprIteratorBuilder) callIterator(ctx context.Context, expr *cnosql.Cal
 	if err := func() error {
 		for _, source := range b.sources {
 			switch source := source.(type) {
-			case *cnosql.Metric:
+			case *cnosql.Measurement:
 				input, err := b.ic.CreateIterator(ctx, source, opt)
 				if err != nil {
 					return err
@@ -776,7 +776,7 @@ func buildAuxIterator(ctx context.Context, ic IteratorCreator, sources cnosql.So
 	if err := func() error {
 		for _, source := range sources {
 			switch source := source.(type) {
-			case *cnosql.Metric:
+			case *cnosql.Measurement:
 				input, err := ic.CreateIterator(ctx, source, opt)
 				if err != nil {
 					return err

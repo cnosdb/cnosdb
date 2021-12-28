@@ -11,9 +11,9 @@ import (
 type MetaClient interface {
 	CreateContinuousQuery(database, name, query string) error
 	CreateDatabase(name string) (*meta.DatabaseInfo, error)
-	CreateDatabaseWithTimeToLive(name string, spec *meta.TimeToLiveSpec) (*meta.DatabaseInfo, error)
-	CreateTimeToLive(database string, spec *meta.TimeToLiveSpec, makeDefault bool) (*meta.TimeToLiveInfo, error)
-	CreateSubscription(database, ttl, name, mode string, destinations []string) error
+	CreateDatabaseWithRetentionPolicy(name string, spec *meta.RetentionPolicySpec) (*meta.DatabaseInfo, error)
+	CreateRetentionPolicy(database string, spec *meta.RetentionPolicySpec, makeDefault bool) (*meta.RetentionPolicyInfo, error)
+	CreateSubscription(database, rp, name, mode string, destinations []string) error
 	CreateUser(name, password string, admin bool) (meta.User, error)
 	Database(name string) *meta.DatabaseInfo
 	Databases() []meta.DatabaseInfo
@@ -25,17 +25,17 @@ type MetaClient interface {
 	DropShard(id uint64) error
 	DropContinuousQuery(database, name string) error
 	DropDatabase(name string) error
-	DropTimeToLive(database, name string) error
-	DropSubscription(database, ttl, name string) error
+	DropRetentionPolicy(database, name string) error
+	DropSubscription(database, rp, name string) error
 	DropUser(name string) error
-	RegionsByTimeRange(database, ttl string, min, max time.Time) (a []meta.RegionInfo, err error)
+	ShardGroupsByTimeRange(database, rp string, min, max time.Time) (a []meta.ShardGroupInfo, err error)
 	SetAdminPrivilege(username string, admin bool) error
-	SetDefaultTimeToLive(database, name string) error
+	SetDefaultRetentionPolicy(database, name string) error
 	SetPrivilege(username, database string, p cnosql.Privilege) error
 	ShardsByTimeRange(sources cnosql.Sources, tmin, tmax time.Time) (a []meta.ShardInfo, err error)
-	TimeToLive(database, name string) (ttl *meta.TimeToLiveInfo, err error)
-	TruncateRegions(t time.Time) error
-	UpdateTimeToLive(database, name string, ttlu *meta.TimeToLiveUpdate, makeDefault bool) error
+	RetentionPolicy(database, name string) (rp *meta.RetentionPolicyInfo, err error)
+	TruncateShardGroups(t time.Time) error
+	UpdateRetentionPolicy(database, name string, rpu *meta.RetentionPolicyUpdate, makeDefault bool) error
 	UpdateUser(name, password string) error
 	UserPrivilege(username, database string) (*cnosql.Privilege, error)
 	UserPrivileges(username string) (map[string]cnosql.Privilege, error)
