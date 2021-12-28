@@ -402,7 +402,7 @@ func (itr *floatSortedMergeIterator) pop() (*FloatPoint, error) {
 
 // floatSortedMergeHeap represents a heap of floatSortedMergeHeapItems.
 // Items are sorted with the following priority:
-//     - By their metric name;
+//     - By their measurement name;
 //     - By their tag keys/values;
 //     - By time; or
 //     - By their Aux field values.
@@ -1099,18 +1099,18 @@ func (itr *floatReduceFloatIterator) reduce() ([]FloatPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceFloatPoint{
+			rp = &floatReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -1133,12 +1133,12 @@ func (itr *floatReduceFloatIterator) reduce() ([]FloatPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]FloatPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -1220,20 +1220,20 @@ func (itr *floatStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []FloatPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -1253,28 +1253,28 @@ func (itr *floatStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceFloatPoint{
+			rp = &floatReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -1387,18 +1387,18 @@ func (itr *floatReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceIntegerPoint{
+			rp = &floatReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -1421,12 +1421,12 @@ func (itr *floatReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]IntegerPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -1508,20 +1508,20 @@ func (itr *floatStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []IntegerPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -1541,28 +1541,28 @@ func (itr *floatStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceIntegerPoint{
+			rp = &floatReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -1675,18 +1675,18 @@ func (itr *floatReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceUnsignedPoint{
+			rp = &floatReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -1709,12 +1709,12 @@ func (itr *floatReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]UnsignedPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -1796,20 +1796,20 @@ func (itr *floatStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []UnsignedPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -1829,28 +1829,28 @@ func (itr *floatStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceUnsignedPoint{
+			rp = &floatReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -1963,18 +1963,18 @@ func (itr *floatReduceStringIterator) reduce() ([]StringPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceStringPoint{
+			rp = &floatReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -1997,12 +1997,12 @@ func (itr *floatReduceStringIterator) reduce() ([]StringPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]StringPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -2084,20 +2084,20 @@ func (itr *floatStreamStringIterator) reduce() ([]StringPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []StringPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -2117,28 +2117,28 @@ func (itr *floatStreamStringIterator) reduce() ([]StringPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceStringPoint{
+			rp = &floatReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -2251,18 +2251,18 @@ func (itr *floatReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceBooleanPoint{
+			rp = &floatReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -2285,12 +2285,12 @@ func (itr *floatReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]BooleanPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -2372,20 +2372,20 @@ func (itr *floatStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []BooleanPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -2405,28 +2405,28 @@ func (itr *floatStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &floatReduceBooleanPoint{
+			rp = &floatReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateFloat(curr)
+		rp.Aggregator.AggregateFloat(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -3066,7 +3066,7 @@ func (itr *integerSortedMergeIterator) pop() (*IntegerPoint, error) {
 
 // integerSortedMergeHeap represents a heap of integerSortedMergeHeapItems.
 // Items are sorted with the following priority:
-//     - By their metric name;
+//     - By their measurement name;
 //     - By their tag keys/values;
 //     - By time; or
 //     - By their Aux field values.
@@ -3763,18 +3763,18 @@ func (itr *integerReduceFloatIterator) reduce() ([]FloatPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceFloatPoint{
+			rp = &integerReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -3797,12 +3797,12 @@ func (itr *integerReduceFloatIterator) reduce() ([]FloatPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]FloatPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -3884,20 +3884,20 @@ func (itr *integerStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []FloatPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -3917,28 +3917,28 @@ func (itr *integerStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceFloatPoint{
+			rp = &integerReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -4051,18 +4051,18 @@ func (itr *integerReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceIntegerPoint{
+			rp = &integerReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -4085,12 +4085,12 @@ func (itr *integerReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]IntegerPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -4172,20 +4172,20 @@ func (itr *integerStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []IntegerPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -4205,28 +4205,28 @@ func (itr *integerStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceIntegerPoint{
+			rp = &integerReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -4339,18 +4339,18 @@ func (itr *integerReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceUnsignedPoint{
+			rp = &integerReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -4373,12 +4373,12 @@ func (itr *integerReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]UnsignedPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -4460,20 +4460,20 @@ func (itr *integerStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []UnsignedPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -4493,28 +4493,28 @@ func (itr *integerStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceUnsignedPoint{
+			rp = &integerReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -4627,18 +4627,18 @@ func (itr *integerReduceStringIterator) reduce() ([]StringPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceStringPoint{
+			rp = &integerReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -4661,12 +4661,12 @@ func (itr *integerReduceStringIterator) reduce() ([]StringPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]StringPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -4748,20 +4748,20 @@ func (itr *integerStreamStringIterator) reduce() ([]StringPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []StringPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -4781,28 +4781,28 @@ func (itr *integerStreamStringIterator) reduce() ([]StringPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceStringPoint{
+			rp = &integerReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -4915,18 +4915,18 @@ func (itr *integerReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceBooleanPoint{
+			rp = &integerReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -4949,12 +4949,12 @@ func (itr *integerReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]BooleanPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -5036,20 +5036,20 @@ func (itr *integerStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []BooleanPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -5069,28 +5069,28 @@ func (itr *integerStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &integerReduceBooleanPoint{
+			rp = &integerReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateInteger(curr)
+		rp.Aggregator.AggregateInteger(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -5730,7 +5730,7 @@ func (itr *unsignedSortedMergeIterator) pop() (*UnsignedPoint, error) {
 
 // unsignedSortedMergeHeap represents a heap of unsignedSortedMergeHeapItems.
 // Items are sorted with the following priority:
-//     - By their metric name;
+//     - By their measurement name;
 //     - By their tag keys/values;
 //     - By time; or
 //     - By their Aux field values.
@@ -6427,18 +6427,18 @@ func (itr *unsignedReduceFloatIterator) reduce() ([]FloatPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceFloatPoint{
+			rp = &unsignedReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -6461,12 +6461,12 @@ func (itr *unsignedReduceFloatIterator) reduce() ([]FloatPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]FloatPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -6548,20 +6548,20 @@ func (itr *unsignedStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []FloatPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -6581,28 +6581,28 @@ func (itr *unsignedStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceFloatPoint{
+			rp = &unsignedReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -6715,18 +6715,18 @@ func (itr *unsignedReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceIntegerPoint{
+			rp = &unsignedReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -6749,12 +6749,12 @@ func (itr *unsignedReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]IntegerPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -6836,20 +6836,20 @@ func (itr *unsignedStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []IntegerPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -6869,28 +6869,28 @@ func (itr *unsignedStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceIntegerPoint{
+			rp = &unsignedReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -7003,18 +7003,18 @@ func (itr *unsignedReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceUnsignedPoint{
+			rp = &unsignedReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -7037,12 +7037,12 @@ func (itr *unsignedReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]UnsignedPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -7124,20 +7124,20 @@ func (itr *unsignedStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []UnsignedPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -7157,28 +7157,28 @@ func (itr *unsignedStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceUnsignedPoint{
+			rp = &unsignedReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -7291,18 +7291,18 @@ func (itr *unsignedReduceStringIterator) reduce() ([]StringPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceStringPoint{
+			rp = &unsignedReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -7325,12 +7325,12 @@ func (itr *unsignedReduceStringIterator) reduce() ([]StringPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]StringPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -7412,20 +7412,20 @@ func (itr *unsignedStreamStringIterator) reduce() ([]StringPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []StringPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -7445,28 +7445,28 @@ func (itr *unsignedStreamStringIterator) reduce() ([]StringPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceStringPoint{
+			rp = &unsignedReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -7579,18 +7579,18 @@ func (itr *unsignedReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceBooleanPoint{
+			rp = &unsignedReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -7613,12 +7613,12 @@ func (itr *unsignedReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]BooleanPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -7700,20 +7700,20 @@ func (itr *unsignedStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []BooleanPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -7733,28 +7733,28 @@ func (itr *unsignedStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &unsignedReduceBooleanPoint{
+			rp = &unsignedReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateUnsigned(curr)
+		rp.Aggregator.AggregateUnsigned(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -8394,7 +8394,7 @@ func (itr *stringSortedMergeIterator) pop() (*StringPoint, error) {
 
 // stringSortedMergeHeap represents a heap of stringSortedMergeHeapItems.
 // Items are sorted with the following priority:
-//     - By their metric name;
+//     - By their measurement name;
 //     - By their tag keys/values;
 //     - By time; or
 //     - By their Aux field values.
@@ -9077,18 +9077,18 @@ func (itr *stringReduceFloatIterator) reduce() ([]FloatPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceFloatPoint{
+			rp = &stringReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -9111,12 +9111,12 @@ func (itr *stringReduceFloatIterator) reduce() ([]FloatPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]FloatPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -9198,20 +9198,20 @@ func (itr *stringStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []FloatPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -9231,28 +9231,28 @@ func (itr *stringStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceFloatPoint{
+			rp = &stringReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -9365,18 +9365,18 @@ func (itr *stringReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceIntegerPoint{
+			rp = &stringReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -9399,12 +9399,12 @@ func (itr *stringReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]IntegerPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -9486,20 +9486,20 @@ func (itr *stringStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []IntegerPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -9519,28 +9519,28 @@ func (itr *stringStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceIntegerPoint{
+			rp = &stringReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -9653,18 +9653,18 @@ func (itr *stringReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceUnsignedPoint{
+			rp = &stringReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -9687,12 +9687,12 @@ func (itr *stringReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]UnsignedPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -9774,20 +9774,20 @@ func (itr *stringStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []UnsignedPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -9807,28 +9807,28 @@ func (itr *stringStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceUnsignedPoint{
+			rp = &stringReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -9941,18 +9941,18 @@ func (itr *stringReduceStringIterator) reduce() ([]StringPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceStringPoint{
+			rp = &stringReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -9975,12 +9975,12 @@ func (itr *stringReduceStringIterator) reduce() ([]StringPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]StringPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -10062,20 +10062,20 @@ func (itr *stringStreamStringIterator) reduce() ([]StringPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []StringPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -10095,28 +10095,28 @@ func (itr *stringStreamStringIterator) reduce() ([]StringPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceStringPoint{
+			rp = &stringReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -10229,18 +10229,18 @@ func (itr *stringReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceBooleanPoint{
+			rp = &stringReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -10263,12 +10263,12 @@ func (itr *stringReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]BooleanPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -10350,20 +10350,20 @@ func (itr *stringStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []BooleanPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -10383,28 +10383,28 @@ func (itr *stringStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &stringReduceBooleanPoint{
+			rp = &stringReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateString(curr)
+		rp.Aggregator.AggregateString(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -11044,7 +11044,7 @@ func (itr *booleanSortedMergeIterator) pop() (*BooleanPoint, error) {
 
 // booleanSortedMergeHeap represents a heap of booleanSortedMergeHeapItems.
 // Items are sorted with the following priority:
-//     - By their metric name;
+//     - By their measurement name;
 //     - By their tag keys/values;
 //     - By time; or
 //     - By their Aux field values.
@@ -11727,18 +11727,18 @@ func (itr *booleanReduceFloatIterator) reduce() ([]FloatPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceFloatPoint{
+			rp = &booleanReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -11761,12 +11761,12 @@ func (itr *booleanReduceFloatIterator) reduce() ([]FloatPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]FloatPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -11848,20 +11848,20 @@ func (itr *booleanStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []FloatPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -11881,28 +11881,28 @@ func (itr *booleanStreamFloatIterator) reduce() ([]FloatPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceFloatPoint{
+			rp = &booleanReduceFloatPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -12015,18 +12015,18 @@ func (itr *booleanReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceIntegerPoint{
+			rp = &booleanReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -12049,12 +12049,12 @@ func (itr *booleanReduceIntegerIterator) reduce() ([]IntegerPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]IntegerPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -12136,20 +12136,20 @@ func (itr *booleanStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []IntegerPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -12169,28 +12169,28 @@ func (itr *booleanStreamIntegerIterator) reduce() ([]IntegerPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceIntegerPoint{
+			rp = &booleanReduceIntegerPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -12303,18 +12303,18 @@ func (itr *booleanReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceUnsignedPoint{
+			rp = &booleanReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -12337,12 +12337,12 @@ func (itr *booleanReduceUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]UnsignedPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -12424,20 +12424,20 @@ func (itr *booleanStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []UnsignedPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -12457,28 +12457,28 @@ func (itr *booleanStreamUnsignedIterator) reduce() ([]UnsignedPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceUnsignedPoint{
+			rp = &booleanReduceUnsignedPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -12591,18 +12591,18 @@ func (itr *booleanReduceStringIterator) reduce() ([]StringPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceStringPoint{
+			rp = &booleanReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -12625,12 +12625,12 @@ func (itr *booleanReduceStringIterator) reduce() ([]StringPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]StringPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -12712,20 +12712,20 @@ func (itr *booleanStreamStringIterator) reduce() ([]StringPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []StringPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -12745,28 +12745,28 @@ func (itr *booleanStreamStringIterator) reduce() ([]StringPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceStringPoint{
+			rp = &booleanReduceStringPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}
@@ -12879,18 +12879,18 @@ func (itr *booleanReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceBooleanPoint{
+			rp = &booleanReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -12913,12 +12913,12 @@ func (itr *booleanReduceBooleanIterator) reduce() ([]BooleanPoint, error) {
 	// Emit the points for each name & tag combination.
 	a := make([]BooleanPoint, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points) - 1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -13000,20 +13000,20 @@ func (itr *booleanStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []BooleanPoint
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -13033,28 +13033,28 @@ func (itr *booleanStreamBooleanIterator) reduce() ([]BooleanPoint, error) {
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &booleanReduceBooleanPoint{
+			rp = &booleanReduceBooleanPoint{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.AggregateBoolean(curr)
+		rp.Aggregator.AggregateBoolean(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}

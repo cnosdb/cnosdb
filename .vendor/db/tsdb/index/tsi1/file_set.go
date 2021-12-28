@@ -7,10 +7,10 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/cnosdatabase/cnosql"
 	"github.com/cnosdatabase/db/pkg/estimator"
 	"github.com/cnosdatabase/db/pkg/estimator/hll"
 	"github.com/cnosdatabase/db/tsdb"
-	"github.com/cnosdatabase/cnosql"
 )
 
 // FileSet represents a collection of files.
@@ -187,10 +187,10 @@ func (fs *FileSet) LastContiguousIndexFilesByLevel(level int) []*IndexFile {
 	return a
 }
 
-// Metric returns a metric by name.
-func (fs *FileSet) Metric(name []byte) MetricElem {
+// Measurement returns a measurement by name.
+func (fs *FileSet) Measurement(name []byte) MeasurementElem {
 	for _, f := range fs.files {
-		if e := f.Metric(name); e == nil {
+		if e := f.Measurement(name); e == nil {
 			continue
 		} else if e.Deleted() {
 			return nil
@@ -201,19 +201,19 @@ func (fs *FileSet) Metric(name []byte) MetricElem {
 	return nil
 }
 
-// MetricIterator returns an iterator over all metrics in the index.
-func (fs *FileSet) MetricIterator() MetricIterator {
-	a := make([]MetricIterator, 0, len(fs.files))
+// MeasurementIterator returns an iterator over all measurements in the index.
+func (fs *FileSet) MeasurementIterator() MeasurementIterator {
+	a := make([]MeasurementIterator, 0, len(fs.files))
 	for _, f := range fs.files {
-		itr := f.MetricIterator()
+		itr := f.MeasurementIterator()
 		if itr != nil {
 			a = append(a, itr)
 		}
 	}
-	return MergeMetricIterators(a...)
+	return MergeMeasurementIterators(a...)
 }
 
-// TagKeyIterator returns an iterator over all tag keys for a metric.
+// TagKeyIterator returns an iterator over all tag keys for a measurement.
 func (fs *FileSet) TagKeyIterator(name []byte) TagKeyIterator {
 	a := make([]TagKeyIterator, 0, len(fs.files))
 	for _, f := range fs.files {
@@ -225,11 +225,11 @@ func (fs *FileSet) TagKeyIterator(name []byte) TagKeyIterator {
 	return MergeTagKeyIterators(a...)
 }
 
-// MetricSeriesIDIterator returns a series iterator for a metric.
-func (fs *FileSet) MetricSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
+// MeasurementSeriesIDIterator returns a series iterator for a measurement.
+func (fs *FileSet) MeasurementSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
 	a := make([]tsdb.SeriesIDIterator, 0, len(fs.files))
 	for _, f := range fs.files {
-		itr := f.MetricSeriesIDIterator(name)
+		itr := f.MeasurementSeriesIDIterator(name)
 		if itr != nil {
 			a = append(a, itr)
 		}
@@ -237,8 +237,8 @@ func (fs *FileSet) MetricSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
 	return tsdb.MergeSeriesIDIterators(a...)
 }
 
-// MetricTagKeysByExpr extracts the tag keys wanted by the expression.
-func (fs *FileSet) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+// MeasurementTagKeysByExpr extracts the tag keys wanted by the expression.
+func (fs *FileSet) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
 	// Return all keys if no condition was passed in.
 	if expr == nil {
 		m := make(map[string]struct{})
@@ -276,12 +276,12 @@ func (fs *FileSet) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[strin
 			return fs.tagKeysByFilter(name, e.Op, []byte(s.Val), nil), nil
 
 		case cnosql.AND, cnosql.OR:
-			lhs, err := fs.MetricTagKeysByExpr(name, e.LHS)
+			lhs, err := fs.MeasurementTagKeysByExpr(name, e.LHS)
 			if err != nil {
 				return nil, err
 			}
 
-			rhs, err := fs.MetricTagKeysByExpr(name, e.RHS)
+			rhs, err := fs.MeasurementTagKeysByExpr(name, e.RHS)
 			if err != nil {
 				return nil, err
 			}
@@ -302,13 +302,13 @@ func (fs *FileSet) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[strin
 		}
 
 	case *cnosql.ParenExpr:
-		return fs.MetricTagKeysByExpr(name, e.Expr)
+		return fs.MeasurementTagKeysByExpr(name, e.Expr)
 	}
 
 	return nil, fmt.Errorf("%#v", expr)
 }
 
-// tagKeysByFilter will filter the tag keys for the metric.
+// tagKeysByFilter will filter the tag keys for the measurement.
 func (fs *FileSet) tagKeysByFilter(name []byte, op cnosql.Token, val []byte, regex *regexp.Regexp) map[string]struct{} {
 	ss := make(map[string]struct{})
 	itr := fs.TagKeyIterator(name)
@@ -410,11 +410,11 @@ func (fs *FileSet) TagValueSeriesIDIterator(name, key, value []byte) (tsdb.Serie
 	return tsdb.NewSeriesIDSetIterator(ss), nil
 }
 
-// MetricsSketches returns the merged metric sketches for the FileSet.
-func (fs *FileSet) MetricsSketches() (estimator.Sketch, estimator.Sketch, error) {
+// MeasurementsSketches returns the merged measurement sketches for the FileSet.
+func (fs *FileSet) MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error) {
 	sketch, tSketch := hll.NewDefaultPlus(), hll.NewDefaultPlus()
 	for _, f := range fs.files {
-		if s, t, err := f.MetricsSketches(); err != nil {
+		if s, t, err := f.MeasurementsSketches(); err != nil {
 			return nil, nil, err
 		} else if err := sketch.Merge(s); err != nil {
 			return nil, nil, err
@@ -425,7 +425,7 @@ func (fs *FileSet) MetricsSketches() (estimator.Sketch, estimator.Sketch, error)
 	return sketch, tSketch, nil
 }
 
-// SeriesSketches returns the merged metric sketches for the FileSet.
+// SeriesSketches returns the merged measurement sketches for the FileSet.
 func (fs *FileSet) SeriesSketches() (estimator.Sketch, estimator.Sketch, error) {
 	sketch, tSketch := hll.NewDefaultPlus(), hll.NewDefaultPlus()
 	for _, f := range fs.files {
@@ -448,9 +448,9 @@ type File interface {
 	ID() int
 	Level() int
 
-	Metric(name []byte) MetricElem
-	MetricIterator() MetricIterator
-	MetricHasSeries(ss *tsdb.SeriesIDSet, name []byte) bool
+	Measurement(name []byte) MeasurementElem
+	MeasurementIterator() MeasurementIterator
+	MeasurementHasSeries(ss *tsdb.SeriesIDSet, name []byte) bool
 
 	TagKey(name, key []byte) TagKeyElem
 	TagKeyIterator(name []byte) TagKeyIterator
@@ -459,12 +459,12 @@ type File interface {
 	TagValueIterator(name, key []byte) TagValueIterator
 
 	// Series iteration.
-	MetricSeriesIDIterator(name []byte) tsdb.SeriesIDIterator
+	MeasurementSeriesIDIterator(name []byte) tsdb.SeriesIDIterator
 	TagKeySeriesIDIterator(name, key []byte) (tsdb.SeriesIDIterator, error)
 	TagValueSeriesIDSet(name, key, value []byte) (*tsdb.SeriesIDSet, error)
 
 	// Sketches for cardinality estimation
-	MetricsSketches() (s, t estimator.Sketch, err error)
+	MeasurementsSketches() (s, t estimator.Sketch, err error)
 	SeriesSketches() (s, t estimator.Sketch, err error)
 
 	// Bitmap series existance.
@@ -539,22 +539,22 @@ func (itr *fileSetSeriesIDSetIterator) SeriesIDSet() *tsdb.SeriesIDSet {
 	return itr.itr.SeriesIDSet()
 }
 
-// fileSetMetricIterator attaches a fileset to an iterator that is released on close.
-type fileSetMetricIterator struct {
+// fileSetMeasurementIterator attaches a fileset to an iterator that is released on close.
+type fileSetMeasurementIterator struct {
 	once sync.Once
 	fs   *FileSet
-	itr  tsdb.MetricIterator
+	itr  tsdb.MeasurementIterator
 }
 
-func newFileSetMetricIterator(fs *FileSet, itr tsdb.MetricIterator) *fileSetMetricIterator {
-	return &fileSetMetricIterator{fs: fs, itr: itr}
+func newFileSetMeasurementIterator(fs *FileSet, itr tsdb.MeasurementIterator) *fileSetMeasurementIterator {
+	return &fileSetMeasurementIterator{fs: fs, itr: itr}
 }
 
-func (itr *fileSetMetricIterator) Next() ([]byte, error) {
+func (itr *fileSetMeasurementIterator) Next() ([]byte, error) {
 	return itr.itr.Next()
 }
 
-func (itr *fileSetMetricIterator) Close() error {
+func (itr *fileSetMeasurementIterator) Close() error {
 	itr.once.Do(func() { itr.fs.Release() })
 	return itr.itr.Close()
 }

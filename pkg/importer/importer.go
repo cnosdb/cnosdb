@@ -42,7 +42,7 @@ type Importer struct {
 
 	client                client.Client
 	database              string
-	timeToLive            string
+	retentionPolicy       string
 	batch                 []string
 	totalInserts          int
 	failedInserts         int
@@ -186,9 +186,9 @@ func (i *Importer) processDML(scanner *bufio.Reader) error {
 			i.batchWrite()
 			i.database = strings.TrimSpace(strings.Split(line, ":")[1])
 		}
-		if strings.HasPrefix(line, "# CONTEXT-TTL:") {
+		if strings.HasPrefix(line, "# CONTEXT-RETENTION-POLICY:") {
 			i.batchWrite()
-			i.timeToLive = strings.TrimSpace(strings.Split(line, ":")[1])
+			i.retentionPolicy = strings.TrimSpace(strings.Split(line, ":")[1])
 		}
 		if strings.HasPrefix(line, "#") {
 			continue
@@ -255,7 +255,7 @@ func (i *Importer) batchWrite() {
 		return
 	}
 
-	_, e := i.WriteLineProtocol(strings.Join(i.batch, "\n"), i.database, i.timeToLive, i.config.Precision, i.config.WriteConsistency)
+	_, e := i.WriteLineProtocol(strings.Join(i.batch, "\n"), i.database, i.retentionPolicy, i.config.Precision, i.config.WriteConsistency)
 	if e != nil {
 		i.stderrLogger.Println("error writing batch: ", e)
 		i.stderrLogger.Println(strings.Join(i.batch, "\n"))
@@ -284,7 +284,7 @@ type Response struct {
 // WriteLineProtocol takes a string with line returns to delimit each write
 // If successful, error is nil and Response is nil
 // If an error occurs, Response may contain additional information if populated.
-func (i *Importer) WriteLineProtocol(data, database, timeToLive, precision, writeConsistency string) (*Response, error) {
+func (i *Importer) WriteLineProtocol(data, database, retentionPolicy, precision, writeConsistency string) (*Response, error) {
 	u := i.config.URL
 	u.Path = path.Join(u.Path, "write")
 
@@ -301,7 +301,7 @@ func (i *Importer) WriteLineProtocol(data, database, timeToLive, precision, writ
 	}
 	params := req.URL.Query()
 	params.Set("db", database)
-	params.Set("ttl", timeToLive)
+	params.Set("rp", retentionPolicy)
 	params.Set("precision", precision)
 	params.Set("consistency", writeConsistency)
 	req.URL.RawQuery = params.Encode()

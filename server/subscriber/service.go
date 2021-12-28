@@ -33,13 +33,13 @@ type PointsWriter interface {
 // subEntry is a unique set that identifies a given subscription.
 type subEntry struct {
 	db   string
-	ttl  string
+	rp   string
 	name string
 }
 
 // Service manages forking the incoming data from CnosDB
 // to defined third party destinations.
-// Subscriptions are defined per database and time to live.
+// Subscriptions are defined per database and retention policy.
 type Service struct {
 	MetaClient interface {
 		Databases() []meta.DatabaseInfo
@@ -215,7 +215,7 @@ func (s *Service) createSubscription(se subEntry, mode string, destinations []st
 		stats:   stats,
 		defaultTags: models.StatisticTags{
 			"database":     se.db,
-			"time_to_live": se.ttl,
+			"time_to_live": se.rp,
 			"name":         se.name,
 			"mode":         mode,
 		},
@@ -244,7 +244,7 @@ func (s *Service) run() {
 				return
 			}
 			for se, cw := range s.subs {
-				if p.Database == se.db && p.TimeToLive == se.ttl {
+				if p.Database == se.db && p.RetentionPolicy == se.rp {
 					select {
 					case cw.writeRequests <- p:
 					default:
@@ -281,11 +281,11 @@ func (s *Service) updateSubs(wg *sync.WaitGroup) {
 	allEntries := make(map[subEntry]bool)
 	// Add in new subscriptions
 	for _, dbi := range dbis {
-		for _, ttli := range dbi.TimeToLives {
-			for _, si := range ttli.Subscriptions {
+		for _, rpi := range dbi.RetentionPolicies {
+			for _, si := range rpi.Subscriptions {
 				se := subEntry{
 					db:   dbi.Name,
-					ttl:  ttli.Name,
+					rp:   rpi.Name,
 					name: si.Name,
 				}
 				allEntries[se] = true
@@ -315,7 +315,7 @@ func (s *Service) updateSubs(wg *sync.WaitGroup) {
 				s.subs[se] = cw
 				s.Logger.Info("Added new subscription",
 					logger.Database(se.db),
-					logger.TimeToLive(se.ttl))
+					logger.RetentionPolicy(se.rp))
 			}
 		}
 	}
@@ -330,7 +330,7 @@ func (s *Service) updateSubs(wg *sync.WaitGroup) {
 			delete(s.subs, se)
 			s.Logger.Info("Deleted old subscription",
 				logger.Database(se.db),
-				logger.TimeToLive(se.ttl))
+				logger.RetentionPolicy(se.rp))
 		}
 	}
 }

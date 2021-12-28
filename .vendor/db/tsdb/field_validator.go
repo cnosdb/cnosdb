@@ -4,20 +4,20 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/cnosdatabase/db/models"
 	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdatabase/db/models"
 )
 
 // FieldValidator should return a PartialWriteError if the point should not be written.
 type FieldValidator interface {
-	Validate(mf *MetricFields, point models.Point) error
+	Validate(mf *MeasurementFields, point models.Point) error
 }
 
 // defaultFieldValidator ensures that points do not use different types for fields that already exist.
 type defaultFieldValidator struct{}
 
 // Validate will return a PartialWriteError if the point has inconsistent fields.
-func (defaultFieldValidator) Validate(mf *MetricFields, point models.Point) error {
+func (defaultFieldValidator) Validate(mf *MeasurementFields, point models.Point) error {
 	iter := point.FieldIterator()
 	for iter.Next() {
 		// Skip fields name "time", they are illegal.
@@ -40,7 +40,7 @@ func (defaultFieldValidator) Validate(mf *MetricFields, point models.Point) erro
 		if f.Type != dataType {
 			return PartialWriteError{
 				Reason: fmt.Sprintf(
-					"%s: input field \"%s\" on metric \"%s\" is type %s, already exists as type %s",
+					"%s: input field \"%s\" on measurement \"%s\" is type %s, already exists as type %s",
 					ErrFieldTypeConflict, iter.FieldKey(), point.Name(), dataType, f.Type),
 				Dropped: 1,
 			}

@@ -9,7 +9,7 @@ import (
 {{range .}}
 
 // build{{.Name}}Cursor creates a cursor for a {{.name}} field.
-func (e *Engine) build{{.Name}}Cursor(ctx context.Context, metric, seriesKey, field string, opt query.IteratorOptions) {{.name}}Cursor {
+func (e *Engine) build{{.Name}}Cursor(ctx context.Context, measurement, seriesKey, field string, opt query.IteratorOptions) {{.name}}Cursor {
 	key := SeriesFieldKeyBytes(seriesKey, field)
 	cacheValues := e.Cache.Values(key)
 	keyCursor := e.KeyCursor(ctx, key, opt.SeekTime(), opt.Ascending)
