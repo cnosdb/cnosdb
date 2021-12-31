@@ -1,6 +1,8 @@
+[English](./CONTRIBUTING_EN.md) | [中文](./CONTRIBUTING.md)
+
 # 贡献指南
 
-感谢您的贡献，在贡献之前请认真阅读并签署[贡献者许可协议（CLA）](./Contributor%20License%20Agreement.md)，您可以通过以下方式参与本项目。
+感谢您的贡献，在贡献之前请认真阅读并签署[贡献者许可协议（CLA）](https://cla-assistant.io/cnosdatabase/cnosdb)，您可以通过以下方式参与本项目。
 
 - 报告错误
 - 功能请求
@@ -78,7 +80,7 @@ Header只有一行，包含三个字段：`type`（必需），`scope`（可选�
 - pkg
 - query
 - server
-- *
+- \*
 
 `description`是commit的简短描述，规定不超过72个字符
 
