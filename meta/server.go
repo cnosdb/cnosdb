@@ -149,7 +149,7 @@ func (s *Server) startHTTPServer() {
 }
 
 func (s *Server) remoteAddr(addr string) string {
-	hostname := s.Config.HTTPD.RemoteHostname
+	hostname := s.Config.Hostname
 	if hostname == "" {
 		hostname = DefaultHostname
 	}
