@@ -1,5 +1,6 @@
 bind-address = "127.0.0.1:8088"
 cluster = true
+hostname = ""
 
 [Meta]
 dir = "/var/lib/cnosdb/meta"

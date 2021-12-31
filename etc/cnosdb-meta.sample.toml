@@ -1,5 +1,6 @@
 dir = "/var/lib/cnosdb/meta"
 retention-autocreate = true
+hostname = ""
 
 [HTTPD]
 logging-enabled = true
