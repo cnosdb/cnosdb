@@ -1,5 +1,5 @@
 bind-address = "127.0.0.1:8088"
-cluster = false
+cluster = true
 hostname = ""
 
 [Meta]
