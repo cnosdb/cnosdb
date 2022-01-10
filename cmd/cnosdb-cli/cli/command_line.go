@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -941,7 +942,7 @@ func (c *CommandLine) printHelp() {
         show measurements     show measurement information
         show tag keys         show tag key information
         show field keys       show field key information
-		logo                  display producer logo`)
+	logo                  display producer logo`)
 }
 
 func (c *CommandLine) printSettings() {
@@ -961,13 +962,11 @@ func (c *CommandLine) printSettings() {
 }
 
 func (c *CommandLine) logo() {
-	fmt.Println(`                                  _   _      
-                                 | | | |     
-  ___   _ __     ___    ___    __| | | |__   
- / __| | '_ \   / _ \  / __|  / _  | | '_ \  
-| (__  | | | | | (_) | \__ \ | (_| | | |_) | 
- \___| |_| |_|  \___/  |___/  \__,_| |_.__/
-                                             `)
+	logo, err := ioutil.ReadFile("cmd/cnosdb-cli/cli/logo")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(logo))
 }
 
 func (c *CommandLine) setHistoryPath() {
