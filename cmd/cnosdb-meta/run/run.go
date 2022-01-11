@@ -41,6 +41,10 @@ func GetCommand() *cobra.Command {
 				return fmt.Errorf("parse config: %s", err)
 			}
 
+			if err := config.ApplyEnvOverrides(os.Getenv); err != nil {
+				return fmt.Errorf("apply env config: %v", err)
+			}
+
 			if err := logger.InitZapLogger(config.Log); err != nil {
 				return fmt.Errorf("parse log config: %s", err)
 			}
