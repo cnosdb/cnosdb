@@ -86,7 +86,7 @@ func (s *Server) initFileSystem() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if _, err := cnosdb.LoadNode(s.Config.Dir); err != nil {
+	if _, err := cnosdb.LoadNode(s.Config.Dir, "meta.json"); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
