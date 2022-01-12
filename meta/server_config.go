@@ -106,3 +106,8 @@ func (c ServerConfig) Diagnostics() (*diagnostics.Diagnostics, error) {
 		"cluster-tracing":      c.ClusterTracing,
 	}), nil
 }
+
+// ApplyEnvOverrides apply the environment configuration on top of the config.
+func (c *Config) ApplyEnvOverrides(getenv func(string) string) error {
+	return toml.ApplyEnvOverrides(getenv, "CNOSDB", c)
+}

@@ -463,16 +463,16 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 
 // HTTPAddr returns the HTTP address used by other nodes for HTTP queries and writes.
 func (s *Server) HTTPAddr() string {
-	return remoteAddr(s.Config.HTTPD.BindAddress)
+	return s.remoteAddr(s.Config.HTTPD.BindAddress)
 }
 
 // TCPAddr returns the TCP address used by other nodes for cluster communication.
 func (s *Server) TCPAddr() string {
-	return remoteAddr(s.Config.BindAddress)
+	return s.remoteAddr(s.Config.BindAddress)
 }
 
-func remoteAddr(addr string) string {
-	hostname, err := meta.DefaultHost(meta.DefaultHostname, addr)
+func (s *Server) remoteAddr(addr string) string {
+	hostname, err := meta.DefaultHost(s.Config.Hostname, addr)
 	if err != nil {
 		return addr
 	}
