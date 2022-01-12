@@ -80,7 +80,14 @@ func ParseConfig(path string) (*server.Config, error) {
 	// Use demo configuration if no config path is specified.
 	if path == "" {
 		logger.BgLogger().Info("No configuration provided, using default settings")
-		return server.NewDemoConfig()
+		if config, err := server.NewDemoConfig(); err != nil {
+			return config, err
+		} else {
+			if err := config.ApplyEnvOverrides(os.Getenv); err != nil {
+				return config, fmt.Errorf("apply env config: %v", err)
+			}
+			return config, err
+		}
 	}
 
 	logger.BgLogger().Info("Loading configuration file", zap.String("path", path))
@@ -90,5 +97,8 @@ func ParseConfig(path string) (*server.Config, error) {
 		return nil, err
 	}
 
+	if err := config.ApplyEnvOverrides(os.Getenv); err != nil {
+		fmt.Errorf("apply env config: %v", err)
+	}
 	return config, nil
 }

@@ -43,6 +43,10 @@ func GetConfigCommand() *cobra.Command {
 					return err
 				}
 
+				if err := c.ApplyEnvOverrides(os.Getenv); err != nil {
+					return fmt.Errorf("apply env config: %v", err)
+				}
+
 				if err := c.Validate(); err != nil {
 					return fmt.Errorf("%s. To generate a valid configuration file run `cnosdb config > cnosdb.generated.conf`", err)
 				}
