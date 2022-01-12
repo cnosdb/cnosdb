@@ -163,7 +163,7 @@ func (s *Server) initMetaStore() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if node, err := cnosdb.LoadNode(s.Config.Meta.Dir); err != nil {
+	if node, err := cnosdb.LoadNode(s.Config.Meta.Dir, ""); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
@@ -449,7 +449,7 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 	s.Node.ID = n.ID
 	s.Node.Peers = peers
 
-	if err := s.Node.Save(); err != nil {
+	if err := s.Node.Save(""); err != nil {
 		s.logger.Error("error save node", zap.Error(err))
 		return
 	}
