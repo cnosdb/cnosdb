@@ -31,12 +31,14 @@ const (
 	// DefaultTCPBindAddress is the default address for various RPC services.
 	DefaultTCPBindAddress = "127.0.0.1:8088"
 	DefaultCluster        = false
+	DefaultHostname       = "localhost"
 )
 
 type Config struct {
 	// BindAddress is the address that all TCP services use (Raft, Snapshot, Cluster, etc.)
 	BindAddress string `toml:"bind-address"`
 	Cluster     bool   `toml:"cluster"`
+	Hostname    string `toml:"hostname"`
 
 	Meta            *meta.Config
 	Data            tsdb.Config
@@ -56,6 +58,7 @@ type Config struct {
 // NewConfig returns an instance of Config with reasonable defaults.
 func NewConfig() *Config {
 	c := &Config{}
+	c.Hostname = DefaultHostname
 	c.BindAddress = DefaultTCPBindAddress
 	c.Cluster = DefaultCluster
 	c.Meta = meta.NewConfig()
