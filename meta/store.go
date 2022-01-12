@@ -359,7 +359,7 @@ func (s *store) joinCluster(peers []string) (*NodeInfo, error) {
 			return nil, err
 		}
 		s.node.ID = n.ID
-		if err := s.node.Save(); err != nil {
+		if err := s.node.Save("meta.json"); err != nil {
 			return nil, err
 		}
 		return n, nil

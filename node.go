@@ -17,7 +17,11 @@ type Node struct {
 }
 
 // LoadNode will load the node information from disk if present
-func LoadNode(path string) (*Node, error) {
+func LoadNode(path, fileName string) (*Node, error) {
+	nodeFile := nodeFile
+	if fileName != "" {
+		nodeFile = fileName
+	}
 	n := &Node{
 		path: path,
 	}
@@ -43,7 +47,11 @@ func NewNode(path string) *Node {
 }
 
 // Save will save the node file to disk and replace the existing one if present
-func (n *Node) Save() error {
+func (n *Node) Save(fileName string) error {
+	nodeFile := nodeFile
+	if fileName != "" {
+		nodeFile = fileName
+	}
 	file := filepath.Join(n.path, nodeFile)
 	tmpFile := file + "tmp"
 
