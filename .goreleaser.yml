@@ -1,0 +1,211 @@
+#  MIT License
+#
+#    Copyright (c) 2021 cnosdatabase
+#
+#    Permission is hereby granted, free of charge, to any person obtaining a copy
+#    of this software and associated documentation files (the "Software"), to deal
+#    in the Software without restriction, including without limitation the rights
+#    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#    copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#    The above copyright notice and this permission notice shall be included in all
+#    copies or substantial portions of the Software.
+#
+#    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+#    SOFTWARE.
+
+project_name: cnosdb
+builds:
+  - id: cnosdb_data
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/cnosdb/
+    env:
+      - GO111MODULE=on
+      - CGO_ENABLED=0
+      - CC=gcc
+      - PKG_CONFIG=$GOPATH/bin/pkg-config
+      - MACOSX_DEPLOYMENT_TARGET=10.11
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+    binary: cnosdb_data
+
+  - id: cnosdb_cli
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/cnosdb-cli/
+    env:
+      - GO111MODULE=on
+      - CGO_ENABLED=0
+      - CC=gcc
+      - PKG_CONFIG=$GOPATH/bin/pkg-config
+      - MACOSX_DEPLOYMENT_TARGET=10.11
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+    binary: cnosdb_cli
+
+  - id: cnosdb_ctl
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/cnosdb-ctl/
+    env:
+      - GO111MODULE=on
+      - CGO_ENABLED=0
+      - CC=gcc
+      - PKG_CONFIG=$GOPATH/bin/pkg-config
+      - MACOSX_DEPLOYMENT_TARGET=10.11
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+    binary: cnosdb_ctl
+
+  - id: cnosdb_meta
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+    main: ./cmd/cnosdb-meta/
+    env:
+      - GO111MODULE=on
+      - CGO_ENABLED=0
+      - CC=gcc
+      - PKG_CONFIG=$GOPATH/bin/pkg-config
+      - MACOSX_DEPLOYMENT_TARGET=10.11
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+    binary: cnosdb_meta
+
+archives:
+  - id: cnosdb_all
+    builds: ["cnosdb_data","cnosdb_cli","cnosdb_ctl","cnosdb_meta"]
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    wrap_in_directory: true
+    name_template: "cnosdb_all-{{ .Os }}-{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+checksum:
+  name_template: "{{ .ProjectName }}_checksums.txt"
+  algorithm: sha256
+snapshot:
+  name_template: "{{ .ProjectName }}:{{ .Tag }}"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+dockers:
+## Support for AMD architecture
+  - goos: linux
+    goarch: amd64
+    ids:
+      - cnosdb_data
+      - cnosdb_cli
+      - cnosdb_ctl
+    image_templates:
+      - "shumintao/cnosdb-data-amd64:{{ .Tag }}-{{.ShortCommit}}"
+    dockerfile: ./Dockerfile_data
+    extra_files:
+      - etc/cnosdb-data.sample.toml
+    use_buildx: true
+    skip_push: false
+
+  - goos: linux
+    goarch: amd64
+    ids:
+      - cnosdb_meta
+      - cnosdb_cli
+      - cnosdb_ctl
+    image_templates:
+      - "shumintao/cnosdb-meta-amd64:{{ .Tag }}-{{.ShortCommit}}"
+    dockerfile: ./Dockerfile_meta
+    extra_files:
+      - etc/cnosdb-meta.sample.toml
+    use_buildx: true
+    skip_push: false
+
+## Support for ARM architecture
+  - goos: linux
+    goarch: arm64
+    ids:
+      - cnosdb_data
+      - cnosdb_cli
+      - cnosdb_ctl
+    image_templates:
+      - "shumintao/cnosdb-data-arm64:{{ .Tag }}-{{.ShortCommit}}"
+    dockerfile: ./Dockerfile_data
+    extra_files:
+      - etc/cnosdb-data.sample.toml
+    use_buildx: true
+    skip_push: false
+
+  - goos: linux
+    goarch: amd64
+    ids:
+      - cnosdb_meta
+      - cnosdb_cli
+      - cnosdb_ctl
+    image_templates:
+      - "shumintao/cnosdb-meta-arm64:{{ .Tag }}-{{.ShortCommit}}"
+    dockerfile: ./Dockerfile_meta
+    extra_files:
+      - etc/cnosdb-meta.sample.toml
+    use_buildx: true
+    skip_push: false
+
+docker_manifests:
+  - image_templates:
+      - "shumintao/cnosdb-data-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "shumintao/cnosdb-meta-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "shumintao/cnosdb-data-arm64:{{ .Tag }}-{{.ShortCommit}}"
+      - "shumintao/cnosdb-meta-arm64:{{ .Tag }}-{{.ShortCommit}}"
+
+
