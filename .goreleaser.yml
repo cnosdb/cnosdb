@@ -21,8 +21,12 @@
 #    SOFTWARE.
 
 project_name: cnosdb
+before:
+  hooks:
+    - rm -rf dist/
+    - go mod tidy
 builds:
-  - id: cnosdb_data
+  - id: cnosdb-data
     goos:
       - linux
       - darwin
@@ -44,9 +48,9 @@ builds:
       - MACOSX_DEPLOYMENT_TARGET=10.11
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
-    binary: cnosdb_data
+    binary: cnosdb-data
 
-  - id: cnosdb_cli
+  - id: cnosdb-cli
     goos:
       - linux
       - darwin
@@ -68,9 +72,9 @@ builds:
       - MACOSX_DEPLOYMENT_TARGET=10.11
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
-    binary: cnosdb_cli
+    binary: cnosdb-cli
 
-  - id: cnosdb_ctl
+  - id: cnosdb-ctl
     goos:
       - linux
       - darwin
@@ -92,9 +96,9 @@ builds:
       - MACOSX_DEPLOYMENT_TARGET=10.11
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
-    binary: cnosdb_ctl
+    binary: cnosdb-ctl
 
-  - id: cnosdb_meta
+  - id: cnosdb-meta
     goos:
       - linux
       - darwin
@@ -116,17 +120,17 @@ builds:
       - MACOSX_DEPLOYMENT_TARGET=10.11
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
-    binary: cnosdb_meta
+    binary: cnosdb-meta
 
 archives:
   - id: cnosdb_all
-    builds: ["cnosdb_data","cnosdb_cli","cnosdb_ctl","cnosdb_meta"]
+    builds: ["cnosdb-data","cnosdb-cli","cnosdb-ctl","cnosdb-meta"]
     format: tar.gz
     format_overrides:
       - goos: windows
         format: zip
     wrap_in_directory: true
-    name_template: "cnosdb_all-{{ .Os }}-{{ .Arch }}"
+    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
     files:
       - LICENSE
       - README.md
@@ -134,78 +138,127 @@ checksum:
   name_template: "{{ .ProjectName }}_checksums.txt"
   algorithm: sha256
 snapshot:
-  name_template: "{{ .ProjectName }}:{{ .Tag }}"
+  name_template: '{{ incpatch .Version }}-next'
 changelog:
   sort: asc
+  use: github
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+    - '^docs:'
+    - '^test:'
+    - '^chore'
+    - Merge pull request
+    - Merge remote-tracking branch
+    - Merge branch
+    - go mod tidy
+  groups:
+    - title: 'New Features'
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 10
+    - title: Other work
+      order: 999
 
 dockers:
 ## Support for AMD architecture
   - goos: linux
     goarch: amd64
-    ids:
-      - cnosdb_data
-      - cnosdb_cli
-      - cnosdb_ctl
     image_templates:
-      - "shumintao/cnosdb-data-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-data-amd64:{{ .Tag }}-{{.ShortCommit}}"
     dockerfile: ./Dockerfile_data
     extra_files:
-      - etc/cnosdb-data.sample.toml
-    use_buildx: true
+      - docker/entrypoint.sh
+      - docker/init-cnosdb.sh
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    use: buildx
     skip_push: false
 
   - goos: linux
     goarch: amd64
-    ids:
-      - cnosdb_meta
-      - cnosdb_cli
-      - cnosdb_ctl
     image_templates:
-      - "shumintao/cnosdb-meta-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-meta-amd64:{{ .Tag }}-{{.ShortCommit}}"
     dockerfile: ./Dockerfile_meta
     extra_files:
-      - etc/cnosdb-meta.sample.toml
-    use_buildx: true
+      - docker/entrypoint.sh
+      - docker/init-cnosdb.sh
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    use: buildx
+    skip_push: false
+
+  - goos: linux
+    goarch: amd64
+    image_templates:
+      - "cnosdb/cnosdb-amd64:{{ .Tag }}-{{.ShortCommit}}"
+    dockerfile: ./Dockerfile
+    extra_files:
+      - docker/entrypoint.sh
+      - docker/init-cnosdb.sh
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    use: buildx
     skip_push: false
 
 ## Support for ARM architecture
   - goos: linux
     goarch: arm64
-    ids:
-      - cnosdb_data
-      - cnosdb_cli
-      - cnosdb_ctl
     image_templates:
-      - "shumintao/cnosdb-data-arm64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-data-arm64:{{ .Tag }}-{{.ShortCommit}}"
     dockerfile: ./Dockerfile_data
-    extra_files:
-      - etc/cnosdb-data.sample.toml
-    use_buildx: true
+    build_flag_templates:
+      - "--platform=linux/arm64/v8"
+    use: buildx
     skip_push: false
 
   - goos: linux
-    goarch: amd64
-    ids:
-      - cnosdb_meta
-      - cnosdb_cli
-      - cnosdb_ctl
+    goarch: arm64
     image_templates:
-      - "shumintao/cnosdb-meta-arm64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-meta-arm64:{{ .Tag }}-{{.ShortCommit}}"
     dockerfile: ./Dockerfile_meta
     extra_files:
-      - etc/cnosdb-meta.sample.toml
-    use_buildx: true
+      - docker/entrypoint.sh
+      - docker/init-cnosdb.sh
+    build_flag_templates:
+      - "--platform=linux/arm64/v8"
+    use: buildx
+    skip_push: false
+
+  - goos: linux
+    goarch: arm64
+    image_templates:
+      - "cnosdb/cnosdb-arm64:{{ .Tag }}-{{.ShortCommit}}"
+    dockerfile: ./Dockerfile
+    extra_files:
+      - docker/entrypoint.sh
+      - docker/init-cnosdb.sh
+    build_flag_templates:
+      - "--platform=linux/arm64/v8"
+    use: buildx
     skip_push: false
 
 docker_manifests:
-  - image_templates:
-      - "shumintao/cnosdb-data-amd64:{{ .Tag }}-{{.ShortCommit}}"
-      - "shumintao/cnosdb-meta-amd64:{{ .Tag }}-{{.ShortCommit}}"
-      - "shumintao/cnosdb-data-arm64:{{ .Tag }}-{{.ShortCommit}}"
-      - "shumintao/cnosdb-meta-arm64:{{ .Tag }}-{{.ShortCommit}}"
+  - name_template: "cnosdb/cnosdb:{{ .Tag }}"
+    image_templates:
+      - "cnosdb/cnosdb-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-data-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-meta-amd64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-arm64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-data-arm64:{{ .Tag }}-{{.ShortCommit}}"
+      - "cnosdb/cnosdb-meta-arm64:{{ .Tag }}-{{.ShortCommit}}"
 
+docker_signs:
+- cmd: cosign
+  env:
+  - COSIGN_EXPERIMENTAL=1
+  artifacts: manifests
+  output: true
+  args:
+  - 'sign'
+  - '${artifact}'
+
+release:
+  disable: true
 
