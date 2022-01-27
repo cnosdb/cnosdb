@@ -3,11 +3,10 @@ package coordinator
 import (
 	"context"
 	"io"
+	"math/rand"
 	"net"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
 	"github.com/cnosdatabase/cnosql"
 	"github.com/cnosdatabase/db/query"
 	"github.com/cnosdatabase/db/tsdb"
@@ -22,27 +21,33 @@ type IteratorCreator interface {
 
 // LocalShardMapper implements a ShardMapper for local shards.
 type LocalShardMapper struct {
-	MetaClient interface {
-		ShardGroupsByTimeRange(database, rp string, min, max time.Time) (a []meta.ShardGroupInfo, err error)
-	}
+	//MetaClient interface {
+	//	ShardGroupsByTimeRange(database, policy string, min, max time.Time) (a []meta.ShardGroupInfo, err error)
+	//}
+	MetaClient MetaClient
 
 	TSDBStore interface {
 		ShardGroup(ids []uint64) tsdb.ShardGroup
+		Shards(ids []uint64) []*tsdb.Shard
+		CreateShard(database, retentionPolicy string, shardID uint64, enabled bool) error
 	}
 }
 
 // MapShards maps the sources to the appropriate shards into an IteratorCreator.
 func (e *LocalShardMapper) MapShards(sources cnosql.Sources, t cnosql.TimeRange, opt query.SelectOptions) (query.ShardGroup, error) {
 	a := &LocalShardMapping{
-		ShardMap: make(map[Source]tsdb.ShardGroup),
+		ShardMap:  make(map[Source]tsdb.ShardGroup),
+		RemoteICs: make(map[Source][]remoteIteratorCreator),
 	}
 
 	tmin := time.Unix(0, t.MinTimeNano())
 	tmax := time.Unix(0, t.MaxTimeNano())
+	a.MinTime, a.MaxTime = tmin, tmax
+	a.LocalNodeID = opt.NodeID
 	if err := e.mapShards(a, sources, tmin, tmax); err != nil {
 		return nil, err
 	}
-	a.MinTime, a.MaxTime = tmin, tmax
+
 	return a, nil
 }
 
@@ -67,12 +72,43 @@ func (e *LocalShardMapper) mapShards(a *LocalShardMapping, sources cnosql.Source
 					a.ShardMap[source] = nil
 					continue
 				}
+				a.RemoteICs[source] = make([]remoteIteratorCreator, 0, len(groups[0].Shards)*len(groups))
 
 				shardIDs := make([]uint64, 0, len(groups[0].Shards)*len(groups))
 				for _, g := range groups {
 					for _, si := range g.Shards {
-						shardIDs = append(shardIDs, si.ID)
+						var nodeID uint64
+						if si.OwnedBy(a.LocalNodeID) {
+							nodeID = a.LocalNodeID
+						} else if len(si.Owners) > 0 {
+							nodeID = si.Owners[rand.Intn(len(si.Owners))].NodeID
+						} else {
+							// This should not occur but if the shard has no owners then
+							// we don't want this to panic by trying to randomly select a node.
+							continue
+						}
+						if nodeID == a.LocalNodeID {
+							shardIDs = append(shardIDs, si.ID)
+
+						} else {
+							dialer := &NodeDialer{
+								MetaClient: e.MetaClient,
+								Timeout:    time.Duration(3 * time.Second),
+							}
+							remoteShardIDs := []uint64{si.ID}
+							remoteIC := newRemoteIteratorCreator(dialer, nodeID, remoteShardIDs)
+							a.RemoteICs[source] = append(a.RemoteICs[source], remoteIC)
+
+						}
 					}
+				}
+				shards := e.TSDBStore.Shards(shardIDs)
+				if len(shards) != len(shardIDs) {
+					for _, shardID := range shardIDs {
+						//err = e.TSDBStore.CreateShard(database, retentionPolicy, shardID, true)
+						e.TSDBStore.CreateShard(s.Database, s.RetentionPolicy, shardID, true)
+					}
+
 				}
 				a.ShardMap[source] = e.TSDBStore.ShardGroup(shardIDs)
 			}
@@ -85,9 +121,11 @@ func (e *LocalShardMapper) mapShards(a *LocalShardMapping, sources cnosql.Source
 	return nil
 }
 
-// LocalShardMapping maps data sources to a list of shard information.
+// ShardMapper maps data sources to a list of shard information.
 type LocalShardMapping struct {
 	ShardMap map[Source]tsdb.ShardGroup
+
+	RemoteICs map[Source][]remoteIteratorCreator
 
 	// MinTime is the minimum time that this shard mapper will allow.
 	// Any attempt to use a time before this one will automatically result in using
@@ -98,6 +136,8 @@ type LocalShardMapping struct {
 	// Any attempt to use a time after this one will automatically result in using
 	// this time instead.
 	MaxTime time.Time
+
+	LocalNodeID uint64
 }
 
 func (a *LocalShardMapping) FieldDimensions(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
@@ -107,8 +147,9 @@ func (a *LocalShardMapping) FieldDimensions(m *cnosql.Measurement) (fields map[s
 	}
 
 	rg := a.ShardMap[source]
-	if rg == nil {
-		return
+	RemoteICs := a.RemoteICs[source]
+	if rg == nil && RemoteICs == nil {
+		return nil, nil, nil
 	}
 
 	fields = make(map[string]cnosql.DataType)
@@ -121,16 +162,34 @@ func (a *LocalShardMapping) FieldDimensions(m *cnosql.Measurement) (fields map[s
 		measurements = []string{m.Name}
 	}
 
-	f, d, err := rg.FieldDimensions(measurements)
-	if err != nil {
-		return nil, nil, err
+	if rg != nil {
+		f, d, err := rg.FieldDimensions(measurements)
+		if err != nil {
+			return nil, nil, err
+		}
+		for k, typ := range f {
+			fields[k] = typ
+		}
+		for k := range d {
+			dimensions[k] = struct{}{}
+		}
 	}
-	for k, typ := range f {
-		fields[k] = typ
+
+	if RemoteICs != nil {
+		for _, remoteIC := range RemoteICs {
+			f, d, err := remoteIC.FieldDimensions(m)
+			if err != nil {
+				return nil, nil, err
+			}
+			for k, typ := range f {
+				fields[k] = typ
+			}
+			for k := range d {
+				dimensions[k] = struct{}{}
+			}
+		}
 	}
-	for k := range d {
-		dimensions[k] = struct{}{}
-	}
+
 	return
 }
 
@@ -172,7 +231,8 @@ func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Measur
 	}
 
 	rg := a.ShardMap[source]
-	if rg == nil {
+	RemoteICs := a.RemoteICs[source]
+	if rg == nil && RemoteICs == nil {
 		return nil, nil
 	}
 
@@ -184,9 +244,9 @@ func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Measur
 		opt.EndTime = a.MaxTime.UnixNano()
 	}
 
+	inputs := []query.Iterator{}
 	if m.Regex != nil {
 		measurements := rg.MeasurementsByRegex(m.Regex.Val)
-		inputs := make([]query.Iterator, 0, len(measurements))
 		if err := func() error {
 			// Create a Measurement for each returned matching measurement value
 			// from the regex.
@@ -198,6 +258,14 @@ func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Measur
 					return err
 				}
 				inputs = append(inputs, input)
+
+				for _, remoteIC := range RemoteICs {
+					input, err := remoteIC.CreateIterator(ctx, m, opt)
+					if err != nil {
+						continue
+					}
+					inputs = append(inputs, input)
+				}
 			}
 			return nil
 		}(); err != nil {
@@ -205,9 +273,127 @@ func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Measur
 			return nil, err
 		}
 
-		return query.Iterators(inputs).Merge(opt)
+	} else {
+
+		input, err := rg.CreateIterator(ctx, m, opt)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, input)
+
+		for _, remoteIC := range RemoteICs {
+			input, err := remoteIC.CreateIterator(ctx, m, opt)
+			if err != nil {
+				continue
+			}
+			inputs = append(inputs, input)
+		}
 	}
-	return rg.CreateIterator(ctx, m, opt)
+
+	return query.Iterators(inputs).Merge(opt)
+}
+
+// remoteIteratorCreator creates iterators for remote shards.
+type remoteIteratorCreator struct {
+	dialer   *NodeDialer
+	nodeID   uint64
+	shardIDs []uint64
+}
+
+// newRemoteIteratorCreator returns a new instance of remoteIteratorCreator for a remote shard.
+func newRemoteIteratorCreator(dialer *NodeDialer, nodeID uint64, shardIDs []uint64) remoteIteratorCreator {
+	return remoteIteratorCreator{
+		dialer:   dialer,
+		nodeID:   nodeID,
+		shardIDs: shardIDs,
+	}
+}
+
+// CreateIterator creates a remote streaming iterator.
+func (ic *remoteIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error) {
+	conn, err := ic.dialer.DialNode(ic.nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp CreateIteratorResponse
+	if err := func() error {
+		// Write request.
+		var req = CreateIteratorRequest{
+			ShardIDs:    ic.shardIDs,
+			Measurement: *(m.Clone()),
+			Opt:         opt,
+		}
+		if err := EncodeTLV(conn, createIteratorRequestMessage, &req); err != nil {
+			return err
+		}
+
+		// Read the response.
+		if _, err := DecodeTLV(conn, &resp); err != nil {
+			return err
+		} else if resp.Err != nil {
+			return err
+		}
+
+		return nil
+	}(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return query.NewReaderIterator(ctx, conn, resp.typ, resp.stats), nil
+}
+
+// FieldDimensions returns the unique fields and dimensions across a list of sources.
+func (ic *remoteIteratorCreator) FieldDimensions(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+	conn, err := ic.dialer.DialNode(ic.nodeID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer conn.Close()
+
+	// Write request.
+	if err := EncodeTLV(conn, fieldDimensionsRequestMessage, &FieldDimensionsRequest{
+		ShardIDs:    ic.shardIDs,
+		Measurement: *m,
+	}); err != nil {
+		return nil, nil, err
+	}
+
+	// Read the response.
+	var resp FieldDimensionsResponse
+	if _, err := DecodeTLV(conn, &resp); err != nil {
+		return nil, nil, err
+	}
+	return resp.Fields, resp.Dimensions, resp.Err
+}
+
+// NodeDialer dials connections to a given node.
+type NodeDialer struct {
+	MetaClient MetaClient
+	Timeout    time.Duration
+}
+
+// DialNode returns a connection to a node.
+func (d *NodeDialer) DialNode(nodeID uint64) (net.Conn, error) {
+	ni, err := d.MetaClient.DataNode(nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := net.Dial("tcp", ni.TCPHost)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetDeadline(time.Now().Add(d.Timeout))
+
+	// Write the cluster multiplexing header byte
+	if _, err := conn.Write([]byte(MuxHeader)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	return conn, nil
 }
 
 func (a *LocalShardMapping) IteratorCost(m *cnosql.Measurement, opt query.IteratorOptions) (query.IteratorCost, error) {
@@ -248,101 +434,6 @@ func (a *LocalShardMapping) IteratorCost(m *cnosql.Measurement, opt query.Iterat
 func (a *LocalShardMapping) Close() error {
 	a.ShardMap = nil
 	return nil
-}
-
-// remoteIteratorCreator creates iterators for remote shards.
-type remoteIteratorCreator struct {
-	dialer   *NodeDialer
-	nodeID   uint64
-	shardIDs []uint64
-}
-
-// newRemoteIteratorCreator returns a new instance of remoteIteratorCreator for a remote shard.
-func newRemoteIteratorCreator(dialer *NodeDialer, nodeID uint64, shardIDs []uint64) *remoteIteratorCreator {
-	return &remoteIteratorCreator{
-		dialer:   dialer,
-		nodeID:   nodeID,
-		shardIDs: shardIDs,
-	}
-}
-
-// CreateIterator creates a remote streaming iterator.
-func (ic *remoteIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error) {
-	conn, err := ic.dialer.DialNode(ic.nodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp CreateIteratorResponse
-	if err := func() error {
-		// Write request.
-		if err := EncodeTLV(conn, createIteratorRequestMessage, &CreateIteratorRequest{
-			ShardIDs: ic.shardIDs,
-			Opt:      opt,
-		}); err != nil {
-			return err
-		}
-
-		// Read the response.
-		if _, err := DecodeTLV(conn, &resp); err != nil {
-			return err
-		} else if resp.Err != nil {
-			return err
-		}
-
-		return nil
-	}(); err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	return query.NewReaderIterator(ctx, conn, resp.typ, resp.stats), nil
-}
-
-// FieldDimensions returns the unique fields and dimensions across a list of sources.
-func (ic *remoteIteratorCreator) FieldDimensions(km *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
-	conn, err := ic.dialer.DialNode(ic.nodeID)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer conn.Close()
-
-	// Write request.
-	if err := EncodeTLV(conn, fieldDimensionsRequestMessage, &FieldDimensionsRequest{
-		ShardIDs:    ic.shardIDs,
-		Measurement: *km,
-	}); err != nil {
-		return nil, nil, err
-	}
-
-	// Read the response.
-	var resp FieldDimensionsResponse
-	if _, err := DecodeTLV(conn, &resp); err != nil {
-		return nil, nil, err
-	}
-	return resp.Fields, resp.Dimensions, resp.Err
-}
-
-// NodeDialer dials connections to a given node.
-type NodeDialer struct {
-	MetaClient MetaClient
-	Timeout    time.Duration
-}
-
-// DialNode returns a connection to a node.
-func (d *NodeDialer) DialNode(nodeID uint64) (net.Conn, error) {
-	ni, err := d.MetaClient.DataNode(nodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := network.DialTimeout("tcp", ni.TCPHost, MuxHeader, d.Timeout)
-	if err != nil {
-		return nil, err
-	}
-	conn.SetDeadline(time.Now().Add(d.Timeout))
-
-	return conn, nil
 }
 
 // Source contains the database and retention policy source for data.
