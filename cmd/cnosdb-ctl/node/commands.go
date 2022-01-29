@@ -42,13 +42,13 @@ func GetShowCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Data Nodes:\n==========\n")
+			fmt.Fprint(cmd.OutOrStdout(), "Data Nodes:\n==========\n")
 			for _, n := range dataNodes {
 				fmt.Fprintln(cmd.OutOrStdout(), n.ID, "    ", n.TCPHost)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "")
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Meta Nodes:\n==========\n")
+			fmt.Fprint(cmd.OutOrStdout(), "Meta Nodes:\n==========\n")
 			for _, n := range metaNodes {
 				fmt.Fprintln(cmd.OutOrStdout(), n.ID, "    ", n.Host)
 			}
