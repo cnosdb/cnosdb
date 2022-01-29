@@ -26,9 +26,9 @@ const (
 type Config struct {
 	Dir                 string `toml:"dir"`
 	RetentionAutoCreate bool   `toml:"retention-autocreate"`
-	Hostname                 string `toml:"hostname"`
-	HTTPD *ServerConfig
-	Log   *logger.Config
+	Hostname            string `toml:"hostname"`
+	HTTPD               *ServerConfig
+	Log                 *logger.Config
 }
 
 // NewConfig builds a new configuration with default values.

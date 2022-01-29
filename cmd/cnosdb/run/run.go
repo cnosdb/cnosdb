@@ -98,7 +98,7 @@ func ParseConfig(path string) (*server.Config, error) {
 	}
 
 	if err := config.ApplyEnvOverrides(os.Getenv); err != nil {
-		fmt.Errorf("apply env config: %v", err)
+		return config, fmt.Errorf("apply env config: %v", err)
 	}
 	return config, nil
 }
