@@ -909,7 +909,7 @@ func (c *CommandLine) clear(cmd string) {
 		if len(args) > 1 {
 			fmt.Printf("ERR: invalid command %q.\n", v)
 		}
-		fmt.Println(`Note: Possible commands for 'clear' are:
+		fmt.Print(`Note: Possible commands for 'clear' are:
     # Clear the database context
     clear database
     clear db
