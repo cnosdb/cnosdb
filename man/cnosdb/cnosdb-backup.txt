@@ -1,0 +1,47 @@
+cnosdb-backup(1)
+================
+
+NAME
+----
+cnosdb-backup - Creates a backup copy of specified CnosDB database(s) and saves the files to PATH (directory where backups are saved).
+
+SYNOPSIS
+--------
+'cnosdb backup' [options] PATH
+
+DESCRIPTION
+-----------
+Creates a backup copy of specified CnosDB database(s) and saves the files to PATH (directory where backups are saved).
+
+OPTIONS
+-------
+
+--db <db_name>::
+   CnosDB database name to back up. Optional. If not specified, all databases are backed up.
+
+--end <timestamp>::
+   Exclude all points after timestamp (RFC3339 format).
+
+-h, --help::
+    help for backup
+
+--host <host:port>::
+   CnosDB host to back up from. Optional. Defaults to 127.0.0.1:8088. (default "localhost:8088")
+
+--rp <rp_name>::
+   Retention Policy to use for the backup. Optional. If not specified, all retention policies are used by default.
+
+--shard <shard_id>::
+   The identifier of the shard to back up. Optional. If specified, '--rp <rp_name>' is required.
+
+--skip-errors::
+   Optional flag to continue backing up the remaining shards when the current shard fails to backup.
+
+--start <timestamp>::
+   Include all points starting with specified timestamp (RFC3339 format).
+
+SEE ALSO
+--------
+*cnosdb-restore*(1)
+
+include::footer.txt[]
