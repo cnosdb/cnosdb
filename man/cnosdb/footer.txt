@@ -1,0 +1,13 @@
+BUGS
+----
+Report bugs to the GitHub issue tracker <https://github.com/cnosdb/cnosdb/issues>.
+
+AUTHORS
+-------
+CnosDB is written and maintained by CnosDB <https://www.cnosdb.com>.
+
+COPYRIGHT
+---------
+CnosDB is released under the MIT license.
+
+This man page is released under Creative Commons Attribution 4.0 International License.
