@@ -2,12 +2,13 @@
 
 # 贡献指南
 
-感谢您的贡献，在贡献之前请认真阅读并签署[贡献者许可协议（CLA）](https://cla-assistant.io/cnosdatabase/cnosdb)，您可以通过以下方式参与本项目。
+CnosDB是一个由社区驱动的开源项目，对CnosDB的贡献应符合我们的[行为准则](./CODE_OF_CONDUCT.md)，我们感谢所有对CnosDB作出贡献的人。
+
+感谢您的贡献，在贡献之前请认真阅读并签署[贡献者许可协议（CLA）](https://cla-assistant.io/cnosdb/cnosdb)，您可以通过以下方式参与本项目。
 
 - 报告错误
 - 功能请求
 - 提交拉取请求
-- Commit规范
 
 ## 报告错误
 
@@ -23,18 +24,27 @@
 
 ## 提交拉取请求
 
-提交拉取请求，应该在CnosDB仓库中建立分支，并在功能分支上进行更改，然后从您的CnosDB仓库的master分支生成拉取请求。在您的拉取请求中应包含更改的详细信息、原因和方式以及您执行的测试。此外，请确保更改到位的情况下运行测试套件。导致测试失败的更改无法提交。
+1. 在提交拉取请求之前，请先在 [Github](https://github.com/cnosdb/cnosdb/pulls) 中搜索关闭或开启的相关PR，以避免重复工作。
 
-为了帮助审查PR，请将以下内容添加到您的拉取评论中：
+2. 确保问题描述了您正在修复的问题，或记录了您要添加的功能的设计。提前讨论设计有助于确保我们准备好接受您的工作。
 
-```
-- [ ] CHNAGELOG.md update
-- [ ] Rebased/mergable
-- [ ] Tests pass
-```
+3. 请在发送PR前签署我们的 [贡献者许可协议（CLA）](https://cla-assistant.io/cnosdb/cnosdb)，因为我们不能接受没有签名CLA的代码。
+
+4. [Fork](https://docs.github.com/en/get-started/quickstart/fork-a-repo) cnosdb/cnosdb 仓库
+
+5. 在您的仓库中，在新的git分支中更改：
+
+   `git checkout -b my-fix-branch main`
+6. 添加你的代码和测试用例
+
+7. 将您的分支推送到Github
+
+   `git push origin my-fix-branch`
+
+8. 打开PR开始合并请求
 
 ## Commit规范
-
+> 详细内容请参考：[Commit规范](https://www.conventionalcommits.org/en/v1.0.0/)
 ### 格式
 
 > Commit message 包含三个部分：header，body和footer，中间用空行隔开。
