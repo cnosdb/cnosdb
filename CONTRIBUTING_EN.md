@@ -2,13 +2,12 @@
 
 # Contribution Guide
 
-CnosDB is a community-driven open source project, and contributions to CnosDB should comply with our [Code of Conduct](./CnosDBWeChatUserGroupGuidelines.md),We thank anyone who has contributed to CnosDB.
+CnosDB is a community-driven open source project, and contributions to CnosDB should comply with our [Code of Conduct](./CODE_OF_CONDUCT.md),We thank anyone who has contributed to CnosDB.
 
-Please read and sign the [Contributor License Agreement（CLA）](https://cla-assistant.io/cnosdatabase/cnosdb) carefully before contributing. You can participate in this project in the following ways
+Please read and sign the [Contributor License Agreement（CLA）](https://cla-assistant.io/cnosdb/cnosdb) carefully before contributing. You can participate in this project in the following ways
 -   [Error Reporting](Error-Reporting)
 -   [Feature Request](Feature-Request)
 -   [Submit Pull Requests](Submit-Pull-Requests)
--   [Commit Specification](Commit-Specification)
 
 ## Error Reporting
 
@@ -20,12 +19,40 @@ Before you report an error, please search for existing issues to prevent them fr
 
 ## Feature Request
 
-Please be clear about your requirements and goals, and use examples to help us understand why it should be added to CnosDB. If you find that a feature request already exists as an issue, click 👍 to indicate your support for the feature. If the feature passes, the audit member will create a new branch for the feature to develop the new feature.
+Please indicate your requirements and objectives and help us understand the reasons for adding to cnosdb through examples. If it is found that the feature request already exists as an issue, please click: + 1: to indicate your support for the feature.
 
 ## Submit Pull Requests
 
-When you submit pull requests, they should be branched locally and commit the merge on the develop branch of CnosDB. When the task starts, you should indicate that you have started developing the task in issue to avoid duplicate code development. You should include the details, reasons, methods and tests of changes in your pull requests.  Besides, please make sure that you run the test suite if the changes are in place. The changes that cause the test to fail could not be committed.
+1. Search [GitHub](https://github.com/cnosdb/cnosdb/pulls) for an open or closed PR that relates to your submission.
+   You don't want to duplicate existing efforts.
+
+2. Be sure that an issue describes the problem you're fixing, or documents the design for the feature you'd like to add.
+   Discussing the design upfront helps to ensure that we're ready to accept your work.
+
+3. Please sign our [Contributor License Agreement (CLA)](https://cla-assistant.io/cnosdb/cnosdb) before sending PRs.
+   We cannot accept code without a signed CLA.
+   Make sure you author all contributed Git commits with email address associated with your CLA signature.
+
+4. [Fork](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the cnosdb/cnosdb repo.
+
+5. In your forked repository, make your changes in a new git branch:
+
+     ```shell
+     git checkout -b my-fix-branch main
+     ```
+
+6. Add code and test case.
+
+7. Push your branch to GitHub:
+
+    ```shell
+    git push origin my-fix-branch
+    ```
+
+8. In GitHub, send pull request to `cnosdb:main`.
+
 ## Commit Specification
+> For more, See [Commit convention](https://www.conventionalcommits.org/en/v1.0.0/)
 
 ### Format
 
@@ -69,7 +96,7 @@ The types of `type` includes：
 - pkg
 - query
 - server
-- *
+- \*
 
 `description` is the short description of commit, which is specified not to exceed 72 characters.
 #### Body
