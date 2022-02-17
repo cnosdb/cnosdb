@@ -6,7 +6,7 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/cnosdatabase/db/pkg/encoding/simple8b"
+	"github.com/cnosdb/db/pkg/encoding/simple8b"
 )
 
 // TimeArrayEncodeAll encodes src into b, returning b and any error encountered.

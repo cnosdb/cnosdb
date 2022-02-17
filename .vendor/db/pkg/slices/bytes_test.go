@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/cnosdatabase/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/bytesutil"
 	"github.com/google/go-cmp/cmp"
 )
 

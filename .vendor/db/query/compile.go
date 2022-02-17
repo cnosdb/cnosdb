@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 )
 
 // CompileOptions are the customization options for the compiler.

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosql"
 )
 
 const (

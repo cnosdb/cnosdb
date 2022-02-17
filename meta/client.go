@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/pkg/file"
+	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/pkg/file"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )

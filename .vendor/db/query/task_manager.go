@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 	"go.uber.org/zap"
 )
 

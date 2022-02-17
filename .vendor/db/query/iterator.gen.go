@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 	"github.com/gogo/protobuf/proto"
 )
 

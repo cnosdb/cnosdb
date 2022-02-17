@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 func isMathFunction(call *cnosql.Call) bool {

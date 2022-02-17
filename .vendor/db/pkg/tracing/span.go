@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/tracing/fields"
-	"github.com/cnosdatabase/db/pkg/tracing/labels"
+	"github.com/cnosdb/db/pkg/tracing/fields"
+	"github.com/cnosdb/db/pkg/tracing/labels"
 )
 
 // The Span type denotes a specific operation for a Trace.

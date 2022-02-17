@@ -1,3 +1,3 @@
-module github.com/cnosdatabase/common
+module github.com/cnosdb/common
 
 go 1.16

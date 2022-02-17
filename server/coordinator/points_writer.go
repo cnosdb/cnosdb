@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/tsdb"
 	"go.uber.org/zap"
 )
 

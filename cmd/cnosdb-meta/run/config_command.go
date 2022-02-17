@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/spf13/cobra"
 )
 

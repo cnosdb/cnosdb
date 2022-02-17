@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/models"
 	"go.uber.org/zap"
 )
 

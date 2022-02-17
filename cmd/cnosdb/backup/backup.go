@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/backup_util"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
-	"github.com/cnosdatabase/cnosdb/server/snapshotter"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/spf13/cobra"
 )

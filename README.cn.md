@@ -1,5 +1,5 @@
 <a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
-![GitHub](https://img.shields.io/github/license/cnosdatabase/cnosdb)
+![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
 
 # CnosDB
 
@@ -18,18 +18,18 @@
 
 入群前请查看[入群须知](./CnosDBWeChatUserGroupGuidelines.md)
 
-![](https://github.com/cnosdatabase/cnosdb/blob/main/doc/assets/u.jpg)
+![](https://github.com/cnosdb/cnosdb/blob/main/doc/assets/u.jpg)
 
 ## 快速开始
 
-> 如果需要完整的入门指南，请查看[入门指南](https://cnosdatabase.github.io/)
+> 如果需要完整的入门指南，请查看[入门指南](https://cnosdb.github.io/)
 
 ### 构建
 
 1. 克隆项目
 
    ```
-   git clone https://github.com/cnosdatabase/cnosdb.git
+   git clone https://github.com/cnosdb/cnosdb.git
    ```
 
 2. 编译

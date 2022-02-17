@@ -6,7 +6,7 @@
 package tsm1
 
 import (
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // ReadFloatArrayBlock reads the next block as a set of float values.

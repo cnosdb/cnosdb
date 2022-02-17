@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 var NullFloat interface{} = (*float64)(nil)

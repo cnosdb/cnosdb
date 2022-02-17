@@ -14,13 +14,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/backup_util"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/server/snapshotter"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/spf13/cobra"
 
-	tarstream "github.com/cnosdatabase/db/pkg/tar"
+	tarstream "github.com/cnosdb/db/pkg/tar"
 )
 
 var restore_examples = `  cnosdb restore`

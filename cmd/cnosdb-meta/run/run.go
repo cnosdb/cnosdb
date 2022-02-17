@@ -7,9 +7,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-meta/options"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-meta/options"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

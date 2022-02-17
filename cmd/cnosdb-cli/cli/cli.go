@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cnosdatabase/cnosdb/client"
+	"github.com/cnosdb/cnosdb/client"
 
 	"github.com/spf13/cobra"
 )

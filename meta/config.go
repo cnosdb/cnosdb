@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )

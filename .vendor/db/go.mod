@@ -1,10 +1,10 @@
-module github.com/cnosdatabase/db
+module github.com/cnosdb/db
 
 go 1.16
 
 require (
-	github.com/cnosdatabase/common v0.0.0
-	github.com/cnosdatabase/cnosql v0.0.0
+	github.com/cnosdb/common v0.0.0
+	github.com/cnosdb/cnosql v0.0.0
 	github.com/BurntSushi/toml v0.3.1
 	github.com/cespare/xxhash v1.1.0
 	github.com/davecgh/go-spew v1.1.1
@@ -41,6 +41,6 @@ require (
 )
 
 replace (
-	github.com/cnosdatabase/common => ../common
-	github.com/cnosdatabase/cnosql => ../cnosql
+	github.com/cnosdb/common => ../common
+	github.com/cnosdb/cnosql => ../cnosql
 )
