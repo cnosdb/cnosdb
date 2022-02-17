@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"

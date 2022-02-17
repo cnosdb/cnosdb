@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	internal "github.com/cnosdatabase/cnosdb/meta/internal"
-	"github.com/cnosdatabase/cnosdb/pkg/uuid"
+	internal "github.com/cnosdb/cnosdb/meta/internal"
+	"github.com/cnosdb/cnosdb/pkg/uuid"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/raft"

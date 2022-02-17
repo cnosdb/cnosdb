@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/limiter"
+	"github.com/cnosdb/db/pkg/limiter"
 )
 
 func TestWriter_Limited(t *testing.T) {

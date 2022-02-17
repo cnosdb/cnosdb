@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/common"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/common"
+	"github.com/cnosdb/db/models"
 )
 
 // NodeProcessor encapsulates a queue of hinted-handoff data for a node, and the

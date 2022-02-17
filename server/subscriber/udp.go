@@ -3,7 +3,7 @@ package subscriber
 import (
 	"net"
 
-	"github.com/cnosdatabase/cnosdb/server/coordinator"
+	"github.com/cnosdb/cnosdb/server/coordinator"
 )
 
 // UDP supports writing points over UDP using the line protocol.

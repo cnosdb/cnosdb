@@ -9,12 +9,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bytesutil"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/slices"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/slices"
+	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 )
 

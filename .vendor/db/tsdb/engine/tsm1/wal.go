@@ -17,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/pkg/pool"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/pkg/pool"
 	"github.com/golang/snappy"
 	"go.uber.org/zap"
 )

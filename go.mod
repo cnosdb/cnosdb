@@ -1,12 +1,12 @@
-module github.com/cnosdatabase/cnosdb
+module github.com/cnosdb/cnosdb
 
 go 1.16
 
 require (
 	github.com/BurntSushi/toml v0.4.1
-	github.com/cnosdatabase/cnosql v0.0.0
-	github.com/cnosdatabase/common v0.0.0
-	github.com/cnosdatabase/db v0.0.0
+	github.com/cnosdb/cnosql v0.0.0
+	github.com/cnosdb/common v0.0.0
+	github.com/cnosdb/db v0.0.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gogo/protobuf v1.3.2
 	github.com/gorilla/mux v1.8.0
@@ -28,7 +28,7 @@ require (
 )
 
 replace (
-	github.com/cnosdatabase/cnosql => ./.vendor/cnosql
-	github.com/cnosdatabase/common => ./.vendor/common
-	github.com/cnosdatabase/db => ./.vendor/db
+	github.com/cnosdb/cnosql => ./.vendor/cnosql
+	github.com/cnosdb/common => ./.vendor/common
+	github.com/cnosdb/db => ./.vendor/db
 )

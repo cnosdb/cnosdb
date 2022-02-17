@@ -3,7 +3,7 @@ package metrics
 import (
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/testing/assert"
+	"github.com/cnosdb/db/pkg/testing/assert"
 )
 
 func TestID_newID(t *testing.T) {

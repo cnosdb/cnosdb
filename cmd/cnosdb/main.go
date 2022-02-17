@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/backup"
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/options"
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/restore"
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/run"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/options"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/restore"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/run"
 	"github.com/spf13/cobra"
 )
 

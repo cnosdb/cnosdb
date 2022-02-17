@@ -8,7 +8,7 @@ package tsm1
 import (
 	"context"
 
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/db/query"
 )
 
 // buildFloatCursor creates a cursor for a float field.

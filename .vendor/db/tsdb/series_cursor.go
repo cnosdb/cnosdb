@@ -6,8 +6,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 )
 
 type SeriesCursor interface {

@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
+	"github.com/cnosdb/cnosdb"
 	"go.uber.org/zap"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/db/tsdb"
 )
 
 const (

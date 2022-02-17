@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/bytesutil"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // IndexFiles represents a layered set of index files.

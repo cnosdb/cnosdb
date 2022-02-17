@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 	"go.uber.org/zap"
 )
 

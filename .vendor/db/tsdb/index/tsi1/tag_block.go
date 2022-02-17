@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cnosdatabase/db/pkg/rhh"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/rhh"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // TagBlockVersion is the version of the tag block.

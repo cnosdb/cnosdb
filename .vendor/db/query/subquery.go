@@ -3,7 +3,7 @@ package query
 import (
 	"context"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 type subqueryBuilder struct {

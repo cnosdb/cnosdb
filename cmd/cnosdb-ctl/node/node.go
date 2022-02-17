@@ -9,8 +9,8 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/server"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/server"
 )
 
 var (

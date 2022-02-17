@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/db/models"
 )
 
 const (

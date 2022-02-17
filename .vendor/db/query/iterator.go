@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/pkg/tracing"
-	internal "github.com/cnosdatabase/db/query/internal"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/pkg/tracing"
+	internal "github.com/cnosdb/db/query/internal"
 	"github.com/gogo/protobuf/proto"
 )
 

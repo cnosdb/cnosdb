@@ -1,11 +1,11 @@
 package internal
 
 import (
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bloom"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/tsdb"
-	"github.com/cnosdatabase/db/tsdb/index/tsi1"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bloom"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/db/tsdb/index/tsi1"
 )
 
 // File is a mock implementation of a tsi1.File.

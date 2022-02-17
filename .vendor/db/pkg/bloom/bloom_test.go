@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/bloom"
+	"github.com/cnosdb/db/pkg/bloom"
 )
 
 // Ensure filter can insert values and verify they exist.

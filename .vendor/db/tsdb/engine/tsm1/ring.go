@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/cespare/xxhash"
-	"github.com/cnosdatabase/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/bytesutil"
 )
 
 // partitions is the number of partitions we used in the ring's continuum. It

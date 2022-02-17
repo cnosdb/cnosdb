@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/cnosdatabase/cnosdb/client"
-	"github.com/cnosdatabase/cnosdb/pkg/importer"
+	"github.com/cnosdb/cnosdb/client"
+	"github.com/cnosdb/cnosdb/pkg/importer"
 
 	"github.com/spf13/cobra"
 )

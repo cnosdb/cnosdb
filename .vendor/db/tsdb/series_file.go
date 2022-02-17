@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/cespare/xxhash"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/binaryutil"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/binaryutil"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )

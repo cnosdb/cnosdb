@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // Values represents a slice of  values.
