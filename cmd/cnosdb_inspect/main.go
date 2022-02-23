@@ -2,12 +2,17 @@ package main
 
 import (
 	"fmt"
+
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/spf13/cobra"
 )
 
 func main() {
 
 	mainCmd := GetCommand()
+
+	dumptsmCmd := dumptsm.GetCommand()
+	mainCmd.AddCommand(dumptsmCmd)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
