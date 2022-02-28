@@ -559,6 +559,7 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 		// it's valid
 	default:
 		writeError(w, fmt.Sprintf("invalid precision %q (use n, u, ms, s, m or h)", precision))
+		return
 	}
 
 	database := r.URL.Query().Get("db")
