@@ -33,7 +33,7 @@ retention-autocreate = true
 # logging-enabled = true
 
 ###[Data]
-### Controls where the actual shard data for InfluxDB lives and how it is
+### Controls where the actual shard data for CnosDB lives and how it is
 ### flushed from the WAL. "dir" may need to be changed to a suitable place
 ### for your system, but the WAL settings are an advanced configuration. The
 ### defaults should work for most systems.
@@ -235,7 +235,7 @@ store-interval = "10s"
 ### [Subscriber]
 ###
 ### Controls the subscriptions, which can be used to fork a copy of all data
-### received by the InfluxDB host.
+### received by the CnosDB host.
 ###
 
 [Subscriber]
@@ -262,7 +262,7 @@ write-buffer-size = 0
 ### [HTTPD]
 ###
 ### Controls how the HTTP endpoints are configured. These are the primary
-### mechanism for getting data into and out of InfluxDB.
+### mechanism for getting data into and out of CnosDB.
 ###
 
 [HTTPD]
@@ -330,7 +330,7 @@ max-body-size = 25000000
 # log entries should be written. If unspecified, the default is to write to stderr, which
 # intermingles HTTP logs with internal cnosdb logging.
 #
-# If influxd is unable to access the specified path, it will log an error and fall back to writing
+# If cnosdb is unable to access the specified path, it will log an error and fall back to writing
 # the request log to stderr.
 access-log-path = ""
 
@@ -379,7 +379,7 @@ max-backups = 0
 ###
 ### [ContinuousQuery]
 ###
-### Controls how continuous queries are run within InfluxDB.
+### Controls how continuous queries are run within CnosDB.
 ###
 
 [ContinuousQuery]
@@ -408,12 +408,12 @@ purge-interval = "0s"
 ###
 ### [TLS]
 ###
-### Global configuration settings for TLS in InfluxDB.
+### Global configuration settings for TLS in CnosDB.
 ###
 [TLS]
 # Determines the available set of cipher suites. See https://golang.org/pkg/crypto/tls/#pkg-constants
 # for a list of available ciphers, which depends on the version of Go (use the query
-# SHOW DIAGNOSTICS to see the version of Go used to build InfluxDB). If not specified, uses
+# SHOW DIAGNOSTICS to see the version of Go used to build CnosDB). If not specified, uses
 # the default settings from Go's crypto/tls package.
 # ciphers = [
 #   "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
