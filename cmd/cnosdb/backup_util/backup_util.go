@@ -13,8 +13,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	internal "github.com/cnosdatabase/cnosdb/cmd/cnosdb/backup_util/internal"
-	"github.com/cnosdatabase/cnosdb/server/snapshotter"
+	internal "github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util/internal"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -28,7 +28,7 @@ const (
 	Metafile = "meta"
 
 	// BackupFilePattern is the beginning of the pattern for a backup
-	// file. They follow the scheme <database>.<ttl>.<shardID>.<increment>
+	// file. They follow the scheme <database>.<retention>.<shardID>.<increment>
 	BackupFilePattern = "%s.%s.%05d"
 
 	PortableFileNamePattern = "20060102T150405Z"
@@ -214,12 +214,12 @@ func (w *CountingWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
-// TimeToLiveAndShardFromPath will take the shard relative path and split it into the
-// time to live name and shard ID. The first part of the path should be the database name.
-func DBTimeToLiveAndShardFromPath(path string) (db, timeToLive, shard string, err error) {
+// DBRetentionAndShardFromPath will take the shard relative path and split it into the
+// retention policy name and shard ID. The first part of the path should be the database name.
+func DBRetentionAndShardFromPath(path string) (db, retention, shard string, err error) {
 	a := strings.Split(path, string(filepath.Separator))
 	if len(a) != 3 {
-		return "", "", "", fmt.Errorf("expected database, time to live, and shard id in path: %s", path)
+		return "", "", "", fmt.Errorf("expected database, retention policy, and shard id in path: %s", path)
 	}
 
 	return a[0], a[1], a[2], nil

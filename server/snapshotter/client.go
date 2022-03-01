@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/network"
 )
 
 // Client provides an API for the snapshotter service.
@@ -101,7 +101,7 @@ func decodeUintPair(bits []byte) (uint64, uint64, error) {
 	return v1, v2, nil
 }
 
-func (c *Client) UploadShard(shardID, newShardID uint64, destinationDatabase, restoreTimeToLive string, tr *tar.Reader) error {
+func (c *Client) UploadShard(shardID, newShardID uint64, destinationDatabase, restoreRetentionPolicy string, tr *tar.Reader) error {
 	conn, err := network.Dial("tcp", c.host, MuxHeader)
 	if err != nil {
 		return err
@@ -136,11 +136,11 @@ func (c *Client) UploadShard(shardID, newShardID uint64, destinationDatabase, re
 			destinationDatabase = names[0]
 		}
 
-		if restoreTimeToLive == "" {
-			restoreTimeToLive = names[1]
+		if restoreRetentionPolicy == "" {
+			restoreRetentionPolicy = names[1]
 		}
 
-		filepathArgs := []string{destinationDatabase, restoreTimeToLive, strconv.FormatUint(newShardID, 10)}
+		filepathArgs := []string{destinationDatabase, restoreRetentionPolicy, strconv.FormatUint(newShardID, 10)}
 		filepathArgs = append(filepathArgs, names[3:]...)
 		hdr.Name = filepath.ToSlash(filepath.Join(filepathArgs...))
 

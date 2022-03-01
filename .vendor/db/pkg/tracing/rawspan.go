@@ -3,8 +3,8 @@ package tracing
 import (
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/tracing/fields"
-	"github.com/cnosdatabase/db/pkg/tracing/labels"
+	"github.com/cnosdb/db/pkg/tracing/fields"
+	"github.com/cnosdb/db/pkg/tracing/labels"
 )
 
 // RawSpan represents the data associated with a span.

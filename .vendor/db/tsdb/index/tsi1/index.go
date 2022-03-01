@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/slices"
-	"github.com/cnosdatabase/db/tsdb"
 	"github.com/cespare/xxhash"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/slices"
+	"github.com/cnosdb/db/tsdb"
 	"go.uber.org/zap"
 )
 
@@ -143,7 +143,7 @@ type Index struct {
 	database string           // Name of database.
 
 	// Cached sketches.
-	mSketch, mTSketch estimator.Sketch // Metric sketches
+	mSketch, mTSketch estimator.Sketch // Measurement sketches
 	sSketch, sTSketch estimator.Sketch // Series sketches
 
 	// Index's version.
@@ -298,7 +298,7 @@ func (i *Index) Open() error {
 	// Refresh cached sketches.
 	if err := i.updateSeriesSketches(); err != nil {
 		return err
-	} else if err := i.updateMetricSketches(); err != nil {
+	} else if err := i.updateMeasurementSketches(); err != nil {
 		return err
 	}
 
@@ -381,10 +381,10 @@ func (i *Index) availableThreads() int {
 	return n
 }
 
-// updateMetricSketches rebuilds the cached metric sketches.
-func (i *Index) updateMetricSketches() error {
+// updateMeasurementSketches rebuilds the cached measurement sketches.
+func (i *Index) updateMeasurementSketches() error {
 	for j := 0; j < int(i.PartitionN); j++ {
-		if s, t, err := i.partitions[j].MetricsSketches(); err != nil {
+		if s, t, err := i.partitions[j].MeasurementsSketches(); err != nil {
 			return err
 		} else if i.mSketch.Merge(s); err != nil {
 			return err
@@ -410,27 +410,27 @@ func (i *Index) updateSeriesSketches() error {
 }
 
 // SetFieldSet sets a shared field set from the engine.
-func (i *Index) SetFieldSet(fs *tsdb.MetricFieldSet) {
+func (i *Index) SetFieldSet(fs *tsdb.MeasurementFieldSet) {
 	for _, p := range i.partitions {
 		p.SetFieldSet(fs)
 	}
 }
 
 // FieldSet returns the assigned fieldset.
-func (i *Index) FieldSet() *tsdb.MetricFieldSet {
+func (i *Index) FieldSet() *tsdb.MeasurementFieldSet {
 	if len(i.partitions) == 0 {
 		return nil
 	}
 	return i.partitions[0].FieldSet()
 }
 
-// ForEachMetricName iterates over all metric names in the index,
+// ForEachMeasurementName iterates over all measurement names in the index,
 // applying fn. It returns the first error encountered, if any.
 //
-// ForEachMetricName does not call fn on each partition concurrently so the
+// ForEachMeasurementName does not call fn on each partition concurrently so the
 // call may provide a non-goroutine safe fn.
-func (i *Index) ForEachMetricName(fn func(name []byte) error) error {
-	itr, err := i.MetricIterator()
+func (i *Index) ForEachMeasurementName(fn func(name []byte) error) error {
+	itr, err := i.MeasurementIterator()
 	if err != nil {
 		return err
 	} else if itr == nil {
@@ -438,7 +438,7 @@ func (i *Index) ForEachMetricName(fn func(name []byte) error) error {
 	}
 	defer itr.Close()
 
-	// Iterate over all metrics.
+	// Iterate over all measurements.
 	for {
 		e, err := itr.Next()
 		if err != nil {
@@ -454,15 +454,15 @@ func (i *Index) ForEachMetricName(fn func(name []byte) error) error {
 	return nil
 }
 
-// MetricExists returns true if a metric exists.
-func (i *Index) MetricExists(name []byte) (bool, error) {
+// MeasurementExists returns true if a measurement exists.
+func (i *Index) MeasurementExists(name []byte) (bool, error) {
 	n := i.availableThreads()
 
 	// Store errors
-	var found uint32 // Use this to signal we found the metric.
+	var found uint32 // Use this to signal we found the measurement.
 	errC := make(chan error, i.PartitionN)
 
-	// Check each partition for the metric concurrently.
+	// Check each partition for the measurement concurrently.
 	var pidx uint32 // Index of maximum Partition being worked on.
 	for k := 0; k < n; k++ {
 		go func() {
@@ -472,14 +472,14 @@ func (i *Index) MetricExists(name []byte) (bool, error) {
 					return // No more work.
 				}
 
-				// Check if the metric has been found. If it has don't
+				// Check if the measurement has been found. If it has don't
 				// need to check this partition and can just move on.
 				if atomic.LoadUint32(&found) == 1 {
 					errC <- nil
 					continue
 				}
 
-				b, err := i.partitions[idx].MetricExists(name)
+				b, err := i.partitions[idx].MeasurementExists(name)
 				if b {
 					atomic.StoreUint32(&found, 1)
 				}
@@ -495,14 +495,14 @@ func (i *Index) MetricExists(name []byte) (bool, error) {
 		}
 	}
 
-	// Check if we found the metric.
+	// Check if we found the measurement.
 	return atomic.LoadUint32(&found) == 1, nil
 }
 
-// MetricHasSeries returns true if a metric has non-tombstoned series.
-func (i *Index) MetricHasSeries(name []byte) (bool, error) {
+// MeasurementHasSeries returns true if a measurement has non-tombstoned series.
+func (i *Index) MeasurementHasSeries(name []byte) (bool, error) {
 	for _, p := range i.partitions {
-		if v, err := p.MetricHasSeries(name); err != nil {
+		if v, err := p.MeasurementHasSeries(name); err != nil {
 			return false, err
 		} else if v {
 			return true, nil
@@ -553,26 +553,26 @@ func (i *Index) fetchByteValues(fn func(idx int) ([][]byte, error)) ([][]byte, e
 	return slices.MergeSortedBytes(names[:]...), nil
 }
 
-// MetricIterator returns an iterator over all metrics.
-func (i *Index) MetricIterator() (tsdb.MetricIterator, error) {
-	itrs := make([]tsdb.MetricIterator, 0, len(i.partitions))
+// MeasurementIterator returns an iterator over all measurements.
+func (i *Index) MeasurementIterator() (tsdb.MeasurementIterator, error) {
+	itrs := make([]tsdb.MeasurementIterator, 0, len(i.partitions))
 	for _, p := range i.partitions {
-		itr, err := p.MetricIterator()
+		itr, err := p.MeasurementIterator()
 		if err != nil {
-			tsdb.MetricIterators(itrs).Close()
+			tsdb.MeasurementIterators(itrs).Close()
 			return nil, err
 		} else if itr != nil {
 			itrs = append(itrs, itr)
 		}
 	}
-	return tsdb.MergeMetricIterators(itrs...), nil
+	return tsdb.MergeMeasurementIterators(itrs...), nil
 }
 
-// MetricSeriesIDIterator returns an iterator over all series in a metric.
-func (i *Index) MetricSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, error) {
+// MeasurementSeriesIDIterator returns an iterator over all series in a measurement.
+func (i *Index) MeasurementSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, error) {
 	itrs := make([]tsdb.SeriesIDIterator, 0, len(i.partitions))
 	for _, p := range i.partitions {
-		itr, err := p.MetricSeriesIDIterator(name)
+		itr, err := p.MeasurementSeriesIDIterator(name)
 		if err != nil {
 			tsdb.SeriesIDIterators(itrs).Close()
 			return nil, err
@@ -583,16 +583,16 @@ func (i *Index) MetricSeriesIDIterator(name []byte) (tsdb.SeriesIDIterator, erro
 	return tsdb.MergeSeriesIDIterators(itrs...), nil
 }
 
-// MetricNamesByRegex returns metric names for the provided regex.
-func (i *Index) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
+// MeasurementNamesByRegex returns measurement names for the provided regex.
+func (i *Index) MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
 	return i.fetchByteValues(func(idx int) ([][]byte, error) {
-		return i.partitions[idx].MetricNamesByRegex(re)
+		return i.partitions[idx].MeasurementNamesByRegex(re)
 	})
 }
 
-// DropMetric deletes a metric from the index. It returns the first
+// DropMeasurement deletes a measurement from the index. It returns the first
 // error encountered, if any.
-func (i *Index) DropMetric(name []byte) error {
+func (i *Index) DropMeasurement(name []byte) error {
 	n := i.availableThreads()
 
 	// Store results.
@@ -606,7 +606,7 @@ func (i *Index) DropMetric(name []byte) error {
 				if idx >= len(i.partitions) {
 					return // No more work.
 				}
-				errC <- i.partitions[idx].DropMetric(name)
+				errC <- i.partitions[idx].DropMeasurement(name)
 			}
 		}()
 	}
@@ -688,7 +688,7 @@ func (i *Index) CreateSeriesListIfNotExists(keys [][]byte, names [][]byte, tagsS
 
 					name := pNames[idx][j]
 					tags := pTags[idx][j]
-					if i.tagValueCache.metricContainsSets(name) {
+					if i.tagValueCache.measurementContainsSets(name) {
 						for _, pair := range tags {
 							// TODO: It's not clear to me yet whether it will be better to take a lock
 							// on every series id set, or whether to gather them all up under the cache rlock
@@ -755,7 +755,7 @@ func (i *Index) CreateSeriesIfNotExists(key, name []byte, tags models.Tags) erro
 	// If there are cached sets for any of the tag pairs, they will need to be
 	// updated with the series id.
 	i.tagValueCache.RLock()
-	if i.tagValueCache.metricContainsSets(name) {
+	if i.tagValueCache.measurementContainsSets(name) {
 		for _, pair := range tags {
 			// TODO: It's not clear to me yet whether it will be better to take a lock
 			// on every series id set, or whether to gather them all up under the cache rlock
@@ -781,7 +781,7 @@ func (i *Index) InitializeSeries(keys, names [][]byte, tags []models.Tags) error
 }
 
 // DropSeries drops the provided series from the index.  If cascade is true
-// and this is the last series to the metric, the metric will also be dropped.
+// and this is the last series to the measurement, the measurement will also be dropped.
 func (i *Index) DropSeries(seriesID uint64, key []byte, cascade bool) error {
 	// Remove from partition.
 	if err := i.partition(key).DropSeries(seriesID); err != nil {
@@ -797,28 +797,28 @@ func (i *Index) DropSeries(seriesID uint64, key []byte, cascade bool) error {
 		return nil
 	}
 
-	// Extract metric name & tags.
+	// Extract measurement name & tags.
 	name, tags := models.ParseKeyBytes(key)
 
 	// If there are cached sets for any of the tag pairs, they will need to be
 	// updated with the series id.
 	i.tagValueCache.RLock()
-	if i.tagValueCache.metricContainsSets(name) {
+	if i.tagValueCache.measurementContainsSets(name) {
 		for _, pair := range tags {
 			i.tagValueCache.delete(name, pair.Key, pair.Value, seriesID) // Takes a lock on the series id set
 		}
 	}
 	i.tagValueCache.RUnlock()
 
-	// Check if that was the last series for the metric in the entire index.
-	if ok, err := i.MetricHasSeries(name); err != nil {
+	// Check if that was the last series for the measurement in the entire index.
+	if ok, err := i.MeasurementHasSeries(name); err != nil {
 		return err
 	} else if ok {
 		return nil
 	}
 
-	// If no more series exist in the metric then delete the metric.
-	if err := i.DropMetric(name); err != nil {
+	// If no more series exist in the measurement then delete the measurement.
+	if err := i.DropMeasurement(name); err != nil {
 		return err
 	}
 	return nil
@@ -827,22 +827,22 @@ func (i *Index) DropSeries(seriesID uint64, key []byte, cascade bool) error {
 // DropSeriesGlobal is a no-op on the tsi1 index.
 func (i *Index) DropSeriesGlobal(key []byte) error { return nil }
 
-// DropMetricIfSeriesNotExist drops a metric only if there are no more
-// series for the metric.
-func (i *Index) DropMetricIfSeriesNotExist(name []byte) (bool, error) {
-	// Check if that was the last series for the metric in the entire index.
-	if ok, err := i.MetricHasSeries(name); err != nil {
+// DropMeasurementIfSeriesNotExist drops a measurement only if there are no more
+// series for the measurement.
+func (i *Index) DropMeasurementIfSeriesNotExist(name []byte) (bool, error) {
+	// Check if that was the last series for the measurement in the entire index.
+	if ok, err := i.MeasurementHasSeries(name); err != nil {
 		return false, err
 	} else if ok {
 		return false, nil
 	}
 
-	// If no more series exist in the metric then delete the metric.
-	return true, i.DropMetric(name)
+	// If no more series exist in the measurement then delete the measurement.
+	return true, i.DropMeasurement(name)
 }
 
-// MetricsSketches returns the two metric sketches for the index.
-func (i *Index) MetricsSketches() (estimator.Sketch, estimator.Sketch, error) {
+// MeasurementsSketches returns the two measurement sketches for the index.
+func (i *Index) MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error) {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	return i.mSketch.Clone(), i.mTSketch.Clone(), nil
@@ -855,10 +855,10 @@ func (i *Index) SeriesSketches() (estimator.Sketch, estimator.Sketch, error) {
 	return i.sSketch.Clone(), i.sTSketch.Clone(), nil
 }
 
-// Since indexes are not shared across shards, the count returned by SeriesN
-// cannot be combined with other shard's results. If you need to count series
-// across indexes then use either the database-wide series file, or merge the
-// index-level bitsets or sketches.
+// SeriesN Since indexes are not shared across shards, the count returned by
+// SeriesN cannot be combined with other shard's results. If you need to count
+// series across indexes then use either the database-wide series file, or
+// merge the index-level bitsets or sketches.
 func (i *Index) SeriesN() int64 {
 	return int64(i.SeriesIDSet().Cardinality())
 }
@@ -954,7 +954,7 @@ func (i *Index) HasTagValue(name, key, value []byte) (bool, error) {
 	return atomic.LoadUint32(&found) == 1, nil
 }
 
-// TagKeyIterator returns an iterator for all keys across a single metric.
+// TagKeyIterator returns an iterator for all keys across a single measurement.
 func (i *Index) TagKeyIterator(name []byte) (tsdb.TagKeyIterator, error) {
 	a := make([]tsdb.TagKeyIterator, 0, len(i.partitions))
 	for _, p := range i.partitions {
@@ -1025,8 +1025,8 @@ func (i *Index) TagValueSeriesIDIterator(name, key, value []byte) (tsdb.SeriesID
 	return itr, nil
 }
 
-// MetricTagKeysByExpr extracts the tag keys wanted by the expression.
-func (i *Index) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+// MeasurementTagKeysByExpr extracts the tag keys wanted by the expression.
+func (i *Index) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
 	n := i.availableThreads()
 
 	// Store results.
@@ -1044,7 +1044,7 @@ func (i *Index) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]s
 
 				// This is safe since there are no readers on keys until all
 				// the writers are done.
-				tagKeys, err := i.partitions[idx].MetricTagKeysByExpr(name, expr)
+				tagKeys, err := i.partitions[idx].MeasurementTagKeysByExpr(name, expr)
 				keys[idx] = tagKeys
 				errC <- err
 			}
@@ -1111,7 +1111,7 @@ func (i *Index) RetainFileSet() (*FileSet, error) {
 }
 
 // SetFieldName is a no-op on this index.
-func (i *Index) SetFieldName(metric []byte, name string) {}
+func (i *Index) SetFieldName(measurement []byte, name string) {}
 
 // Rebuild rebuilds an index. It's a no-op for this index.
 func (i *Index) Rebuild() {}

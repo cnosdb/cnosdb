@@ -10,9 +10,9 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/binaryutil"
 	"github.com/cespare/xxhash"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/binaryutil"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -285,8 +285,8 @@ func AppendSeriesKey(dst []byte, name []byte, tags models.Tags) []byte {
 
 	// Size of name/tags. Does not include total length.
 	size := 0 + //
-		2 + // size of metric
-		len(name) + // metric
+		2 + // size of measurement
+		len(name) + // measurement
 		tcSz + // size of number of tags
 		(4 * len(tags)) + // length of each tag key and value
 		tags.Size() // size of tag keys/values
@@ -340,7 +340,7 @@ func ReadSeriesKeyLen(data []byte) (sz int, remainder []byte) {
 	return int(sz64), data[i:]
 }
 
-func ReadSeriesKeyMetric(data []byte) (name, remainder []byte) {
+func ReadSeriesKeyMeasurement(data []byte) (name, remainder []byte) {
 	n, data := binary.BigEndian.Uint16(data), data[2:]
 	return data[:n], data[n:]
 }
@@ -378,7 +378,7 @@ func ParseSeriesKeyInto(data []byte, dstTags models.Tags) ([]byte, models.Tags) 
 func parseSeriesKey(data []byte, dst models.Tags) ([]byte, models.Tags) {
 	var name []byte
 	_, data = ReadSeriesKeyLen(data)
-	name, data = ReadSeriesKeyMetric(data)
+	name, data = ReadSeriesKeyMeasurement(data)
 	tagN, data := ReadSeriesKeyTagN(data)
 
 	dst = dst[:cap(dst)] // Grow dst to use full capacity
@@ -413,8 +413,8 @@ func CompareSeriesKeys(a, b []byte) int {
 	_, b = ReadSeriesKeyLen(b)
 
 	// Read names.
-	name0, a := ReadSeriesKeyMetric(a)
-	name1, b := ReadSeriesKeyMetric(b)
+	name0, a := ReadSeriesKeyMeasurement(a)
+	name1, b := ReadSeriesKeyMeasurement(b)
 
 	// Compare names, return if not equal.
 	if cmp := bytes.Compare(name0, name1); cmp != 0 {

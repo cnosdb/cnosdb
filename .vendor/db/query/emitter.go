@@ -1,7 +1,7 @@
 package query
 
 import (
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/db/models"
 )
 
 // Emitter reads from a cursor into rows.

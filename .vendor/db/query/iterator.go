@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/tracing"
-	internal "github.com/cnosdatabase/db/query/internal"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/pkg/tracing"
+	internal "github.com/cnosdb/db/query/internal"
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -551,10 +551,10 @@ func NewReaderIterator(ctx context.Context, r io.Reader, typ cnosql.DataType, st
 // IteratorCreator is an interface to create Iterators.
 type IteratorCreator interface {
 	// Creates a simple iterator for use in an CnosQL query.
-	CreateIterator(ctx context.Context, source *cnosql.Metric, opt IteratorOptions) (Iterator, error)
+	CreateIterator(ctx context.Context, source *cnosql.Measurement, opt IteratorOptions) (Iterator, error)
 
 	// Determines the potential cost for creating an iterator.
-	IteratorCost(source *cnosql.Metric, opt IteratorOptions) (IteratorCost, error)
+	IteratorCost(source *cnosql.Measurement, opt IteratorOptions) (IteratorCost, error)
 }
 
 // IteratorOptions is an object passed to CreateIterator to specify creation options.
@@ -567,7 +567,7 @@ type IteratorOptions struct {
 	Aux []cnosql.VarRef
 
 	// Data sources from which to receive data. This is only used for encoding
-	// metrics over RPC and is no longer used in the open source version.
+	// measurements over RPC and is no longer used in the open source version.
 	Sources []cnosql.Source
 
 	// Group by interval and tags.
@@ -596,7 +596,7 @@ type IteratorOptions struct {
 	// Limits the number of series.
 	SLimit, SOffset int
 
-	// Removes the metric name. Useful for meta queries.
+	// Removes the measurement name. Useful for meta queries.
 	StripName bool
 
 	// Removes duplicate rows from raw queries.
@@ -991,12 +991,12 @@ func encodeIteratorOptions(opt *IteratorOptions) *internal.IteratorOptions {
 		pb.GroupBy = dimensions
 	}
 
-	// Convert and encode sources to metrics.
+	// Convert and encode sources to measurements.
 	if opt.Sources != nil {
-		sources := make([]*internal.Metric, len(opt.Sources))
+		sources := make([]*internal.Measurement, len(opt.Sources))
 		for i, source := range opt.Sources {
-			mm := source.(*cnosql.Metric)
-			sources[i] = encodeMetric(mm)
+			mm := source.(*cnosql.Measurement)
+			sources[i] = encodeMeasurement(mm)
 		}
 		pb.Sources = sources
 	}
@@ -1062,11 +1062,11 @@ func decodeIteratorOptions(pb *internal.IteratorOptions) (*IteratorOptions, erro
 		}
 	}
 
-	// Convert and decode sources to metrics.
+	// Convert and decode sources to measurements.
 	if pb.Sources != nil {
 		sources := make([]cnosql.Source, len(pb.GetSources()))
 		for i, source := range pb.GetSources() {
-			mm, err := decodeMetric(source)
+			mm, err := decodeMeasurement(source)
 			if err != nil {
 				return nil, err
 			}
@@ -1101,13 +1101,13 @@ func decodeIteratorOptions(pb *internal.IteratorOptions) (*IteratorOptions, erro
 	return opt, nil
 }
 
-func encodeMetric(mm *cnosql.Metric) *internal.Metric {
-	pb := &internal.Metric{
-		Database:       proto.String(mm.Database),
-		TimeToLive:     proto.String(mm.TimeToLive),
-		Name:           proto.String(mm.Name),
-		SystemIterator: proto.String(mm.SystemIterator),
-		IsTarget:       proto.Bool(mm.IsTarget),
+func encodeMeasurement(mm *cnosql.Measurement) *internal.Measurement {
+	pb := &internal.Measurement{
+		Database:        proto.String(mm.Database),
+		RetentionPolicy: proto.String(mm.RetentionPolicy),
+		Name:            proto.String(mm.Name),
+		SystemIterator:  proto.String(mm.SystemIterator),
+		IsTarget:        proto.Bool(mm.IsTarget),
 	}
 	if mm.Regex != nil {
 		pb.Regex = proto.String(mm.Regex.Val.String())
@@ -1115,19 +1115,19 @@ func encodeMetric(mm *cnosql.Metric) *internal.Metric {
 	return pb
 }
 
-func decodeMetric(pb *internal.Metric) (*cnosql.Metric, error) {
-	mm := &cnosql.Metric{
-		Database:       pb.GetDatabase(),
-		TimeToLive:     pb.GetTimeToLive(),
-		Name:           pb.GetName(),
-		SystemIterator: pb.GetSystemIterator(),
-		IsTarget:       pb.GetIsTarget(),
+func decodeMeasurement(pb *internal.Measurement) (*cnosql.Measurement, error) {
+	mm := &cnosql.Measurement{
+		Database:        pb.GetDatabase(),
+		RetentionPolicy: pb.GetRetentionPolicy(),
+		Name:            pb.GetName(),
+		SystemIterator:  pb.GetSystemIterator(),
+		IsTarget:        pb.GetIsTarget(),
 	}
 
 	if pb.Regex != nil {
 		regex, err := regexp.Compile(pb.GetRegex())
 		if err != nil {
-			return nil, fmt.Errorf("invalid binary metric regex: value=%q, err=%s", pb.GetRegex(), err)
+			return nil, fmt.Errorf("invalid binary measurement regex: value=%q, err=%s", pb.GetRegex(), err)
 		}
 		mm.Regex = &cnosql.RegexLiteral{Val: regex}
 	}

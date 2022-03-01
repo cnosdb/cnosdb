@@ -3,7 +3,7 @@ package cursors
 import (
 	"context"
 
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/db/models"
 )
 
 const DefaultMaxPointsPerBlock = 1000

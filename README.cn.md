@@ -1,8 +1,12 @@
+<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
+![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
+
 # CnosDB
 
 [English](./README.md) | 简体中文
 
-一款高性能、高压缩率、高可玩性的开源时序数据库。
+
+一款高性能、高压缩率、高易用性的开源分布式时序数据库。
 
 ## 功能特性
 
@@ -21,12 +25,13 @@
 
 > 如果需要完整的入门指南，请查看[入门指南](https://cnosdatabase.github.io/)
 
+
 ### 构建
 
 1. 克隆项目
 
    ```
-   git clone https://github.com/cnosdatabase/cnosdb.git
+   git clone https://github.com/cnosdb/cnosdb.git
    ```
 
 2. 编译
@@ -76,3 +81,4 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 ## 许可证
 
 [MIT License](./LICENSE)
+

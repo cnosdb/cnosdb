@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/metrics"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/metrics"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 )
 
 type arrayCursorIterator struct {
@@ -37,7 +37,7 @@ func (q *arrayCursorIterator) Stats() tsdb.CursorStats {
 }
 
 func (q *arrayCursorIterator) Next(ctx context.Context, r *tsdb.CursorRequest) (tsdb.Cursor, error) {
-	// Look up fields for metric.
+	// Look up fields for measurement.
 	mf := q.e.fieldset.Fields(r.Name)
 	if mf == nil {
 		return nil, nil
@@ -46,7 +46,7 @@ func (q *arrayCursorIterator) Next(ctx context.Context, r *tsdb.CursorRequest) (
 	// Find individual field.
 	f := mf.Field(r.Field)
 	if f == nil {
-		// field doesn't exist for this metric
+		// field doesn't exist for this measurement
 		return nil, nil
 	}
 

@@ -1,0 +1,17 @@
+cnosdb-version(1)
+=================
+
+NAME
+----
+cnosdb-version - Display the version of cnosdb
+
+SYNOPSIS
+--------
+[verse]
+'cnosdb version'
+
+DESCRIPTION
+-----------
+'cnosdb version' will output the version of the CnosDB server.
+
+include::footer.txt[]

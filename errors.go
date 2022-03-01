@@ -14,10 +14,10 @@ var ErrFieldTypeConflict = errors.New("field type conflict")
 // specified database because the specified database does not exist.
 func ErrDatabaseNotFound(name string) error { return fmt.Errorf("database not found: %s", name) }
 
-// ErrTimeToLiveNotFound indicates that the named time-to-live could
+// ErrRetentionPolicyNotFound indicates that the named retention policy could
 // not be found in the database.
-func ErrTimeToLiveNotFound(name string) error {
-	return fmt.Errorf("time-to-live not found: %s", name)
+func ErrRetentionPolicyNotFound(name string) error {
+	return fmt.Errorf("retention policy not found: %s", name)
 }
 
 // IsAuthorizationError indicates whether an error is due to an authorization failure

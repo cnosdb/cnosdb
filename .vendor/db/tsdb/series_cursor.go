@@ -6,8 +6,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 )
 
 type SeriesCursor interface {
@@ -16,14 +16,14 @@ type SeriesCursor interface {
 }
 
 type SeriesCursorRequest struct {
-	Metrics MetricIterator
+	Measurements MeasurementIterator
 }
 
 // seriesCursor is an implementation of SeriesCursor over an IndexSet.
 type seriesCursor struct {
 	once     sync.Once
 	indexSet IndexSet
-	mitr     MetricIterator
+	mitr     MeasurementIterator
 	keys     [][]byte
 	ofs      int
 	row      SeriesCursorRow
@@ -67,9 +67,9 @@ func newSeriesCursor(req SeriesCursorRequest, indexSet IndexSet, cond cnosql.Exp
 		return nil, err
 	}
 
-	mitr := req.Metrics
+	mitr := req.Measurements
 	if mitr == nil {
-		mitr, err = indexSet.MetricIterator()
+		mitr, err = indexSet.MeasurementIterator()
 		if err != nil {
 			return nil, err
 		}
@@ -95,8 +95,8 @@ func (cur *seriesCursor) Close() (err error) {
 // Next emits the next point in the iterator.
 func (cur *seriesCursor) Next() (*SeriesCursorRow, error) {
 	for {
-		// Read series keys for next metric if no more keys remaining.
-		// Exit if there are no metrics remaining.
+		// Read series keys for next measurement if no more keys remaining.
+		// Exit if there are no measurements remaining.
 		if cur.ofs == len(cur.keys) {
 			m, err := cur.mitr.Next()
 			if err != nil {
@@ -123,7 +123,7 @@ func (cur *seriesCursor) Next() (*SeriesCursorRow, error) {
 }
 
 func (cur *seriesCursor) readSeriesKeys(name []byte) error {
-	sitr, err := cur.indexSet.MetricSeriesByExprIterator(name, cur.cond)
+	sitr, err := cur.indexSet.MeasurementSeriesByExprIterator(name, cur.cond)
 	if err != nil {
 		return err
 	} else if sitr == nil {

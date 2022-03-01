@@ -1,4 +1,4 @@
-// Package models implements basic objects used throughout the TICK stack.
+// Package models implements basic objects
 package models
 
 import (
@@ -15,20 +15,20 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/cnosdatabase/db/pkg/escape"
+	"github.com/cnosdb/db/pkg/escape"
 )
 
-// Values used to store the field key and metric name as special internal
+// Values used to store the field key and measurement name as special internal
 // tags.
 const (
-	FieldKeyTagKey = "\xff"
-	MetricTagKey   = "\x00"
+	FieldKeyTagKey    = "\xff"
+	MeasurementTagKey = "\x00"
 )
 
 // Predefined byte representations of special tag keys.
 var (
-	FieldKeyTagKeyBytes = []byte(FieldKeyTagKey)
-	MetricTagKeyBytes   = []byte(MetricTagKey)
+	FieldKeyTagKeyBytes    = []byte(FieldKeyTagKey)
+	MeasurementTagKeyBytes = []byte(MeasurementTagKey)
 )
 
 type escapeSet struct {
@@ -37,7 +37,7 @@ type escapeSet struct {
 }
 
 var (
-	metricEscapeCodes = [...]escapeSet{
+	measurementEscapeCodes = [...]escapeSet{
 		{k: [1]byte{','}, esc: [2]byte{'\\', ','}},
 		{k: [1]byte{' '}, esc: [2]byte{'\\', ' '}},
 	}
@@ -59,7 +59,7 @@ var (
 )
 
 const (
-	// MaxKeyLength is the largest allowed size of the combined metric and tag keys.
+	// MaxKeyLength is the largest allowed size of the combined measurement and tag keys.
 	MaxKeyLength = 65535
 )
 
@@ -75,10 +75,10 @@ func EnableUintSupport() {
 
 // Point defines the values that will be written to the database.
 type Point interface {
-	// Name return the metric name for the point.
+	// Name return the measurement name for the point.
 	Name() []byte
 
-	// SetName updates the metric name for the point.
+	// SetName updates the measurement name for the point.
 	SetName(string)
 
 	// Tags returns the tag set for the point.
@@ -111,7 +111,7 @@ type Point interface {
 	// HashID returns a non-cryptographic checksum of the point's key.
 	HashID() uint64
 
-	// Key returns the key (metric joined with tags) of the point.
+	// Key returns the key (measurement joined with tags) of the point.
 	Key() []byte
 
 	// String returns a string representation of the point. If there is a
@@ -221,7 +221,7 @@ func (a Points) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 type point struct {
 	time time.Time
 
-	// text encoding of metric and tags
+	// text encoding of measurement and tags
 	// key must always be stored sorted by tags, if the original line was not sorted,
 	// we need to resort it
 	key []byte
@@ -281,7 +281,7 @@ func ParsePointsString(buf string) ([]Point, error) {
 	return ParsePoints([]byte(buf))
 }
 
-// ParseKey returns the metric name and tags from a point.
+// ParseKey returns the measurement name and tags from a point.
 //
 // NOTE: to minimize heap allocations, the returned Tags will refer to subslices of buf.
 // This can have the unintended effect preventing buf from being garbage collected.
@@ -295,19 +295,19 @@ func ParseKeyBytes(buf []byte) ([]byte, Tags) {
 }
 
 func ParseKeyBytesWithTags(buf []byte, tags Tags) ([]byte, Tags) {
-	// Ignore the error because scanMetric returns "missing fields" which we ignore
+	// Ignore the error because scanMeasurement returns "missing fields" which we ignore
 	// when just parsing a key
-	state, i, _ := scanMetric(buf, 0)
+	state, i, _ := scanMeasurement(buf, 0)
 
 	var name []byte
 	if state == tagKeyState {
 		tags = parseTags(buf, tags)
-		// scanMetric returns the location of the comma if there are tags, strip that off
+		// scanMeasurement returns the location of the comma if there are tags, strip that off
 		name = buf[:i-1]
 	} else {
 		name = buf[:i]
 	}
-	return unescapeMetric(name), tags
+	return unescapeMeasurement(name), tags
 }
 
 func ParseTags(buf []byte) Tags {
@@ -315,9 +315,9 @@ func ParseTags(buf []byte) Tags {
 }
 
 func ParseName(buf []byte) []byte {
-	// Ignore the error because scanMetric returns "missing fields" which we ignore
+	// Ignore the error because scanMeasurement returns "missing fields" which we ignore
 	// when just parsing a key
-	state, i, _ := scanMetric(buf, 0)
+	state, i, _ := scanMeasurement(buf, 0)
 	var name []byte
 	if state == tagKeyState {
 		name = buf[:i-1]
@@ -325,7 +325,7 @@ func ParseName(buf []byte) []byte {
 		name = buf[:i]
 	}
 
-	return unescapeMetric(name)
+	return unescapeMeasurement(name)
 }
 
 // ParsePointsWithPrecision is similar to ParsePoints, but allows the
@@ -381,15 +381,15 @@ func ParsePointsWithPrecision(buf []byte, defaultTime time.Time, precision strin
 }
 
 func parsePoint(buf []byte, defaultTime time.Time, precision string) (Point, error) {
-	// scan the first block which is metric[,tag1=value1,tag2=value2...]
+	// scan the first block which is measurement[,tag1=value1,tag2=value2...]
 	pos, key, err := scanKey(buf, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	// metric name is required
+	// measurement name is required
 	if len(key) == 0 {
-		return nil, fmt.Errorf("missing metric")
+		return nil, fmt.Errorf("missing measurement")
 	}
 
 	if len(key) > MaxKeyLength {
@@ -479,7 +479,7 @@ func GetPrecisionMultiplier(precision string) int64 {
 	return int64(d)
 }
 
-// scanKey scans buf starting at i for the metric and tag portion of the point.
+// scanKey scans buf starting at i for the measurement and tag portion of the point.
 // It returns the ending position and the byte slice of key within buf.  If there
 // are tags, they will be sorted if they are not already.
 func scanKey(buf []byte, i int) (int, []byte, error) {
@@ -501,8 +501,8 @@ func scanKey(buf []byte, i int) (int, []byte, error) {
 	// we need to know how many values in the buffer are in use.
 	commas := 0
 
-	// First scan the Point's metric.
-	state, i, err := scanMetric(buf, i)
+	// First scan the Point's measurement.
+	state, i, err := scanMeasurement(buf, i)
 	if err != nil {
 		return i, buf[start:i], err
 	}
@@ -541,16 +541,16 @@ func scanKey(buf []byte, i int) (int, []byte, error) {
 	// indices are using the buffer for value comparison.  After the indices are sorted,
 	// the buffer is reconstructed from the sorted indices.
 	if !sorted && commas > 0 {
-		// Get the metric name for later
-		metric := buf[start : indices[0]-1]
+		// Get the measurement name for later
+		measurement := buf[start : indices[0]-1]
 
 		// Sort the indices
 		indices := indices[:commas]
 		insertionSort(0, commas, buf, indices)
 
-		// Create a new key using the metric and sorted indices
+		// Create a new key using the measurement and sorted indices
 		b := make([]byte, len(buf[start:i]))
-		pos := copy(b, metric)
+		pos := copy(b, measurement)
 		for _, i := range indices {
 			b[pos] = ','
 			pos++
@@ -586,14 +586,14 @@ const (
 	fieldsState
 )
 
-// scanMetric examines the metric part of a Point, returning
+// scanMeasurement examines the measurement part of a Point, returning
 // the next state to move to, and the current location in the buffer.
-func scanMetric(buf []byte, i int) (int, int, error) {
-	// Check first byte of metric, anything except a comma is fine.
+func scanMeasurement(buf []byte, i int) (int, int, error) {
+	// Check first byte of measurement, anything except a comma is fine.
 	// It can't be a space, since whitespace is stripped prior to this
 	// function call.
 	if i >= len(buf) || buf[i] == ',' {
-		return -1, i, fmt.Errorf("missing metric")
+		return -1, i, fmt.Errorf("missing measurement")
 	}
 
 	for {
@@ -1244,8 +1244,8 @@ func scanFieldValue(buf []byte, i int) (int, []byte) {
 	return i, buf[start:i]
 }
 
-func EscapeMetric(in []byte) []byte {
-	for _, c := range metricEscapeCodes {
+func EscapeMeasurement(in []byte) []byte {
+	for _, c := range measurementEscapeCodes {
 		if bytes.IndexByte(in, c.k[0]) != -1 {
 			in = bytes.Replace(in, c.k[:], c.esc[:], -1)
 		}
@@ -1253,13 +1253,13 @@ func EscapeMetric(in []byte) []byte {
 	return in
 }
 
-func unescapeMetric(in []byte) []byte {
+func unescapeMeasurement(in []byte) []byte {
 	if bytes.IndexByte(in, '\\') == -1 {
 		return in
 	}
 
-	for i := range metricEscapeCodes {
-		c := &metricEscapeCodes[i]
+	for i := range measurementEscapeCodes {
+		c := &measurementEscapeCodes[i]
 		if bytes.IndexByte(in, c.k[0]) != -1 {
 			in = bytes.Replace(in, c.esc[:], c.k[:], -1)
 		}
@@ -1336,7 +1336,7 @@ func unescapeStringField(in string) string {
 	return string(out)
 }
 
-// NewPoint returns a new point with the given metric name, tags, fields and timestamp.  If
+// NewPoint returns a new point with the given measurement name, tags, fields and timestamp.  If
 // an unsupported field value (NaN, or +/-Inf) or out of range time is passed, this function
 // returns an error.
 func NewPoint(name string, tags Tags, fields Fields, t time.Time) (Point, error) {
@@ -1354,7 +1354,7 @@ func NewPoint(name string, tags Tags, fields Fields, t time.Time) (Point, error)
 
 // pointKey checks some basic requirements for valid points, and returns the
 // key, along with an possible error.
-func pointKey(metric string, tags Tags, fields Fields, t time.Time) ([]byte, error) {
+func pointKey(measurement string, tags Tags, fields Fields, t time.Time) ([]byte, error) {
 	if len(fields) == 0 {
 		return nil, ErrPointMustHaveAField
 	}
@@ -1389,7 +1389,7 @@ func pointKey(metric string, tags Tags, fields Fields, t time.Time) ([]byte, err
 		}
 	}
 
-	key := MakeKey([]byte(metric), tags)
+	key := MakeKey([]byte(measurement), tags)
 	for field := range fields {
 		sz := seriesKeySize(key, []byte(field))
 		if sz > MaxKeyLength {
@@ -1455,7 +1455,7 @@ func NewPointFromBytes(b []byte) (Point, error) {
 	return p, nil
 }
 
-// MustNewPoint returns a new point with the given metric name, tags, fields and timestamp.  If
+// MustNewPoint returns a new point with the given measurement name, tags, fields and timestamp.  If
 // an unsupported field value (NaN) is passed, this function panics.
 func MustNewPoint(name string, tags Tags, fields Fields, time time.Time) Point {
 	pt, err := NewPoint(name, tags, fields, time)
@@ -1465,7 +1465,7 @@ func MustNewPoint(name string, tags Tags, fields Fields, time time.Time) Point {
 	return pt
 }
 
-// Key returns the key (metric joined with tags) of the point.
+// Key returns the key (measurement joined with tags) of the point.
 func (p *point) Key() []byte {
 	return p.key
 }
@@ -1479,7 +1479,7 @@ func (p *point) Name() []byte {
 	return escape.Unescape(p.name())
 }
 
-// SetName updates the metric name for the point.
+// SetName updates the measurement name for the point.
 func (p *point) SetName(name string) {
 	p.cachedName = ""
 	p.key = MakeKey([]byte(name), p.Tags())
@@ -1635,7 +1635,7 @@ func MakeKey(name []byte, tags Tags) []byte {
 func AppendMakeKey(dst []byte, name []byte, tags Tags) []byte {
 	// unescape the name and then re-escape it to avoid double escaping.
 	// The key should always be stored in escaped form.
-	dst = append(dst, EscapeMetric(unescapeMetric(name))...)
+	dst = append(dst, EscapeMeasurement(unescapeMeasurement(name))...)
 	dst = tags.AppendHashKey(dst)
 	return dst
 }
@@ -2457,7 +2457,7 @@ func appendField(b []byte, k string, v interface{}) []byte {
 	return b
 }
 
-// ValidKeyToken returns true if the token used for metric, tag key, or tag
+// ValidKeyToken returns true if the token used for measurement, tag key, or tag
 // value is a valid unicode string and only contains printable, non-replacement characters.
 func ValidKeyToken(s string) bool {
 	if !utf8.ValidString(s) {
@@ -2471,7 +2471,7 @@ func ValidKeyToken(s string) bool {
 	return true
 }
 
-// ValidKeyTokens returns true if the metric name and all tags are valid.
+// ValidKeyTokens returns true if the measurement name and all tags are valid.
 func ValidKeyTokens(name string, tags Tags) bool {
 	if !ValidKeyToken(name) {
 		return false

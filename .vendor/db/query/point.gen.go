@@ -10,7 +10,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	internal "github.com/cnosdatabase/db/query/internal"
+	internal "github.com/cnosdb/db/query/internal"
 	"github.com/gogo/protobuf/proto"
 )
 

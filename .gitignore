@@ -30,4 +30,5 @@ go.sum
 # IDE
 .vscode/
 .idea/
-*.iml
+.dist/
+*.imldist/

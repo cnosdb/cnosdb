@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosdb/pkg/utils"
 )
 
 // ResponseLogger is wrapper of http.ResponseWriter that keeps track of its HTTP status

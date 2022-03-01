@@ -1,22 +1,6 @@
 package tsm1
 
-import (
-	"github.com/cnosdatabase/db/tsdb"
-)
-{{$isArray := .D.isArray}}
-{{$isNotArray := not $isArray}}
-{{range .In}}
-{{if $isArray -}}
-// Read{{.Name}}ArrayBlock reads the next block as a set of {{.name}} values.
-func (c *KeyCursor) Read{{.Name}}ArrayBlock(values *tsdb.{{.Name}}Array) (*tsdb.{{.Name}}Array, error) {
-LOOP:
-	// No matching blocks to decode
-	if len(c.current) == 0 {
-		values.Timestamps = values.Timestamps[:0]
-		values.Values = values.Values[:0]
-		return values, nil
-	}
-{{else}}
+{{range .}}
 // Read{{.Name}}Block reads the next block as a set of {{.name}} values.
 func (c *KeyCursor) Read{{.Name}}Block(buf *[]{{.Name}}Value) ([]{{.Name}}Value, error) {
 LOOP:
@@ -24,17 +8,12 @@ LOOP:
 	if len(c.current) == 0 {
 		return nil, nil
 	}
-{{end}}
 
 	// First block is the oldest block containing the points we're searching for.
 	first := c.current[0]
-{{if $isArray -}}
-	err := first.r.Read{{.Name}}ArrayBlockAt(&first.entry, values)
-{{else -}}
 	*buf = (*buf)[:0]
 	var values {{.Name}}Values
 	values, err := first.r.Read{{.Name}}BlockAt(&first.entry, buf)
-{{end -}}
 	if err != nil {
 		return nil, err
 	}
@@ -44,20 +23,11 @@ LOOP:
 	}
 
 	// Remove values we already read
-{{if $isArray -}}
-	values.Exclude(first.readMin, first.readMax)
-{{else -}}
 	values = values.Exclude(first.readMin, first.readMax)
-{{end}}
 
 	// Remove any tombstones
 	tombstones := first.r.TombstoneRange(c.key)
-{{if $isArray -}}
-	excludeTombstones{{.Name}}Array(tombstones, values)
-{{else -}}
 	values = excludeTombstones{{.Name}}Values(tombstones, values)
-{{end -}}
-
 	// If there are no values in this first block (all tombstoned or previously read) and
 	// we have more potential blocks too search.  Try again.
 	if values.Len() == 0 && len(c.current) > 0 {
@@ -99,11 +69,7 @@ LOOP:
 				if cur.entry.MaxTime > maxT {
 					maxT = cur.entry.MaxTime
 				}
-{{if $isArray -}}
-				values.Include(minT, maxT)
-{{else -}}
 				values = values.Include(minT, maxT)
-{{end -}}
 				break
 			}
 		}
@@ -118,14 +84,9 @@ LOOP:
 				continue
 			}
 
-{{if $isArray -}}
-			v := &tsdb.{{.Name}}Array{}
-            err := cur.r.Read{{.Name}}ArrayBlockAt(&cur.entry, v)
-{{else -}}
 			var a []{{.Name}}Value
 			var v {{.Name}}Values
 			v, err := cur.r.Read{{.Name}}BlockAt(&cur.entry, &a)
-{{end -}}
 			if err != nil {
 				return nil, err
 			}
@@ -135,20 +96,6 @@ LOOP:
 			}
 
 			tombstones := cur.r.TombstoneRange(c.key)
-{{if $isArray -}}
-			// Remove any tombstoned values
-			excludeTombstones{{.Name}}Array(tombstones, v)
-
-			// Remove values we already read
-			v.Exclude(cur.readMin, cur.readMax)
-
-			if v.Len() > 0 {
-				// Only use values in the overlapping window
-				v.Include(minT, maxT)
-				// Merge the remaining values with the existing
-				values.Merge(v)
-			}
-{{else -}}
 			// Remove any tombstoned values
 			v = excludeTombstones{{.Name}}Values(tombstones, v)
 
@@ -161,7 +108,6 @@ LOOP:
 				// Merge the remaining values with the existing
 				values = values.Merge(v)
 			}
-{{end -}}
 			cur.markRead(minT, maxT)
 		}
 
@@ -186,11 +132,7 @@ LOOP:
 				if cur.entry.MinTime < minT {
 					minT = cur.entry.MinTime
 				}
-{{if $isArray -}}
-				values.Include(minT, maxT)
-{{else -}}
 				values = values.Include(minT, maxT)
-{{end -}}
 				break
 			}
 		}
@@ -205,14 +147,9 @@ LOOP:
 				continue
 			}
 
-{{if $isArray -}}
-			v := &tsdb.{{.Name}}Array{}
-			err := cur.r.Read{{.Name}}ArrayBlockAt(&cur.entry, v)
-{{else -}}
 			var a []{{.Name}}Value
 			var v {{.Name}}Values
 			v, err := cur.r.Read{{.Name}}BlockAt(&cur.entry, &a)
-{{end -}}
 			if err != nil {
 				return nil, err
 			}
@@ -221,22 +158,6 @@ LOOP:
 				c.col.GetCounter({{.name}}BlocksSizeCounter).Add(int64(cur.entry.Size))
 			}
 			tombstones := cur.r.TombstoneRange(c.key)
-{{if $isArray -}}
-			// Remove any tombstoned values
-			excludeTombstones{{.Name}}Array(tombstones, v)
-
-			// Remove values we already read
-			v.Exclude(cur.readMin, cur.readMax)
-
-			// If the block we decoded should have all of it's values included, mark it as read so we
-			// don't use it again.
-			if v.Len() > 0 {
-				v.Include(minT, maxT)
-				// Merge the remaining values with the existing
-				v.Merge(values)
-				*values = *v
-			}
-{{else -}}
 			// Remove any tombstoned values
 			v = excludeTombstones{{.Name}}Values(tombstones, v)
 
@@ -250,7 +171,6 @@ LOOP:
 				// Merge the remaining values with the existing
 				values = v.Merge(values)
 			}
-{{end -}}
 			cur.markRead(minT, maxT)
 		}
 	}
@@ -260,18 +180,10 @@ LOOP:
 	return values, err
 }
 
-{{if $isArray -}}
-func excludeTombstones{{.Name}}Array(t []TimeRange, values *tsdb.{{.Name}}Array) {
-	for i := range t {
-		values.Exclude(t[i].Min, t[i].Max)
-	}
-}
-{{else -}}
 func excludeTombstones{{.Name}}Values(t []TimeRange, values {{.Name}}Values) {{.Name}}Values {
 	for i := range t {
 		values = values.Exclude(t[i].Min, t[i].Max)
 	}
 	return values
 }
-{{end -}}
 {{ end }}

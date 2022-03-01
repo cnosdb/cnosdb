@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/file"
+	"github.com/cnosdb/db/pkg/file"
 )
 
 // Stream is a convenience function for creating a tar of a shard dir. It walks over the directory and subdirs,
@@ -57,12 +57,12 @@ func SinceFilterTarFile(since time.Time) func(f os.FileInfo, shardRelativePath, 
 	}
 }
 
-// stream a single file to tw, extending the header name using the shardRelativePath
+// StreamFile stream a single file to tw, extending the header name using the shardRelativePath
 func StreamFile(f os.FileInfo, shardRelativePath, fullPath string, tw *tar.Writer) error {
 	return StreamRenameFile(f, f.Name(), shardRelativePath, fullPath, tw)
 }
 
-/// Stream a single file to tw, using tarHeaderFileName instead of the actual filename
+// StreamRenameFile / Stream a single file to tw, using tarHeaderFileName instead of the actual filename
 // e.g., when we want to write a *.tmp file using the original file's non-tmp name.
 func StreamRenameFile(f os.FileInfo, tarHeaderFileName, relativePath, fullPath string, tw *tar.Writer) error {
 	h, err := tar.FileInfoHeader(f, f.Name())
@@ -115,7 +115,7 @@ func extractFile(tr *tar.Reader, dir string) error {
 	}
 
 	// The hdr.Name is the relative path of the file from the root data dir.
-	// e.g (db/ttl/1/xxxxx.tsm or db/ttl/1/index/xxxxxx.tsi)
+	// e.g (db/rp/1/xxxxx.tsm or db/rp/1/index/xxxxxx.tsi)
 	sections := strings.Split(filepath.FromSlash(hdr.Name), string(filepath.Separator))
 	if len(sections) < 3 {
 		return fmt.Errorf("invalid archive path: %s", hdr.Name)

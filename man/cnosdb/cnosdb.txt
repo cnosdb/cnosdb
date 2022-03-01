@@ -1,0 +1,41 @@
+cnosdb(1)
+==========
+
+NAME 
+----
+cnosdb - CnosDB Server daemon
+
+SYNOPSIS
+--------
+
+[verse]
+'cnosdb' [command] [options]
+
+DESCRIPTION
+-----------
+'cnosdb' is the server daemon for CnosDB.
+
+COMMANDS
+--------
+These commands can be invoked using the 'cnosdb' program. The default is 'run' if the command parameter is skipped.
+
+backup::
+  Downloads a snapshot of a data node and saves it to disk.
+
+config::
+  Displays the default configuration. This can also read an existing configuration file and output the default values for any missing fields. Default values and existing entries in a configuration file can be customized through environment variables.
+
+restore::
+  Uses backups to restore the metastore, databases, retention policies, or specific shards. The CnosDB process must not be running during a restore.
+
+run::
+  Runs the CnosDB server. This is the default command if none is specified.
+
+version::
+  Displays the CnosDB version, build branch, and git commit hash.
+
+SEE ALSO
+--------
+*cnosdb-backup*(1), *cnosdb-config*(1), *cnosdb-restore*(1), *cnosdb-run*(1), *cnosdb-version*(1)
+
+include::footer.txt[]

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 )
 
 // guard lets one match a set of points and block until they are done.
@@ -19,7 +19,7 @@ type guard struct {
 }
 
 // newGuard constructs a guard that will match any points in the given min and max
-// time range, with the given set of metric names, or the given expression.
+// time range, with the given set of measurement names, or the given expression.
 // The expression is optional.
 func newGuard(min, max int64, names []string, expr cnosql.Expr) *guard {
 	set := make(map[string]struct{}, len(names))
@@ -202,7 +202,7 @@ func newBinaryExprGuard(expr *cnosql.BinaryExpr) *exprGuard {
 		// against them, but I'm not quite sure how to do that. Be conservative and match
 		// any points that contain either the key or value.
 
-		// since every point has a metric, always match if either are on the metric.
+		// since every point has a measurement, always match if either are on the measurement.
 		if key.Val == "_name" || value.Val == "_name" {
 			return nil
 		}

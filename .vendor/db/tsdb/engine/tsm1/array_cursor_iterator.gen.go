@@ -8,9 +8,9 @@ package tsm1
 import (
 	"context"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // buildFloatArrayCursor creates an array cursor for a float field.

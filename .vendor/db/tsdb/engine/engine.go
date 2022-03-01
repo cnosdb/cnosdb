@@ -5,5 +5,5 @@ package engine
 
 import (
 	// Initialize and register tsm1 engine
-	_ "github.com/cnosdatabase/db/tsdb/engine/tsm1"
+	_ "github.com/cnosdb/db/tsdb/engine/tsm1"
 )

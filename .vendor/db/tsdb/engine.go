@@ -11,11 +11,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 )
 
@@ -48,9 +48,9 @@ type Engine interface {
 	Import(r io.Reader, basePath string) error
 	Digest() (io.ReadCloser, int64, error)
 
-	CreateIterator(ctx context.Context, metric string, opt query.IteratorOptions) (query.Iterator, error)
+	CreateIterator(ctx context.Context, measurement string, opt query.IteratorOptions) (query.Iterator, error)
 	CreateCursorIterator(ctx context.Context) (CursorIterator, error)
-	IteratorCost(metric string, opt query.IteratorOptions) (query.IteratorCost, error)
+	IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error)
 	WritePoints(points []models.Point) error
 
 	CreateSeriesIfNotExists(key, name []byte, tags models.Tags) error
@@ -58,20 +58,20 @@ type Engine interface {
 	DeleteSeriesRange(itr SeriesIterator, min, max int64) error
 	DeleteSeriesRangeWithPredicate(itr SeriesIterator, predicate func(name []byte, tags models.Tags) (int64, int64, bool)) error
 
-	MetricsSketches() (estimator.Sketch, estimator.Sketch, error)
+	MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error)
 	SeriesSketches() (estimator.Sketch, estimator.Sketch, error)
 	SeriesN() int64
 
-	MetricExists(name []byte) (bool, error)
+	MeasurementExists(name []byte) (bool, error)
 
-	MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error)
-	MetricFieldSet() *MetricFieldSet
-	MetricFields(metric []byte) *MetricFields
-	ForEachMetricName(fn func(name []byte) error) error
-	DeleteMetric(name []byte) error
+	MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error)
+	MeasurementFieldSet() *MeasurementFieldSet
+	MeasurementFields(measurement []byte) *MeasurementFields
+	ForEachMeasurementName(fn func(name []byte) error) error
+	DeleteMeasurement(name []byte) error
 
 	HasTagKey(name, key []byte) (bool, error)
-	MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error)
+	MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error)
 	TagKeyCardinality(name, key []byte) int
 
 	// Statistics will return statistics relevant to this engine.
@@ -179,13 +179,13 @@ type EngineOptions struct {
 	// If no function is set, all databases will be opened.
 	DatabaseFilter func(database string) bool
 
-	// TimeToLiveFilter is a predicate controlling which combination of database and time-to-live may be opened.
+	// RetentionPolicyFilter is a predicate controlling which combination of database and retention policy may be opened.
 	// nil will allow all combinations to pass.
-	TimeToLiveFilter func(database, ttl string) bool
+	RetentionPolicyFilter func(database, rp string) bool
 
-	// ShardFilter is a predicate controlling which combination of database, time-to-live and region may be opened.
+	// ShardFilter is a predicate controlling which combination of database, retention policy and shard group may be opened.
 	// nil will allow all combinations to pass.
-	ShardFilter func(database, ttl string, id uint64) bool
+	ShardFilter func(database, rp string, id uint64) bool
 
 	Config         Config
 	SeriesIDSets   SeriesIDSets

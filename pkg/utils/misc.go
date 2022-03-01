@@ -3,7 +3,7 @@ package utils
 import (
 	"context"
 
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"go.uber.org/zap"
 )
 

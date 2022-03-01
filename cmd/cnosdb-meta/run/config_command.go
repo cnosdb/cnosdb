@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +41,10 @@ func GetConfigCommand() *cobra.Command {
 
 				if err := c.FromTomlFile(path); err != nil {
 					return err
+				}
+
+				if err := c.ApplyEnvOverrides(os.Getenv); err != nil {
+					return fmt.Errorf("apply env config: %v", err)
 				}
 
 				if err := c.Validate(); err != nil {

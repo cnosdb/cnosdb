@@ -11,20 +11,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	internal "github.com/cnosdatabase/cnosdb/meta/internal"
+	"github.com/cnosdb/cnosdb"
+	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 )
 
-// Time to live settings.
+// Retention policy settings.
 const (
-	autoCreateTimeToLiveName   = "autogen"
-	autoCreateTimeToLivePeriod = 0
+	autoCreateRetentionPolicyName   = "autogen"
+	autoCreateRetentionPolicyPeriod = 0
 
-	// maxAutoCreatedTimeToLiveReplicaN is the maximum replication factor that will
-	// be set for auto-created time to lives.
-	maxAutoCreatedTimeToLiveReplicaN = 3
+	// maxAutoCreatedRetentionPolicyReplicaN is the maximum replication factor that will
+	// be set for auto-created retention policies.
+	maxAutoCreatedRetentionPolicyReplicaN = 3
 )
 
 // Raft configuration.
@@ -359,7 +359,7 @@ func (s *store) joinCluster(peers []string) (*NodeInfo, error) {
 			return nil, err
 		}
 		s.node.ID = n.ID
-		if err := s.node.Save(); err != nil {
+		if err := s.node.Save("meta.json"); err != nil {
 			return nil, err
 		}
 		return n, nil

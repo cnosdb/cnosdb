@@ -11,18 +11,18 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/monitor"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
-	"github.com/cnosdatabase/cnosdb/pkg/tlsconfig"
-	"github.com/cnosdatabase/cnosdb/server/continuous_querier"
-	"github.com/cnosdatabase/cnosdb/server/coordinator"
-	"github.com/cnosdatabase/cnosdb/server/hh"
-	"github.com/cnosdatabase/cnosdb/server/region"
-	"github.com/cnosdatabase/cnosdb/server/subscriber"
-	"github.com/cnosdatabase/cnosdb/server/ttl"
-	itoml "github.com/cnosdatabase/common/pkg/toml"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/monitor"
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/tlsconfig"
+	"github.com/cnosdb/cnosdb/server/continuous_querier"
+	"github.com/cnosdb/cnosdb/server/coordinator"
+	"github.com/cnosdb/cnosdb/server/hh"
+	"github.com/cnosdb/cnosdb/server/precreator"
+	"github.com/cnosdb/cnosdb/server/rp"
+	"github.com/cnosdb/cnosdb/server/subscriber"
+	itoml "github.com/cnosdb/common/pkg/toml"
+	"github.com/cnosdb/db/tsdb"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )
@@ -30,17 +30,21 @@ import (
 const (
 	// DefaultTCPBindAddress is the default address for various RPC services.
 	DefaultTCPBindAddress = "127.0.0.1:8088"
+	DefaultCluster        = false
+	DefaultHostname       = "localhost"
 )
 
 type Config struct {
 	// BindAddress is the address that all TCP services use (Raft, Snapshot, Cluster, etc.)
 	BindAddress string `toml:"bind-address"`
+	Cluster     bool   `toml:"cluster"`
+	Hostname    string `toml:"hostname"`
 
-	Meta        *meta.Config
-	Data        tsdb.Config
-	Coordinator coordinator.Config
-	TimeToLive  ttl.Config
-	Precreator  region.Config
+	Meta            *meta.Config
+	Data            tsdb.Config
+	Coordinator     coordinator.Config
+	RetentionPolicy rp.Config
+	Precreator      precreator.Config
 
 	Monitor         monitor.Config
 	Subscriber      subscriber.Config
@@ -54,18 +58,20 @@ type Config struct {
 // NewConfig returns an instance of Config with reasonable defaults.
 func NewConfig() *Config {
 	c := &Config{}
+	c.Hostname = DefaultHostname
 	c.BindAddress = DefaultTCPBindAddress
+	c.Cluster = DefaultCluster
 	c.Meta = meta.NewConfig()
 	c.Data = tsdb.NewConfig()
 	c.Coordinator = coordinator.NewConfig()
-	c.Precreator = region.NewConfig()
+	c.Precreator = precreator.NewConfig()
 
 	c.Monitor = monitor.NewConfig()
 	c.HTTPD = NewHTTPConfig()
 	c.Log = logger.NewDefaultLogConfig()
 
 	c.ContinuousQuery = continuous_querier.NewConfig()
-	c.TimeToLive = ttl.NewConfig()
+	c.RetentionPolicy = rp.NewConfig()
 
 	return c
 }
@@ -143,7 +149,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if err := c.TimeToLive.Validate(); err != nil {
+	if err := c.RetentionPolicy.Validate(); err != nil {
 		return err
 	}
 

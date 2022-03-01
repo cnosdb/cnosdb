@@ -5,9 +5,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/db/models"
 )
 
 const (
@@ -32,7 +32,7 @@ type ShardWriter struct {
 
 	MetaClient interface {
 		DataNode(id uint64) (ni *meta.NodeInfo, err error)
-		ShardOwner(shardID uint64) (database, ttl string, sgi *meta.RegionInfo)
+		ShardOwner(shardID uint64) (database, rp string, sgi *meta.ShardGroupInfo)
 	}
 }
 
@@ -61,7 +61,7 @@ func (w *ShardWriter) WriteShard(shardID, ownerID uint64, points []models.Point)
 	}(conn)
 
 	// Determine the location of this shard and whether it still exists
-	db, ttl, sgi := w.MetaClient.ShardOwner(shardID)
+	db, rp, sgi := w.MetaClient.ShardOwner(shardID)
 	if sgi == nil {
 		// If we can't get the shard group for this shard, then we need to drop this request
 		// as it is no longer valid.  This could happen if writes were queued via
@@ -73,7 +73,7 @@ func (w *ShardWriter) WriteShard(shardID, ownerID uint64, points []models.Point)
 	var request WriteShardRequest
 	request.SetShardID(shardID)
 	request.SetDatabase(db)
-	request.SetTimeToLive(ttl)
+	request.SetRetentionPolicy(rp)
 	request.AddPoints(points)
 
 	// Marshal into protocol buffers.

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/cnosdatabase/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/meta"
 )
 
 type RequestInfo struct {

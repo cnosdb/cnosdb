@@ -20,28 +20,27 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bytesutil"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/file"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/pkg/metrics"
-	"github.com/cnosdatabase/db/pkg/radix"
-	intar "github.com/cnosdatabase/db/pkg/tar"
-	"github.com/cnosdatabase/db/pkg/tracing"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
-	_ "github.com/cnosdatabase/db/tsdb/index"
-	"github.com/cnosdatabase/db/tsdb/index/inmem"
-	"github.com/cnosdatabase/db/tsdb/index/tsi1"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/file"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/pkg/metrics"
+	"github.com/cnosdb/db/pkg/radix"
+	intar "github.com/cnosdb/db/pkg/tar"
+	"github.com/cnosdb/db/pkg/tracing"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
+	_ "github.com/cnosdb/db/tsdb/index"
+	"github.com/cnosdb/db/tsdb/index/inmem"
+	"github.com/cnosdb/db/tsdb/index/tsi1"
 	"go.uber.org/zap"
 )
 
 //go:generate tmpl -data=@iterator.gen.go.tmpldata iterator.gen.go.tmpl engine.gen.go.tmpl array_cursor.gen.go.tmpl array_cursor_iterator.gen.go.tmpl
-//go:generate go run ../../../_tools/tmpl/main.go -i -data=file_store.gen.go.tmpldata file_store.gen.go.tmpl=file_store.gen.go
-//go:generate go run ../../../_tools/tmpl/main.go -i -d isArray=y -data=file_store.gen.go.tmpldata file_store.gen.go.tmpl=file_store_array.gen.go
+//go:generate tmpl -data=@file_store.gen.go.tmpldata file_store.gen.go.tmpl file_store_array.gen.go.tmpl
 //go:generate tmpl -data=@encoding.gen.go.tmpldata encoding.gen.go.tmpl
 //go:generate tmpl -data=@compact.gen.go.tmpldata compact.gen.go.tmpl
 //go:generate tmpl -data=@reader.gen.go.tmpldata reader.gen.go.tmpl
@@ -155,7 +154,7 @@ type Engine struct {
 	traceLogger  *zap.Logger // Logger to be used when trace-logging is on.
 	traceLogging bool
 
-	fieldset *tsdb.MetricFieldSet
+	fieldset *tsdb.MeasurementFieldSet
 
 	WAL            *WAL
 	Cache          *Cache
@@ -565,34 +564,34 @@ func (e *Engine) ScheduleFullCompaction() error {
 // Path returns the path the engine was opened with.
 func (e *Engine) Path() string { return e.path }
 
-func (e *Engine) SetFieldName(metric []byte, name string) {
-	e.index.SetFieldName(metric, name)
+func (e *Engine) SetFieldName(measurement []byte, name string) {
+	e.index.SetFieldName(measurement, name)
 }
 
-func (e *Engine) MetricExists(name []byte) (bool, error) {
-	return e.index.MetricExists(name)
+func (e *Engine) MeasurementExists(name []byte) (bool, error) {
+	return e.index.MeasurementExists(name)
 }
 
-func (e *Engine) MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
-	return e.index.MetricNamesByRegex(re)
+func (e *Engine) MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error) {
+	return e.index.MeasurementNamesByRegex(re)
 }
 
-// MetricFieldSet returns the metric field set.
-func (e *Engine) MetricFieldSet() *tsdb.MetricFieldSet {
+// MeasurementFieldSet returns the measurement field set.
+func (e *Engine) MeasurementFieldSet() *tsdb.MeasurementFieldSet {
 	return e.fieldset
 }
 
-// MetricFields returns the metric fields for a metric.
-func (e *Engine) MetricFields(metric []byte) *tsdb.MetricFields {
-	return e.fieldset.CreateFieldsIfNotExists(metric)
+// MeasurementFields returns the measurement fields for a measurement.
+func (e *Engine) MeasurementFields(measurement []byte) *tsdb.MeasurementFields {
+	return e.fieldset.CreateFieldsIfNotExists(measurement)
 }
 
 func (e *Engine) HasTagKey(name, key []byte) (bool, error) {
 	return e.index.HasTagKey(name, key)
 }
 
-func (e *Engine) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
-	return e.index.MetricTagKeysByExpr(name, expr)
+func (e *Engine) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+	return e.index.MeasurementTagKeysByExpr(name, expr)
 }
 
 func (e *Engine) TagKeyCardinality(name, key []byte) int {
@@ -604,11 +603,11 @@ func (e *Engine) SeriesN() int64 {
 	return e.index.SeriesN()
 }
 
-// MetricsSketches returns sketches that describe the cardinality of the
-// metrics in this shard and metrics that were in this shard, but have
+// MeasurementsSketches returns sketches that describe the cardinality of the
+// measurements in this shard and measurements that were in this shard, but have
 // been tombstoned.
-func (e *Engine) MetricsSketches() (estimator.Sketch, estimator.Sketch, error) {
-	return e.index.MetricsSketches()
+func (e *Engine) MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error) {
+	return e.index.MeasurementsSketches()
 }
 
 // SeriesSketches returns sketches that describe the cardinality of the
@@ -726,7 +725,7 @@ func (e *Engine) Open() error {
 		return err
 	}
 
-	fields, err := tsdb.NewMetricFieldSet(filepath.Join(e.path, "fields.idx"))
+	fields, err := tsdb.NewMeasurementFieldSet(filepath.Join(e.path, "fields.idx"))
 	if err != nil {
 		e.logger.Warn(fmt.Sprintf("error opening fields.idx: %v.  Rebuilding.", err))
 	}
@@ -1223,8 +1222,8 @@ func (e *Engine) readFileFromBackup(tr *tar.Reader, shardRelativePath string, as
 	return tmp, nil
 }
 
-// addToIndexFromKey will pull the metric names, series keys, and field
-// names from composite keys, and add them to the database index and metric
+// addToIndexFromKey will pull the measurement names, series keys, and field
+// names from composite keys, and add them to the database index and measurement
 // fields.
 func (e *Engine) addToIndexFromKey(keys [][]byte, fieldTypes []cnosql.DataType) error {
 	var field []byte
@@ -1375,7 +1374,7 @@ func (e *Engine) DeleteSeriesRange(itr tsdb.SeriesIterator, min, max int64) erro
 func (e *Engine) DeleteSeriesRangeWithPredicate(itr tsdb.SeriesIterator, predicate func(name []byte, tags models.Tags) (int64, int64, bool)) error {
 	var disableOnce bool
 
-	// Ensure that the index does not compact away the metric or series we're
+	// Ensure that the index does not compact away the measurement or series we're
 	// going to delete before we're done with them.
 	if tsiIndex, ok := e.index.(*tsi1.Index); ok {
 		tsiIndex.DisableCompactions()
@@ -1437,7 +1436,7 @@ func (e *Engine) DeleteSeriesRangeWithPredicate(itr tsdb.SeriesIterator, predica
 
 		if !disableOnce {
 			// Disable and abort running compactions so that tombstones added existing tsm
-			// files don't get removed.  This would cause deleted metrics/series to
+			// files don't get removed.  This would cause deleted measurements/series to
 			// re-appear once the compaction completed.  We only disable the level compactions
 			// so that snapshotting does not stop while writing out tombstones.  If it is stopped,
 			// and writing tombstones takes a long time, writes can get rejected due to the cache
@@ -1556,7 +1555,7 @@ func (e *Engine) deleteSeriesRange(seriesKeys [][]byte, min, max int64) error {
 		// series we need to delete to see if any of the cache keys match.
 		i := bytesutil.SearchBytes(seriesKeys, seriesKey)
 		if i < len(seriesKeys) && bytes.Equal(seriesKey, seriesKeys[i]) {
-			// k is the metric + tags + sep + field
+			// k is the measurement + tags + sep + field
 			deleteKeys = append(deleteKeys, k)
 		}
 		return nil
@@ -1575,11 +1574,11 @@ func (e *Engine) deleteSeriesRange(seriesKeys [][]byte, min, max int64) error {
 	}
 
 	// The series are deleted on disk, but the index may still say they exist.
-	// Depending on the the min,max time passed in, the series may or not actually
+	// Depending on the min,max time passed in, the series may or not actually
 	// exists now.  To reconcile the index, we walk the series keys that still exists
 	// on disk and cross out any keys that match the passed in series.  Any series
 	// left in the slice at the end do not exist and can be deleted from the index.
-	// Note: this is inherently racy if writes are occurring to the same metric/series are
+	// Note: this is inherently racy if writes are occurring to the same measurement/series are
 	// being removed.  A write could occur and exist in the cache at this point, but we
 	// would delete it from the index.
 	minKey := seriesKeys[0]
@@ -1632,7 +1631,7 @@ func (e *Engine) deleteSeriesRange(seriesKeys [][]byte, min, max int64) error {
 	if hasDeleted {
 		buf := make([]byte, 1024) // For use when accessing series file.
 		ids := tsdb.NewSeriesIDSet()
-		metrics := make(map[string]struct{}, 1)
+		measurements := make(map[string]struct{}, 1)
 
 		for _, k := range seriesKeys {
 			if len(k) == 0 {
@@ -1663,7 +1662,7 @@ func (e *Engine) deleteSeriesRange(seriesKeys [][]byte, min, max int64) error {
 				continue
 			}
 
-			metrics[string(name)] = struct{}{}
+			measurements[string(name)] = struct{}{}
 			// Remove the series from the local index.
 			if err := e.index.DropSeries(sid, k, false); err != nil {
 				return err
@@ -1673,18 +1672,18 @@ func (e *Engine) deleteSeriesRange(seriesKeys [][]byte, min, max int64) error {
 			ids.Add(sid)
 		}
 
-		fielsetChanged := false
-		for k := range metrics {
-			if dropped, err := e.index.DropMetricIfSeriesNotExist([]byte(k)); err != nil {
+		filesetChanged := false
+		for k := range measurements {
+			if dropped, err := e.index.DropMeasurementIfSeriesNotExist([]byte(k)); err != nil {
 				return err
 			} else if dropped {
-				if err := e.cleanupMetric([]byte(k)); err != nil {
+				if err := e.cleanupMeasurement([]byte(k)); err != nil {
 					return err
 				}
-				fielsetChanged = true
+				filesetChanged = true
 			}
 		}
-		if fielsetChanged {
+		if filesetChanged {
 			if err := e.fieldset.Save(); err != nil {
 				return err
 			}
@@ -1725,18 +1724,18 @@ func (e *Engine) deleteSeriesRange(seriesKeys [][]byte, min, max int64) error {
 	return nil
 }
 
-func (e *Engine) cleanupMetric(name []byte) error {
-	// A sentinel error message to cause DeleteWithLock to not delete the metric
-	abortErr := fmt.Errorf("metrics still exist")
+func (e *Engine) cleanupMeasurement(name []byte) error {
+	// A sentinel error message to cause DeleteWithLock to not delete the measurement
+	abortErr := fmt.Errorf("measurements still exist")
 
-	// Under write lock, delete the metric if we no longer have any data stored for
-	// the metric.  If data exists, we can't delete the field set yet as there
-	// were writes to the metric while we are deleting it.
+	// Under write lock, delete the measurement if we no longer have any data stored for
+	// the measurement.  If data exists, we can't delete the field set yet as there
+	// were writes to the measurement while we are deleting it.
 	if err := e.fieldset.DeleteWithLock(string(name), func() error {
-		encodedName := models.EscapeMetric(name)
+		encodedName := models.EscapeMeasurement(name)
 		sep := len(encodedName)
 
-		// First scan the cache to see if any series exists for this metric.
+		// First scan the cache to see if any series exists for this measurement.
 		if err := e.Cache.ApplyEntryFn(func(k []byte, _ *entry) error {
 			if bytes.HasPrefix(k, encodedName) && (k[sep] == ',' || k[sep] == keyFieldSeparator[0]) {
 				return abortErr
@@ -1762,11 +1761,11 @@ func (e *Engine) cleanupMetric(name []byte) error {
 	return nil
 }
 
-// DeleteMetric deletes a metric and all related series.
-func (e *Engine) DeleteMetric(name []byte) error {
+// DeleteMeasurement deletes a measurement and all related series.
+func (e *Engine) DeleteMeasurement(name []byte) error {
 	// Attempt to find the series keys.
 	indexSet := tsdb.IndexSet{Indexes: []tsdb.Index{e.index}, SeriesFile: e.sfile}
-	itr, err := indexSet.MetricSeriesByExprIterator(name, nil)
+	itr, err := indexSet.MeasurementSeriesByExprIterator(name, nil)
 	if err != nil {
 		return err
 	} else if itr == nil {
@@ -1776,9 +1775,9 @@ func (e *Engine) DeleteMetric(name []byte) error {
 	return e.DeleteSeriesRange(tsdb.NewSeriesIteratorAdapter(e.sfile, itr), math.MinInt64, math.MaxInt64)
 }
 
-// ForEachMetricName iterates over each metric name in the engine.
-func (e *Engine) ForEachMetricName(fn func(name []byte) error) error {
-	return e.index.ForEachMetricName(fn)
+// ForEachMeasurementName iterates over each measurement name in the engine.
+func (e *Engine) ForEachMeasurementName(fn func(name []byte) error) error {
+	return e.index.ForEachMeasurementName(fn)
 }
 
 func (e *Engine) CreateSeriesListIfNotExists(keys, names [][]byte, tagsSlice []models.Tags) error {
@@ -1871,7 +1870,7 @@ func (e *Engine) CreateSnapshot() (string, error) {
 	return path, nil
 }
 
-// writeSnapshotAndCommit will write the passed cache to a new TSM file and remove the closed SAL segments.
+// writeSnapshotAndCommit will write the passed cache to a new TSM file and remove the closed WAL segments.
 func (e *Engine) writeSnapshotAndCommit(log *zap.Logger, closedFiles []string, snapshot *Cache) (err error) {
 	defer func() {
 		if err != nil {
@@ -2318,10 +2317,10 @@ func (e *Engine) KeyCursor(ctx context.Context, key []byte, t int64, ascending b
 	return e.FileStore.KeyCursor(ctx, key, t, ascending)
 }
 
-// CreateIterator returns an iterator for the metric based on opt.
-func (e *Engine) CreateIterator(ctx context.Context, metric string, opt query.IteratorOptions) (query.Iterator, error) {
+// CreateIterator returns an iterator for the measurement based on opt.
+func (e *Engine) CreateIterator(ctx context.Context, measurement string, opt query.IteratorOptions) (query.Iterator, error) {
 	if span := tracing.SpanFromContext(ctx); span != nil {
-		labels := []string{"shard_id", strconv.Itoa(int(e.id)), "metric", metric}
+		labels := []string{"shard_id", strconv.Itoa(int(e.id)), "measurement", measurement}
 		if opt.Condition != nil {
 			labels = append(labels, "cond", opt.Condition.String())
 		}
@@ -2346,7 +2345,7 @@ func (e *Engine) CreateIterator(ctx context.Context, metric string, opt query.It
 				refOpt.Ordered = true
 				refOpt.Expr = call.Args[0]
 
-				itrs, err := e.createVarRefIterator(ctx, metric, refOpt)
+				itrs, err := e.createVarRefIterator(ctx, measurement, refOpt)
 				if err != nil {
 					return nil, err
 				}
@@ -2354,7 +2353,7 @@ func (e *Engine) CreateIterator(ctx context.Context, metric string, opt query.It
 			}
 		}
 
-		inputs, err := e.createCallIterator(ctx, metric, call, opt)
+		inputs, err := e.createCallIterator(ctx, measurement, call, opt)
 		if err != nil {
 			return nil, err
 		} else if len(inputs) == 0 {
@@ -2363,7 +2362,7 @@ func (e *Engine) CreateIterator(ctx context.Context, metric string, opt query.It
 		return newMergeFinalizerIterator(ctx, inputs, opt, e.logger)
 	}
 
-	itrs, err := e.createVarRefIterator(ctx, metric, opt)
+	itrs, err := e.createVarRefIterator(ctx, measurement, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -2374,26 +2373,26 @@ type indexTagSets interface {
 	TagSets(name []byte, options query.IteratorOptions) ([]*query.TagSet, error)
 }
 
-func (e *Engine) createCallIterator(ctx context.Context, metric string, call *cnosql.Call, opt query.IteratorOptions) ([]query.Iterator, error) {
+func (e *Engine) createCallIterator(ctx context.Context, measurement string, call *cnosql.Call, opt query.IteratorOptions) ([]query.Iterator, error) {
 	ref, _ := call.Args[0].(*cnosql.VarRef)
 
-	if exists, err := e.index.MetricExists([]byte(metric)); err != nil {
+	if exists, err := e.index.MeasurementExists([]byte(measurement)); err != nil {
 		return nil, err
 	} else if !exists {
 		return nil, nil
 	}
 
-	// Determine tagsets for this metric based on dimensions and filters.
+	// Determine tagsets for this measurement based on dimensions and filters.
 	var (
 		tagSets []*query.TagSet
 		err     error
 	)
 	if e.index.Type() == tsdb.InmemIndexName {
 		ts := e.index.(indexTagSets)
-		tagSets, err = ts.TagSets([]byte(metric), opt)
+		tagSets, err = ts.TagSets([]byte(measurement), opt)
 	} else {
 		indexSet := tsdb.IndexSet{Indexes: []tsdb.Index{e.index}, SeriesFile: e.sfile}
-		tagSets, err = indexSet.TagSets(e.sfile, []byte(metric), opt)
+		tagSets, err = indexSet.TagSets(e.sfile, []byte(measurement), opt)
 	}
 
 	if err != nil {
@@ -2421,7 +2420,7 @@ func (e *Engine) createCallIterator(ctx context.Context, metric string, call *cn
 			default:
 			}
 
-			inputs, err := e.createTagSetIterators(ctx, ref, metric, t, opt)
+			inputs, err := e.createTagSetIterators(ctx, ref, measurement, t, opt)
 			if err != nil {
 				return err
 			} else if len(inputs) == 0 {
@@ -2455,10 +2454,10 @@ func (e *Engine) createCallIterator(ctx context.Context, metric string, call *cn
 }
 
 // createVarRefIterator creates an iterator for a variable reference.
-func (e *Engine) createVarRefIterator(ctx context.Context, metric string, opt query.IteratorOptions) ([]query.Iterator, error) {
+func (e *Engine) createVarRefIterator(ctx context.Context, measurement string, opt query.IteratorOptions) ([]query.Iterator, error) {
 	ref, _ := opt.Expr.(*cnosql.VarRef)
 
-	if exists, err := e.index.MetricExists([]byte(metric)); err != nil {
+	if exists, err := e.index.MeasurementExists([]byte(measurement)); err != nil {
 		return nil, err
 	} else if !exists {
 		return nil, nil
@@ -2470,10 +2469,10 @@ func (e *Engine) createVarRefIterator(ctx context.Context, metric string, opt qu
 	)
 	if e.index.Type() == tsdb.InmemIndexName {
 		ts := e.index.(indexTagSets)
-		tagSets, err = ts.TagSets([]byte(metric), opt)
+		tagSets, err = ts.TagSets([]byte(measurement), opt)
 	} else {
 		indexSet := tsdb.IndexSet{Indexes: []tsdb.Index{e.index}, SeriesFile: e.sfile}
-		tagSets, err = indexSet.TagSets(e.sfile, []byte(metric), opt)
+		tagSets, err = indexSet.TagSets(e.sfile, []byte(measurement), opt)
 	}
 
 	if err != nil {
@@ -2492,7 +2491,7 @@ func (e *Engine) createVarRefIterator(ctx context.Context, metric string, opt qu
 	itrs := make([]query.Iterator, 0, len(tagSets))
 	if err := func() error {
 		for _, t := range tagSets {
-			inputs, err := e.createTagSetIterators(ctx, ref, metric, t, opt)
+			inputs, err := e.createTagSetIterators(ctx, ref, measurement, t, opt)
 			if err != nil {
 				return err
 			} else if len(inputs) == 0 {
@@ -2821,11 +2820,11 @@ func (e *Engine) createVarRefSeriesIterator(ctx context.Context, ref *cnosql.Var
 }
 
 // buildCursor creates an untyped cursor for a field.
-func (e *Engine) buildCursor(ctx context.Context, metric, seriesKey string, tags models.Tags, ref *cnosql.VarRef, opt query.IteratorOptions) cursor {
+func (e *Engine) buildCursor(ctx context.Context, measurement, seriesKey string, tags models.Tags, ref *cnosql.VarRef, opt query.IteratorOptions) cursor {
 	// Check if this is a system field cursor.
 	switch ref.Val {
 	case "_name":
-		return &stringSliceCursor{values: []string{metric}}
+		return &stringSliceCursor{values: []string{measurement}}
 	case "_tagKey":
 		return &stringSliceCursor{values: tags.Keys()}
 	case "_tagValue":
@@ -2834,8 +2833,8 @@ func (e *Engine) buildCursor(ctx context.Context, metric, seriesKey string, tags
 		return &stringSliceCursor{values: []string{seriesKey}}
 	}
 
-	// Look up fields for metric.
-	mf := e.fieldset.FieldsByString(metric)
+	// Look up fields for measurement.
+	mf := e.fieldset.FieldsByString(measurement)
 	if mf == nil {
 		return nil
 	}
@@ -2858,28 +2857,28 @@ func (e *Engine) buildCursor(ctx context.Context, metric, seriesKey string, tags
 		case cnosql.Float:
 			switch f.Type {
 			case cnosql.Integer:
-				cur := e.buildIntegerCursor(ctx, metric, seriesKey, ref.Val, opt)
+				cur := e.buildIntegerCursor(ctx, measurement, seriesKey, ref.Val, opt)
 				return &floatCastIntegerCursor{cursor: cur}
 			case cnosql.Unsigned:
-				cur := e.buildUnsignedCursor(ctx, metric, seriesKey, ref.Val, opt)
+				cur := e.buildUnsignedCursor(ctx, measurement, seriesKey, ref.Val, opt)
 				return &floatCastUnsignedCursor{cursor: cur}
 			}
 		case cnosql.Integer:
 			switch f.Type {
 			case cnosql.Float:
-				cur := e.buildFloatCursor(ctx, metric, seriesKey, ref.Val, opt)
+				cur := e.buildFloatCursor(ctx, measurement, seriesKey, ref.Val, opt)
 				return &integerCastFloatCursor{cursor: cur}
 			case cnosql.Unsigned:
-				cur := e.buildUnsignedCursor(ctx, metric, seriesKey, ref.Val, opt)
+				cur := e.buildUnsignedCursor(ctx, measurement, seriesKey, ref.Val, opt)
 				return &integerCastUnsignedCursor{cursor: cur}
 			}
 		case cnosql.Unsigned:
 			switch f.Type {
 			case cnosql.Float:
-				cur := e.buildFloatCursor(ctx, metric, seriesKey, ref.Val, opt)
+				cur := e.buildFloatCursor(ctx, measurement, seriesKey, ref.Val, opt)
 				return &unsignedCastFloatCursor{cursor: cur}
 			case cnosql.Integer:
-				cur := e.buildIntegerCursor(ctx, metric, seriesKey, ref.Val, opt)
+				cur := e.buildIntegerCursor(ctx, measurement, seriesKey, ref.Val, opt)
 				return &unsignedCastIntegerCursor{cursor: cur}
 			}
 		}
@@ -2889,15 +2888,15 @@ func (e *Engine) buildCursor(ctx context.Context, metric, seriesKey string, tags
 	// Return appropriate cursor based on type.
 	switch f.Type {
 	case cnosql.Float:
-		return e.buildFloatCursor(ctx, metric, seriesKey, ref.Val, opt)
+		return e.buildFloatCursor(ctx, measurement, seriesKey, ref.Val, opt)
 	case cnosql.Integer:
-		return e.buildIntegerCursor(ctx, metric, seriesKey, ref.Val, opt)
+		return e.buildIntegerCursor(ctx, measurement, seriesKey, ref.Val, opt)
 	case cnosql.Unsigned:
-		return e.buildUnsignedCursor(ctx, metric, seriesKey, ref.Val, opt)
+		return e.buildUnsignedCursor(ctx, measurement, seriesKey, ref.Val, opt)
 	case cnosql.String:
-		return e.buildStringCursor(ctx, metric, seriesKey, ref.Val, opt)
+		return e.buildStringCursor(ctx, measurement, seriesKey, ref.Val, opt)
 	case cnosql.Boolean:
-		return e.buildBooleanCursor(ctx, metric, seriesKey, ref.Val, opt)
+		return e.buildBooleanCursor(ctx, measurement, seriesKey, ref.Val, opt)
 	default:
 		panic("unreachable")
 	}
@@ -2926,10 +2925,10 @@ func matchTagValues(tags models.Tags, condition cnosql.Expr) []string {
 }
 
 // IteratorCost produces the cost of an iterator.
-func (e *Engine) IteratorCost(metric string, opt query.IteratorOptions) (query.IteratorCost, error) {
-	// Determine if this metric exists. If it does not, then no shards are
+func (e *Engine) IteratorCost(measurement string, opt query.IteratorOptions) (query.IteratorCost, error) {
+	// Determine if this measurement exists. If it does not, then no shards are
 	// accessed to begin with.
-	if exists, err := e.index.MetricExists([]byte(metric)); err != nil {
+	if exists, err := e.index.MeasurementExists([]byte(measurement)); err != nil {
 		return query.IteratorCost{}, err
 	} else if !exists {
 		return query.IteratorCost{}, nil
@@ -2937,7 +2936,7 @@ func (e *Engine) IteratorCost(metric string, opt query.IteratorOptions) (query.I
 
 	// Determine all of the tag sets for this query.
 	indexSet := tsdb.IndexSet{Indexes: []tsdb.Index{e.index}, SeriesFile: e.sfile}
-	tagSets, err := indexSet.TagSets(e.sfile, []byte(metric), opt)
+	tagSets, err := indexSet.TagSets(e.sfile, []byte(measurement), opt)
 	if err != nil {
 		return query.IteratorCost{}, err
 	}

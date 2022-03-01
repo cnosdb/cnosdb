@@ -14,12 +14,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bloom"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/mmap"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bloom"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/mmap"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // Log errors.
@@ -29,10 +29,10 @@ var (
 
 // Log entry flag constants.
 const (
-	LogEntrySeriesTombstoneFlag   = 0x01
-	LogEntryMetricTombstoneFlag   = 0x02
-	LogEntryTagKeyTombstoneFlag   = 0x04
-	LogEntryTagValueTombstoneFlag = 0x08
+	LogEntrySeriesTombstoneFlag      = 0x01
+	LogEntryMeasurementTombstoneFlag = 0x02
+	LogEntryTagKeyTombstoneFlag      = 0x04
+	LogEntryTagValueTombstoneFlag    = 0x08
 )
 
 // defaultLogFileBufferSize describes the size of the buffer that the LogFile's buffered
@@ -66,7 +66,7 @@ type LogFile struct {
 	seriesIDSet, tombstoneSeriesIDSet *tsdb.SeriesIDSet
 
 	// In-memory index.
-	mms logMetrics
+	mms logMeasurements
 
 	// Filepath to the log file.
 	path string
@@ -77,7 +77,7 @@ func NewLogFile(sfile *tsdb.SeriesFile, path string) *LogFile {
 	return &LogFile{
 		sfile: sfile,
 		path:  path,
-		mms:   make(logMetrics),
+		mms:   make(logMeasurements),
 
 		seriesIDSet:          tsdb.NewSeriesIDSet(),
 		tombstoneSeriesIDSet: tsdb.NewSeriesIDSet(),
@@ -190,7 +190,7 @@ func (f *LogFile) Close() error {
 		mmap.Unmap(f.data)
 	}
 
-	f.mms = make(logMetrics)
+	f.mms = make(logMeasurements)
 	return nil
 }
 
@@ -260,8 +260,8 @@ func (f *LogFile) Size() int64 {
 	return v
 }
 
-// Metric returns a metric element.
-func (f *LogFile) Metric(name []byte) MetricElem {
+// Measurement returns a measurement element.
+func (f *LogFile) Measurement(name []byte) MeasurementElem {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -273,7 +273,7 @@ func (f *LogFile) Metric(name []byte) MetricElem {
 	return mm
 }
 
-func (f *LogFile) MetricHasSeries(ss *tsdb.SeriesIDSet, name []byte) bool {
+func (f *LogFile) MeasurementHasSeries(ss *tsdb.SeriesIDSet, name []byte) bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -291,14 +291,14 @@ func (f *LogFile) MetricHasSeries(ss *tsdb.SeriesIDSet, name []byte) bool {
 	return false
 }
 
-// MetricNames returns an ordered list of metric names.
-func (f *LogFile) MetricNames() []string {
+// MeasurementNames returns an ordered list of measurement names.
+func (f *LogFile) MeasurementNames() []string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.metricNames()
+	return f.measurementNames()
 }
 
-func (f *LogFile) metricNames() []string {
+func (f *LogFile) measurementNames() []string {
 	a := make([]string, 0, len(f.mms))
 	for name := range f.mms {
 		a = append(a, name)
@@ -307,12 +307,12 @@ func (f *LogFile) metricNames() []string {
 	return a
 }
 
-// DeleteMetric adds a tombstone for a metric to the log file.
-func (f *LogFile) DeleteMetric(name []byte) error {
+// DeleteMeasurement adds a tombstone for a measurement to the log file.
+func (f *LogFile) DeleteMeasurement(name []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	e := LogEntry{Flag: LogEntryMetricTombstoneFlag, Name: name}
+	e := LogEntry{Flag: LogEntryMeasurementTombstoneFlag, Name: name}
 	if err := f.appendEntry(&e); err != nil {
 		return err
 	}
@@ -351,7 +351,7 @@ func (f *LogFile) TagKeySeriesIDIterator(name, key []byte) (tsdb.SeriesIDIterato
 	return tsdb.MergeSeriesIDIterators(itrs...), nil
 }
 
-// TagKeyIterator returns a value iterator for a metric.
+// TagKeyIterator returns a value iterator for a measurement.
 func (f *LogFile) TagKeyIterator(name []byte) TagKeyIterator {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -466,8 +466,8 @@ func (f *LogFile) TagValueSeriesIDSet(name, key, value []byte) (*tsdb.SeriesIDSe
 	return tv.seriesIDSet(), nil
 }
 
-// MetricN returns the total number of metrics.
-func (f *LogFile) MetricN() (n uint64) {
+// MeasurementN returns the total number of measurements.
+func (f *LogFile) MeasurementN() (n uint64) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return uint64(len(f.mms))
@@ -622,8 +622,8 @@ func (f *LogFile) appendEntry(e *LogEntry) error {
 // This is done after appending and on replay of the log.
 func (f *LogFile) execEntry(e *LogEntry) {
 	switch e.Flag {
-	case LogEntryMetricTombstoneFlag:
-		f.execDeleteMetricEntry(e)
+	case LogEntryMeasurementTombstoneFlag:
+		f.execDeleteMeasurementEntry(e)
 	case LogEntryTagKeyTombstoneFlag:
 		f.execDeleteTagKeyEntry(e)
 	case LogEntryTagValueTombstoneFlag:
@@ -633,8 +633,8 @@ func (f *LogFile) execEntry(e *LogEntry) {
 	}
 }
 
-func (f *LogFile) execDeleteMetricEntry(e *LogEntry) {
-	mm := f.createMetricIfNotExists(e.Name)
+func (f *LogFile) execDeleteMeasurementEntry(e *LogEntry) {
+	mm := f.createMeasurementIfNotExists(e.Name)
 	mm.deleted = true
 	mm.tagSet = make(map[string]logTagKey)
 	mm.series = make(map[uint64]struct{})
@@ -642,7 +642,7 @@ func (f *LogFile) execDeleteMetricEntry(e *LogEntry) {
 }
 
 func (f *LogFile) execDeleteTagKeyEntry(e *LogEntry) {
-	mm := f.createMetricIfNotExists(e.Name)
+	mm := f.createMeasurementIfNotExists(e.Name)
 	ts := mm.createTagSetIfNotExists(e.Key)
 
 	ts.deleted = true
@@ -651,7 +651,7 @@ func (f *LogFile) execDeleteTagKeyEntry(e *LogEntry) {
 }
 
 func (f *LogFile) execDeleteTagValueEntry(e *LogEntry) {
-	mm := f.createMetricIfNotExists(e.Name)
+	mm := f.createMeasurementIfNotExists(e.Name)
 	ts := mm.createTagSetIfNotExists(e.Key)
 	tv := ts.createTagValueIfNotExists(e.Value)
 
@@ -686,9 +686,9 @@ func (f *LogFile) execSeriesEntry(e *LogEntry) {
 	// Read key size.
 	_, remainder := tsdb.ReadSeriesKeyLen(seriesKey)
 
-	// Read metric name.
-	name, remainder := tsdb.ReadSeriesKeyMetric(remainder)
-	mm := f.createMetricIfNotExists(name)
+	// Read measurement name.
+	name, remainder := tsdb.ReadSeriesKeyMeasurement(remainder)
+	mm := f.createMeasurementIfNotExists(name)
 	mm.deleted = false
 	if !deleted {
 		mm.addSeriesID(e.SeriesID)
@@ -741,7 +741,7 @@ func (f *LogFile) SeriesIDIterator() tsdb.SeriesIDIterator {
 			continue
 		}
 
-		// metric is not using seriesSet to store series IDs.
+		// measurement is not using seriesSet to store series IDs.
 		mm.forEach(func(seriesID uint64) {
 			ss.AddNoLock(seriesID)
 		})
@@ -755,11 +755,11 @@ func (f *LogFile) SeriesIDIterator() tsdb.SeriesIDIterator {
 	return tsdb.NewSeriesIDSetIterator(ss)
 }
 
-// createMetricIfNotExists returns a metric by name.
-func (f *LogFile) createMetricIfNotExists(name []byte) *logMetric {
+// createMeasurementIfNotExists returns a measurement by name.
+func (f *LogFile) createMeasurementIfNotExists(name []byte) *logMeasurement {
 	mm := f.mms[string(name)]
 	if mm == nil {
-		mm = &logMetric{
+		mm = &logMeasurement{
 			name:   name,
 			tagSet: make(map[string]logTagKey),
 			series: make(map[uint64]struct{}),
@@ -769,21 +769,21 @@ func (f *LogFile) createMetricIfNotExists(name []byte) *logMetric {
 	return mm
 }
 
-// MetricIterator returns an iterator over all the metrics in the file.
-func (f *LogFile) MetricIterator() MetricIterator {
+// MeasurementIterator returns an iterator over all the measurements in the file.
+func (f *LogFile) MeasurementIterator() MeasurementIterator {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	var itr logMetricIterator
+	var itr logMeasurementIterator
 	for _, mm := range f.mms {
 		itr.mms = append(itr.mms, *mm)
 	}
-	sort.Sort(logMetricSlice(itr.mms))
+	sort.Sort(logMeasurementSlice(itr.mms))
 	return &itr
 }
 
-// MetricSeriesIDIterator returns an iterator over all series for a metric.
-func (f *LogFile) MetricSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
+// MeasurementSeriesIDIterator returns an iterator over all series for a measurement.
+func (f *LogFile) MeasurementSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -819,25 +819,25 @@ func (f *LogFile) CompactTo(w io.Writer, m, k uint64, cancel <-chan struct{}) (n
 		return n, err
 	}
 
-	// Retreve metric names in order.
-	names := f.metricNames()
+	// Retreve measurement names in order.
+	names := f.measurementNames()
 
 	// Flush buffer & mmap series block.
 	if err := bw.Flush(); err != nil {
 		return n, err
 	}
 
-	// Write tagset blocks in metric order.
+	// Write tagset blocks in measurement order.
 	if err := f.writeTagsetsTo(bw, names, info, &n); err != nil {
 		return n, err
 	}
 
-	// Write metric block.
-	t.MetricBlock.Offset = n
-	if err := f.writeMetricBlockTo(bw, names, info, &n); err != nil {
+	// Write measurement block.
+	t.MeasurementBlock.Offset = n
+	if err := f.writeMeasurementBlockTo(bw, names, info, &n); err != nil {
 		return n, err
 	}
-	t.MetricBlock.Size = n - t.MetricBlock.Offset
+	t.MeasurementBlock.Size = n - t.MeasurementBlock.Offset
 
 	// Write series set.
 	t.SeriesIDSet.Offset = n
@@ -953,7 +953,7 @@ func (f *LogFile) writeTagsetTo(w io.Writer, name string, info *logFileCompactIn
 		}
 	}
 
-	// Save tagset offset to metric.
+	// Save tagset offset to measurement.
 	offset := *n
 
 	// Flush tag block.
@@ -963,16 +963,16 @@ func (f *LogFile) writeTagsetTo(w io.Writer, name string, info *logFileCompactIn
 		return err
 	}
 
-	// Save tagset offset to metric.
+	// Save tagset offset to measurement.
 	size := *n - offset
 
-	info.mms[name] = &logFileMetricCompactInfo{offset: offset, size: size}
+	info.mms[name] = &logFileMeasurementCompactInfo{offset: offset, size: size}
 
 	return nil
 }
 
-func (f *LogFile) writeMetricBlockTo(w io.Writer, names []string, info *logFileCompactInfo, n *int64) error {
-	mw := NewMetricBlockWriter()
+func (f *LogFile) writeMeasurementBlockTo(w io.Writer, names []string, info *logFileCompactInfo, n *int64) error {
+	mw := NewMeasurementBlockWriter()
 
 	// Check for cancellation.
 	select {
@@ -981,11 +981,11 @@ func (f *LogFile) writeMetricBlockTo(w io.Writer, names []string, info *logFileC
 	default:
 	}
 
-	// Add metric data.
+	// Add measurement data.
 	for _, name := range names {
 		mm := f.mms[name]
 		mmInfo := info.mms[name]
-		assert(mmInfo != nil, "metric info not found")
+		assert(mmInfo != nil, "measurement info not found")
 		mw.Add(mm.name, mm.deleted, mmInfo.offset, mmInfo.size, mm.seriesIDs())
 	}
 
@@ -998,29 +998,29 @@ func (f *LogFile) writeMetricBlockTo(w io.Writer, names []string, info *logFileC
 // logFileCompactInfo is a context object to track compaction position info.
 type logFileCompactInfo struct {
 	cancel <-chan struct{}
-	mms    map[string]*logFileMetricCompactInfo
+	mms    map[string]*logFileMeasurementCompactInfo
 }
 
 // newLogFileCompactInfo returns a new instance of logFileCompactInfo.
 func newLogFileCompactInfo() *logFileCompactInfo {
 	return &logFileCompactInfo{
-		mms: make(map[string]*logFileMetricCompactInfo),
+		mms: make(map[string]*logFileMeasurementCompactInfo),
 	}
 }
 
-type logFileMetricCompactInfo struct {
+type logFileMeasurementCompactInfo struct {
 	offset int64
 	size   int64
 }
 
-// MetricsSketches returns sketches for existing and tombstoned metric names.
-func (f *LogFile) MetricsSketches() (sketch, tSketch estimator.Sketch, err error) {
+// MeasurementsSketches returns sketches for existing and tombstoned measurement names.
+func (f *LogFile) MeasurementsSketches() (sketch, tSketch estimator.Sketch, err error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.metricsSketches()
+	return f.measurementsSketches()
 }
 
-func (f *LogFile) metricsSketches() (sketch, tSketch estimator.Sketch, err error) {
+func (f *LogFile) measurementsSketches() (sketch, tSketch estimator.Sketch, err error) {
 	sketch, tSketch = hll.NewDefaultPlus(), hll.NewDefaultPlus()
 	for _, mm := range f.mms {
 		if mm.deleted {
@@ -1058,14 +1058,14 @@ func (f *LogFile) seriesSketches() (sketch, tSketch estimator.Sketch, err error)
 type LogEntry struct {
 	Flag     byte   // flag
 	SeriesID uint64 // series id
-	Name     []byte // metric name
+	Name     []byte // measurement name
 	Key      []byte // tag key
 	Value    []byte // tag value
 	Checksum uint32 // checksum of flag/name/tags.
 	Size     int    // total size of record, in bytes.
 
 	cached   bool        // Hint to LogFile that series data is already parsed
-	name     []byte      // series naem, this is a cached copy of the parsed metric name
+	name     []byte      // series naem, this is a cached copy of the parsed measurement name
 	tags     models.Tags // series tags, this is a cached copied of the parsed tags
 	batchidx int         // position of entry in batch.
 }
@@ -1183,11 +1183,11 @@ func appendLogEntry(dst []byte, e *LogEntry) []byte {
 	return dst
 }
 
-// logMetrics represents a map of metric names to metrics.
-type logMetrics map[string]*logMetric
+// logMeasurements represents a map of measurement names to measurements.
+type logMeasurements map[string]*logMeasurement
 
-// bytes estimates the memory footprint of this logMetrics, in bytes.
-func (mms *logMetrics) bytes() int {
+// bytes estimates the memory footprint of this logMeasurements, in bytes.
+func (mms *logMeasurements) bytes() int {
 	var b int
 	for k, v := range *mms {
 		b += len(k)
@@ -1197,7 +1197,7 @@ func (mms *logMetrics) bytes() int {
 	return b
 }
 
-type logMetric struct {
+type logMeasurement struct {
 	name      []byte
 	tagSet    map[string]logTagKey
 	deleted   bool
@@ -1205,8 +1205,8 @@ type logMetric struct {
 	seriesSet *tsdb.SeriesIDSet
 }
 
-// bytes estimates the memory footprint of this logMetric, in bytes.
-func (m *logMetric) bytes() int {
+// bytes estimates the memory footprint of this logMeasurement, in bytes.
+func (m *logMeasurement) bytes() int {
 	var b int
 	b += len(m.name)
 	for k, v := range m.tagSet {
@@ -1218,7 +1218,7 @@ func (m *logMetric) bytes() int {
 	return b
 }
 
-func (m *logMetric) addSeriesID(x uint64) {
+func (m *logMeasurement) addSeriesID(x uint64) {
 	if m.seriesSet != nil {
 		m.seriesSet.AddNoLock(x)
 		return
@@ -1236,7 +1236,7 @@ func (m *logMetric) addSeriesID(x uint64) {
 	}
 }
 
-func (m *logMetric) removeSeriesID(x uint64) {
+func (m *logMeasurement) removeSeriesID(x uint64) {
 	if m.seriesSet != nil {
 		m.seriesSet.RemoveNoLock(x)
 		return
@@ -1244,15 +1244,15 @@ func (m *logMetric) removeSeriesID(x uint64) {
 	delete(m.series, x)
 }
 
-func (m *logMetric) cardinality() int64 {
+func (m *logMeasurement) cardinality() int64 {
 	if m.seriesSet != nil {
 		return int64(m.seriesSet.Cardinality())
 	}
 	return int64(len(m.series))
 }
 
-// forEach applies fn to every series ID in the logMetric.
-func (m *logMetric) forEach(fn func(uint64)) {
+// forEach applies fn to every series ID in the logMeasurement.
+func (m *logMeasurement) forEach(fn func(uint64)) {
 	if m.seriesSet != nil {
 		m.seriesSet.ForEachNoLock(fn)
 		return
@@ -1264,7 +1264,7 @@ func (m *logMetric) forEach(fn func(uint64)) {
 }
 
 // seriesIDs returns a sorted set of seriesIDs.
-func (m *logMetric) seriesIDs() []uint64 {
+func (m *logMeasurement) seriesIDs() []uint64 {
 	a := make([]uint64, 0, m.cardinality())
 	if m.seriesSet != nil {
 		m.seriesSet.ForEachNoLock(func(id uint64) { a = append(a, id) })
@@ -1278,9 +1278,9 @@ func (m *logMetric) seriesIDs() []uint64 {
 	return a
 }
 
-// seriesIDSet returns a copy of the logMetric's seriesSet, or creates a new
+// seriesIDSet returns a copy of the logMeasurement's seriesSet, or creates a new
 // one
-func (m *logMetric) seriesIDSet() *tsdb.SeriesIDSet {
+func (m *logMeasurement) seriesIDSet() *tsdb.SeriesIDSet {
 	if m.seriesSet != nil {
 		return m.seriesSet.CloneNoLock()
 	}
@@ -1292,10 +1292,10 @@ func (m *logMetric) seriesIDSet() *tsdb.SeriesIDSet {
 	return ss
 }
 
-func (m *logMetric) Name() []byte  { return m.name }
-func (m *logMetric) Deleted() bool { return m.deleted }
+func (m *logMeasurement) Name() []byte  { return m.name }
+func (m *logMeasurement) Deleted() bool { return m.deleted }
 
-func (m *logMetric) createTagSetIfNotExists(key []byte) logTagKey {
+func (m *logMeasurement) createTagSetIfNotExists(key []byte) logTagKey {
 	ts, ok := m.tagSet[string(key)]
 	if !ok {
 		ts = logTagKey{name: key, tagValues: make(map[string]logTagValue)}
@@ -1304,7 +1304,7 @@ func (m *logMetric) createTagSetIfNotExists(key []byte) logTagKey {
 }
 
 // keys returns a sorted list of tag keys.
-func (m *logMetric) keys() []string {
+func (m *logMeasurement) keys() []string {
 	a := make([]string, 0, len(m.tagSet))
 	for k := range m.tagSet {
 		a = append(a, k)
@@ -1313,20 +1313,20 @@ func (m *logMetric) keys() []string {
 	return a
 }
 
-// logMetricSlice is a sortable list of log metrics.
-type logMetricSlice []logMetric
+// logMeasurementSlice is a sortable list of log measurements.
+type logMeasurementSlice []logMeasurement
 
-func (a logMetricSlice) Len() int           { return len(a) }
-func (a logMetricSlice) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a logMetricSlice) Less(i, j int) bool { return bytes.Compare(a[i].name, a[j].name) == -1 }
+func (a logMeasurementSlice) Len() int           { return len(a) }
+func (a logMeasurementSlice) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a logMeasurementSlice) Less(i, j int) bool { return bytes.Compare(a[i].name, a[j].name) == -1 }
 
-// logMetricIterator represents an iterator over a slice of metrics.
-type logMetricIterator struct {
-	mms []logMetric
+// logMeasurementIterator represents an iterator over a slice of measurements.
+type logMeasurementIterator struct {
+	mms []logMeasurement
 }
 
 // Next returns the next element in the iterator.
-func (itr *logMetricIterator) Next() (e MetricElem) {
+func (itr *logMeasurementIterator) Next() (e MeasurementElem) {
 	if len(itr.mms) == 0 {
 		return nil
 	}
@@ -1427,7 +1427,7 @@ func (tv *logTagValue) cardinality() int64 {
 	return int64(len(tv.series))
 }
 
-// seriesIDSet returns a copy of the logMetric's seriesSet, or creates a new
+// seriesIDSet returns a copy of the logMeasurement's seriesSet, or creates a new
 // one
 func (tv *logTagValue) seriesIDSet() *tsdb.SeriesIDSet {
 	if tv.seriesSet != nil {

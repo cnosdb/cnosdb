@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cnosdatabase/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/db/tsdb/engine/tsm1"
 )
 
 func IsShardDir(dir string) error {
@@ -21,9 +21,9 @@ func IsShardDir(dir string) error {
 	return nil
 }
 
-func WalkShardDirs(root string, fn func(db, ttl, id, path string) error) error {
+func WalkShardDirs(root string, fn func(db, rp, id, path string) error) error {
 	type location struct {
-		db, ttl, id, path string
+		db, rp, id, path string
 	}
 
 	var dirs []location
@@ -47,8 +47,8 @@ func WalkShardDirs(root string, fn func(db, ttl, id, path string) error) error {
 				return err
 			}
 			parts := strings.Split(absPath, string(filepath.Separator))
-			db, ttl, id := parts[len(parts)-4], parts[len(parts)-3], parts[len(parts)-2]
-			dirs = append(dirs, location{db: db, ttl: ttl, id: id, path: path})
+			db, rp, id := parts[len(parts)-4], parts[len(parts)-3], parts[len(parts)-2]
+			dirs = append(dirs, location{db: db, rp: rp, id: id, path: path})
 			return nil
 		}
 		return nil
@@ -63,7 +63,7 @@ func WalkShardDirs(root string, fn func(db, ttl, id, path string) error) error {
 	})
 
 	for _, shard := range dirs {
-		if err := fn(shard.db, shard.ttl, shard.id, shard.path); err != nil {
+		if err := fn(shard.db, shard.rp, shard.id, shard.path); err != nil {
 			return err
 		}
 	}

@@ -17,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/pkg/pool"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/pkg/pool"
 	"github.com/golang/snappy"
 	"go.uber.org/zap"
 )
@@ -467,7 +467,7 @@ func (l *WAL) writeToLog(entry WALEntry) (int, error) {
 func (l *WAL) rollSegment() error {
 	if l.currentSegmentWriter == nil || l.currentSegmentWriter.size > DefaultSegmentSize {
 		if err := l.newSegmentFile(); err != nil {
-			// A drop database or time-to-live call could trigger this error if writes were in-flight
+			// A drop database or RP call could trigger this error if writes were in-flight
 			// when the drop statement executes.
 			return fmt.Errorf("error opening new segment file for wal (2): %v", err)
 		}
@@ -483,7 +483,7 @@ func (l *WAL) CloseSegment() error {
 	defer l.mu.Unlock()
 	if l.currentSegmentWriter == nil || l.currentSegmentWriter.size > 0 {
 		if err := l.newSegmentFile(); err != nil {
-			// A drop database or time-to-live call could trigger this error if writes were in-flight
+			// A drop database or RP call could trigger this error if writes were in-flight
 			// when the drop statement executes.
 			return fmt.Errorf("error opening new segment file for wal (1): %v", err)
 		}

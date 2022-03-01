@@ -3,7 +3,7 @@ package logger
 import (
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/snowflake"
+	"github.com/cnosdb/db/pkg/snowflake"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -25,11 +25,11 @@ const (
 	// DBInstanceKey is the logging context key used for identifying name of the relevant database.
 	DBInstanceKey = "db_instance"
 
-	// DBTimeToLiveKey is the logging context key used for identifying name of the relevant time-to-live.
-	DBTimeToLiveKey = "db_ttl"
+	// DBRetentionPolicyKey is the logging context key used for identifying name of the relevant retention policy.
+	DBRetentionPolicyKey = "db_rp"
 
-	// DBRegionKey is the logging context key used for identifying relevant region.
-	DBRegionKey = "db_region"
+	// DBShardGroupKey is the logging context key used for identifying relevant shard group.
+	DBShardGroupKey = "db_shard_group"
 
 	// DBShardIDKey is the logging context key used for identifying name of the relevant shard number.
 	DBShardIDKey = "db_shard_id"
@@ -77,14 +77,14 @@ func Database(name string) zapcore.Field {
 	return zap.String(DBInstanceKey, name)
 }
 
-// TimeToLive returns the time-to-live.
-func TimeToLive(name string) zapcore.Field {
-	return zap.String(DBTimeToLiveKey, name)
+// RetentionPolicy returns the retention policy.
+func RetentionPolicy(name string) zapcore.Field {
+	return zap.String(DBRetentionPolicyKey, name)
 }
 
-// Region returns a field for tracking the region identifier.
-func Region(id uint64) zapcore.Field {
-	return zap.Uint64(DBRegionKey, id)
+// ShardGroup returns a field for tracking the shard group identifier.
+func ShardGroup(id uint64) zapcore.Field {
+	return zap.Uint64(DBShardGroupKey, id)
 }
 
 // Shard returns a field for tracking the shard identifier.
