@@ -19,11 +19,11 @@
 
 入群前请查看[入群须知](./CnosDBWeChatUserGroupGuidelines.md)
 
-![](https://github.com/cnosdatabase/cnosdb/blob/main/doc/assets/u.jpg)
+![](https://github.com/cnosdb/cnosdb/blob/main/doc/assets/u.jpg)
 
 ## 快速开始
 
-> 如果需要完整的入门指南，请查看[入门指南](https://cnosdatabase.github.io/)
+> 如果需要完整的入门指南，请查看[入门指南](https://cnosdb.github.io/)
 
 
 ### 构建
