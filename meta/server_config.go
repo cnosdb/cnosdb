@@ -4,10 +4,10 @@ import (
 	"net"
 	"time"
 
-	log "github.com/cnosdatabase/cnosdb/pkg/logger"
-	tls "github.com/cnosdatabase/cnosdb/pkg/tlsconfig"
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/common/pkg/toml"
+	log "github.com/cnosdb/cnosdb/pkg/logger"
+	tls "github.com/cnosdb/cnosdb/pkg/tlsconfig"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/common/pkg/toml"
 )
 
 const (
@@ -41,7 +41,6 @@ type ServerConfig struct {
 
 	// RemoteHostname is the hostname portion to use when registering meta node
 	// addresses.  This hostname must be resolvable from other nodes.
-	RemoteHostname string `toml:"-"`
 
 	// HTTPBindAddress is the bind address for the metaservice HTTP API
 	HTTPBindAddress  string `toml:"http-bind-address"`
@@ -97,7 +96,6 @@ func DefaultHost(hostname, addr string) (string, error) {
 func (c ServerConfig) Diagnostics() (*diagnostics.Diagnostics, error) {
 	return diagnostics.RowFromMap(map[string]interface{}{
 		"logging-enabled":      c.LoggingEnabled,
-		"remote-hostname":      c.RemoteHostname,
 		"http-bind-address":    c.HTTPBindAddress,
 		"https-enabled":        c.HTTPSEnabled,
 		"https-certificate":    c.HTTPSCertificate,
@@ -107,4 +105,9 @@ func (c ServerConfig) Diagnostics() (*diagnostics.Diagnostics, error) {
 		"commit-timeout":       c.CommitTimeout,
 		"cluster-tracing":      c.ClusterTracing,
 	}), nil
+}
+
+// ApplyEnvOverrides apply the environment configuration on top of the config.
+func (c *Config) ApplyEnvOverrides(getenv func(string) string) error {
+	return toml.ApplyEnvOverrides(getenv, "CNOSDB", c)
 }

@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 )
 
@@ -294,9 +294,9 @@ func (s *Service) ExecuteContinuousQuery(dbi *meta.DatabaseInfo, cqi *meta.Conti
 	id := fmt.Sprintf("%s%s%s", dbi.Name, idDelimiter, cqi.Name)
 	cq.LastRun, cq.HasRun = s.lastRuns[id]
 
-	// Set the time-to-live to default if it wasn't specified in the query.
+	// Set the retention policy to default if it wasn't specified in the query.
 	if cq.intoRP() == "" {
-		cq.setIntoRP(dbi.DefaultTimeToLive)
+		cq.setIntoRP(dbi.DefaultRetentionPolicy)
 	}
 
 	// Get the group by interval.
@@ -451,8 +451,8 @@ type ContinuousQuery struct {
 	q        *cnosql.SelectStatement
 }
 
-func (cq *ContinuousQuery) intoRP() string       { return cq.q.Target.Metric.TimeToLive }
-func (cq *ContinuousQuery) setIntoRP(ttl string) { cq.q.Target.Metric.TimeToLive = ttl }
+func (cq *ContinuousQuery) intoRP() string      { return cq.q.Target.Measurement.RetentionPolicy }
+func (cq *ContinuousQuery) setIntoRP(rp string) { cq.q.Target.Measurement.RetentionPolicy = rp }
 
 // ResampleOptions controls the resampling intervals and duration of this continuous query.
 type ResampleOptions struct {
@@ -477,7 +477,7 @@ func NewContinuousQuery(database string, cqi *meta.ContinuousQueryInfo) (*Contin
 	}
 
 	q, ok := stmt.(*cnosql.CreateContinuousQueryStatement)
-	if !ok || q.Source.Target == nil || q.Source.Target.Metric == nil {
+	if !ok || q.Source.Target == nil || q.Source.Target.Measurement == nil {
 		return nil, errors.New("query isn't a valid continuous query")
 	}
 

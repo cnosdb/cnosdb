@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/common/pkg/toml"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/common/pkg/toml"
 )
 
 const (
@@ -56,7 +56,7 @@ const (
 	// This limit only applies to the "inmem" index.
 	DefaultMaxSeriesPerDatabase = 1000000
 
-	// DefaultMaxValuesPerTag is the maximum number of values a tag can have within a metric.
+	// DefaultMaxValuesPerTag is the maximum number of values a tag can have within a measurement.
 	DefaultMaxValuesPerTag = 100000
 
 	// DefaultMaxConcurrentCompactions is the maximum number of concurrent full and level compactions
@@ -107,7 +107,7 @@ type Config struct {
 	MaxSeriesPerDatabase int `toml:"max-series-per-database"`
 
 	// MaxValuesPerTag is the maximum number of tag values a single tag key can have within
-	// a metric.  When the limit is execeeded, writes return an error.
+	// a measurement.  When the limit is exceeded, writes return an error.
 	// A value of 0 disables the limit.
 	MaxValuesPerTag int `toml:"max-values-per-tag"`
 

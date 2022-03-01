@@ -9,11 +9,11 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/mmap"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/mmap"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // IndexFileVersion is the current TSI1 index file version.
@@ -29,7 +29,7 @@ const (
 
 	// IndexFileTrailerSize is the size of the trailer. Currently 82 bytes.
 	IndexFileTrailerSize = IndexFileVersionSize +
-		8 + 8 + // metric block offset + size
+		8 + 8 + // measurement block offset + size
 		8 + 8 + // series id set offset + size
 		8 + 8 + // tombstone series id set offset + size
 		8 + 8 + // series sketch offset + size
@@ -43,15 +43,15 @@ var (
 	ErrUnsupportedIndexFileVersion = errors.New("unsupported index file version")
 )
 
-// IndexFile represents a collection of metric, tag, and series data.
+// IndexFile represents a collection of measurement, tag, and series data.
 type IndexFile struct {
 	wg   sync.WaitGroup // ref count
 	data []byte
 
 	// Components
 	sfile *tsdb.SeriesFile
-	tblks map[string]*TagBlock // tag blocks by metric name
-	mblk  MetricBlock
+	tblks map[string]*TagBlock // tag blocks by measurement name
+	mblk  MeasurementBlock
 
 	// Raw series set data.
 	seriesIDSetData          []byte
@@ -132,7 +132,7 @@ func (f *IndexFile) Close() error {
 
 	f.sfile = nil
 	f.tblks = nil
-	f.mblk = MetricBlock{}
+	f.mblk = MeasurementBlock{}
 	return mmap.Unmap(f.data)
 }
 
@@ -189,8 +189,8 @@ func (f *IndexFile) UnmarshalBinary(data []byte) error {
 	f.seriesIDSetData = data[t.SeriesIDSet.Offset : t.SeriesIDSet.Offset+t.SeriesIDSet.Size]
 	f.tombstoneSeriesIDSetData = data[t.TombstoneSeriesIDSet.Offset : t.TombstoneSeriesIDSet.Offset+t.TombstoneSeriesIDSet.Size]
 
-	// Unmarshal metric block.
-	if err := f.mblk.UnmarshalBinary(data[t.MetricBlock.Offset:][:t.MetricBlock.Size]); err != nil {
+	// Unmarshal measurement block.
+	if err := f.mblk.UnmarshalBinary(data[t.MeasurementBlock.Offset:][:t.MeasurementBlock.Size]); err != nil {
 		return err
 	}
 
@@ -199,13 +199,13 @@ func (f *IndexFile) UnmarshalBinary(data []byte) error {
 	itr := f.mblk.Iterator()
 
 	for m := itr.Next(); m != nil; m = itr.Next() {
-		e := m.(*MetricBlockElem)
+		e := m.(*MeasurementBlockElem)
 
-		// Slice metric block data.
+		// Slice measurement block data.
 		buf := data[e.tagBlock.offset:]
 		buf = buf[:e.tagBlock.size]
 
-		// Unmarshal metric block.
+		// Unmarshal measurement block.
 		var tblk TagBlock
 		if err := tblk.UnmarshalBinary(buf); err != nil {
 			return err
@@ -235,8 +235,8 @@ func (f *IndexFile) TombstoneSeriesIDSet() (*tsdb.SeriesIDSet, error) {
 	return ss, nil
 }
 
-// Metric returns a metric element.
-func (f *IndexFile) Metric(name []byte) MetricElem {
+// Measurement returns a measurement element.
+func (f *IndexFile) Measurement(name []byte) MeasurementElem {
 	e, ok := f.mblk.Elem(name)
 	if !ok {
 		return nil
@@ -244,8 +244,8 @@ func (f *IndexFile) Metric(name []byte) MetricElem {
 	return &e
 }
 
-// MetricN returns the number of metrics in the file.
-func (f *IndexFile) MetricN() (n uint64) {
+// MeasurementN returns the number of measurements in the file.
+func (f *IndexFile) MeasurementN() (n uint64) {
 	mitr := f.mblk.Iterator()
 	for me := mitr.Next(); me != nil; me = mitr.Next() {
 		n++
@@ -253,8 +253,8 @@ func (f *IndexFile) MetricN() (n uint64) {
 	return n
 }
 
-// MetricHasSeries returns true if a metric has any non-tombstoned series.
-func (f *IndexFile) MetricHasSeries(ss *tsdb.SeriesIDSet, name []byte) (ok bool) {
+// MeasurementHasSeries returns true if a measurement has any non-tombstoned series.
+func (f *IndexFile) MeasurementHasSeries(ss *tsdb.SeriesIDSet, name []byte) (ok bool) {
 	e, ok := f.mblk.Elem(name)
 	if !ok {
 		return false
@@ -272,7 +272,7 @@ func (f *IndexFile) MetricHasSeries(ss *tsdb.SeriesIDSet, name []byte) (ok bool)
 }
 
 // TagValueIterator returns a value iterator for a tag key and a flag
-// indicating if a tombstone exists on the metric or key.
+// indicating if a tombstone exists on the measurement or key.
 func (f *IndexFile) TagValueIterator(name, key []byte) TagValueIterator {
 	tblk := f.tblks[string(name)]
 	if tblk == nil {
@@ -290,7 +290,7 @@ func (f *IndexFile) TagValueIterator(name, key []byte) TagValueIterator {
 }
 
 // TagKeySeriesIDIterator returns a series iterator for a tag key and a flag
-// indicating if a tombstone exists on the metric or key.
+// indicating if a tombstone exists on the measurement or key.
 func (f *IndexFile) TagKeySeriesIDIterator(name, key []byte) (tsdb.SeriesIDIterator, error) {
 	tblk := f.tblks[string(name)]
 	if tblk == nil {
@@ -363,7 +363,7 @@ func (f *IndexFile) HasSeries(name []byte, tags models.Tags, buf []byte) (exists
 	return f.sfile.HasSeries(name, tags, buf), false // TODO: series tombstone
 }
 
-// TagValueElem returns an element for a metric/tag/value.
+// TagValueElem returns an element for a measurement/tag/value.
 func (f *IndexFile) TagValueElem(name, key, value []byte) TagValueElem {
 	tblk, ok := f.tblks[string(name)]
 	if !ok {
@@ -372,12 +372,12 @@ func (f *IndexFile) TagValueElem(name, key, value []byte) TagValueElem {
 	return tblk.TagValueElem(key, value)
 }
 
-// MetricIterator returns an iterator over all metrics.
-func (f *IndexFile) MetricIterator() MetricIterator {
+// MeasurementIterator returns an iterator over all measurements.
+func (f *IndexFile) MeasurementIterator() MeasurementIterator {
 	return f.mblk.Iterator()
 }
 
-// TagKeyIterator returns an iterator over all tag keys for a metric.
+// TagKeyIterator returns an iterator over all tag keys for a measurement.
 func (f *IndexFile) TagKeyIterator(name []byte) TagKeyIterator {
 	blk := f.tblks[string(name)]
 	if blk == nil {
@@ -386,13 +386,13 @@ func (f *IndexFile) TagKeyIterator(name []byte) TagKeyIterator {
 	return blk.TagKeyIterator()
 }
 
-// MetricSeriesIDIterator returns an iterator over a metric's series.
-func (f *IndexFile) MetricSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
+// MeasurementSeriesIDIterator returns an iterator over a measurement's series.
+func (f *IndexFile) MeasurementSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
 	return f.mblk.SeriesIDIterator(name)
 }
 
-// MetricsSketches returns existence and tombstone sketches for metrics.
-func (f *IndexFile) MetricsSketches() (sketch, tSketch estimator.Sketch, err error) {
+// MeasurementsSketches returns existence and tombstone sketches for measurements.
+func (f *IndexFile) MeasurementsSketches() (sketch, tSketch estimator.Sketch, err error) {
 	return f.mblk.Sketches()
 }
 
@@ -423,9 +423,9 @@ func ReadIndexFileTrailer(data []byte) (IndexFileTrailer, error) {
 	// Slice trailer data.
 	buf := data[len(data)-IndexFileTrailerSize:]
 
-	// Read metric block info.
-	t.MetricBlock.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
-	t.MetricBlock.Size, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
+	// Read measurement block info.
+	t.MeasurementBlock.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
+	t.MeasurementBlock.Size, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
 
 	// Read series id set info.
 	t.SeriesIDSet.Offset, buf = int64(binary.BigEndian.Uint64(buf[0:8])), buf[8:]
@@ -453,7 +453,7 @@ func ReadIndexFileTrailer(data []byte) (IndexFileTrailer, error) {
 type IndexFileTrailer struct {
 	Version int
 
-	MetricBlock struct {
+	MeasurementBlock struct {
 		Offset int64
 		Size   int64
 	}
@@ -481,10 +481,10 @@ type IndexFileTrailer struct {
 
 // WriteTo writes the trailer to w.
 func (t *IndexFileTrailer) WriteTo(w io.Writer) (n int64, err error) {
-	// Write metric block info.
-	if err := writeUint64To(w, uint64(t.MetricBlock.Offset), &n); err != nil {
+	// Write measurement block info.
+	if err := writeUint64To(w, uint64(t.MeasurementBlock.Offset), &n); err != nil {
 		return n, err
-	} else if err := writeUint64To(w, uint64(t.MetricBlock.Size), &n); err != nil {
+	} else if err := writeUint64To(w, uint64(t.MeasurementBlock.Size), &n); err != nil {
 		return n, err
 	}
 

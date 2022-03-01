@@ -20,17 +20,17 @@ called compaction where a log file or multiple index files are merged together.
 
 Operations
 
-The index can perform many tasks related to series, metric, & tag data.
+The index can perform many tasks related to series, measurement, & tag data.
 All data is inserted by adding a series to the index. When adding a series,
-the metric, tag keys, and tag values are all extracted and indexed
+the measurement, tag keys, and tag values are all extracted and indexed
 separately.
 
 Once a series has been added, it can be removed in several ways. First, the
 individual series can be removed. Second, it can be removed as part of a bulk
-operation by deleting the entire metric.
+operation by deleting the entire measurement.
 
 The query engine needs to be able to look up series in a variety of ways such
-as by metric name, by tag value, or by using regular expressions. The
+as by measurement name, by tag value, or by using regular expressions. The
 index provides an API to iterate over subsets of series and perform set
 operations such as unions and intersections.
 
@@ -39,14 +39,14 @@ Log File Layout
 
 The write-ahead file that series initially are inserted into simply appends
 all new operations sequentially. It is simply composed of a series of log
-entries. An entry contains a flag to specify the operation type, the metric
+entries. An entry contains a flag to specify the operation type, the measurement
 name, the tag set, and a checksum.
 
 	┏━━━━━━━━━LogEntry━━━━━━━━━┓
 	┃ ┌──────────────────────┐ ┃
 	┃ │         Flag         │ ┃
 	┃ ├──────────────────────┤ ┃
-	┃ │        Metric        │ ┃
+	┃ │     Measurement      │ ┃
 	┃ ├──────────────────────┤ ┃
 	┃ │      Key/Value       │ ┃
 	┃ ├──────────────────────┤ ┃
@@ -65,7 +65,7 @@ incomplete (because of a partially failed write) then the log is truncated.
 Index File Layout
 
 The index file is composed of 3 main block types: one series block, one or more
-tag blocks, and one metric block. At the end of the index file is a
+tag blocks, and one measurement block. At the end of the index file is a
 trailer that records metadata such as the offsets to these blocks.
 
 
@@ -115,7 +115,7 @@ a trailer which contains metadata about the block.
 Tag Block Layout
 
 After the series block is one or more tag blocks. One of these blocks exists
-for every metric in the index file. The block is structured as a sorted
+for every measurement in the index file. The block is structured as a sorted
 list of values for each key and then a sorted list of keys. Each of these lists
 has their own hash index for fast direct lookups.
 
@@ -160,23 +160,23 @@ multiple iterators can be merged with set operators such as union or
 intersection.
 
 
-Metric block
+Measurement block
 
-The metric block stores a sorted list of metrics, their associated
+The measurement block stores a sorted list of measurements, their associated
 series offsets, and the offset to their tag block. This allows all series for
-a metric to be traversed quickly and it allows fast direct lookups of
-metrics and their tags.
+a measurement to be traversed quickly and it allows fast direct lookups of
+measurements and their tags.
 
 This block also contains HyperLogLog++ sketches for new and deleted
-metrics.
+measurements.
 
-	┏━━━━━━━Metric Block━━━━━━━┓
+	┏━━━━Measurement Block━━━━━┓
 	┃ ┌──────────────────────┐ ┃
-	┃ │       Metric         │ ┃
+	┃ │     Measurement      │ ┃
 	┃ ├──────────────────────┤ ┃
-	┃ │       Metric         │ ┃
+	┃ │     Measurement      │ ┃
 	┃ ├──────────────────────┤ ┃
-	┃ │       Metric         │ ┃
+	┃ │     Measurement      │ ┃
 	┃ ├──────────────────────┤ ┃
 	┃ │                      │ ┃
 	┃ │      Hash Index      │ ┃
@@ -193,7 +193,7 @@ Manifest file
 
 The index is simply an ordered set of log and index files. These files can be
 merged together or rewritten but their order must always be the same. This is
-because series, metrics, & tags can be marked as deleted (aka tombstoned)
+because series, measurements, & tags can be marked as deleted (aka tombstoned)
 and this action needs to be tracked in time order.
 
 Whenever the set of active files is changed, a manifest file is written to

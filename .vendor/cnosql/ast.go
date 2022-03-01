@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	internal "github.com/cnosdatabase/cnosql/internal"
+	internal "github.com/cnosdb/cnosql/internal"
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -60,7 +60,7 @@ const (
 	// 2262-04-11 23:47:16.854775806 +0000 UTC
 	//
 	// The highest time represented by a nanosecond needs to be used for an
-	// exclusive range in the region, so the maximum time needs to be one
+	// exclusive range in the shard group, so the maximum time needs to be one
 	// less than the possible maximum number of nanoseconds representable by an
 	// int64 so that we don't lose a point at that one time.
 	MaxTime = int64(math.MaxInt64) - 1
@@ -207,52 +207,52 @@ type Node interface {
 func (*Query) node()     {}
 func (Statements) node() {}
 
-func (*AlterTimeToLiveStatement) node()          {}
-func (*CreateContinuousQueryStatement) node()    {}
-func (*CreateDatabaseStatement) node()           {}
-func (*CreateTimeToLiveStatement) node()         {}
-func (*CreateSubscriptionStatement) node()       {}
-func (*CreateUserStatement) node()               {}
-func (*Distinct) node()                          {}
-func (*DeleteSeriesStatement) node()             {}
-func (*DeleteStatement) node()                   {}
-func (*DropContinuousQueryStatement) node()      {}
-func (*DropDatabaseStatement) node()             {}
-func (*DropMetricStatement) node()               {}
-func (*DropTimeToLiveStatement) node()           {}
-func (*DropSeriesStatement) node()               {}
-func (*DropShardStatement) node()                {}
-func (*DropSubscriptionStatement) node()         {}
-func (*DropUserStatement) node()                 {}
-func (*ExplainStatement) node()                  {}
-func (*GrantStatement) node()                    {}
-func (*GrantAdminStatement) node()               {}
-func (*KillQueryStatement) node()                {}
-func (*RevokeStatement) node()                   {}
-func (*RevokeAdminStatement) node()              {}
-func (*SelectStatement) node()                   {}
-func (*SetPasswordUserStatement) node()          {}
-func (*ShowContinuousQueriesStatement) node()    {}
-func (*ShowGrantsForUserStatement) node()        {}
-func (*ShowDatabasesStatement) node()            {}
-func (*ShowFieldKeyCardinalityStatement) node()  {}
-func (*ShowFieldKeysStatement) node()            {}
-func (*ShowTimeToLivesStatement) node()          {}
-func (*ShowMetricCardinalityStatement) node()    {}
-func (*ShowMetricsStatement) node()              {}
-func (*ShowQueriesStatement) node()              {}
-func (*ShowSeriesStatement) node()               {}
-func (*ShowSeriesCardinalityStatement) node()    {}
-func (*ShowRegionsStatement) node()              {}
-func (*ShowShardsStatement) node()               {}
-func (*ShowStatsStatement) node()                {}
-func (*ShowSubscriptionsStatement) node()        {}
-func (*ShowDiagnosticsStatement) node()          {}
-func (*ShowTagKeyCardinalityStatement) node()    {}
-func (*ShowTagKeysStatement) node()              {}
-func (*ShowTagValuesCardinalityStatement) node() {}
-func (*ShowTagValuesStatement) node()            {}
-func (*ShowUsersStatement) node()                {}
+func (*AlterRetentionPolicyStatement) node()       {}
+func (*CreateContinuousQueryStatement) node()      {}
+func (*CreateDatabaseStatement) node()             {}
+func (*CreateRetentionPolicyStatement) node()      {}
+func (*CreateSubscriptionStatement) node()         {}
+func (*CreateUserStatement) node()                 {}
+func (*Distinct) node()                            {}
+func (*DeleteSeriesStatement) node()               {}
+func (*DeleteStatement) node()                     {}
+func (*DropContinuousQueryStatement) node()        {}
+func (*DropDatabaseStatement) node()               {}
+func (*DropMeasurementStatement) node()            {}
+func (*DropRetentionPolicyStatement) node()        {}
+func (*DropSeriesStatement) node()                 {}
+func (*DropShardStatement) node()                  {}
+func (*DropSubscriptionStatement) node()           {}
+func (*DropUserStatement) node()                   {}
+func (*ExplainStatement) node()                    {}
+func (*GrantStatement) node()                      {}
+func (*GrantAdminStatement) node()                 {}
+func (*KillQueryStatement) node()                  {}
+func (*RevokeStatement) node()                     {}
+func (*RevokeAdminStatement) node()                {}
+func (*SelectStatement) node()                     {}
+func (*SetPasswordUserStatement) node()            {}
+func (*ShowContinuousQueriesStatement) node()      {}
+func (*ShowGrantsForUserStatement) node()          {}
+func (*ShowDatabasesStatement) node()              {}
+func (*ShowFieldKeyCardinalityStatement) node()    {}
+func (*ShowFieldKeysStatement) node()              {}
+func (*ShowRetentionPoliciesStatement) node()      {}
+func (*ShowMeasurementCardinalityStatement) node() {}
+func (*ShowMeasurementsStatement) node()           {}
+func (*ShowQueriesStatement) node()                {}
+func (*ShowSeriesStatement) node()                 {}
+func (*ShowSeriesCardinalityStatement) node()      {}
+func (*ShowShardGroupsStatement) node()            {}
+func (*ShowShardsStatement) node()                 {}
+func (*ShowStatsStatement) node()                  {}
+func (*ShowSubscriptionsStatement) node()          {}
+func (*ShowDiagnosticsStatement) node()            {}
+func (*ShowTagKeyCardinalityStatement) node()      {}
+func (*ShowTagKeysStatement) node()                {}
+func (*ShowTagValuesCardinalityStatement) node()   {}
+func (*ShowTagValuesStatement) node()              {}
+func (*ShowUsersStatement) node()                  {}
 
 func (*BinaryExpr) node()      {}
 func (*BooleanLiteral) node()  {}
@@ -265,8 +265,8 @@ func (*IntegerLiteral) node()  {}
 func (*UnsignedLiteral) node() {}
 func (*Field) node()           {}
 func (Fields) node()           {}
-func (*Metric) node()          {}
-func (Metrics) node()          {}
+func (*Measurement) node()     {}
+func (Measurements) node()     {}
 func (*NilLiteral) node()      {}
 func (*NumberLiteral) node()   {}
 func (*ParenExpr) node()       {}
@@ -336,51 +336,51 @@ type ExecutionPrivilege struct {
 // ExecutionPrivileges is a list of privileges required to execute a statement.
 type ExecutionPrivileges []ExecutionPrivilege
 
-func (*AlterTimeToLiveStatement) stmt()          {}
-func (*CreateContinuousQueryStatement) stmt()    {}
-func (*CreateDatabaseStatement) stmt()           {}
-func (*CreateTimeToLiveStatement) stmt()         {}
-func (*CreateSubscriptionStatement) stmt()       {}
-func (*CreateUserStatement) stmt()               {}
-func (*DeleteSeriesStatement) stmt()             {}
-func (*DeleteStatement) stmt()                   {}
-func (*DropContinuousQueryStatement) stmt()      {}
-func (*DropDatabaseStatement) stmt()             {}
-func (*DropMetricStatement) stmt()               {}
-func (*DropTimeToLiveStatement) stmt()           {}
-func (*DropSeriesStatement) stmt()               {}
-func (*DropSubscriptionStatement) stmt()         {}
-func (*DropUserStatement) stmt()                 {}
-func (*ExplainStatement) stmt()                  {}
-func (*GrantStatement) stmt()                    {}
-func (*GrantAdminStatement) stmt()               {}
-func (*KillQueryStatement) stmt()                {}
-func (*ShowContinuousQueriesStatement) stmt()    {}
-func (*ShowGrantsForUserStatement) stmt()        {}
-func (*ShowDatabasesStatement) stmt()            {}
-func (*ShowFieldKeyCardinalityStatement) stmt()  {}
-func (*ShowFieldKeysStatement) stmt()            {}
-func (*ShowMetricCardinalityStatement) stmt()    {}
-func (*ShowMetricsStatement) stmt()              {}
-func (*ShowQueriesStatement) stmt()              {}
-func (*ShowTimeToLivesStatement) stmt()          {}
-func (*ShowSeriesStatement) stmt()               {}
-func (*ShowSeriesCardinalityStatement) stmt()    {}
-func (*ShowRegionsStatement) stmt()              {}
-func (*ShowShardsStatement) stmt()               {}
-func (*ShowStatsStatement) stmt()                {}
-func (*DropShardStatement) stmt()                {}
-func (*ShowSubscriptionsStatement) stmt()        {}
-func (*ShowDiagnosticsStatement) stmt()          {}
-func (*ShowTagKeyCardinalityStatement) stmt()    {}
-func (*ShowTagKeysStatement) stmt()              {}
-func (*ShowTagValuesCardinalityStatement) stmt() {}
-func (*ShowTagValuesStatement) stmt()            {}
-func (*ShowUsersStatement) stmt()                {}
-func (*RevokeStatement) stmt()                   {}
-func (*RevokeAdminStatement) stmt()              {}
-func (*SelectStatement) stmt()                   {}
-func (*SetPasswordUserStatement) stmt()          {}
+func (*AlterRetentionPolicyStatement) stmt()       {}
+func (*CreateContinuousQueryStatement) stmt()      {}
+func (*CreateDatabaseStatement) stmt()             {}
+func (*CreateRetentionPolicyStatement) stmt()      {}
+func (*CreateSubscriptionStatement) stmt()         {}
+func (*CreateUserStatement) stmt()                 {}
+func (*DeleteSeriesStatement) stmt()               {}
+func (*DeleteStatement) stmt()                     {}
+func (*DropContinuousQueryStatement) stmt()        {}
+func (*DropDatabaseStatement) stmt()               {}
+func (*DropMeasurementStatement) stmt()            {}
+func (*DropRetentionPolicyStatement) stmt()        {}
+func (*DropSeriesStatement) stmt()                 {}
+func (*DropSubscriptionStatement) stmt()           {}
+func (*DropUserStatement) stmt()                   {}
+func (*ExplainStatement) stmt()                    {}
+func (*GrantStatement) stmt()                      {}
+func (*GrantAdminStatement) stmt()                 {}
+func (*KillQueryStatement) stmt()                  {}
+func (*ShowContinuousQueriesStatement) stmt()      {}
+func (*ShowGrantsForUserStatement) stmt()          {}
+func (*ShowDatabasesStatement) stmt()              {}
+func (*ShowFieldKeyCardinalityStatement) stmt()    {}
+func (*ShowFieldKeysStatement) stmt()              {}
+func (*ShowMeasurementCardinalityStatement) stmt() {}
+func (*ShowMeasurementsStatement) stmt()           {}
+func (*ShowQueriesStatement) stmt()                {}
+func (*ShowRetentionPoliciesStatement) stmt()      {}
+func (*ShowSeriesStatement) stmt()                 {}
+func (*ShowSeriesCardinalityStatement) stmt()      {}
+func (*ShowShardGroupsStatement) stmt()            {}
+func (*ShowShardsStatement) stmt()                 {}
+func (*ShowStatsStatement) stmt()                  {}
+func (*DropShardStatement) stmt()                  {}
+func (*ShowSubscriptionsStatement) stmt()          {}
+func (*ShowDiagnosticsStatement) stmt()            {}
+func (*ShowTagKeyCardinalityStatement) stmt()      {}
+func (*ShowTagKeysStatement) stmt()                {}
+func (*ShowTagValuesCardinalityStatement) stmt()   {}
+func (*ShowTagValuesStatement) stmt()              {}
+func (*ShowUsersStatement) stmt()                  {}
+func (*RevokeStatement) stmt()                     {}
+func (*RevokeAdminStatement) stmt()                {}
+func (*SelectStatement) stmt()                     {}
+func (*SetPasswordUserStatement) stmt()            {}
 
 // Expr represents an expression that can be evaluated to a value.
 type Expr interface {
@@ -436,8 +436,8 @@ type Source interface {
 	source()
 }
 
-func (*Metric) source()   {}
-func (*SubQuery) source() {}
+func (*Measurement) source() {}
+func (*SubQuery) source()    {}
 
 // Sources represents a list of sources.
 type Sources []Source
@@ -457,15 +457,15 @@ func (a Sources) String() string {
 	return buf.String()
 }
 
-// Metrics returns all metrics including ones embedded in subqueries.
-func (a Sources) Metrics() []*Metric {
-	mms := make([]*Metric, 0, len(a))
+// Measurements returns all measurements including ones embedded in subqueries.
+func (a Sources) Measurements() []*Measurement {
+	mms := make([]*Measurement, 0, len(a))
 	for _, src := range a {
 		switch src := src.(type) {
-		case *Metric:
+		case *Measurement:
 			mms = append(mms, src)
 		case *SubQuery:
-			mms = append(mms, src.Statement.Sources.Metrics()...)
+			mms = append(mms, src.Statement.Sources.Measurements()...)
 		}
 	}
 	return mms
@@ -473,23 +473,23 @@ func (a Sources) Metrics() []*Metric {
 
 // MarshalBinary encodes a list of sources to a binary format.
 func (a Sources) MarshalBinary() ([]byte, error) {
-	var pb internal.Metrics
-	pb.Items = make([]*internal.Metric, len(a))
+	var pb internal.Measurements
+	pb.Items = make([]*internal.Measurement, len(a))
 	for i, source := range a {
-		pb.Items[i] = encodeMetric(source.(*Metric))
+		pb.Items[i] = encodeMeasurement(source.(*Measurement))
 	}
 	return proto.Marshal(&pb)
 }
 
 // UnmarshalBinary decodes binary data into a list of sources.
 func (a *Sources) UnmarshalBinary(buf []byte) error {
-	var pb internal.Metrics
+	var pb internal.Measurements
 	if err := proto.Unmarshal(buf, &pb); err != nil {
 		return err
 	}
 	*a = make(Sources, len(pb.GetItems()))
 	for i := range pb.GetItems() {
-		mm, err := decodeMetric(pb.GetItems()[i])
+		mm, err := decodeMeasurement(pb.GetItems()[i])
 		if err != nil {
 			return err
 		}
@@ -503,7 +503,7 @@ func (a Sources) RequiredPrivileges() (ExecutionPrivileges, error) {
 	var ep ExecutionPrivileges
 	for _, source := range a {
 		switch source := source.(type) {
-		case *Metric:
+		case *Measurement:
 			ep = append(ep, ExecutionPrivilege{
 				Name:      source.Database,
 				Privilege: ReadPrivilege,
@@ -525,7 +525,7 @@ func (a Sources) RequiredPrivileges() (ExecutionPrivileges, error) {
 func IsSystemName(name string) bool {
 	switch name {
 	case "_fieldKeys",
-		"_metrics",
+		"_measurements",
 		"_name",
 		"_series",
 		"_tagKey",
@@ -578,20 +578,20 @@ type CreateDatabaseStatement struct {
 	// Name of the database to be created.
 	Name string
 
-	// TimeToLiveCreate indicates whether the user explicitly wants to create a time-to-live.
-	TimeToLiveCreate bool
+	// RetentionPolicyCreate indicates whether the user explicitly wants to create a retention policy.
+	RetentionPolicyCreate bool
 
-	// TimeToLiveDuration indicates ttl duration for the new database.
-	TimeToLiveDuration *time.Duration
+	// RetentionPolicyDuration indicates retention duration for the new database.
+	RetentionPolicyDuration *time.Duration
 
-	// TimeToLiveReplication indicates ttl replication for the new database.
-	TimeToLiveReplication *int
+	// RetentionPolicyReplication indicates retention replication for the new database.
+	RetentionPolicyReplication *int
 
-	// TimeToLiveName indicates ttl name for the new database.
-	TimeToLiveName string
+	// RetentionPolicyName indicates retention name for the new database.
+	RetentionPolicyName string
 
-	// TimeToLiveRegionDuration indicates region duration for the new database.
-	TimeToLiveRegionDuration time.Duration
+	// RetentionPolicyShardGroupDuration indicates shard group duration for the new database.
+	RetentionPolicyShardGroupDuration time.Duration
 }
 
 // String returns a string representation of the create database statement.
@@ -599,23 +599,23 @@ func (s *CreateDatabaseStatement) String() string {
 	var buf strings.Builder
 	_, _ = buf.WriteString("CREATE DATABASE ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
-	if s.TimeToLiveCreate {
+	if s.RetentionPolicyCreate {
 		_, _ = buf.WriteString(" WITH")
-		if s.TimeToLiveDuration != nil {
+		if s.RetentionPolicyDuration != nil {
 			_, _ = buf.WriteString(" DURATION ")
-			_, _ = buf.WriteString(s.TimeToLiveDuration.String())
+			_, _ = buf.WriteString(s.RetentionPolicyDuration.String())
 		}
-		if s.TimeToLiveReplication != nil {
+		if s.RetentionPolicyReplication != nil {
 			_, _ = buf.WriteString(" REPLICATION ")
-			_, _ = buf.WriteString(strconv.Itoa(*s.TimeToLiveReplication))
+			_, _ = buf.WriteString(strconv.Itoa(*s.RetentionPolicyReplication))
 		}
-		if s.TimeToLiveRegionDuration > 0 {
+		if s.RetentionPolicyShardGroupDuration > 0 {
 			_, _ = buf.WriteString(" SHARD DURATION ")
-			_, _ = buf.WriteString(s.TimeToLiveRegionDuration.String())
+			_, _ = buf.WriteString(s.RetentionPolicyShardGroupDuration.String())
 		}
-		if s.TimeToLiveName != "" {
+		if s.RetentionPolicyName != "" {
 			_, _ = buf.WriteString(" NAME ")
-			_, _ = buf.WriteString(QuoteIdent(s.TimeToLiveName))
+			_, _ = buf.WriteString(QuoteIdent(s.RetentionPolicyName))
 		}
 	}
 
@@ -646,32 +646,32 @@ func (s *DropDatabaseStatement) RequiredPrivileges() (ExecutionPrivileges, error
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
-// DropTimeToLiveStatement represents a command to drop a time-to-live from a database.
-type DropTimeToLiveStatement struct {
-	// Name of the time-to-live to drop.
+// DropRetentionPolicyStatement represents a command to drop a retention policy from a database.
+type DropRetentionPolicyStatement struct {
+	// Name of the policy to drop.
 	Name string
 
-	// Name of the database to drop the time-to-live from.
+	// Name of the database to drop the policy from.
 	Database string
 }
 
-// String returns a string representation of the drop time-to-live statement.
-func (s *DropTimeToLiveStatement) String() string {
+// String returns a string representation of the drop retention policy statement.
+func (s *DropRetentionPolicyStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("DROP TTL ")
+	_, _ = buf.WriteString("DROP RETENTION POLICY ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
 	_, _ = buf.WriteString(QuoteIdent(s.Database))
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege required to execute a DropTimeToLiveStatement.
-func (s *DropTimeToLiveStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege required to execute a DropRetentionPolicyStatement.
+func (s *DropRetentionPolicyStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: false, Name: s.Database, Privilege: WritePrivilege}}, nil
 }
 
 // DefaultDatabase returns the default database from the statement.
-func (s *DropTimeToLiveStatement) DefaultDatabase() string {
+func (s *DropRetentionPolicyStatement) DefaultDatabase() string {
 	return s.Database
 }
 
@@ -912,31 +912,31 @@ func (s *RevokeAdminStatement) RequiredPrivileges() (ExecutionPrivileges, error)
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
-// CreateTimeToLiveStatement represents a command to create a time-to-live.
-type CreateTimeToLiveStatement struct {
-	// Name of time-to-live to create.
+// CreateRetentionPolicyStatement represents a command to create a retention policy.
+type CreateRetentionPolicyStatement struct {
+	// Name of policy to create.
 	Name string
 
-	// Name of database this time-to-live belongs to.
+	// Name of database this policy belongs to.
 	Database string
 
-	// Duration data written to this time-to-live will be retained.
+	// Duration data written to this policy will be retained.
 	Duration time.Duration
 
-	// Replication factor for data written to this time-to-live.
+	// Replication factor for data written to this policy.
 	Replication int
 
-	// Should this time-to-live be set as default for the database?
+	// Should this policy be set as default for the database?
 	Default bool
 
 	// Shard Duration.
-	RegionDuration time.Duration
+	ShardGroupDuration time.Duration
 }
 
-// String returns a string representation of the create time-to-live.
-func (s *CreateTimeToLiveStatement) String() string {
+// String returns a string representation of the create retention policy.
+func (s *CreateRetentionPolicyStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("CREATE TTL ")
+	_, _ = buf.WriteString("CREATE RETENTION POLICY ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
 	_, _ = buf.WriteString(QuoteIdent(s.Database))
@@ -944,9 +944,9 @@ func (s *CreateTimeToLiveStatement) String() string {
 	_, _ = buf.WriteString(FormatDuration(s.Duration))
 	_, _ = buf.WriteString(" REPLICATION ")
 	_, _ = buf.WriteString(strconv.Itoa(s.Replication))
-	if s.RegionDuration > 0 {
-		_, _ = buf.WriteString(" REGION DURATION ")
-		_, _ = buf.WriteString(FormatDuration(s.RegionDuration))
+	if s.ShardGroupDuration > 0 {
+		_, _ = buf.WriteString(" SHARD DURATION ")
+		_, _ = buf.WriteString(FormatDuration(s.ShardGroupDuration))
 	}
 	if s.Default {
 		_, _ = buf.WriteString(" DEFAULT")
@@ -954,41 +954,41 @@ func (s *CreateTimeToLiveStatement) String() string {
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege required to execute a CreateTimeToLiveStatement.
-func (s *CreateTimeToLiveStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege required to execute a CreateRetentionPolicyStatement.
+func (s *CreateRetentionPolicyStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
 // DefaultDatabase returns the default database from the statement.
-func (s *CreateTimeToLiveStatement) DefaultDatabase() string {
+func (s *CreateRetentionPolicyStatement) DefaultDatabase() string {
 	return s.Database
 }
 
-// AlterTimeToLiveStatement represents a command to alter an existing time-to-live.
-type AlterTimeToLiveStatement struct {
-	// Name of time-to-live to alter.
+// AlterRetentionPolicyStatement represents a command to alter an existing retention policy.
+type AlterRetentionPolicyStatement struct {
+	// Name of policy to alter.
 	Name string
 
-	// Name of the database this time-to-live belongs to.
+	// Name of the database this policy belongs to.
 	Database string
 
-	// Duration data written to this time-to-live will be retained.
+	// Duration data written to this policy will be retained.
 	Duration *time.Duration
 
-	// Replication factor for data written to this time-to-live.
+	// Replication factor for data written to this policy.
 	Replication *int
 
-	// Should this time-to-live be set as defalut for the database?
+	// Should this policy be set as defalut for the database?
 	Default bool
 
-	// Duration of the Shards.
-	RegionDuration *time.Duration
+	// Duration of the Shard.
+	ShardGroupDuration *time.Duration
 }
 
-// String returns a string representation of the alter time-to-live statement.
-func (s *AlterTimeToLiveStatement) String() string {
+// String returns a string representation of the alter retention policy statement.
+func (s *AlterRetentionPolicyStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("ALTER TTL ")
+	_, _ = buf.WriteString("ALTER RETENTION POLICY ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	_, _ = buf.WriteString(" ON ")
 	_, _ = buf.WriteString(QuoteIdent(s.Database))
@@ -1003,9 +1003,9 @@ func (s *AlterTimeToLiveStatement) String() string {
 		_, _ = buf.WriteString(strconv.Itoa(*s.Replication))
 	}
 
-	if s.RegionDuration != nil {
+	if s.ShardGroupDuration != nil {
 		_, _ = buf.WriteString(" SHARD DURATION ")
-		_, _ = buf.WriteString(FormatDuration(*s.RegionDuration))
+		_, _ = buf.WriteString(FormatDuration(*s.ShardGroupDuration))
 	}
 
 	if s.Default {
@@ -1015,13 +1015,13 @@ func (s *AlterTimeToLiveStatement) String() string {
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege required to execute an AlterTimeToLiveStatement.
-func (s *AlterTimeToLiveStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege required to execute an AlterRetentionPolicyStatement.
+func (s *AlterRetentionPolicyStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
 // DefaultDatabase returns the default database from the statement.
-func (s *AlterTimeToLiveStatement) DefaultDatabase() string {
+func (s *AlterRetentionPolicyStatement) DefaultDatabase() string {
 	return s.Database
 }
 
@@ -1052,7 +1052,7 @@ type SelectStatement struct {
 	// Expressions used for grouping the selection.
 	Dimensions Dimensions
 
-	// Data sources (metrics) that fields are extracted from.
+	// Data sources (measurements) that fields are extracted from.
 	Sources Sources
 
 	// An expression evaluated on data point.
@@ -1094,10 +1094,10 @@ type SelectStatement struct {
 	// Removes the "time" column from the output.
 	OmitTime bool
 
-	// Removes metric name from resulting query. Useful for meta queries.
+	// Removes measurement name from resulting query. Useful for meta queries.
 	StripName bool
 
-	// Overrides the output metric name.
+	// Overrides the output measurement name.
 	EmitName string
 
 	// Removes duplicate rows from raw queries.
@@ -1128,11 +1128,11 @@ func (s *SelectStatement) Clone() *SelectStatement {
 
 	if s.Target != nil {
 		clone.Target = &Target{
-			Metric: &Metric{
-				Database:   s.Target.Metric.Database,
-				TimeToLive: s.Target.Metric.TimeToLive,
-				Name:       s.Target.Metric.Name,
-				Regex:      CloneRegexLiteral(s.Target.Metric.Regex),
+			Measurement: &Measurement{
+				Database:        s.Target.Measurement.Database,
+				RetentionPolicy: s.Target.Measurement.RetentionPolicy,
+				Name:            s.Target.Measurement.Name,
+				Regex:           CloneRegexLiteral(s.Target.Measurement.Regex),
 			},
 		}
 	}
@@ -1162,7 +1162,7 @@ func cloneSource(s Source) Source {
 	}
 
 	switch s := s.(type) {
-	case *Metric:
+	case *Measurement:
 		return s.Clone()
 	case *SubQuery:
 		return &SubQuery{Statement: s.Statement.Clone()}
@@ -1171,9 +1171,9 @@ func cloneSource(s Source) Source {
 	}
 }
 
-// FieldMapper returns the data type for the field inside of the metric.
+// FieldMapper returns the data type for the field inside of the measurement.
 type FieldMapper interface {
-	FieldDimensions(m *Metric) (fields map[string]DataType, dimensions map[string]struct{}, err error)
+	FieldDimensions(m *Measurement) (fields map[string]DataType, dimensions map[string]struct{}, err error)
 
 	TypeMapper
 }
@@ -1822,7 +1822,7 @@ func (s *SelectStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	}
 
 	if s.Target != nil {
-		ep = append(ep, ExecutionPrivilege{Admin: false, Name: s.Target.Metric.Database, Privilege: WritePrivilege})
+		ep = append(ep, ExecutionPrivilege{Admin: false, Name: s.Target.Measurement.Database, Privilege: WritePrivilege})
 	}
 	return ep, nil
 }
@@ -1959,12 +1959,12 @@ func (s *SelectStatement) rewriteWithoutTimeDimensions() string {
 	return n.String()
 }
 
-func encodeMetric(mm *Metric) *internal.Metric {
-	pb := &internal.Metric{
-		Database:   proto.String(mm.Database),
-		TimeToLive: proto.String(mm.TimeToLive),
-		Name:       proto.String(mm.Name),
-		IsTarget:   proto.Bool(mm.IsTarget),
+func encodeMeasurement(mm *Measurement) *internal.Measurement {
+	pb := &internal.Measurement{
+		Database:        proto.String(mm.Database),
+		RetentionPolicy: proto.String(mm.RetentionPolicy),
+		Name:            proto.String(mm.Name),
+		IsTarget:        proto.Bool(mm.IsTarget),
 	}
 	if mm.Regex != nil {
 		pb.Regex = proto.String(mm.Regex.Val.String())
@@ -1972,18 +1972,18 @@ func encodeMetric(mm *Metric) *internal.Metric {
 	return pb
 }
 
-func decodeMetric(pb *internal.Metric) (*Metric, error) {
-	mm := &Metric{
-		Database:   pb.GetDatabase(),
-		TimeToLive: pb.GetTimeToLive(),
-		Name:       pb.GetName(),
-		IsTarget:   pb.GetIsTarget(),
+func decodeMeasurement(pb *internal.Measurement) (*Measurement, error) {
+	mm := &Measurement{
+		Database:        pb.GetDatabase(),
+		RetentionPolicy: pb.GetRetentionPolicy(),
+		Name:            pb.GetName(),
+		IsTarget:        pb.GetIsTarget(),
 	}
 
 	if pb.Regex != nil {
 		regex, err := regexp.Compile(pb.GetRegex())
 		if err != nil {
-			return nil, fmt.Errorf("invalid binary metric regex: value=%q, err=%s", pb.GetRegex(), err)
+			return nil, fmt.Errorf("invalid binary measurement regex: value=%q, err=%s", pb.GetRegex(), err)
 		}
 		mm.Regex = &RegexLiteral{Val: regex}
 	}
@@ -2066,10 +2066,10 @@ func ExprNames(expr Expr) []VarRef {
 	return a
 }
 
-// Target represents a target (destination) ttl, metric, and DB.
+// Target represents a target (destination) policy, measurement, and DB.
 type Target struct {
-	// Metric to write into.
-	Metric *Metric
+	// Measurement to write into.
+	Measurement *Measurement
 }
 
 // String returns a string representation of the Target.
@@ -2080,9 +2080,9 @@ func (t *Target) String() string {
 
 	var buf strings.Builder
 	_, _ = buf.WriteString("INTO ")
-	_, _ = buf.WriteString(t.Metric.String())
-	if t.Metric.Name == "" {
-		_, _ = buf.WriteString(":METRIC")
+	_, _ = buf.WriteString(t.Measurement.String())
+	if t.Measurement.Name == "" {
+		_, _ = buf.WriteString(":MEASUREMENT")
 	}
 
 	return buf.String()
@@ -2139,7 +2139,7 @@ func (s *DeleteStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 
 // DefaultDatabase returns the default database from the statement.
 func (s *DeleteStatement) DefaultDatabase() string {
-	if m, ok := s.Source.(*Metric); ok {
+	if m, ok := s.Source.(*Measurement); ok {
 		return m.Database
 	}
 	return ""
@@ -2151,7 +2151,7 @@ type ShowSeriesStatement struct {
 	// The database can also be specified per source in the Sources.
 	Database string
 
-	// Metric(s) the series are listed for.
+	// Measurement(s) the series are listed for.
 	Sources Sources
 
 	// An expression evaluated on a series name or tag.
@@ -2303,7 +2303,7 @@ type ShowSeriesCardinalityStatement struct {
 	// Specifies whether the user requires exact counting or not.
 	Exact bool
 
-	// Metric(s) the series are listed for.
+	// Measurement(s) the series are listed for.
 	Sources Sources
 
 	// An expression evaluated on a series name or tag.
@@ -2456,14 +2456,14 @@ func (s *CreateContinuousQueryStatement) RequiredPrivileges() (ExecutionPrivileg
 	ep := ExecutionPrivileges{{Admin: false, Name: s.Database, Privilege: ReadPrivilege}}
 
 	// Selecting into a database that's different from the source?
-	if s.Source.Target.Metric.Database != "" {
+	if s.Source.Target.Measurement.Database != "" {
 		// Change source database privilege requirement to read.
 		ep[0].Privilege = ReadPrivilege
 
 		// Add destination database privilege requirement and set it to write.
 		p := ExecutionPrivilege{
 			Admin:     false,
-			Name:      s.Source.Target.Metric.Database,
+			Name:      s.Source.Target.Measurement.Database,
 			Privilege: WritePrivilege,
 		}
 		ep = append(ep, p)
@@ -2510,8 +2510,8 @@ func (s *DropContinuousQueryStatement) DefaultDatabase() string {
 	return s.Database
 }
 
-// ShowMetricCardinalityStatement represents a command for listing metric cardinality.
-type ShowMetricCardinalityStatement struct {
+// ShowMeasurementCardinalityStatement represents a command for listing measurement cardinality.
+type ShowMeasurementCardinalityStatement struct {
 	Exact         bool // If false then cardinality estimation will be used.
 	Database      string
 	Sources       Sources
@@ -2521,9 +2521,9 @@ type ShowMetricCardinalityStatement struct {
 }
 
 // String returns a string representation of the statement.
-func (s *ShowMetricCardinalityStatement) String() string {
+func (s *ShowMeasurementCardinalityStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("SHOW METRIC")
+	_, _ = buf.WriteString("SHOW MEASUREMENT")
 
 	if s.Exact {
 		_, _ = buf.WriteString(" EXACT")
@@ -2557,8 +2557,8 @@ func (s *ShowMetricCardinalityStatement) String() string {
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege required to execute a ShowMetricCardinalityStatement.
-func (s *ShowMetricCardinalityStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege required to execute a ShowMeasurementCardinalityStatement.
+func (s *ShowMeasurementCardinalityStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	if !s.Exact {
 		return ExecutionPrivileges{{Admin: false, Name: s.Database, Privilege: ReadPrivilege}}, nil
 	}
@@ -2566,16 +2566,21 @@ func (s *ShowMetricCardinalityStatement) RequiredPrivileges() (ExecutionPrivileg
 }
 
 // DefaultDatabase returns the default database from the statement.
-func (s *ShowMetricCardinalityStatement) DefaultDatabase() string {
+func (s *ShowMeasurementCardinalityStatement) DefaultDatabase() string {
 	return s.Database
 }
 
-// ShowMetricsStatement represents a command for listing metrics.
-type ShowMetricsStatement struct {
+// ShowMeasurementsStatement represents a command for listing measurements.
+type ShowMeasurementsStatement struct {
 	// Database to query. If blank, use the default database.
 	Database string
 
-	// Metric name or regex.
+	// Retention policy to query. If blank, use all retention policies (do not use default)
+	RetentionPolicy string
+
+	WildcardDatabase        bool
+	WildcardRetentionPolicy bool
+	// Measurement name or regex.
 	Source Source
 
 	// An expression evaluated on data point.
@@ -2593,17 +2598,27 @@ type ShowMetricsStatement struct {
 }
 
 // String returns a string representation of the statement.
-func (s *ShowMetricsStatement) String() string {
+func (s *ShowMeasurementsStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("SHOW METRICS")
+	_, _ = buf.WriteString("SHOW MEASUREMENTS")
 
-	if s.Database != "" {
+	if s.Database != "" || s.WildcardDatabase {
 		_, _ = buf.WriteString(" ON ")
-		_, _ = buf.WriteString(s.Database)
+		if s.WildcardDatabase {
+			_, _ = buf.WriteString("*")
+		} else {
+			_, _ = buf.WriteString(s.Database)
+		}
+		if s.WildcardRetentionPolicy {
+			_, _ = buf.WriteString(".*")
+		} else if s.RetentionPolicy != "" {
+			_, _ = buf.WriteString(".")
+			_, _ = buf.WriteString(s.RetentionPolicy)
+		}
 	}
 	if s.Source != nil {
-		_, _ = buf.WriteString(" WITH METRIC ")
-		if m, ok := s.Source.(*Metric); ok && m.Regex != nil {
+		_, _ = buf.WriteString(" WITH MEASUREMENT ")
+		if m, ok := s.Source.(*Measurement); ok && m.Regex != nil {
 			_, _ = buf.WriteString("=~ ")
 		} else {
 			_, _ = buf.WriteString("= ")
@@ -2629,32 +2644,32 @@ func (s *ShowMetricsStatement) String() string {
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege(s) required to execute a ShowMetricsStatement.
-func (s *ShowMetricsStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege(s) required to execute a ShowMeasurementsStatement.
+func (s *ShowMeasurementsStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: false, Name: s.Database, Privilege: ReadPrivilege}}, nil
 }
 
 // DefaultDatabase returns the default database from the statement.
-func (s *ShowMetricsStatement) DefaultDatabase() string {
+func (s *ShowMeasurementsStatement) DefaultDatabase() string {
 	return s.Database
 }
 
-// DropMetricStatement represents a command to drop a metric.
-type DropMetricStatement struct {
-	// Name of the metric to be dropped.
+// DropMeasurementStatement represents a command to drop a measurement.
+type DropMeasurementStatement struct {
+	// Name of the measurement to be dropped.
 	Name string
 }
 
-// String returns a string representation of the drop metric statement.
-func (s *DropMetricStatement) String() string {
+// String returns a string representation of the drop measurement statement.
+func (s *DropMeasurementStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("DROP METRIC ")
+	_, _ = buf.WriteString("DROP MEASUREMENT ")
 	_, _ = buf.WriteString(QuoteIdent(s.Name))
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege(s) required to execute a DropMetricStatement
-func (s *DropMetricStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege(s) required to execute a DropMeasurementStatement
+func (s *DropMeasurementStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
@@ -2671,16 +2686,16 @@ func (s *ShowQueriesStatement) RequiredPrivileges() (ExecutionPrivileges, error)
 	return ExecutionPrivileges{{Admin: false, Name: "", Privilege: ReadPrivilege}}, nil
 }
 
-// ShowTimeToLivesStatement represents a command for listing time-to-lives.
-type ShowTimeToLivesStatement struct {
-	// Name of the database to list ttls for.
+// ShowRetentionPoliciesStatement represents a command for listing retention policies.
+type ShowRetentionPoliciesStatement struct {
+	// Name of the database to list policies for.
 	Database string
 }
 
-// String returns a string representation of a ShowTimeToLivesStatement.
-func (s *ShowTimeToLivesStatement) String() string {
+// String returns a string representation of a ShowRetentionPoliciesStatement.
+func (s *ShowRetentionPoliciesStatement) String() string {
 	var buf strings.Builder
-	_, _ = buf.WriteString("SHOW TTLS")
+	_, _ = buf.WriteString("SHOW RETENTION POLICIES")
 	if s.Database != "" {
 		_, _ = buf.WriteString(" ON ")
 		_, _ = buf.WriteString(QuoteIdent(s.Database))
@@ -2688,13 +2703,13 @@ func (s *ShowTimeToLivesStatement) String() string {
 	return buf.String()
 }
 
-// RequiredPrivileges returns the privilege(s) required to execute a ShowTimeToLivesStatement
-func (s *ShowTimeToLivesStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+// RequiredPrivileges returns the privilege(s) required to execute a ShowRetentionPoliciesStatement
+func (s *ShowRetentionPoliciesStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: false, Name: s.Database, Privilege: ReadPrivilege}}, nil
 }
 
 // DefaultDatabase returns the default database from the statement.
-func (s *ShowTimeToLivesStatement) DefaultDatabase() string {
+func (s *ShowRetentionPoliciesStatement) DefaultDatabase() string {
 	return s.Database
 }
 
@@ -2719,14 +2734,14 @@ func (s *ShowStatsStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
-// ShowRegionsStatement represents a command for displaying regions in the cluster.
-type ShowRegionsStatement struct{}
+// ShowShardGroupsStatement represents a command for displaying shard groups in the cluster.
+type ShowShardGroupsStatement struct{}
 
-// String returns a string representation of the SHOW REGIONS command.
-func (s *ShowRegionsStatement) String() string { return "SHOW REGIONS" }
+// String returns a string representation of the SHOW SHARD GROUPS command.
+func (s *ShowShardGroupsStatement) String() string { return "SHOW SHARD GROUPS" }
 
 // RequiredPrivileges returns the privileges required to execute the statement.
-func (s *ShowRegionsStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
+func (s *ShowShardGroupsStatement) RequiredPrivileges() (ExecutionPrivileges, error) {
 	return ExecutionPrivileges{{Admin: true, Name: "", Privilege: AllPrivileges}}, nil
 }
 
@@ -2765,11 +2780,11 @@ func (s *ShowDiagnosticsStatement) RequiredPrivileges() (ExecutionPrivileges, er
 
 // CreateSubscriptionStatement represents a command to add a subscription to the incoming data stream.
 type CreateSubscriptionStatement struct {
-	Name         string
-	Database     string
-	TimeToLive   string
-	Destinations []string
-	Mode         string
+	Name            string
+	Database        string
+	RetentionPolicy string
+	Destinations    []string
+	Mode            string
 }
 
 // String returns a string representation of the CreateSubscriptionStatement.
@@ -2780,7 +2795,7 @@ func (s *CreateSubscriptionStatement) String() string {
 	_, _ = buf.WriteString(" ON ")
 	_, _ = buf.WriteString(QuoteIdent(s.Database))
 	_, _ = buf.WriteString(".")
-	_, _ = buf.WriteString(QuoteIdent(s.TimeToLive))
+	_, _ = buf.WriteString(QuoteIdent(s.RetentionPolicy))
 	_, _ = buf.WriteString(" DESTINATIONS ")
 	_, _ = buf.WriteString(s.Mode)
 	_, _ = buf.WriteString(" ")
@@ -2806,14 +2821,14 @@ func (s *CreateSubscriptionStatement) DefaultDatabase() string {
 
 // DropSubscriptionStatement represents a command to drop a subscription to the incoming data stream.
 type DropSubscriptionStatement struct {
-	Name       string
-	Database   string
-	TimeToLive string
+	Name            string
+	Database        string
+	RetentionPolicy string
 }
 
 // String returns a string representation of the DropSubscriptionStatement.
 func (s *DropSubscriptionStatement) String() string {
-	return fmt.Sprintf(`DROP SUBSCRIPTION %s ON %s.%s`, QuoteIdent(s.Name), QuoteIdent(s.Database), QuoteIdent(s.TimeToLive))
+	return fmt.Sprintf(`DROP SUBSCRIPTION %s ON %s.%s`, QuoteIdent(s.Name), QuoteIdent(s.Database), QuoteIdent(s.RetentionPolicy))
 }
 
 // RequiredPrivileges returns the privilege required to execute a DropSubscriptionStatement
@@ -2849,13 +2864,18 @@ type ShowTagKeysStatement struct {
 	// Data sources that fields are extracted from.
 	Sources Sources
 
+	// Op to compare tag keys with
+	TagKeyOp Token
+
+	// Literal to compare tag keys with
+	TagKeyExpr Expr
 	// An expression evaluated on data point.
 	Condition Expr
 
 	// Fields to sort results by.
 	SortFields SortFields
 
-	// Maximum number of tag keys per metric. Unlimited if zero.
+	// Maximum number of tag keys per measurement. Unlimited if zero.
 	Limit int
 
 	// Returns tag keys starting at an offset from the first row.
@@ -2983,15 +3003,26 @@ type ShowTagValuesStatement struct {
 	Sources Sources
 
 	// Operation to use when selecting tag key(s).
+	// This is one of: (associated TagKeyExpr Literal
+	// type in parentheses:
+	// 	EQ (*StringLiteral)
+	//	NEQ (*StringLiteral)
+	//	IN (*ListLiteral)
+	//	EQREGEX (*RegexLiteral)
+	//	NEQREGEX (*RegexLiteral)
 	Op Token
 
 	// Literal to compare the tag key(s) with.
+	// The value of the above Op field determines its dynamic type.
 	TagKeyExpr Literal
 
-	// An expression evaluated on data point.
+	// An expression evaluated on each data point.
 	Condition Expr
 
-	// Fields to sort results by.
+	// NOTE: The specification doesn't permit ORDER BY in
+	// a SHOW TAG VALUES statement and this field is
+	// ignored in practice. It's only left here to maintain
+	// backward compatibility.
 	SortFields SortFields
 
 	// Maximum number of rows to be returned.
@@ -3373,11 +3404,11 @@ type Dimension struct {
 // String returns a string representation of the dimension.
 func (d *Dimension) String() string { return d.Expr.String() }
 
-// Metrics represents a list of metrics.
-type Metrics []*Metric
+// Measurements represents a list of measurements.
+type Measurements []*Measurement
 
-// String returns a string representation of the metrics.
-func (a Metrics) String() string {
+// String returns a string representation of the measurements.
+func (a Measurements) String() string {
 	var str []string
 	for _, m := range a {
 		str = append(str, m.String())
@@ -3385,48 +3416,48 @@ func (a Metrics) String() string {
 	return strings.Join(str, ", ")
 }
 
-// Metric represents a single metric used as a datasource.
-type Metric struct {
-	Database   string
-	TimeToLive string
-	Name       string
-	Regex      *RegexLiteral
-	IsTarget   bool
+// Measurement represents a single measurement used as a datasource.
+type Measurement struct {
+	Database        string
+	RetentionPolicy string
+	Name            string
+	Regex           *RegexLiteral
+	IsTarget        bool
 
-	// This field indicates that the metric should read be read from the
+	// This field indicates that the measurement should read be read from the
 	// specified system iterator.
 	SystemIterator string
 }
 
-// Clone returns a deep clone of the Metric.
-func (m *Metric) Clone() *Metric {
+// Clone returns a deep clone of the Measurement.
+func (m *Measurement) Clone() *Measurement {
 	var regexp *RegexLiteral
 	if m.Regex != nil && m.Regex.Val != nil {
 		regexp = &RegexLiteral{Val: m.Regex.Val.Copy()}
 	}
-	return &Metric{
-		Database:       m.Database,
-		TimeToLive:     m.TimeToLive,
-		Name:           m.Name,
-		Regex:          regexp,
-		IsTarget:       m.IsTarget,
-		SystemIterator: m.SystemIterator,
+	return &Measurement{
+		Database:        m.Database,
+		RetentionPolicy: m.RetentionPolicy,
+		Name:            m.Name,
+		Regex:           regexp,
+		IsTarget:        m.IsTarget,
+		SystemIterator:  m.SystemIterator,
 	}
 }
 
-// String returns a string representation of the metric.
-func (m *Metric) String() string {
+// String returns a string representation of the measurement.
+func (m *Measurement) String() string {
 	var buf strings.Builder
 	if m.Database != "" {
 		_, _ = buf.WriteString(QuoteIdent(m.Database))
 		_, _ = buf.WriteString(".")
 	}
 
-	if m.TimeToLive != "" {
-		_, _ = buf.WriteString(QuoteIdent(m.TimeToLive))
+	if m.RetentionPolicy != "" {
+		_, _ = buf.WriteString(QuoteIdent(m.RetentionPolicy))
 	}
 
-	if m.Database != "" || m.TimeToLive != "" {
+	if m.Database != "" || m.RetentionPolicy != "" {
 		_, _ = buf.WriteString(`.`)
 	}
 
@@ -3441,21 +3472,21 @@ func (m *Metric) String() string {
 	return buf.String()
 }
 
-// MarshalBinary encodes a Metric to a binary format.
-func (m *Metric) MarshalBinary() ([]byte, error) {
-	pb := encodeMetric(m)
+// MarshalBinary encodes a Measurement to a binary format.
+func (m *Measurement) MarshalBinary() ([]byte, error) {
+	pb := encodeMeasurement(m)
 	return proto.Marshal(pb)
 }
 
-// UnmarshalBinary decodes binary data into a Metric.
-func (m *Metric) UnmarshalBinary(buf []byte) error {
-	var pb internal.Metric
+// UnmarshalBinary decodes binary data into a Measurement.
+func (m *Measurement) UnmarshalBinary(buf []byte) error {
+	var pb internal.Measurement
 	if err := proto.Unmarshal(buf, &pb); err != nil {
 		return err
 	}
 
-	*m = Metric{}
-	mm, err := decodeMetric(&pb)
+	*m = Measurement{}
+	mm, err := decodeMeasurement(&pb)
 	if err != nil {
 		return err
 	}
@@ -3935,7 +3966,7 @@ func Walk(v Visitor, node Node) {
 		Walk(v, n.Sources)
 		Walk(v, n.Condition)
 
-	case *ShowMetricCardinalityStatement:
+	case *ShowMeasurementCardinalityStatement:
 		Walk(v, n.Sources)
 		Walk(v, n.Condition)
 
@@ -3981,7 +4012,7 @@ func Walk(v Visitor, node Node) {
 
 	case *Target:
 		if n != nil {
-			Walk(v, n.Metric)
+			Walk(v, n.Measurement)
 		}
 	}
 }
@@ -4556,9 +4587,9 @@ func EvalBool(expr Expr, m map[string]interface{}) bool {
 	return v
 }
 
-// TypeMapper maps a data type to the metric and field.
+// TypeMapper maps a data type to the measurement and field.
 type TypeMapper interface {
-	MapType(metric *Metric, field string) DataType
+	MapType(measurement *Measurement, field string) DataType
 }
 
 // CallTypeMapper maps a data type to the function call.
@@ -4570,7 +4601,7 @@ type CallTypeMapper interface {
 
 type nilTypeMapper struct{}
 
-func (nilTypeMapper) MapType(*Metric, string) DataType { return Unknown }
+func (nilTypeMapper) MapType(*Measurement, string) DataType { return Unknown }
 
 type multiTypeMapper []TypeMapper
 
@@ -4581,9 +4612,9 @@ func MultiTypeMapper(mappers ...TypeMapper) TypeMapper {
 	return multiTypeMapper(mappers)
 }
 
-func (a multiTypeMapper) MapType(metric *Metric, field string) DataType {
+func (a multiTypeMapper) MapType(measurement *Measurement, field string) DataType {
 	for _, m := range a {
-		if typ := m.MapType(metric, field); typ != Unknown {
+		if typ := m.MapType(measurement, field); typ != Unknown {
 			return typ
 		}
 	}
@@ -4650,7 +4681,7 @@ func (v *TypeValuerEval) evalVarRefExprType(expr *VarRef) (DataType, error) {
 	if v.TypeMapper != nil {
 		for _, src := range v.Sources {
 			switch src := src.(type) {
-			case *Metric:
+			case *Measurement:
 				if t := v.TypeMapper.MapType(src, expr.Val); typ.LessThan(t) {
 					typ = t
 				}
@@ -4804,7 +4835,7 @@ func FieldDimensions(sources Sources, m FieldMapper) (fields map[string]DataType
 
 	for _, src := range sources {
 		switch src := src.(type) {
-		case *Metric:
+		case *Measurement:
 			f, d, err := m.FieldDimensions(src)
 			if err != nil {
 				return nil, nil, err

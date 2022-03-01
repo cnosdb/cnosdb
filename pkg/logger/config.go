@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/cnosdatabase/cnosdb/internal/log"
+	"github.com/cnosdb/cnosdb/internal/log"
 )
 
 const (

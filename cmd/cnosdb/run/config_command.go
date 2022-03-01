@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdatabase/cnosdb/server"
+	"github.com/cnosdb/cnosdb/server"
 	"github.com/spf13/cobra"
 )
 

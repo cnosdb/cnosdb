@@ -7,10 +7,10 @@ import (
 	"net/http/pprof"
 	"os"
 
-	"github.com/cnosdatabase/cnosdb"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
-	"github.com/cnosdatabase/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/pkg/utils"
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 )
@@ -86,7 +86,7 @@ func (s *Server) initFileSystem() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if _, err := cnosdb.LoadNode(s.Config.Dir); err != nil {
+	if _, err := cnosdb.LoadNode(s.Config.Dir, "meta.json"); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
@@ -149,7 +149,7 @@ func (s *Server) startHTTPServer() {
 }
 
 func (s *Server) remoteAddr(addr string) string {
-	hostname := s.Config.HTTPD.RemoteHostname
+	hostname := s.Config.Hostname
 	if hostname == "" {
 		hostname = DefaultHostname
 	}

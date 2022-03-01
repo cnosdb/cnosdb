@@ -171,11 +171,11 @@ func (p *Parser) parseCreateSubscriptionStatement() (*CreateSubscriptionStatemen
 		return nil, newParseError(tokstr(tok, lit), []string{"."}, pos)
 	}
 
-	// Read the name of the time-to-live.
+	// Read the name of the retention policy.
 	if ident, err = p.ParseIdent(); err != nil {
 		return nil, err
 	}
-	stmt.TimeToLive = ident
+	stmt.RetentionPolicy = ident
 
 	// Expect a "DESTINATIONS" keyword.
 	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != DESTINATIONS {
@@ -199,12 +199,12 @@ func (p *Parser) parseCreateSubscriptionStatement() (*CreateSubscriptionStatemen
 	return stmt, nil
 }
 
-// parseCreateTimeToLiveStatement parses a string and returns a create time-to-live statement.
-// This function assumes the CREATE TTL tokens have already been consumed.
-func (p *Parser) parseCreateTimeToLiveStatement() (*CreateTimeToLiveStatement, error) {
-	stmt := &CreateTimeToLiveStatement{}
+// parseCreateRetentionPolicyStatement parses a string and returns a create retention policy statement.
+// This function assumes the CREATE RETENTION POLICY tokens have already been consumed.
+func (p *Parser) parseCreateRetentionPolicyStatement() (*CreateRetentionPolicyStatement, error) {
+	stmt := &CreateRetentionPolicyStatement{}
 
-	// Parse the time-to-live name.
+	// Parse the retention policy name.
 	ident, err := p.ParseIdent()
 	if err != nil {
 		return nil, err
@@ -267,7 +267,7 @@ func (p *Parser) parseCreateTimeToLiveStatement() (*CreateTimeToLiveStatement, e
 		if err != nil {
 			return nil, err
 		}
-		stmt.RegionDuration = d
+		stmt.ShardGroupDuration = d
 	} else {
 		p.Unscan()
 	}
@@ -282,12 +282,12 @@ func (p *Parser) parseCreateTimeToLiveStatement() (*CreateTimeToLiveStatement, e
 	return stmt, nil
 }
 
-// parseAlterTimeToLiveStatement parses a string and returns an alter time-to-live statement.
-// This function assumes the ALTER TTL tokens have already been consumed.
-func (p *Parser) parseAlterTimeToLiveStatement() (*AlterTimeToLiveStatement, error) {
-	stmt := &AlterTimeToLiveStatement{}
+// parseAlterRetentionPolicyStatement parses a string and returns an alter retention policy statement.
+// This function assumes the ALTER RETENTION POLICY tokens have already been consumed.
+func (p *Parser) parseAlterRetentionPolicyStatement() (*AlterRetentionPolicyStatement, error) {
+	stmt := &AlterRetentionPolicyStatement{}
 
-	// Parse the time-to-live name.
+	// Parse the retention policy name.
 	tok, pos, lit := p.ScanIgnoreWhitespace()
 	if tok == DEFAULT {
 		stmt.Name = "default"
@@ -351,7 +351,7 @@ Loop:
 				if err != nil {
 					return nil, err
 				}
-				stmt.RegionDuration = &d
+				stmt.ShardGroupDuration = &d
 			} else {
 				return nil, newParseError(tokstr(tok, lit), []string{"DURATION"}, pos)
 			}
@@ -462,7 +462,7 @@ func (p *Parser) ParseIdentList() ([]string, error) {
 }
 
 // parseSegmentedIdents parses a segmented identifiers.
-// e.g.,  "db"."ttl".metric  or  "db"..metric
+// e.g.,  "db"."rp".measurement  or  "db"..measurement
 func (p *Parser) parseSegmentedIdents() ([]string, error) {
 	ident, err := p.ParseIdent()
 	if err != nil {
@@ -815,35 +815,35 @@ func (p *Parser) parseTarget(tr targetRequirement) (*Target, error) {
 		return nil, nil
 	}
 
-	// db, ttl, and / or metric
+	// db, rp, and / or measurement
 	idents, err := p.parseSegmentedIdents()
 	if err != nil {
 		return nil, err
 	}
 
 	if len(idents) < 3 {
-		// Check for source metric reference.
+		// Check for source measurement reference.
 		if ch := p.peekRune(); ch == ':' {
-			if err := p.parseTokens([]Token{COLON, METRIC}); err != nil {
+			if err := p.parseTokens([]Token{COLON, MEASUREMENT}); err != nil {
 				return nil, err
 			}
-			// Append empty metric name.
+			// Append empty measurement name.
 			idents = append(idents, "")
 		}
 	}
 
-	t := &Target{Metric: &Metric{IsTarget: true}}
+	t := &Target{Measurement: &Measurement{IsTarget: true}}
 
 	switch len(idents) {
 	case 1:
-		t.Metric.Name = idents[0]
+		t.Measurement.Name = idents[0]
 	case 2:
-		t.Metric.TimeToLive = idents[0]
-		t.Metric.Name = idents[1]
+		t.Measurement.RetentionPolicy = idents[0]
+		t.Measurement.Name = idents[1]
 	case 3:
-		t.Metric.Database = idents[0]
-		t.Metric.TimeToLive = idents[1]
-		t.Metric.Name = idents[2]
+		t.Measurement.Database = idents[0]
+		t.Measurement.RetentionPolicy = idents[1]
+		t.Measurement.Name = idents[2]
 	}
 
 	return t, nil
@@ -865,15 +865,15 @@ func (p *Parser) parseDeleteStatement() (Statement, error) {
 
 		var err error
 		WalkFunc(stmt.Sources, func(n Node) {
-			if t, ok := n.(*Metric); ok {
-				// Don't allow database or time-to-live in from clause for delete
-				// statement.  They apply to the selected database across all
-				// time-to-lives.
+			if t, ok := n.(*Measurement); ok {
+				// Don't allow database or retention policy in from clause for delete
+				// statement.  They apply to the selected database across all retention
+				// policies.
 				if t.Database != "" {
 					err = &ParseError{Message: "database not supported"}
 				}
-				if t.TimeToLive != "" {
-					err = &ParseError{Message: "time-to-live not supported"}
+				if t.RetentionPolicy != "" {
+					err = &ParseError{Message: "retention policy not supported"}
 				}
 			}
 		})
@@ -1005,9 +1005,9 @@ func (p *Parser) parseShowSeriesCardinalityStatement(exact bool) (Statement, err
 	return stmt, nil
 }
 
-// This function assumes the "SHOW METRIC" tokens have already been consumed.
-func (p *Parser) parseShowMetricCardinalityStatement(exact bool) (Statement, error) {
-	stmt := &ShowMetricCardinalityStatement{Exact: exact}
+// This function assumes the "SHOW MEASUREMENT" tokens have already been consumed.
+func (p *Parser) parseShowMeasurementCardinalityStatement(exact bool) (Statement, error) {
+	stmt := &ShowMeasurementCardinalityStatement{Exact: exact}
 
 	if stmt.Exact {
 		// Parse remaining CARDINALITY token
@@ -1055,18 +1055,35 @@ func (p *Parser) parseShowMetricCardinalityStatement(exact bool) (Statement, err
 	return stmt, nil
 }
 
-// parseShowMetricsStatement parses a string and returns a Statement.
-// This function assumes the "SHOW METRICS" tokens have already been consumed.
-func (p *Parser) parseShowMetricsStatement() (*ShowMetricsStatement, error) {
-	stmt := &ShowMetricsStatement{}
+// parseShowMeasurementsStatement parses a string and returns a Statement.
+// This function assumes the "SHOW MEASUREMENTS" tokens have already been consumed.
+func (p *Parser) parseShowMeasurementsStatement() (*ShowMeasurementsStatement, error) {
+	stmt := &ShowMeasurementsStatement{}
 	var err error
 
 	// Parse optional ON clause.
 	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == ON {
 		// Parse the database.
-		stmt.Database, err = p.ParseIdent()
-		if err != nil {
-			return nil, err
+		tok, pos, lit := p.ScanIgnoreWhitespace()
+		if tok == IDENT {
+			stmt.Database = lit
+		} else if tok == MUL {
+			stmt.WildcardDatabase = true
+		} else {
+			return nil, newParseError(tokstr(tok, lit), []string{"identifier or *"}, pos)
+		}
+
+		if tok, _, _ := p.ScanIgnoreWhitespace(); tok == DOT {
+			tok, pos, lit := p.ScanIgnoreWhitespace()
+			if tok == IDENT {
+				stmt.RetentionPolicy = lit
+			} else if tok == MUL {
+				stmt.WildcardRetentionPolicy = true
+			} else {
+				return nil, newParseError(tokstr(tok, lit), []string{"identifier or *"}, pos)
+			}
+		} else {
+			p.Unscan()
 		}
 	} else {
 		p.Unscan()
@@ -1074,8 +1091,8 @@ func (p *Parser) parseShowMetricsStatement() (*ShowMetricsStatement, error) {
 
 	// Parse optional WITH clause.
 	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == WITH {
-		// Parse required METRIC token.
-		if err := p.parseTokens([]Token{METRIC}); err != nil {
+		// Parse required MEASUREMENT token.
+		if err := p.parseTokens([]Token{MEASUREMENT}); err != nil {
 			return nil, err
 		}
 
@@ -1083,7 +1100,7 @@ func (p *Parser) parseShowMetricsStatement() (*ShowMetricsStatement, error) {
 		tok, pos, lit := p.ScanIgnoreWhitespace()
 		switch tok {
 		case EQ, EQREGEX:
-			// Parse required source (metric name or regex).
+			// Parse required source (measurement name or regex).
 			if stmt.Source, err = p.parseSource(false); err != nil {
 				return nil, err
 			}
@@ -1124,10 +1141,10 @@ func (p *Parser) parseShowQueriesStatement() (*ShowQueriesStatement, error) {
 	return &ShowQueriesStatement{}, nil
 }
 
-// parseShowTimeToLivesStatement parses a string and returns a ShowTimeToLivesStatement.
-// This function assumes the "SHOW TTLS" tokens have been consumed.
-func (p *Parser) parseShowTimeToLivesStatement() (*ShowTimeToLivesStatement, error) {
-	stmt := &ShowTimeToLivesStatement{}
+// parseShowRetentionPoliciesStatement parses a string and returns a ShowRetentionPoliciesStatement.
+// This function assumes the "SHOW RETENTION POLICIES" tokens have been consumed.
+func (p *Parser) parseShowRetentionPoliciesStatement() (*ShowRetentionPoliciesStatement, error) {
+	stmt := &ShowRetentionPoliciesStatement{}
 
 	// Expect an "ON" keyword.
 	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == ON {
@@ -1224,6 +1241,16 @@ func (p *Parser) parseShowTagKeysStatement() (*ShowTagKeysStatement, error) {
 			return nil, err
 		}
 	} else {
+		p.Unscan()
+	}
+	// Parse optional WITH clause.
+	if tok, _, _ := p.ScanIgnoreWhitespace(); tok == WITH {
+		p.Unscan()
+		if stmt.TagKeyOp, stmt.TagKeyExpr, err = p.parseTagKeyExpr(); err != nil {
+			return nil, err
+		}
+	} else {
+		// Not a WITH clause so put the token back.
 		p.Unscan()
 	}
 
@@ -1539,12 +1566,12 @@ func (p *Parser) parseShowFieldKeysStatement() (*ShowFieldKeysStatement, error) 
 	return stmt, nil
 }
 
-// parseDropMetricStatement parses a string and returns a DropMetricStatement.
-// This function assumes the "DROP METRIC" tokens have already been consumed.
-func (p *Parser) parseDropMetricStatement() (*DropMetricStatement, error) {
-	stmt := &DropMetricStatement{}
+// parseDropMeasurementStatement parses a string and returns a DropMeasurementStatement.
+// This function assumes the "DROP MEASUREMENT" tokens have already been consumed.
+func (p *Parser) parseDropMeasurementStatement() (*DropMeasurementStatement, error) {
+	stmt := &DropMeasurementStatement{}
 
-	// Parse the name of the metric to be dropped.
+	// Parse the name of the measurement to be dropped.
 	lit, err := p.ParseIdent()
 	if err != nil {
 		return nil, err
@@ -1570,15 +1597,15 @@ func (p *Parser) parseDropSeriesStatement() (*DropSeriesStatement, error) {
 
 		var err error
 		WalkFunc(stmt.Sources, func(n Node) {
-			if t, ok := n.(*Metric); ok {
-				// Don't allow database or time-to-live in from clause for delete
-				// statement.  They apply to the selected database across all
-				// time-to-lives.
+			if t, ok := n.(*Measurement); ok {
+				// Don't allow database or retention policy in from clause for delete
+				// statement.  They apply to the selected database across all retention
+				// policies.
 				if t.Database != "" {
 					err = &ParseError{Message: "database not supported"}
 				}
-				if t.TimeToLive != "" {
-					err = &ParseError{Message: "time-to-live not supported"}
+				if t.RetentionPolicy != "" {
+					err = &ParseError{Message: "retention policy not supported"}
 				}
 			}
 		})
@@ -1737,8 +1764,8 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 		// rewind
 		p.Unscan()
 
-		// mark statement as having a TimeToLiveInfo defined
-		stmt.TimeToLiveCreate = true
+		// mark statement as having a RetentionPolicyInfo defined
+		stmt.RetentionPolicyCreate = true
 
 		// Look for "DURATION"
 		if err := p.parseTokens([]Token{DURATION}); err != nil {
@@ -1748,7 +1775,7 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 			if err != nil {
 				return nil, err
 			}
-			stmt.TimeToLiveDuration = &rpDuration
+			stmt.RetentionPolicyDuration = &rpDuration
 		}
 
 		// Look for "REPLICATION"
@@ -1759,7 +1786,7 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 			if err != nil {
 				return nil, err
 			}
-			stmt.TimeToLiveReplication = &rpReplication
+			stmt.RetentionPolicyReplication = &rpReplication
 		}
 
 		// Look for "SHARD"
@@ -1771,7 +1798,7 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 			if tok != DURATION {
 				return nil, newParseError(tokstr(tok, lit), []string{"DURATION"}, pos)
 			}
-			stmt.TimeToLiveRegionDuration, err = p.ParseDuration()
+			stmt.RetentionPolicyShardGroupDuration, err = p.ParseDuration()
 			if err != nil {
 				return nil, err
 			}
@@ -1781,7 +1808,7 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 		if err := p.parseTokens([]Token{NAME}); err != nil {
 			p.Unscan()
 		} else {
-			stmt.TimeToLiveName, err = p.ParseIdent()
+			stmt.RetentionPolicyName, err = p.ParseIdent()
 			if err != nil {
 				return nil, err
 			}
@@ -1834,21 +1861,21 @@ func (p *Parser) parseDropSubscriptionStatement() (*DropSubscriptionStatement, e
 		return nil, newParseError(tokstr(tok, lit), []string{"."}, pos)
 	}
 
-	// Read the name of the time-to-live.
+	// Read the name of the retention policy.
 	if ident, err = p.ParseIdent(); err != nil {
 		return nil, err
 	}
-	stmt.TimeToLive = ident
+	stmt.RetentionPolicy = ident
 
 	return stmt, nil
 }
 
-// parseDropTimeToLiveStatement parses a string and returns a DropTimeToLiveStatement.
-// This function assumes the DROP TTL tokens have been consumed.
-func (p *Parser) parseDropTimeToLiveStatement() (*DropTimeToLiveStatement, error) {
-	stmt := &DropTimeToLiveStatement{}
+// parseDropRetentionPolicyStatement parses a string and returns a DropRetentionPolicyStatement.
+// This function assumes the DROP RETENTION POLICY tokens have been consumed.
+func (p *Parser) parseDropRetentionPolicyStatement() (*DropRetentionPolicyStatement, error) {
+	stmt := &DropRetentionPolicyStatement{}
 
-	// Parse the time-to-live name.
+	// Parse the policy name.
 	ident, err := p.ParseIdent()
 	if err != nil {
 		return nil, err
@@ -1945,10 +1972,10 @@ func (p *Parser) parseExplainStatement() (*ExplainStatement, error) {
 	return stmt, nil
 }
 
-// parseShowRegionsStatement parses a string for "SHOW REGIONS" statement.
-// This function assumes the "SHOW REGIONS" tokens have already been consumed.
-func (p *Parser) parseShowRegionsStatement() (*ShowRegionsStatement, error) {
-	return &ShowRegionsStatement{}, nil
+// parseShowShardGroupsStatement parses a string for "SHOW SHARD GROUPS" statement.
+// This function assumes the "SHOW SHARD GROUPS" tokens have already been consumed.
+func (p *Parser) parseShowShardGroupsStatement() (*ShowShardGroupsStatement, error) {
+	return &ShowShardGroupsStatement{}, nil
 }
 
 // parseShowShardsStatement parses a string for "SHOW SHARDS" statement.
@@ -2145,7 +2172,7 @@ func (p *Parser) peekRune() rune {
 }
 
 func (p *Parser) parseSource(subqueries bool) (Source, error) {
-	m := &Metric{}
+	m := &Measurement{}
 
 	// Attempt to parse a regex.
 	re, err := p.parseRegex()
@@ -2187,7 +2214,7 @@ func (p *Parser) parseSource(subqueries bool) (Source, error) {
 
 	// If we already have the max allowed idents, we're done.
 	if len(idents) == 3 {
-		m.Database, m.TimeToLive, m.Name = idents[0], idents[1], idents[2]
+		m.Database, m.RetentionPolicy, m.Name = idents[0], idents[1], idents[2]
 		return m, nil
 	}
 	// Check again for regex.
@@ -2202,15 +2229,15 @@ func (p *Parser) parseSource(subqueries bool) (Source, error) {
 	switch len(idents) {
 	case 1:
 		if re != nil {
-			m.TimeToLive = idents[0]
+			m.RetentionPolicy = idents[0]
 		} else {
 			m.Name = idents[0]
 		}
 	case 2:
 		if re != nil {
-			m.Database, m.TimeToLive = idents[0], idents[1]
+			m.Database, m.RetentionPolicy = idents[0], idents[1]
 		} else {
-			m.TimeToLive, m.Name = idents[0], idents[1]
+			m.RetentionPolicy, m.Name = idents[0], idents[1]
 		}
 	}
 
@@ -2482,7 +2509,7 @@ func (p *Parser) parseSortField() (*SortField, error) {
 	return field, nil
 }
 
-// ParseVarRef parses a reference to a metric or field.
+// ParseVarRef parses a reference to a measurement or field.
 func (p *Parser) ParseVarRef() (*VarRef, error) {
 	// Parse the segments of the variable ref.
 	segments, err := p.parseSegmentedIdents()

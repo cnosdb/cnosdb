@@ -6,9 +6,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/query/internal/gota"
-	"github.com/cnosdatabase/db/query/neldermead"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/query/internal/gota"
+	"github.com/cnosdb/db/query/neldermead"
 )
 
 // FieldMapper is a FieldMapper that wraps another FieldMapper and exposes
@@ -37,7 +37,7 @@ func (m FieldMapper) CallType(name string, args []cnosql.DataType) (cnosql.DataT
 // so this mapper is limited to only the return values of those functions.
 type CallTypeMapper struct{}
 
-func (CallTypeMapper) MapType(metric *cnosql.Metric, field string) cnosql.DataType {
+func (CallTypeMapper) MapType(measurement *cnosql.Measurement, field string) cnosql.DataType {
 	return cnosql.Unknown
 }
 
@@ -62,7 +62,7 @@ type FunctionTypeMapper struct {
 	CallTypeMapper
 }
 
-func (FunctionTypeMapper) MapType(metric *cnosql.Metric, field string) cnosql.DataType {
+func (FunctionTypeMapper) MapType(measurement *cnosql.Measurement, field string) cnosql.DataType {
 	return cnosql.Unknown
 }
 

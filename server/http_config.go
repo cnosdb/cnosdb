@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	tls "github.com/cnosdatabase/cnosdb/pkg/tlsconfig"
-	"github.com/cnosdatabase/common/pkg/toml"
+	tls "github.com/cnosdb/cnosdb/pkg/tlsconfig"
+	"github.com/cnosdb/common/pkg/toml"
 	"github.com/pkg/errors"
 )
 

@@ -13,23 +13,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/models"
 	"go.uber.org/zap"
 )
 
-// Time-to-live constants.
+// Retention policy constants.
 const (
-	// Name of the time-to-live used by the monitor service.
-	MonitorTimeToLive = "monitor"
+	// Name of the retention policy used by the monitor service.
+	MonitorRetentionPolicy = "monitor"
 
-	// Duration of the monitor time-to-live.
-	MonitorTimeToLiveDuration = 7 * 24 * time.Hour
+	// Duration of the monitor retention policy.
+	MonitorRetentionPolicyDuration = 7 * 24 * time.Hour
 
-	// Default replication factor to set on the monitor time-to-live.
-	MonitorTimeToLiveReplicaN = 1
+	// Default replication factor to set on the monitor retention policy.
+	MonitorRetentionPolicyReplicaN = 1
 )
 
 // Monitor represents an instance of the monitor system.
@@ -50,12 +50,12 @@ type Monitor struct {
 	storeCreated      bool
 	storeEnabled      bool
 
-	storeDatabase   string
-	storeTimeToLive string
-	storeInterval   time.Duration
+	storeDatabase        string
+	storeRetentionPolicy string
+	storeInterval        time.Duration
 
 	MetaClient interface {
-		CreateDatabaseWithTimeToLive(name string, spec *meta.TimeToLiveSpec) (*meta.DatabaseInfo, error)
+		CreateDatabaseWithRetentionPolicy(name string, spec *meta.RetentionPolicySpec) (*meta.DatabaseInfo, error)
 		Database(name string) *meta.DatabaseInfo
 	}
 
@@ -67,20 +67,20 @@ type Monitor struct {
 
 // PointsWriter is a simplified interface for writing the points the monitor gathers.
 type PointsWriter interface {
-	WritePoints(database, timeToLive string, points models.Points) error
+	WritePoints(database, retentionPolicy string, points models.Points) error
 }
 
 // New returns a new instance of the monitor system.
 func New(r Reporter, c Config) *Monitor {
 	return &Monitor{
-		globalTags:        make(map[string]string),
-		diagRegistrations: make(map[string]diagnostics.Client),
-		reporter:          r,
-		storeEnabled:      c.StoreEnabled,
-		storeDatabase:     c.StoreDatabase,
-		storeInterval:     time.Duration(c.StoreInterval),
-		storeTimeToLive:   MonitorTimeToLive,
-		Logger:            zap.NewNop(),
+		globalTags:           make(map[string]string),
+		diagRegistrations:    make(map[string]diagnostics.Client),
+		reporter:             r,
+		storeEnabled:         c.StoreEnabled,
+		storeDatabase:        c.StoreDatabase,
+		storeInterval:        time.Duration(c.StoreInterval),
+		storeRetentionPolicy: MonitorRetentionPolicy,
+		Logger:               zap.NewNop(),
 	}
 }
 
@@ -151,7 +151,7 @@ func (m *Monitor) writePoints(p models.Points) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if err := m.PointsWriter.WritePoints(m.storeDatabase, m.storeTimeToLive, p); err != nil {
+	if err := m.PointsWriter.WritePoints(m.storeDatabase, m.storeRetentionPolicy, p); err != nil {
 		m.Logger.Info("failed to store statistics", zap.Error(err))
 	}
 	return nil
@@ -383,15 +383,15 @@ func (m *Monitor) createInternalStorage() {
 	}
 
 	if di := m.MetaClient.Database(m.storeDatabase); di == nil {
-		duration := MonitorTimeToLiveDuration
-		replicaN := MonitorTimeToLiveReplicaN
-		spec := meta.TimeToLiveSpec{
-			Name:     MonitorTimeToLive,
+		duration := MonitorRetentionPolicyDuration
+		replicaN := MonitorRetentionPolicyReplicaN
+		spec := meta.RetentionPolicySpec{
+			Name:     MonitorRetentionPolicy,
 			Duration: &duration,
 			ReplicaN: &replicaN,
 		}
 
-		if _, err := m.MetaClient.CreateDatabaseWithTimeToLive(m.storeDatabase, &spec); err != nil {
+		if _, err := m.MetaClient.CreateDatabaseWithRetentionPolicy(m.storeDatabase, &spec); err != nil {
 			m.Logger.Info("Failed to create storage", logger.Database(m.storeDatabase), zap.Error(err))
 			return
 		}
@@ -419,7 +419,7 @@ func (m *Monitor) waitUntilInterval(d time.Duration) error {
 // storeStatistics writes the statistics to an CnosDB system.
 func (m *Monitor) storeStatistics() {
 	defer m.wg.Done()
-	m.Logger.Info("Storing statistics", logger.Database(m.storeDatabase), logger.TimeToLive(m.storeTimeToLive), logger.DurationLiteral("interval", m.storeInterval))
+	m.Logger.Info("Storing statistics", logger.Database(m.storeDatabase), logger.RetentionPolicy(m.storeRetentionPolicy), logger.DurationLiteral("interval", m.storeInterval))
 
 	// Wait until an even interval to start recording monitor statistics.
 	// If we are interrupted before the interval for some reason, exit early.

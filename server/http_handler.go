@@ -14,16 +14,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/monitor"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
-	"github.com/cnosdatabase/cnosdb/pkg/uuid"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/monitor"
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/uuid"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -148,7 +148,7 @@ type Handler struct {
 	}
 
 	PointsWriter interface {
-		WritePoints(database, timeToLive string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error
+		WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error
 	}
 
 	requestTracker *RequestTracker
@@ -171,6 +171,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 
 	h.AddRoutes([]route{
 		{
+			"query-options", http.MethodOptions, "/query", false, true,
+			h.serveOptions,
+		},
+		{
 			"query", http.MethodPost, "/query", false, true,
 			h.serveQuery,
 		},
@@ -181,6 +185,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		{
 			"ping", http.MethodGet, "/ping", false, true,
 			h.servePing,
+		},
+		{
+			"write-options", http.MethodOptions, "/write", false, true,
+			h.serveOptions,
 		},
 		{
 			"write", http.MethodPost, "/write", true, true,
@@ -198,6 +206,11 @@ func (h *Handler) Open() {
 // 响应 HTTP 请求
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.router.ServeHTTP(w, r)
+}
+
+// serveOptions returns an empty response to comply with OPTIONS pre-flight requests
+func (h *Handler) serveOptions(w http.ResponseWriter, r *http.Request) {
+	writeHeader(w, http.StatusNoContent)
 }
 
 // serveQuery parses an incoming query and, if valid, executes the query.
@@ -318,12 +331,12 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 	async := r.FormValue("async") == "true"
 
 	opts := query.ExecutionOptions{
-		Database:   db,
-		TimeToLive: r.FormValue("ttl"),
-		ChunkSize:  chunkSize,
-		ReadOnly:   r.Method == "GET",
-		NodeID:     nodeID,
-		Authorizer: fineAuthorizer,
+		Database:        db,
+		RetentionPolicy: r.FormValue("rp"),
+		ChunkSize:       chunkSize,
+		ReadOnly:        r.Method == "GET",
+		NodeID:          nodeID,
+		Authorizer:      fineAuthorizer,
 	}
 
 	if h.config.AuthEnabled {
@@ -546,10 +559,11 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 		// it's valid
 	default:
 		writeError(w, fmt.Sprintf("invalid precision %q (use n, u, ms, s, m or h)", precision))
+		return
 	}
 
 	database := r.URL.Query().Get("db")
-	timeToLive := r.URL.Query().Get("ttl")
+	retentionPolicy := r.URL.Query().Get("rp")
 
 	if database == "" {
 		writeError(w, "database is required")
@@ -645,7 +659,7 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 	}
 
 	// Write points.
-	if err := h.PointsWriter.WritePoints(database, timeToLive, consistency, user, points); cnosdb.IsClientError(err) {
+	if err := h.PointsWriter.WritePoints(database, retentionPolicy, consistency, user, points); cnosdb.IsClientError(err) {
 		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
 		writeError(w, err.Error())
 		return
@@ -760,7 +774,7 @@ func (h *Handler) AddRoutes(routes ...route) {
 			handler = WrapWithGzipResponseWriter(handler)
 		}
 
-		handler = WrapWithCors(handler, "")
+		handler = WrapWithCors(handler)
 		handler = WrapWithRequestID(handler)
 
 		if h.config.LogEnabled && r.LoggingEnabled {
@@ -773,35 +787,33 @@ func (h *Handler) AddRoutes(routes ...route) {
 }
 
 // WrapWithCors responds to incoming requests and adds the appropriate cors headers
-func WrapWithCors(inner http.Handler, cors string) http.Handler {
+func WrapWithCors(inner http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cors != "" {
-			if origin := r.Header.Get("Origin"); origin != "" {
-				w.Header().Set(`Access-Control-Allow-Origin`, origin)
-				w.Header().Set(`Access-Control-Allow-Methods`, strings.Join([]string{
-					`DELETE`,
-					`GET`,
-					`OPTIONS`,
-					`POST`,
-					`PUT`,
-				}, ", "))
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set(`Access-Control-Allow-Origin`, origin)
+			w.Header().Set(`Access-Control-Allow-Methods`, strings.Join([]string{
+				`DELETE`,
+				`GET`,
+				`OPTIONS`,
+				`POST`,
+				`PUT`,
+			}, ", "))
 
-				w.Header().Set(`Access-Control-Allow-Headers`, strings.Join([]string{
-					`Accept`,
-					`Accept-Encoding`,
-					`Authorization`,
-					`Content-Length`,
-					`Content-Type`,
-					`X-CSRF-Token`,
-					`X-HTTPD-Method-Override`,
-				}, ", "))
+			w.Header().Set(`Access-Control-Allow-Headers`, strings.Join([]string{
+				`Accept`,
+				`Accept-Encoding`,
+				`Authorization`,
+				`Content-Length`,
+				`Content-Type`,
+				`X-CSRF-Token`,
+				`X-HTTPD-Method-Override`,
+			}, ", "))
 
-				w.Header().Set(`Access-Control-Expose-Headers`, strings.Join([]string{
-					`Date`,
-					`X-CnosDB-Version`,
-					`X-CnosDB-Build`,
-				}, ", "))
-			}
+			w.Header().Set(`Access-Control-Expose-Headers`, strings.Join([]string{
+				`Date`,
+				`X-CnosDB-Version`,
+				`X-CnosDB-Build`,
+			}, ", "))
 		}
 
 		if r.Method == "OPTIONS" {

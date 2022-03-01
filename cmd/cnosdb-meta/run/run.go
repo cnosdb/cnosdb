@@ -7,9 +7,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-meta/options"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-meta/options"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -39,6 +39,10 @@ func GetCommand() *cobra.Command {
 			config, err := ParseConfig(options.Env.GetConfigPath())
 			if err != nil {
 				return fmt.Errorf("parse config: %s", err)
+			}
+
+			if err := config.ApplyEnvOverrides(os.Getenv); err != nil {
+				return fmt.Errorf("apply env config: %v", err)
 			}
 
 			if err := logger.InitZapLogger(config.Log); err != nil {

@@ -12,27 +12,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/monitor"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
-	"github.com/cnosdatabase/cnosdb/pkg/utils"
-	"github.com/cnosdatabase/cnosdb/server/coordinator"
-	"github.com/cnosdatabase/cnosdb/server/hh"
-	"github.com/cnosdatabase/cnosdb/server/snapshotter"
-	"github.com/cnosdatabase/cnosdb/server/subscriber"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/monitor"
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosdb/server/coordinator"
+	"github.com/cnosdb/cnosdb/server/hh"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
+	"github.com/cnosdb/cnosdb/server/subscriber"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 	"github.com/pkg/errors"
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 
 	// Initialize the engine package
-	_ "github.com/cnosdatabase/db/tsdb/engine"
+	_ "github.com/cnosdb/db/tsdb/engine"
 	// Initialize the index package
-	_ "github.com/cnosdatabase/db/tsdb/index"
+	_ "github.com/cnosdb/db/tsdb/index"
 )
 
 const NodeMuxHeader = "node"
@@ -163,7 +163,7 @@ func (s *Server) initMetaStore() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if node, err := cnosdb.LoadNode(s.Config.Meta.Dir); err != nil {
+	if node, err := cnosdb.LoadNode(s.Config.Meta.Dir, ""); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
@@ -315,7 +315,7 @@ func (s *Server) openServices() error {
 
 func (s *Server) initMetaClient() error {
 	var metaCli meta.MetaClient
-	if s.Config.Meta.HTTPD == nil {
+	if s.Config.Cluster == false {
 		metaCli = meta.NewClient(s.Config.Meta)
 	} else {
 		s.logger.Info("waiting to be added to cluster")
@@ -449,7 +449,7 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 	s.Node.ID = n.ID
 	s.Node.Peers = peers
 
-	if err := s.Node.Save(); err != nil {
+	if err := s.Node.Save(""); err != nil {
 		s.logger.Error("error save node", zap.Error(err))
 		return
 	}
@@ -463,16 +463,16 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 
 // HTTPAddr returns the HTTP address used by other nodes for HTTP queries and writes.
 func (s *Server) HTTPAddr() string {
-	return remoteAddr(s.Config.HTTPD.BindAddress)
+	return s.remoteAddr(s.Config.HTTPD.BindAddress)
 }
 
 // TCPAddr returns the TCP address used by other nodes for cluster communication.
 func (s *Server) TCPAddr() string {
-	return remoteAddr(s.Config.BindAddress)
+	return s.remoteAddr(s.Config.BindAddress)
 }
 
-func remoteAddr(addr string) string {
-	hostname, err := meta.DefaultHost(meta.DefaultHostname, addr)
+func (s *Server) remoteAddr(addr string) string {
+	hostname, err := meta.DefaultHost(s.Config.Hostname, addr)
 	if err != nil {
 		return addr
 	}

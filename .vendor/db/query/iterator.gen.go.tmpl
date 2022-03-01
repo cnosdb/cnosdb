@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 // DefaultStatsInterval is the default value for IteratorEncoder.StatsInterval.
@@ -402,7 +402,7 @@ func (itr *{{$k.name}}SortedMergeIterator) pop() (*{{$k.Name}}Point, error) {
 
 // {{$k.name}}SortedMergeHeap represents a heap of {{$k.name}}SortedMergeHeapItems.
 // Items are sorted with the following priority:
-//     - By their metric name;
+//     - By their measurement name;
 //     - By their tag keys/values;
 //     - By time; or
 //     - By their Aux field values.
@@ -1104,18 +1104,18 @@ func (itr *{{$k.name}}Reduce{{$v.Name}}Iterator) reduce() ([]{{$v.Name}}Point, e
 		id := tags.ID()
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := m[id]
-		if ttl == nil {
+		rp := m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &{{$k.name}}Reduce{{$v.Name}}Point{
+			rp = &{{$k.name}}Reduce{{$v.Name}}Point{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			m[id] = ttl
+			m[id] = rp
 		}
-		ttl.Aggregator.Aggregate{{$k.Name}}(curr)
+		rp.Aggregator.Aggregate{{$k.Name}}(curr)
 	}
 
 	keys := make([]string, 0, len(m))
@@ -1138,12 +1138,12 @@ func (itr *{{$k.name}}Reduce{{$v.Name}}Iterator) reduce() ([]{{$v.Name}}Point, e
 	// Emit the points for each name & tag combination.
 	a := make([]{{$v.Name}}Point, 0, len(m))
 	for _, k := range keys {
-		ttl := m[k]
-		points := ttl.Emitter.Emit()
+		rp := m[k]
+		points := rp.Emitter.Emit()
 		for i := len(points)-1; i >= 0; i-- {
-			points[i].Name = ttl.Name
+			points[i].Name = rp.Name
 			if !itr.keepTags {
-				points[i].Tags = ttl.Tags
+				points[i].Tags = rp.Tags
 			}
 			// Set the points time to the interval time if the reducer didn't provide one.
 			if points[i].Time == ZeroTime {
@@ -1225,20 +1225,20 @@ func (itr *{{$k.name}}Stream{{$v.Name}}Iterator) reduce() ([]{{$v.Name}}Point, e
 		} else if curr == nil {
 			// Close all of the aggregators to flush any remaining points to emit.
 			var points []{{$v.Name}}Point
-			for _, ttl := range itr.m {
-				if aggregator, ok := ttl.Aggregator.(io.Closer); ok {
+			for _, rp := range itr.m {
+				if aggregator, ok := rp.Aggregator.(io.Closer); ok {
 					if err := aggregator.Close(); err != nil {
 						return nil, err
 					}
 
-					pts := ttl.Emitter.Emit()
+					pts := rp.Emitter.Emit()
 					if len(pts) == 0 {
 						continue
 					}
 
 					for i := range pts {
-						pts[i].Name = ttl.Name
-						pts[i].Tags = ttl.Tags
+						pts[i].Name = rp.Name
+						pts[i].Tags = rp.Tags
 					}
 					points = append(points, pts...)
 				}
@@ -1258,28 +1258,28 @@ func (itr *{{$k.name}}Stream{{$v.Name}}Iterator) reduce() ([]{{$v.Name}}Point, e
 		}
 
 		// Retrieve the aggregator for this name/tag combination or create one.
-		ttl := itr.m[id]
-		if ttl == nil {
+		rp := itr.m[id]
+		if rp == nil {
 			aggregator, emitter := itr.create()
-			ttl = &{{$k.name}}Reduce{{.Name}}Point{
+			rp = &{{$k.name}}Reduce{{.Name}}Point{
 				Name:       curr.Name,
 				Tags:       tags,
 				Aggregator: aggregator,
 				Emitter:    emitter,
 			}
-			itr.m[id] = ttl
+			itr.m[id] = rp
 		}
-		ttl.Aggregator.Aggregate{{$k.Name}}(curr)
+		rp.Aggregator.Aggregate{{$k.Name}}(curr)
 
 		// Attempt to emit points from the aggregator.
-		points := ttl.Emitter.Emit()
+		points := rp.Emitter.Emit()
 		if len(points) == 0 {
 			continue
 		}
 
 		for i := range points {
-			points[i].Name = ttl.Name
-			points[i].Tags = ttl.Tags
+			points[i].Name = rp.Name
+			points[i].Tags = rp.Tags
 		}
 		return points, nil
 	}

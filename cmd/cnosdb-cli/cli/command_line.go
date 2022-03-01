@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,10 +20,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/client"
-	"github.com/cnosdatabase/cnosdb/pkg/utils"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosdb/client"
+	"github.com/cnosdb/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 
 	"github.com/peterh/liner"
 	"github.com/pkg/errors"
@@ -176,7 +177,7 @@ func (c *CommandLine) parseCommand(cmd string) error {
 		case "settings":
 			c.printSettings()
 		case "use":
-			c.setDatabaseAndTTL(cmd)
+			c.setDatabaseAndRP(cmd)
 		case "node":
 			c.setNode(cmd)
 		case "insert":
@@ -374,8 +375,8 @@ func (c *CommandLine) setPrecision(cmd string) {
 	}
 }
 
-// setDatabaseAndTTL 设置默认数据库命令： use <Database>
-func (c *CommandLine) setDatabaseAndTTL(cmd string) {
+// setDatabaseAndRP 设置默认数据库命令： use <Database>
+func (c *CommandLine) setDatabaseAndRP(cmd string) {
 	args := strings.SplitAfterN(strings.TrimSuffix(strings.TrimSpace(cmd), ";"), " ", 2)
 	if len(args) != 2 {
 		fmt.Printf("ERR: could not parse database name from %q.\n", cmd)
@@ -383,9 +384,9 @@ func (c *CommandLine) setDatabaseAndTTL(cmd string) {
 	}
 
 	stmt := args[1]
-	db, ttl, err := parseDatabaseAndTimeToLive([]byte(stmt))
+	db, rp, err := parseDatabaseAndRetentionPolicy([]byte(stmt))
 	if err != nil {
-		fmt.Printf("ERR: unable to parse database or ttl from %s", stmt)
+		fmt.Printf("ERR: unable to parse database or rp from %s", stmt)
 		return
 	}
 
@@ -397,17 +398,17 @@ func (c *CommandLine) setDatabaseAndTTL(cmd string) {
 	c.pointConfig.Database = db
 	fmt.Printf("Using database %s\n", db)
 
-	if ttl != "" {
-		if !c.requestTtlExists(db, ttl) {
+	if rp != "" {
+		if !c.requestRpExists(db, rp) {
 			return
 		}
-		c.pointConfig.TimeToLive = ttl
-		fmt.Printf("Using ttl %s\n", ttl)
+		c.pointConfig.RetentionPolicy = rp
+		fmt.Printf("Using rp %s\n", rp)
 	}
 }
 
-func parseDatabaseAndTimeToLive(stmt []byte) (string, string, error) {
-	var db, ttl []byte
+func parseDatabaseAndRetentionPolicy(stmt []byte) (string, string, error) {
+	var db, rp []byte
 	var quoted bool
 	var separatorCount int
 
@@ -421,17 +422,17 @@ func parseDatabaseAndTimeToLive(stmt []byte) (string, string, error) {
 		if b == '.' && !quoted {
 			separatorCount++
 			if separatorCount > 1 {
-				return "", "", errors.Errorf("unable to parse database and ttl from %s", string(stmt))
+				return "", "", errors.Errorf("unable to parse database and rp from %s", string(stmt))
 			}
 			continue
 		}
 		if separatorCount == 1 {
-			ttl = append(ttl, b)
+			rp = append(rp, b)
 			continue
 		}
 		db = append(db, b)
 	}
-	return string(db), string(ttl), nil
+	return string(db), string(rp), nil
 }
 
 // requestDbExists Server交互：检查数据库是否存在
@@ -470,9 +471,9 @@ func (c *CommandLine) requestDbExists(db string) bool {
 	return true
 }
 
-// requestTtlExists Server 交互：检查保留策略是否存在
-func (c *CommandLine) requestTtlExists(db, ttl string) bool {
-	response, err := c.client.Query(client.Query{Command: fmt.Sprintf("SHOW TTLS ON %q", db)})
+// requestRpExists Server 交互：检查保留策略是否存在
+func (c *CommandLine) requestRpExists(db, rp string) bool {
+	response, err := c.client.Query(client.Query{Command: fmt.Sprintf("SHOW RETENTION POLICIES ON %q", db)})
 	if err != nil {
 		fmt.Printf("ERR: %s\n", err)
 		return false
@@ -483,7 +484,7 @@ func (c *CommandLine) requestTtlExists(db, ttl string) bool {
 		}
 		fmt.Printf("WARN: %s\n", err)
 	} else {
-		if timeToLiveExists := func() bool {
+		if retentionPolicyExists := func() bool {
 			for _, result := range response.Results {
 				for _, row := range result.Series {
 					for _, values := range row.Values {
@@ -491,7 +492,7 @@ func (c *CommandLine) requestTtlExists(db, ttl string) bool {
 							if i != 0 {
 								continue
 							}
-							if v == ttl {
+							if v == rp {
 								return true
 							}
 						}
@@ -499,8 +500,8 @@ func (c *CommandLine) requestTtlExists(db, ttl string) bool {
 				}
 			}
 			return false
-		}(); !timeToLiveExists {
-			fmt.Printf("ERR: TTL %s doesn't exist. Run SHOW TTLS ON %q for a list of existing ttls.\n", ttl, db)
+		}(); !retentionPolicyExists {
+			fmt.Printf("ERR: RP %s doesn't exist. Run SHOW RPS ON %q for a list of existing rps.\n", rp, db)
 			return false
 		}
 	}
@@ -538,9 +539,9 @@ func (c *CommandLine) requestInsert(cmd string) error {
 	if err := c.client.Write(bp); err != nil {
 		fmt.Printf("ERR: %s\n", err)
 		if c.pointConfig.Database == "" {
-			fmt.Println("Note: error may be due to not setting a database or ttl.")
+			fmt.Println("Note: error may be due to not setting a database or rp.")
 			fmt.Println(`Please set a database with the command "use <database>" or`)
-			fmt.Println("INSERT INTO <database>.<time-to-live> <point>")
+			fmt.Println("INSERT INTO <database>.<retention policy> <point>")
 		}
 	}
 	return nil
@@ -549,18 +550,18 @@ func (c *CommandLine) requestInsert(cmd string) error {
 // query 创建 client.Query 实例
 func (c *CommandLine) query(query string) client.Query {
 	return client.Query{
-		Command:    query,
-		Database:   c.pointConfig.Database,
-		TimeToLive: c.pointConfig.TimeToLive,
-		Chunked:    c.Chunked,
-		ChunkSize:  c.ChunkSize,
+		Command:         query,
+		Database:        c.pointConfig.Database,
+		RetentionPolicy: c.pointConfig.RetentionPolicy,
+		Chunked:         c.Chunked,
+		ChunkSize:       c.ChunkSize,
 	}
 }
 
 // requestQuery Server 交互：执行查询请求
 func (c *CommandLine) requestQuery(query string) error {
-	// 以默认的 ttl 覆盖输入语句中的 ttl （如果设置了）
-	if c.pointConfig.TimeToLive != "" {
+	// 以默认的 rp 覆盖输入语句中的 rp （如果设置了）
+	if c.pointConfig.RetentionPolicy != "" {
 		pq, err := cnosql.NewParser(strings.NewReader(query)).ParseQuery()
 		if err != nil {
 			fmt.Printf("ERR: %s\n", err)
@@ -569,12 +570,12 @@ func (c *CommandLine) requestQuery(query string) error {
 		for _, stmt := range pq.Statements {
 			if selectStatement, ok := stmt.(*cnosql.SelectStatement); ok {
 				cnosql.WalkFunc(selectStatement.Sources, func(n cnosql.Node) {
-					if t, ok := n.(*cnosql.Metric); ok {
+					if t, ok := n.(*cnosql.Measurement); ok {
 						if t.Database == "" && c.pointConfig.Database != "" {
 							t.Database = c.pointConfig.Database
 						}
-						if t.TimeToLive == "" && c.pointConfig.TimeToLive != "" {
-							t.TimeToLive = c.pointConfig.TimeToLive
+						if t.RetentionPolicy == "" && c.pointConfig.RetentionPolicy != "" {
+							t.RetentionPolicy = c.pointConfig.RetentionPolicy
 						}
 					}
 				})
@@ -669,19 +670,19 @@ func (c *CommandLine) parseInsert(stmt string) (client.BatchPoints, error) {
 
 func (c *CommandLine) parseInto(stmt string) *client.BatchPointsConfig {
 	ident, stmt := parseNextIdentifier(stmt)
-	db, ttl := c.pointConfig.Database, c.pointConfig.TimeToLive
+	db, rp := c.pointConfig.Database, c.pointConfig.RetentionPolicy
 	if strings.HasPrefix(stmt, ".") {
 		db = ident
 		ident, stmt = parseNextIdentifier(stmt[1:])
 	}
 	if strings.HasPrefix(stmt, " ") {
-		ttl = ident
+		rp = ident
 		stmt = stmt[1:]
 	}
 
 	return &client.BatchPointsConfig{
 		Database:         db,
-		TimeToLive:       ttl,
+		RetentionPolicy:  rp,
 		Precision:        c.pointConfig.Precision,
 		WriteConsistency: c.pointConfig.WriteConsistency,
 	}
@@ -900,23 +901,23 @@ func (c *CommandLine) clear(cmd string) {
 		c.pointConfig.Database = ""
 		fmt.Println("Database context cleared")
 		return
-	case "time to live", "ttl":
-		c.pointConfig.TimeToLive = ""
-		fmt.Println("TTL context cleared")
+	case "retention policy", "rp":
+		c.pointConfig.RetentionPolicy = ""
+		fmt.Println("Retention Policy context cleared")
 		return
 	default:
 		if len(args) > 1 {
 			fmt.Printf("ERR: invalid command %q.\n", v)
 		}
-		fmt.Println(`Note: Possible commands for 'clear' are:
+		fmt.Print(`Note: Possible commands for 'clear' are:
     # Clear the database context
     clear database
     clear db
 
-    # Clear the time to live context
-    clear time to live
-    clear ttl
-		`)
+    # Clear the retention policy context
+    clear retention policy
+    clear rp
+`)
 	}
 }
 
@@ -933,15 +934,15 @@ func (c *CommandLine) printHelp() {
         consistency <level>   sets write consistency level: any, one, quorum, or all
         history               displays command history
         settings              outputs the current settings for the shell
-        clear                 clears settings such as database or time to live.  run 'clear' for help
+        clear                 clears settings such as database or retention policy.  run 'clear' for help
         exit/quit/ctrl+d      quits the cnosdb-cli shell
 
         show databases        show database names
         show series           show series information
-        show metrics          show metric information
+        show measurements     show measurement information
         show tag keys         show tag key information
         show field keys       show field key information
-		logo                  display producer logo`)
+	logo                  display producer logo`)
 }
 
 func (c *CommandLine) printSettings() {
@@ -952,7 +953,7 @@ func (c *CommandLine) printSettings() {
 	_, _ = fmt.Fprintf(w, "Addr\t%s\n", c.clientConfig.Addr)
 	_, _ = fmt.Fprintf(w, "Username\t%s\n", c.clientConfig.Username)
 	_, _ = fmt.Fprintf(w, "Database\t%s\n", c.pointConfig.Database)
-	_, _ = fmt.Fprintf(w, "TimeToLive\t%s\n", c.pointConfig.TimeToLive)
+	_, _ = fmt.Fprintf(w, "Retention Policy\t%s\n", c.pointConfig.RetentionPolicy)
 	_, _ = fmt.Fprintf(w, "Format\t%s\n", c.Format)
 	_, _ = fmt.Fprintf(w, "Precision\t%s\n", c.pointConfig.Precision)
 	_, _ = fmt.Fprintf(w, "Chunked\t%v\n", c.Chunked)
@@ -961,13 +962,11 @@ func (c *CommandLine) printSettings() {
 }
 
 func (c *CommandLine) logo() {
-	fmt.Println(`                                  _   _      
-                                 | | | |     
-  ___   _ __     ___    ___    __| | | |__   
- / __| | '_ \   / _ \  / __|  / _  | | '_ \  
-| (__  | | | | | (_) | \__ \ | (_| | | |_) | 
- \___| |_| |_|  \___/  |___/  \__,_| |_.__/
-                                             `)
+	logo, err := ioutil.ReadFile("cmd/cnosdb-cli/cli/logo")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(logo))
 }
 
 func (c *CommandLine) setHistoryPath() {

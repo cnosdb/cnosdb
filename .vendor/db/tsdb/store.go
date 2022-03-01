@@ -15,13 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -40,8 +40,8 @@ var (
 
 // Statistics gathered by the store.
 const (
-	statDatabaseSeries  = "numSeries"  // number of series in a database
-	statDatabaseMetrics = "numMetrics" // number of metrics in a database
+	statDatabaseSeries       = "numSeries"       // number of series in a database
+	statDatabaseMeasurements = "numMeasurements" // number of measurements in a database
 )
 
 // SeriesFileDirectory is the name of the directory containing series files for
@@ -134,7 +134,7 @@ func (s *Store) Statistics(tags map[string]string) []models.Statistic {
 	shards := s.shardsSlice()
 	s.mu.RUnlock()
 
-	// Add all the series and metrics cardinality estimations.
+	// Add all the series and measurements cardinality estimations.
 	databases := s.Databases()
 	statistics := make([]models.Statistic, 0, len(databases))
 	for _, database := range databases {
@@ -145,9 +145,9 @@ func (s *Store) Statistics(tags map[string]string) []models.Statistic {
 			continue
 		}
 
-		mc, err := s.MetricsCardinality(database)
+		mc, err := s.MeasurementsCardinality(database)
 		if err != nil {
-			log.Info("Cannot retrieve metric cardinality", zap.Error(err))
+			log.Info("Cannot retrieve measurement cardinality", zap.Error(err))
 			continue
 		}
 
@@ -155,13 +155,13 @@ func (s *Store) Statistics(tags map[string]string) []models.Statistic {
 			Name: "database",
 			Tags: models.StatisticTags{"database": database}.Merge(tags),
 			Values: map[string]interface{}{
-				statDatabaseSeries:  sc,
-				statDatabaseMetrics: mc,
+				statDatabaseSeries:       sc,
+				statDatabaseMeasurements: mc,
 			},
 		})
 	}
 
-	// Gather all statistics for all shards.
+	// Gather all statistics for all shards.
 	for _, shard := range shards {
 		statistics = append(statistics, shard.Statistics(tags)...)
 	}
@@ -323,49 +323,49 @@ func (s *Store) loadShards() error {
 			return err
 		}
 
-		// Load each time-to-live within the database directory.
-		ttlDirs, err := ioutil.ReadDir(dbPath)
+		// Load each retention policy within the database directory.
+		rpDirs, err := ioutil.ReadDir(dbPath)
 		if err != nil {
 			return err
 		}
 
-		for _, ttl := range ttlDirs {
-			ttlPath := filepath.Join(s.path, db.Name(), ttl.Name())
-			if !ttl.IsDir() {
-				log.Info("Skipping time-to-live dir", zap.String("name", ttl.Name()), zap.String("reason", "not a directory"))
+		for _, rp := range rpDirs {
+			rpPath := filepath.Join(s.path, db.Name(), rp.Name())
+			if !rp.IsDir() {
+				log.Info("Skipping retention policy dir", zap.String("name", rp.Name()), zap.String("reason", "not a directory"))
 				continue
 			}
 
-			// The .series directory is not a time-to-live.
-			if ttl.Name() == SeriesFileDirectory {
+			// The .series directory is not a retention policy.
+			if rp.Name() == SeriesFileDirectory {
 				continue
 			}
 
-			if s.EngineOptions.TimeToLiveFilter != nil && !s.EngineOptions.TimeToLiveFilter(db.Name(), ttl.Name()) {
-				log.Info("Skipping time-to-live dir", logger.TimeToLive(ttl.Name()), zap.String("reason", "failed time-to-live filter"))
+			if s.EngineOptions.RetentionPolicyFilter != nil && !s.EngineOptions.RetentionPolicyFilter(db.Name(), rp.Name()) {
+				log.Info("Skipping retention policy dir", logger.RetentionPolicy(rp.Name()), zap.String("reason", "failed retention policy filter"))
 				continue
 			}
 
-			shardDirs, err := ioutil.ReadDir(ttlPath)
+			shardDirs, err := ioutil.ReadDir(rpPath)
 			if err != nil {
 				return err
 			}
 
 			for _, sh := range shardDirs {
-				// Series file should not be in a time-to-live but skip just in case.
+				// Series file should not be in a retention policy but skip just in case.
 				if sh.Name() == SeriesFileDirectory {
-					log.Warn("Skipping series file in time-to-live dir", zap.String("path", filepath.Join(s.path, db.Name(), ttl.Name())))
+					log.Warn("Skipping series file in retention policy dir", zap.String("path", filepath.Join(s.path, db.Name(), rp.Name())))
 					continue
 				}
 
 				n++
-				go func(db, ttl, sh string) {
+				go func(db, rp, sh string) {
 					t.Take()
 					defer t.Release()
 
 					start := time.Now()
-					path := filepath.Join(s.path, db, ttl, sh)
-					walPath := filepath.Join(s.EngineOptions.Config.WALDir, db, ttl, sh)
+					path := filepath.Join(s.path, db, rp, sh)
+					walPath := filepath.Join(s.EngineOptions.Config.WALDir, db, rp, sh)
 
 					// Shard file names are numeric shardIDs
 					shardID, err := strconv.ParseUint(sh, 10, 64)
@@ -375,7 +375,7 @@ func (s *Store) loadShards() error {
 						return
 					}
 
-					if s.EngineOptions.ShardFilter != nil && !s.EngineOptions.ShardFilter(db, ttl, shardID) {
+					if s.EngineOptions.ShardFilter != nil && !s.EngineOptions.ShardFilter(db, rp, shardID) {
 						log.Info("skipping shard", zap.String("path", path), logger.Shard(shardID))
 						resC <- &res{}
 						return
@@ -410,7 +410,7 @@ func (s *Store) loadShards() error {
 
 					resC <- &res{s: shard}
 					log.Info("Opened shard", zap.String("index_version", shard.IndexType()), zap.String("path", path), zap.Duration("duration", time.Since(start)))
-				}(db.Name(), ttl.Name(), sh.Name())
+				}(db.Name(), rp.Name(), sh.Name())
 			}
 		}
 	}
@@ -573,8 +573,8 @@ func (s *Store) Shards(ids []uint64) []*Shard {
 	return a
 }
 
-// Region returns a Region with a list of shards by id.
-func (s *Store) Region(ids []uint64) Region {
+// ShardGroup returns a ShardGroup with a list of shards by id.
+func (s *Store) ShardGroup(ids []uint64) ShardGroup {
 	return Shards(s.Shards(ids))
 }
 
@@ -595,8 +595,8 @@ func (s *Store) ShardDigest(id uint64) (io.ReadCloser, int64, error) {
 	return sh.Digest()
 }
 
-// CreateShard creates a shard with the given id and time-to-live on a database.
-func (s *Store) CreateShard(database, timeToLive string, shardID uint64, enabled bool) error {
+// CreateShard creates a shard with the given id and retention policy on a database.
+func (s *Store) CreateShard(database, retentionPolicy string, shardID uint64, enabled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -617,13 +617,13 @@ func (s *Store) CreateShard(database, timeToLive string, shardID uint64, enabled
 		return ErrShardDeletion
 	}
 
-	// Create the db and time-to-live directories if they don't exist.
-	if err := os.MkdirAll(filepath.Join(s.path, database, timeToLive), 0700); err != nil {
+	// Create the db and retention policy directories if they don't exist.
+	if err := os.MkdirAll(filepath.Join(s.path, database, retentionPolicy), 0700); err != nil {
 		return err
 	}
 
 	// Create the WAL directory.
-	walPath := filepath.Join(s.EngineOptions.Config.WALDir, database, timeToLive, fmt.Sprintf("%d", shardID))
+	walPath := filepath.Join(s.EngineOptions.Config.WALDir, database, retentionPolicy, fmt.Sprintf("%d", shardID))
 	if err := os.MkdirAll(walPath, 0700); err != nil {
 		return err
 	}
@@ -645,7 +645,7 @@ func (s *Store) CreateShard(database, timeToLive string, shardID uint64, enabled
 	opt.InmemIndex = idx
 	opt.SeriesIDSets = shardSet{store: s, db: database}
 
-	path := filepath.Join(s.path, database, timeToLive, strconv.FormatUint(shardID, 10))
+	path := filepath.Join(s.path, database, retentionPolicy, strconv.FormatUint(shardID, 10))
 	shard := NewShard(shardID, path, walPath, sfile, opt)
 	shard.WithLogger(s.baseLogger)
 	shard.EnableOnOpen = enabled
@@ -864,10 +864,10 @@ func (s *Store) DeleteDatabase(name string) error {
 	return nil
 }
 
-// DeleteTimeToLive will close all shards associated with the
-// provided time-to-live, remove the time-to-live directories on
+// DeleteRetentionPolicy will close all shards associated with the
+// provided retention policy, remove the retention policy directories on
 // both the DB and WAL, and remove all shard files from disk.
-func (s *Store) DeleteTimeToLive(database, name string) error {
+func (s *Store) DeleteRetentionPolicy(database, name string) error {
 	s.mu.RLock()
 	if _, ok := s.databases[database]; !ok {
 		s.mu.RUnlock()
@@ -875,14 +875,14 @@ func (s *Store) DeleteTimeToLive(database, name string) error {
 		return nil
 	}
 	shards := s.filterShards(func(sh *Shard) bool {
-		return sh.database == database && sh.timeToLive == name
+		return sh.database == database && sh.retentionPolicy == name
 	})
 	s.mu.RUnlock()
 
-	// Close and delete all shards under the time-to-live on the
+	// Close and delete all shards under the retention policy on the
 	// database.
 	if err := s.walkShards(shards, func(sh *Shard) error {
-		if sh.database != database || sh.timeToLive != name {
+		if sh.database != database || sh.retentionPolicy != name {
 			return nil
 		}
 
@@ -891,20 +891,20 @@ func (s *Store) DeleteTimeToLive(database, name string) error {
 		return err
 	}
 
-	// Remove the time-to-live folder.
-	ttlPath := filepath.Clean(filepath.Join(s.path, database, name))
+	// Remove the retention policy folder.
+	rpPath := filepath.Clean(filepath.Join(s.path, database, name))
 
-	// ensure Store's path is the grandparent of the time-to-live
-	if filepath.Clean(s.path) != filepath.Dir(filepath.Dir(ttlPath)) {
-		return fmt.Errorf("invalid path for database '%s', time-to-live '%s': %s", database, name, ttlPath)
+	// ensure Store's path is the grandparent of the retention policy
+	if filepath.Clean(s.path) != filepath.Dir(filepath.Dir(rpPath)) {
+		return fmt.Errorf("invalid path for database '%s', retention policy '%s': %s", database, name, rpPath)
 	}
 
-	// Remove the time-to-live folder.
+	// Remove the retention policy folder.
 	if err := os.RemoveAll(filepath.Join(s.path, database, name)); err != nil {
 		return err
 	}
 
-	// Remove the time-to-live folder from the the WAL.
+	// Remove the retention policy folder from the the WAL.
 	if err := os.RemoveAll(filepath.Join(s.EngineOptions.Config.WALDir, database, name)); err != nil {
 		return err
 	}
@@ -919,8 +919,8 @@ func (s *Store) DeleteTimeToLive(database, name string) error {
 	return nil
 }
 
-// DeleteMetric removes a metric and all associated series from a database.
-func (s *Store) DeleteMetric(database, name string) error {
+// DeleteMeasurement removes a measurement and all associated series from a database.
+func (s *Store) DeleteMeasurement(database, name string) error {
 	s.mu.RLock()
 	if s.databases[database].hasMultipleIndexTypes() {
 		s.mu.RUnlock()
@@ -930,7 +930,7 @@ func (s *Store) DeleteMetric(database, name string) error {
 	epochs := s.epochsForShards(shards)
 	s.mu.RUnlock()
 
-	// Limit to 1 delete for each shard since expanding the metric into the list
+	// Limit to 1 delete for each shard since expanding the measurement into the list
 	// of series keys can be very memory intensive if run concurrently.
 	limit := limiter.NewFixed(1)
 	return s.walkShards(shards, func(sh *Shard) error {
@@ -944,7 +944,7 @@ func (s *Store) DeleteMetric(database, name string) error {
 		waiter.Wait()
 		defer waiter.Done()
 
-		return sh.DeleteMetric([]byte(name))
+		return sh.DeleteMeasurement([]byte(name))
 	})
 }
 
@@ -1151,17 +1151,17 @@ func (s *Store) SeriesSketches(database string) (estimator.Sketch, estimator.Ske
 	})
 }
 
-// MetricsCardinality returns an estimation of the metric cardinality
+// MeasurementsCardinality returns an estimation of the measurement cardinality
 // for the provided database.
 //
 // Cardinality is calculated using a sketch-based estimation. The result of this
 // method cannot be combined with any other results.
-func (s *Store) MetricsCardinality(database string) (int64, error) {
+func (s *Store) MeasurementsCardinality(database string) (int64, error) {
 	ss, ts, err := s.sketchesForDatabase(database, func(sh *Shard) (estimator.Sketch, estimator.Sketch, error) {
 		if sh == nil {
 			return nil, nil, errors.New("shard nil, can't get cardinality")
 		}
-		return sh.MetricsSketches()
+		return sh.MeasurementsSketches()
 	})
 
 	if err != nil {
@@ -1170,17 +1170,17 @@ func (s *Store) MetricsCardinality(database string) (int64, error) {
 	return int64(ss.Count() - ts.Count()), nil
 }
 
-// MetricsSketches returns the sketches associated with the metric
+// MeasurementsSketches returns the sketches associated with the measurement
 // data in all the shards in the provided database.
 //
 // The returned sketches can be combined with other sketches to provide an
 // estimation across distributed databases.
-func (s *Store) MetricsSketches(database string) (estimator.Sketch, estimator.Sketch, error) {
+func (s *Store) MeasurementsSketches(database string) (estimator.Sketch, estimator.Sketch, error) {
 	return s.sketchesForDatabase(database, func(sh *Shard) (estimator.Sketch, estimator.Sketch, error) {
 		if sh == nil {
 			return nil, nil, errors.New("shard nil, can't get cardinality")
 		}
-		return sh.MetricsSketches()
+		return sh.MeasurementsSketches()
 	})
 }
 
@@ -1249,7 +1249,7 @@ func (s *Store) ImportShard(id uint64, r io.Reader) error {
 }
 
 // ShardRelativePath will return the relative path to the shard, i.e.,
-// <database>/<ttl>/<id>.
+// <database>/<rp>/<id>.
 func (s *Store) ShardRelativePath(id uint64) (string, error) {
 	shard := s.Shard(id)
 	if shard == nil {
@@ -1303,20 +1303,20 @@ func (s *Store) DeleteSeries(database string, sources []cnosql.Source, condition
 	epochs := s.epochsForShards(shards)
 	s.mu.RUnlock()
 
-	// Limit to 1 delete for each shard since expanding the metric into the list
+	// Limit to 1 delete for each shard since expanding the measurement into the list
 	// of series keys can be very memory intensive if run concurrently.
 	limit := limiter.NewFixed(1)
 
 	return s.walkShards(shards, func(sh *Shard) error {
-		// Determine list of metrics from sources.
-		// Use all metrics if no FROM clause was provided.
+		// Determine list of measurements from sources.
+		// Use all measurements if no FROM clause was provided.
 		var names []string
 		if len(sources) > 0 {
 			for _, source := range sources {
-				names = append(names, source.(*cnosql.Metric).Name)
+				names = append(names, source.(*cnosql.Measurement).Name)
 			}
 		} else {
-			if err := sh.ForEachMetricName(func(name []byte) error {
+			if err := sh.ForEachMeasurementName(func(name []byte) error {
 				names = append(names, string(name))
 				return nil
 			}); err != nil {
@@ -1340,9 +1340,9 @@ func (s *Store) DeleteSeries(database string, sources []cnosql.Source, condition
 		}
 
 		indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: sfile}
-		// Find matching series keys for each metric.
+		// Find matching series keys for each measurement.
 		for _, name := range names {
-			itr, err := indexSet.MetricSeriesByExprIterator([]byte(name), condition)
+			itr, err := indexSet.MeasurementSeriesByExprIterator([]byte(name), condition)
 			if err != nil {
 				return err
 			} else if itr == nil {
@@ -1410,10 +1410,10 @@ func (s *Store) WriteToShard(shardID uint64, points []models.Point) error {
 	return sh.WritePoints(points)
 }
 
-// MetricNames returns a slice of all metrics. Metrics accepts an
-// optional condition expression. If cond is nil, then all metrics for the
+// MeasurementNames returns a slice of all measurements. Measurements accepts an
+// optional condition expression. If cond is nil, then all measurements for the
 // database will be returned.
-func (s *Store) MetricNames(auth query.FineAuthorizer, database string, cond cnosql.Expr) ([][]byte, error) {
+func (s *Store) MeasurementNames(auth query.FineAuthorizer, database string, cond cnosql.Expr) ([][]byte, error) {
 	s.mu.RLock()
 	shards := s.filterShards(byDatabase(database))
 	s.mu.RUnlock()
@@ -1433,26 +1433,26 @@ func (s *Store) MetricNames(auth query.FineAuthorizer, database string, cond cno
 		is.Indexes = append(is.Indexes, index)
 	}
 	is = is.DedupeInmemIndexes()
-	return is.MetricNamesByExpr(auth, cond)
+	return is.MeasurementNamesByExpr(auth, cond)
 }
 
-// MetricSeriesCounts returns the number of metrics and series in all
+// MeasurementSeriesCounts returns the number of measurements and series in all
 // the shards' indices.
-func (s *Store) MetricSeriesCounts(database string) (metrics int, series int) {
+func (s *Store) MeasurementSeriesCounts(database string) (measurements int, series int) {
 	// TODO: implement me
 	return 0, 0
 }
 
 type TagKeys struct {
-	Metric string
-	Keys   []string
+	Measurement string
+	Keys        []string
 }
 
 type TagKeysSlice []TagKeys
 
 func (a TagKeysSlice) Len() int           { return len(a) }
 func (a TagKeysSlice) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a TagKeysSlice) Less(i, j int) bool { return a[i].Metric < a[j].Metric }
+func (a TagKeysSlice) Less(i, j int) bool { return a[i].Measurement < a[j].Measurement }
 
 // TagKeys returns the tag keys in the given database, matching the condition.
 func (s *Store) TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosql.Expr) ([]TagKeys, error) {
@@ -1460,8 +1460,8 @@ func (s *Store) TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosq
 		return nil, nil
 	}
 
-	metricExpr := cnosql.CloneExpr(cond)
-	metricExpr = cnosql.Reduce(cnosql.RewriteExpr(metricExpr, func(e cnosql.Expr) cnosql.Expr {
+	measurementExpr := cnosql.CloneExpr(cond)
+	measurementExpr = cnosql.Reduce(cnosql.RewriteExpr(measurementExpr, func(e cnosql.Expr) cnosql.Expr {
 		switch e := e.(type) {
 		case *cnosql.BinaryExpr:
 			switch e.Op {
@@ -1517,19 +1517,19 @@ func (s *Store) TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosq
 	}
 	s.mu.RUnlock()
 
-	// Determine list of metrics.
+	// Determine list of measurements.
 	is = is.DedupeInmemIndexes()
-	names, err := is.MetricNamesByExpr(nil, metricExpr)
+	names, err := is.MeasurementNamesByExpr(nil, measurementExpr)
 	if err != nil {
 		return nil, err
 	}
 
-	// Iterate over each metric.
+	// Iterate over each measurement.
 	var results []TagKeys
 	for _, name := range names {
 
-		// Build keyset over all indexes for metric.
-		tagKeySet, err := is.MetricTagKeysByExpr(name, nil)
+		// Build keyset over all indexes for measurement.
+		tagKeySet, err := is.MeasurementTagKeysByExpr(name, nil)
 		if err != nil {
 			return nil, err
 		} else if len(tagKeySet) == 0 {
@@ -1552,8 +1552,8 @@ func (s *Store) TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosq
 
 			// Add to resultset.
 			results = append(results, TagKeys{
-				Metric: string(name),
-				Keys:   keys,
+				Measurement: string(name),
+				Keys:        keys,
 			})
 
 			continue
@@ -1568,7 +1568,7 @@ func (s *Store) TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosq
 		sort.Strings(keys)
 
 		// Filter against tag values, skip if no values exist.
-		values, err := is.MetricTagKeyValuesByExpr(auth, name, keys, filterExpr, true)
+		values, err := is.MeasurementTagKeyValuesByExpr(auth, name, keys, filterExpr, true)
 		if err != nil {
 			return nil, err
 		}
@@ -1585,23 +1585,23 @@ func (s *Store) TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosq
 
 		// Add to resultset.
 		results = append(results, TagKeys{
-			Metric: string(name),
-			Keys:   finalKeys,
+			Measurement: string(name),
+			Keys:        finalKeys,
 		})
 	}
 	return results, nil
 }
 
 type TagValues struct {
-	Metric string
-	Values []KeyValue
+	Measurement string
+	Values      []KeyValue
 }
 
 type TagValuesSlice []TagValues
 
 func (a TagValuesSlice) Len() int           { return len(a) }
 func (a TagValuesSlice) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a TagValuesSlice) Less(i, j int) bool { return a[i].Metric < a[j].Metric }
+func (a TagValuesSlice) Less(i, j int) bool { return a[i].Measurement < a[j].Measurement }
 
 // tagValues is a temporary representation of a TagValues. Rather than allocating
 // KeyValues as we build up a TagValues object, We hold off allocating KeyValues
@@ -1612,7 +1612,7 @@ type tagValues struct {
 	values [][]string
 }
 
-// Is a slice of tagValues that can be sorted by metric.
+// Is a slice of tagValues that can be sorted by measurement.
 type tagValuesSlice []tagValues
 
 func (a tagValuesSlice) Len() int           { return len(a) }
@@ -1626,8 +1626,8 @@ func (s *Store) TagValues(auth query.FineAuthorizer, shardIDs []uint64, cond cno
 		return nil, errors.New("a condition is required")
 	}
 
-	metricExpr := cnosql.CloneExpr(cond)
-	metricExpr = cnosql.Reduce(cnosql.RewriteExpr(metricExpr, func(e cnosql.Expr) cnosql.Expr {
+	measurementExpr := cnosql.CloneExpr(cond)
+	measurementExpr = cnosql.Reduce(cnosql.RewriteExpr(measurementExpr, func(e cnosql.Expr) cnosql.Expr {
 		switch e := e.(type) {
 		case *cnosql.BinaryExpr:
 			switch e.Op {
@@ -1685,39 +1685,39 @@ func (s *Store) TagValues(auth query.FineAuthorizer, shardIDs []uint64, cond cno
 	s.mu.RUnlock()
 	is = is.DedupeInmemIndexes()
 
-	// Stores each list of TagValues for each metric.
+	// Stores each list of TagValues for each measurement.
 	var allResults []tagValues
-	var maxMetrics int // Hint as to lower bound on number of metrics.
-	// names will be sorted by MetricNamesByExpr.
+	var maxMeasurements int // Hint as to lower bound on number of measurements.
+	// names will be sorted by MeasurementNamesByExpr.
 	// Authorisation can be done later on, when series may have been filtered
 	// out by other conditions.
-	names, err := is.MetricNamesByExpr(nil, metricExpr)
+	names, err := is.MeasurementNamesByExpr(nil, measurementExpr)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(names) > maxMetrics {
-		maxMetrics = len(names)
+	if len(names) > maxMeasurements {
+		maxMeasurements = len(names)
 	}
 
 	if allResults == nil {
 		allResults = make([]tagValues, 0, len(is.Indexes)*len(names)) // Assuming all series in all shards.
 	}
 
-	// Iterate over each matching metric in the shard. For each
-	// metric we'll get the matching tag keys (e.g., when a WITH KEYS)
+	// Iterate over each matching measurement in the shard. For each
+	// measurement we'll get the matching tag keys (e.g., when a WITH KEYS)
 	// statement is used, and we'll then use those to fetch all the relevant
 	// values from matching series. Series may be filtered using a WHERE
 	// filter.
 	for _, name := range names {
 		// Determine a list of keys from condition.
-		keySet, err := is.MetricTagKeysByExpr(name, cond)
+		keySet, err := is.MeasurementTagKeysByExpr(name, cond)
 		if err != nil {
 			return nil, err
 		}
 
 		if len(keySet) == 0 {
-			// No matching tag keys for this metric
+			// No matching tag keys for this measurement
 			continue
 		}
 
@@ -1734,8 +1734,8 @@ func (s *Store) TagValues(auth query.FineAuthorizer, shardIDs []uint64, cond cno
 
 		// get all the tag values for each key in the keyset.
 		// Each slice in the results contains the sorted values associated
-		// associated with each tag key for the metric from the key set.
-		if result.values, err = is.MetricTagKeyValuesByExpr(auth, name, result.keys, filterExpr, true); err != nil {
+		// with each tag key for the measurement from the key set.
+		if result.values, err = is.MeasurementTagKeyValuesByExpr(auth, name, result.keys, filterExpr, true); err != nil {
 			return nil, err
 		}
 
@@ -1759,29 +1759,29 @@ func (s *Store) TagValues(auth query.FineAuthorizer, shardIDs []uint64, cond cno
 		}
 	}
 
-	result := make([]TagValues, 0, maxMetrics)
+	result := make([]TagValues, 0, maxMeasurements)
 
-	// We need to sort all results by metric name.
+	// We need to sort all results by measurement name.
 	if len(is.Indexes) > 1 {
 		sort.Sort(tagValuesSlice(allResults))
 	}
 
-	// The next stage is to merge the tagValue results for each shard's metrics.
+	// The next stage is to merge the tagValue results for each shard's measurements.
 	var i, j int
 	// Used as a temporary buffer in mergeTagValues. There can be at most len(shards)
-	// instances of tagValues for a given metric.
+	// instances of tagValues for a given measurement.
 	idxBuf := make([][2]int, 0, len(is.Indexes))
 	for i < len(allResults) {
-		// Gather all occurrences of the same metric for merging.
+		// Gather all occurrences of the same measurement for merging.
 		for j+1 < len(allResults) && bytes.Equal(allResults[j+1].name, allResults[i].name) {
 			j++
 		}
 
 		// An invariant is that there can't be more than n instances of tag
-		// key value pairs for a given metric, where n is the number of
+		// key value pairs for a given measurement, where n is the number of
 		// shards.
 		if got, exp := j-i+1, len(is.Indexes); got > exp {
-			return nil, fmt.Errorf("unexpected results returned engine. Got %d metric sets for %d shards", got, exp)
+			return nil, fmt.Errorf("unexpected results returned engine. Got %d measurement sets for %d shards", got, exp)
 		}
 
 		nextResult := mergeTagValues(idxBuf, allResults[i:j+1]...)
@@ -1805,7 +1805,7 @@ func mergeTagValues(valueIdxs [][2]int, tvs ...tagValues) TagValues {
 	if len(tvs) == 0 {
 		return TagValues{}
 	} else if len(tvs) == 1 {
-		result.Metric = string(tvs[0].name)
+		result.Measurement = string(tvs[0].name)
 		// TODO: will be too small likely. Find a hint?
 		result.Values = make([]KeyValue, 0, len(tvs[0].values))
 
@@ -1817,7 +1817,7 @@ func mergeTagValues(valueIdxs [][2]int, tvs ...tagValues) TagValues {
 		return result
 	}
 
-	result.Metric = string(tvs[0].name)
+	result.Measurement = string(tvs[0].name)
 
 	var maxSize int
 	for _, tv := range tvs {
@@ -1971,11 +1971,11 @@ func (s *Store) monitorShards() {
 				}
 
 				// inmem shards share the same index instance so just use the first one to avoid
-				// allocating the same metrics repeatedly
+				// allocating the same measurements repeatedly
 				indexSet := IndexSet{Indexes: []Index{firstShardIndex}, SeriesFile: sfile}
-				names, err := indexSet.MetricNamesByExpr(nil, nil)
+				names, err := indexSet.MeasurementNamesByExpr(nil, nil)
 				if err != nil {
-					s.Logger.Warn("Cannot retrieve metric names",
+					s.Logger.Warn("Cannot retrieve measurement names",
 						zap.Error(err),
 						logger.Shard(sh.ID()),
 						logger.Database(db))
@@ -1984,7 +1984,7 @@ func (s *Store) monitorShards() {
 
 				indexSet.Indexes = []Index{index}
 				for _, name := range names {
-					indexSet.ForEachMetricTagKey(name, func(k []byte) error {
+					indexSet.ForEachMeasurementTagKey(name, func(k []byte) error {
 						n := sh.TagKeyCardinality(name, k)
 						perc := int(float64(n) / float64(s.EngineOptions.Config.MaxValuesPerTag) * 100)
 						if perc > 100 {
@@ -1998,7 +1998,7 @@ func (s *Store) monitorShards() {
 								zap.Int("n", n),
 								zap.Int("max", s.EngineOptions.Config.MaxValuesPerTag),
 								logger.Database(db),
-								zap.ByteString("metric", name),
+								zap.ByteString("measurement", name),
 								zap.ByteString("tag", k))
 						}
 						return nil
@@ -2045,18 +2045,18 @@ func IsRetryable(err error) bool {
 	return true
 }
 
-// decodeStorePath extracts the database and time-to-live names
+// decodeStorePath extracts the database and retention policy names
 // from a given shard or WAL path.
-func decodeStorePath(shardOrWALPath string) (database, timeToLive string) {
-	// shardOrWALPath format: /maybe/absolute/base/then/:database/:timeToLive/:nameOfShardOrWAL
+func decodeStorePath(shardOrWALPath string) (database, retentionPolicy string) {
+	// shardOrWALPath format: /maybe/absolute/base/then/:database/:retentionPolicy/:nameOfShardOrWAL
 
 	// Discard the last part of the path (the shard name or the wal name).
 	path, _ := filepath.Split(filepath.Clean(shardOrWALPath))
 
-	// Extract the database and time-to-live.
-	path, ttl := filepath.Split(filepath.Clean(path))
+	// Extract the database and retention policy.
+	path, rp := filepath.Split(filepath.Clean(path))
 	_, db := filepath.Split(filepath.Clean(path))
-	return db, ttl
+	return db, rp
 }
 
 // relativePath will expand out the full paths passed in and return

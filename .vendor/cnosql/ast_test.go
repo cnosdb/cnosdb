@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 func BenchmarkQuery_String(b *testing.B) {
@@ -520,7 +520,7 @@ func TestSelectStatement_RewriteFields(t *testing.T) {
 		}
 
 		var mapper FieldMapper
-		mapper.FieldDimensionsFn = func(m *cnosql.Metric) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+		mapper.FieldDimensionsFn = func(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
 			switch m.Name {
 			case "cpu":
 				fields = map[string]cnosql.DataType{
@@ -655,7 +655,7 @@ func TestSelectStatement_RewriteTimeFields(t *testing.T) {
 					{Expr: &cnosql.VarRef{Val: "field1"}},
 				},
 				Sources: []cnosql.Source{
-					&cnosql.Metric{Name: "cpu"},
+					&cnosql.Measurement{Name: "cpu"},
 				},
 			},
 		},
@@ -667,7 +667,7 @@ func TestSelectStatement_RewriteTimeFields(t *testing.T) {
 					{Expr: &cnosql.VarRef{Val: "field1"}},
 				},
 				Sources: []cnosql.Source{
-					&cnosql.Metric{Name: "cpu"},
+					&cnosql.Measurement{Name: "cpu"},
 				},
 				TimeAlias: "timestamp",
 			},
@@ -936,7 +936,7 @@ func TestParseString(t *testing.T) {
 			stmt: `SELECT "cpu load" FROM "my\"series"`,
 		},
 		{
-			stmt: `SELECT "field with spaces" FROM "\"ugly\" db"."\"ugly\" ttl"."\"ugly\" metric"`,
+			stmt: `SELECT "field with spaces" FROM "\"ugly\" db"."\"ugly\" rp"."\"ugly\" measurement"`,
 		},
 		{
 			stmt: `SELECT * FROM myseries`,
@@ -945,16 +945,16 @@ func TestParseString(t *testing.T) {
 			stmt: `DROP DATABASE "!"`,
 		},
 		{
-			stmt: `DROP TTL "my ttl" ON "a database"`,
+			stmt: `DROP RETENTION POLICY "my rp" ON "a database"`,
 		},
 		{
-			stmt: `CREATE TTL "my ttl" ON "a database" DURATION 1d REPLICATION 1`,
+			stmt: `CREATE RETENTION POLICY "my rp" ON "a database" DURATION 1d REPLICATION 1`,
 		},
 		{
-			stmt: `ALTER TTL "my ttl" ON "a database" DEFAULT`,
+			stmt: `ALTER RETENTION POLICY "my rp" ON "a database" DEFAULT`,
 		},
 		{
-			stmt: `SHOW TTLS ON "a database"`,
+			stmt: `SHOW RETENTION POLICIES ON "a database"`,
 		},
 		{
 			stmt: `SHOW TAG VALUES WITH KEY IN ("a long name", short)`,
@@ -963,16 +963,16 @@ func TestParseString(t *testing.T) {
 			stmt: `DROP CONTINUOUS QUERY "my query" ON "my database"`,
 		},
 		{
-			stmt: `DROP SUBSCRIPTION "ugly \"subscription\" name" ON "\"my\" db"."\"my\" ttl"`,
+			stmt: `DROP SUBSCRIPTION "ugly \"subscription\" name" ON "\"my\" db"."\"my\" rp"`,
 		},
 		{
-			stmt: `CREATE SUBSCRIPTION "ugly \"subscription\" name" ON "\"my\" db"."\"my\" ttl" DESTINATIONS ALL 'my host', 'my other host'`,
+			stmt: `CREATE SUBSCRIPTION "ugly \"subscription\" name" ON "\"my\" db"."\"my\" rp" DESTINATIONS ALL 'my host', 'my other host'`,
 		},
 		{
-			stmt: `SHOW METRICS WITH METRIC =~ /foo/`,
+			stmt: `SHOW MEASUREMENTS WITH MEASUREMENT =~ /foo/`,
 		},
 		{
-			stmt: `SHOW METRICS WITH METRIC = "and/or"`,
+			stmt: `SHOW MEASUREMENTS WITH MEASUREMENT = "and/or"`,
 		},
 		{
 			stmt: `DROP USER "user with spaces"`,
@@ -1105,8 +1105,8 @@ func TestEval(t *testing.T) {
 
 type EvalFixture map[string]map[string]cnosql.DataType
 
-func (e EvalFixture) MapType(metric *cnosql.Metric, field string) cnosql.DataType {
-	m := e[metric.Name]
+func (e EvalFixture) MapType(measurement *cnosql.Measurement, field string) cnosql.DataType {
+	m := e[measurement.Name]
 	if m == nil {
 		return cnosql.Unknown
 	}
@@ -1242,7 +1242,7 @@ func TestEvalType(t *testing.T) {
 	} {
 		sources := make([]cnosql.Source, 0, len(tt.data))
 		for src := range tt.data {
-			sources = append(sources, &cnosql.Metric{Name: src})
+			sources = append(sources, &cnosql.Measurement{Name: src})
 		}
 
 		expr := cnosql.MustParseExpr(tt.in)
@@ -1545,11 +1545,11 @@ func TestSelect_ColumnNames(t *testing.T) {
 func TestSelect_Privileges(t *testing.T) {
 	stmt := &cnosql.SelectStatement{
 		Target: &cnosql.Target{
-			Metric: &cnosql.Metric{Database: "db2"},
+			Measurement: &cnosql.Measurement{Database: "db2"},
 		},
 		Sources: []cnosql.Source{
-			&cnosql.Metric{Database: "db0"},
-			&cnosql.Metric{Database: "db1"},
+			&cnosql.Measurement{Database: "db0"},
+			&cnosql.Measurement{Database: "db1"},
 		},
 	}
 
@@ -1572,14 +1572,14 @@ func TestSelect_Privileges(t *testing.T) {
 func TestSelect_SubqueryPrivileges(t *testing.T) {
 	stmt := &cnosql.SelectStatement{
 		Target: &cnosql.Target{
-			Metric: &cnosql.Metric{Database: "db2"},
+			Measurement: &cnosql.Measurement{Database: "db2"},
 		},
 		Sources: []cnosql.Source{
-			&cnosql.Metric{Database: "db0"},
+			&cnosql.Measurement{Database: "db0"},
 			&cnosql.SubQuery{
 				Statement: &cnosql.SelectStatement{
 					Sources: []cnosql.Source{
-						&cnosql.Metric{Database: "db1"},
+						&cnosql.Measurement{Database: "db1"},
 					},
 				},
 			},
@@ -1616,7 +1616,7 @@ func TestShow_Privileges(t *testing.T) {
 			exp:  cnosql.ExecutionPrivileges{{Admin: false, Privilege: cnosql.ReadPrivilege}},
 		},
 		{
-			stmt: &cnosql.ShowMetricsStatement{},
+			stmt: &cnosql.ShowMeasurementsStatement{},
 			exp:  cnosql.ExecutionPrivileges{{Admin: false, Privilege: cnosql.ReadPrivilege}},
 		},
 		{
@@ -1624,7 +1624,7 @@ func TestShow_Privileges(t *testing.T) {
 			exp:  cnosql.ExecutionPrivileges{{Admin: false, Privilege: cnosql.ReadPrivilege}},
 		},
 		{
-			stmt: &cnosql.ShowTimeToLivesStatement{},
+			stmt: &cnosql.ShowRetentionPoliciesStatement{},
 			exp:  cnosql.ExecutionPrivileges{{Admin: false, Privilege: cnosql.ReadPrivilege}},
 		},
 		{
@@ -1632,7 +1632,7 @@ func TestShow_Privileges(t *testing.T) {
 			exp:  cnosql.ExecutionPrivileges{{Admin: false, Privilege: cnosql.ReadPrivilege}},
 		},
 		{
-			stmt: &cnosql.ShowRegionsStatement{},
+			stmt: &cnosql.ShowShardGroupsStatement{},
 			exp:  cnosql.ExecutionPrivileges{{Admin: true, Privilege: cnosql.AllPrivileges}},
 		},
 		{
@@ -1680,7 +1680,7 @@ func TestBoundParameter_String(t *testing.T) {
 		IsRawQuery: true,
 		Fields: []*cnosql.Field{{
 			Expr: &cnosql.VarRef{Val: "value"}}},
-		Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+		Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 		Condition: &cnosql.BinaryExpr{
 			Op:  cnosql.GT,
 			LHS: &cnosql.VarRef{Val: "value"},
@@ -1696,7 +1696,7 @@ func TestBoundParameter_String(t *testing.T) {
 		IsRawQuery: true,
 		Fields: []*cnosql.Field{{
 			Expr: &cnosql.VarRef{Val: "value"}}},
-		Sources: []cnosql.Source{&cnosql.Metric{Name: "cpu"}},
+		Sources: []cnosql.Source{&cnosql.Measurement{Name: "cpu"}},
 		Condition: &cnosql.BinaryExpr{
 			Op:  cnosql.GT,
 			LHS: &cnosql.VarRef{Val: "value"},
@@ -1713,7 +1713,7 @@ func TestBoundParameter_String(t *testing.T) {
 // context required for security checks.  If a new statement is added, this
 // test will fail until it is categorized into the correct bucket below.
 func Test_EnforceHasDefaultDatabase(t *testing.T) {
-	pkg, err := importer.Default().Import("github.com/cnosdatabase/cnosql")
+	pkg, err := importer.Default().Import("github.com/cnosdb/cnosql")
 	if err != nil {
 		fmt.Printf("error: %s\n", err.Error())
 		return
@@ -1726,7 +1726,7 @@ func Test_EnforceHasDefaultDatabase(t *testing.T) {
 		"CreateUserStatement",
 		"DeleteSeriesStatement",
 		"DropDatabaseStatement",
-		"DropMetricStatement",
+		"DropMeasurementStatement",
 		"DropSeriesStatement",
 		"DropShardStatement",
 		"DropUserStatement",
@@ -1741,7 +1741,7 @@ func Test_EnforceHasDefaultDatabase(t *testing.T) {
 		"ShowDiagnosticsStatement",
 		"ShowGrantsForUserStatement",
 		"ShowQueriesStatement",
-		"ShowRegionsStatement",
+		"ShowShardGroupsStatement",
 		"ShowShardsStatement",
 		"ShowStatsStatement",
 		"ShowSubscriptionsStatement",
@@ -1771,21 +1771,21 @@ func Test_EnforceHasDefaultDatabase(t *testing.T) {
 	}
 
 	needsHasDefault := []interface{}{
-		&cnosql.AlterTimeToLiveStatement{},
+		&cnosql.AlterRetentionPolicyStatement{},
 		&cnosql.CreateContinuousQueryStatement{},
-		&cnosql.CreateTimeToLiveStatement{},
+		&cnosql.CreateRetentionPolicyStatement{},
 		&cnosql.CreateSubscriptionStatement{},
 		&cnosql.DeleteStatement{},
 		&cnosql.DropContinuousQueryStatement{},
-		&cnosql.DropTimeToLiveStatement{},
+		&cnosql.DropRetentionPolicyStatement{},
 		&cnosql.DropSubscriptionStatement{},
 		&cnosql.GrantStatement{},
 		&cnosql.RevokeStatement{},
 		&cnosql.ShowFieldKeysStatement{},
 		&cnosql.ShowFieldKeyCardinalityStatement{},
-		&cnosql.ShowMetricCardinalityStatement{},
-		&cnosql.ShowMetricsStatement{},
-		&cnosql.ShowTimeToLivesStatement{},
+		&cnosql.ShowMeasurementCardinalityStatement{},
+		&cnosql.ShowMeasurementsStatement{},
+		&cnosql.ShowRetentionPoliciesStatement{},
 		&cnosql.ShowSeriesStatement{},
 		&cnosql.ShowSeriesCardinalityStatement{},
 		&cnosql.ShowTagKeysStatement{},
@@ -1831,14 +1831,14 @@ func mustParseTime(s string) time.Time {
 
 // FieldMapper is a mockable implementation of cnosql.FieldMapper.
 type FieldMapper struct {
-	FieldDimensionsFn func(m *cnosql.Metric) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error)
+	FieldDimensionsFn func(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error)
 }
 
-func (fm *FieldMapper) FieldDimensions(m *cnosql.Metric) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+func (fm *FieldMapper) FieldDimensions(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
 	return fm.FieldDimensionsFn(m)
 }
 
-func (fm *FieldMapper) MapType(m *cnosql.Metric, field string) cnosql.DataType {
+func (fm *FieldMapper) MapType(m *cnosql.Measurement, field string) cnosql.DataType {
 	f, d, err := fm.FieldDimensions(m)
 	if err != nil {
 		return cnosql.Unknown

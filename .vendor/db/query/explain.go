@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 func (p *preparedStatement) Explain() (string, error) {
@@ -64,7 +64,7 @@ type explainIteratorCreator struct {
 	nodes []planNode
 }
 
-func (e *explainIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.Metric, opt IteratorOptions) (Iterator, error) {
+func (e *explainIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.Measurement, opt IteratorOptions) (Iterator, error) {
 	cost, err := e.ic.IteratorCost(m, opt)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (e *explainIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.M
 	return &nilFloatIterator{}, nil
 }
 
-func (e *explainIteratorCreator) IteratorCost(m *cnosql.Metric, opt IteratorOptions) (IteratorCost, error) {
+func (e *explainIteratorCreator) IteratorCost(m *cnosql.Measurement, opt IteratorOptions) (IteratorCost, error) {
 	return e.ic.IteratorCost(m, opt)
 }
 

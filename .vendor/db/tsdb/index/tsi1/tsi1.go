@@ -6,57 +6,57 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // LoadFactor is the fill percent for RHH indexes.
 const LoadFactor = 80
 
-// MetricElem represents a generic metric element.
-type MetricElem interface {
+// MeasurementElem represents a generic measurement element.
+type MeasurementElem interface {
 	Name() []byte
 	Deleted() bool
 	// HasSeries() bool
 }
 
-// MetricElems represents a list of MetricElem.
-type MetricElems []MetricElem
+// MeasurementElems represents a list of MeasurementElem.
+type MeasurementElems []MeasurementElem
 
-func (a MetricElems) Len() int           { return len(a) }
-func (a MetricElems) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a MetricElems) Less(i, j int) bool { return bytes.Compare(a[i].Name(), a[j].Name()) == -1 }
+func (a MeasurementElems) Len() int           { return len(a) }
+func (a MeasurementElems) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a MeasurementElems) Less(i, j int) bool { return bytes.Compare(a[i].Name(), a[j].Name()) == -1 }
 
-// MetricIterator represents a iterator over a list of metrics.
-type MetricIterator interface {
-	Next() MetricElem
+// MeasurementIterator represents a iterator over a list of measurements.
+type MeasurementIterator interface {
+	Next() MeasurementElem
 }
 
-// MergeMetricIterators returns an iterator that merges a set of iterators.
+// MergeMeasurementIterators returns an iterator that merges a set of iterators.
 // Iterators that are first in the list take precedence and a deletion by those
 // early iterators will invalidate elements by later iterators.
-func MergeMetricIterators(itrs ...MetricIterator) MetricIterator {
+func MergeMeasurementIterators(itrs ...MeasurementIterator) MeasurementIterator {
 	if len(itrs) == 0 {
 		return nil
 	}
 
-	return &metricMergeIterator{
-		e:    make(metricMergeElem, 0, len(itrs)),
-		buf:  make([]MetricElem, len(itrs)),
+	return &measurementMergeIterator{
+		e:    make(measurementMergeElem, 0, len(itrs)),
+		buf:  make([]MeasurementElem, len(itrs)),
 		itrs: itrs,
 	}
 }
 
-type metricMergeIterator struct {
-	e    metricMergeElem
-	buf  []MetricElem
-	itrs []MetricIterator
+type measurementMergeIterator struct {
+	e    measurementMergeElem
+	buf  []MeasurementElem
+	itrs []MeasurementIterator
 }
 
 // Next returns the element with the next lowest name across the iterators.
 //
 // If multiple iterators contain the same name then the first is returned
 // and the remaining ones are skipped.
-func (itr *metricMergeIterator) Next() MetricElem {
+func (itr *measurementMergeIterator) Next() MeasurementElem {
 	// Find next lowest name amongst the buffers.
 	var name []byte
 	for i, buf := range itr.buf {
@@ -92,11 +92,11 @@ func (itr *metricMergeIterator) Next() MetricElem {
 	return itr.e
 }
 
-// metricMergeElem represents a merged metric element.
-type metricMergeElem []MetricElem
+// measurementMergeElem represents a merged measurement element.
+type measurementMergeElem []MeasurementElem
 
 // Name returns the name of the first element.
-func (p metricMergeElem) Name() []byte {
+func (p measurementMergeElem) Name() []byte {
 	if len(p) == 0 {
 		return nil
 	}
@@ -104,30 +104,30 @@ func (p metricMergeElem) Name() []byte {
 }
 
 // Deleted returns the deleted flag of the first element.
-func (p metricMergeElem) Deleted() bool {
+func (p measurementMergeElem) Deleted() bool {
 	if len(p) == 0 {
 		return false
 	}
 	return p[0].Deleted()
 }
 
-// tsdbMetricIteratorAdapter wraps MetricIterator to match the TSDB interface.
-// This is needed because TSDB doesn't have a concept of "deleted" metrics.
-type tsdbMetricIteratorAdapter struct {
-	itr MetricIterator
+// tsdbMeasurementIteratorAdapter wraps MeasurementIterator to match the TSDB interface.
+// This is needed because TSDB doesn't have a concept of "deleted" measurements.
+type tsdbMeasurementIteratorAdapter struct {
+	itr MeasurementIterator
 }
 
-// NewTSDBMetricIteratorAdapter return an iterator which implements tsdb.MetricIterator.
-func NewTSDBMetricIteratorAdapter(itr MetricIterator) tsdb.MetricIterator {
+// NewTSDBMeasurementIteratorAdapter return an iterator which implements tsdb.MeasurementIterator.
+func NewTSDBMeasurementIteratorAdapter(itr MeasurementIterator) tsdb.MeasurementIterator {
 	if itr == nil {
 		return nil
 	}
-	return &tsdbMetricIteratorAdapter{itr: itr}
+	return &tsdbMeasurementIteratorAdapter{itr: itr}
 }
 
-func (itr *tsdbMetricIteratorAdapter) Close() error { return nil }
+func (itr *tsdbMeasurementIteratorAdapter) Close() error { return nil }
 
-func (itr *tsdbMetricIteratorAdapter) Next() ([]byte, error) {
+func (itr *tsdbMeasurementIteratorAdapter) Next() ([]byte, error) {
 	for {
 		e := itr.itr.Next()
 		if e == nil {
@@ -381,7 +381,7 @@ func (itr *tagValueMergeIterator) Next() TagValueElem {
 // tagValueMergeElem represents a merged tag value element.
 type tagValueMergeElem []TagValueElem
 
-// Name returns the value of the first element.
+// Value Name returns the value of the first element.
 func (p tagValueMergeElem) Value() []byte {
 	if len(p) == 0 {
 		return nil

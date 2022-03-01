@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 {{range .}}
@@ -243,7 +243,7 @@ func Encode{{ .Name }}ArrayBlock(a *tsdb.{{ .Name }}Array, b []byte) ([]byte, er
 		return nil, nil
 	}
 
-	// TODO(edd): These need to be pooled.
+	// TODO: These need to be pooled.
 	var vb []byte
 	var tb []byte
 	var err error

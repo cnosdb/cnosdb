@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/bytesutil"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // IndexFiles represents a layered set of index files.
@@ -84,9 +84,9 @@ func (p IndexFiles) buildSeriesIDSets() (seriesIDSet, tombstoneSeriesIDSet *tsdb
 	return seriesIDSet, tombstoneSeriesIDSet, nil
 }
 
-// MetricNames returns a sorted list of all metric names for all files.
-func (p *IndexFiles) MetricNames() [][]byte {
-	itr := p.MetricIterator()
+// MeasurementNames returns a sorted list of all measurement names for all files.
+func (p *IndexFiles) MeasurementNames() [][]byte {
+	itr := p.MeasurementIterator()
 	if itr == nil {
 		return nil
 	}
@@ -99,17 +99,17 @@ func (p *IndexFiles) MetricNames() [][]byte {
 	return names
 }
 
-// MetricIterator returns an iterator that merges metrics across all files.
-func (p IndexFiles) MetricIterator() MetricIterator {
-	a := make([]MetricIterator, 0, len(p))
+// MeasurementIterator returns an iterator that merges measurements across all files.
+func (p IndexFiles) MeasurementIterator() MeasurementIterator {
+	a := make([]MeasurementIterator, 0, len(p))
 	for i := range p {
-		itr := p[i].MetricIterator()
+		itr := p[i].MeasurementIterator()
 		if itr == nil {
 			continue
 		}
 		a = append(a, itr)
 	}
-	return MergeMetricIterators(a...)
+	return MergeMeasurementIterators(a...)
 }
 
 // TagKeyIterator returns an iterator that merges tag keys across all files.
@@ -125,11 +125,11 @@ func (p *IndexFiles) TagKeyIterator(name []byte) (TagKeyIterator, error) {
 	return MergeTagKeyIterators(a...), nil
 }
 
-// MetricSeriesIDIterator returns an iterator that merges series across all files.
-func (p IndexFiles) MetricSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
+// MeasurementSeriesIDIterator returns an iterator that merges series across all files.
+func (p IndexFiles) MeasurementSeriesIDIterator(name []byte) tsdb.SeriesIDIterator {
 	a := make([]tsdb.SeriesIDIterator, 0, len(p))
 	for _, f := range p {
-		itr := f.MetricSeriesIDIterator(name)
+		itr := f.MeasurementSeriesIDIterator(name)
 		if itr == nil {
 			continue
 		}
@@ -180,7 +180,7 @@ func (p IndexFiles) CompactTo(w io.Writer, sfile *tsdb.SeriesFile, m, k uint64, 
 		return n, err
 	}
 
-	// Write tagset blocks in metric order.
+	// Write tagset blocks in measurement order.
 	if err := p.writeTagsetsTo(bw, &info, &n); err != nil {
 		return n, err
 	}
@@ -192,12 +192,12 @@ func (p IndexFiles) CompactTo(w io.Writer, sfile *tsdb.SeriesFile, m, k uint64, 
 	// 	}
 	// }
 
-	// Write metric block.
-	t.MetricBlock.Offset = n
-	if err := p.writeMetricBlockTo(bw, &info, &n); err != nil {
+	// Write measurement block.
+	t.MeasurementBlock.Offset = n
+	if err := p.writeMeasurementBlockTo(bw, &info, &n); err != nil {
 		return n, err
 	}
-	t.MetricBlock.Size = n - t.MetricBlock.Offset
+	t.MeasurementBlock.Size = n - t.MeasurementBlock.Offset
 
 	// Build series sets.
 	seriesIDSet, tombstoneSeriesIDSet, err := p.buildSeriesIDSets()
@@ -272,7 +272,7 @@ func (p IndexFiles) CompactTo(w io.Writer, sfile *tsdb.SeriesFile, m, k uint64, 
 }
 
 func (p IndexFiles) writeTagsetsTo(w io.Writer, info *indexCompactInfo, n *int64) error {
-	mitr := p.MetricIterator()
+	mitr := p.MeasurementIterator()
 	if mitr == nil {
 		return nil
 	}
@@ -333,7 +333,7 @@ func (p IndexFiles) writeTagsetTo(w io.Writer, name []byte, info *indexCompactIn
 		}
 	}
 
-	// Save tagset offset to metric.
+	// Save tagset offset to measurement.
 	pos := info.tagSets[string(name)]
 	pos.offset = *n
 
@@ -344,7 +344,7 @@ func (p IndexFiles) writeTagsetTo(w io.Writer, name []byte, info *indexCompactIn
 		return err
 	}
 
-	// Save tagset size to metric.
+	// Save tagset size to measurement.
 	pos.size = *n - pos.offset
 
 	info.tagSets[string(name)] = pos
@@ -352,8 +352,8 @@ func (p IndexFiles) writeTagsetTo(w io.Writer, name []byte, info *indexCompactIn
 	return nil
 }
 
-func (p IndexFiles) writeMetricBlockTo(w io.Writer, info *indexCompactInfo, n *int64) error {
-	mw := NewMetricBlockWriter()
+func (p IndexFiles) writeMeasurementBlockTo(w io.Writer, info *indexCompactInfo, n *int64) error {
+	mw := NewMeasurementBlockWriter()
 
 	// Check for cancellation.
 	select {
@@ -362,8 +362,8 @@ func (p IndexFiles) writeMetricBlockTo(w io.Writer, info *indexCompactInfo, n *i
 	default:
 	}
 
-	// Add metric data & compute sketches.
-	mitr := p.MetricIterator()
+	// Add measurement data & compute sketches.
+	mitr := p.MeasurementIterator()
 	if mitr != nil {
 		var seriesN int
 		for m := mitr.Next(); m != nil; m = mitr.Next() {
@@ -371,7 +371,7 @@ func (p IndexFiles) writeMetricBlockTo(w io.Writer, info *indexCompactInfo, n *i
 
 			// Look-up series ids.
 			if err := func() error {
-				itr := p.MetricSeriesIDIterator(name)
+				itr := p.MeasurementSeriesIDIterator(name)
 				defer itr.Close()
 
 				var seriesIDs []uint64
@@ -395,7 +395,7 @@ func (p IndexFiles) writeMetricBlockTo(w io.Writer, info *indexCompactInfo, n *i
 				}
 				sort.Sort(uint64Slice(seriesIDs))
 
-				// Add metric to writer.
+				// Add measurement to writer.
 				pos := info.tagSets[string(name)]
 				mw.Add(name, m.Deleted(), pos.offset, pos.size, seriesIDs)
 
@@ -446,7 +446,7 @@ type IndexFilesInfo struct {
 type indexCompactInfo struct {
 	cancel <-chan struct{}
 
-	// Tracks offset/size for each metric's tagset.
+	// Tracks offset/size for each measurement's tagset.
 	tagSets map[string]indexTagSetPos
 }
 

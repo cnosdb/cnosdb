@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/testing/assert"
+	"github.com/cnosdb/db/pkg/testing/assert"
 )
 
 func TestEncode(t *testing.T) {

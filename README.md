@@ -1,8 +1,11 @@
+<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
+![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
+
 # CnosDB
 
 English | [简体中文](./README.cn.md)
 
-An Open Source Time Series Database with high performance, high compression ratio and high playability.
+An Open Source Distributed Time Series Database with high performance, high compression ratio and high usability.
 
 ## Features
 
@@ -17,18 +20,19 @@ All developers/users who love time series databases are welcome to participate i
 
 Please check [Instructions for joining the group](./CnosDBWeChatUserGroupGuidelines.md) beforehand.
 
-![](https://github.com/cnosdatabase/cnosdb/blob/main/doc/assets/u.jpg)
+![](https://github.com/cnosdb/cnosdb/blob/main/doc/assets/u.jpg)
 
 ## Quick start
 
-> If you need a complete getting started guide, please check the [Quickstart Guide](https://cnosdatabase.github.io/)
+
+> If you need a complete getting started guide, please check the [Quickstart Guide](https://cnosdb.github.io/)
 
 ### Construct
 
 1. Clone
 
    ```
-   git clone https://github.com/cnosdatabase/cnosdb.git
+   git clone https://github.com/cnosdb/cnosdb.git
    ```
 
 2. Compile

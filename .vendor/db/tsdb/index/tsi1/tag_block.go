@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cnosdatabase/db/pkg/rhh"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/rhh"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // TagBlockVersion is the version of the tag block.
@@ -42,7 +42,7 @@ var (
 	ErrTagBlockSizeMismatch       = errors.New("tag block size mismatch")
 )
 
-// TagBlock represents tag key/value block for a single metric.
+// TagBlock represents tag key/value block for a single measurement.
 type TagBlock struct {
 	data []byte
 

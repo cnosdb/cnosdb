@@ -3,14 +3,13 @@ package coordinator
 import (
 	"context"
 	"io"
+	"math/rand"
 	"net"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // IteratorCreator is an interface that combines mapping fields and creating iterators.
@@ -22,43 +21,49 @@ type IteratorCreator interface {
 
 // LocalShardMapper implements a ShardMapper for local shards.
 type LocalShardMapper struct {
-	MetaClient interface {
-		RegionsByTimeRange(database, ttl string, min, max time.Time) (a []meta.RegionInfo, err error)
-	}
+	//MetaClient interface {
+	//	ShardGroupsByTimeRange(database, policy string, min, max time.Time) (a []meta.ShardGroupInfo, err error)
+	//}
+	MetaClient MetaClient
 
 	TSDBStore interface {
-		Region(ids []uint64) tsdb.Region
+		ShardGroup(ids []uint64) tsdb.ShardGroup
+		Shards(ids []uint64) []*tsdb.Shard
+		CreateShard(database, retentionPolicy string, shardID uint64, enabled bool) error
 	}
 }
 
 // MapShards maps the sources to the appropriate shards into an IteratorCreator.
-func (e *LocalShardMapper) MapShards(sources cnosql.Sources, t cnosql.TimeRange, opt query.SelectOptions) (query.Region, error) {
+func (e *LocalShardMapper) MapShards(sources cnosql.Sources, t cnosql.TimeRange, opt query.SelectOptions) (query.ShardGroup, error) {
 	a := &LocalShardMapping{
-		ShardMap: make(map[Source]tsdb.Region),
+		ShardMap:  make(map[Source]tsdb.ShardGroup),
+		RemoteICs: make(map[Source][]remoteIteratorCreator),
 	}
 
 	tmin := time.Unix(0, t.MinTimeNano())
 	tmax := time.Unix(0, t.MaxTimeNano())
+	a.MinTime, a.MaxTime = tmin, tmax
+	a.LocalNodeID = opt.NodeID
 	if err := e.mapShards(a, sources, tmin, tmax); err != nil {
 		return nil, err
 	}
-	a.MinTime, a.MaxTime = tmin, tmax
+
 	return a, nil
 }
 
 func (e *LocalShardMapper) mapShards(a *LocalShardMapping, sources cnosql.Sources, tmin, tmax time.Time) error {
 	for _, s := range sources {
 		switch s := s.(type) {
-		case *cnosql.Metric:
+		case *cnosql.Measurement:
 			source := Source{
-				Database:   s.Database,
-				TimeToLive: s.TimeToLive,
+				Database:        s.Database,
+				RetentionPolicy: s.RetentionPolicy,
 			}
 			// Retrieve the list of shards for this database. This list of
-			// shards is always the same regardless of which metric we are
+			// shards is always the same regardless of which measurement we are
 			// using.
 			if _, ok := a.ShardMap[source]; !ok {
-				groups, err := e.MetaClient.RegionsByTimeRange(s.Database, s.TimeToLive, tmin, tmax)
+				groups, err := e.MetaClient.ShardGroupsByTimeRange(s.Database, s.RetentionPolicy, tmin, tmax)
 				if err != nil {
 					return err
 				}
@@ -67,14 +72,45 @@ func (e *LocalShardMapper) mapShards(a *LocalShardMapping, sources cnosql.Source
 					a.ShardMap[source] = nil
 					continue
 				}
+				a.RemoteICs[source] = make([]remoteIteratorCreator, 0, len(groups[0].Shards)*len(groups))
 
 				shardIDs := make([]uint64, 0, len(groups[0].Shards)*len(groups))
 				for _, g := range groups {
 					for _, si := range g.Shards {
-						shardIDs = append(shardIDs, si.ID)
+						var nodeID uint64
+						if si.OwnedBy(a.LocalNodeID) {
+							nodeID = a.LocalNodeID
+						} else if len(si.Owners) > 0 {
+							nodeID = si.Owners[rand.Intn(len(si.Owners))].NodeID
+						} else {
+							// This should not occur but if the shard has no owners then
+							// we don't want this to panic by trying to randomly select a node.
+							continue
+						}
+						if nodeID == a.LocalNodeID {
+							shardIDs = append(shardIDs, si.ID)
+
+						} else {
+							dialer := &NodeDialer{
+								MetaClient: e.MetaClient,
+								Timeout:    time.Duration(3 * time.Second),
+							}
+							remoteShardIDs := []uint64{si.ID}
+							remoteIC := newRemoteIteratorCreator(dialer, nodeID, remoteShardIDs)
+							a.RemoteICs[source] = append(a.RemoteICs[source], remoteIC)
+
+						}
 					}
 				}
-				a.ShardMap[source] = e.TSDBStore.Region(shardIDs)
+				shards := e.TSDBStore.Shards(shardIDs)
+				if len(shards) != len(shardIDs) {
+					for _, shardID := range shardIDs {
+						//err = e.TSDBStore.CreateShard(database, retentionPolicy, shardID, true)
+						e.TSDBStore.CreateShard(s.Database, s.RetentionPolicy, shardID, true)
+					}
+
+				}
+				a.ShardMap[source] = e.TSDBStore.ShardGroup(shardIDs)
 			}
 		case *cnosql.SubQuery:
 			if err := e.mapShards(a, s.Statement.Sources, tmin, tmax); err != nil {
@@ -87,7 +123,9 @@ func (e *LocalShardMapper) mapShards(a *LocalShardMapping, sources cnosql.Source
 
 // ShardMapper maps data sources to a list of shard information.
 type LocalShardMapping struct {
-	ShardMap map[Source]tsdb.Region
+	ShardMap map[Source]tsdb.ShardGroup
+
+	RemoteICs map[Source][]remoteIteratorCreator
 
 	// MinTime is the minimum time that this shard mapper will allow.
 	// Any attempt to use a time before this one will automatically result in using
@@ -98,46 +136,67 @@ type LocalShardMapping struct {
 	// Any attempt to use a time after this one will automatically result in using
 	// this time instead.
 	MaxTime time.Time
+
+	LocalNodeID uint64
 }
 
-func (a *LocalShardMapping) FieldDimensions(m *cnosql.Metric) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+func (a *LocalShardMapping) FieldDimensions(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
 	source := Source{
-		Database:   m.Database,
-		TimeToLive: m.TimeToLive,
+		Database:        m.Database,
+		RetentionPolicy: m.RetentionPolicy,
 	}
 
 	rg := a.ShardMap[source]
-	if rg == nil {
-		return
+	RemoteICs := a.RemoteICs[source]
+	if rg == nil && RemoteICs == nil {
+		return nil, nil, nil
 	}
 
 	fields = make(map[string]cnosql.DataType)
 	dimensions = make(map[string]struct{})
 
-	var metrics []string
+	var measurements []string
 	if m.Regex != nil {
-		metrics = rg.MetricsByRegex(m.Regex.Val)
+		measurements = rg.MeasurementsByRegex(m.Regex.Val)
 	} else {
-		metrics = []string{m.Name}
+		measurements = []string{m.Name}
 	}
 
-	f, d, err := rg.FieldDimensions(metrics)
-	if err != nil {
-		return nil, nil, err
+	if rg != nil {
+		f, d, err := rg.FieldDimensions(measurements)
+		if err != nil {
+			return nil, nil, err
+		}
+		for k, typ := range f {
+			fields[k] = typ
+		}
+		for k := range d {
+			dimensions[k] = struct{}{}
+		}
 	}
-	for k, typ := range f {
-		fields[k] = typ
+
+	if RemoteICs != nil {
+		for _, remoteIC := range RemoteICs {
+			f, d, err := remoteIC.FieldDimensions(m)
+			if err != nil {
+				return nil, nil, err
+			}
+			for k, typ := range f {
+				fields[k] = typ
+			}
+			for k := range d {
+				dimensions[k] = struct{}{}
+			}
+		}
 	}
-	for k := range d {
-		dimensions[k] = struct{}{}
-	}
+
 	return
 }
 
-func (a *LocalShardMapping) MapType(m *cnosql.Metric, field string) cnosql.DataType {
+func (a *LocalShardMapping) MapType(m *cnosql.Measurement, field string) cnosql.DataType {
 	source := Source{
-		Database:   m.Database,
-		TimeToLive: m.TimeToLive,
+		Database:        m.Database,
+		RetentionPolicy: m.RetentionPolicy,
 	}
 
 	rg := a.ShardMap[source]
@@ -147,7 +206,7 @@ func (a *LocalShardMapping) MapType(m *cnosql.Metric, field string) cnosql.DataT
 
 	var names []string
 	if m.Regex != nil {
-		names = rg.MetricsByRegex(m.Regex.Val)
+		names = rg.MeasurementsByRegex(m.Regex.Val)
 	} else {
 		names = []string{m.Name}
 	}
@@ -165,14 +224,15 @@ func (a *LocalShardMapping) MapType(m *cnosql.Metric, field string) cnosql.DataT
 	return typ
 }
 
-func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Metric, opt query.IteratorOptions) (query.Iterator, error) {
+func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error) {
 	source := Source{
-		Database:   m.Database,
-		TimeToLive: m.TimeToLive,
+		Database:        m.Database,
+		RetentionPolicy: m.RetentionPolicy,
 	}
 
 	rg := a.ShardMap[source]
-	if rg == nil {
+	RemoteICs := a.RemoteICs[source]
+	if rg == nil && RemoteICs == nil {
 		return nil, nil
 	}
 
@@ -184,20 +244,28 @@ func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Metric
 		opt.EndTime = a.MaxTime.UnixNano()
 	}
 
+	inputs := []query.Iterator{}
 	if m.Regex != nil {
-		metrics := rg.MetricsByRegex(m.Regex.Val)
-		inputs := make([]query.Iterator, 0, len(metrics))
+		measurements := rg.MeasurementsByRegex(m.Regex.Val)
 		if err := func() error {
-			// Create a Metric for each returned matching metric value
+			// Create a Measurement for each returned matching measurement value
 			// from the regex.
-			for _, metric := range metrics {
+			for _, measurement := range measurements {
 				mm := m.Clone()
-				mm.Name = metric // Set the name to this matching regex value.
+				mm.Name = measurement // Set the name to this matching regex value.
 				input, err := rg.CreateIterator(ctx, mm, opt)
 				if err != nil {
 					return err
 				}
 				inputs = append(inputs, input)
+
+				for _, remoteIC := range RemoteICs {
+					input, err := remoteIC.CreateIterator(ctx, m, opt)
+					if err != nil {
+						continue
+					}
+					inputs = append(inputs, input)
+				}
 			}
 			return nil
 		}(); err != nil {
@@ -205,49 +273,24 @@ func (a *LocalShardMapping) CreateIterator(ctx context.Context, m *cnosql.Metric
 			return nil, err
 		}
 
-		return query.Iterators(inputs).Merge(opt)
-	}
-	return rg.CreateIterator(ctx, m, opt)
-}
+	} else {
 
-func (a *LocalShardMapping) IteratorCost(m *cnosql.Metric, opt query.IteratorOptions) (query.IteratorCost, error) {
-	source := Source{
-		Database:   m.Database,
-		TimeToLive: m.TimeToLive,
-	}
-
-	rg := a.ShardMap[source]
-	if rg == nil {
-		return query.IteratorCost{}, nil
-	}
-
-	// Override the time constraints if they don't match each other.
-	if !a.MinTime.IsZero() && opt.StartTime < a.MinTime.UnixNano() {
-		opt.StartTime = a.MinTime.UnixNano()
-	}
-	if !a.MaxTime.IsZero() && opt.EndTime > a.MaxTime.UnixNano() {
-		opt.EndTime = a.MaxTime.UnixNano()
-	}
-
-	if m.Regex != nil {
-		var costs query.IteratorCost
-		metrics := rg.MetricsByRegex(m.Regex.Val)
-		for _, metric := range metrics {
-			cost, err := rg.IteratorCost(metric, opt)
-			if err != nil {
-				return query.IteratorCost{}, err
-			}
-			costs = costs.Combine(cost)
+		input, err := rg.CreateIterator(ctx, m, opt)
+		if err != nil {
+			return nil, err
 		}
-		return costs, nil
-	}
-	return rg.IteratorCost(m.Name, opt)
-}
+		inputs = append(inputs, input)
 
-// Close clears out the list of mapped shards.
-func (a *LocalShardMapping) Close() error {
-	a.ShardMap = nil
-	return nil
+		for _, remoteIC := range RemoteICs {
+			input, err := remoteIC.CreateIterator(ctx, m, opt)
+			if err != nil {
+				continue
+			}
+			inputs = append(inputs, input)
+		}
+	}
+
+	return query.Iterators(inputs).Merge(opt)
 }
 
 // remoteIteratorCreator creates iterators for remote shards.
@@ -258,8 +301,8 @@ type remoteIteratorCreator struct {
 }
 
 // newRemoteIteratorCreator returns a new instance of remoteIteratorCreator for a remote shard.
-func newRemoteIteratorCreator(dialer *NodeDialer, nodeID uint64, shardIDs []uint64) *remoteIteratorCreator {
-	return &remoteIteratorCreator{
+func newRemoteIteratorCreator(dialer *NodeDialer, nodeID uint64, shardIDs []uint64) remoteIteratorCreator {
+	return remoteIteratorCreator{
 		dialer:   dialer,
 		nodeID:   nodeID,
 		shardIDs: shardIDs,
@@ -267,7 +310,7 @@ func newRemoteIteratorCreator(dialer *NodeDialer, nodeID uint64, shardIDs []uint
 }
 
 // CreateIterator creates a remote streaming iterator.
-func (ic *remoteIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.Metric, opt query.IteratorOptions) (query.Iterator, error) {
+func (ic *remoteIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.Measurement, opt query.IteratorOptions) (query.Iterator, error) {
 	conn, err := ic.dialer.DialNode(ic.nodeID)
 	if err != nil {
 		return nil, err
@@ -276,10 +319,12 @@ func (ic *remoteIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.M
 	var resp CreateIteratorResponse
 	if err := func() error {
 		// Write request.
-		if err := EncodeTLV(conn, createIteratorRequestMessage, &CreateIteratorRequest{
-			ShardIDs: ic.shardIDs,
-			Opt:      opt,
-		}); err != nil {
+		var req = CreateIteratorRequest{
+			ShardIDs:    ic.shardIDs,
+			Measurement: *(m.Clone()),
+			Opt:         opt,
+		}
+		if err := EncodeTLV(conn, createIteratorRequestMessage, &req); err != nil {
 			return err
 		}
 
@@ -300,7 +345,7 @@ func (ic *remoteIteratorCreator) CreateIterator(ctx context.Context, m *cnosql.M
 }
 
 // FieldDimensions returns the unique fields and dimensions across a list of sources.
-func (ic *remoteIteratorCreator) FieldDimensions(km *cnosql.Metric) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
+func (ic *remoteIteratorCreator) FieldDimensions(m *cnosql.Measurement) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {
 	conn, err := ic.dialer.DialNode(ic.nodeID)
 	if err != nil {
 		return nil, nil, err
@@ -309,8 +354,8 @@ func (ic *remoteIteratorCreator) FieldDimensions(km *cnosql.Metric) (fields map[
 
 	// Write request.
 	if err := EncodeTLV(conn, fieldDimensionsRequestMessage, &FieldDimensionsRequest{
-		ShardIDs: ic.shardIDs,
-		Metric:   *km,
+		ShardIDs:    ic.shardIDs,
+		Measurement: *m,
 	}); err != nil {
 		return nil, nil, err
 	}
@@ -336,17 +381,63 @@ func (d *NodeDialer) DialNode(nodeID uint64) (net.Conn, error) {
 		return nil, err
 	}
 
-	conn, err := network.DialTimeout("tcp", ni.TCPHost, MuxHeader, d.Timeout)
+	conn, err := net.Dial("tcp", ni.TCPHost)
 	if err != nil {
 		return nil, err
 	}
 	conn.SetDeadline(time.Now().Add(d.Timeout))
 
+	// Write the cluster multiplexing header byte
+	if _, err := conn.Write([]byte(MuxHeader)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
 	return conn, nil
 }
 
-// Source contains the database and time to live source for data.
+func (a *LocalShardMapping) IteratorCost(m *cnosql.Measurement, opt query.IteratorOptions) (query.IteratorCost, error) {
+	source := Source{
+		Database:        m.Database,
+		RetentionPolicy: m.RetentionPolicy,
+	}
+
+	rg := a.ShardMap[source]
+	if rg == nil {
+		return query.IteratorCost{}, nil
+	}
+
+	// Override the time constraints if they don't match each other.
+	if !a.MinTime.IsZero() && opt.StartTime < a.MinTime.UnixNano() {
+		opt.StartTime = a.MinTime.UnixNano()
+	}
+	if !a.MaxTime.IsZero() && opt.EndTime > a.MaxTime.UnixNano() {
+		opt.EndTime = a.MaxTime.UnixNano()
+	}
+
+	if m.Regex != nil {
+		var costs query.IteratorCost
+		measurements := rg.MeasurementsByRegex(m.Regex.Val)
+		for _, measurement := range measurements {
+			cost, err := rg.IteratorCost(measurement, opt)
+			if err != nil {
+				return query.IteratorCost{}, err
+			}
+			costs = costs.Combine(cost)
+		}
+		return costs, nil
+	}
+	return rg.IteratorCost(m.Name, opt)
+}
+
+// Close clears out the list of mapped shards.
+func (a *LocalShardMapping) Close() error {
+	a.ShardMap = nil
+	return nil
+}
+
+// Source contains the database and retention policy source for data.
 type Source struct {
-	Database   string
-	TimeToLive string
+	Database        string
+	RetentionPolicy string
 }

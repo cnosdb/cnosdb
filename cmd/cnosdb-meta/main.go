@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-meta/options"
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-meta/run"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-meta/options"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-meta/run"
 	"github.com/spf13/cobra"
 )
 

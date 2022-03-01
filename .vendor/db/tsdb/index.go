@@ -9,12 +9,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bytesutil"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/slices"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/slices"
+	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 )
 
@@ -33,21 +33,21 @@ type Index interface {
 	WithLogger(*zap.Logger)
 
 	Database() string
-	MetricExists(name []byte) (bool, error)
-	MetricNamesByRegex(re *regexp.Regexp) ([][]byte, error)
-	DropMetric(name []byte) error
-	ForEachMetricName(fn func(name []byte) error) error
+	MeasurementExists(name []byte) (bool, error)
+	MeasurementNamesByRegex(re *regexp.Regexp) ([][]byte, error)
+	DropMeasurement(name []byte) error
+	ForEachMeasurementName(fn func(name []byte) error) error
 
 	InitializeSeries(keys, names [][]byte, tags []models.Tags) error
 	CreateSeriesIfNotExists(key, name []byte, tags models.Tags) error
 	CreateSeriesListIfNotExists(keys, names [][]byte, tags []models.Tags) error
 	DropSeries(seriesID uint64, key []byte, cascade bool) error
-	DropMetricIfSeriesNotExist(name []byte) (bool, error)
+	DropMeasurementIfSeriesNotExist(name []byte) (bool, error)
 
 	// Used to clean up series in inmem index that were dropped with a shard.
 	DropSeriesGlobal(key []byte) error
 
-	MetricsSketches() (estimator.Sketch, estimator.Sketch, error)
+	MeasurementsSketches() (estimator.Sketch, estimator.Sketch, error)
 	SeriesN() int64
 	SeriesSketches() (estimator.Sketch, estimator.Sketch, error)
 	SeriesIDSet() *SeriesIDSet
@@ -55,21 +55,21 @@ type Index interface {
 	HasTagKey(name, key []byte) (bool, error)
 	HasTagValue(name, key, value []byte) (bool, error)
 
-	MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error)
+	MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error)
 
 	TagKeyCardinality(name, key []byte) int
 
 	// CnosQL system iterators
-	MetricIterator() (MetricIterator, error)
+	MeasurementIterator() (MeasurementIterator, error)
 	TagKeyIterator(name []byte) (TagKeyIterator, error)
 	TagValueIterator(name, key []byte) (TagValueIterator, error)
-	MetricSeriesIDIterator(name []byte) (SeriesIDIterator, error)
+	MeasurementSeriesIDIterator(name []byte) (SeriesIDIterator, error)
 	TagKeySeriesIDIterator(name, key []byte) (SeriesIDIterator, error)
 	TagValueSeriesIDIterator(name, key, value []byte) (SeriesIDIterator, error)
 
 	// Sets a shared fieldset from the engine.
-	FieldSet() *MetricFieldSet
-	SetFieldSet(fs *MetricFieldSet)
+	FieldSet() *MeasurementFieldSet
+	SetFieldSet(fs *MeasurementFieldSet)
 
 	// Size of the index on disk, if applicable.
 	DiskSizeBytes() int64
@@ -78,7 +78,7 @@ type Index interface {
 	Bytes() int
 
 	// To be removed w/ tsi1.
-	SetFieldName(metric []byte, name string)
+	SetFieldName(measurement []byte, name string)
 
 	Type() string
 	// Returns a unique reference ID to the index instance.
@@ -152,9 +152,9 @@ type seriesElemAdapter struct {
 	expr    cnosql.Expr
 }
 
-func (e *seriesElemAdapter) Name() []byte        { return e.name }
-func (e *seriesElemAdapter) Tags() models.Tags   { return e.tags }
-func (e *seriesElemAdapter) Deleted() bool       { return e.deleted }
+func (e *seriesElemAdapter) Name() []byte      { return e.name }
+func (e *seriesElemAdapter) Tags() models.Tags { return e.tags }
+func (e *seriesElemAdapter) Deleted() bool     { return e.deleted }
 func (e *seriesElemAdapter) Expr() cnosql.Expr { return e.expr }
 
 // SeriesIDElem represents a single series and optional expression.
@@ -300,14 +300,14 @@ type seriesQueryAdapterIterator struct {
 	once     sync.Once
 	sfile    *SeriesFile
 	itr      SeriesIDIterator
-	fieldset *MetricFieldSet
+	fieldset *MeasurementFieldSet
 	opt      query.IteratorOptions
 
 	point query.FloatPoint // reusable point
 }
 
 // NewSeriesQueryAdapterIterator returns a new instance of SeriesQueryAdapterIterator.
-func NewSeriesQueryAdapterIterator(sfile *SeriesFile, itr SeriesIDIterator, fieldset *MetricFieldSet, opt query.IteratorOptions) query.Iterator {
+func NewSeriesQueryAdapterIterator(sfile *SeriesFile, itr SeriesIDIterator, fieldset *MeasurementFieldSet, opt query.IteratorOptions) query.Iterator {
 	return &seriesQueryAdapterIterator{
 		sfile:    sfile,
 		itr:      itr,
@@ -767,7 +767,7 @@ func (itr *seriesIDDifferenceIterator) Next() (_ SeriesIDElem, err error) {
 type seriesPointIterator struct {
 	once     sync.Once
 	indexSet IndexSet
-	mitr     MetricIterator
+	mitr     MeasurementIterator
 	keys     [][]byte
 	opt      query.IteratorOptions
 
@@ -792,7 +792,7 @@ func NewSeriesPointIterator(indexSet IndexSet, opt query.IteratorOptions) (_ que
 		return nil, err
 	}
 
-	mitr, err := indexSet.MetricIterator()
+	mitr, err := indexSet.MeasurementIterator()
 	if err != nil {
 		return nil, err
 	}
@@ -823,8 +823,8 @@ func (itr *seriesPointIterator) Close() (err error) {
 // Next emits the next point in the iterator.
 func (itr *seriesPointIterator) Next() (*query.FloatPoint, error) {
 	for {
-		// Read series keys for next metric if no more keys remaining.
-		// Exit if there are no metrics remaining.
+		// Read series keys for next measurement if no more keys remaining.
+		// Exit if there are no measurements remaining.
 		if len(itr.keys) == 0 {
 			m, err := itr.mitr.Next()
 			if err != nil {
@@ -866,7 +866,7 @@ func (itr *seriesPointIterator) Next() (*query.FloatPoint, error) {
 }
 
 func (itr *seriesPointIterator) readSeriesKeys(name []byte) error {
-	sitr, err := itr.indexSet.MetricSeriesByExprIterator(name, itr.opt.Condition)
+	sitr, err := itr.indexSet.MeasurementSeriesByExprIterator(name, itr.opt.Condition)
 	if err != nil {
 		return err
 	} else if sitr == nil {
@@ -905,15 +905,15 @@ func (itr *seriesPointIterator) readSeriesKeys(name []byte) error {
 	return nil
 }
 
-// MetricIterator represents a iterator over a list of metrics.
-type MetricIterator interface {
+// MeasurementIterator represents a iterator over a list of measurements.
+type MeasurementIterator interface {
 	Close() error
 	Next() ([]byte, error)
 }
 
-type MetricIterators []MetricIterator
+type MeasurementIterators []MeasurementIterator
 
-func (a MetricIterators) Close() (err error) {
+func (a MeasurementIterators) Close() (err error) {
 	for i := range a {
 		if e := a[i].Close(); e != nil && err == nil {
 			err = e
@@ -922,18 +922,18 @@ func (a MetricIterators) Close() (err error) {
 	return err
 }
 
-type metricSliceIterator struct {
+type measurementSliceIterator struct {
 	names [][]byte
 }
 
-// NewMetricSliceIterator returns an iterator over a slice of in-memory metric names.
-func NewMetricSliceIterator(names [][]byte) *metricSliceIterator {
-	return &metricSliceIterator{names: names}
+// NewMeasurementSliceIterator returns an iterator over a slice of in-memory measurement names.
+func NewMeasurementSliceIterator(names [][]byte) *measurementSliceIterator {
+	return &measurementSliceIterator{names: names}
 }
 
-func (itr *metricSliceIterator) Close() (err error) { return nil }
+func (itr *measurementSliceIterator) Close() (err error) { return nil }
 
-func (itr *metricSliceIterator) Next() (name []byte, err error) {
+func (itr *measurementSliceIterator) Next() (name []byte, err error) {
 	if len(itr.names) == 0 {
 		return nil, nil
 	}
@@ -941,28 +941,28 @@ func (itr *metricSliceIterator) Next() (name []byte, err error) {
 	return name, nil
 }
 
-// MergeMetricIterators returns an iterator that merges a set of iterators.
+// MergeMeasurementIterators returns an iterator that merges a set of iterators.
 // Iterators that are first in the list take precedence and a deletion by those
 // early iterators will invalidate elements by later iterators.
-func MergeMetricIterators(itrs ...MetricIterator) MetricIterator {
+func MergeMeasurementIterators(itrs ...MeasurementIterator) MeasurementIterator {
 	if len(itrs) == 0 {
 		return nil
 	} else if len(itrs) == 1 {
 		return itrs[0]
 	}
 
-	return &metricMergeIterator{
+	return &measurementMergeIterator{
 		buf:  make([][]byte, len(itrs)),
 		itrs: itrs,
 	}
 }
 
-type metricMergeIterator struct {
+type measurementMergeIterator struct {
 	buf  [][]byte
-	itrs []MetricIterator
+	itrs []MeasurementIterator
 }
 
-func (itr *metricMergeIterator) Close() (err error) {
+func (itr *measurementMergeIterator) Close() (err error) {
 	for i := range itr.itrs {
 		if e := itr.itrs[i].Close(); e != nil && err == nil {
 			err = e
@@ -975,7 +975,7 @@ func (itr *metricMergeIterator) Close() (err error) {
 //
 // If multiple iterators contain the same name then the first is returned
 // and the remaining ones are skipped.
-func (itr *metricMergeIterator) Next() (_ []byte, err error) {
+func (itr *measurementMergeIterator) Next() (_ []byte, err error) {
 	// Find next lowest name amongst the buffers.
 	var name []byte
 	for i, buf := range itr.buf {
@@ -1223,9 +1223,9 @@ func (itr *tagValueMergeIterator) Next() (_ []byte, err error) {
 
 // IndexSet represents a list of indexes, all belonging to one database.
 type IndexSet struct {
-	Indexes    []Index           // The set of indexes comprising this IndexSet.
-	SeriesFile *SeriesFile       // The Series File associated with the db for this set.
-	fieldSets  []*MetricFieldSet // field sets for _all_ indexes in this set's DB.
+	Indexes    []Index                // The set of indexes comprising this IndexSet.
+	SeriesFile *SeriesFile            // The Series File associated with the db for this set.
+	fieldSets  []*MeasurementFieldSet // field sets for _all_ indexes in this set's DB.
 }
 
 // HasInmemIndex returns true if any in-memory index is in use.
@@ -1247,22 +1247,22 @@ func (is IndexSet) Database() string {
 }
 
 // HasField determines if any of the field sets on the set of indexes in the
-// IndexSet have the provided field for the provided metric.
-func (is IndexSet) HasField(metric []byte, field string) bool {
+// IndexSet have the provided field for the provided measurement.
+func (is IndexSet) HasField(measurement []byte, field string) bool {
 	if len(is.Indexes) == 0 {
 		return false
 	}
 
 	if len(is.fieldSets) == 0 {
 		// field sets may not have been initialised yet.
-		is.fieldSets = make([]*MetricFieldSet, 0, len(is.Indexes))
+		is.fieldSets = make([]*MeasurementFieldSet, 0, len(is.Indexes))
 		for _, idx := range is.Indexes {
 			is.fieldSets = append(is.fieldSets, idx.FieldSet())
 		}
 	}
 
 	for _, fs := range is.fieldSets {
-		if fs.Fields(metric).HasField(field) {
+		if fs.Fields(measurement).HasField(field) {
 			return true
 		}
 	}
@@ -1275,7 +1275,7 @@ func (is IndexSet) DedupeInmemIndexes() IndexSet {
 	other := IndexSet{
 		Indexes:    make([]Index, 0, len(is.Indexes)),
 		SeriesFile: is.SeriesFile,
-		fieldSets:  make([]*MetricFieldSet, 0, len(is.Indexes)),
+		fieldSets:  make([]*MeasurementFieldSet, 0, len(is.Indexes)),
 	}
 
 	uniqueIndexes := make(map[uintptr]Index)
@@ -1291,22 +1291,22 @@ func (is IndexSet) DedupeInmemIndexes() IndexSet {
 	return other
 }
 
-// MetricNamesByExpr returns a slice of metric names matching the
+// MeasurementNamesByExpr returns a slice of measurement names matching the
 // provided condition. If no condition is provided then all names are returned.
-func (is IndexSet) MetricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
+func (is IndexSet) MeasurementNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
 
 	// Return filtered list if expression exists.
 	if expr != nil {
-		names, err := is.metricNamesByExpr(auth, expr)
+		names, err := is.measurementNamesByExpr(auth, expr)
 		if err != nil {
 			return nil, err
 		}
 		return slices.CopyChunkedByteSlices(names, 1000), nil
 	}
 
-	itr, err := is.metricIterator()
+	itr, err := is.measurementIterator()
 	if err != nil {
 		return nil, err
 	} else if itr == nil {
@@ -1314,7 +1314,7 @@ func (is IndexSet) MetricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr
 	}
 	defer itr.Close()
 
-	// Iterate over all metrics if no condition exists.
+	// Iterate over all measurements if no condition exists.
 	var names [][]byte
 	for {
 		e, err := itr.Next()
@@ -1325,15 +1325,15 @@ func (is IndexSet) MetricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr
 		}
 
 		// Determine if there exists at least one authorised series for the
-		// metric name.
-		if is.metricAuthorizedSeries(auth, e) {
+		// measurement name.
+		if is.measurementAuthorizedSeries(auth, e) {
 			names = append(names, e)
 		}
 	}
 	return slices.CopyChunkedByteSlices(names, 1000), nil
 }
 
-func (is IndexSet) metricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
+func (is IndexSet) measurementNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
 	if expr == nil {
 		return nil, nil
 	}
@@ -1366,19 +1366,19 @@ func (is IndexSet) metricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr
 
 			// Match on name, if specified.
 			if tag.Val == "_name" {
-				return is.metricNamesByNameFilter(auth, e.Op, value, regex)
+				return is.measurementNamesByNameFilter(auth, e.Op, value, regex)
 			} else if cnosql.IsSystemName(tag.Val) {
 				return nil, nil
 			}
-			return is.metricNamesByTagFilter(auth, e.Op, tag.Val, value, regex)
+			return is.measurementNamesByTagFilter(auth, e.Op, tag.Val, value, regex)
 
 		case cnosql.OR, cnosql.AND:
-			lhs, err := is.metricNamesByExpr(auth, e.LHS)
+			lhs, err := is.measurementNamesByExpr(auth, e.LHS)
 			if err != nil {
 				return nil, err
 			}
 
-			rhs, err := is.metricNamesByExpr(auth, e.RHS)
+			rhs, err := is.measurementNamesByExpr(auth, e.RHS)
 			if err != nil {
 				return nil, err
 			}
@@ -1393,15 +1393,15 @@ func (is IndexSet) metricNamesByExpr(auth query.FineAuthorizer, expr cnosql.Expr
 		}
 
 	case *cnosql.ParenExpr:
-		return is.metricNamesByExpr(auth, e.Expr)
+		return is.measurementNamesByExpr(auth, e.Expr)
 	default:
 		return nil, fmt.Errorf("%#v", expr)
 	}
 }
 
-// metricNamesByNameFilter returns matching metric names in sorted order.
-func (is IndexSet) metricNamesByNameFilter(auth query.FineAuthorizer, op cnosql.Token, val string, regex *regexp.Regexp) ([][]byte, error) {
-	itr, err := is.metricIterator()
+// measurementNamesByNameFilter returns matching measurement names in sorted order.
+func (is IndexSet) measurementNamesByNameFilter(auth query.FineAuthorizer, op cnosql.Token, val string, regex *regexp.Regexp) ([][]byte, error) {
+	itr, err := is.measurementIterator()
 	if err != nil {
 		return nil, err
 	} else if itr == nil {
@@ -1430,7 +1430,7 @@ func (is IndexSet) metricNamesByNameFilter(auth query.FineAuthorizer, op cnosql.
 			matched = !regex.Match(e)
 		}
 
-		if matched && is.metricAuthorizedSeries(auth, e) {
+		if matched && is.measurementAuthorizedSeries(auth, e) {
 			names = append(names, e)
 		}
 	}
@@ -1438,10 +1438,10 @@ func (is IndexSet) metricNamesByNameFilter(auth query.FineAuthorizer, op cnosql.
 	return names, nil
 }
 
-func (is IndexSet) metricNamesByTagFilter(auth query.FineAuthorizer, op cnosql.Token, key, val string, regex *regexp.Regexp) ([][]byte, error) {
+func (is IndexSet) measurementNamesByTagFilter(auth query.FineAuthorizer, op cnosql.Token, key, val string, regex *regexp.Regexp) ([][]byte, error) {
 	var names [][]byte
 
-	mitr, err := is.metricIterator()
+	mitr, err := is.measurementIterator()
 	if err != nil {
 		return nil, err
 	} else if mitr == nil {
@@ -1466,7 +1466,7 @@ func (is IndexSet) metricNamesByTagFilter(auth query.FineAuthorizer, op cnosql.T
 		} else if me == nil {
 			break
 		}
-		// If the metric doesn't have the tag key, then it won't be considered.
+		// If the measurement doesn't have the tag key, then it won't be considered.
 		if ok, err := is.hasTagKey(me, []byte(key)); err != nil {
 			return nil, err
 		} else if !ok {
@@ -1499,7 +1499,7 @@ func (is IndexSet) metricNamesByTagFilter(auth query.FineAuthorizer, op cnosql.T
 					break
 				}
 
-				// When an authorizer is present, the metric should be
+				// When an authorizer is present, the measurement should be
 				// included only if one of it's series is authorized.
 				sitr, err := is.tagValueSeriesIDIterator(me, []byte(key), ve)
 				if err != nil {
@@ -1533,7 +1533,7 @@ func (is IndexSet) metricNamesByTagFilter(auth query.FineAuthorizer, op cnosql.T
 				}
 
 				if tagMatch && authorized {
-					// The metric can definitely be included or rejected.
+					// The measurement can definitely be included or rejected.
 					break
 				}
 			}
@@ -1542,14 +1542,14 @@ func (is IndexSet) metricNamesByTagFilter(auth query.FineAuthorizer, op cnosql.T
 			}
 		}
 
-		// For negation operators, to determine if the metric is authorized,
-		// an authorized series belonging to the metric must be located.
-		// Then, the metric can be added iff !tagMatch && authorized.
+		// For negation operators, to determine if the measurement is authorized,
+		// an authorized series belonging to the measurement must be located.
+		// Then, the measurement can be added iff !tagMatch && authorized.
 		if (op == cnosql.NEQ || op == cnosql.NEQREGEX) && !tagMatch {
-			authorized = is.metricAuthorizedSeries(auth, me)
+			authorized = is.measurementAuthorizedSeries(auth, me)
 		}
 
-		// tags match | operation is EQ | metric matches
+		// tags match | operation is EQ | measurement matches
 		// --------------------------------------------------
 		//     True   |       True      |      True
 		//     True   |       False     |      False
@@ -1565,14 +1565,14 @@ func (is IndexSet) metricNamesByTagFilter(auth query.FineAuthorizer, op cnosql.T
 	return names, nil
 }
 
-// metricAuthorizedSeries determines if the metric contains a series
+// measurementAuthorizedSeries determines if the measurement contains a series
 // that is authorized to be read.
-func (is IndexSet) metricAuthorizedSeries(auth query.FineAuthorizer, name []byte) bool {
+func (is IndexSet) measurementAuthorizedSeries(auth query.FineAuthorizer, name []byte) bool {
 	if query.AuthorizerIsOpen(auth) {
 		return true
 	}
 
-	sitr, err := is.metricSeriesIDIterator(name)
+	sitr, err := is.measurementSeriesIDIterator(name)
 	if err != nil || sitr == nil {
 		return false
 	}
@@ -1597,13 +1597,13 @@ func (is IndexSet) metricAuthorizedSeries(auth query.FineAuthorizer, name []byte
 }
 
 // HasTagKey returns true if the tag key exists in any index for the provided
-// metric.
+// measurement.
 func (is IndexSet) HasTagKey(name, key []byte) (bool, error) {
 	return is.hasTagKey(name, key)
 }
 
 // hasTagKey returns true if the tag key exists in any index for the provided
-// metric, and guarantees to never take a lock on the series file.
+// measurement, and guarantees to never take a lock on the series file.
 func (is IndexSet) hasTagKey(name, key []byte) (bool, error) {
 	for _, idx := range is.Indexes {
 		if ok, err := idx.HasTagKey(name, key); err != nil {
@@ -1616,7 +1616,7 @@ func (is IndexSet) hasTagKey(name, key []byte) (bool, error) {
 }
 
 // HasTagValue returns true if the tag value exists in any index for the provided
-// metric and tag key.
+// measurement and tag key.
 func (is IndexSet) HasTagValue(name, key, value []byte) (bool, error) {
 	for _, idx := range is.Indexes {
 		if ok, err := idx.HasTagValue(name, key, value); err != nil {
@@ -1628,33 +1628,33 @@ func (is IndexSet) HasTagValue(name, key, value []byte) (bool, error) {
 	return false, nil
 }
 
-// MetricIterator returns an iterator over all metrics in the index.
-func (is IndexSet) MetricIterator() (MetricIterator, error) {
-	return is.metricIterator()
+// MeasurementIterator returns an iterator over all measurements in the index.
+func (is IndexSet) MeasurementIterator() (MeasurementIterator, error) {
+	return is.measurementIterator()
 }
 
-// metricIterator returns an iterator over all metrics in the index.
+// measurementIterator returns an iterator over all measurements in the index.
 // It guarantees to never take any locks on the underlying series file.
-func (is IndexSet) metricIterator() (MetricIterator, error) {
-	a := make([]MetricIterator, 0, len(is.Indexes))
+func (is IndexSet) measurementIterator() (MeasurementIterator, error) {
+	a := make([]MeasurementIterator, 0, len(is.Indexes))
 	for _, idx := range is.Indexes {
-		itr, err := idx.MetricIterator()
+		itr, err := idx.MeasurementIterator()
 		if err != nil {
-			MetricIterators(a).Close()
+			MeasurementIterators(a).Close()
 			return nil, err
 		} else if itr != nil {
 			a = append(a, itr)
 		}
 	}
-	return MergeMetricIterators(a...), nil
+	return MergeMeasurementIterators(a...), nil
 }
 
-// TagKeyIterator returns a key iterator for a metric.
+// TagKeyIterator returns a key iterator for a measurement.
 func (is IndexSet) TagKeyIterator(name []byte) (TagKeyIterator, error) {
 	return is.tagKeyIterator(name)
 }
 
-// tagKeyIterator returns a key iterator for a metric. It guarantees to never
+// tagKeyIterator returns a key iterator for a measurement. It guarantees to never
 // take any locks on the underlying series file.
 func (is IndexSet) tagKeyIterator(name []byte) (TagKeyIterator, error) {
 	a := make([]TagKeyIterator, 0, len(is.Indexes))
@@ -1692,7 +1692,7 @@ func (is IndexSet) tagValueIterator(name, key []byte) (TagValueIterator, error) 
 }
 
 // TagKeyHasAuthorizedSeries determines if there exists an authorized series for
-// the provided metric name and tag key.
+// the provided measurement name and tag key.
 func (is IndexSet) TagKeyHasAuthorizedSeries(auth query.FineAuthorizer, name, tagKey []byte) (bool, error) {
 	if !is.HasInmemIndex() && query.AuthorizerIsOpen(auth) {
 		return true, nil
@@ -1731,26 +1731,26 @@ func (is IndexSet) TagKeyHasAuthorizedSeries(auth query.FineAuthorizer, name, ta
 	}
 }
 
-// MetricSeriesIDIterator returns an iterator over all non-tombstoned series
-// for the provided metric.
-func (is IndexSet) MetricSeriesIDIterator(name []byte) (SeriesIDIterator, error) {
+// MeasurementSeriesIDIterator returns an iterator over all non-tombstoned series
+// for the provided measurement.
+func (is IndexSet) MeasurementSeriesIDIterator(name []byte) (SeriesIDIterator, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
 
-	itr, err := is.metricSeriesIDIterator(name)
+	itr, err := is.measurementSeriesIDIterator(name)
 	if err != nil {
 		return nil, err
 	}
 	return FilterUndeletedSeriesIDIterator(is.SeriesFile, itr), nil
 }
 
-// metricSeriesIDIterator does not provide any locking on the Series file.
+// measurementSeriesIDIterator does not provide any locking on the Series file.
 //
-// See  MetricSeriesIDIterator for more details.
-func (is IndexSet) metricSeriesIDIterator(name []byte) (SeriesIDIterator, error) {
+// See  MeasurementSeriesIDIterator for more details.
+func (is IndexSet) measurementSeriesIDIterator(name []byte) (SeriesIDIterator, error) {
 	a := make([]SeriesIDIterator, 0, len(is.Indexes))
 	for _, idx := range is.Indexes {
-		itr, err := idx.MetricSeriesIDIterator(name)
+		itr, err := idx.MeasurementSeriesIDIterator(name)
 		if err != nil {
 			SeriesIDIterators(a).Close()
 			return nil, err
@@ -1761,9 +1761,9 @@ func (is IndexSet) metricSeriesIDIterator(name []byte) (SeriesIDIterator, error)
 	return MergeSeriesIDIterators(a...), nil
 }
 
-// ForEachMetricTagKey iterates over all tag keys in a metric and applies
+// ForEachMeasurementTagKey iterates over all tag keys in a measurement and applies
 // the provided function.
-func (is IndexSet) ForEachMetricTagKey(name []byte, fn func(key []byte) error) error {
+func (is IndexSet) ForEachMeasurementTagKey(name []byte, fn func(key []byte) error) error {
 	release := is.SeriesFile.Retain()
 	defer release()
 
@@ -1789,14 +1789,14 @@ func (is IndexSet) ForEachMetricTagKey(name []byte, fn func(key []byte) error) e
 	}
 }
 
-// MetricTagKeysByExpr extracts the tag keys wanted by the expression.
-func (is IndexSet) MetricTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
+// MeasurementTagKeysByExpr extracts the tag keys wanted by the expression.
+func (is IndexSet) MeasurementTagKeysByExpr(name []byte, expr cnosql.Expr) (map[string]struct{}, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
 
 	keys := make(map[string]struct{})
 	for _, idx := range is.Indexes {
-		m, err := idx.MetricTagKeysByExpr(name, expr)
+		m, err := idx.MeasurementTagKeysByExpr(name, expr)
 		if err != nil {
 			return nil, err
 		}
@@ -1866,24 +1866,24 @@ func (is IndexSet) tagValueSeriesIDIterator(name, key, value []byte) (SeriesIDIt
 	return MergeSeriesIDIterators(a...), nil
 }
 
-// MetricSeriesByExprIterator returns a series iterator for a metric
+// MeasurementSeriesByExprIterator returns a series iterator for a measurement
 // that is filtered by expr. If expr only contains time expressions then this
-// call is equivalent to MetricSeriesIDIterator().
-func (is IndexSet) MetricSeriesByExprIterator(name []byte, expr cnosql.Expr) (SeriesIDIterator, error) {
+// call is equivalent to MeasurementSeriesIDIterator().
+func (is IndexSet) MeasurementSeriesByExprIterator(name []byte, expr cnosql.Expr) (SeriesIDIterator, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
-	return is.metricSeriesByExprIterator(name, expr)
+	return is.measurementSeriesByExprIterator(name, expr)
 }
 
-// metricSeriesByExprIterator returns a series iterator for a metric
-// that is filtered by expr. See MetricSeriesByExprIterator for more details.
+// measurementSeriesByExprIterator returns a series iterator for a measurement
+// that is filtered by expr. See MeasurementSeriesByExprIterator for more details.
 //
-// metricSeriesByExprIterator guarantees to never take any locks on the
+// measurementSeriesByExprIterator guarantees to never take any locks on the
 // series file.
-func (is IndexSet) metricSeriesByExprIterator(name []byte, expr cnosql.Expr) (SeriesIDIterator, error) {
-	// Return all series for the metric if there are no tag expressions.
+func (is IndexSet) measurementSeriesByExprIterator(name []byte, expr cnosql.Expr) (SeriesIDIterator, error) {
+	// Return all series for the measurement if there are no tag expressions.
 	if expr == nil {
-		itr, err := is.metricSeriesIDIterator(name)
+		itr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
@@ -1897,13 +1897,13 @@ func (is IndexSet) metricSeriesByExprIterator(name []byte, expr cnosql.Expr) (Se
 	return FilterUndeletedSeriesIDIterator(is.SeriesFile, itr), nil
 }
 
-// MetricSeriesKeysByExpr returns a list of series keys matching expr.
-func (is IndexSet) MetricSeriesKeysByExpr(name []byte, expr cnosql.Expr) ([][]byte, error) {
+// MeasurementSeriesKeysByExpr returns a list of series keys matching expr.
+func (is IndexSet) MeasurementSeriesKeysByExpr(name []byte, expr cnosql.Expr) ([][]byte, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
 
 	// Create iterator for all matching series.
-	itr, err := is.metricSeriesByExprIterator(name, expr)
+	itr, err := is.measurementSeriesByExprIterator(name, expr)
 	if err != nil {
 		return nil, err
 	} else if itr == nil {
@@ -1911,7 +1911,7 @@ func (is IndexSet) MetricSeriesKeysByExpr(name []byte, expr cnosql.Expr) ([][]by
 	}
 	defer itr.Close()
 
-	// metricSeriesByExprIterator filters deleted series; no need to do so here.
+	// measurementSeriesByExprIterator filters deleted series; no need to do so here.
 
 	// Iterate over all series and generate keys.
 	var keys [][]byte
@@ -1982,7 +1982,7 @@ func (is IndexSet) seriesByExprIterator(name []byte, expr cnosql.Expr) (SeriesID
 
 	case *cnosql.BooleanLiteral:
 		if expr.Val {
-			return is.metricSeriesIDIterator(name)
+			return is.measurementSeriesIDIterator(name)
 		}
 		return nil, nil
 
@@ -1996,13 +1996,13 @@ func (is IndexSet) seriesByBinaryExprIterator(name []byte, n *cnosql.BinaryExpr)
 	// If this binary expression has another binary expression, then this
 	// is some expression math and we should just pass it to the underlying query.
 	if _, ok := n.LHS.(*cnosql.BinaryExpr); ok {
-		itr, err := is.metricSeriesIDIterator(name)
+		itr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
 		return newSeriesIDExprIterator(itr, n), nil
 	} else if _, ok := n.RHS.(*cnosql.BinaryExpr); ok {
-		itr, err := is.metricSeriesIDIterator(name)
+		itr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
@@ -2017,7 +2017,7 @@ func (is IndexSet) seriesByBinaryExprIterator(name []byte, n *cnosql.BinaryExpr)
 		if !ok {
 			// This is an expression we do not know how to evaluate. Let the
 			// query engine take care of this.
-			itr, err := is.metricSeriesIDIterator(name)
+			itr, err := is.measurementSeriesIDIterator(name)
 			if err != nil {
 				return nil, err
 			}
@@ -2026,9 +2026,9 @@ func (is IndexSet) seriesByBinaryExprIterator(name []byte, n *cnosql.BinaryExpr)
 		value = n.LHS
 	}
 
-	// For fields, return all series from this metric.
+	// For fields, return all series from this measurement.
 	if key.Val != "_name" && ((key.Type == cnosql.Unknown && is.HasField(name, key.Val)) || key.Type == cnosql.AnyField || (key.Type != cnosql.Tag && key.Type != cnosql.Unknown)) {
-		itr, err := is.metricSeriesIDIterator(name)
+		itr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
@@ -2036,7 +2036,7 @@ func (is IndexSet) seriesByBinaryExprIterator(name []byte, n *cnosql.BinaryExpr)
 	} else if value, ok := value.(*cnosql.VarRef); ok {
 		// Check if the RHS is a variable and if it is a field.
 		if value.Val != "_name" && ((value.Type == cnosql.Unknown && is.HasField(name, value.Val)) || key.Type == cnosql.AnyField || (value.Type != cnosql.Tag && value.Type != cnosql.Unknown)) {
-			itr, err := is.metricSeriesIDIterator(name)
+			itr, err := is.measurementSeriesIDIterator(name)
 			if err != nil {
 				return nil, err
 			}
@@ -2055,7 +2055,7 @@ func (is IndexSet) seriesByBinaryExprIterator(name []byte, n *cnosql.BinaryExpr)
 	default:
 		// We do not know how to evaluate this expression so pass it
 		// on to the query engine.
-		itr, err := is.metricSeriesIDIterator(name)
+		itr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
@@ -2064,10 +2064,10 @@ func (is IndexSet) seriesByBinaryExprIterator(name []byte, n *cnosql.BinaryExpr)
 }
 
 func (is IndexSet) seriesByBinaryExprStringIterator(name, key, value []byte, op cnosql.Token) (SeriesIDIterator, error) {
-	// Special handling for "_name" to match metric name.
+	// Special handling for "_name" to match measurement name.
 	if bytes.Equal(key, []byte("_name")) {
 		if (op == cnosql.EQ && bytes.Equal(value, name)) || (op == cnosql.NEQ && !bytes.Equal(value, name)) {
-			return is.metricSeriesIDIterator(name)
+			return is.measurementSeriesIDIterator(name)
 		}
 		return nil, nil
 	}
@@ -2078,7 +2078,7 @@ func (is IndexSet) seriesByBinaryExprStringIterator(name, key, value []byte, op 
 			return is.tagValueSeriesIDIterator(name, key, value)
 		}
 
-		mitr, err := is.metricSeriesIDIterator(name)
+		mitr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
@@ -2091,13 +2091,13 @@ func (is IndexSet) seriesByBinaryExprStringIterator(name, key, value []byte, op 
 			return nil, err
 		}
 
-		// Return all metric series that have no values from this tag key.
+		// Return all measurement series that have no values from this tag key.
 		return DifferenceSeriesIDIterators(mitr, kitr), nil
 	}
 
-	// Return all metric series without this tag value.
+	// Return all measurement series without this tag value.
 	if len(value) != 0 {
-		mitr, err := is.metricSeriesIDIterator(name)
+		mitr, err := is.measurementSeriesIDIterator(name)
 		if err != nil {
 			return nil, err
 		}
@@ -2118,11 +2118,11 @@ func (is IndexSet) seriesByBinaryExprStringIterator(name, key, value []byte, op 
 }
 
 func (is IndexSet) seriesByBinaryExprRegexIterator(name, key []byte, value *regexp.Regexp, op cnosql.Token) (SeriesIDIterator, error) {
-	// Special handling for "_name" to match metric name.
+	// Special handling for "_name" to match measurement name.
 	if bytes.Equal(key, []byte("_name")) {
 		match := value.Match(name)
 		if (op == cnosql.EQREGEX && match) || (op == cnosql.NEQREGEX && !match) {
-			mitr, err := is.metricSeriesIDIterator(name)
+			mitr, err := is.measurementSeriesIDIterator(name)
 			if err != nil {
 				return nil, err
 			}
@@ -2189,7 +2189,7 @@ func (is IndexSet) matchTagValueEqualEmptySeriesIDIterator(name, key []byte, val
 	if err != nil {
 		return nil, err
 	} else if vitr == nil {
-		return is.metricSeriesIDIterator(name)
+		return is.measurementSeriesIDIterator(name)
 	}
 	defer vitr.Close()
 
@@ -2218,7 +2218,7 @@ func (is IndexSet) matchTagValueEqualEmptySeriesIDIterator(name, key []byte, val
 		return nil, err
 	}
 
-	mitr, err := is.metricSeriesIDIterator(name)
+	mitr, err := is.measurementSeriesIDIterator(name)
 	if err != nil {
 		SeriesIDIterators(itrs).Close()
 		return nil, err
@@ -2296,7 +2296,7 @@ func (is IndexSet) matchTagValueNotEqualNotEmptySeriesIDIterator(name, key []byt
 	if err != nil {
 		return nil, err
 	} else if vitr == nil {
-		return is.metricSeriesIDIterator(name)
+		return is.measurementSeriesIDIterator(name)
 	}
 	defer vitr.Close()
 
@@ -2320,7 +2320,7 @@ func (is IndexSet) matchTagValueNotEqualNotEmptySeriesIDIterator(name, key []byt
 		}
 	}
 
-	mitr, err := is.metricSeriesIDIterator(name)
+	mitr, err := is.measurementSeriesIDIterator(name)
 	if err != nil {
 		SeriesIDIterators(itrs).Close()
 		return nil, err
@@ -2335,7 +2335,7 @@ func (is IndexSet) matchTagValueNotEqualNotEmptySeriesIDIterator(name, key []byt
 //
 // N.B tagValuesByKeyAndExpr relies on keys being sorted in ascending
 // lexicographic order.
-func (is IndexSet) TagValuesByKeyAndExpr(auth query.FineAuthorizer, name []byte, keys []string, expr cnosql.Expr, fieldset *MetricFieldSet) ([]map[string]struct{}, error) {
+func (is IndexSet) TagValuesByKeyAndExpr(auth query.FineAuthorizer, name []byte, keys []string, expr cnosql.Expr, fieldset *MeasurementFieldSet) ([]map[string]struct{}, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
 	return is.tagValuesByKeyAndExpr(auth, name, keys, expr)
@@ -2410,7 +2410,7 @@ func (is IndexSet) tagValuesByKeyAndExpr(auth query.FineAuthorizer, name []byte,
 		}
 
 		_, buf = ReadSeriesKeyLen(buf)
-		_, buf = ReadSeriesKeyMetric(buf)
+		_, buf = ReadSeriesKeyMeasurement(buf)
 		tagN, buf := ReadSeriesKeyTagN(buf)
 		for i := 0; i < tagN; i++ {
 			var key, value []byte
@@ -2432,8 +2432,8 @@ func (is IndexSet) tagValuesByKeyAndExpr(auth query.FineAuthorizer, name []byte,
 	return resultSet, nil
 }
 
-// MetricTagKeyValuesByExpr returns a set of tag values filtered by an expression.
-func (is IndexSet) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte, keys []string, expr cnosql.Expr, keysSorted bool) ([][]string, error) {
+// MeasurementTagKeyValuesByExpr returns a set of tag values filtered by an expression.
+func (is IndexSet) MeasurementTagKeyValuesByExpr(auth query.FineAuthorizer, name []byte, keys []string, expr cnosql.Expr, keysSorted bool) ([][]string, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
@@ -2474,7 +2474,7 @@ func (is IndexSet) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []by
 			}
 
 			// Authorization is present — check all series with matching tag values
-			// and metrics for the presence of an authorized series.
+			// and measurements for the presence of an authorized series.
 			for {
 				val, err := vitr.Next()
 				if err != nil {
@@ -2536,20 +2536,20 @@ func (is IndexSet) MetricTagKeyValuesByExpr(auth query.FineAuthorizer, name []by
 	return results, nil
 }
 
-// TagSets returns an ordered list of tag sets for a metric by dimension
+// TagSets returns an ordered list of tag sets for a measurement by dimension
 // and filtered by an optional conditional expression.
 func (is IndexSet) TagSets(sfile *SeriesFile, name []byte, opt query.IteratorOptions) ([]*query.TagSet, error) {
 	release := is.SeriesFile.Retain()
 	defer release()
 
-	itr, err := is.metricSeriesByExprIterator(name, opt.Condition)
+	itr, err := is.measurementSeriesByExprIterator(name, opt.Condition)
 	if err != nil {
 		return nil, err
 	} else if itr == nil {
 		return nil, nil
 	}
 	defer itr.Close()
-	// metricSeriesByExprIterator filters deleted series IDs; no need to
+	// measurementSeriesByExprIterator filters deleted series IDs; no need to
 	// do so here.
 
 	var dims []string
