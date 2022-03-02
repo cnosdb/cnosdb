@@ -7,6 +7,8 @@ English | [简体中文](./README.cn.md)
 
 An Open Source Distributed Time Series Database with high performance, high compression ratio and high usability.
 
+Click to view [roadmap](./ROADMAP.md)
+
 ## Features
 
 - High batch writing throughput.
