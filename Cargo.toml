@@ -1,7 +1,9 @@
 [workspace]
 
 members = [
-    "main"
+    "main",
+    "protos",
+    "server",
 ]
 
 default-members = ["main"]
