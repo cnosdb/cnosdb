@@ -1,8 +1,8 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
+// protobuf generated
+pub mod tskv {
+    include!(concat!(env!("OUT_DIR"), "/protobuf/tskv.rs"));
 }
+
+// flatbuffers generated
+
+include!(concat!(env!("OUT_DIR"), "/flatbuffers/models.rs"));
