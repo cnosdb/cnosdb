@@ -10,13 +10,13 @@ static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
-// cli exmples is here 
+// cli exmples is here
 // https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
 #[derive(Debug, clap::Parser)]
 #[clap(name = "cnosdb")]
-#[clap(version = &VERSION[..],
-        about = "cnosdb command line tools",
-        long_about = r#"cnosdb and command line tools
+#[clap(version = & VERSION[..],
+about = "cnosdb command line tools",
+long_about = r#"cnosdb and command line tools
                         Examples:
                             # Run the cnosdb:
                             server run
@@ -24,14 +24,14 @@ static VERSION: Lazy<String> = Lazy::new(|| {
 )]
 struct Cli {
     /// gRPC address
-    #[clap(short, long,  global = true, env = "server_addr", default_value = "http://127.0.0.1:31006")]
+    #[clap(short, long, global = true, env = "server_addr", default_value = "http://127.0.0.1:31006")]
     host: String,
 
-    #[clap(short,long, global = true)]
+    #[clap(short, long, global = true)]
     /// the number of cores on the system
     cpu: Option<usize>,
 
-    #[clap(short,long, global = true)]
+    #[clap(short, long, global = true)]
     /// the number of cores on the system
     memory: Option<usize>,
 
@@ -45,24 +45,19 @@ enum SubCommand {
     #[clap(arg_required_else_help = true)]
     Debug {
         debug: String,
-    }, 
+    },
     /// run cnosdb server
     #[clap(arg_required_else_help = true)]
-    Run {
-
-    },
-    /// run tskv 
+    Run {},
+    /// run tskv
     #[clap(arg_required_else_help = true)]
     Tskv {
         debug: String,
     },
     /// run query
     #[clap(arg_required_else_help = true)]
-    Query {
-
-    }
+    Query {},
 }
-
 
 
 fn main() -> Result<(), std::io::Error> {
@@ -72,15 +67,15 @@ fn main() -> Result<(), std::io::Error> {
     println!("params: host:{}, cpu:{:?}, memory:{:?}, sub:{:?}", config.host, config.cpu, config.memory, config.subcmd);
     runtime.block_on(async move {
         match &config.subcmd {
-            SubCommand::Debug{debug } => {
+            SubCommand::Debug { debug } => {
                 println!("Debug {}", debug)
             }
-            SubCommand::Run {  } => todo!(),
-            SubCommand::Tskv {debug } => {
+            SubCommand::Run {} => todo!(),
+            SubCommand::Tskv { debug } => {
                 println!(" tskv {}", debug)
                 //tskv::open()
-            },
-            SubCommand::Query {  } => todo!(),
+            }
+            SubCommand::Query {} => todo!(),
         }
     });
     Ok(())
@@ -89,11 +84,11 @@ fn main() -> Result<(), std::io::Error> {
 fn install_crash_handler() {
     unsafe {
         // handle segfaults
-        set_signal_handler(libc::SIGSEGV, signal_handler); 
+        set_signal_handler(libc::SIGSEGV, signal_handler);
         // handle stack overflow and unsupported CPUs
-        set_signal_handler(libc::SIGILL, signal_handler); 
+        set_signal_handler(libc::SIGILL, signal_handler);
         // handle invalid memory access
-        set_signal_handler(libc::SIGBUS, signal_handler); 
+        set_signal_handler(libc::SIGBUS, signal_handler);
     }
 }
 
