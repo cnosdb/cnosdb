@@ -1,17 +1,47 @@
-[package]
-name = "cnosdb"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+members = [
+    "main"
+]
 
-[dependencies]
-backtrace = "0.3"
-libc = { version = "0.2" }
-log = "0.4"
-num_cpus = "1.13.0"
-clap = { version = "3", features = ["derive", "env"] }
-once_cell = { version = "1.4.0", features = ["parking_lot"] }
-tokio = { version = "1.13", features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-stream = { version = "0.1", features = ["net"] }
-tokio-util = { version = "0.7.0" }
+default-members = ["main"]
+
+[profile.dev]
+lto = false
+opt-level = 0
+codegen-units = 16
+debug-assertions = true
+panic = 'unwind'
+incremental = true
+overflow-checks = true
+debug = true
+
+[profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+debug-assertions = false
+panic = 'unwind'
+incremental = false
+overflow-checks = false
+debug = false
+
+[profile.test]
+lto = false
+opt-level = 0
+codegen-units = 16
+debug-assertions = true
+panic = 'unwind'
+incremental = true
+overflow-checks = true
+debug = 2
+
+[profile.bench]
+lto = false
+opt-level = 3
+codegen-units = 1
+debug-assertions = false
+panic = 'unwind'
+incremental = false
+overflow-checks = false
+debug = false
