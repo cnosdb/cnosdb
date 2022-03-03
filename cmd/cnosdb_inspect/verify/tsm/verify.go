@@ -94,20 +94,25 @@ func verify(cmd *cobra.Command, args []string) error {
 
 		blockItr := reader.BlockIterator()
 		count := 0
+		isHealthy := true
 		for blockItr.Next() {
 			totalBlocks++
 			key, _, _, _, checksum, buf, err := blockItr.Read()
 			if err != nil {
+				isHealthy = false
 				brokenBlocks++
 				fmt.Fprintf(tw, "%s: could not get checksum for key %v block %d due to error: %q\n", f, key, count, err)
 			} else if expected := crc32.ChecksumIEEE(buf); checksum != expected {
+				isHealthy = false
 				brokenBlocks++
 				fmt.Fprintf(tw, "%s: got %d but expected %d for key %v, block %d\n", f, checksum, expected, key, count)
 			}
 			count++
 		}
-		if brokenBlocks == 0 {
+		if isHealthy {
 			fmt.Fprintf(tw, "%s: healthy\n", f)
+		} else {
+			fmt.Fprintf(tw, "%s: unhealthy\n", f)
 		}
 		reader.Close()
 	}
