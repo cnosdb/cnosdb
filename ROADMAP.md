@@ -35,6 +35,12 @@ cnosdb-ctl包含以下内容：
 SDK：
 - Golang
 - Java
+- C#
+- Python
+- ...
+
+JDBC:提供JDBC客户端程序
+
 
 与Pormetheus集成
 - 添加Prometheus adapter，用于使用prometheus读写CnosDB
@@ -44,12 +50,14 @@ SDK：
 
 |       title        |            content            |    time    |
 |:------------------:|:-----------------------------:|:----------:|
-|   cnosdb_inspect   | 完成cnosdb_inspect中关于磁盘上文件的所有操作 | 2022-03-31 |
-|    cnosdb_tools    |     完成cnosdb_tools中手动运维工具     | 2022-04-15 |
-|        SDK         |      开发Java和Golang的客户端程序      | 2022-04-30 |
-| Prometheus adapter |      开发与Prometheus的集成程序       | 2022-05-13 |
-|     cnosdb-ctl     |            集群运维工具             |            |
-|         解耦         |       解耦查询和存储，使用GRPC通信        | 2022-07-15 |
+|        SDK         |      开发Java和Golang的客户端程序      | 2022-03-15  |
+| Prometheus adapter |      开发与Prometheus的集成程序        | 2022-03-21  |
+|     cnosdb         |          backup/restore             | 2022-03-31  |
+|      JDBC          |         提供JDBC客户端程序            |              |
+|   cnosdb_inspect   | 完成cnosdb_inspect中关于磁盘上文件的所有操作 | 2022-04 |
+|    cnosdb_tools    |     完成cnosdb_tools中手动运维工具     | 2022-04   |
+|     cnosdb-ctl     |            集群运维工具             |             |
+|         解耦        |       解耦查询和存储，使用GRPC通信        | 2022-07-15 |
 
 
 
