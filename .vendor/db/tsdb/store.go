@@ -696,7 +696,7 @@ func (s *Store) SetShardEnabled(shardID uint64, enabled bool) error {
 func (s *Store) DeleteShard(shardID uint64) error {
 	sh := s.Shard(shardID)
 	if sh == nil {
-		return nil
+		return ErrShardNotFound
 	}
 
 	// Remove the shard from Store so it's not returned to callers requesting
