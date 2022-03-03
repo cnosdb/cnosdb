@@ -2,13 +2,22 @@ package verify
 
 import (
 	"github.com/spf13/cobra"
+	"io"
+	"os"
 )
 
 type Options struct {
+	Stderr io.Writer
+	Stdout io.Writer
+
+	path string
 }
 
 func NewOptions() *Options {
-	return nil
+	return &Options{
+		Stderr: os.Stderr,
+		Stdout: os.Stdout,
+	}
 }
 
 var opt = NewOptions()
