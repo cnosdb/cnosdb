@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
 	"github.com/spf13/cobra"
 )
 
@@ -13,6 +14,9 @@ func main() {
 
 	dumptsmCmd := dumptsm.GetCommand()
 	mainCmd.AddCommand(dumptsmCmd)
+
+	verifyCmd := verify.GetCommand()
+	mainCmd.AddCommand(verifyCmd)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
