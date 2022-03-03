@@ -43,11 +43,16 @@ func (a Iterators) Stats() IteratorStats {
 }
 
 // Close closes all iterators.
-func (a Iterators) Close() error {
+func (a Iterators) Close() (err error) {
+	err = nil
 	for _, itr := range a {
-		itr.Close()
+		if itr != nil {
+			if e := itr.Close(); e != nil && err == nil {
+				err = e
+			}
+		}
 	}
-	return nil
+	return err
 }
 
 // filterNonNil returns a slice of iterators that removes all nil iterators.
