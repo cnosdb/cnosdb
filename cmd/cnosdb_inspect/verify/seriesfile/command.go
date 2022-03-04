@@ -36,7 +36,7 @@ func GetCommand() *cobra.Command {
 		Use:   "verify-seriesfile",
 		Short: "Verifies the integrity of Series files.",
 		Run: func(cmd *cobra.Command, args []string) {
-			v := NewVerify()
+			v := NewVerify(opt.c)
 			if opt.seriesFile != "" {
 				_, err := v.VerifySeriesFile(opt.seriesFile)
 				if err != nil {
