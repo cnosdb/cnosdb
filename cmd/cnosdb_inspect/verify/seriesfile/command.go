@@ -1,7 +1,9 @@
 package seriesfile
 
 import (
+	"github.com/cnosdb/db/logger"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 	"io"
 	"io/ioutil"
 	"os"
@@ -36,7 +38,17 @@ func GetCommand() *cobra.Command {
 		Use:   "verify-seriesfile",
 		Short: "Verifies the integrity of Series files.",
 		Run: func(cmd *cobra.Command, args []string) {
-			v := NewVerify(opt.c)
+			config := logger.NewConfig()
+			config.Level = zapcore.WarnLevel
+			if opt.verbose {
+				config.Level = zapcore.InfoLevel
+			}
+			vLogger, err := config.New(opt.Stdout)
+			if err != nil {
+				panic(err)
+			}
+			v := NewVerify(opt.c, vLogger)
+
 			if opt.seriesFile != "" {
 				_, err := v.VerifySeriesFile(opt.seriesFile)
 				if err != nil {
@@ -70,9 +82,9 @@ func GetCommand() *cobra.Command {
 	var defaultDir string
 	u, err := user.Current()
 	if err == nil {
-		defaultDir = path.Join(u.HomeDir, ".cnosdb")
+		defaultDir = path.Join(u.HomeDir, ".cnosdb", "data")
 	} else if os.Getenv("HOME") != "" {
-		defaultDir = path.Join(os.Getenv("HOME"), ".cnosdb")
+		defaultDir = path.Join(os.Getenv("HOME"), ".cnosdb", "data")
 	} else {
 		defaultDir = ""
 	}
