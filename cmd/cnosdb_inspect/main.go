@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
@@ -17,6 +18,9 @@ func main() {
 
 	verifyCmd := verify.GetCommand()
 	mainCmd.AddCommand(verifyCmd)
+
+	verifySeriesfileCmd := seriesfile.GetCommand()
+	mainCmd.AddCommand(verifySeriesfileCmd)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
