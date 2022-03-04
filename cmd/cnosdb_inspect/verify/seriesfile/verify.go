@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/cnosdb/db/tsdb"
 	"go.uber.org/zap"
+	"sort"
 )
 
 // Verify contains configuration for running verification of series files.
@@ -56,7 +57,72 @@ func (v Verify) VerifySegment(segmentPath string, ids map[uint64]IDData) (valid 
 // The ids map must be built from verifying the passed in segments.
 func (v Verify) VerifyIndex(indexPath string, segments []*tsdb.SeriesSegment,
 	ids map[uint64]IDData) (valid bool, err error) {
-	return false, nil
+	v.Logger.Info("Verifying index")
+
+	defer func() {
+		if rec := recover(); rec != nil {
+			v.Logger.Error("Panic verifying index", zap.String("recovered", fmt.Sprint(rec)))
+			valid = false
+		}
+	}()
+
+	index := tsdb.NewSeriesIndex(indexPath)
+	if err := index.Open(); err != nil {
+		v.Logger.Error("Error opening index", zap.Error(err))
+		return false, nil
+	}
+	defer index.Close()
+
+	if err := index.Recover(segments); err != nil {
+		v.Logger.Error("Error recovering index", zap.Error(err))
+		return false, nil
+	}
+
+	// we check all the ids in a consistent order to get the same errors if
+	// there is a problem
+	idsList := make([]uint64, 0, len(ids))
+	for id := range ids {
+		idsList = append(idsList, id)
+	}
+	sort.Slice(idsList, func(i, j int) bool {
+		return idsList[i] < idsList[j]
+	})
+
+	for _, id := range idsList {
+		select {
+		default:
+		case <-v.done:
+			return false, nil
+		}
+
+		IDData := ids[id]
+
+		expectedOffset, expectedID := IDData.Offset, id
+		if IDData.Deleted {
+			expectedOffset, expectedID = 0, 0
+		}
+
+		// check both that the offset is right and that we get the right
+		// id for the key
+		if gotOffset := index.FindOffsetByID(id); gotOffset != expectedOffset {
+			v.Logger.Error("Index inconsistency",
+				zap.Uint64("id", id),
+				zap.Int64("got_offset", gotOffset),
+				zap.Int64("expected_offset", expectedOffset))
+			return false, nil
+		}
+
+		if gotID := index.FindIDBySeriesKey(segments, IDData.Key); gotID != expectedID {
+			v.Logger.Error("Index inconsistency",
+				zap.Uint64("id", id),
+				zap.Uint64("got_id", gotID),
+				zap.Uint64("expected_id", expectedID))
+			return false, nil
+		}
+	}
+
+	return true, nil
+
 }
 
 // buffer allows one to safely advance a byte slice and keep track of how many bytes were advanced.
