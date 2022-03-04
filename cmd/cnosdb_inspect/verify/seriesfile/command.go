@@ -1,6 +1,7 @@
 package seriesfile
 
 import (
+	"fmt"
 	"github.com/cnosdb/db/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
@@ -48,35 +49,50 @@ func GetCommand() *cobra.Command {
 				panic(err)
 			}
 			v := NewVerify(opt.c, vLogger)
-
 			if opt.seriesFile != "" {
-				_, err := v.VerifySeriesFile(opt.seriesFile)
+				valid, err := v.VerifySeriesFile(opt.seriesFile)
 				if err != nil {
 					panic(err)
 				}
-				return
-			}
-			if opt.dbName != "" {
-				_, err := v.VerifySeriesFile(filepath.Join(opt.dir, opt.dbName, "_series"))
+				if valid {
+					fmt.Printf("verify-seriesfile completed, seriesfile is valid.")
+				} else {
+					fmt.Printf("verify-seriesfile completed, seriesfile is invalid.")
+				}
+			} else if opt.dbName != "" {
+				valid, err := v.VerifySeriesFile(filepath.Join(opt.dir, opt.dbName, "_series"))
 				if err != nil {
 					panic(err)
 				}
-				return
-			}
-			dbs, err := ioutil.ReadDir(opt.dir)
-			if err != nil {
-				panic(err)
+				if valid {
+					fmt.Printf("verify-seriesfile completed, seriesfile is valid.")
+				} else {
+					fmt.Printf("verify-seriesfile completed, seriesfile is invalid.")
+				}
+			} else {
+				invalidCnt := 0
+				totCnt := 0
+				dbs, err := ioutil.ReadDir(opt.dir)
+				if err != nil {
+					panic(err)
+				}
+
+				for _, db := range dbs {
+					if !db.IsDir() {
+						continue
+					}
+					totCnt++
+					valid, err := v.VerifySeriesFile(filepath.Join(opt.dir, db.Name(), "_series"))
+					if !valid {
+						invalidCnt++
+					}
+					if err != nil {
+						panic(err)
+					}
+				}
+				fmt.Printf("verify-seriesfile completed, %d/%d invalid seriesfiles.", invalidCnt, totCnt)
 			}
 
-			for _, db := range dbs {
-				if !db.IsDir() {
-					continue
-				}
-				_, err := v.VerifySeriesFile(filepath.Join(opt.dir, db.Name(), "_series"))
-				if err != nil {
-					panic(err)
-				}
-			}
 		},
 	}
 	var defaultDir string
@@ -89,9 +105,9 @@ func GetCommand() *cobra.Command {
 		defaultDir = ""
 	}
 	c.PersistentFlags().IntVar(&opt.c, "c", runtime.GOMAXPROCS(0), "Specifies the number of concurrent workers to run for this command. Default is equal to the value of GOMAXPROCS. If performance is adversely impacted, you can set a lower value.")
-	c.PersistentFlags().StringVar(&opt.dir, "dir", defaultDir, "Specifies the root data path. Defaults to $HOME/data")
+	c.PersistentFlags().StringVar(&opt.dir, "dir", defaultDir, "Specifies the root data path. Defaults to '$HOME/data'.")
 	c.PersistentFlags().StringVar(&opt.dbName, "db", "", "Restricts verifying series files to the specified database in the data directory.")
-	c.PersistentFlags().StringVar(&opt.seriesFile, "series-seriesFile", "", "Path to a specific series seriesFile; overrides -db and -dir.")
-	c.PersistentFlags().BoolVar(&opt.verbose, "v", false, "The path to the storage root directory.")
+	c.PersistentFlags().StringVar(&opt.seriesFile, "series-file", "", "Path to a specific series file; overrides -db and -dir.")
+	c.PersistentFlags().BoolVar(&opt.verbose, "v", false, "Enables verbose logging.")
 	return c
 }
