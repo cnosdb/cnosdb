@@ -1,6 +1,11 @@
+use std::net::SocketAddr;
+
+use clap::{Parser, Subcommand};
+use futures::FutureExt;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
-use clap::{Parser, Subcommand};
+
+mod rpc;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
@@ -24,7 +29,13 @@ long_about = r#"cnosdb and command line tools
 )]
 struct Cli {
     /// gRPC address
-    #[clap(short, long, global = true, env = "server_addr", default_value = "http://127.0.0.1:31006")]
+    #[clap(
+        short,
+        long,
+        global = true,
+        env = "server_addr",
+        default_value = "http://127.0.0.1:31006"
+    )]
     host: String,
 
     #[clap(short, long, global = true)]
@@ -43,37 +54,46 @@ struct Cli {
 enum SubCommand {
     /// debug mode
     #[clap(arg_required_else_help = true)]
-    Debug {
-        debug: String,
-    },
+    Debug { debug: String },
     /// run cnosdb server
     #[clap(arg_required_else_help = true)]
     Run {},
     /// run tskv
     #[clap(arg_required_else_help = true)]
-    Tskv {
-        debug: String,
-    },
+    Tskv { debug: String },
     /// run query
     #[clap(arg_required_else_help = true)]
     Query {},
 }
 
-
 fn main() -> Result<(), std::io::Error> {
     install_crash_handler();
     let config = Cli::parse();
     let runtime = init_runtime(config.cpu)?;
-    println!("params: host:{}, cpu:{:?}, memory:{:?}, sub:{:?}", config.host, config.cpu, config.memory, config.subcmd);
+    println!(
+        "params: host:{}, cpu:{:?}, memory:{:?}, sub:{:?}",
+        config.host, config.cpu, config.memory, config.subcmd
+    );
     runtime.block_on(async move {
         match &config.subcmd {
             SubCommand::Debug { debug } => {
-                println!("Debug {}", debug)
+                println!("Debug {}", debug);
             }
             SubCommand::Run {} => todo!(),
             SubCommand::Tskv { debug } => {
-                println!(" tskv {}", debug)
-                //tskv::open()
+                println!(" tskv {}", debug);
+
+                let host = config.host.parse::<SocketAddr>().expect("Invalid host");
+
+                // tskv::open()
+                let mut builder = tonic::transport::server::Server::builder();
+                let tskv_impl = rpc::tskv::TsKvImpl {};
+                let tskv_service = protos::tskv::ts_kv_server::TsKvServer::new(tskv_impl);
+                let router = builder.add_service(tskv_service);
+                if let Err(e) = router.serve(host).await {
+                    eprintln!("{}", e);
+                    std::process::exit(1)
+                }
             }
             SubCommand::Query {} => todo!(),
         }
@@ -120,7 +140,6 @@ unsafe fn set_signal_handler(signal: libc::c_int, handler: unsafe extern "C" fn(
     }
 }
 
-
 fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     use tokio::runtime::Builder;
     let kind = std::io::ErrorKind::Other;
@@ -134,10 +153,7 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 
             match cores {
                 0 => {
-                    let msg = format!(
-                        "Invalid core number: '{}' must be greater than zero",
-                        cores
-                    );
+                    let msg = format!("Invalid core number: '{}' must be greater than zero", cores);
                     Err(std::io::Error::new(kind, msg))
                 }
                 1 => Builder::new_current_thread().enable_all().build(),
@@ -149,4 +165,3 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
         }
     }
 }
-

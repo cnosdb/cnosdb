@@ -1,0 +1,27 @@
+syntax = "proto3";
+package tskv;
+
+message PingRequest {
+  uint64 protocol_version = 1;
+  bytes body = 2;
+}
+
+message PingResponse {
+  uint64 protocol_version = 1;
+  bytes body = 2;
+}
+
+message WritePointRpcRequest {
+  uint64 protocol_version = 1;
+  bytes points = 2;
+}
+
+message WritePointRpcResponse {
+  uint64 protocol_version = 1;
+  bytes points = 2;
+}
+
+service TsKv {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc WritePoint(stream WritePointRpcRequest) returns (stream WritePointRpcResponse) {};
+}
