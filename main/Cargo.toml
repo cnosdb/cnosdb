@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 protos = { path = "../protos" }
-server = { path = "../server" }
 
 async-stream = "0.3"
 backtrace = "0.3"
