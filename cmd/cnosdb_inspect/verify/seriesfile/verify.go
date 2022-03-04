@@ -33,8 +33,6 @@ type verifyResult struct {
 }
 
 func (v Verify) VerifySeriesFile(filePath string) (valid bool, err error) {
-	fmt.Println("VerifySeriesFile:", filePath)
-
 	v.Logger = v.Logger.With(zap.String("path", filePath))
 	v.Logger.Info("Verifying series seriesFile")
 
