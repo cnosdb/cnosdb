@@ -21,6 +21,7 @@ import (
 	"github.com/cnosdb/db/pkg/limiter"
 	"github.com/cnosdb/db/tsdb/engine/tsm1"
 	"go.uber.org/zap"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -28,28 +29,17 @@ var (
 	_ binary.Writer
 )
 
-// Command represents the program execution for "cnosdb-tools compact".
-type Command struct {
-	// Standard input/output, overridden for testing.
-	Stderr io.Writer
-	Stdout io.Writer
-	Logger *zap.Logger
-
-	path    string
-	force   bool
-	verbose bool
-}
 
 // NewCommand returns a new instance of the export Command.
-func NewCommand() *Command {
-	return &Command{
+func NewCommand() *cobra.Command {
+	return &cobra.Command{
 		Stderr: os.Stderr,
 		Stdout: os.Stdout,
 	}
 }
 
 // Run executes the export command using the specified args.
-func (cmd *Command) Run(args []string) (err error) {
+func (cmd *cobra.Command) Run(args []string) (err error) {
 	err = cmd.parseFlags(args)
 	if err != nil {
 		return err
@@ -104,7 +94,7 @@ func (cmd *Command) Run(args []string) (err error) {
 	return nil
 }
 
-func (cmd *Command) parseFlags(args []string) error {
+func (cmd *cobra.Command) parseFlags(args []string) error {
 	fs := flag.NewFlagSet("compact-shard", flag.ContinueOnError)
 	fs.StringVar(&cmd.path, "path", "", "path of shard to be compacted")
 	fs.BoolVar(&cmd.force, "force", false, "Force compaction without prompting")
