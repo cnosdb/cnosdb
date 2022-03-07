@@ -14,29 +14,12 @@ import (
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/db/tsdb/engine/tsm1"
 	"go.uber.org/zap"
+	"github.com/spf13/cobra"
 )
 
-// Command represents the program execution for "store query".
-type Command struct {
-	// Standard input/output, overridden for testing.
-	Stderr io.Writer
-	Stdin  io.Reader
-	Logger *zap.Logger
-	server server.Interface
-
-	configPath      string
-	database        string
-	retentionPolicy string
-	replication     int
-	duration        time.Duration
-	shardDuration   time.Duration
-	buildTSI        bool
-	replace         bool
-}
-
 // NewCommand returns a new instance of Command.
-func NewCommand(server server.Interface) *Command {
-	return &Command{
+func NewCommand(server server.Interface) *cobra.Command {
+	return &cobra.Command{
 		Stderr: os.Stderr,
 		Stdin:  os.Stdin,
 		server: server,
@@ -44,7 +27,7 @@ func NewCommand(server server.Interface) *Command {
 }
 
 // Run executes the import command using the specified args.
-func (cmd *Command) Run(args []string) (err error) {
+func (cmd *cobra.Command) Run(args []string) (err error) {
 	err = cmd.parseFlags(args)
 	if err != nil {
 		return err
@@ -117,7 +100,7 @@ func importShard(reader *binary.Reader, i *importer, start int64, end int64) err
 	return el.Err()
 }
 
-func (cmd *Command) parseFlags(args []string) error {
+func (cmd *cobra.Command) parseFlags(args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	fs.StringVar(&cmd.configPath, "config", "", "Config file")
 	fs.StringVar(&cmd.database, "database", "", "Database name")
