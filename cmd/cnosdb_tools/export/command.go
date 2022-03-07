@@ -18,6 +18,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/text"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
 	"go.uber.org/zap"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -25,30 +26,9 @@ var (
 	_ binary.Writer
 )
 
-// Command represents the program execution for "store query".
-type Command struct {
-	// Standard input/output, overridden for testing.
-	Stderr io.Writer
-	Stdout io.Writer
-	Logger *zap.Logger
-	server server.Interface
-
-	conflicts io.WriteCloser
-
-	configPath    string
-	database      string
-	rp            string
-	shardDuration time.Duration
-	format        string
-	r             rangeValue
-	conflictPath  string
-	ignore        bool
-	print         bool
-}
-
 // NewCommand returns a new instance of the export Command.
-func NewCommand(server server.Interface) *Command {
-	return &Command{
+func NewCommand(server server.Interface) *cobra.Command {
+	return &cobra.Command{
 		Stderr: os.Stderr,
 		Stdout: os.Stdout,
 		server: server,
@@ -56,7 +36,7 @@ func NewCommand(server server.Interface) *Command {
 }
 
 // Run executes the export command using the specified args.
-func (cmd *Command) Run(args []string) (err error) {
+func (cmd *cobra.Command) Run(args []string) (err error) {
 	err = cmd.parseFlags(args)
 	if err != nil {
 		return err
@@ -118,7 +98,7 @@ func (cmd *Command) Run(args []string) (err error) {
 	return e.WriteTo(wr)
 }
 
-func (cmd *Command) openExporter() (*exporter, error) {
+func (cmd *cobra.Command) openExporter() (*exporter, error) {
 	cfg := &exporterConfig{Database: cmd.database, RP: cmd.rp, ShardDuration: cmd.shardDuration, Min: cmd.r.Min(), Max: cmd.r.Max()}
 	e, err := newExporter(cmd.server, cfg)
 	if err != nil {
@@ -128,7 +108,7 @@ func (cmd *Command) openExporter() (*exporter, error) {
 	return e, e.Open()
 }
 
-func (cmd *Command) parseFlags(args []string) error {
+func (cmd *cobra.Command) parseFlags(args []string) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	fs.StringVar(&cmd.configPath, "config", "", "Config file")
 	fs.StringVar(&cmd.database, "database", "", "Database name")
