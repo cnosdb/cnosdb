@@ -28,9 +28,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // build .proto files
     {
         let proto_file_paths = &[proto_files_dir.join("tskv.proto")];
+
         let output_dir_final = PathBuf::from(env::var("OUT_DIR").unwrap()).join("protobuf");
         fs::create_dir_all(&output_dir_final)?;
-        // TODO specify protobuf message field type.
         let config = prost_build::Config::new();
         let descriptor_set_path =
             PathBuf::from(env::var("OUT_DIR").unwrap()).join("proto-descriptor.bin");
@@ -67,6 +67,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg("-o")
                 .arg(&output_dir_final)
                 .arg("--rust")
+                .arg("--gen-onefile")
+                .arg("--gen-name-strings")
                 .arg("--filename-suffix")
                 .arg("")
                 .arg(p)
