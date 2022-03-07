@@ -1,6 +1,18 @@
 # RoadMap
 
-## cnosdb1.0 RoadMap
+## cnosdb-1.0 RoadMap
+> 点击查看 [cnosdb-2.0 RoadMap](#cnosdb-20-roadmap)
+
+|       title        |            content            |    time    |
+|:------------------:|:-----------------------------:|:----------:|
+|        SDK         |      开发Java和Golang的客户端程序      | 2022-03-15  |
+| Prometheus adapter |      开发与Prometheus的集成程序        | 2022-03-21  |
+|     cnosdb         |          backup/restore             | 2022-03-31  |
+|      JDBC          |         提供JDBC客户端程序            |              |
+|   cnosdb_inspect   | 完成cnosdb_inspect中关于磁盘上文件的所有操作 | 2022-04 |
+|    cnosdb_tools    |     完成cnosdb_tools中手动运维工具     | 2022-04   |
+|     cnosdb-ctl     |            集群运维工具             |             |
+|         解耦        |       解耦查询和存储，使用GRPC通信        | 2022-07-15 |
 
 cnosdb_inspect包含以下内容：
 - buildtsi：重建tsi索引文件
@@ -48,21 +60,13 @@ JDBC:提供JDBC客户端程序
 为了cnosdb能够稳定地提供数据的维护工作，需要完成以上任务。
 从长远的角度来看，为了能够与cnosdb-2.0相结合，需要解耦cnosdb1.0的查询层和存储层，中间使用GRPC通信
 
-|       title        |            content            |    time    |
-|:------------------:|:-----------------------------:|:----------:|
-|        SDK         |      开发Java和Golang的客户端程序      | 2022-03-15  |
-| Prometheus adapter |      开发与Prometheus的集成程序        | 2022-03-21  |
-|     cnosdb         |          backup/restore             | 2022-03-31  |
-|      JDBC          |         提供JDBC客户端程序            |              |
-|   cnosdb_inspect   | 完成cnosdb_inspect中关于磁盘上文件的所有操作 | 2022-04 |
-|    cnosdb_tools    |     完成cnosdb_tools中手动运维工具     | 2022-04   |
-|     cnosdb-ctl     |            集群运维工具             |             |
-|         解耦        |       解耦查询和存储，使用GRPC通信        | 2022-07-15 |
+
 
 
 
 
 ## cnosdb-2.0 RoadMap
+> 点击查看 [cnosdb-1.0 RoadMap](#cnosdb-10-roadmap)
 
 从更远的角度考虑，为了cnosdb拥有更好的安全、性能指标，计划使用Rust语言来开发cnosdb-2.0的版本，并实现查询引擎和存储引擎的插
 件化，以获得更好的生态适配性。
