@@ -5,7 +5,10 @@
 
 [English](./README.md) | 简体中文
 
+
 一款高性能、高压缩率、高易用性的开源分布式时序数据库。
+
+点击查看[路线图](./ROADMAP.md)
 
 ## 功能特性
 
@@ -23,6 +26,7 @@
 ## 快速开始
 
 > 如果需要完整的入门指南，请查看[入门指南](https://cnosdb.github.io/)
+
 
 ### 构建
 
@@ -79,3 +83,4 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 ## 许可证
 
 [MIT License](./LICENSE)
+

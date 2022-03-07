@@ -7,6 +7,8 @@ English | [简体中文](./README.cn.md)
 
 An Open Source Distributed Time Series Database with high performance, high compression ratio and high usability.
 
+Click to view [roadmap](./ROADMAP.md)
+
 ## Features
 
 - High batch writing throughput.
@@ -23,6 +25,7 @@ Please check [Instructions for joining the group](./CnosDBWeChatUserGroupGuideli
 ![](https://github.com/cnosdb/cnosdb/blob/main/doc/assets/u.jpg)
 
 ## Quick start
+
 
 > If you need a complete getting started guide, please check the [Quickstart Guide](https://cnosdb.github.io/)
 
