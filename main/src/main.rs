@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand};
-use futures::FutureExt;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 
