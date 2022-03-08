@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"time"
-
+	
+	"fmt"
+	
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/compact"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/export"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate/exec"
