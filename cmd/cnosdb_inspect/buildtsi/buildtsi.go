@@ -24,26 +24,11 @@ import (
 
 const defaultBatchSize = 10000
 
-// Command represents the program execution for "influx_inspect buildtsi".
-type Command struct {
-	Stderr  io.Writer
-	Stdout  io.Writer
-	Verbose bool
-	Logger  *zap.Logger
-
-	concurrency     int // Number of goroutines to dedicate to shard index building.
-	databaseFilter  string
-	retentionFilter string
-	shardFilter     string
-	maxLogFileSize  int64
-	maxCacheSize    uint64
-	batchSize       int
-}
 
 cmd := NewCommand()
 // NewCommand returns a new instance of Command.
-func NewCommand() *Command {
-	return &Command{
+func NewCommand() *cobra.Command {
+	return &cobra.Command{
 		Stderr:      os.Stderr,
 		Stdout:      os.Stdout,
 		Logger:      zap.NewNop(),
@@ -83,7 +68,7 @@ func GetCommand() *cobra.Command {
 }
 
 
-func (cmd *Command) run(dataDir, walDir string) error {
+func (cmd *cobra.Command) run(dataDir, walDir string) error {
 	// Verify the user actually wants to run as root.
 	if isRoot() {
 		fmt.Println("You are currently running as root. This will build your")
@@ -118,7 +103,7 @@ func (cmd *Command) run(dataDir, walDir string) error {
 	return nil
 }
 
-func (cmd *Command) processDatabase(dbName, dataDir, walDir string) error {
+func (cmd *cobra.Command) processDatabase(dbName, dataDir, walDir string) error {
 	cmd.Logger.Info("Rebuilding database", zap.String("name", dbName))
 
 	sfile := tsdb.NewSeriesFile(filepath.Join(dataDir, tsdb.SeriesFileDirectory))
@@ -151,7 +136,7 @@ func (cmd *Command) processDatabase(dbName, dataDir, walDir string) error {
 	return nil
 }
 
-func (cmd *Command) processRetentionPolicy(sfile *tsdb.SeriesFile, dbName, rpName, dataDir, walDir string) error {
+func (cmd *cobra.Command) processRetentionPolicy(sfile *tsdb.SeriesFile, dbName, rpName, dataDir, walDir string) error {
 	cmd.Logger.Info("Rebuilding retention policy", logger.Database(dbName), logger.RetentionPolicy(rpName))
 
 	fis, err := ioutil.ReadDir(dataDir)
