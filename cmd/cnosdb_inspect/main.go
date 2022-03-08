@@ -13,7 +13,7 @@ func main() {
 
 	mainCmd := GetCommand()
 
-	buildtsi := dumptsm.GetCommand()
+	buildtsi := buildtsi.GetCommand()
 	mainCmd.AddCommand(buildtsi)
 
 	dumptsmCmd := dumptsm.GetCommand()

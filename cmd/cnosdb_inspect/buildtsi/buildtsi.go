@@ -14,7 +14,7 @@ import (
 
 	"github.com/cnosdb/db/logger"
 	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb/"
+	"github.com/cnosdb/db/tsdb"
 	"github.com/cnosdb/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/db/tsdb/index/tsi1"
 	"go.uber.org/zap"
