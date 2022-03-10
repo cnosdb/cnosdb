@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-cli/_import"
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-cli/cli"
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-cli/export"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/_import"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/cli"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/export"
 )
 
 func main() {

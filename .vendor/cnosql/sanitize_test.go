@@ -3,7 +3,7 @@ package cnosql_test
 import (
 	"testing"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 func TestSanitize(t *testing.T) {

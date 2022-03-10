@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/mmap"
-	"github.com/cnosdatabase/db/pkg/rhh"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/mmap"
+	"github.com/cnosdb/db/pkg/rhh"
 )
 
 const (

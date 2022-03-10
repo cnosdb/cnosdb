@@ -14,12 +14,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bloom"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/mmap"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bloom"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/mmap"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // Log errors.

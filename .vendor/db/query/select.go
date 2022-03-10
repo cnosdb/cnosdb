@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/pkg/tracing"
-	"github.com/cnosdatabase/db/query/internal/gota"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/pkg/tracing"
+	"github.com/cnosdb/db/query/internal/gota"
 )
 
 var DefaultTypeMapper = cnosql.MultiTypeMapper(

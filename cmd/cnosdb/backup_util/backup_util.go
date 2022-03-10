@@ -13,8 +13,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
-	internal "github.com/cnosdatabase/cnosdb/cmd/cnosdb/backup_util/internal"
-	"github.com/cnosdatabase/cnosdb/server/snapshotter"
+	internal "github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util/internal"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
 	"github.com/gogo/protobuf/proto"
 )
 

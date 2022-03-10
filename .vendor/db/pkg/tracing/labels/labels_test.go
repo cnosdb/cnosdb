@@ -3,7 +3,7 @@ package labels
 import (
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/testing/assert"
+	"github.com/cnosdb/db/pkg/testing/assert"
 )
 
 func makeLabels(args ...string) Labels {

@@ -18,15 +18,15 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/bytesutil"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/file"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/pkg/slices"
-	"github.com/cnosdatabase/db/query"
-	internal "github.com/cnosdatabase/db/tsdb/internal"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/bytesutil"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/file"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/pkg/slices"
+	"github.com/cnosdb/db/query"
+	internal "github.com/cnosdb/db/tsdb/internal"
 	"github.com/gogo/protobuf/proto"
 	"go.uber.org/zap"
 )
@@ -129,7 +129,7 @@ type Shard struct {
 	walPath string
 	id      uint64
 
-	database   string
+	database        string
 	retentionPolicy string
 
 	sfile   *SeriesFile
@@ -156,7 +156,7 @@ type Shard struct {
 
 // NewShard returns a new initialized Shard. walPath doesn't apply to the b1 type index
 func NewShard(id uint64, path string, walPath string, sfile *SeriesFile, opt EngineOptions) *Shard {
-	db, rp :=decodeStorePath(path)
+	db, rp := decodeStorePath(path)
 	logger := zap.NewNop()
 	if opt.FieldValidator == nil {
 		opt.FieldValidator = defaultFieldValidator{}
@@ -171,15 +171,15 @@ func NewShard(id uint64, path string, walPath string, sfile *SeriesFile, opt Eng
 
 		stats: &ShardStatistics{},
 		defaultTags: models.StatisticTags{
-			"path":       path,
-			"walPath":    walPath,
-			"id":         fmt.Sprintf("%d", id),
-			"database":   db,
+			"path":            path,
+			"walPath":         walPath,
+			"id":              fmt.Sprintf("%d", id),
+			"database":        db,
 			"retentionPolicy": rp,
-			"engine":     opt.EngineVersion,
+			"engine":          opt.EngineVersion,
 		},
 
-		database:   db,
+		database:        db,
 		retentionPolicy: rp,
 
 		logger:       logger,
@@ -1029,9 +1029,9 @@ func (s *Shard) expandSources(sources cnosql.Sources) (cnosql.Sources, error) {
 
 			for _, name := range names {
 				other := &cnosql.Measurement{
-					Database:   src.Database,
+					Database:        src.Database,
 					RetentionPolicy: src.RetentionPolicy,
-					Name:       string(name),
+					Name:            string(name),
 				}
 				set[other.String()] = other
 			}

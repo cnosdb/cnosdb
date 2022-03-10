@@ -25,8 +25,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/tsdb"
 )
 
 const maxTSMFileSize = uint32(2048 * 1024 * 1024) // 2GB

@@ -8,10 +8,10 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/rhh"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/rhh"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // MeasurementBlockVersion is the version of the measurement block.

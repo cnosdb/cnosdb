@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 type IteratorMap interface {

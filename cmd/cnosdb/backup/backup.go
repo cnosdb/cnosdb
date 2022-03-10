@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb/backup_util"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
-	"github.com/cnosdatabase/cnosdb/server/snapshotter"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/spf13/cobra"
 )
@@ -190,7 +190,7 @@ func GetCommand() *cobra.Command {
 	return c
 }
 
-func (cmd *options) backupShard(db, rp, sid string) error {
+func (cmd *options) backupShard(db, rp, sid string) (err error) {
 	id, err := strconv.ParseUint(sid, 10, 64)
 	if err != nil {
 		return err
@@ -216,7 +216,7 @@ func (cmd *options) backupShard(db, rp, sid string) error {
 	// TODO: verify shard backup data
 	err = cmd.downloadAndVerify(req, shardArchivePath, nil)
 	if err != nil {
-		os.Remove(shardArchivePath)
+		_ = os.Remove(shardArchivePath)
 		return err
 	}
 	if !cmd.portable {
@@ -224,12 +224,19 @@ func (cmd *options) backupShard(db, rp, sid string) error {
 	}
 
 	if cmd.portable {
-		f, err := os.Open(shardArchivePath)
+		var f, out *os.File
+		f, err = os.Open(shardArchivePath)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		defer os.Remove(shardArchivePath)
+		defer func() {
+			if closeErr := f.Close(); err == nil {
+				err = closeErr
+			}
+			if remErr := os.Remove(shardArchivePath); err == nil {
+				err = remErr
+			}
+		}()
 
 		filePrefix := cmd.portableFileBase + ".s" + sid
 		filename := filePrefix + ".tar.gz"
@@ -237,25 +244,33 @@ func (cmd *options) backupShard(db, rp, sid string) error {
 		if err != nil {
 			return err
 		}
+		defer func() {
+			if out != nil {
+				if e := out.Close(); err == nil {
+					err = e
+				}
+			}
+		}()
 
 		zw := gzip.NewWriter(out)
+		defer func() {
+			if zw != nil {
+				if e := zw.Close(); err == nil {
+					err = e
+				}
+			}
+		}()
 		zw.Name = filePrefix + ".tar"
 
 		cw := backup_util.CountingWriter{Writer: zw}
 
 		_, err = io.Copy(&cw, f)
 		if err != nil {
-			if err := zw.Close(); err != nil {
-				return err
-			}
-
-			if err := out.Close(); err != nil {
-				return err
-			}
 			return err
 		}
 
-		shardid, err := strconv.ParseUint(sid, 10, 64)
+		var shardID uint64
+		shardID, err = strconv.ParseUint(sid, 10, 64)
 		if err != nil {
 			if err := zw.Close(); err != nil {
 				return err
@@ -269,19 +284,11 @@ func (cmd *options) backupShard(db, rp, sid string) error {
 		cmd.manifest.Files = append(cmd.manifest.Files, backup_util.Entry{
 			Database:     db,
 			Policy:       rp,
-			ShardID:      shardid,
+			ShardID:      shardID,
 			FileName:     filename,
 			Size:         cw.Total,
 			LastModified: 0,
 		})
-
-		if err := zw.Close(); err != nil {
-			return err
-		}
-
-		if err := out.Close(); err != nil {
-			return err
-		}
 
 		cmd.BackupFiles = append(cmd.BackupFiles, filename)
 	}

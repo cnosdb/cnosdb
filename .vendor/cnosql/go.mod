@@ -1,4 +1,4 @@
-module github.com/cnosdatabase/cnosql
+module github.com/cnosdb/cnosql
 
 go 1.13
 

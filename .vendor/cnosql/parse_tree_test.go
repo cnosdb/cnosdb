@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 func TestParseTree_Clone(t *testing.T) {

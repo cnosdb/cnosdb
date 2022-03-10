@@ -15,13 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/logger"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/pkg/estimator"
-	"github.com/cnosdatabase/db/pkg/estimator/hll"
-	"github.com/cnosdatabase/db/pkg/limiter"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/db/pkg/estimator/hll"
+	"github.com/cnosdb/db/pkg/limiter"
+	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -696,7 +696,7 @@ func (s *Store) SetShardEnabled(shardID uint64, enabled bool) error {
 func (s *Store) DeleteShard(shardID uint64) error {
 	sh := s.Shard(shardID)
 	if sh == nil {
-		return nil
+		return ErrShardNotFound
 	}
 
 	// Remove the shard from Store so it's not returned to callers requesting
@@ -2054,7 +2054,7 @@ func decodeStorePath(shardOrWALPath string) (database, retentionPolicy string) {
 	path, _ := filepath.Split(filepath.Clean(shardOrWALPath))
 
 	// Extract the database and retention policy.
-	path, rp :=filepath.Split(filepath.Clean(path))
+	path, rp := filepath.Split(filepath.Clean(path))
 	_, db := filepath.Split(filepath.Clean(path))
 	return db, rp
 }

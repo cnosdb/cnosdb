@@ -3,8 +3,8 @@ package node
 import (
 	"fmt"
 
-	"github.com/cnosdatabase/cnosdb/cmd/cnosdb-ctl/options"
-	"github.com/cnosdatabase/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
+	"github.com/cnosdb/cnosdb/meta"
 	"github.com/spf13/cobra"
 )
 
@@ -42,13 +42,13 @@ func GetShowCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Data Nodes:\n==========\n")
+			fmt.Fprint(cmd.OutOrStdout(), "Data Nodes:\n==========\n")
 			for _, n := range dataNodes {
 				fmt.Fprintln(cmd.OutOrStdout(), n.ID, "    ", n.TCPHost)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "")
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Meta Nodes:\n==========\n")
+			fmt.Fprint(cmd.OutOrStdout(), "Meta Nodes:\n==========\n")
 			for _, n := range metaNodes {
 				fmt.Fprintln(cmd.OutOrStdout(), n.ID, "    ", n.Host)
 			}

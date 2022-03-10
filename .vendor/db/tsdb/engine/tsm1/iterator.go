@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cnosdatabase/db/pkg/metrics"
-	"github.com/cnosdatabase/db/pkg/tracing"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/pkg/metrics"
+	"github.com/cnosdb/db/pkg/tracing"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 	"go.uber.org/zap"
 )
 

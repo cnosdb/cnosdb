@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/client"
-	"github.com/cnosdatabase/cnosdb/server/coordinator"
+	"github.com/cnosdb/cnosdb/client"
+	"github.com/cnosdb/cnosdb/server/coordinator"
 )
 
 // HTTP supports writing points over HTTP using the line protocol.

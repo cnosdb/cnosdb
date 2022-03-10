@@ -1,6 +1,6 @@
 package query
 
-import "github.com/cnosdatabase/cnosql"
+import "github.com/cnosdb/cnosql"
 
 // castToType will coerce the underlying interface type to another
 // interface depending on the type.

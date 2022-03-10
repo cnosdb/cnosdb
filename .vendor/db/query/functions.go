@@ -6,9 +6,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/query/internal/gota"
-	"github.com/cnosdatabase/db/query/neldermead"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/query/internal/gota"
+	"github.com/cnosdb/db/query/neldermead"
 )
 
 // FieldMapper is a FieldMapper that wraps another FieldMapper and exposes

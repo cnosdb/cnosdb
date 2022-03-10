@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/db/models"
 )
 
 // PointBatcher accepts Points and will emit a batch of those points when either
