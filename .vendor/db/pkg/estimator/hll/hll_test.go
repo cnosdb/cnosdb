@@ -468,10 +468,11 @@ func TestPlus_Marshal_Unmarshal_Sparse(t *testing.T) {
 	h, _ := NewPlus(4)
 	h.sparse = true
 	h.tmpSet = map[uint32]struct{}{26: struct{}{}, 40: struct{}{}}
+	src := rand.New(rand.NewSource(6611))
 
 	// Add a bunch of values to the sparse representation.
 	for i := 0; i < 10; i++ {
-		h.sparseList.Append(uint32(rand.Int()))
+		h.sparseList.Append(uint32(src.Int()))
 	}
 
 	data, err := h.MarshalBinary()
@@ -500,10 +501,10 @@ func TestPlus_Marshal_Unmarshal_Sparse(t *testing.T) {
 func TestPlus_Marshal_Unmarshal_Dense(t *testing.T) {
 	h, _ := NewPlus(4)
 	h.sparse = false
-
+	src := rand.New(rand.NewSource(1688))
 	// Add a bunch of values to the dense representation.
 	for i := 0; i < 10; i++ {
-		h.denseList = append(h.denseList, uint8(rand.Int()))
+		h.denseList = append(h.denseList, uint8(src.Int()))
 	}
 
 	data, err := h.MarshalBinary()
