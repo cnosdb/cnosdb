@@ -14,16 +14,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/monitor"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
-	"github.com/cnosdatabase/cnosdb/pkg/uuid"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/db/models"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/monitor"
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/uuid"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
@@ -559,6 +559,7 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 		// it's valid
 	default:
 		writeError(w, fmt.Sprintf("invalid precision %q (use n, u, ms, s, m or h)", precision))
+		return
 	}
 
 	database := r.URL.Query().Get("db")

@@ -20,10 +20,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/client"
-	"github.com/cnosdatabase/cnosdb/pkg/utils"
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosdb/client"
+	"github.com/cnosdb/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 
 	"github.com/peterh/liner"
 	"github.com/pkg/errors"
@@ -909,7 +909,7 @@ func (c *CommandLine) clear(cmd string) {
 		if len(args) > 1 {
 			fmt.Printf("ERR: invalid command %q.\n", v)
 		}
-		fmt.Println(`Note: Possible commands for 'clear' are:
+		fmt.Print(`Note: Possible commands for 'clear' are:
     # Clear the database context
     clear database
     clear db

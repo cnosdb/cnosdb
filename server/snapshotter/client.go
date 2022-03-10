@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/network"
 )
 
 // Client provides an API for the snapshotter service.

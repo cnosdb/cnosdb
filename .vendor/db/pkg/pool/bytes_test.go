@@ -3,7 +3,7 @@ package pool_test
 import (
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/pool"
+	"github.com/cnosdb/db/pkg/pool"
 )
 
 func TestLimitedBytePool_Put_MaxSize(t *testing.T) {

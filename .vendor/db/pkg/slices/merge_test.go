@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/slices"
+	"github.com/cnosdb/db/pkg/slices"
 )
 
 func TestMergeSortedBytes(t *testing.T) {

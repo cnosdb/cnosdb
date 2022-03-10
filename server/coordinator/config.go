@@ -5,9 +5,9 @@ package coordinator
 import (
 	"time"
 
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/common/pkg/toml"
-	"github.com/cnosdatabase/db/query"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/common/pkg/toml"
+	"github.com/cnosdb/db/query"
 )
 
 const (

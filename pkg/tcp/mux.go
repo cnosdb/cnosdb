@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	// DefaultTimeout 默认用来接收 Header 字节的超时时间
+	// DefaultTimeout Default Header timeout 
 	DefaultTimeout = 30 * time.Second
 )
 
-// Mux 可复用的网络连接
+// Mux Reusable connections
 type Mux struct {
 	mu sync.RWMutex
 	ln net.Listener
@@ -26,7 +26,7 @@ type Mux struct {
 
 	wg sync.WaitGroup
 
-	// 接收 Header 字节的超时时间
+	// Receive Header timeout
 	Timeout time.Duration
 
 	// Out-of-band error logger

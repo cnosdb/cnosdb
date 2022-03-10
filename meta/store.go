@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb"
-	internal "github.com/cnosdatabase/cnosdb/meta/internal"
+	"github.com/cnosdb/cnosdb"
+	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 )

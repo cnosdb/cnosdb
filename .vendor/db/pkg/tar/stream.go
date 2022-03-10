@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/db/pkg/file"
+	"github.com/cnosdb/db/pkg/file"
 )
 
 // Stream is a convenience function for creating a tar of a shard dir. It walks over the directory and subdirs,

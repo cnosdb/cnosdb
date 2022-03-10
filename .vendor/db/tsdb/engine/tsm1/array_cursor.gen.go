@@ -8,7 +8,7 @@ package tsm1
 import (
 	"sort"
 
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // Array Cursors

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/models"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/models"
 )
 
 // guard lets one match a set of points and block until they are done.

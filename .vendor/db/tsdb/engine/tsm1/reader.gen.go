@@ -6,7 +6,7 @@
 package tsm1
 
 import (
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // ReadFloatBlockAt returns the float values corresponding to the given index entry.

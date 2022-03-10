@@ -3,7 +3,7 @@ package tsm1
 import (
 	"fmt"
 
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // DecodeBooleanArrayBlock decodes the boolean block from the byte slice

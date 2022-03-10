@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/pkg/tracing"
-	internal "github.com/cnosdatabase/db/query/internal"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/pkg/tracing"
+	internal "github.com/cnosdb/db/query/internal"
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -43,11 +43,16 @@ func (a Iterators) Stats() IteratorStats {
 }
 
 // Close closes all iterators.
-func (a Iterators) Close() error {
+func (a Iterators) Close() (err error) {
+	err = nil
 	for _, itr := range a {
-		itr.Close()
+		if itr != nil {
+			if e := itr.Close(); e != nil && err == nil {
+				err = e
+			}
+		}
 	}
-	return nil
+	return err
 }
 
 // filterNonNil returns a slice of iterators that removes all nil iterators.

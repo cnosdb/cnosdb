@@ -3,7 +3,7 @@ package limiter_test
 import (
 	"testing"
 
-	"github.com/cnosdatabase/db/pkg/limiter"
+	"github.com/cnosdb/db/pkg/limiter"
 )
 
 func TestFixed_Available(t *testing.T) {

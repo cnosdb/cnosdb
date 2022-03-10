@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdatabase/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )
@@ -26,9 +26,9 @@ const (
 type Config struct {
 	Dir                 string `toml:"dir"`
 	RetentionAutoCreate bool   `toml:"retention-autocreate"`
-	Hostname                 string `toml:"hostname"`
-	HTTPD *ServerConfig
-	Log   *logger.Config
+	Hostname            string `toml:"hostname"`
+	HTTPD               *ServerConfig
+	Log                 *logger.Config
 }
 
 // NewConfig builds a new configuration with default values.

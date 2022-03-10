@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosql"
 )
 
 func (p *preparedStatement) Explain() (string, error) {

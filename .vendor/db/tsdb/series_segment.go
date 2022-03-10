@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/cnosdatabase/db/pkg/mmap"
+	"github.com/cnosdb/db/pkg/mmap"
 )
 
 const (
@@ -209,7 +209,10 @@ func (s *SeriesSegment) Flush() error {
 	if s.w == nil {
 		return nil
 	}
-	return s.w.Flush()
+	if err := s.w.Flush(); err != nil {
+		return err
+	}
+	return s.file.Sync()
 }
 
 // AppendSeriesIDs appends all the segments ids to a slice. Returns the new slice.

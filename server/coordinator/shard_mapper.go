@@ -7,9 +7,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/cnosdatabase/cnosql"
-	"github.com/cnosdatabase/db/query"
-	"github.com/cnosdatabase/db/tsdb"
+	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/db/tsdb"
 )
 
 // IteratorCreator is an interface that combines mapping fields and creating iterators.

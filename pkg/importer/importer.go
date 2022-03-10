@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/client"
+	"github.com/cnosdb/cnosdb/client"
 )
 
 const batchSize = 5000

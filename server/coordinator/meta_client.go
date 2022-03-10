@@ -3,8 +3,8 @@ package coordinator
 import (
 	"time"
 
-	"github.com/cnosdatabase/cnosdb/meta"
-	"github.com/cnosdatabase/cnosql"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosql"
 )
 
 // MetaClient is an interface for accessing meta data.

@@ -4,10 +4,10 @@ import (
 	"net"
 	"time"
 
-	log "github.com/cnosdatabase/cnosdb/pkg/logger"
-	tls "github.com/cnosdatabase/cnosdb/pkg/tlsconfig"
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/common/pkg/toml"
+	log "github.com/cnosdb/cnosdb/pkg/logger"
+	tls "github.com/cnosdb/cnosdb/pkg/tlsconfig"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/common/pkg/toml"
 )
 
 const (

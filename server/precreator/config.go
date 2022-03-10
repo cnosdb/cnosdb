@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cnosdatabase/common/monitor/diagnostics"
-	"github.com/cnosdatabase/common/pkg/toml"
+	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/common/pkg/toml"
 )
 
 const (
