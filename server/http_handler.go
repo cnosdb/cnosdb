@@ -187,6 +187,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 			h.servePing,
 		},
 		{
+			"ping-head", http.MethodHead, "/ping", false, true,
+			h.servePing,
+		},
+		{
 			"write-options", http.MethodOptions, "/write", false, true,
 			h.serveOptions,
 		},
@@ -205,6 +209,7 @@ func (h *Handler) Open() {
 
 // 响应 HTTP 请求
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("X-CnosDB-Version", h.Version)
 	h.router.ServeHTTP(w, r)
 }
 

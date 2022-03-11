@@ -1,6 +1,7 @@
 FROM --platform=$BUILDPLATFORM golang:1.17.5 as builder
 ARG TARGETARCH
 
+
 WORKDIR /go/src/github.com/cnosdb/cnosdb
 COPY . /go/src/github.com/cnosdb/cnosdb
 

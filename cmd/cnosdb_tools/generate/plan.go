@@ -200,7 +200,7 @@ func (v *planDefaults) Visit(node Node) Visitor {
 	switch n := node.(type) {
 	case *StoragePlan:
 		if n.DatabasePath == "" {
-			n.DatabasePath = "${HOME}/.influxdb/data"
+			n.DatabasePath = "${HOME}/.cnosdb/data"
 		}
 		if n.Database == "" {
 			n.Database = "db"
