@@ -5,7 +5,7 @@
 
 |       title        |            content            |    time    |
 |:------------------:|:-----------------------------:|:----------:|
-|        SDK         |      开发Java和Golang的客户端程序      | 2022-03-15  |
+|        SDK         |      开发Java和Golang的客户端程序      | 2022-03-14  |
 | Prometheus adapter |      开发与Prometheus的集成程序        | 2022-03-21  |
 |     cnosdb         |          backup/restore             | 2022-03-31  |
 |      JDBC          |         提供JDBC客户端程序            |              |
