@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/deletetsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsmwal"
 	"github.com/spf13/cobra"
@@ -17,6 +18,9 @@ func main() {
 
 	dumptsmwalCmd := dumptsmwal.GetCommand()
 	mainCmd.AddCommand(dumptsmwalCmd)
+
+	deletetsmCmd := deletetsm.GetCommand()
+	mainCmd.AddCommand(deletetsmCmd)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
