@@ -22,6 +22,7 @@ func main() {
 	deletetsmCmd := deletetsm.GetCommand()
 	mainCmd.AddCommand(deletetsmCmd)
 
+
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
 	}
