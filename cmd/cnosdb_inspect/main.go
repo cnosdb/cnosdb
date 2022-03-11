@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reportdisk"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
 
@@ -29,6 +30,9 @@ func main() {
 
 	deletetsmCmd := deletetsm.GetCommand()
 	mainCmd.AddCommand(deletetsmCmd)
+
+	reportDiakCmd := reportdisk.GetCommand()
+	mainCmd.AddCommand(reportDiakCmd)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
