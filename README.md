@@ -84,3 +84,7 @@ Please refer to [Contribution Guide](./CONTRIBUTING.md) to contribute to CnosDB.
 ## License
 
 [MIT License](./LICENSE)
+
+## Contact
+
+* [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
