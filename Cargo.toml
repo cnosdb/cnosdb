@@ -3,6 +3,7 @@
 members = [
     "main",
     "protos",
+    "tskv",
 ]
 
 default-members = ["main"]
