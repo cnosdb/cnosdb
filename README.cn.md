@@ -84,3 +84,8 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 
 [MIT License](./LICENSE)
 
+## 联系我们
+
+* [Stack Overflow](https://stackoverflow.com/questions/tagged/nebulagraph)
+
+* Twitter: [@CnosDB](https://twitter.com/CnosDB)
