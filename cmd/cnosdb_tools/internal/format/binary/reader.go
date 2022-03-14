@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/tlv"
 )
 

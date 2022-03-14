@@ -6,9 +6,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/cnosql"
-	"github.com/cnosdb/cnosdb/.vendor/db/models"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/tlv"
 )

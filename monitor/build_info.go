@@ -1,7 +1,7 @@
 package monitor
 
 import (
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 )
 
 // build holds information of the build of the current executable.

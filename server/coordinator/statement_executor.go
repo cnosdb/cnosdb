@@ -14,12 +14,12 @@ import (
 	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
-	"github.com/cnosdb/cnosdb/.vendor/cnosql"
-	"github.com/cnosdb/cnosdb/.vendor/db/models"
-	"github.com/cnosdb/cnosdb/.vendor/db/pkg/tracing"
-	"github.com/cnosdb/cnosdb/.vendor/db/pkg/tracing/fields"
-	"github.com/cnosdb/cnosdb/.vendor/db/query"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/tracing"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/tracing/fields"
+	"github.com/cnosdb/cnosdb/vend/db/query"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 // ErrDatabaseNameRequired is returned when executing statements that require a database,

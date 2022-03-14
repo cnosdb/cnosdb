@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/tinylib/msgp/msgp"
 )
 

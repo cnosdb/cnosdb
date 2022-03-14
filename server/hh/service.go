@@ -3,7 +3,7 @@ package hh
 import (
 	"expvar"
 	"fmt"
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"io/ioutil"
 	"log"
 	"os"
@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/common"
-	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/vend/common"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/meta"
 )
 

@@ -3,7 +3,7 @@ package logger
 import (
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/db/pkg/snowflake"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/snowflake"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
