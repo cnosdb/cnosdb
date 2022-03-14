@@ -2,7 +2,7 @@ package seriesfile
 
 import (
 	"fmt"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"go.uber.org/zap"
 	"io/ioutil"
 	"os"

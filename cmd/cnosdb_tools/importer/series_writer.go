@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/index/tsi1"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
-	"github.com/cnosdb/db/tsdb/index/tsi1"
 )
 
 type seriesWriter struct {

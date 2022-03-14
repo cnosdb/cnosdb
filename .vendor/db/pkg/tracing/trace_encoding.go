@@ -4,9 +4,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/cnosdb/db/pkg/tracing/fields"
-	"github.com/cnosdb/db/pkg/tracing/labels"
-	"github.com/cnosdb/db/pkg/tracing/wire"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/tracing/fields"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/tracing/labels"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/tracing/wire"
 	"github.com/gogo/protobuf/proto"
 )
 

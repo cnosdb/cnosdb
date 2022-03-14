@@ -5,11 +5,11 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/escape"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/escape"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/cnosql"
 )
 
 type Writer struct {

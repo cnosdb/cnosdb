@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
 )
 
 const (

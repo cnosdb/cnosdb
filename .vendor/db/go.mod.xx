@@ -1,10 +1,8 @@
-module github.com/cnosdb/db
+module github.com/cnosdb/cnosdb/.vendor/db
 
 go 1.16
 
 require (
-	github.com/cnosdb/common v0.0.0
-	github.com/cnosdb/cnosql v0.0.0
 	github.com/BurntSushi/toml v0.3.1
 	github.com/cespare/xxhash v1.1.0
 	github.com/davecgh/go-spew v1.1.1
@@ -20,7 +18,6 @@ require (
 	github.com/mattn/go-isatty v0.0.4
 	github.com/mschoch/smat v0.0.0-20160514031455-90eadee771ae
 	github.com/philhofer/fwd v1.0.0 // indirect
-	github.com/pkg/errors v0.9.1
 	github.com/smartystreets/goconvey v1.6.4
 	github.com/spf13/cast v1.3.0
 	github.com/stretchr/testify v1.7.0
@@ -30,17 +27,9 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.7.0 // indirect
 	go.uber.org/zap v1.9.1
-	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20201119102817-f84b799fce68
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	google.golang.org/genproto v0.0.0-20200108215221-bd8f9a0ef82f // indirect
-	google.golang.org/grpc v1.26.0
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 
-)
-
-replace (
-	github.com/cnosdb/common => ../common
-	github.com/cnosdb/cnosql => ../cnosql
 )

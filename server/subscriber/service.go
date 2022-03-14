@@ -11,8 +11,8 @@ import (
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/server/coordinator"
-	"github.com/cnosdb/db/logger"
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/logger"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 	"go.uber.org/zap"
 )
 

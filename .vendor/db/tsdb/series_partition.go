@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/cnosdb/db/logger"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/rhh"
+	"github.com/cnosdb/cnosdb/.vendor/db/logger"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/rhh"
 	"go.uber.org/zap"
 )
 

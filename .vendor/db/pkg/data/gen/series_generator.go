@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 type SeriesGenerator interface {

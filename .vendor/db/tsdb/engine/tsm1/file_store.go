@@ -17,12 +17,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/file"
-	"github.com/cnosdb/db/pkg/limiter"
-	"github.com/cnosdb/db/pkg/metrics"
-	"github.com/cnosdb/db/query"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/file"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/limiter"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/metrics"
+	"github.com/cnosdb/cnosdb/.vendor/db/query"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"go.uber.org/zap"
 )
 

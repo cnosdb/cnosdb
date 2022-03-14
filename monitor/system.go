@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/cnosdb/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 )
 
 var startTime time.Time

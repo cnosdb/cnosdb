@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/cnosdb/db/pkg/mmap"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/mmap"
 )
 
 func TestMap(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
 )
 
 // Config represents the configuration for the rp service.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/pkg/network"
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 const (

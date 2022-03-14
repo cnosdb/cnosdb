@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/logger"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/query"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/logger"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/query"
 	"go.uber.org/zap"
 )
 

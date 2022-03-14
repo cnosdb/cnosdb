@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"go.uber.org/zap"
 )
 

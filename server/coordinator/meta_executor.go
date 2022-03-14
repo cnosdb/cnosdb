@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosql"
 )
 
 const (

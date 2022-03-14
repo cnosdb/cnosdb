@@ -11,11 +11,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/estimator"
-	"github.com/cnosdb/db/pkg/limiter"
-	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/limiter"
+	"github.com/cnosdb/cnosdb/.vendor/db/query"
 	"go.uber.org/zap"
 )
 
