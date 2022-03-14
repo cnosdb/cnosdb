@@ -3,7 +3,7 @@ package fields
 import (
 	"testing"
 
-	"github.com/cnosdb/db/pkg/testing/assert"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/testing/assert"
 )
 
 func makeFields(args ...string) Fields {

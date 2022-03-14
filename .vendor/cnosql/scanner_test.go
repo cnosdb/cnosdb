@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
 )
 
 // Ensure the scanner can scan tokens correctly.

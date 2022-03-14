@@ -4,7 +4,7 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
 )
 
 // RewriteStatement rewrites stmt into a new statement, if applicable.

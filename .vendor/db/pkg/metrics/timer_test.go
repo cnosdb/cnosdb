@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cnosdb/db/pkg/testing/assert"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/testing/assert"
 )
 
 func TestTimer_Update(t *testing.T) {

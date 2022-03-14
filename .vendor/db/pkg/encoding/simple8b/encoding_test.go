@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/cnosdb/db/pkg/encoding/simple8b"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/encoding/simple8b"
 	"github.com/google/go-cmp/cmp"
 )
 

@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/cnosdb/pkg/escape"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
 	"github.com/spf13/cobra"
 )
 

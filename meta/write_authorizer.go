@@ -3,7 +3,7 @@ package meta
 import (
 	"fmt"
 
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
 )
 
 // WriteAuthorizer determines whether a user is authorized to write to a given database.

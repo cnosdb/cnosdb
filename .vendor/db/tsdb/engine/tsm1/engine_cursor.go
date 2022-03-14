@@ -3,7 +3,7 @@ package tsm1
 import (
 	"context"
 
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 func (e *Engine) CreateCursorIterator(ctx context.Context) (tsdb.CursorIterator, error) {

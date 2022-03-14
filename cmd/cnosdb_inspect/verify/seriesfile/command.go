@@ -2,7 +2,7 @@ package seriesfile
 
 import (
 	"fmt"
-	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/cnosdb/.vendor/db/logger"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	"io"

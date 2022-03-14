@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cnosdb/cnosdb/.vendor/common"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/common"
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/db/models"
 )
 
 // ErrHintedHandoffDisabled is returned when attempting to use a

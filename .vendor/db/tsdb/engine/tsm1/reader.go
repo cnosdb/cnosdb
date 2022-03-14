@@ -12,9 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/cnosdb/db/pkg/bytesutil"
-	"github.com/cnosdb/db/pkg/file"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/bytesutil"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/file"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // ErrFileInUse is returned when attempting to remove or close a TSM file that is still being used.

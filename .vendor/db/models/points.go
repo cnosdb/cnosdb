@@ -15,7 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/cnosdb/db/pkg/escape"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/escape"
 )
 
 // Values used to store the field key and measurement name as special internal

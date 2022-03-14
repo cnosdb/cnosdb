@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/cnosdb/db/pkg/mmap"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/mmap"
 )
 
 const (

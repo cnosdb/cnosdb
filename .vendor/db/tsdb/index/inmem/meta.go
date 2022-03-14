@@ -8,12 +8,12 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/bytesutil"
-	"github.com/cnosdb/db/pkg/radix"
-	"github.com/cnosdb/db/query"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/bytesutil"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/radix"
+	"github.com/cnosdb/cnosdb/.vendor/db/query"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // Measurement represents a collection of time series in a database. It also

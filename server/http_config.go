@@ -8,7 +8,7 @@ import (
 	"time"
 
 	tls "github.com/cnosdb/cnosdb/pkg/tlsconfig"
-	"github.com/cnosdb/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
 	"github.com/pkg/errors"
 )
 

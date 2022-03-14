@@ -7,10 +7,10 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/pkg/estimator"
-	"github.com/cnosdb/db/pkg/estimator/hll"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator/hll"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // FileSet represents a collection of files.

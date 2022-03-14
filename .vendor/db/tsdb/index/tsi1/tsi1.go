@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // LoadFactor is the fill percent for RHH indexes.

@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/pkg/pool"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/pool"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 const (

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cnosdb/db/pkg/file"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/file"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 const (

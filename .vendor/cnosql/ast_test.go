@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
 )
 
 func BenchmarkQuery_String(b *testing.B) {
@@ -1713,7 +1713,7 @@ func TestBoundParameter_String(t *testing.T) {
 // context required for security checks.  If a new statement is added, this
 // test will fail until it is categorized into the correct bucket below.
 func Test_EnforceHasDefaultDatabase(t *testing.T) {
-	pkg, err := importer.Default().Import("github.com/cnosdb/cnosql")
+	pkg, err := importer.Default().Import("github.com/cnosdb/cnosdb/.vendor/cnosql")
 	if err != nil {
 		fmt.Printf("error: %s\n", err.Error())
 		return

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
 )
 
 func IsShardDir(dir string) error {

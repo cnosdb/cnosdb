@@ -14,7 +14,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/profile"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
-	"github.com/cnosdb/db/pkg/data/gen"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/data/gen"
 	"github.com/cnosdb/cnosdb/meta"
 )
 
