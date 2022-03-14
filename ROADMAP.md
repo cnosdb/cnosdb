@@ -8,10 +8,10 @@
 |        SDK         |      开发Java和Golang的客户端程序      | 2022-03-14  |
 | Prometheus adapter |      开发与Prometheus的集成程序        | 2022-03-21  |
 |     cnosdb         |          backup/restore             | 2022-03-31  |
-|      JDBC          |         提供JDBC客户端程序            |              |
 |   cnosdb_inspect   | 完成cnosdb_inspect中关于磁盘上文件的所有操作 | 2022-04 |
 |    cnosdb_tools    |     完成cnosdb_tools中手动运维工具     | 2022-04   |
-|     cnosdb-ctl     |            集群运维工具             |             |
+|      JDBC          |         提供JDBC客户端程序            |  2022-05     |
+|     cnosdb-ctl     |            集群运维工具             |    2022-05   |
 |         解耦        |       解耦查询和存储，使用GRPC通信        | 2022-07-15 |
 
 cnosdb_inspect包含以下内容：
@@ -45,11 +45,11 @@ cnosdb-ctl包含以下内容：
 - update-data：更新meta服务中存储的data节点的主机名称
 
 SDK：
-- Golang
-- Java
+- Golang 已完成
+- Java   已完成
 - C#
 - Python
-- ...
+- ... 欢迎提出issue
 
 JDBC:提供JDBC客户端程序
 
