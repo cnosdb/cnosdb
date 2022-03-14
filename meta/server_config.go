@@ -1,10 +1,10 @@
 package meta
 
 import (
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"net"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
 	log "github.com/cnosdb/cnosdb/pkg/logger"
 	tls "github.com/cnosdb/cnosdb/pkg/tlsconfig"

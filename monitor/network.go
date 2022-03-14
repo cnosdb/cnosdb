@@ -1,9 +1,8 @@
 package monitor
 
 import (
-	"os"
-
 	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"os"
 )
 
 // network captures network diagnostics.
