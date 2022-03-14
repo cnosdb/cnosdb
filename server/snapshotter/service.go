@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 const (

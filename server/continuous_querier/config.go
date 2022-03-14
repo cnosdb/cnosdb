@@ -2,10 +2,10 @@ package continuous_querier
 
 import (
 	"errors"
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 )
 
 // Default values for aspects of interval computation.

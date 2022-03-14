@@ -1,7 +1,7 @@
 package monitor
 
 import (
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"os"
 	"time"
 )

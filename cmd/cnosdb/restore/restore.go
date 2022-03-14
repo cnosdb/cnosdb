@@ -20,7 +20,7 @@ import (
 	gzip "github.com/klauspost/pgzip"
 	"github.com/spf13/cobra"
 
-	tarstream "github.com/cnosdb/cnosdb/.vendor/db/pkg/tar"
+	tarstream "github.com/cnosdb/cnosdb/vend/db/pkg/tar"
 )
 
 var restore_examples = `  cnosdb restore`

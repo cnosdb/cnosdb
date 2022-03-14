@@ -12,7 +12,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"go.uber.org/zap"
 )
 
