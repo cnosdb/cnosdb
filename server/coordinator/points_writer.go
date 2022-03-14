@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb"
-	"github.com/cnosdb/cnosdb/.vendor/db/models"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"go.uber.org/zap"
 )

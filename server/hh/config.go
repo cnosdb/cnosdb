@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 )
 
 const (

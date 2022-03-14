@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/cnosdb/cnosdb/.vendor/cnosql"
-	"github.com/cnosdb/cnosdb/.vendor/db/models"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 // ConflictWriter is a Writer that redirects conflicting data to an alternate output.

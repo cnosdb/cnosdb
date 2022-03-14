@@ -17,9 +17,9 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/line"
-	"github.com/cnosdb/cnosdb/.vendor/db/logger"
-	"github.com/cnosdb/cnosdb/.vendor/db/pkg/limiter"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/limiter"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"go.uber.org/zap"
 )
 

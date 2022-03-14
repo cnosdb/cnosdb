@@ -3,8 +3,8 @@ package meta
 import (
 	"fmt"
 
-	"github.com/cnosdb/cnosdb/.vendor/cnosql"
-	"github.com/cnosdb/cnosdb/.vendor/db/query"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/query"
 )
 
 // QueryAuthorizer determines whether a user is authorized to execute a given query.

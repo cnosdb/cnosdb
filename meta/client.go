@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb"
-	"github.com/cnosdb/cnosdb/.vendor/cnosql"
-	"github.com/cnosdb/cnosdb/.vendor/db/logger"
-	"github.com/cnosdb/cnosdb/.vendor/db/pkg/file"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/file"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )

@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	itoml "github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
-	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
+	itoml "github.com/cnosdb/cnosdb/vend/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
