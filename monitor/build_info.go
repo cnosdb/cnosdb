@@ -1,6 +1,8 @@
 package monitor
 
-import "github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+import (
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+)
 
 // build holds information of the build of the current executable.
 type build struct {

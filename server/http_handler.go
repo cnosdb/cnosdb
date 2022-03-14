@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"io"
 	"net/http"
 	"os"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/.vendor/cnosql"
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/.vendor/db/models"
 	"github.com/cnosdb/cnosdb/.vendor/db/query"
 	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
@@ -24,6 +24,7 @@ import (
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/uuid"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )

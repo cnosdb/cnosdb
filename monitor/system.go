@@ -1,10 +1,9 @@
 package monitor
 
 import (
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"os"
 	"time"
-
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 )
 
 var startTime time.Time
