@@ -8,8 +8,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/cnosdb/cnosql"
-	internal "github.com/cnosdb/db/query/internal"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	internal "github.com/cnosdb/cnosdb/.vendor/db/query/internal"
 	"github.com/gogo/protobuf/proto"
 )
 

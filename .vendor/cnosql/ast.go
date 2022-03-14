@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	internal "github.com/cnosdb/cnosql/internal"
+	internal "github.com/cnosdb/cnosdb/.vendor/cnosql/internal"
 	"github.com/gogo/protobuf/proto"
 )
 

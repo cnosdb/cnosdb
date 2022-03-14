@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 // FieldValidator should return a PartialWriteError if the point should not be written.

@@ -8,7 +8,7 @@ package tsm1
 import (
 	"sort"
 
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // merge combines the next set of blocks into merged blocks.

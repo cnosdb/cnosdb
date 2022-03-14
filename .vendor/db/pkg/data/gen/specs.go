@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 type Spec struct {

@@ -14,12 +14,12 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/estimator"
-	"github.com/cnosdb/db/pkg/estimator/hll"
-	"github.com/cnosdb/db/pkg/slices"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator/hll"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/slices"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"go.uber.org/zap"
 )
 

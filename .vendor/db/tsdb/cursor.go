@@ -3,8 +3,8 @@ package tsdb
 import (
 	"context"
 
-	"github.com/cnosdb/db/query"
-	"github.com/cnosdb/db/tsdb/cursors"
+	"github.com/cnosdb/cnosdb/.vendor/db/query"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/cursors"
 )
 
 type (

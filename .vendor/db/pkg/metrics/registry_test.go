@@ -3,7 +3,7 @@ package metrics
 import (
 	"testing"
 
-	"github.com/cnosdb/db/pkg/testing/assert"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/testing/assert"
 )
 
 func TestRegistry_MustRegisterCounter(t *testing.T) {

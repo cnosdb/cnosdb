@@ -4,7 +4,7 @@ import (
 	"container/heap"
 	"math"
 
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 type mergedSeriesGenerator struct {

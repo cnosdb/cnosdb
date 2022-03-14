@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
 )
 
 // Ensure the parser can parse a multi-statement query.

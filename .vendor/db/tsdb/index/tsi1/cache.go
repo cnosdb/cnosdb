@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"sync"
 
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // TagValueSeriesIDCache is an LRU cache for series id sets associated with

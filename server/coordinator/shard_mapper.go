@@ -7,9 +7,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/query"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/query"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 // IteratorCreator is an interface that combines mapping fields and creating iterators.
@@ -438,6 +438,6 @@ func (a *LocalShardMapping) Close() error {
 
 // Source contains the database and retention policy source for data.
 type Source struct {
-	Database        string
+	Database string
 	RetentionPolicy string
 }

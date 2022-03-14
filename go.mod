@@ -3,11 +3,8 @@ module github.com/cnosdb/cnosdb
 go 1.16
 
 require (
+	github.com/cespare/xxhash v1.1.0
 	github.com/BurntSushi/toml v0.4.1
-	github.com/cnosdb/cnosql v0.0.0
-	github.com/cnosdb/common v0.0.0
-	github.com/cnosdb/db v0.0.0
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gogo/protobuf v1.3.2
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/go-hclog v0.9.1
@@ -25,10 +22,5 @@ require (
 	golang.org/x/text v0.3.7
 	gopkg.in/fatih/pool.v2 v2.0.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-)
 
-replace (
-	github.com/cnosdb/cnosql => ./.vendor/cnosql
-	github.com/cnosdb/common => ./.vendor/common
-	github.com/cnosdb/db => ./.vendor/db
 )

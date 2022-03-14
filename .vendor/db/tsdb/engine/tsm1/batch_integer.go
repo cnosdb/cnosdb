@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/cnosdb/db/pkg/encoding/simple8b"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/encoding/simple8b"
 )
 
 // IntegerArrayEncodeAll encodes src into b, returning b and any error encountered.

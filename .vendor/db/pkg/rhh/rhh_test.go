@@ -7,7 +7,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/cnosdb/db/pkg/rhh"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/rhh"
 )
 
 // Ensure hash map can perform basic get/put operations.

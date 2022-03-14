@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 type TagsSequence interface {

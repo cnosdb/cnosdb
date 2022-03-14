@@ -5,7 +5,7 @@ package tsdb
 import (
 	"sort"
 
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 )
 
 // MarshalTags converts a tag set to bytes for use as a lookup key.

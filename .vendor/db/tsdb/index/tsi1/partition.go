@@ -14,12 +14,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/logger"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/bytesutil"
-	"github.com/cnosdb/db/pkg/estimator"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/cnosql"
+	"github.com/cnosdb/cnosdb/.vendor/db/logger"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/bytesutil"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"go.uber.org/zap"
 )
 

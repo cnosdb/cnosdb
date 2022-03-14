@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/db/logger"
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/.vendor/db/logger"
+	"github.com/cnosdb/cnosdb/.vendor/db/models"
 	"go.uber.org/zap"
 )
 

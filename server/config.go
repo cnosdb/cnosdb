@@ -21,8 +21,8 @@ import (
 	"github.com/cnosdb/cnosdb/server/precreator"
 	"github.com/cnosdb/cnosdb/server/rp"
 	"github.com/cnosdb/cnosdb/server/subscriber"
-	itoml "github.com/cnosdb/common/pkg/toml"
-	"github.com/cnosdb/db/tsdb"
+	itoml "github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )

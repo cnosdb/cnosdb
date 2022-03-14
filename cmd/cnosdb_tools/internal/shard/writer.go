@@ -7,8 +7,8 @@ import (
 	"strconv"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
-	"github.com/cnosdb/db/pkg/data/gen"
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/data/gen"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb/engine/tsm1"
 )
 
 const (

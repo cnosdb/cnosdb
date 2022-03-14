@@ -6,7 +6,7 @@
 package gen
 
 import (
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/.vendor/db/tsdb"
 )
 
 type FloatValuesSequence interface {

@@ -22,7 +22,7 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/cnosdb/db/pkg/estimator"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/estimator"
 	"github.com/cespare/xxhash"
 )
 

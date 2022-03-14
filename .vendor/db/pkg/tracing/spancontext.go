@@ -1,7 +1,7 @@
 package tracing
 
 import (
-	"github.com/cnosdb/db/pkg/tracing/wire"
+	"github.com/cnosdb/cnosdb/.vendor/db/pkg/tracing/wire"
 	"github.com/gogo/protobuf/proto"
 )
 
