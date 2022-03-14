@@ -1,48 +1,12 @@
-[workspace]
+[package]
+name = "tskv"
+version = "0.1.0"
+edition = "2021"
 
-members = [
-    "main",
-]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-default-members = ["main"]
-
-
-[profile.dev]
-lto = false
-opt-level = 0
-codegen-units = 16
-debug-assertions = true
-panic = 'unwind'
-incremental = true
-overflow-checks = true
-debug = true
-
-[profile.release]
-lto = "thin"
-opt-level = 3
-codegen-units = 1
-debug-assertions = false
-panic = 'unwind'
-incremental = false
-overflow-checks = false
-debug = false
-
-[profile.test]
-lto = false
-opt-level = 0
-codegen-units = 16
-debug-assertions = true
-panic = 'unwind'
-incremental = true
-overflow-checks = true
-debug = 2
-
-[profile.bench]
-lto = false
-opt-level = 3
-codegen-units = 1
-debug-assertions = false
-panic = 'unwind'
-incremental = false
-overflow-checks = false
-debug = false
+[dependencies]
+num_cpus = "1.13.1"
+core_affinity = "0.5.10"
+crossbeam = "0.8.1"
+snafu = "0.7"

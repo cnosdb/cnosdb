@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use clap::{Parser, Subcommand};
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
-
+use tskv;
 mod rpc;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
@@ -84,8 +84,8 @@ fn main() -> Result<(), std::io::Error> {
 
                 let host = config.host.parse::<SocketAddr>().expect("Invalid host");
 
-                // tskv::open()
-                //./target/debug/main -c 1 -m 11 tskv  
+                tskv::TsKv::open();
+                //./target/debug/main -c 1 -m 11 tskv
                 let mut builder = tonic::transport::server::Server::builder();
                 let tskv_impl = rpc::tskv::TsKvImpl {};
                 let tskv_service = protos::tskv::ts_kv_server::TsKvServer::new(tskv_impl);

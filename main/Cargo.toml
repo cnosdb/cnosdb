@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 protos = { path = "../protos" }
-
+tskv = { path = "../tskv" }
 async-stream = "0.3"
 backtrace = "0.3"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
