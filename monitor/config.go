@@ -2,9 +2,9 @@ package monitor
 
 import (
 	"errors"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"time"
 
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/.vendor/common/pkg/toml"
 )
 

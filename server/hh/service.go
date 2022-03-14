@@ -3,6 +3,7 @@ package hh
 import (
 	"expvar"
 	"fmt"
+	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"io/ioutil"
 	"log"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/.vendor/common"
-	"github.com/cnosdb/cnosdb/.vendor/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/.vendor/db/models"
 	"github.com/cnosdb/cnosdb/meta"
 )
