@@ -5,7 +5,10 @@ use tonic::{Request, Response, Status, Streaming};
 
 use protos::models::{PingBody, PingBodyBuilder};
 use protos::tskv::ts_kv_server::TsKv;
-use protos::tskv::{PingRequest, PingResponse, WritePointRpcRequest, WritePointRpcResponse};
+use protos::tskv::{
+    AddSeriesRpcRequest, AddSeriesRpcResponse, GetSeriesInfoRpcRequest, GetSeriesInfoRpcResponse,
+    PingRequest, PingResponse, WriteRowsRpcRequest, WriteRowsRpcResponse,
+};
 
 #[derive(Clone)]
 pub struct TsKvImpl {}
@@ -39,13 +42,27 @@ impl TsKv for TsKvImpl {
         }))
     }
 
-    type WritePointStream =
-        Pin<Box<dyn Stream<Item = Result<WritePointRpcResponse, Status>> + Send + Sync + 'static>>;
-
-    async fn write_point(
+    async fn add_series(
         &self,
-        _request: Request<Streaming<WritePointRpcRequest>>,
-    ) -> Result<Response<Self::WritePointStream>, Status> {
+        _request: Request<AddSeriesRpcRequest>,
+    ) -> Result<Response<AddSeriesRpcResponse>, Status> {
+        Err(Status::unimplemented("Not yet implemented"))
+    }
+
+    async fn get_series_info(
+        &self,
+        _request: Request<GetSeriesInfoRpcRequest>,
+    ) -> Result<Response<GetSeriesInfoRpcResponse>, Status> {
+        Err(Status::unimplemented("Not yet implemented"))
+    }
+
+    type WriteRowsStream =
+        Pin<Box<dyn Stream<Item = Result<WriteRowsRpcResponse, Status>> + Send + Sync + 'static>>;
+
+    async fn write_rows(
+        &self,
+        _request: Request<Streaming<WriteRowsRpcRequest>>,
+    ) -> Result<Response<Self::WriteRowsStream>, Status> {
         Err(Status::unimplemented("Not yet implemented"))
     }
 }
