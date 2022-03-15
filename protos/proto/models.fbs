@@ -3,3 +3,65 @@ namespace models;
 table PingBody {
     payload: [ubyte];
 }
+
+enum FieldType: int {
+    Unknown = -1,
+    Float,
+    Integer,
+    Unsigned,
+    Boolean,
+    String,
+}
+
+struct RowKey {
+    series_id: uint64;
+    timestamp: uint64;
+}
+
+table RowField {
+    field_id: uint64;
+    type: FieldType;
+    value: [ubyte];
+}
+
+table Row {
+    key: RowKey;
+    fields: [RowField];
+}
+
+enum WALEntryType: ubyte {
+    Write = 1,
+    Delete,
+    DeleteRange,
+}
+
+table WriteWALEntry {
+    Rows: [Row];
+}
+
+struct DeleteWALEntryItems {
+    series_id: uint64;
+    field_id: uint64;
+}
+
+table DeleteWALEntry {
+    items: [DeleteWALEntryItems];
+}
+
+table DeleteRangeWALEntry {
+    items: [DeleteWALEntryItems];
+    min: uint64;
+    max: uint64;
+}
+
+union WALEntryUnion {
+    Write: WriteWALEntry,
+    DeleteWALEntry,
+    DeleteRange: DeleteRangeWALEntry,
+}
+
+table WALEntry {
+    type: WALEntryType;
+    series_id: uint64;
+    value: WALEntryUnion;
+}
