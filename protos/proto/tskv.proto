@@ -11,17 +11,67 @@ message PingResponse {
   bytes body = 2;
 }
 
-message WritePointRpcRequest {
-  uint64 protocol_version = 1;
-  bytes points = 2;
+message Tag {
+  bytes key = 1;
+  bytes value = 2;
 }
 
-message WritePointRpcResponse {
+enum FieldType {
+  Float = 0;
+  Integer = 1;
+  Unsigned = 2;
+  Boolean = 3;
+  String = 5;
+}
+
+message FieldInfo {
+  FieldType field_type = 1;
+  bytes name = 2;
+  uint64 id = 3;
+}
+
+message AddSeriesRpcRequest {
   uint64 protocol_version = 1;
-  bytes points = 2;
+  uint64 series_id = 2;
+  repeated Tag tags = 3;
+  repeated FieldInfo fields = 4;
+}
+
+message AddSeriesRpcResponse {
+  uint64 protocol_version = 1;
+  uint64 series_id = 2;
+  repeated Tag tags = 3;
+  repeated FieldInfo fields = 4;
+}
+
+message GetSeriesInfoRpcRequest {
+  uint64 protocol_version = 1;
+  uint64 series_id = 2;
+}
+
+message GetSeriesInfoRpcResponse {
+  uint64 protocol_version = 1;
+  uint64 series_id = 2;
+  repeated Tag tags = 3;
+  repeated FieldInfo fields = 4;
+}
+
+message WriteRowsRpcRequest {
+  uint64 protocol_version = 1;
+  bytes rows = 2;
+}
+
+message WriteRowsRpcResponse {
+  uint64 protocol_version = 1;
+  bytes rows = 2;
 }
 
 service TsKv {
   rpc Ping(PingRequest) returns (PingResponse);
-  rpc WritePoint(stream WritePointRpcRequest) returns (stream WritePointRpcResponse) {};
+
+  rpc AddSeries(AddSeriesRpcRequest) returns (AddSeriesRpcResponse) {};
+
+  rpc GetSeriesInfo(GetSeriesInfoRpcRequest) returns (GetSeriesInfoRpcResponse) {};
+
+  rpc WriteRows(stream WriteRowsRpcRequest) returns (stream WriteRowsRpcResponse) {};
 }
