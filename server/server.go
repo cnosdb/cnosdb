@@ -22,17 +22,17 @@ import (
 	"github.com/cnosdb/cnosdb/server/hh"
 	"github.com/cnosdb/cnosdb/server/snapshotter"
 	"github.com/cnosdb/cnosdb/server/subscriber"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/query"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/query"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/pkg/errors"
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 
 	// Initialize the engine package
-	_ "github.com/cnosdb/db/tsdb/engine"
+	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine"
 	// Initialize the index package
-	_ "github.com/cnosdb/db/tsdb/index"
+	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/index"
 )
 
 const NodeMuxHeader = "node"

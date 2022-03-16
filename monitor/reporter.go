@@ -1,6 +1,6 @@
 package monitor
 
-import "github.com/cnosdb/db/models"
+import "github.com/cnosdb/cnosdb/vend/db/models"
 
 // Reporter is an interface for gathering internal statistics.
 type Reporter interface {

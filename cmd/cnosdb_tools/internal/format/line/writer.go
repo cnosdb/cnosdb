@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/escape"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/escape"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/cnosql"
 )
 
 type Writer struct {

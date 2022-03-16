@@ -2,10 +2,10 @@ package monitor
 
 import (
 	"errors"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"time"
 
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 )
 
 const (

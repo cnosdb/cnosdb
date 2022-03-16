@@ -3,6 +3,7 @@ package hh
 import (
 	"expvar"
 	"fmt"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"io/ioutil"
 	"log"
 	"os"
@@ -12,10 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/common"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/common"
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/db/models"
 )
 
 // ErrHintedHandoffDisabled is returned when attempting to use a

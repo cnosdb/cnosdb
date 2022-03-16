@@ -6,6 +6,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"os"
 	"runtime"
 	"sort"
@@ -13,10 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/db/logger"
-	"github.com/cnosdb/db/models"
 	"go.uber.org/zap"
 )
 

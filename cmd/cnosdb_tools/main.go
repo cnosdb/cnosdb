@@ -2,9 +2,8 @@
 package main
 
 import (
-	
 	"fmt"
-	
+
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/compact"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/export"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate/exec"
@@ -14,12 +13,11 @@ import (
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb/run"
 	_ "github.com/cnosdb/cnosdb/meta"
-	_ "github.com/cnosdb/db/tsdb"
-	_ "github.com/cnosdb/db/tsdb/engine"
-  
-  geninit "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate/init"
+	_ "github.com/cnosdb/cnosdb/vend/db/tsdb"
+	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine"
+
+	geninit "github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate/init"
 	"github.com/spf13/cobra"
-  
 )
 
 func main() {

@@ -3,9 +3,9 @@ package storage
 import (
 	"context"
 
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 type ResultSet struct {
@@ -45,9 +45,9 @@ func (r *ResultSet) Next() bool {
 	return true
 }
 
-func (r *ResultSet) Name() []byte                 { return r.row.name }
-func (r *ResultSet) Tags() models.Tags            { return r.row.tags }
-func (r *ResultSet) Field() []byte                { return []byte(r.row.field.n) }
+func (r *ResultSet) Name() []byte               { return r.row.name }
+func (r *ResultSet) Tags() models.Tags          { return r.row.tags }
+func (r *ResultSet) Field() []byte              { return []byte(r.row.field.n) }
 func (r *ResultSet) FieldType() cnosql.DataType { return r.row.field.d }
 
 func (r *ResultSet) CursorIterator() *CursorIterator {

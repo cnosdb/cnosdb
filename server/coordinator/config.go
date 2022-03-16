@@ -3,11 +3,11 @@
 package coordinator
 
 import (
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"time"
 
-	"github.com/cnosdb/common/monitor/diagnostics"
-	"github.com/cnosdb/common/pkg/toml"
-	"github.com/cnosdb/db/query"
+	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/vend/db/query"
 )
 
 const (

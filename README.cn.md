@@ -89,3 +89,5 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 * [Stack Overflow](https://stackoverflow.com/questions/tagged/nebulagraph)
 
 * Twitter: [@CnosDB](https://twitter.com/CnosDB)
+
+* [领英主页](https://www.linkedin.com/company/vesoft-nebula-graph)
