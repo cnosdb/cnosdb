@@ -4,10 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/pkg/reporthelper"
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
-	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"os/user"
@@ -16,6 +12,11 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/reporthelper"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+	"github.com/spf13/cobra"
 )
 
 type Options struct {
