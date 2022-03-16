@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/spf13/cobra"
 )
 

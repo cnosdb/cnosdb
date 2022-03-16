@@ -1,9 +1,8 @@
 package monitor
 
 import (
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"runtime"
-
-	"github.com/cnosdb/common/monitor/diagnostics"
 )
 
 // goRuntime captures Go runtime diagnostics.

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/query"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/cnosql"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/query"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 type seriesCursor interface {

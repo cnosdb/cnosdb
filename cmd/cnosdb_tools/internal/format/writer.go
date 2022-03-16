@@ -3,10 +3,10 @@ package format
 import (
 	"fmt"
 
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/storage"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/cnosql"
 )
 
 var (
@@ -90,7 +90,7 @@ func (w *devNull) NewBucket(start, end int64) (BucketWriter, error) {
 	return w, nil
 }
 func (w *devNull) BeginSeries(name, field []byte, typ cnosql.DataType, tags models.Tags) {}
-func (w *devNull) EndSeries()                                                              {}
+func (w *devNull) EndSeries()                                                            {}
 
 func (w *devNull) Err() error   { return nil }
 func (w *devNull) Close() error { return nil }

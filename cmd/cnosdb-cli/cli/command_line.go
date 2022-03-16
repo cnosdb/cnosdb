@@ -20,10 +20,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/client"
 	"github.com/cnosdb/cnosdb/pkg/utils"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
 
 	"github.com/peterh/liner"
 	"github.com/pkg/errors"

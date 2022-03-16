@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/server/coordinator/internal"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/query"
 	"github.com/gogo/protobuf/proto"
 )
 
