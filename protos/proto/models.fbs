@@ -29,14 +29,14 @@ table Row {
     fields: [RowField];
 }
 
-enum WALEntryType: ubyte {
+enum WALEntryType: byte {
     Write = 1,
     Delete,
     DeleteRange,
 }
 
 table WriteWALEntry {
-    Rows: [Row];
+    rows: [Row];
 }
 
 struct DeleteWALEntryItems {
@@ -61,7 +61,7 @@ union WALEntryUnion {
 }
 
 table WALEntry {
-    type: WALEntryType;
+    type: WALEntryType = Write;
     series_id: uint64;
     value: WALEntryUnion;
 }

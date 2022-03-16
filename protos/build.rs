@@ -1,3 +1,4 @@
+use core::panic;
 use prost_build;
 use std::io::Write;
 use std::ops::Deref;
@@ -100,7 +101,7 @@ mod flatbuffers_generated;
             flatbuffers_generated_mod_rs_file.write_all(b";\n")?;
             flatbuffers_generated_mod_rs_file.flush()?;
 
-            Command::new("flatc")
+            let output = Command::new("flatc")
                 .arg("-o")
                 .arg(&output_dir_final)
                 .arg("--rust")
@@ -114,6 +115,10 @@ mod flatbuffers_generated;
                     "Failed to generate file by flatbuffers {}.",
                     output_file_name
                 ));
+
+            if !output.status.success() {
+                panic!("{}", String::from_utf8(output.stderr).unwrap());
+            }
 
             let output_file_path = output_dir_final.join(output_file_name);
             println!("fbs_file: {}", output_file_path.to_str().unwrap());
