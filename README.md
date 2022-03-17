@@ -91,3 +91,8 @@ Please refer to [Contribution Guide](./CONTRIBUTING.md) to contribute to CnosDB.
 
 * Twitter: [@CnosDB](https://twitter.com/CnosDB)
 
+* [LinkedIn page](https://www.linkedin.com/company/cnosdb)
+
+* [Bilibili](https://space.bilibili.com/36231559)
+
+* [Tiktok CN](https://www.douyin.com/user/MS4wLjABAAAA6ua1UPmYWCcTl0AT0Lf1asILf9ogmj7J257KEq812csox9FBrAkxxKcok1GIzPMv)
