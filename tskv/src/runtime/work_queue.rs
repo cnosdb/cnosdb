@@ -1,57 +1,41 @@
-use core_affinity::CoreId;
+use crate::runtime::runtime;
 use runtime::Runtime;
-use std::rc::Rc;
-use std::thread_local;
-use tokio::sync::oneshot;
 
 pub struct WorkerQueue {
-    runtime: Runtime,
+    pub work_queue: Runtime,
+    pub core_num: usize,
 }
 
 impl WorkerQueue {
-    pub fn new(core_ids: &[CoreId]) -> Self {
-        let runtime = Runtime::new(core_ids);
-
-        Self { runtime }
-    }
-
-    pub async fn append(&self, id: Id, bytes: Bytes) {
-        let (tx, rx) = oneshot::channel();
-
-        let id = shard_id(id);
-        self.runtime.spawn(shard_id(id), async move {
-            thread_local! (static SHARD:WorkerQueue = WorkerQueue::new() );
-
-            SHARD.with(|shard| {
-                shard.append(id, bytes);
-            });
-
-            tx.send(()).unwrap();
-        });
-
-        rx.await.unwrap();
-    }
-
-    pub async fn get(&self, id: Id, size: usize) {
-        let (tx, rx) = oneshot::channel();
-
-        let id = shard_id(id);
-        self.runtime.spawn(shard_id(id), async move {
-            thread_local! (static SHARD:WorkerQueue = WorkerQueue::new() );
-
-            let result = SHARD.with(|shard| {
-                shard.get(id, size);
-            });
-
-            tx.send(result).unwrap();
-        });
-
-        let _ = rx.await.unwrap();
+    pub fn new(core_num: usize) -> Self {
+        let core_ids = core_affinity::get_core_ids().unwrap();
+        let queue = Runtime::new(&core_ids[0..core_num]);
+        Self {
+            work_queue: queue,
+            core_num,
+        }
     }
 }
 
-#[inline]
-fn shard_id(id: Id) -> usize {
-    1
-}
+#[cfg(test)]
+mod tests {
+    use super::WorkerQueue;
+    use tokio::sync::oneshot;
+    #[test]
+    fn workqueue_test() {
+        let q = WorkerQueue::new(2);
+        let num = 3;
+        let (tx, rx) = oneshot::channel();
+        q.work_queue.spawn(num % q.core_num, async move {
+            let mut sum: u64 = 0;
+            let mut i = 1000000;
+            while i > 0 {
+                sum += i;
+                i = i - 1;
+            }
+            tx.send(sum).unwrap();
+        });
 
+        println!("work queue calu {}", rx.blocking_recv().unwrap());
+    }
+}
