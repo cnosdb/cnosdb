@@ -1,7 +1,7 @@
 use crossbeam::channel::Sender;
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::mem::{ManuallyDrop};
+use std::mem::{forget, ManuallyDrop};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering::{self, Relaxed};
@@ -10,10 +10,10 @@ use std::task::{Context, RawWaker, RawWakerVTable, Waker};
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-const WAITING: u8 = 0;  
-const POLLING: u8 = 1;  
-const REPOLL: u8 = 2;   
-const COMPLETE: u8 = 3; 
+const WAITING: u8 = 0;
+const POLLING: u8 = 1;
+const REPOLL: u8 = 2;
+const COMPLETE: u8 = 3;
 
 /// default ordering
 const ORDERING: Ordering = Relaxed;
