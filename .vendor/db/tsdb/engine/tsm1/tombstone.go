@@ -25,6 +25,7 @@ const (
 	v4header   = 0x1504
 )
 
+const TombstoneFileExtension = "tombstone"
 var errIncompatibleVersion = errors.New("incompatible v4 version")
 
 // Tombstoner records tombstones when entries are deleted.
