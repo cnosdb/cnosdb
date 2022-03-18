@@ -95,3 +95,6 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 * [B站](https://space.bilibili.com/36231559)
 
 * [抖音](https://www.douyin.com/user/MS4wLjABAAAA6ua1UPmYWCcTl0AT0Lf1asILf9ogmj7J257KEq812csox9FBrAkxxKcok1GIzPMv)
+
+* [知乎](https://www.zhihu.com/org/cnosdb)
+
