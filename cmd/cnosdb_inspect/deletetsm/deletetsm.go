@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Command represents the program execution for "influxd deletetsm".
+// Command represents the program execution for "cnosdb deletetsm".
 type Options struct {
 	// Standard input/output, overridden for testing.
 	Stderr io.Writer
