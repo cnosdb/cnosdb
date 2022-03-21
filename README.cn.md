@@ -98,3 +98,4 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 
 * [知乎](https://www.zhihu.com/org/cnosdb)
 
+* [CSDN](https://blog.csdn.net/CnosDB)
