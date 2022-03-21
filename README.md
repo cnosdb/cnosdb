@@ -100,3 +100,5 @@ Please refer to [Contribution Guide](./CONTRIBUTING.md) to contribute to CnosDB.
 * [Zhihu](https://www.zhihu.com/org/cnosdb)
 
 * [CSDN](https://blog.csdn.net/CnosDB)
+
+* [Jianshu](https://www.jianshu.com/u/745811688e9e)
