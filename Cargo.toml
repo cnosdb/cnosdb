@@ -4,6 +4,7 @@ members = [
     "main",
     "protos",
     "tskv",
+    "logger"
 ]
 
 default-members = ["main"]
