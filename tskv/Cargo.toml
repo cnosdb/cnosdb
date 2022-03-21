@@ -10,3 +10,5 @@ num_cpus = "1.13.1"
 core_affinity = "0.5.10"
 crossbeam = "0.8.1"
 snafu = "0.7"
+tokio = "1.17.0"
+protos = { path = "../protos" }
