@@ -1,0 +1,243 @@
+syntax = "proto3";
+package cnosdb.platform.storage;
+option go_package = ".;datatypes";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
+import "predicate.proto";
+
+service Storage {
+  // ReadFilter performs a filter operation at storage
+  rpc ReadFilter (ReadFilterRequest) returns (stream ReadResponse);
+
+  // ReadGroup performs a group operation at storage
+  rpc ReadGroup (ReadGroupRequest) returns (stream ReadResponse);
+
+  rpc ReadWindowAggregate (ReadWindowAggregateRequest) returns (stream ReadResponse);
+
+  // TagKeys performs a read operation for tag keys
+  rpc TagKeys (TagKeysRequest) returns (stream StringValuesResponse);
+
+  // TagValues performs a read operation for tag values
+  rpc TagValues (TagValuesRequest) returns (stream StringValuesResponse);
+
+  // Capabilities returns a map of keys and values identifying the capabilities supported by the storage engine
+  rpc Capabilities (google.protobuf.Empty) returns (CapabilitiesResponse);
+}
+
+message ReadFilterRequest {
+  google.protobuf.Any ReadSource = 1;
+  TimestampRange range = 2;
+  Predicate predicate = 3;
+}
+
+message ReadGroupRequest {
+  google.protobuf.Any ReadSource = 1;
+  TimestampRange range = 2;
+  Predicate predicate = 3;
+
+  enum Group {
+    // GroupNone returns all series as a single group.
+    // The single GroupFrame.TagKeys will be the union of all tag keys.
+    GroupNone = 0;
+
+    // GroupBy returns a group for each unique value of the specified GroupKeys.
+    GroupBy = 2;
+  }
+
+  // GroupKeys specifies a list of tag keys used to order the data.
+  // It is dependent on the Group property to determine its behavior.
+  repeated string GroupKeys = 4;
+
+  Group group = 5;
+  Aggregate aggregate = 6;
+
+  // TODO(jlapacik): This field is only used in unit tests.
+  // Specifically the two tests in group_resultset_test.go.
+  // This field should be removed and the tests that depend
+  // on it refactored.
+  enum HintFlags {
+    HintNone     = 0x00;
+    HintNoPoints = 0x01;
+    HintNoSeries = 0x02;
+    // HintSchemaAllTime performs schema queries without using time ranges
+    HintSchemaAllTime = 0x04;
+  }
+  fixed32 Hints = 7;
+}
+
+message Aggregate {
+  enum AggregateType {
+    AggregateTypeNone = 0;
+    AggregateTypeSum = 1;
+    AggregateTypeCount = 2;
+    AggregateTypeMin = 3;
+    AggregateTypeMax = 4;
+    AggregateTypeFirst = 5;
+    AggregateTypeLast = 6;
+    AggregateTypeMean = 7;
+  }
+
+  AggregateType type = 1;
+
+  // additional arguments?
+}
+
+message ReadWindowAggregateRequest {
+  google.protobuf.Any ReadSource = 1;
+  TimestampRange range = 2;
+  Predicate predicate = 3;
+  int64 WindowEvery = 4;
+  int64 Offset = 6;
+  repeated Aggregate aggregate = 5;
+  Window window = 7;
+}
+
+message Window {
+  Duration every = 1;
+  Duration offset = 2;
+}
+
+message Duration {
+  int64 nsecs = 1;
+  int64 months = 2;
+  bool negative = 3;
+}
+
+
+message Tag {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+// Response message for ReadFilter and ReadGroup
+message ReadResponse {
+  enum FrameType {
+    FrameTypeSeries = 0;
+    FrameTypePoints = 1;
+  }
+
+  enum DataType {
+    DataTypeFloat = 0;
+    DataTypeInteger = 1;
+    DataTypeUnsigned = 2;
+    DataTypeBoolean = 3;
+    DataTypeString = 4;
+    DataTypeMulti = 5;
+  }
+
+  message Frame {
+    oneof data {
+      GroupFrame group = 7;
+      SeriesFrame series = 1;
+      FloatPointsFrame FloatPoints = 2;
+      IntegerPointsFrame IntegerPoints = 3;
+      UnsignedPointsFrame UnsignedPoints = 4;
+      BooleanPointsFrame BooleanPoints = 5;
+      StringPointsFrame StringPoints = 6;
+      MultiPointsFrame MultiPoints = 8;
+    }
+  }
+
+  message GroupFrame {
+    // TagKeys
+    repeated bytes TagKeys = 1;
+    // PartitionKeyVals is the values of the partition key for this group, order matching ReadGroupRequest.GroupKeys
+    repeated bytes PartitionKeyVals = 2;
+  }
+
+  message SeriesFrame {
+    repeated Tag tags = 1;
+    DataType data_type = 2;
+  }
+
+  message FloatValues {
+    repeated double values = 1;
+  }
+  message IntegerValues {
+    repeated int64 values = 1;
+  }
+  message UnsignedValues {
+    repeated uint64 values = 1;
+  }
+  message BooleanValues {
+    repeated bool values = 1;
+  }
+  message StringValues {
+    repeated string values = 1;
+  }
+  message AnyPoints {
+    oneof data {
+      FloatValues floats = 1;
+      IntegerValues integers = 2;
+      UnsignedValues unsigneds = 3;
+      BooleanValues booleans = 4;
+      StringValues strings = 5;
+    }
+  }
+
+  message MultiPointsFrame {
+    repeated sfixed64 timestamps = 1;
+    repeated AnyPoints value_arrays = 2;
+  }
+
+  message FloatPointsFrame {
+    repeated sfixed64 timestamps = 1;
+    repeated double values = 2;
+  }
+
+  message IntegerPointsFrame {
+    repeated sfixed64 timestamps = 1;
+    repeated int64 values = 2;
+  }
+
+  message UnsignedPointsFrame {
+    repeated sfixed64 timestamps = 1;
+    repeated uint64 values = 2;
+  }
+
+  message BooleanPointsFrame {
+    repeated sfixed64 timestamps = 1;
+    repeated bool values = 2;
+  }
+
+  message StringPointsFrame {
+    repeated sfixed64 timestamps = 1;
+    repeated string values = 2;
+  }
+
+  repeated Frame frames = 1;
+}
+
+message CapabilitiesResponse {
+  map<string, string> caps = 1;
+}
+
+// Specifies a continuous range of nanosecond timestamps.
+message TimestampRange {
+  // Start defines the inclusive lower bound.
+  int64 start = 1;
+
+  // End defines the exclusive upper bound.
+  int64 end = 2;
+}
+
+// TagKeysRequest is the request message for Storage.TagKeys.
+message TagKeysRequest {
+  google.protobuf.Any TagsSource = 1;
+  TimestampRange range = 2;
+  Predicate predicate = 3;
+}
+
+// TagValuesRequest is the request message for Storage.TagValues.
+message TagValuesRequest {
+  google.protobuf.Any TagsSource = 1;
+  TimestampRange range = 2;
+  Predicate predicate = 3;
+  string tag_key = 4;
+}
+
+// Response message for Storage.TagKeys and Storage.TagValues.
+message StringValuesResponse {
+  repeated bytes values = 1;
+}
