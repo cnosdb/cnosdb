@@ -1,18 +1,6 @@
 package binary_test
 
-import (
-	"bytes"
-	"fmt"
-	"math"
-	"testing"
-	"time"
-
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb"
-	"github.com/cnosdb/cnosql"
-)
-
+/*
 func TestReader_OneBucketOneIntegerSeries(t *testing.T) {
 	var buf bytes.Buffer
 	ts := []int64{0, 1, 2}
@@ -464,3 +452,4 @@ func assertError(t *testing.T, got error, exp error) {
 		assertEqual(t, got.Error(), exp.Error())
 	}
 }
+*/

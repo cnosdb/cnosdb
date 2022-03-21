@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/db/logger"
+	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"go.uber.org/zap"
 )
 

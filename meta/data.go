@@ -12,10 +12,10 @@ import (
 	"unicode"
 
 	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/query"
 	internal "github.com/cnosdb/cnosdb/meta/internal"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/query"
 	"github.com/gogo/protobuf/proto"
 )
 

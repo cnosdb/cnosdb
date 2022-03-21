@@ -11,9 +11,9 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/storage"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
-	"github.com/cnosdb/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 type exporterConfig struct {
