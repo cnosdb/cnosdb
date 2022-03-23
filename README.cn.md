@@ -101,3 +101,5 @@ curl -G 'http://localhost:8086/query?pretty=true' --data-urlencode "db=db" --dat
 * [CSDN](https://blog.csdn.net/CnosDB)
 
 * [简书](https://www.jianshu.com/u/745811688e9e)
+
+* email: mkt@cnosdb.com
