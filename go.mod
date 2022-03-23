@@ -25,6 +25,8 @@ require (
 	github.com/mschoch/smat v0.2.0
 	github.com/peterh/liner v1.2.1
 	github.com/pkg/errors v0.9.1
+	github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4
+	github.com/prometheus/prometheus v2.5.0+incompatible
 	github.com/smartystreets/goconvey v1.6.4
 	github.com/soheilhy/cmux v0.1.5
 	github.com/spf13/cast v1.3.1
@@ -39,6 +41,7 @@ require (
 	golang.org/x/sys v0.0.0-20210510120138-977fb7262007
 	golang.org/x/text v0.3.7
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
+	google.golang.org/protobuf v1.26.0
 	gopkg.in/fatih/pool.v2 v2.0.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 
