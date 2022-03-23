@@ -1,0 +1,32 @@
+[package]
+name = "util"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1.1"
+dashmap = "5.2"
+evmap = "10.0"
+flatbuffers = "2.1"
+futures = "0.3"
+futures-channel = {version = "0.3", features = ["default"]}
+futures-core = {version = "0.3", features = ["default"]}
+futures-executor = {version = "0.3", features = ["default"]}
+futures-sink = {version = "0.3", features = ["default"]}
+futures-task = {version = "0.3", features = ["default"]}
+futures-util = {version = "0.3", features = ["default"]}
+lazy_static = "1.4"
+libc = "0.2"
+page_size = "0.4"
+parking_lot = "0.12"
+snafu = "0.7"
+static_assertions = "1.1"
+tokio = { version = "1.17", features = ["full"] }
+tokio-util = "0.7"
+walkdir = "2.3"
+
+[dev-dependencies]
+tempfile = "3"
