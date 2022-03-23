@@ -102,3 +102,5 @@ Please refer to [Contribution Guide](./CONTRIBUTING.md) to contribute to CnosDB.
 * [CSDN](https://blog.csdn.net/CnosDB)
 
 * [Jianshu](https://www.jianshu.com/u/745811688e9e)
+
+* email: hr@cnosdb.com
