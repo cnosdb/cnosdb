@@ -5,7 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
+
 	"io"
 	"net/http"
 	"os"
@@ -16,16 +16,21 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb"
-	"github.com/cnosdb/cnosdb/vend/cnosql"
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/cnosdb/cnosdb/vend/db/query"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/pkg/prometheus"
 	"github.com/cnosdb/cnosdb/pkg/uuid"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/query"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+
 	"github.com/dgrijalva/jwt-go"
+	"github.com/golang/snappy"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/prometheus/prompb"
 	"go.uber.org/zap"
 )
 
@@ -197,6 +202,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		{
 			"write", http.MethodPost, "/write", true, true,
 			h.serveWrite,
+		},
+		{
+			"prometheus-write", // Prometheus remote write
+			"POST", "/api/v1/prom/write", false, true, h.servePromWrite,
 		},
 	}...)
 
@@ -986,6 +995,142 @@ func convertToEpoch(r *query.Result, epoch string) {
 				v[0] = ts.UnixNano() / divisor
 			}
 		}
+	}
+}
+
+// servePromWrite receives data in the Prometheus remote write protocol and writes it to the database
+func (h *Handler) servePromWrite(w http.ResponseWriter, r *http.Request, user meta.User) {
+	atomic.AddInt64(&h.stats.WriteRequests, 1)
+	atomic.AddInt64(&h.stats.ActiveWriteRequests, 1)
+	atomic.AddInt64(&h.stats.PromWriteRequests, 1)
+	defer func(start time.Time) {
+		atomic.AddInt64(&h.stats.ActiveWriteRequests, -1)
+		atomic.AddInt64(&h.stats.WriteRequestDuration, time.Since(start).Nanoseconds())
+	}(time.Now())
+	h.requestTracker.Add(r, user)
+
+	database := r.URL.Query().Get("db")
+	if database == "" {
+		h.httpError(w, "database is required", http.StatusBadRequest)
+		return
+	}
+
+	if di := h.metaClient.Database(database); di == nil {
+		h.httpError(w, fmt.Sprintf("database not found: %q", database), http.StatusNotFound)
+		return
+	}
+
+	if h.config.AuthEnabled {
+		if user == nil {
+			h.httpError(w, fmt.Sprintf("%q user is authorized to write to database %q", user.ID(), database), http.StatusForbidden)
+			return
+		}
+	}
+
+	body := r.Body
+	if h.config.MaxBodySize > 0 {
+		body = truncateReader(body, int64(h.config.MaxBodySize))
+	}
+
+	var bs []byte
+	if r.ContentLength > 0 {
+		if h.config.MaxBodySize > 0 && r.ContentLength > int64(h.config.MaxBodySize) {
+			h.httpError(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		// This will just be an initial hint for the reader, as the
+		// bytes.Buffer will grow as needed when ReadFrom is called
+		bs = make([]byte, 0, r.ContentLength)
+	}
+	buf := bytes.NewBuffer(bs)
+
+	_, err := buf.ReadFrom(body)
+	if err != nil {
+		if err == errTruncated {
+			h.httpError(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		if h.config.WriteTracing {
+			h.logger.Info("Prom write handler unable to read bytes from request body")
+		}
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	atomic.AddInt64(&h.stats.WriteRequestBytesReceived, int64(buf.Len()))
+
+	if h.config.WriteTracing {
+		h.logger.Info("Prom write body received by handler", zap.ByteString("body", buf.Bytes()))
+	}
+
+	reqBuf, err := snappy.Decode(nil, buf.Bytes())
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Convert the Prometheus remote write request to CnosDB Points
+	var req prompb.WriteRequest
+	if err := req.Unmarshal(reqBuf); err != nil {
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	points, err := prometheus.WriteRequestToPoints(&req)
+	if err != nil {
+		if h.config.WriteTracing {
+			h.logger.Info("Prom write handler", zap.Error(err))
+		}
+
+		// Check if the error was from something other than dropping invalid values.
+		if _, ok := err.(prometheus.DroppedValuesError); !ok {
+			h.httpError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Determine required consistency level.
+	level := r.URL.Query().Get("consistency")
+	consistency := models.ConsistencyLevelOne
+	if level != "" {
+		consistency, err = models.ParseConsistencyLevel(level)
+		if err != nil {
+			h.httpError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Write points.
+	if err := h.PointsWriter.WritePoints(database, r.URL.Query().Get("rp"), consistency, user, points); cnosdb.IsClientError(err) {
+		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	} else if cnosdb.IsAuthorizationError(err) {
+		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
+		h.httpError(w, err.Error(), http.StatusForbidden)
+		return
+	} else if werr, ok := err.(tsdb.PartialWriteError); ok {
+		atomic.AddInt64(&h.stats.PointsWrittenOK, int64(len(points)-werr.Dropped))
+		atomic.AddInt64(&h.stats.PointsWrittenDropped, int64(werr.Dropped))
+		h.httpError(w, werr.Error(), http.StatusBadRequest)
+		return
+	} else if err != nil {
+		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
+		h.httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	atomic.AddInt64(&h.stats.PointsWrittenOK, int64(len(points)))
+	h.writeHeader(w, http.StatusNoContent)
+}
+
+func (h *Handler) writeHeader(w http.ResponseWriter, code int) {
+	switch code / 100 {
+	case 4:
+		atomic.AddInt64(&h.stats.ClientErrors, 1)
+	case 5:
+		atomic.AddInt64(&h.stats.ServerErrors, 1)
 	}
 }
 
