@@ -4,7 +4,8 @@ members = [
     "main",
     "protos",
     "tskv",
-    "logger"
+    "logger",
+    "rpctests",
 ]
 
 default-members = ["main"]
