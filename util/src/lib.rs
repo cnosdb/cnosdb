@@ -1,1 +1,1 @@
-mod direct_fio;
+pub mod direct_fio;
