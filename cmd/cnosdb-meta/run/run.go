@@ -22,7 +22,7 @@ var run_examples = `  cnosdb-meta run
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "run",
-		Short:   "run [Short]",
+		Short:   description,
 		Long:    description,
 		Example: run_examples,
 		CompletionOptions: cobra.CompletionOptions{
