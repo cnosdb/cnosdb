@@ -8,6 +8,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	version string
+)
+
+func init() {
+	if version == "" {
+		version = "unknown"
+	}
+}
+
 func main() {
 	mainCmd := GetCommand()
 	mainCmd.AddCommand(node.GetShowCommand())
@@ -15,9 +25,25 @@ func main() {
 	mainCmd.AddCommand(node.GetRemoveMetaCommand())
 	mainCmd.AddCommand(node.GetAddDataCommand())
 	mainCmd.AddCommand(node.GetRemoveDataCommand())
+	mainCmd.AddCommand(printVersion())
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
+	}
+}
+
+func printVersion() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Displays the CnosDB meta version",
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd:   true,
+			DisableNoDescFlag:   true,
+			DisableDescriptions: true,
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("cnosdb-cli: v%s \n", version)
+		},
 	}
 }
 
