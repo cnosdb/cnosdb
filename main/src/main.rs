@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use clap::{Parser, Subcommand};
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
-use tskv;
+// use tskv;
 
 mod rpc;
 
@@ -30,11 +30,11 @@ long_about = r#"cnosdb and command line tools
 struct Cli {
     /// gRPC address
     #[clap(
-    short,
-    long,
-    global = true,
-    env = "server_addr",
-    default_value = "127.0.0.1:31006"
+        short,
+        long,
+        global = true,
+        env = "server_addr",
+        default_value = "127.0.0.1:31006"
     )]
     host: String,
 
@@ -88,8 +88,9 @@ fn main() -> Result<(), std::io::Error> {
                 // tskv::TsKv::open();
                 //./target/debug/main -c 1 -m 11 tskv
                 let mut builder = tonic::transport::server::Server::builder();
-                let tskv_impl = rpc::tskv::TsKvImpl {};
-                let tskv_service = protos::tskv::ts_kv_server::TsKvServer::new(tskv_impl);
+                let tskv_impl = rpc::tskv::TskvServiceImpl {};
+                let tskv_service =
+                    protos::kv_service::tskv_service_server::TskvServiceServer::new(tskv_impl);
                 let router = builder.add_service(tskv_service);
                 if let Err(e) = router.serve(host).await {
                     eprintln!("{}", e);
