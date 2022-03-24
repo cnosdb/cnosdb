@@ -1,6 +1,10 @@
+use protos::tskv::ts_kv_client::TsKvClient;
+
 #[actix_rt::test]
 async fn test_call_add_series() {
-    let mut conn = protos::tskv::ts_kv_client::TsKvClient::connect("http://127.0.0.1:31006").await.unwrap();
+    let mut conn =
+        TsKvClient::connect("http://127.0.0.1:31006").await.unwrap();
+
     let mut tags = Vec::<protos::tskv::Tag>::new();
     tags.push(protos::tskv::Tag {
         key: Vec::<u8>::from("host"),
@@ -19,7 +23,7 @@ async fn test_call_add_series() {
         fields,
     };
     let resp = conn.add_series(req).await;
-    let resp = match resp {
+    match resp {
         Ok(t) => {
             assert_eq!(t.get_ref().series_id, 10010);
         }
