@@ -49,6 +49,8 @@ func main() {
 	mainCmd.AddCommand(backupCmd)
 	restoreCmd := restore.GetCommand()
 	mainCmd.AddCommand(restoreCmd)
+	buildInfoCmd := printBuildInfo()
+	mainCmd.AddCommand(buildInfoCmd)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
@@ -78,6 +80,23 @@ func GetCommand() *cobra.Command {
 		},
 	}
 	return c
+}
+
+func printBuildInfo() *cobra.Command {
+	return &cobra.Command{
+		Use:  "version",
+		Long: "displays the CnosDB version",
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd:   true,
+			DisableNoDescFlag:   true,
+			DisableDescriptions: true,
+		},
+		// example: CnosDB v0.10.0 (git: main c2b889e3)
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("CnosDB v%s (git: %s %s)\n", version, branch, commit)
+		},
+	}
+
 }
 
 func setFlags(c *cobra.Command) {
