@@ -1,20 +1,20 @@
-use std::pin::Pin;
-
 use futures::Stream;
-use tonic::{Request, Response, Status, Streaming};
-
-use protos::models::{PingBody, PingBodyBuilder};
-use protos::tskv::ts_kv_server::TsKv;
-use protos::tskv::{
+use protos::kv_service::tskv_service_server::TskvService;
+use protos::kv_service::{
     AddSeriesRpcRequest, AddSeriesRpcResponse, GetSeriesInfoRpcRequest, GetSeriesInfoRpcResponse,
     PingRequest, PingResponse, WriteRowsRpcRequest, WriteRowsRpcResponse,
 };
+use protos::models::{PingBody, PingBodyBuilder};
+use std::pin::Pin;
+use tokio::sync::mpsc;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tonic::{Request, Response, Status, Streaming};
+// use tskv::TsKv;
 
-#[derive(Clone)]
-pub struct TsKvImpl {}
+pub struct TskvServiceImpl {}
 
 #[tonic::async_trait]
-impl TsKv for TsKvImpl {
+impl TskvService for TskvServiceImpl {
     async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
         println!("PING: {:?}", _request);
 
@@ -37,7 +37,7 @@ impl TsKv for TsKvImpl {
         let finished_data = fbb.finished_data();
 
         Ok(Response::new(PingResponse {
-            protocol_version: 1,
+            version: 1,
             body: finished_data.to_vec(),
         }))
     }
@@ -61,16 +61,41 @@ impl TsKv for TsKvImpl {
 
     async fn write_rows(
         &self,
-        _request: Request<Streaming<WriteRowsRpcRequest>>,
+        request: Request<Streaming<WriteRowsRpcRequest>>,
     ) -> Result<Response<Self::WriteRowsStream>, Status> {
-        Err(Status::unimplemented("Not yet implemented"))
+        let mut stream = request.into_inner();
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(async move {
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(_req) => {
+                        tx.send(Ok(WriteRowsRpcResponse {
+                            version: 1,
+                            ..Default::default()
+                        }))
+                        .await
+                        .expect("successful");
+                    }
+                    Err(err) => {
+                        match tx.send(Err(err)).await {
+                            Ok(_) => (),
+                            Err(_err) => break, // response was droped
+                        }
+                    }
+                }
+            }
+            println!("stream ended");
+        });
+        // echo just write the same data that was received
+        let out_stream = ReceiverStream::new(rx);
+
+        Ok(Response::new(Box::pin(out_stream)))
     }
 }
 
 #[tokio::test]
 async fn test_tikv_ping() {
-    use protos::tskv::ts_kv_client::TsKvClient;
-
+    use protos::kv_service::tskv_service_client::TskvServiceClient;
     let mut fbb = flatbuffers::FlatBufferBuilder::new();
     let payload = fbb.create_vector(b"hello world");
 
@@ -84,11 +109,13 @@ async fn test_tikv_ping() {
     let decoded_payload = flatbuffers::root::<PingBody>(&finished_data);
     assert!(decoded_payload.is_ok());
 
-    let mut client = TsKvClient::connect("http://[::1]:10000").await.unwrap();
+    let mut client = TskvServiceClient::connect("http://[::1]:10000")
+        .await
+        .unwrap();
 
     let resp = client
         .ping(Request::new(PingRequest {
-            protocol_version: 10,
+            version: 10,
             body: finished_data.to_vec(),
         }))
         .await;

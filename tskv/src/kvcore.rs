@@ -9,6 +9,7 @@ use crate::FileManager;
 use crate::WorkerQueue;
 use std::thread::JoinHandle;
 
+#[derive(Clone)]
 pub struct TsKv {
     kvctx: Rc<KvContext>,
 }
@@ -28,17 +29,20 @@ impl TsKv {
         Ok(())
     }
 
-    pub async fn query(&self, opt: QueryOption) -> Result<Option<Entry>> {
+    pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
     }
 }
 
+#[allow(dead_code)]
 enum KvStatus {
     Init,
     Recover,
     Runing,
     Closed,
 }
+
+#[allow(dead_code)]
 pub(crate) struct KvContext {
     pub file_manager: FileManager,
     front_handler: Rc<WorkerQueue>,
@@ -46,6 +50,7 @@ pub(crate) struct KvContext {
     status: KvStatus,
 }
 
+#[allow(dead_code)]
 impl KvContext {
     pub fn new(opt: Options) -> Self {
         let file_manager = FileManager::new();
@@ -65,7 +70,7 @@ impl KvContext {
         Ok(())
     }
 
-    pub async fn shard_write(&self, partion_id: usize, entry: Vec<Entry>) -> Result<()> {
+    pub async fn shard_write(&self, partion_id: usize, _entry: Vec<Entry>) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.front_handler.work_queue.spawn(partion_id, async move {
             let err = 0;
@@ -76,7 +81,7 @@ impl KvContext {
         rx.await.unwrap();
         Ok(())
     }
-    pub async fn shard_query(&self, opt: QueryOption) -> Result<Option<Entry>> {
+    pub async fn shard_query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
     }
 }

@@ -69,9 +69,7 @@ impl<T> LRUList<T> {
         if self.count() == 0 {
             return None;
         }
-        let mut lasto = unsafe {
-                (*((*self.head.prev.unwrap()).prev.unwrap())).next.take()
-        };
+        let mut lasto = unsafe { (*((*self.head.prev.unwrap()).prev.unwrap())).next.take() };
 
         assert!(lasto.is_some());
         if let Some(ref mut last) = lasto {
