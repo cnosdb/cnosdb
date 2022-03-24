@@ -39,24 +39,24 @@ table WriteWALEntry {
     rows: [Row];
 }
 
-struct DeleteWALEntryItems {
+struct DeleteWALEntryItem {
     series_id: uint64;
     field_id: uint64;
 }
 
 table DeleteWALEntry {
-    items: [DeleteWALEntryItems];
+    items: [DeleteWALEntryItem];
 }
 
 table DeleteRangeWALEntry {
-    items: [DeleteWALEntryItems];
+    items: [DeleteWALEntryItem];
     min: uint64;
     max: uint64;
 }
 
 union WALEntryUnion {
     Write: WriteWALEntry,
-    DeleteWALEntry,
+    Delete: DeleteWALEntry,
     DeleteRange: DeleteRangeWALEntry,
 }
 

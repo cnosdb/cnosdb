@@ -6,6 +6,7 @@ members = [
     "tskv",
     "logger",
     "rpctests",
+    "util",
 ]
 
 default-members = ["main"]

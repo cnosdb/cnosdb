@@ -3,12 +3,25 @@ name = "tskv"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-num_cpus = "1.13.1"
+protos = { path = "../protos" }
+util = { path = "../util" }
+
+chrono = "0.4"
 core_affinity = "0.5.10"
 crossbeam = "0.8.1"
+futures = "0.3"
+flatbuffers = "2.1"
+lazy_static = "1.4"
+libc = "0.2"
+mio = "0.8"
+num_cpus = "1.13.1"
+priority-queue = "1.2"
+regex = "1.5"
 snafu = "0.7"
-tokio = "1.17.0"
-protos = { path = "../protos" }
+tokio = { version = "1.17", features = ["full"] }
+walkdir = "2.3"
+
+[dev-dependencies]
+rand = "0.8"
+
