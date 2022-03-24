@@ -1,13 +1,13 @@
 syntax = "proto3";
-package tskv;
+package kv_service;
 
 message PingRequest {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   bytes body = 2;
 }
 
 message PingResponse {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   bytes body = 2;
 }
 
@@ -31,14 +31,14 @@ message FieldInfo {
 }
 
 message AddSeriesRpcRequest {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   uint64 series_id = 2;
   repeated Tag tags = 3;
   repeated FieldInfo fields = 4;
 }
 
 message AddSeriesRpcResponse {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   uint64 series_id = 2;
   repeated Tag tags = 3;
   repeated FieldInfo fields = 4;
@@ -50,23 +50,23 @@ message GetSeriesInfoRpcRequest {
 }
 
 message GetSeriesInfoRpcResponse {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   uint64 series_id = 2;
   repeated Tag tags = 3;
   repeated FieldInfo fields = 4;
 }
 
 message WriteRowsRpcRequest {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   bytes rows = 2;
 }
 
 message WriteRowsRpcResponse {
-  uint64 protocol_version = 1;
+  uint64 version = 1;
   bytes rows = 2;
 }
 
-service TsKv {
+service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse);
 
   rpc AddSeries(AddSeriesRpcRequest) returns (AddSeriesRpcResponse) {};
