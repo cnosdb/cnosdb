@@ -78,6 +78,7 @@ for f in CONFIGURATION_FILES:
 targets = {
     'cnosdb': './cmd/cnosdb',
     'cnosdb-cli': './cmd/cnosdb-cli',
+    'cnosdb_inspect': './cmd/cnosdb_inspect'
 }
 
 supported_builds = {
