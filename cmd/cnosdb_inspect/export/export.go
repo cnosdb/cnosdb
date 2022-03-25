@@ -4,6 +4,11 @@ import (
 	"bufio"
 	"compress/gzip"
 	"fmt"
+	"github.com/cnosdb/cnosdb/pkg/escape"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+	"github.com/spf13/cobra"
 	"io"
 	"math"
 	"os"
@@ -14,15 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"net/http"
-	"log"
-	_ "net/http/pprof"
-
-	"github.com/cnosdb/cnosdb/pkg/escape"
-	"github.com/cnosdb/cnosql"
-	"github.com/cnosdb/db/models"
-	"github.com/cnosdb/db/tsdb/engine/tsm1"
-	"github.com/spf13/cobra"
 )
 
 const examples = `aaa
@@ -35,9 +31,6 @@ var (
 )
 
 func GetCommand() *cobra.Command {
-	go func() {
-		log.Println(http.ListenAndServe(":8086",nil)
-			    }()
 	c := &cobra.Command{
 		Use:     "export",
 		Short:   "exports raw data from a shard to line protocol",
