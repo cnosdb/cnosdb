@@ -20,10 +20,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cnosdb/cnosdb/vend/cnosql"
-	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/client"
 	"github.com/cnosdb/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 
 	"github.com/peterh/liner"
 	"github.com/pkg/errors"
@@ -72,6 +72,7 @@ func (c *CommandLine) Run() error {
 	}
 
 	c.line = liner.NewLiner()
+	fmt.Printf("CnosDB shell version: v%s\n", c.clientVersion)
 	defer func(line *liner.State) {
 		if err := line.Close(); err != nil {
 			fmt.Printf("ERR: cannot close the Liner: %s\n", err)

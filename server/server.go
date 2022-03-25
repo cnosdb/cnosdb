@@ -525,6 +525,31 @@ func writeErrorWithCode(w http.ResponseWriter, errMsg string, code int) {
 	_, _ = w.Write(b)
 }
 
+// httpError writes an error to the client in a standard format.
+func (h *Handler) httpError(w http.ResponseWriter, errmsg string, code int) {
+	if code == http.StatusUnauthorized {
+		// If an unauthorized header will be sent back, add a WWW-Authenticate header
+		// as an authorization challenge.
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=\"%s\"", h.config.Realm))
+	} else if code/100 != 2 {
+		sz := math.Min(float64(len(errmsg)), 1024.0)
+		w.Header().Set("X-CnosDB-Error", errmsg[:int(sz)])
+	}
+	response := Response{Err: errors.New(errmsg)}
+	if rw, ok := w.(ResponseWriter); ok {
+		h.writeHeader(w, code)
+		rw.WriteResponse(response)
+		return
+	}
+
+	// Default implementation if the response writer hasn't been replaced
+	// with our special response writer type.
+	w.Header().Add("Content-Type", "application/json")
+	h.writeHeader(w, code)
+	b, _ := json.Marshal(response)
+	w.Write(b)
+}
+
 func writeJson(w http.ResponseWriter, data interface{}) {
 	js, err := json.MarshalIndent(data, "", " ")
 	if err != nil {
