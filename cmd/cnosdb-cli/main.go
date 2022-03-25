@@ -5,8 +5,6 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/_import"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/cli"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/export"
-
 	"github.com/spf13/cobra"
 )
 
@@ -24,8 +22,6 @@ func main() {
 	cliCmd := cli.GetCommand(version)
 	importCmd := _import.GetCommand()
 	cliCmd.AddCommand(importCmd)
-	exportCmd := export.GetCommand()
-	cliCmd.AddCommand(exportCmd)
 	printVersionCmd := printVersionCmd()
 	cliCmd.AddCommand(printVersionCmd)
 
