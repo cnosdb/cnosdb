@@ -14,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net/http"
+	"log"
+	_ "net/http/pprof"
 
 	"github.com/cnosdb/cnosdb/pkg/escape"
 	"github.com/cnosdb/cnosql"
@@ -32,6 +35,9 @@ var (
 )
 
 func GetCommand() *cobra.Command {
+	go func() {
+		log.Println(http.ListenAndServe(":8086",nil)
+			    }()
 	c := &cobra.Command{
 		Use:     "export",
 		Short:   "exports raw data from a shard to line protocol",
