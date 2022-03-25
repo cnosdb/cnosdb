@@ -76,4 +76,4 @@ var description = `CnosDB shell`
 var examples = `  cnosdb-cli
   cnosdb-cli --format=json --pretty
   cnosdb-cli import --path dba-export.txt
-  cnosdb-cli export --database dba --out dba-export.txt`
+`
