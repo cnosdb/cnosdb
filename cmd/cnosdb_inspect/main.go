@@ -35,7 +35,6 @@ func main() {
 	reportDiakCmd := reportdisk.GetCommand()
 	mainCmd.AddCommand(reportDiakCmd)
        
-	
 	exportCmd := export.GetCommand()
 	mainCmd.AddCommand(exportCmd)
 	
