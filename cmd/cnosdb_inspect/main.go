@@ -9,6 +9,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/deletetsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsmwal"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/export"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +34,11 @@ func main() {
 
 	reportDiakCmd := reportdisk.GetCommand()
 	mainCmd.AddCommand(reportDiakCmd)
-
+       
+	
+	exportCmd := export.GetCommand()
+	mainCmd.AddCommand(exportCmd)
+	
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
 	}
