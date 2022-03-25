@@ -8,3 +8,8 @@ edition = "2021"
 [dependencies]
 actix-rt = "2.7.0"
 protos = {path = "../protos"}
+
+[dev-dependencies]
+flatbuffers = "2.1"
+tonic = "0.6"
+tokio = { version = "1.17", features = ["full"] }
