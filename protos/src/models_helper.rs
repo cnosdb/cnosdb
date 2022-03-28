@@ -68,6 +68,7 @@ pub fn build_delete_range_wal_entry<'a>(
 }
 
 pub fn build_wal_entry<'a>(
+    seq: u64,
     fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
     series_id: u64,
     entry_type: WALEntryType,
@@ -77,6 +78,7 @@ pub fn build_wal_entry<'a>(
     WALEntry::create(
         fbb,
         &WALEntryArgs {
+            seq,
             type_: entry_type,
             series_id,
             value_type,

@@ -322,7 +322,7 @@ impl<T: Scope> CacheInner<T> {
                             self.run_hand_hot(true);
                         } else {
                             // If reference bit is set but it is not in its test period, there are no status
-                            // change as well as HAND_hot actions.
+                            // change as well as HAND_hot actions.
                         }
 
                         // In both of the cases, reference bit is reset, and we move the page to the list head.
@@ -343,7 +343,7 @@ impl<T: Scope> CacheInner<T> {
 
                             // We keep track of the number of non-resident cold pages.
                             // Once the number exceeds _m_, the memory size in the number of pages, we
-                            // terminate the test period of the cold page pointed to by HAND_test.
+                            // terminate the test period of the cold page pointed to by HAND_test.
                             self.update_page_count(
                                 PageCountKind::Cold { resident: true },
                                 PageCountUpdate::Dec,

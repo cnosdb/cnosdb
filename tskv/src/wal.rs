@@ -7,6 +7,8 @@ use snafu::Snafu;
 use protos::models::*;
 use util::direct_fio::{File, FileSync, FileSystem, Options};
 
+use crate::FileManager;
+
 lazy_static! {
     static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new("_.*\\.wal").unwrap();
 }
@@ -21,14 +23,11 @@ pub enum Error {
     #[snafu(display("File {} has wrong name format to have an id", file_name))]
     InvalidFileName { file_name: String },
 
-    #[snafu(display("Unable to open file: {}", source))]
-    UnableToOpenFile { source: std::io::Error },
+    #[snafu(display("Error with file: {}", source))]
+    FileManagerError { source: super::file_manager::Error },
 
-    #[snafu(display("Unable to write file: {}", source))]
-    UnableToWriteBytes { source: std::io::Error },
-
-    #[snafu(display("Unable to sync file: {}", source))]
-    UnableToSyncFile { source: std::io::Error },
+    #[snafu(display("{}", source))]
+    FileIOError { source: std::io::Error },
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -37,7 +36,7 @@ struct WalConfig {}
 
 struct WriteAheadLogManager {
     dir: String,
-    file_system: FileSystem,
+    file_manager: &'static FileManager,
 
     current_dir_path: PathBuf,
     current_file_id: u64,
@@ -45,7 +44,7 @@ struct WriteAheadLogManager {
 }
 
 impl WriteAheadLogManager {
-    pub fn new(dir: String) -> Self {
+    pub fn new(file_manager: &'static FileManager, dir: String) -> Self {
         let mut fs_options = Options::default();
         let fs_options = fs_options
             .max_resident(1)
@@ -54,7 +53,7 @@ impl WriteAheadLogManager {
 
         WriteAheadLogManager {
             dir: dir.clone(),
-            file_system: FileSystem::new(fs_options),
+            file_manager,
 
             current_dir_path: PathBuf::from(dir),
             current_file_id: 0,
@@ -113,9 +112,9 @@ impl WriteAheadLogManager {
     }
 
     fn get_wal_file<P: AsRef<Path>>(&self, path: P) -> Result<File> {
-        self.file_system
+        self.file_manager
             .open(path)
-            .map_err(|err| Error::UnableToOpenFile { source: err })
+            .map_err(|err| Error::FileManagerError { source: err })
     }
 
     fn new_wal_file(&mut self) -> Result<()> {
@@ -125,9 +124,9 @@ impl WriteAheadLogManager {
                 .current_dir_path
                 .join(format!("_{:05}.wal", self.current_file_id));
             self.current_file_writer = Some(
-                self.file_system
+                self.file_manager
                     .open(file_name)
-                    .map_err(|err| Error::UnableToOpenFile { source: err })
+                    .map_err(|err| Error::FileManagerError { source: err })
                     .map(|file| WriteAheadLogDiskFileWriter::new(file))?,
             );
         }
@@ -162,7 +161,7 @@ impl WriteAheadLogManager {
         let writer = &mut self.current_file_writer;
         match writer {
             Some(w) => w.write(entry),
-            None => Err(Error::UnableToWriteBytes {
+            None => Err(Error::FileIOError {
                 source: std::io::Error::new(std::io::ErrorKind::Other, "No writer initialized."),
             }),
         }
@@ -196,7 +195,7 @@ impl WriteAheadLogDiskFileWriter {
         // 3. return bytes writed
         let ret = match self.writer.write_at(self.size, buf) {
             Ok(_) => Ok(buf.len() as u64),
-            Err(err) => Err(Error::UnableToWriteBytes { source: err }),
+            Err(err) => Err(Error::FileIOError { source: err }),
         };
 
         self.writer.sync_all(FileSync::Soft);
@@ -209,13 +208,13 @@ impl WriteAheadLogDiskFileWriter {
     pub fn sync(&self) -> Result<()> {
         self.writer
             .sync_all(FileSync::Soft)
-            .map_err(|err| Error::UnableToSyncFile { source: err })
+            .map_err(|err| Error::FileIOError { source: err })
     }
 
     pub fn flush(&self) -> Result<()> {
         self.writer
             .sync_all(FileSync::Hard)
-            .map_err(|err| Error::UnableToSyncFile { source: err })
+            .map_err(|err| Error::FileIOError { source: err })
     }
 }
 
@@ -250,9 +249,12 @@ mod test {
 
     use chrono::Utc;
     use flatbuffers::{self, Vector, WIPOffset};
+    use lazy_static::lazy_static;
     use rand;
 
     use protos::models::*;
+
+    use crate::FileManager;
 
     use super::WriteAheadLogManager;
 
@@ -397,6 +399,7 @@ mod test {
         WALEntry::create(
             fbb,
             &WALEntryArgs {
+                seq: 1,
                 type_: entry_type,
                 series_id: random_series_id(),
                 value_type: entry_union.0,
@@ -407,7 +410,12 @@ mod test {
 
     #[test]
     fn write_entry() {
-        let mut writer = WriteAheadLogManager::new(String::from("/tmp/test/"));
+        let fs_options = util::direct_fio::Options::default();
+        lazy_static! {
+            static ref FILE_MANAGER: FileManager = FileManager::new();
+        }
+
+        let mut writer = WriteAheadLogManager::new(&FILE_MANAGER, String::from("/tmp/test/"));
         writer.open().unwrap();
 
         for i in 0..10 {
