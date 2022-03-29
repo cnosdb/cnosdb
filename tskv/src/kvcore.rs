@@ -44,7 +44,7 @@ enum KvStatus {
 
 #[allow(dead_code)]
 pub(crate) struct KvContext {
-    pub file_manager: FileManager,
+    pub file_manager: &'static FileManager,
     front_handler: Rc<WorkerQueue>,
     handler: Vec<JoinHandle<()>>,
     status: KvStatus,
@@ -53,7 +53,7 @@ pub(crate) struct KvContext {
 #[allow(dead_code)]
 impl KvContext {
     pub fn new(opt: Options) -> Self {
-        let file_manager = FileManager::new();
+        let file_manager = FileManager::get_instance();
         let front_work_queue = Rc::new(WorkerQueue::new(opt.front_cpu));
         let worker_handle = Vec::with_capacity(opt.back_cpu);
         Self {

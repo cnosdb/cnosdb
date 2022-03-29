@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use once_cell::sync::OnceCell;
 use snafu::Snafu;
 use util::direct_fio;
 
@@ -23,14 +24,21 @@ pub struct FileManager {
 }
 
 impl FileManager {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let fs_options = direct_fio::Options::default();
         return Self {
             file_system: direct_fio::FileSystem::new(&fs_options),
         };
     }
 
-    pub fn open_with(
+    pub fn get_instance() -> &'static Self {
+        static INSTANCE: OnceCell<FileManager> = OnceCell::new();
+        INSTANCE.get_or_init(|| {
+            Self::new()
+        })
+    }
+
+    pub fn open_file_with(
         &self,
         path: impl AsRef<Path>,
         options: &fs::OpenOptions,
@@ -40,13 +48,13 @@ impl FileManager {
             .map_err(|err| Error::UnableToOpenFile { source: err })
     }
 
-    pub fn open(&self, path: impl AsRef<Path>) -> Result<direct_fio::File> {
+    pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_fio::File> {
         self.file_system
             .open(path)
             .map_err(|err| Error::UnableToOpenFile { source: err })
     }
 
-    pub fn create(&self, path: impl AsRef<Path>) -> Result<direct_fio::File> {
+    pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_fio::File> {
         self.file_system
             .create(path)
             .map_err(|err| Error::UnableToOpenFile { source: err })
@@ -62,5 +70,23 @@ impl FileManager {
         self.file_system
             .sync_data(sync)
             .map_err(|err| Error::UnableToSyncFile { source: err })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::FileManager;
+
+    #[test]
+    fn test() {
+        let file_manager_1 = FileManager::get_instance();
+        println!("0x{:X}", file_manager_1 as *const FileManager as usize);
+        let file_manager_2 = FileManager::get_instance();
+        println!("0x{:X}", file_manager_2 as *const FileManager as usize);
+        assert_eq!(file_manager_1 as *const FileManager as usize, file_manager_2 as *const FileManager as usize);
+
+        let file_manager_3 = FileManager::new();
+        println!("0x{:X}", &file_manager_3 as *const FileManager as usize);
+        assert_ne!(file_manager_1 as *const FileManager as usize, &file_manager_3 as *const FileManager as usize);
     }
 }
