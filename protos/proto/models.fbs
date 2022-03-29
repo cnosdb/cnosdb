@@ -61,6 +61,7 @@ union WALEntryUnion {
 }
 
 table WALEntry {
+    seq: uint64;
     type: WALEntryType = Write;
     series_id: uint64;
     value: WALEntryUnion;
