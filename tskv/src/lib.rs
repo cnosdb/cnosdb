@@ -11,6 +11,7 @@ mod option;
 mod points;
 mod runtime;
 mod wal;
+mod tsm;
 
 pub use error::*;
 pub use file_manager::*;
@@ -19,3 +20,4 @@ pub use lru_cache::*;
 pub use memcache::*;
 pub use points::*;
 pub use runtime::*;
+pub use tsm::*;
