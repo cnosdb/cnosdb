@@ -1,6 +1,7 @@
 package dumptsi
 
 import (
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
@@ -48,17 +49,18 @@ func GetCommand() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "dumptsi",
 		Short: "Dumps low-level details about tsi1 files.",
-		PreRun: func(cmd *cobra.Command, args []string) {
-			if opt.paths == nil {
-				fmt.Printf("at least one path required\n\n")
-				os.Exit(0)
-			}
-		},
 		Run: func(cmd *cobra.Command, args []string) {
+			if opt.seriesFilePath == "" {
+				fmt.Println("series file path required")
+			}
+			if len(opt.paths) == 0 {
+				fmt.Println("at least one path required")
+			}
 			if err := run(cmd, args); err != nil {
 				fmt.Println(err)
 			}
-			if opt.measurementFilter != nil {
+			// Parse filters.
+			if measurementFilter != "" {
 				re, err := regexp.Compile(measurementFilter)
 				if err != nil {
 					fmt.Println(err)
@@ -80,9 +82,15 @@ func GetCommand() *cobra.Command {
 				opt.tagValueFilter = re
 			}
 
-			// Validate series file path.
-			if opt.seriesFilePath == "" {
-				fmt.Println("series file path required")
+			// Some flags imply other flags.
+			if opt.showTagValueSeries {
+				opt.showTagValues = true
+			}
+			if opt.showTagValues {
+				opt.showTagKeys = true
+			}
+			if opt.showTagKeys {
+				opt.showMeasurements = true
 			}
 		},
 	}
@@ -98,7 +106,7 @@ func GetCommand() *cobra.Command {
 	c.PersistentFlags().SetOutput(opt.Stdout)
 	return c
 }
-func run(cmd *cobra.Command, args []string) error {
+func run(cmd *cobra.Command, args []string) (rErr error) {
 	sfile := tsdb.NewSeriesFile(opt.seriesFilePath)
 	sfile.Logger = logger.New(os.Stderr)
 	if err := sfile.Open(); err != nil {
@@ -110,6 +118,13 @@ func run(cmd *cobra.Command, args []string) error {
 	idx, fs, err := readFileSet(cmd, sfile)
 	if err != nil {
 		return err
+	}
+	if fs != nil {
+		defer errors2.Capture(&rErr, fs.Close)()
+		defer fs.Release()
+	}
+	if idx != nil {
+		defer errors2.Capture(&rErr, idx.Close)()
 	}
 
 	if opt.showSeries {
@@ -455,40 +470,6 @@ func matchSeries(cmd *cobra.Command, name []byte, tags models.Tags) bool {
 	}
 
 	return true
-}
-
-// printUsage prints the usage message to STDERR.
-func printUsage(cmd *cobra.Command) {
-	usage := `Dumps low-level details about tsi1 files.
-
-Usage: influx_inspect dumptsi [flags] path...
-
-    -series
-            Dump raw series data
-    -measurements
-            Dump raw measurement data
-    -tag-keys
-            Dump raw tag keys
-    -tag-values
-            Dump raw tag values
-    -tag-value-series
-            Dump raw series for each tag value
-    -measurement-filter REGEXP
-            Filters data by measurement regular expression
-    -series-file PATH
-            Path to the "_series" directory under the database data directory.
-            Required.
-    -tag-key-filter REGEXP
-            Filters data by tag key regular expression
-    -tag-value-filter REGEXP
-            Filters data by tag value regular expression
-
-One or more paths are required. Path must specify either a TSI index directory
-or it should specify one or more .tsi/.tsl files. If no flags are specified
-then summary stats are provided for each file.
-`
-
-	fmt.Fprintf(opt.Stdout, usage)
 }
 
 // deletedString returns "(deleted)" if v is true.
