@@ -113,7 +113,7 @@ impl WriteAheadLogManager {
 
     fn get_wal_file<P: AsRef<Path>>(&self, path: P) -> Result<File> {
         self.file_manager
-            .open(path)
+            .open_file(path)
             .map_err(|err| Error::FileManagerError { source: err })
     }
 
@@ -125,7 +125,7 @@ impl WriteAheadLogManager {
                 .join(format!("_{:05}.wal", self.current_file_id));
             self.current_file_writer = Some(
                 self.file_manager
-                    .open(file_name)
+                    .create_file(file_name)
                     .map_err(|err| Error::FileManagerError { source: err })
                     .map(|file| WriteAheadLogDiskFileWriter::new(file))?,
             );
@@ -254,7 +254,7 @@ mod test {
 
     use protos::models::*;
 
-    use crate::FileManager;
+    use crate::{file_manager, FileManager};
 
     use super::WriteAheadLogManager;
 
@@ -410,12 +410,9 @@ mod test {
 
     #[test]
     fn write_entry() {
-        let fs_options = util::direct_fio::Options::default();
-        lazy_static! {
-            static ref FILE_MANAGER: FileManager = FileManager::new();
-        }
+        let file_manager = file_manager::FileManager::get_instance();
 
-        let mut writer = WriteAheadLogManager::new(&FILE_MANAGER, String::from("/tmp/test/"));
+        let mut writer = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
         writer.open().unwrap();
 
         for i in 0..10 {
