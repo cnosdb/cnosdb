@@ -6,13 +6,11 @@ import (
 	"math"
 	"time"
 
-	"github.com/cnosdb/cnosdb/pkg/storage"
 	"github.com/cnosdb/cnosdb/storage/reads/datatypes"
 	"github.com/cnosdb/cnosdb/vend/db/models"
-
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/prometheus/prompb"
-	"google.golang.org/protobuf/types/known/anypb"
+	"github.com/cnosdb/cnosdb/vend/storage"
+	"github.com/gogo/protobuf/types"
+	remote "github.com/prometheus/prometheus/prompb"
 )
 
 const (
@@ -47,7 +45,7 @@ func (e DroppedValuesError) Error() string {
 
 // WriteRequestToPoints converts a Prometheus remote write request of time series and their
 // samples into Points that can be written into CnosDB
-func WriteRequestToPoints(req *prompb.WriteRequest) ([]models.Point, error) {
+func WriteRequestToPoints(req *remote.WriteRequest) ([]models.Point, error) {
 	var maxPoints int
 	for _, ts := range req.Timeseries {
 		maxPoints += len(ts.Samples)
@@ -97,22 +95,22 @@ func WriteRequestToPoints(req *prompb.WriteRequest) ([]models.Point, error) {
 	return points, nil
 }
 
-// ReadRequestToInCnosDBStorageRequest converts a Prometheus remote read request into one using the
+// ReadRequestToCnosDBStorageRequest converts a Prometheus remote read request into one using the
 // new storage API that IFQL uses.
-func ReadRequestToInCnosDBStorageRequest(req *prompb.ReadRequest, db, rp string) (*datatypes.ReadFilterRequest, error) {
+func ReadRequestToCnosDBStorageRequest(req *remote.ReadRequest, db, rp string) (*datatypes.ReadFilterRequest, error) {
 	if len(req.Queries) != 1 {
 		return nil, errors.New("Prometheus read endpoint currently only supports one query at a time")
 	}
 	q := req.Queries[0]
 
-	src, err := anypb.New(&storage.ReadSource{Database: db, RetentionPolicy: rp})
+	src, err := types.MarshalAny(&storage.ReadSource{Database: db, RetentionPolicy: rp})
 	if err != nil {
 		return nil, err
 	}
 
 	sreq := &datatypes.ReadFilterRequest{
 		ReadSource: src,
-		Range: &datatypes.TimestampRange{
+		Range: datatypes.TimestampRange{
 			Start: time.Unix(0, q.StartTimestampMs*int64(time.Millisecond)).UnixNano(),
 			End:   time.Unix(0, q.EndTimestampMs*int64(time.Millisecond)).UnixNano(),
 		},
@@ -143,7 +141,7 @@ func RemoveCnosDBSystemTags(tags models.Tags) models.Tags {
 // predicateFromMatchers takes Prometheus label matchers and converts them to a storage
 // predicate that works with the schema that is written in, which assumes a single field
 // named value
-func predicateFromMatchers(matchers []*prompb.LabelMatcher) (*datatypes.Predicate, error) {
+func predicateFromMatchers(matchers []*remote.LabelMatcher) (*datatypes.Predicate, error) {
 	left, err := nodeFromMatchers(matchers)
 	if err != nil {
 		return nil, err
@@ -152,8 +150,8 @@ func predicateFromMatchers(matchers []*prompb.LabelMatcher) (*datatypes.Predicat
 
 	return &datatypes.Predicate{
 		Root: &datatypes.Node{
-			NodeType: datatypes.Node_TypeLogicalExpression,
-			Value:    &datatypes.Node_Logical_{Logical: datatypes.Node_LogicalAnd},
+			NodeType: datatypes.NodeTypeLogicalExpression,
+			Value:    &datatypes.Node_Logical_{Logical: datatypes.LogicalAnd},
 			Children: []*datatypes.Node{left, right},
 		},
 	}, nil
@@ -164,13 +162,13 @@ func predicateFromMatchers(matchers []*prompb.LabelMatcher) (*datatypes.Predicat
 func fieldNode() *datatypes.Node {
 	children := []*datatypes.Node{
 		&datatypes.Node{
-			NodeType: datatypes.Node_TypeTagRef,
+			NodeType: datatypes.NodeTypeTagRef,
 			Value: &datatypes.Node_TagRefValue{
-				TagRefValue: []byte(fieldTagKey),
+				TagRefValue: fieldTagKey,
 			},
 		},
 		&datatypes.Node{
-			NodeType: datatypes.Node_TypeLiteral,
+			NodeType: datatypes.NodeTypeLiteral,
 			Value: &datatypes.Node_StringValue{
 				StringValue: fieldName,
 			},
@@ -178,13 +176,13 @@ func fieldNode() *datatypes.Node {
 	}
 
 	return &datatypes.Node{
-		NodeType: datatypes.Node_TypeComparisonExpression,
-		Value:    &datatypes.Node_Comparison_{Comparison: datatypes.Node_ComparisonEqual},
+		NodeType: datatypes.NodeTypeComparisonExpression,
+		Value:    &datatypes.Node_Comparison_{Comparison: datatypes.ComparisonEqual},
 		Children: children,
 	}
 }
 
-func nodeFromMatchers(matchers []*prompb.LabelMatcher) (*datatypes.Node, error) {
+func nodeFromMatchers(matchers []*remote.LabelMatcher) (*datatypes.Node, error) {
 	if len(matchers) == 0 {
 		return nil, errors.New("expected matcher")
 	} else if len(matchers) == 1 {
@@ -203,23 +201,23 @@ func nodeFromMatchers(matchers []*prompb.LabelMatcher) (*datatypes.Node, error) 
 
 	children := []*datatypes.Node{left, right}
 	return &datatypes.Node{
-		NodeType: datatypes.Node_TypeLogicalExpression,
-		Value:    &datatypes.Node_Logical_{Logical: datatypes.Node_LogicalAnd},
+		NodeType: datatypes.NodeTypeLogicalExpression,
+		Value:    &datatypes.Node_Logical_{Logical: datatypes.LogicalAnd},
 		Children: children,
 	}, nil
 }
 
-func nodeFromMatcher(m *prompb.LabelMatcher) (*datatypes.Node, error) {
+func nodeFromMatcher(m *remote.LabelMatcher) (*datatypes.Node, error) {
 	var op datatypes.Node_Comparison
 	switch m.Type {
-	case prompb.LabelMatcher_EQ:
-		op = datatypes.Node_ComparisonEqual
-	case prompb.LabelMatcher_NEQ:
-		op = datatypes.Node_ComparisonNotEqual
-	case prompb.LabelMatcher_RE:
-		op = datatypes.Node_ComparisonRegex
-	case prompb.LabelMatcher_NRE:
-		op = datatypes.Node_ComparisonNotRegex
+	case remote.LabelMatcher_EQ:
+		op = datatypes.ComparisonEqual
+	case remote.LabelMatcher_NEQ:
+		op = datatypes.ComparisonNotEqual
+	case remote.LabelMatcher_RE:
+		op = datatypes.ComparisonRegex
+	case remote.LabelMatcher_NRE:
+		op = datatypes.ComparisonNotRegex
 	default:
 		return nil, fmt.Errorf("unknown match type %v", m.Type)
 	}
@@ -230,17 +228,17 @@ func nodeFromMatcher(m *prompb.LabelMatcher) (*datatypes.Node, error) {
 	}
 
 	left := &datatypes.Node{
-		NodeType: datatypes.Node_TypeTagRef,
+		NodeType: datatypes.NodeTypeTagRef,
 		Value: &datatypes.Node_TagRefValue{
-			TagRefValue: []byte(name),
+			TagRefValue: name,
 		},
 	}
 
 	var right *datatypes.Node
 
-	if op == datatypes.Node_ComparisonRegex || op == datatypes.Node_ComparisonNotRegex {
+	if op == datatypes.ComparisonRegex || op == datatypes.ComparisonNotRegex {
 		right = &datatypes.Node{
-			NodeType: datatypes.Node_TypeLiteral,
+			NodeType: datatypes.NodeTypeLiteral,
 			Value: &datatypes.Node_RegexValue{
 				// To comply with PromQL, see
 				// https://github.com/prometheus/prometheus/blob/daf382e4a9f5ca380b2b662c8e60755a56675f14/pkg/labels/regexp.go#L30
@@ -249,7 +247,7 @@ func nodeFromMatcher(m *prompb.LabelMatcher) (*datatypes.Node, error) {
 		}
 	} else {
 		right = &datatypes.Node{
-			NodeType: datatypes.Node_TypeLiteral,
+			NodeType: datatypes.NodeTypeLiteral,
 			Value: &datatypes.Node_StringValue{
 				StringValue: m.Value,
 			},
@@ -258,20 +256,20 @@ func nodeFromMatcher(m *prompb.LabelMatcher) (*datatypes.Node, error) {
 
 	children := []*datatypes.Node{left, right}
 	return &datatypes.Node{
-		NodeType: datatypes.Node_TypeComparisonExpression,
+		NodeType: datatypes.NodeTypeComparisonExpression,
 		Value:    &datatypes.Node_Comparison_{Comparison: op},
 		Children: children,
 	}, nil
 }
 
 // ModelTagsToLabelPairs converts models.Tags to a slice of Prometheus label pairs
-func ModelTagsToLabelPairs(tags models.Tags) []prompb.Label {
-	pairs := make([]prompb.Label, 0, len(tags))
+func ModelTagsToLabelPairs(tags models.Tags) []remote.Label {
+	pairs := make([]remote.Label, 0, len(tags))
 	for _, t := range tags {
 		if string(t.Value) == "" {
 			continue
 		}
-		pairs = append(pairs, prompb.Label{
+		pairs = append(pairs, remote.Label{
 			Name:  string(t.Key),
 			Value: string(t.Value),
 		})
@@ -280,8 +278,8 @@ func ModelTagsToLabelPairs(tags models.Tags) []prompb.Label {
 }
 
 // TagsToLabelPairs converts a map of CnosDB tags into a slice of Prometheus label pairs
-func TagsToLabelPairs(tags map[string]string) []*prompb.Label {
-	pairs := make([]*prompb.Label, 0, len(tags))
+func TagsToLabelPairs(tags map[string]string) []*remote.Label {
+	pairs := make([]*remote.Label, 0, len(tags))
 	for k, v := range tags {
 		if v == "" {
 			// If we select metrics with different sets of labels names,
@@ -292,91 +290,10 @@ func TagsToLabelPairs(tags map[string]string) []*prompb.Label {
 			// to make the result correct.
 			continue
 		}
-		pairs = append(pairs, &prompb.Label{
+		pairs = append(pairs, &remote.Label{
 			Name:  k,
 			Value: v,
 		})
 	}
 	return pairs
-}
-
-// PrometheusToStatistics converts a prometheus metric family (from Registry.Gather)
-// to a []model.Statistics for /debug/vars .
-// This code is strongly inspired by the telegraf prometheus plugin.
-func PrometheusToStatistics(family []*dto.MetricFamily, tags map[string]string) []models.Statistic {
-	statistics := []models.Statistic{}
-	for _, mf := range family {
-		for _, m := range mf.Metric {
-			newTags := make(map[string]string, len(tags)+len(m.Label))
-			for key, value := range tags {
-				newTags[key] = value
-			}
-			for _, lp := range m.Label {
-				newTags[lp.GetName()] = lp.GetValue()
-			}
-
-			// reading fields
-			var fields map[string]interface{}
-			if mf.GetType() == dto.MetricType_SUMMARY {
-				// summary metric
-				fields = makeQuantiles(m)
-				fields["count"] = float64(m.GetSummary().GetSampleCount())
-				fields["sum"] = float64(m.GetSummary().GetSampleSum())
-			} else if mf.GetType() == dto.MetricType_HISTOGRAM {
-				// histogram metric
-				fields = makeBuckets(m)
-				fields["count"] = float64(m.GetHistogram().GetSampleCount())
-				fields["sum"] = float64(m.GetHistogram().GetSampleSum())
-			} else {
-				// standard metric
-				fields = getNameAndValue(m)
-			}
-
-			statistics = append(statistics, models.Statistic{
-				Name:   *mf.Name,
-				Tags:   tags,
-				Values: fields,
-			})
-		}
-	}
-	return statistics
-}
-
-// Get Quantiles from summary metric
-func makeQuantiles(m *dto.Metric) map[string]interface{} {
-	fields := make(map[string]interface{})
-	for _, q := range m.GetSummary().Quantile {
-		if !math.IsNaN(q.GetValue()) {
-			fields[fmt.Sprint(q.GetQuantile())] = float64(q.GetValue())
-		}
-	}
-	return fields
-}
-
-// Get Buckets  from histogram metric
-func makeBuckets(m *dto.Metric) map[string]interface{} {
-	fields := make(map[string]interface{})
-	for _, b := range m.GetHistogram().Bucket {
-		fields[fmt.Sprint(b.GetUpperBound())] = float64(b.GetCumulativeCount())
-	}
-	return fields
-}
-
-// Get name and value from metric
-func getNameAndValue(m *dto.Metric) map[string]interface{} {
-	fields := make(map[string]interface{})
-	if m.Gauge != nil {
-		if !math.IsNaN(m.GetGauge().GetValue()) {
-			fields["gauge"] = float64(m.GetGauge().GetValue())
-		}
-	} else if m.Counter != nil {
-		if !math.IsNaN(m.GetCounter().GetValue()) {
-			fields["counter"] = float64(m.GetCounter().GetValue())
-		}
-	} else if m.Untyped != nil {
-		if !math.IsNaN(m.GetUntyped().GetValue()) {
-			fields["value"] = float64(m.GetUntyped().GetValue())
-		}
-	}
-	return fields
 }
