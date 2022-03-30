@@ -22,9 +22,9 @@ require (
 	github.com/klauspost/pgzip v1.2.5
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mschoch/smat v0.2.0
+	github.com/opentracing/opentracing-go v1.2.0
 	github.com/peterh/liner v1.2.1
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/prometheus v0.0.0-20200609090129-a6600f564e3c
 	github.com/smartystreets/goconvey v1.6.4
 	github.com/soheilhy/cmux v0.1.5
@@ -40,6 +40,7 @@ require (
 	golang.org/x/sys v0.0.0-20210510120138-977fb7262007
 	golang.org/x/text v0.3.7
 	golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1
+	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/fatih/pool.v2 v2.0.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0

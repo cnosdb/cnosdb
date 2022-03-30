@@ -3,10 +3,11 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
-
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -26,8 +27,9 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-
+	"github.com/cnosdb/cnosdb/vend/storage"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/prompb"
@@ -147,6 +149,8 @@ type Handler struct {
 
 	QueryExecutor *query.Executor
 
+	StorageStore *storage.Store
+
 	Monitor interface {
 		Statistics(tags map[string]string) ([]*monitor.Statistic, error)
 		Diagnostics() (map[string]*diagnostics.Diagnostics, error)
@@ -202,6 +206,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		{
 			"write", http.MethodPost, "/write", true, true,
 			h.serveWrite,
+		},
+		{
+			"prometheus-read", // Prometheus remote read
+			"POST", "/api/v1/prom/read", true, true, h.servePromRead,
 		},
 		{
 			"prometheus-write", // Prometheus remote write
@@ -996,6 +1004,132 @@ func convertToEpoch(r *query.Result, epoch string) {
 			}
 		}
 	}
+}
+
+func (h *Handler) servePromRead(w http.ResponseWriter, r *http.Request, user meta.User) {
+	compressed, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req prompb.ReadRequest
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Query the DB and create a ReadResponse for Prometheus
+	db := r.FormValue("db")
+	rp := r.FormValue("rp")
+
+	readRequest, err := prometheus.ReadRequestToCnosDBStorageRequest(&req, db, rp)
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	respond := func(resp *prompb.ReadResponse) {
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			h.httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
+
+		compressed = snappy.Encode(nil, data)
+		if _, err := w.Write(compressed); err != nil {
+			h.httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		atomic.AddInt64(&h.stats.QueryRequestBytesTransmitted, int64(len(compressed)))
+	}
+
+	ctx := context.Background()
+	rs, err := h.StorageStore.ReadFilter(ctx, readRequest)
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp := &prompb.ReadResponse{
+		Results: []*prompb.QueryResult{{}},
+	}
+
+	if rs == nil {
+		respond(resp)
+		return
+	}
+	defer rs.Close()
+
+	for rs.Next() {
+		cur := rs.Cursor()
+		if cur == nil {
+			// no data for series key + field combination
+			continue
+		}
+
+		tags := prometheus.RemoveCnosDBSystemTags(rs.Tags())
+		var unsupportedCursor string
+		switch cur := cur.(type) {
+		case tsdb.FloatArrayCursor:
+			var series *prompb.TimeSeries
+			for {
+				a := cur.Next()
+				if a.Len() == 0 {
+					break
+				}
+
+				// We have some data for this series.
+				if series == nil {
+					series = &prompb.TimeSeries{
+						Labels: prometheus.ModelTagsToLabelPairs(tags),
+					}
+				}
+
+				for i, ts := range a.Timestamps {
+					series.Samples = append(series.Samples, prompb.Sample{
+						Value:     a.Values[i],
+						Timestamp: ts / int64(time.Millisecond),
+					})
+				}
+			}
+
+			// There was data for the series.
+			if series != nil {
+				resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, series)
+			}
+		case tsdb.IntegerArrayCursor:
+			unsupportedCursor = "int64"
+		case tsdb.UnsignedArrayCursor:
+			unsupportedCursor = "uint"
+		case tsdb.BooleanArrayCursor:
+			unsupportedCursor = "bool"
+		case tsdb.StringArrayCursor:
+			unsupportedCursor = "string"
+		default:
+			panic(fmt.Sprintf("unreachable: %T", cur))
+		}
+		cur.Close()
+
+		if len(unsupportedCursor) > 0 {
+			h.logger.Info("Prometheus can't read cursor",
+				zap.String("cursor_type", unsupportedCursor),
+				zap.Stringer("series", tags),
+			)
+		}
+	}
+
+	respond(resp)
 }
 
 // servePromWrite receives data in the Prometheus remote write protocol and writes it to the database

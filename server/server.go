@@ -25,6 +25,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/storage"
 	"github.com/pkg/errors"
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
@@ -277,6 +278,7 @@ func (s *Server) initHTTPServer() error {
 	h.QueryAuthorizer = meta.NewQueryAuthorizer(s.metaClient)
 	h.WriteAuthorizer = meta.NewWriteAuthorizer(s.metaClient)
 	h.QueryExecutor = s.queryExecutor
+	h.StorageStore = storage.NewStore(s.tsdbStore, s.metaClient)
 	h.Monitor = s.monitor
 	h.PointsWriter = s.pointsWriter
 	h.logger = logger.BgLogger()
