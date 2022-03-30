@@ -57,7 +57,7 @@ impl TskvService for TskvServiceImpl {
     }
 
     type WriteRowsStream =
-    Pin<Box<dyn Stream<Item=Result<WriteRowsRpcResponse, Status>> + Send + Sync + 'static>>;
+        Pin<Box<dyn Stream<Item = Result<WriteRowsRpcResponse, Status>> + Send + Sync + 'static>>;
 
     async fn write_rows(
         &self,
