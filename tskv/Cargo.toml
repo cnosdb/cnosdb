@@ -22,7 +22,6 @@ regex = "1.5"
 snafu = "0.7"
 tokio = { version = "1.17", features = ["full"] }
 walkdir = "2.3"
-
 [dev-dependencies]
 rand = "0.8"
 
