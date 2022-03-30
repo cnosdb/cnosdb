@@ -806,6 +806,16 @@ func (s *Shard) MeasurementTagKeyValuesByExpr(auth query.FineAuthorizer, name []
 	return indexSet.MeasurementTagKeyValuesByExpr(auth, name, key, expr, keysSorted)
 }
 
+// MeasurementNamesByPredicate returns fields for a measurement filtered by an expression.
+func (s *Shard) MeasurementNamesByPredicate(expr cnosql.Expr) ([][]byte, error) {
+	index, err := s.Index()
+	if err != nil {
+		return nil, err
+	}
+	indexSet := IndexSet{Indexes: []Index{index}, SeriesFile: s.sfile}
+	return indexSet.MeasurementNamesByPredicate(query.OpenAuthorizer, expr)
+}
+
 // MeasurementFields returns fields for a measurement.
 func (s *Shard) MeasurementFields(name []byte) *MeasurementFields {
 	engine, err := s.Engine()
@@ -1259,6 +1269,38 @@ func (a Shards) FieldKeysByMeasurement(name []byte) []string {
 		all = append(all, mf.FieldKeys())
 	}
 	return slices.MergeSortedStrings(all...)
+}
+
+// MeasurementNamesByPredicate returns the measurements that match the given predicate.
+func (a Shards) MeasurementNamesByPredicate(expr cnosql.Expr) ([][]byte, error) {
+	if len(a) == 1 {
+		return a[0].MeasurementNamesByPredicate(expr)
+	}
+
+	all := make([][][]byte, len(a))
+	for i, shard := range a {
+		names, err := shard.MeasurementNamesByPredicate(expr)
+		if err != nil {
+			return nil, err
+		}
+		all[i] = names
+	}
+	return slices.MergeSortedBytes(all...), nil
+}
+
+// FieldKeysByPredicate returns the field keys for series that match
+// the given predicate.
+func (a Shards) FieldKeysByPredicate(expr cnosql.Expr) (map[string][]string, error) {
+	names, err := a.MeasurementNamesByPredicate(expr)
+	if err != nil {
+		return nil, err
+	}
+
+	all := make(map[string][]string, len(names))
+	for _, name := range names {
+		all[string(name)] = a.FieldKeysByMeasurement(name)
+	}
+	return all, nil
 }
 
 func (a Shards) FieldDimensions(measurements []string) (fields map[string]cnosql.DataType, dimensions map[string]struct{}, err error) {

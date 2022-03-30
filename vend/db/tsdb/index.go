@@ -1346,7 +1346,7 @@ func (is IndexSet) MeasurementNamesByExpr(auth query.FineAuthorizer, expr cnosql
 
 		// Determine if there exists at least one authorised series for the
 		// measurement name.
-		if is.measurementAuthorizedSeries(auth, e) {
+		if is.measurementAuthorizedSeries(auth, e, nil) {
 			names = append(names, e)
 		}
 	}
@@ -1450,12 +1450,122 @@ func (is IndexSet) measurementNamesByNameFilter(auth query.FineAuthorizer, op cn
 			matched = !regex.Match(e)
 		}
 
-		if matched && is.measurementAuthorizedSeries(auth, e) {
+		if matched && is.measurementAuthorizedSeries(auth, e, nil) {
 			names = append(names, e)
 		}
 	}
 	bytesutil.Sort(names)
 	return names, nil
+}
+
+// MeasurementNamesByPredicate returns a slice of measurement names matching the
+// provided condition. If no condition is provided then all names are returned.
+// This behaves differently from MeasurementNamesByExpr because it will
+// return measurements using flux predicates.
+func (is IndexSet) MeasurementNamesByPredicate(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
+	release := is.SeriesFile.Retain()
+	defer release()
+
+	// Return filtered list if expression exists.
+	if expr != nil {
+		names, err := is.measurementNamesByPredicate(auth, expr)
+		if err != nil {
+			return nil, err
+		}
+		return slices.CopyChunkedByteSlices(names, 1000), nil
+	}
+
+	itr, err := is.measurementIterator()
+	if err != nil {
+		return nil, err
+	} else if itr == nil {
+		return nil, nil
+	}
+	defer itr.Close()
+
+	// Iterate over all measurements if no condition exists.
+	var names [][]byte
+	for {
+		e, err := itr.Next()
+		if err != nil {
+			return nil, err
+		} else if e == nil {
+			break
+		}
+
+		// Determine if there exists at least one authorised series for the
+		// measurement name.
+		if is.measurementAuthorizedSeries(auth, e, nil) {
+			names = append(names, e)
+		}
+	}
+	return slices.CopyChunkedByteSlices(names, 1000), nil
+}
+
+func (is IndexSet) measurementNamesByPredicate(auth query.FineAuthorizer, expr cnosql.Expr) ([][]byte, error) {
+	if expr == nil {
+		return nil, nil
+	}
+
+	switch e := expr.(type) {
+	case *cnosql.BinaryExpr:
+		switch e.Op {
+		case cnosql.EQ, cnosql.NEQ, cnosql.EQREGEX, cnosql.NEQREGEX:
+			tag, ok := e.LHS.(*cnosql.VarRef)
+			if !ok {
+				return nil, fmt.Errorf("left side of '%s' must be a tag key", e.Op.String())
+			}
+
+			// Retrieve value or regex expression from RHS.
+			var value string
+			var regex *regexp.Regexp
+			if cnosql.IsRegexOp(e.Op) {
+				re, ok := e.RHS.(*cnosql.RegexLiteral)
+				if !ok {
+					return nil, fmt.Errorf("right side of '%s' must be a regular expression", e.Op.String())
+				}
+				regex = re.Val
+			} else {
+				s, ok := e.RHS.(*cnosql.StringLiteral)
+				if !ok {
+					return nil, fmt.Errorf("right side of '%s' must be a tag value string", e.Op.String())
+				}
+				value = s.Val
+			}
+
+			// Match on name, if specified.
+			if tag.Val == "_name" {
+				return is.measurementNamesByNameFilter(auth, e.Op, value, regex)
+			} else if cnosql.IsSystemName(tag.Val) {
+				return nil, nil
+			}
+			return is.measurementNamesByTagPredicate(auth, e.Op, tag.Val, value, regex)
+
+		case cnosql.OR, cnosql.AND:
+			lhs, err := is.measurementNamesByPredicate(auth, e.LHS)
+			if err != nil {
+				return nil, err
+			}
+
+			rhs, err := is.measurementNamesByPredicate(auth, e.RHS)
+			if err != nil {
+				return nil, err
+			}
+
+			if e.Op == cnosql.OR {
+				return bytesutil.Union(lhs, rhs), nil
+			}
+			return bytesutil.Intersect(lhs, rhs), nil
+
+		default:
+			return nil, fmt.Errorf("invalid tag comparison operator")
+		}
+
+	case *cnosql.ParenExpr:
+		return is.measurementNamesByPredicate(auth, e.Expr)
+	default:
+		return nil, fmt.Errorf("%#v", expr)
+	}
 }
 
 func (is IndexSet) measurementNamesByTagFilter(auth query.FineAuthorizer, op cnosql.Token, key, val string, regex *regexp.Regexp) ([][]byte, error) {
@@ -1566,7 +1676,7 @@ func (is IndexSet) measurementNamesByTagFilter(auth query.FineAuthorizer, op cno
 		// an authorized series belonging to the measurement must be located.
 		// Then, the measurement can be added iff !tagMatch && authorized.
 		if (op == cnosql.NEQ || op == cnosql.NEQREGEX) && !tagMatch {
-			authorized = is.measurementAuthorizedSeries(auth, me)
+			authorized = is.measurementAuthorizedSeries(auth, me, nil)
 		}
 
 		// tags match | operation is EQ | measurement matches
@@ -1585,11 +1695,78 @@ func (is IndexSet) measurementNamesByTagFilter(auth query.FineAuthorizer, op cno
 	return names, nil
 }
 
+func (is IndexSet) measurementNamesByTagPredicate(auth query.FineAuthorizer, op cnosql.Token, key, val string, regex *regexp.Regexp) ([][]byte, error) {
+	var names [][]byte
+
+	mitr, err := is.measurementIterator()
+	if err != nil {
+		return nil, err
+	} else if mitr == nil {
+		return nil, nil
+	}
+	defer mitr.Close()
+
+	var checkMeasurement func(auth query.FineAuthorizer, me []byte) (bool, error)
+	switch op {
+	case cnosql.EQ:
+		checkMeasurement = func(auth query.FineAuthorizer, me []byte) (bool, error) {
+			return is.measurementHasTagValue(auth, me, []byte(key), []byte(val))
+		}
+	case cnosql.NEQ:
+		checkMeasurement = func(auth query.FineAuthorizer, me []byte) (bool, error) {
+			// If there is an authorized series in this measurement and that series
+			// does not contain the tag key/value.
+			ok := is.measurementAuthorizedSeries(auth, me, func(tags models.Tags) bool {
+				return tags.GetString(key) == val
+			})
+			return ok, nil
+		}
+	case cnosql.EQREGEX:
+		checkMeasurement = func(auth query.FineAuthorizer, me []byte) (bool, error) {
+			return is.measurementHasTagValueRegex(auth, me, []byte(key), regex)
+		}
+	case cnosql.NEQREGEX:
+		checkMeasurement = func(auth query.FineAuthorizer, me []byte) (bool, error) {
+			// If there is an authorized series in this measurement and that series
+			// does not contain the tag key/value.
+			ok := is.measurementAuthorizedSeries(auth, me, func(tags models.Tags) bool {
+				return regex.MatchString(tags.GetString(key))
+			})
+			return ok, nil
+		}
+	default:
+		return nil, fmt.Errorf("unsupported operand: %s", op)
+	}
+
+	for {
+		me, err := mitr.Next()
+		if err != nil {
+			return nil, err
+		} else if me == nil {
+			break
+		}
+
+		ok, err := checkMeasurement(auth, me)
+		if err != nil {
+			return nil, err
+		} else if ok {
+			names = append(names, me)
+		}
+	}
+
+	bytesutil.Sort(names)
+	return names, nil
+}
+
 // measurementAuthorizedSeries determines if the measurement contains a series
 // that is authorized to be read.
-func (is IndexSet) measurementAuthorizedSeries(auth query.FineAuthorizer, name []byte) bool {
-	if query.AuthorizerIsOpen(auth) {
+func (is IndexSet) measurementAuthorizedSeries(auth query.FineAuthorizer, name []byte, exclude func(tags models.Tags) bool) bool {
+	if query.AuthorizerIsOpen(auth) && exclude == nil {
 		return true
+	}
+
+	if auth == nil {
+		auth = query.OpenAuthorizer
 	}
 
 	sitr, err := is.measurementSeriesIDIterator(name)
@@ -1611,7 +1788,147 @@ func (is IndexSet) measurementAuthorizedSeries(auth query.FineAuthorizer, name [
 
 		name, tags := is.SeriesFile.Series(series.SeriesID)
 		if auth.AuthorizeSeriesRead(is.Database(), name, tags) {
+			if exclude != nil && exclude(tags) {
+				continue
+			}
 			return true
+		}
+	}
+}
+
+func (is IndexSet) measurementHasTagValue(auth query.FineAuthorizer, me, key, value []byte) (bool, error) {
+	if len(value) == 0 {
+		return is.measurementHasEmptyTagValue(auth, me, key)
+	}
+
+	hasTagValue, err := is.HasTagValue(me, key, value)
+	if err != nil || !hasTagValue {
+		return false, err
+	}
+
+	// If the authorizer is open, return true.
+	if query.AuthorizerIsOpen(auth) {
+		return true, nil
+	}
+
+	// When an authorizer is present, the measurement should be
+	// included only if one of it's series is authorized.
+	sitr, err := is.tagValueSeriesIDIterator(me, key, value)
+	if err != nil || sitr == nil {
+		return false, err
+	}
+	defer sitr.Close()
+	sitr = FilterUndeletedSeriesIDIterator(is.SeriesFile, sitr)
+
+	// Locate a series with this matching tag value that's authorized.
+	for {
+		se, err := sitr.Next()
+		if err != nil || se.SeriesID == 0 {
+			return false, err
+		}
+
+		name, tags := is.SeriesFile.Series(se.SeriesID)
+		if auth.AuthorizeSeriesRead(is.Database(), name, tags) {
+			return true, nil
+		}
+	}
+}
+
+func (is IndexSet) measurementHasEmptyTagValue(auth query.FineAuthorizer, me, key []byte) (bool, error) {
+	// Any series that does not have a tag key
+	// has an empty tag value for that key.
+	// Iterate through all of the series to find one
+	// series that does not have the tag key.
+	sitr, err := is.measurementSeriesIDIterator(me)
+	if err != nil || sitr == nil {
+		return false, err
+	}
+	defer sitr.Close()
+	sitr = FilterUndeletedSeriesIDIterator(is.SeriesFile, sitr)
+
+	for {
+		series, err := sitr.Next()
+		if err != nil || series.SeriesID == 0 {
+			return false, err
+		}
+
+		name, tags := is.SeriesFile.Series(series.SeriesID)
+		if len(tags.Get(key)) > 0 {
+			// The tag key exists in this series. We need
+			// at least one series that does not have the tag
+			// keys.
+			continue
+		}
+
+		// Verify that we can see this series.
+		if query.AuthorizerIsOpen(auth) {
+			return true, nil
+		} else if auth.AuthorizeSeriesRead(is.Database(), name, tags) {
+			return true, nil
+		}
+	}
+}
+
+func (is IndexSet) measurementHasTagValueRegex(auth query.FineAuthorizer, me, key []byte, value *regexp.Regexp) (bool, error) {
+	// If the regex matches the empty string, do a special check to see
+	// if we have an empty tag value.
+	if matchEmpty := value.MatchString(""); matchEmpty {
+		if ok, err := is.measurementHasEmptyTagValue(auth, me, key); err != nil {
+			return false, err
+		} else if ok {
+			return true, nil
+		}
+	}
+
+	// Iterate over the tag values and find one that matches the value.
+	vitr, err := is.tagValueIterator(me, key)
+	if err != nil || vitr == nil {
+		return false, err
+	}
+	defer vitr.Close()
+
+	for {
+		ve, err := vitr.Next()
+		if err != nil || ve == nil {
+			return false, err
+		}
+
+		if !value.Match(ve) {
+			// The regex does not match this tag value.
+			continue
+		}
+
+		// If the authorizer is open, then we have found a suitable tag value.
+		if query.AuthorizerIsOpen(auth) {
+			return true, nil
+		}
+
+		// When an authorizer is present, the measurement should only be included
+		// if one of the series is authorized.
+		if authorized, err := func() (bool, error) {
+			sitr, err := is.tagValueSeriesIDIterator(me, key, ve)
+			if err != nil || sitr == nil {
+				return false, err
+			}
+			defer sitr.Close()
+			sitr = FilterUndeletedSeriesIDIterator(is.SeriesFile, sitr)
+
+			// Locate an authorized series.
+			for {
+				se, err := sitr.Next()
+				if err != nil || se.SeriesID == 0 {
+					return false, err
+				}
+
+				name, tags := is.SeriesFile.Series(se.SeriesID)
+				if auth.AuthorizeSeriesRead(is.Database(), name, tags) {
+					return true, nil
+				}
+			}
+		}(); err != nil {
+			return false, err
+		} else if authorized {
+			return true, nil
 		}
 	}
 }

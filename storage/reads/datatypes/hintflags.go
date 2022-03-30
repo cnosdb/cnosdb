@@ -1,42 +1,47 @@
 package datatypes
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/gogo/protobuf/proto"
+)
 
 type HintFlags uint32
 
 func (h HintFlags) NoPoints() bool {
-	return uint32(h)&uint32(ReadGroupRequest_HintNoPoints) != 0
+	return uint32(h)&uint32(HintNoPoints) != 0
 }
 
 func (h *HintFlags) SetNoPoints() {
-	*h |= HintFlags(ReadGroupRequest_HintNoPoints)
+	*h |= HintFlags(HintNoPoints)
 }
 
 func (h HintFlags) NoSeries() bool {
-	return uint32(h)&uint32(ReadGroupRequest_HintNoSeries) != 0
+	return uint32(h)&uint32(HintNoSeries) != 0
 }
 
 func (h *HintFlags) SetNoSeries() {
-	*h |= HintFlags(ReadGroupRequest_HintNoSeries)
+	*h |= HintFlags(HintNoSeries)
 }
 
 func (h HintFlags) HintSchemaAllTime() bool {
-	return uint32(h)&uint32(ReadGroupRequest_HintSchemaAllTime) != 0
+	return uint32(h)&uint32(HintSchemaAllTime) != 0
 }
 
 func (h *HintFlags) SetHintSchemaAllTime() {
-	*h |= HintFlags(ReadGroupRequest_HintSchemaAllTime)
+	*h |= HintFlags(HintSchemaAllTime)
 }
 
 func (h HintFlags) String() string {
 	f := uint32(h)
 
 	var s []string
+	enums := proto.EnumValueMap("influxdata.platform.storage.ReadRequest_HintFlags")
 	if h == 0 {
 		return "HINT_NONE"
 	}
 
-	for k, v := range ReadGroupRequest_HintFlags_value {
+	for k, v := range enums {
 		if v == 0 {
 			continue
 		}

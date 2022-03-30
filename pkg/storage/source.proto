@@ -1,6 +1,6 @@
 syntax = "proto3";
 package com.github.cnosdb.cnosdb.pkg.storage;
-option go_package = ".;storage";
+option go_package = "./;storage";
 
 message ReadSource {
   // Database identifies which database to query.
