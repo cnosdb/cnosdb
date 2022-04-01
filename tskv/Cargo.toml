@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 protos = { path = "../protos" }
-util = { path = "../util" }
 
 chrono = "0.4"
 core_affinity = "0.5.10"
@@ -22,6 +21,14 @@ regex = "1.5"
 snafu = "0.7"
 tokio = { version = "1.17", features = ["full"] }
 walkdir = "2.3"
+async-trait = "0.1"
+bytes = "1.1"
+dashmap = "5.2"
+evmap = "10.0"
+page_size = "0.4"
+parking_lot = "0.12"
+static_assertions = "1.1"
+
 [dev-dependencies]
 rand = "0.8"
-
+tempfile = "3"
