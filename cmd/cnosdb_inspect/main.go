@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/buildtsi"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reportdisk"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
@@ -34,14 +35,16 @@ func main() {
 
 	reportDiakCmd := reportdisk.GetCommand()
 	mainCmd.AddCommand(reportDiakCmd)
-       
+
 	exportCmd := export.GetCommand()
 	mainCmd.AddCommand(exportCmd)
-	
+
+	buildTsiCmd := buildtsi.GetCommand()
+	mainCmd.AddCommand(buildTsiCmd)
+
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
 	}
-
 }
 
 func GetCommand() *cobra.Command {
