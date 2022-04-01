@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/buildtsi"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/deletetsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsmwal"
@@ -41,6 +42,8 @@ func main() {
 	exportCmd := export.GetCommand()
 	mainCmd.AddCommand(exportCmd)
 
+	buildTsiCmd := buildtsi.GetCommand()
+	mainCmd.AddCommand(buildTsiCmd)
 
 	reporttsiCmd := reporttsi.GetCommand()
 	mainCmd.AddCommand(reporttsiCmd)
@@ -48,11 +51,9 @@ func main() {
 	reportCmd := report.GetCommand()
 	mainCmd.AddCommand(reportCmd)
 
-
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
 	}
-
 }
 
 func GetCommand() *cobra.Command {
