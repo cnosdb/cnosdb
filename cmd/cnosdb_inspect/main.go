@@ -7,6 +7,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsmwal"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/export"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reporttsi"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/report"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reportdisk"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
@@ -40,8 +41,13 @@ func main() {
 	exportCmd := export.GetCommand()
 	mainCmd.AddCommand(exportCmd)
 
+
+	reporttsiCmd := reporttsi.GetCommand()
+	mainCmd.AddCommand(reporttsiCmd)
+
 	reportCmd := report.GetCommand()
 	mainCmd.AddCommand(reportCmd)
+
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
