@@ -2,14 +2,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reportdisk"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/deletetsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsmwal"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/export"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reportdisk"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reporttsi"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
+
 	"github.com/spf13/cobra"
 )
 
@@ -34,10 +36,13 @@ func main() {
 
 	reportDiakCmd := reportdisk.GetCommand()
 	mainCmd.AddCommand(reportDiakCmd)
-       
+
 	exportCmd := export.GetCommand()
 	mainCmd.AddCommand(exportCmd)
-	
+
+	reporttsiCmd := reporttsi.GetCommand()
+	mainCmd.AddCommand(reporttsiCmd)
+
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
 	}
