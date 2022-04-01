@@ -2,13 +2,6 @@ package buildtsi
 
 import (
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 	"io"
 	"io/ioutil"
 	"os"
@@ -18,6 +11,15 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	
+	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
+	
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 const defaultBatchSize = 10000
@@ -81,7 +83,7 @@ func run(dataDir, walDir string) error {
 	if isRoot() {
 		fmt.Println("You are currently running as root. This will build your")
 		fmt.Println("index files with root ownership and will be inaccessible")
-		fmt.Println("if you run influxd as a non-root user. You should run")
+		fmt.Println("if you run cnosdb as a non-root user. You should run")
 		fmt.Println("buildtsi as the same user you are running cnosdb.")
 		fmt.Print("Are you sure you want to continue? (y/N): ")
 		var answer string
