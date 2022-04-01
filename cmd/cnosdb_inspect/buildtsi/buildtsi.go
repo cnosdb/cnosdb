@@ -54,7 +54,7 @@ var opt = NewOptions()
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "buildtsi",
-		Short: "xxx",
+		Short: "Builds TSI (Time Series Index) disk-based shard index files and associated series files.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(opt.dataDir, opt.walDir)
 		},
@@ -63,7 +63,6 @@ func GetCommand() *cobra.Command {
 	c.PersistentFlags().StringVar(&opt.walDir, "waldir", "", "WAL directory")
 
 	c.PersistentFlags().IntVar(&opt.concurrency, "concurrency", runtime.GOMAXPROCS(0), "Number of workers to dedicate to shard index building. Defaults to GOMAXPROCS")
-	c.PersistentFlags().StringVar(&opt.databaseFilter, "database", "", "optional: database name")
 	c.PersistentFlags().StringVar(&opt.databaseFilter, "database", "", "optional: database name")
 	c.PersistentFlags().StringVar(&opt.retentionFilter, "retention", "", "optional: retention policy")
 	c.PersistentFlags().StringVar(&opt.shardFilter, "shard", "", "optional: shard id")
