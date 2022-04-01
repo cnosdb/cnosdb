@@ -26,6 +26,7 @@ require (
 	github.com/peterh/liner v1.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/prometheus v0.0.0-20200609090129-a6600f564e3c
+	github.com/retailnext/hllpp v1.0.1-0.20180308014038-101a6d2f8b52
 	github.com/smartystreets/goconvey v1.6.4
 	github.com/soheilhy/cmux v0.1.5
 	github.com/spf13/cast v1.3.1
