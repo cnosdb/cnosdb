@@ -962,10 +962,6 @@ func (c *CommandLine) printSettings() {
 }
 
 func (c *CommandLine) logo() {
-	//logo, err := ioutil.ReadFile("cmd/cnosdb-cli/cli/logo")
-	//if err != nil {
-	//	panic(err)
-	//}
 	logo :=
 `
                                   _   _
