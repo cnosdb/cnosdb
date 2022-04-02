@@ -5,7 +5,7 @@ use tokio::sync::oneshot;
 use crate::error::Result;
 use crate::option::Options;
 use crate::option::QueryOption;
-use crate::FileManager;
+use crate::{FileManager, wal};
 use crate::WorkerQueue;
 use std::thread::JoinHandle;
 
@@ -45,6 +45,7 @@ enum KvStatus {
 #[allow(dead_code)]
 pub(crate) struct KvContext {
     pub file_manager: &'static FileManager,
+    wal_manager: wal::WriteAheadLogManager,
     front_handler: Rc<WorkerQueue>,
     handler: Vec<JoinHandle<()>>,
     status: KvStatus,
@@ -57,7 +58,8 @@ impl KvContext {
         let front_work_queue = Rc::new(WorkerQueue::new(opt.front_cpu));
         let worker_handle = Vec::with_capacity(opt.back_cpu);
         Self {
-            file_manager: file_manager,
+            file_manager,
+            wal_manager: wal::WriteAheadLogManager::new(file_manager, opt.wal),
             front_handler: front_work_queue,
             handler: worker_handle,
             status: KvStatus::Init,

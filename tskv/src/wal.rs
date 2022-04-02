@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, marker::PhantomData,
 };
 
 use lazy_static::lazy_static;
@@ -10,7 +10,7 @@ use crate::direct_io::{File, FileCursor, FileSync, FileSystem, Options};
 use protos::models::*;
 use walkdir::IntoIter;
 
-use crate::FileManager;
+use crate::{FileManager, option};
 
 lazy_static! {
     static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new("_.*\\.wal").unwrap();
@@ -47,8 +47,9 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 struct WalConfig {}
 
-struct WriteAheadLogManager {
-    dir: String,
+pub struct WriteAheadLogManager {
+    config: option::WriteAheadLog,
+
     file_manager: &'static FileManager,
     crc_algorithm: &'static crc::Algorithm<u32>,
 
@@ -58,15 +59,18 @@ struct WriteAheadLogManager {
 }
 
 impl WriteAheadLogManager {
-    pub fn new(file_manager: &'static FileManager, dir: String) -> Self {
+    pub fn new(file_manager: &'static FileManager, config: option::WriteAheadLog) -> Self {
         let mut fs_options = Options::default();
         let fs_options = fs_options
             .max_resident(1)
             .max_non_resident(0)
             .page_len_scale(1);
 
+        let dir = config.dir.clone();
+
         WriteAheadLogManager {
-            dir: dir.clone(),
+            config,
+
             file_manager,
             crc_algorithm: &WAL_CRC_ALGORITHM,
 
@@ -158,7 +162,7 @@ impl WriteAheadLogManager {
     }
 
     pub fn open(&mut self) -> Result<()> {
-        let segments = Self::list_wal_filenames(&self.dir);
+        let segments = Self::list_wal_filenames(&self.config.dir);
         if segments.len() > 0 {
             let last = segments.last().unwrap();
             let id = Self::get_id_by_file_name(last)?;
@@ -183,6 +187,25 @@ impl WriteAheadLogManager {
     }
 }
 
+/// Get a WriteAheadLogReader. Used for loading file to cache.
+/// ```
+/// use util::direct_fio::{File, FileSystem, Options};
+///
+/// let file_system: FileSystem = FileSystem::new(&Options::default());
+/// let file: File = file_system.open("_00001.wal").unwrap();
+///
+/// let mut reader: WriteAheadLogReader = reader(file);
+/// while let Some(block) = reader.next_wal_entry() {
+///     // ...
+/// }
+/// ```
+pub fn reader<'a>(f: File) -> WriteAheadLogReader<'a> {
+    WriteAheadLogReader {
+        cursor: f.into_cursor(),
+        phantom: PhantomData,
+    }
+}
+
 fn get_checksum(data: &[u8]) -> u32 {
     // TODO: can crc::Crc be global, or a singleton instance
     let crc_builder = crc::Crc::<u32>::new(&WAL_CRC_ALGORITHM);
@@ -192,9 +215,9 @@ fn get_checksum(data: &[u8]) -> u32 {
 }
 
 pub struct WriteAheadLogBlock {
-    crc: u32,
-    len: u32,
-    buf: Vec<u8>,
+    pub crc: u32,
+    pub len: u32,
+    pub buf: Vec<u8>,
 }
 
 impl WriteAheadLogBlock {
@@ -219,7 +242,7 @@ impl<'a> From<&'a WriteAheadLogBlock> for WALEntry<'a> {
     }
 }
 
-pub struct WriteAheadLogDiskFileWriter {
+struct WriteAheadLogDiskFileWriter {
     cursor: FileCursor,
     size: u64,
 }
@@ -245,6 +268,7 @@ impl WriteAheadLogDiskFileWriter {
             .write(crc.to_be_bytes().as_slice())
             .and_then(|()| self.cursor.write(data_len.to_be_bytes().as_slice()))
             .and_then(|()| self.cursor.write(data))
+            // TODO: run sync in a Future
             .and_then(|()| self.cursor.sync_all(FileSync::Soft))
             .context(FailedWithStdIOSnafu);
 
@@ -266,11 +290,9 @@ impl WriteAheadLogDiskFileWriter {
     }
 }
 
-struct WriteAheadLogReader<'a> {
+pub struct WriteAheadLogReader<'a> {
     cursor: FileCursor,
-
-    data_buf: Option<Vec<u8>>,
-    wal_entry: Option<WALEntry<'a>>,
+    phantom: PhantomData<&'a Self>,
 }
 
 // pub(crate) fn pread_exact_or_eof(
@@ -298,8 +320,7 @@ impl WriteAheadLogReader<'_> {
     pub fn new(cursor: FileCursor) -> Self {
         Self {
             cursor,
-            data_buf: None,
-            wal_entry: None,
+            phantom: PhantomData
         }
     }
 
@@ -308,7 +329,6 @@ impl WriteAheadLogReader<'_> {
 
         dbg!(self.cursor.pos());
         let read_bytes = self.cursor.read(&mut header_buf[..]).unwrap();
-        dbg!(self.cursor.pos());
         if read_bytes < 8 {
             return None;
         }
@@ -320,14 +340,13 @@ impl WriteAheadLogReader<'_> {
         }
         dbg!(data_len);
 
-        // TODO use a sync pool
+        // TODO use a synchronized pool to get buffer
         let mut buf = vec![0_u8; 1024];
         dbg!(self.cursor.pos());
         let read_bytes = self
             .cursor
             .read(&mut buf.as_mut_slice()[0..data_len as usize])
             .unwrap();
-        dbg!(self.cursor.pos());
 
         Some(WriteAheadLogBlock {
             crc,
@@ -352,7 +371,7 @@ mod test {
     use crate::{
         file_manager,
         wal::{get_checksum, WriteAheadLogReader},
-        FileManager,
+        FileManager, option,
     };
 
     use super::{WriteAheadLogBlock, WriteAheadLogManager};
@@ -511,7 +530,12 @@ mod test {
     fn test_write_entry() {
         let file_manager = file_manager::FileManager::get_instance();
 
-        let mut mgr = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
+        let wal_config = option::WriteAheadLog {
+            enabled: true,
+            dir: String::from("/tmp/test/"),
+        };
+
+        let mut mgr = WriteAheadLogManager::new(&file_manager, wal_config);
         mgr.open().unwrap();
 
         for i in 0..10 {
@@ -532,7 +556,12 @@ mod test {
     fn test_read_entry() {
         let file_manager = file_manager::FileManager::get_instance();
 
-        let mut mgr = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test"));
+        let wal_config = crate::option::WriteAheadLog {
+            enabled: true,
+            dir: String::from("/tmp/test/"),
+        };
+
+        let mut mgr = WriteAheadLogManager::new(&file_manager, wal_config);
         mgr.open().unwrap();
 
         let cursor = mgr.current_file_writer.unwrap().cursor;
@@ -551,8 +580,13 @@ mod test {
     #[test]
     fn test_read_and_write() {
         let file_manager = file_manager::FileManager::get_instance();
+        
+        let wal_config = crate::option::WriteAheadLog {
+            enabled: true,
+            dir: String::from("/tmp/test/"),
+        };
 
-        let mut mgr = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
+        let mut mgr = WriteAheadLogManager::new(&file_manager, wal_config);
         mgr.open().unwrap();
 
         for i in 0..10 {
