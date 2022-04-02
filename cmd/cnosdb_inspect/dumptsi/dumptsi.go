@@ -1,6 +1,7 @@
 package dumptsi
 
 import (
+	"errors"
 	"fmt"
 	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"github.com/cnosdb/cnosdb/vend/db/logger"
@@ -49,6 +50,7 @@ func GetCommand() *cobra.Command {
 		Use:   "dumptsi",
 		Short: "Dumps low-level details about tsi1 files.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			opt.paths = args
 			if measurementFilter != "" {
 				re, err := regexp.Compile(measurementFilter)
 				if err != nil {
@@ -71,13 +73,10 @@ func GetCommand() *cobra.Command {
 				opt.tagValueFilter = re
 			}
 			if opt.seriesFilePath == "" {
-				fmt.Println("series file path required")
-				return nil
+				return errors.New("series file path required")
 			}
-			opt.paths = args
 			if opt.paths == nil {
-				fmt.Println("at least one path required")
-				return nil
+				return errors.New("at least one path required")
 			}
 			// Some flags imply other flags.
 			if opt.showTagValueSeries {
