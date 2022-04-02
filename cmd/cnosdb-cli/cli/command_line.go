@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -963,10 +962,31 @@ func (c *CommandLine) printSettings() {
 }
 
 func (c *CommandLine) logo() {
-	logo, err := ioutil.ReadFile("cmd/cnosdb-cli/cli/logo")
-	if err != nil {
-		panic(err)
-	}
+	//logo, err := ioutil.ReadFile("cmd/cnosdb-cli/cli/logo")
+	//if err != nil {
+	//	panic(err)
+	//}
+	logo :=
+`
+                                  _   _
+                                 | | | |
+  ___   _ __     ___    ___    __| | | |__
+ / __| | '_    / _   / __|  / _  | | '_
+| (__  | | | | | (_) | __  | (_| | | |_) |
+  ___| |_| |_|  ___/  |___/  __,_| |_.__/
+
+
+-----------------------------------------------------------------------------------------
+我要立Flag:
+| **GitHub User ID** | **Goal**                    | **Due Date**   | **Penalty**       |
+| ------------------ | --------------------------- | -------------- | ----------------- |
+|  GIS-PuppetMaster  |         中顶会/ESI           |   2022/12/31   |       继续投       |
+|  Leowner           |     做一个完整的feature       |   2022/09/01   |  戒饮料一个月      |
+|  YunneWH           |     愿天下没有战事~           |   2022/03/31   |  没有VAIO或者M1 Ultra|
+|  BenTown           |     完成《诗云》App           |   2022/05/31   |  没有喀什旅行        |
+|  Vrg000            |     完成8块腹肌合一           |   2022/12/12   |   直播吃翔            |
+|  YichengZHU        |     减肥！！！                |   2022/6/1     |   给liuliu买买买   |
+`
 	fmt.Println(string(logo))
 }
 
