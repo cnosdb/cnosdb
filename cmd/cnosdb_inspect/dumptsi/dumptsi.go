@@ -1,6 +1,7 @@
 package dumptsi
 
 import (
+	"fmt"
 	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
@@ -8,8 +9,6 @@ import (
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
 	"github.com/spf13/cobra"
-
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,8 +34,6 @@ type Options struct {
 	tagValueFilter    *regexp.Regexp
 }
 
-var opt = NewOptions()
-
 func NewOptions() *Options {
 	return &Options{
 		Stderr: os.Stderr,
@@ -44,44 +41,44 @@ func NewOptions() *Options {
 	}
 }
 
+var opt = NewOptions()
+
 func GetCommand() *cobra.Command {
 	var measurementFilter, tagKeyFilter, tagValueFilter string
 	c := &cobra.Command{
 		Use:   "dumptsi",
 		Short: "Dumps low-level details about tsi1 files.",
-		Run: func(cmd *cobra.Command, args []string) {
-			if opt.seriesFilePath == "" {
-				fmt.Println("series file path required")
-			}
-			if len(opt.paths) == 0 {
-				fmt.Println("at least one path required")
-			}
-			if err := run(cmd, args); err != nil {
-				fmt.Println(err)
-			}
-			// Parse filters.
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if measurementFilter != "" {
 				re, err := regexp.Compile(measurementFilter)
 				if err != nil {
-					fmt.Println(err)
+					return err
 				}
 				opt.measurementFilter = re
 			}
 			if tagKeyFilter != "" {
 				re, err := regexp.Compile(tagKeyFilter)
 				if err != nil {
-					fmt.Println(err)
+					return err
 				}
 				opt.tagKeyFilter = re
 			}
 			if tagValueFilter != "" {
 				re, err := regexp.Compile(tagValueFilter)
 				if err != nil {
-					fmt.Println(err)
+					return err
 				}
 				opt.tagValueFilter = re
 			}
-
+			if opt.seriesFilePath == "" {
+				fmt.Println("series file path required")
+				return nil
+			}
+			opt.paths = args
+			if opt.paths == nil {
+				fmt.Println("at least one path required")
+				return nil
+			}
 			// Some flags imply other flags.
 			if opt.showTagValueSeries {
 				opt.showTagValues = true
@@ -92,6 +89,7 @@ func GetCommand() *cobra.Command {
 			if opt.showTagKeys {
 				opt.showMeasurements = true
 			}
+			return opt.run()
 		},
 	}
 	c.PersistentFlags().StringVar(&opt.seriesFilePath, "series-file", "", "Path to series file")
@@ -106,16 +104,16 @@ func GetCommand() *cobra.Command {
 	c.PersistentFlags().SetOutput(opt.Stdout)
 	return c
 }
-func run(cmd *cobra.Command, args []string) (rErr error) {
+func (opt *Options) run() (rErr error) {
 	sfile := tsdb.NewSeriesFile(opt.seriesFilePath)
-	sfile.Logger = logger.New(os.Stderr)
+	sfile.Logger = logger.New(opt.Stderr)
 	if err := sfile.Open(); err != nil {
 		return err
 	}
 	defer sfile.Close()
 
 	// Build a file set from the paths on the command line.
-	idx, fs, err := readFileSet(cmd, sfile)
+	idx, fs, err := opt.readFileSet(sfile)
 	if err != nil {
 		return err
 	}
@@ -128,23 +126,20 @@ func run(cmd *cobra.Command, args []string) (rErr error) {
 	}
 
 	if opt.showSeries {
-		if err := printSeries(cmd, sfile); err != nil {
+		if err := opt.printSeries(sfile); err != nil {
 			return err
 		}
 	}
 
 	// If this is an ad-hoc fileset then process it and close afterward.
 	if fs != nil {
-		defer fs.Release()
-		defer fs.Close()
 		if opt.showSeries || opt.showMeasurements {
-			return printMeasurements(cmd, sfile, fs)
+			return opt.printMeasurements(sfile, fs)
 		}
-		return printFileSummaries(cmd, fs)
+		return opt.printFileSummaries(fs)
 	}
 
 	// Otherwise iterate over each partition in the index.
-	defer idx.Close()
 	for i := 0; i < int(idx.PartitionN); i++ {
 		if err := func() error {
 			fs, err := idx.PartitionAt(i).RetainFileSet()
@@ -154,27 +149,28 @@ func run(cmd *cobra.Command, args []string) (rErr error) {
 			defer fs.Release()
 
 			if opt.showSeries || opt.showMeasurements {
-				return printMeasurements(cmd, sfile, fs)
+				return opt.printMeasurements(sfile, fs)
 			}
-			return printFileSummaries(cmd, fs)
+			return opt.printFileSummaries(fs)
 		}(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func readFileSet(cmd *cobra.Command, sfile *tsdb.SeriesFile) (*tsi1.Index, *tsi1.FileSet, error) {
+
+func (opt *Options) readFileSet(sfile *tsdb.SeriesFile) (*tsi1.Index, *tsi1.FileSet, error) {
 	// If only one path exists and it's a directory then open as an index.
 	if len(opt.paths) == 1 {
 		fi, err := os.Stat(opt.paths[0])
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to get FileInfo of %q: %w", opt.paths[0], err)
 		} else if fi.IsDir() {
 			// Verify directory is an index before opening it.
 			if ok, err := tsi1.IsIndexDir(opt.paths[0]); err != nil {
 				return nil, nil, err
 			} else if !ok {
-				return nil, nil, fmt.Errorf("Not an index directory: %q", opt.paths[0])
+				return nil, nil, fmt.Errorf("not an index directory: %q", opt.paths[0])
 			}
 
 			idx := tsi1.NewIndex(sfile,
@@ -183,7 +179,7 @@ func readFileSet(cmd *cobra.Command, sfile *tsdb.SeriesFile) (*tsi1.Index, *tsi1
 				tsi1.DisableCompactions(),
 			)
 			if err := idx.Open(); err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("failed to open TSI Index at %q: %w", idx.Path(), err)
 			}
 			return idx, nil, nil
 		}
@@ -193,18 +189,18 @@ func readFileSet(cmd *cobra.Command, sfile *tsdb.SeriesFile) (*tsi1.Index, *tsi1
 	var files []tsi1.File
 	for _, path := range opt.paths {
 		switch ext := filepath.Ext(path); ext {
-		case tsi1.LogFileExt:
+		case tsi1.LogFileExt: //LogFileExt   = ".tsl"
 			f := tsi1.NewLogFile(sfile, path)
 			if err := f.Open(); err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("failed to get TSI logfile at %q: %w", sfile.Path(), err)
 			}
 			files = append(files, f)
 
-		case tsi1.IndexFileExt:
+		case tsi1.IndexFileExt: //IndexFileExt = ".tsi"
 			f := tsi1.NewIndexFile(sfile)
 			f.SetPath(path)
 			if err := f.Open(); err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("failed to open index file at %q: %w", f.Path(), err)
 			}
 			files = append(files, f)
 
@@ -213,16 +209,13 @@ func readFileSet(cmd *cobra.Command, sfile *tsdb.SeriesFile) (*tsi1.Index, *tsi1
 		}
 	}
 
-	fs, err := tsi1.NewFileSet(nil, sfile, files)
-	if err != nil {
-		return nil, nil, err
-	}
+	fs := tsi1.NewFileSet1(files)
 	fs.Retain()
 
 	return nil, fs, nil
 }
 
-func printSeries(cmd *cobra.Command, sfile *tsdb.SeriesFile) error {
+func (opt *Options) printSeries(sfile *tsdb.SeriesFile) error {
 	if !opt.showSeries {
 		return nil
 	}
@@ -230,19 +223,18 @@ func printSeries(cmd *cobra.Command, sfile *tsdb.SeriesFile) error {
 	// Print header.
 	tw := tabwriter.NewWriter(opt.Stdout, 8, 8, 1, '\t', 0)
 	fmt.Fprintln(tw, "Series\t")
-
 	// Iterate over each series.
 	itr := sfile.SeriesIDIterator()
 	for {
 		e, err := itr.Next()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get next series ID in %q: %w", sfile.Path(), err)
 		} else if e.SeriesID == 0 {
 			break
 		}
 		name, tags := tsdb.ParseSeriesKey(sfile.SeriesKey(e.SeriesID))
 
-		if !matchSeries(cmd, name, tags) {
+		if !opt.matchSeries(name, tags) {
 			continue
 		}
 
@@ -253,18 +245,17 @@ func printSeries(cmd *cobra.Command, sfile *tsdb.SeriesFile) error {
 
 	// Flush & write footer spacing.
 	if err := tw.Flush(); err != nil {
-		return err
+		return fmt.Errorf("failed to flush tabwriter: %w", err)
 	}
 	fmt.Fprint(opt.Stdout, "\n\n")
 
 	return nil
 }
 
-func printMeasurements(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet) error {
+func (opt *Options) printMeasurements(sfile *tsdb.SeriesFile, fs *tsi1.FileSet) error {
 	if !opt.showMeasurements {
 		return nil
 	}
-
 	tw := tabwriter.NewWriter(opt.Stdout, 8, 8, 1, '\t', 0)
 	fmt.Fprintln(tw, "Measurement\t")
 
@@ -277,10 +268,10 @@ func printMeasurements(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.File
 
 			fmt.Fprintf(tw, "%s\t%v\n", e.Name(), deletedString(e.Deleted()))
 			if err := tw.Flush(); err != nil {
-				return err
+				return fmt.Errorf("failed to flush tabwriter: %w", err)
 			}
 
-			if err := printTagKeys(cmd, sfile, fs, e.Name()); err != nil {
+			if err := opt.printTagKeys(sfile, fs, e.Name()); err != nil {
 				return err
 			}
 		}
@@ -291,7 +282,7 @@ func printMeasurements(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.File
 	return nil
 }
 
-func printTagKeys(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet, name []byte) error {
+func (opt *Options) printTagKeys(sfile *tsdb.SeriesFile, fs *tsi1.FileSet, name []byte) error {
 	if !opt.showTagKeys {
 		return nil
 	}
@@ -306,10 +297,10 @@ func printTagKeys(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet, 
 
 		fmt.Fprintf(tw, "    %s\t%v\n", e.Key(), deletedString(e.Deleted()))
 		if err := tw.Flush(); err != nil {
-			return err
+			return fmt.Errorf("failed to flush tabwriter: %w", err)
 		}
 
-		if err := printTagValues(cmd, sfile, fs, name, e.Key()); err != nil {
+		if err := opt.printTagValues(sfile, fs, name, e.Key()); err != nil {
 			return err
 		}
 	}
@@ -318,7 +309,7 @@ func printTagKeys(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet, 
 	return nil
 }
 
-func printTagValues(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet, name, key []byte) error {
+func (opt *Options) printTagValues(sfile *tsdb.SeriesFile, fs *tsi1.FileSet, name, key []byte) error {
 	if !opt.showTagValues {
 		return nil
 	}
@@ -333,10 +324,10 @@ func printTagValues(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet
 
 		fmt.Fprintf(tw, "        %s\t%v\n", e.Value(), deletedString(e.Deleted()))
 		if err := tw.Flush(); err != nil {
-			return err
+			return fmt.Errorf("failed to flush tabwriter: %w", err)
 		}
 
-		if err := printTagValueSeries(cmd, sfile, fs, name, key, e.Value()); err != nil {
+		if err := opt.printTagValueSeries(sfile, fs, name, key, e.Value()); err != nil {
 			return err
 		}
 	}
@@ -345,7 +336,7 @@ func printTagValues(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet
 	return nil
 }
 
-func printTagValueSeries(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.FileSet, name, key, value []byte) error {
+func (opt *Options) printTagValueSeries(sfile *tsdb.SeriesFile, fs *tsi1.FileSet, name, key, value []byte) error {
 	if !opt.showTagValueSeries {
 		return nil
 	}
@@ -354,25 +345,25 @@ func printTagValueSeries(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.Fi
 	tw := tabwriter.NewWriter(opt.Stdout, 8, 8, 1, '\t', 0)
 	itr, err := fs.TagValueSeriesIDIterator(name, key, value)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get series ID iterator with name %q: %w", name, err)
 	}
 	for {
 		e, err := itr.Next()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to print tag value series: %w", err)
 		} else if e.SeriesID == 0 {
 			break
 		}
 
 		name, tags := tsdb.ParseSeriesKey(sfile.SeriesKey(e.SeriesID))
 
-		if !matchSeries(cmd, name, tags) {
+		if !opt.matchSeries(name, tags) {
 			continue
 		}
 
 		fmt.Fprintf(tw, "            %s%s\n", name, tags.HashKey())
 		if err := tw.Flush(); err != nil {
-			return err
+			return fmt.Errorf("failed to flush tabwriter: %w", err)
 		}
 	}
 	fmt.Fprint(opt.Stdout, "\n")
@@ -380,15 +371,15 @@ func printTagValueSeries(cmd *cobra.Command, sfile *tsdb.SeriesFile, fs *tsi1.Fi
 	return nil
 }
 
-func printFileSummaries(cmd *cobra.Command, fs *tsi1.FileSet) error {
+func (opt *Options) printFileSummaries(fs *tsi1.FileSet) error {
 	for _, f := range fs.Files() {
 		switch f := f.(type) {
 		case *tsi1.LogFile:
-			if err := printLogFileSummary(cmd, f); err != nil {
+			if err := opt.printLogFileSummary(f); err != nil {
 				return err
 			}
 		case *tsi1.IndexFile:
-			if err := printIndexFileSummary(cmd, f); err != nil {
+			if err := opt.printIndexFileSummary(f); err != nil {
 				return err
 			}
 		default:
@@ -399,7 +390,7 @@ func printFileSummaries(cmd *cobra.Command, fs *tsi1.FileSet) error {
 	return nil
 }
 
-func printLogFileSummary(cmd *cobra.Command, f *tsi1.LogFile) error {
+func (opt *Options) printLogFileSummary(f *tsi1.LogFile) error {
 	fmt.Fprintf(opt.Stdout, "[LOG FILE] %s\n", filepath.Base(f.Path()))
 	tw := tabwriter.NewWriter(opt.Stdout, 8, 8, 1, '\t', 0)
 	fmt.Fprintf(tw, "Series:\t%d\n", f.SeriesN())
@@ -409,7 +400,7 @@ func printLogFileSummary(cmd *cobra.Command, f *tsi1.LogFile) error {
 	return tw.Flush()
 }
 
-func printIndexFileSummary(cmd *cobra.Command, f *tsi1.IndexFile) error {
+func (opt *Options) printIndexFileSummary(f *tsi1.IndexFile) error {
 	fmt.Fprintf(opt.Stdout, "[INDEX FILE] %s\n", filepath.Base(f.Path()))
 
 	// Calculate summary stats.
@@ -449,7 +440,7 @@ func printIndexFileSummary(cmd *cobra.Command, f *tsi1.IndexFile) error {
 }
 
 // matchSeries returns true if the command filters matches the series.
-func matchSeries(cmd *cobra.Command, name []byte, tags models.Tags) bool {
+func (opt *Options) matchSeries(name []byte, tags models.Tags) bool {
 	// Filter by measurement.
 	if opt.measurementFilter != nil && !opt.measurementFilter.Match(name) {
 		return false
