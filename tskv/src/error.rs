@@ -5,7 +5,6 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub enum Error {
     #[snafu(display("{}", source))]
     IO { source: std::io::Error },
-    #[snafu(display("{}", info))]
-    Cancel{ info: String},
-
+    #[snafu(display("async file system stopped"))]
+    Cancel,
 }

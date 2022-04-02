@@ -5,6 +5,7 @@ pub struct Options {
     max_resident: usize,
     max_non_resident: usize,
     page_len_scale: usize,
+    thread_num: usize,
 }
 
 impl Options {
@@ -22,6 +23,13 @@ impl Options {
         self.page_len_scale = v;
         self
     }
+    pub fn thread_num(&mut self, n: usize) -> &mut Self {
+        self.thread_num = n;
+        self
+    }
+    pub fn get_thread_num(&self) -> usize {
+        self.thread_num
+    }
 }
 
 impl Default for Options {
@@ -30,6 +38,7 @@ impl Default for Options {
             max_resident: 1024,
             max_non_resident: 1024,
             page_len_scale: 1,
+            thread_num: 1,
         }
     }
 }
