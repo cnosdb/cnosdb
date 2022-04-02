@@ -1,11 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use snafu::Snafu;
+use snafu::prelude::*;
 
-use crate::direct_io::{File, FileSync, FileSystem, Options};
+use crate::direct_io::{File, FileCursor, FileSync, FileSystem, Options};
 use protos::models::*;
+use walkdir::IntoIter;
 
 use crate::FileManager;
 
@@ -15,28 +18,39 @@ lazy_static! {
 
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
+const WAL_CRC_ALGORITHM: &crc::Algorithm<u32> = &crc::Algorithm {
+    poly: 0x8005,
+    init: 0xffff,
+    refin: false,
+    refout: false,
+    xorout: 0x0000,
+    check: 0xaee7,
+    residue: 0x0000,
+};
+
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(display("Unable to walk dir: {}", source))]
+    #[snafu(display("Unable to walk dir : {}", source))]
     UnableToWalkDir { source: walkdir::Error },
 
     #[snafu(display("File {} has wrong name format to have an id", file_name))]
     InvalidFileName { file_name: String },
 
-    #[snafu(display("Error with file: {}", source))]
-    FileManagerError { source: super::file_manager::Error },
+    #[snafu(display("Error with file : {}", source))]
+    FailedWithFileManager { source: super::file_manager::Error },
 
-    #[snafu(display("{}", source))]
-    FileIOError { source: std::io::Error },
+    #[snafu(display("Error with std::io : {}", source))]
+    FailedWithStdIO { source: std::io::Error },
 }
 
-type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 struct WalConfig {}
 
 struct WriteAheadLogManager {
     dir: String,
     file_manager: &'static FileManager,
+    crc_algorithm: &'static crc::Algorithm<u32>,
 
     current_dir_path: PathBuf,
     current_file_id: u64,
@@ -54,6 +68,7 @@ impl WriteAheadLogManager {
         WriteAheadLogManager {
             dir: dir.clone(),
             file_manager,
+            crc_algorithm: &WAL_CRC_ALGORITHM,
 
             current_dir_path: PathBuf::from(dir),
             current_file_id: 0,
@@ -114,7 +129,7 @@ impl WriteAheadLogManager {
     fn get_wal_file<P: AsRef<Path>>(&self, path: P) -> Result<File> {
         self.file_manager
             .open_file(path)
-            .map_err(|err| Error::FileManagerError { source: err })
+            .context(FailedWithFileManagerSnafu)
     }
 
     fn new_wal_file(&mut self) -> Result<()> {
@@ -126,8 +141,8 @@ impl WriteAheadLogManager {
             self.current_file_writer = Some(
                 self.file_manager
                     .create_file(file_name)
-                    .map_err(|err| Error::FileManagerError { source: err })
-                    .map(|file| WriteAheadLogDiskFileWriter::new(file))?,
+                    .context(FailedWithFileManagerSnafu)
+                    .map(|file| WriteAheadLogDiskFileWriter::new(file.into()))?,
             );
         }
         Ok(())
@@ -149,7 +164,7 @@ impl WriteAheadLogManager {
             let id = Self::get_id_by_file_name(last)?;
             self.current_file_id = id;
             let file = self.get_wal_file(self.current_dir_path.join(last))?;
-            self.current_file_writer = Some(WriteAheadLogDiskFileWriter::new(file));
+            self.current_file_writer = Some(WriteAheadLogDiskFileWriter::new(file.into()));
         }
 
         Ok(())
@@ -161,65 +176,101 @@ impl WriteAheadLogManager {
         let writer = &mut self.current_file_writer;
         match writer {
             Some(w) => w.write(entry),
-            None => Err(Error::FileIOError {
+            None => Err(Error::FailedWithStdIO {
                 source: std::io::Error::new(std::io::ErrorKind::Other, "No writer initialized."),
             }),
         }
     }
 }
 
+fn get_checksum(data: &[u8]) -> u32 {
+    // TODO: can crc::Crc be global, or a singleton instance
+    let crc_builder = crc::Crc::<u32>::new(&WAL_CRC_ALGORITHM);
+    let mut crc_digest = crc_builder.digest();
+    crc_digest.update(data);
+    crc_digest.finalize()
+}
+
+pub struct WriteAheadLogBlock {
+    crc: u32,
+    len: u32,
+    buf: Vec<u8>,
+}
+
+impl WriteAheadLogBlock {
+    pub fn size(&self) -> u32 {
+        self.len + 8
+    }
+}
+
+impl From<&WALEntry<'_>> for WriteAheadLogBlock {
+    fn from(entry: &WALEntry) -> Self {
+        Self {
+            crc: get_checksum(entry._tab.buf),
+            len: entry._tab.buf.len() as u32,
+            buf: entry._tab.buf.into(),
+        }
+    }
+}
+
+impl<'a> From<&'a WriteAheadLogBlock> for WALEntry<'a> {
+    fn from(block: &'a WriteAheadLogBlock) -> Self {
+        flatbuffers::root::<WALEntry<'a>>(&block.buf[0..block.len as usize]).unwrap()
+    }
+}
+
 pub struct WriteAheadLogDiskFileWriter {
-    writer: File,
+    cursor: FileCursor,
     size: u64,
 }
 
 impl WriteAheadLogDiskFileWriter {
-    pub fn new(file: File) -> Self {
-        Self {
-            writer: file,
-            size: 0,
-        }
+    pub fn new(cursor: FileCursor) -> Self {
+        Self { cursor, size: 0 }
     }
 
     pub fn write(&mut self, wal_entry: &WALEntry) -> Result<()> {
-        let ret = self.append(wal_entry._tab.buf);
+        let crc = get_checksum(wal_entry._tab.buf);
+
+        let ret = self.append(crc, wal_entry._tab.buf.len() as u32, wal_entry._tab.buf);
         match ret {
             Ok(u64) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
-    fn append(&mut self, buf: &[u8]) -> Result<u64> {
-        // todo: 1. wrap buf (option: compress)
-        // 2. write entry
-        // 3. return bytes writed
-        let ret = match self.writer.write_at(self.size, buf) {
-            Ok(_) => Ok(buf.len() as u64),
-            Err(err) => Err(Error::FileIOError { source: err }),
-        };
+    fn append(&mut self, crc: u32, data_len: u32, data: &[u8]) -> Result<()> {
+        let ret = self
+            .cursor
+            .write(crc.to_be_bytes().as_slice())
+            .and_then(|()| self.cursor.write(data_len.to_be_bytes().as_slice()))
+            .and_then(|()| self.cursor.write(data))
+            .and_then(|()| self.cursor.sync_all(FileSync::Soft))
+            .context(FailedWithStdIOSnafu);
 
-        self.writer.sync_all(FileSync::Soft);
-
-        self.size += buf.len() as u64;
+        self.size += 8 + data_len as u64;
 
         ret
     }
 
     pub fn sync(&self) -> Result<()> {
-        self.writer
+        self.cursor
             .sync_all(FileSync::Soft)
-            .map_err(|err| Error::FileIOError { source: err })
+            .context(FailedWithStdIOSnafu)
     }
 
     pub fn flush(&self) -> Result<()> {
-        self.writer
+        self.cursor
             .sync_all(FileSync::Hard)
-            .map_err(|err| Error::FileIOError { source: err })
+            .context(FailedWithStdIOSnafu)
     }
 }
 
-struct WriteAheadLogReader {
-    reader: File,
+struct WriteAheadLogReader<'a> {
+    cursor: FileCursor,
+
+    data_buf: Option<Vec<u8>>,
+    wal_entry: Option<WALEntry<'a>>,
 }
 
 // pub(crate) fn pread_exact_or_eof(
@@ -243,6 +294,49 @@ struct WriteAheadLogReader {
 //     Ok(total)
 // }
 
+impl WriteAheadLogReader<'_> {
+    pub fn new(cursor: FileCursor) -> Self {
+        Self {
+            cursor,
+            data_buf: None,
+            wal_entry: None,
+        }
+    }
+
+    pub fn next_wal_entry<'a>(&mut self) -> Option<WriteAheadLogBlock> {
+        let mut header_buf = [0_u8; 8];
+
+        dbg!(self.cursor.pos());
+        let read_bytes = self.cursor.read(&mut header_buf[..]).unwrap();
+        dbg!(self.cursor.pos());
+        if read_bytes < 8 {
+            return None;
+        }
+        let crc = u32::from_be_bytes([header_buf[0], header_buf[1], header_buf[2], header_buf[3]]);
+        let data_len =
+            u32::from_be_bytes([header_buf[4], header_buf[5], header_buf[6], header_buf[7]]);
+        if data_len <= 0 {
+            return None;
+        }
+        dbg!(data_len);
+
+        // TODO use a sync pool
+        let mut buf = vec![0_u8; 1024];
+        dbg!(self.cursor.pos());
+        let read_bytes = self
+            .cursor
+            .read(&mut buf.as_mut_slice()[0..data_len as usize])
+            .unwrap();
+        dbg!(self.cursor.pos());
+
+        Some(WriteAheadLogBlock {
+            crc,
+            len: read_bytes as u32,
+            buf,
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{borrow::BorrowMut, time};
@@ -253,10 +347,15 @@ mod test {
     use rand;
 
     use protos::models::*;
+    use crate::direct_io::{FileCursor, FileSync};
 
-    use crate::{file_manager, FileManager};
+    use crate::{
+        file_manager,
+        wal::{get_checksum, WriteAheadLogReader},
+        FileManager,
+    };
 
-    use super::WriteAheadLogManager;
+    use super::{WriteAheadLogBlock, WriteAheadLogManager};
 
     fn random_series_id() -> u64 {
         rand::random::<u64>()
@@ -409,11 +508,11 @@ mod test {
     }
 
     #[test]
-    fn write_entry() {
+    fn test_write_entry() {
         let file_manager = file_manager::FileManager::get_instance();
 
-        let mut writer = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
-        writer.open().unwrap();
+        let mut mgr = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
+        mgr.open().unwrap();
 
         for i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -422,10 +521,70 @@ mod test {
             fbb.finish(entry, None);
 
             let bytes = fbb.finished_data();
-            println!("{:?}", bytes);
+            dbg!(bytes.len());
 
             let de_entry = flatbuffers::root::<WALEntry>(bytes).unwrap();
-            writer.write(&de_entry).unwrap();
+            mgr.write(&de_entry).unwrap();
         }
+    }
+
+    #[test]
+    fn test_read_entry() {
+        let file_manager = file_manager::FileManager::get_instance();
+
+        let mut mgr = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test"));
+        mgr.open().unwrap();
+
+        let cursor = mgr.current_file_writer.unwrap().cursor;
+        let mut reader = WriteAheadLogReader::new(cursor);
+
+        let mut i = 0;
+        while let Some(block) = reader.next_wal_entry() {
+            i += 1;
+            dbg!(i);
+            let wal_entry =
+                flatbuffers::root::<WALEntry>(&block.buf[..block.len as usize]).unwrap();
+            dbg!(wal_entry);
+        }
+    }
+
+    #[test]
+    fn test_read_and_write() {
+        let file_manager = file_manager::FileManager::get_instance();
+
+        let mut mgr = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
+        mgr.open().unwrap();
+
+        for i in 0..10 {
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+
+            let entry = random_wal_entry(&mut fbb);
+            fbb.finish(entry, None);
+
+            let bytes = fbb.finished_data();
+            dbg!(bytes.len());
+
+            let de_entry = flatbuffers::root::<WALEntry>(bytes).unwrap();
+            mgr.write(&de_entry).unwrap();
+        }
+
+        let mut cursor = mgr.current_file_writer.unwrap().cursor;
+        cursor.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let mut reader = WriteAheadLogReader::new(cursor);
+        let mut i = 0;
+        let mut writed_crcs = Vec::<u32>::new();
+        let mut readed_crcs = Vec::<u32>::new();
+        while let Some(block) = reader.next_wal_entry() {
+            i += 1;
+            dbg!(i);
+            let wal_entry =
+                flatbuffers::root::<WALEntry>(&block.buf[..block.len as usize]).unwrap();
+            dbg!(wal_entry);
+
+            writed_crcs.push(block.crc);
+            readed_crcs.push(get_checksum(&block.buf[..block.len as usize]));
+        }
+
+        assert_eq!(writed_crcs, readed_crcs);
     }
 }
