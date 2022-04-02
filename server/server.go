@@ -119,6 +119,10 @@ func (s *Server) Open() error {
 		return err
 	}
 
+	if err := s.initMonitor(); err != nil {
+		return err
+	}
+
 	if err := s.openServices(); err != nil {
 		return err
 	}
@@ -299,6 +303,12 @@ func (s *Server) initTCPServer() error {
 	s.tcpListener = network.ListenString(s.tcpMux, NodeMuxHeader)
 
 	return nil
+}
+
+func (s *Server) initMonitor() error {
+	s.monitor.MetaClient = s.metaClient
+	s.monitor.PointsWriter = (*monitorPointsWriter)(s.pointsWriter)
+	return s.monitor.Open()
 }
 
 func (s *Server) openServices() error {
@@ -617,4 +627,13 @@ func (r *Response) Error() error {
 		}
 	}
 	return nil
+}
+
+// monitorPointsWriter is a wrapper around `coordinator.PointsWriter` that helps
+// to prevent a circular dependency between the `cluster` and `monitor` packages.
+type monitorPointsWriter coordinator.PointsWriter
+
+func (pw *monitorPointsWriter) WritePoints(database, retentionPolicy string, points models.Points) error {
+
+	return (*coordinator.PointsWriter)(pw).WritePointsPrivileged(database, retentionPolicy, models.ConsistencyLevelAny, points)
 }
