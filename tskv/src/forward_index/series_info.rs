@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 use crate::forward_index::field_info::{FieldID, FieldInfo};
 use crate::forward_index::tags::Tag;
-use util::bkdr_hash::hash_with_bytes;
+use utils::bkdr_hash::hash_with_bytes;
 use serde::{Serialize, Deserialize};
 use bincode;
 
 pub type SeriesID = u64;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct SeriesInfo {
     pub id: SeriesID,
     pub fields: Vec<FieldInfo>,

@@ -5,15 +5,12 @@ mod tests;
 
 use std::any::Any;
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use hashbrown::HashMap;
 use series_info::{SeriesID, SeriesInfo, SeriesInfoSimplified};
-use util::direct_fio;
-use util::direct_fio::{File, FileSync};
-use util::direct_fio::FileSync::{Hard, Soft};
+use crate::direct_io;
 use crate::file_manager::FileManager;
 use crc32fast;
 use libc::munlock;
@@ -21,7 +18,7 @@ use libc::munlock;
 pub struct ForwardIndex {
     series_info_set: HashMap<SeriesID, SeriesInfoSimplified>,
     file_path: PathBuf,
-    file: direct_fio::File,
+    file: direct_io::File,
 }
 
 impl ForwardIndex {
@@ -64,7 +61,7 @@ impl ForwardIndex {
     }
 
     fn del_encode(&self, id: SeriesID) -> Vec<u8> {
-        self.encode(ElemType::Del, id.encode_to_vec())
+        self.encode(ElemType::Del, id.to_be_bytes().to_vec())
     }
 
     pub fn add_series(&mut self, info: SeriesInfo) {
@@ -120,8 +117,4 @@ impl ElemType {
     fn u8_number(&self) -> u8 {
         *self as u8
     }
-}
-
-fn f(foo: &Foo) -> u8 {
-    *foo as u8
 }
