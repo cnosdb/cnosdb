@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+
 	"io"
 	"math"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/pkg/utils"
+	"github.com/cnosdb/cnosdb/server/continuous_querier"
 	"github.com/cnosdb/cnosdb/server/coordinator"
 	"github.com/cnosdb/cnosdb/server/hh"
 	"github.com/cnosdb/cnosdb/server/snapshotter"
@@ -26,14 +28,14 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/storage"
-	"github.com/pkg/errors"
-	"github.com/soheilhy/cmux"
-	"go.uber.org/zap"
-
 	// Initialize the engine package
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine"
 	// Initialize the index package
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/index"
+
+	"github.com/pkg/errors"
+	"github.com/soheilhy/cmux"
+	"go.uber.org/zap"
 )
 
 const NodeMuxHeader = "node"
@@ -58,12 +60,13 @@ type Server struct {
 	metaServer *meta.Server
 	metaClient meta.MetaClient
 
-	tsdbStore     *tsdb.Store
-	queryExecutor *query.Executor
-	pointsWriter  *coordinator.PointsWriter
-	shardWriter   *coordinator.ShardWriter
-	hintedHandoff *hh.Service
-	subscriber    *subscriber.Service
+	tsdbStore                *tsdb.Store
+	queryExecutor            *query.Executor
+	pointsWriter             *coordinator.PointsWriter
+	shardWriter              *coordinator.ShardWriter
+	hintedHandoff            *hh.Service
+	subscriber               *subscriber.Service
+	continuousQuerierService *continuous_querier.Service
 
 	coordinatorService *coordinator.Service
 	snapshotterService *snapshotter.Service
@@ -123,6 +126,10 @@ func (s *Server) Open() error {
 		return err
 	}
 
+	if err := s.initContinueQuery(); err != nil {
+		return err
+	}
+
 	if err := s.openServices(); err != nil {
 		return err
 	}
@@ -156,6 +163,10 @@ func (s *Server) Close() {
 
 	_ = s.httpListener.Close()
 	s.httpMux.Close()
+
+	if s.continuousQuerierService != nil {
+		_ = s.continuousQuerierService.Close()
+	}
 
 	close(s.closing)
 }
@@ -320,6 +331,10 @@ func (s *Server) openServices() error {
 	s.snapshotterService.Listener = network.ListenString(s.tcpMux, snapshotter.MuxHeader)
 	if err := s.snapshotterService.Open(); err != nil {
 		return fmt.Errorf("open snapshotter service: %s", err)
+	}
+
+	if err := s.continuousQuerierService.Open(); err != nil {
+		return fmt.Errorf("open continuous query service: %s", err)
 	}
 
 	return nil
@@ -503,6 +518,18 @@ func (s *Server) Statistics(tags map[string]string) []models.Statistic {
 		}
 	}
 	return statistics
+}
+
+func (s *Server) initContinueQuery() error {
+	if !s.Config.ContinuousQuery.Enabled {
+		return fmt.Errorf("open continue query service failed. ")
+	}
+
+	s.continuousQuerierService = continuous_querier.NewService(s.Config.ContinuousQuery)
+	s.continuousQuerierService.MetaClient = s.metaClient
+	s.continuousQuerierService.QueryExecutor = s.queryExecutor
+	s.continuousQuerierService.Monitor = s.monitor
+	return nil
 }
 
 func writeHeader(w http.ResponseWriter, code int) {
