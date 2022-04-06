@@ -10,6 +10,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/options"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/server"
+
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
