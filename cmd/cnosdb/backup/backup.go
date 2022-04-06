@@ -64,7 +64,10 @@ type options struct {
 	BackupFiles []string
 }
 
-var env = options{}
+var env = options{
+	Stdout: os.Stdout,
+	Stderr: os.Stderr,
+}
 
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{

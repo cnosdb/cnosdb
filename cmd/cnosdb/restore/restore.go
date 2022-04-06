@@ -57,7 +57,10 @@ type options struct {
 	shardIDMap map[uint64]uint64
 }
 
-var env = options{}
+var env = options{
+	Stderr: os.Stderr,
+	Stdout: os.Stdout,
+}
 
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
