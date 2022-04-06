@@ -189,6 +189,7 @@ func GetCommand() *cobra.Command {
 	c.Flags().StringVar(&env.startArg, "start", "", "Include all points starting with specified timestamp (RFC3339 format).")
 	c.Flags().StringVar(&env.endArg, "end", "", "Exclude all points after timestamp (RFC3339 format).")
 	c.Flags().BoolVar(&env.continueOnError, "skip-errors", false, "Optional flag to continue backing up the remaining shards when the current shard fails to backup.")
+	c.Flags().BoolVar(&env.portable, "portable", false, `Required to generate backup files in a portable format that can be restored to CnosDB OSS or CnosDB`)
 
 	return c
 }

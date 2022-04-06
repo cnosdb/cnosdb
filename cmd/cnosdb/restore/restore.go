@@ -168,6 +168,7 @@ func GetCommand() *cobra.Command {
 		" Requires that '-rp <rp_name>' is set. If not given, the '--rp <rp_name>' value is used.")
 	c.Flags().Uint64Var(&env.shard, "shard", 0, "Identifier of the shard to be restored. Optional. If specified, then '-db <db_name>' and '-rp <rp_name>' are required.")
 	c.Flags().BoolVar(&env.online, "online", false, "")
+	c.Flags().BoolVar(&env.portable, "portable", false, "Required to activate the portable restore mode. If not specified, the legacy restore mode is used.")
 
 	// Continue on flag errors.
 	c.SetFlagErrorFunc(func(command *cobra.Command, err error) error {
