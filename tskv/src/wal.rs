@@ -4,8 +4,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use snafu::Snafu;
 
+use crate::direct_io::{File, FileSync, FileSystem, Options};
 use protos::models::*;
-use util::direct_fio::{File, FileSync, FileSystem, Options};
 
 use crate::FileManager;
 

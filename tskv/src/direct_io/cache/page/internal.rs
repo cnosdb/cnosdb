@@ -5,8 +5,8 @@ use std::ptr::{self, NonNull};
 use std::sync::atomic::*;
 use std::sync::Arc;
 
-use crate::direct_fio::cache::page::*;
-use crate::direct_fio::cache::scope::*;
+use crate::direct_io::cache::page::*;
+use crate::direct_io::cache::scope::*;
 use lock::*;
 use parking_lot::{RwLock, RwLockWriteGuard};
 

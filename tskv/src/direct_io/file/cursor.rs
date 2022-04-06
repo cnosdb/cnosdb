@@ -76,7 +76,7 @@ impl Deref for FileCursor {
 
 #[cfg(test)]
 mod test {
-    use crate::direct_fio::*;
+    use crate::direct_io::*;
     use std::io::prelude::*;
     use std::io::BufWriter;
     use tempfile::NamedTempFile;

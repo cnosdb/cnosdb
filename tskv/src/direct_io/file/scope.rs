@@ -4,7 +4,7 @@ use std::io::{ErrorKind, Result};
 use std::sync::atomic::*;
 use std::sync::{Arc, Weak};
 
-use crate::direct_fio::file::*;
+use crate::direct_io::file::*;
 
 pub struct FileScope {
     scope_map: Weak<ScopeMap>,

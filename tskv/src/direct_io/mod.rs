@@ -3,9 +3,11 @@
 // #![deny(unused_imports)]
 // #![deny(unused_must_use)]
 
+mod async_rt;
 mod cache;
 mod file;
 
+pub use async_rt::*;
 pub use cache::PageId;
 pub use file::cursor::FileCursor;
 pub use file::system::{FileSystem, Options};

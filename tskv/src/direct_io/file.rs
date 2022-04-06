@@ -12,7 +12,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::direct_fio::cache::{self, PageId, Scope};
+use crate::direct_io::cache::{self, PageId, Scope};
 use cursor::FileCursor;
 use os::*;
 use scope::FileScope;
@@ -105,7 +105,8 @@ impl File {
         Ok(read)
     }
 
-    pub fn write_at(&self, mut pos: u64, mut buf: &[u8]) -> Result<()> {
+    pub fn write_at(&self, mut pos: u64, mut buf: &[u8]) -> Result<usize> {
+        let len = buf.len();
         while buf.len() > 0 {
             let (id, offset) = self.page_id_at(pos);
             let page = self.page(id)?;
@@ -118,7 +119,7 @@ impl File {
             buf = &buf[len..];
             pos = pos.checked_add(len as u64).unwrap();
         }
-        Ok(())
+        Ok(len)
     }
 
     pub fn into_cursor(self) -> FileCursor {
@@ -284,7 +285,7 @@ impl PageRef {
 
 #[cfg(test)]
 mod test {
-    use crate::direct_fio::*;
+    use crate::direct_io::*;
     use std::fs::File as StdFile;
     use std::io::prelude::*;
     use std::io::SeekFrom;

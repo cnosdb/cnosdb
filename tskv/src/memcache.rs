@@ -93,7 +93,7 @@ impl MemCache {
             // FieldType::Float(t) =>{},
             // FieldType::String => {},
             // FieldType::Boolean => {},
-            _ => todo!()
+            _ => todo!(),
         };
         Ok(())
     }

@@ -2,6 +2,7 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
+mod direct_io;
 mod error;
 mod file_manager;
 mod kvcore;
@@ -10,9 +11,10 @@ mod memcache;
 mod option;
 mod points;
 mod runtime;
-mod wal;
 mod tsm;
+mod wal;
 
+pub use direct_io::*;
 pub use error::*;
 pub use file_manager::*;
 pub use kvcore::*;
