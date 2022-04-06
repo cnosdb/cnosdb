@@ -13,6 +13,7 @@ mod points;
 mod runtime;
 mod tsm;
 mod wal;
+mod forward_index;
 
 pub use direct_io::*;
 pub use error::*;
