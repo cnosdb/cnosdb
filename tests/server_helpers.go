@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -51,9 +52,16 @@ type Server interface {
 }
 
 // NewServer returns a new instance of Server
-func NewServer(c *Config) {
-	//srv:= server.NewServer(c.Config)
-	//s :=
+func NewServer(c *Config)  {
+	srv:= server.NewServer(c.Config)
+	s := LocalServer{
+		client: &client{},
+		Server: srv,
+		Config: c,
+	}
+	s.client.URLFn = s.URL
+	//todo implement Server interface
+	//return &s
 }
 
 //
@@ -97,6 +105,60 @@ type LocalServer struct {
 	*client
 	Config *Config
 }
+
+// Open opens the server. If running this test on a 32-bit platform it reduces
+// the size of series files so that they can all be addressable in the process.
+func (s *LocalServer) Open() error {
+	if runtime.GOARCH == "386" {
+		//todo fix usage
+		//s.Server.tsdbStore.SeriesFileMaxSize = 1 << 27
+	}
+	return s.Server.Open()
+}
+
+// Close shuts down the server and removes all temporary paths.
+func (s *LocalServer) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	//todo fix usage
+	s.Server.Close()
+
+	if cleanupData {
+		if err := os.RemoveAll(s.Config.rootPath); err != nil {
+			panic(err.Error())
+		}
+	}
+
+	// Nil the server so our deadlock detector goroutine can determine if we completed writes
+	// without timing out
+	s.Server = nil
+}
+
+func (s *LocalServer) Closed() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Server == nil
+}
+
+// URL returns the base URL for the httpd endpoint.
+func (s *LocalServer) URL() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	//todo fix URL
+	return "http://127.0.0.1"
+}
+
+func (s *LocalServer) TcpAddr() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return "tcp://127.0.0.1"
+}
+
+//todo add Server interface method
+
+
+
 
 
 type client struct {
@@ -279,4 +341,172 @@ func RemoteEnabled() bool {
 
 func expectPattern(exp, act string) bool {
 	return regexp.MustCompile(exp).MatchString(act)
+}
+
+type Query struct {
+	name     string
+	command  string
+	params   url.Values
+	exp, act string
+	pattern  bool
+	skip     bool
+	repeat   int
+	once     bool
+}
+
+// Execute runs the command and returns an err if it fails
+func (q *Query) Execute(s Server) (err error) {
+	if q.params == nil {
+		q.act, err = s.Query(q.command)
+		return
+	}
+	q.act, err = s.QueryWithParams(q.command, q.params)
+	return
+}
+
+func (q *Query) success() bool {
+	if q.pattern {
+		return expectPattern(q.exp, q.act)
+	}
+	return q.exp == q.act
+}
+
+func (q *Query) Error(err error) string {
+	return fmt.Sprintf("%s: %v", q.name, err)
+}
+
+func (q *Query) failureMessage() string {
+	return fmt.Sprintf("%s: unexpected results\nquery:  %s\nparams:  %v\nexp:    %s\nactual: %s\n", q.name, q.command, q.params, q.exp, q.act)
+}
+
+type Write struct {
+	db   string
+	rp   string
+	data string
+}
+
+func (w *Write) duplicate() *Write {
+	return &Write{
+		db:   w.db,
+		rp:   w.rp,
+		data: w.data,
+	}
+}
+
+type Writes []*Write
+
+func (a Writes) duplicate() Writes {
+	writes := make(Writes, 0, len(a))
+	for _, w := range a {
+		writes = append(writes, w.duplicate())
+	}
+	return writes
+}
+
+type Tests map[string]Test
+
+type Test struct {
+	initialized bool
+	writes      Writes
+	params      url.Values
+	db          string
+	rp          string
+	exp         string
+	queries     []*Query
+}
+
+func NewTest(db, rp string) Test {
+	return Test{
+		db: db,
+		rp: rp,
+	}
+}
+
+func (t Test) duplicate() Test {
+	test := Test{
+		initialized: t.initialized,
+		writes:      t.writes.duplicate(),
+		db:          t.db,
+		rp:          t.rp,
+		exp:         t.exp,
+		queries:     make([]*Query, len(t.queries)),
+	}
+
+	if t.params != nil {
+		t.params = url.Values{}
+		for k, a := range t.params {
+			vals := make([]string, len(a))
+			copy(vals, a)
+			test.params[k] = vals
+		}
+	}
+	copy(test.queries, t.queries)
+	return test
+}
+
+func (t *Test) addQueries(q ...*Query) {
+	t.queries = append(t.queries, q...)
+}
+
+func (t *Test) database() string {
+	if t.db != "" {
+		return t.db
+	}
+	return "db0"
+}
+
+func (t *Test) retentionPolicy() string {
+	if t.rp != "" {
+		return t.rp
+	}
+	return "default"
+}
+
+func (t *Test) init(s Server) error {
+	if len(t.writes) == 0 || t.initialized {
+		return nil
+	}
+	if t.db == "" {
+		t.db = "db0"
+	}
+	if t.rp == "" {
+		t.rp = "rp0"
+	}
+
+	if err := writeTestData(s, t); err != nil {
+		return err
+	}
+
+	t.initialized = true
+
+	return nil
+}
+
+func writeTestData(s Server, t *Test) error {
+	for i, w := range t.writes {
+		if w.db == "" {
+			w.db = t.database()
+		}
+		if w.rp == "" {
+			w.rp = t.retentionPolicy()
+		}
+
+		if err := s.CreateDatabaseAndRetentionPolicy(w.db, NewRetentionPolicySpec(w.rp, 1, 0), true); err != nil {
+			return err
+		}
+		if res, err := s.Write(w.db, w.rp, w.data, t.params); err != nil {
+			return fmt.Errorf("write #%d: %s", i, err)
+		} else if t.exp != res {
+			return fmt.Errorf("unexpected results\nexp: %s\ngot: %s\n", t.exp, res)
+		}
+	}
+
+	return nil
+}
+
+func configureLogging(s Server) {
+	// Set the logger to discard unless verbose is on
+	if !verboseServerLogs {
+		s.SetLogOutput(ioutil.Discard)
+	}
 }
