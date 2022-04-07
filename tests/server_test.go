@@ -2,11 +2,12 @@ package tests
 
 import (
 	"flag"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 // Global server used by benchmarks
@@ -26,6 +27,7 @@ func TestMain(m *testing.M) {
 
 	var r int
 	for _, indexType = range tsdb.RegisteredIndexes() {
+
 	}
 	os.Exit(r)
 }
