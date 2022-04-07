@@ -3,12 +3,14 @@ package verifytombstone
 import (
 	"errors"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
-	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+
+	"github.com/spf13/cobra"
 )
 
 // Options represents the program execution for "cnosdb_inspect verifytombstone".
