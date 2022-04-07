@@ -10,87 +10,11 @@ SYNOPSIS
 [verse]
 'cnosdb-cli' [options]
 'cnosdb-cli' help
-'cnosdb-cli' import -path <path> (-compressed) [options]
-'cnosdb-cli' export [options] --out <path>
-
-DESCRIPTION
------------cnosdb-cli(1)
-=============
-
-NAME
-----
-cnosdb-cli - CnosDB client
-
-SYNOPSIS
---------
-[verse]
-'cnosdb-cli' [options]
-'cnosdb-cli' help
 'cnosdb-cli' import --path <path> (-compressed) [options]
 'cnosdb-cli' export [options] --out <path>
 
 DESCRIPTION
 -----------
-'cnosdb-cli' is the command line program for interacting with an CnosDB server.
-
-In the first form, the program starts a CLI that can be used to write data or query the database. The command line is described in *COMMAND LINE*.
-
-In the second form, this will execute a single command, usually a query. This is the equivalent of starting the command line, running one command, and then exiting.
-
-In the third form, this imports a previously exported database to the database.
-
-The fourth form outputs the version of the command line and then immediately exits.
-
-OPTIONS
--------
---host <host>::
-   Host to connect to. Default is localhost.
-
---port <port>::
-   Port to use when connecting to the host. Default is 8086.
-
---database <database>::
-   Database to use when connecting to the database.
-
---username <username>::
-   Username to connect to the server.
-
---password <password>::
-   Password to connect to the server. If left blank, this will prompt for a password.
-
---ssl::
-   Use https for connecting to cluster.
-
---format <json|csv|column>::
-   The format of the server responses:  json, csv, or column. (default "column") 
-
---precision <rfc3339|h|m|s|ms|u|ns>::
-   Specifies the format of the timestamp. Default is ns.
-
---pretty::
-   Turns on pretty print format for the JSON format.
-
---path <path>::
-   Path to the database export file to import. Must be used with 'import'.
-
---version::
-   Outputs the version of the cnosdb client.
-
-ENVIRONMENT
------------
-The environment variables can be specified in lower case or upper case. The upper case version has precedence.
-
-HTTP_PROXY [protocol://]<host>[:port]::
-  Sets the proxy server to use for HTTP.
-
-HTTPS_PROXY [protocol://]<host>[:port]::
-  Sets the proxy server to use for HTTPS. Takes precedence over HTTP_PROXY for HTTPS.
-
-NO_PROXY <comma-separated list of hosts>::
-  List of host names that shouldn't go through any proxy. If set to an asterisk \'*' only, it matches all hosts.
-
-include::footer.txt[]
-
 'cnosdb-cli' is the command line program for interacting with an CnosDB server.
 
 In the first form, the program starts a CLI that can be used to write data or query the database. The command line is described in *COMMAND LINE*.
