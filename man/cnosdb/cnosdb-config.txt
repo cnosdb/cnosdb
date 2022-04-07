@@ -34,7 +34,7 @@ The second command version will force 'cnosdb config' to output the default conf
 
 OPTIONS
 -------
--config <path>::
+--config <path>::
   Customize the default configuration file to load. Disables automatic loading when the path is */dev/null*.
 
 include::footer.txt[]
