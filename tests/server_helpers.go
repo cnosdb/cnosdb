@@ -2,10 +2,25 @@
 package tests
 
 import (
-	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosdb/vend/db/models"
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
+	"io/ioutil"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/server"
+	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 )
 
 var verboseServerLogs bool
@@ -13,7 +28,7 @@ var indexType string
 var cleanupData bool
 var seed int64
 
-// Server represents a test wrapper for run.Server.
+// Server represents a test wrapper for server.Server.
 type Server interface {
 	URL() string
 	TcpAddr() string
@@ -34,4 +49,464 @@ type Server interface {
 	Write(db, rp, body string, params url.Values) (results string, err error)
 	MustWrite(db, rp, body string, params url.Values) string
 	WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error
+}
+
+// NewServer returns a new instance of Server
+func NewServer(c *Config)  {
+	srv:= server.NewServer(c.Config)
+	s := LocalServer{
+		client: &client{},
+		Server: srv,
+		Config: c,
+	}
+	s.client.URLFn = s.URL
+	//todo implement Server interface
+	//return &s
+}
+
+//
+type Config struct {
+	rootPath string
+	*server.Config
+}
+
+func NewConfig() *Config {
+	root, err := os.MkdirTemp("", "tests-cnosdb-")
+	if err != nil {
+		panic(err)
+	}
+
+	c := &Config{rootPath: root, Config: server.NewConfig()}
+	c.BindAddress = "127.0.0.1:0"
+	c.Coordinator.WriteTimeout = toml.Duration(30 * time.Second)
+
+	c.Meta.Dir = filepath.Join(c.rootPath, "meta")
+
+	c.Data.Dir = filepath.Join(c.rootPath, "data")
+	c.Data.WALDir = filepath.Join(c.rootPath, "wal")
+	c.Data.QueryLogEnabled = verboseServerLogs
+	c.Data.TraceLoggingEnabled = verboseServerLogs
+	c.Data.Index = indexType
+
+	c.HTTPD.Enabled = true
+	c.HTTPD.BindAddress = "127.0.0.1:0"
+	c.HTTPD.LogEnabled = verboseServerLogs
+
+	c.Monitor.StoreEnabled = false
+
+	return c
+}
+
+// LocalServer is a Server that is running in-proess and can be accessed directly
+type LocalServer struct {
+	mu sync.RWMutex
+	*server.Server
+
+	*client
+	Config *Config
+}
+
+// Open opens the server. If running this test on a 32-bit platform it reduces
+// the size of series files so that they can all be addressable in the process.
+func (s *LocalServer) Open() error {
+	if runtime.GOARCH == "386" {
+		//todo fix usage
+		//s.Server.tsdbStore.SeriesFileMaxSize = 1 << 27
+	}
+	return s.Server.Open()
+}
+
+// Close shuts down the server and removes all temporary paths.
+func (s *LocalServer) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	//todo fix usage
+	s.Server.Close()
+
+	if cleanupData {
+		if err := os.RemoveAll(s.Config.rootPath); err != nil {
+			panic(err.Error())
+		}
+	}
+
+	// Nil the server so our deadlock detector goroutine can determine if we completed writes
+	// without timing out
+	s.Server = nil
+}
+
+func (s *LocalServer) Closed() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Server == nil
+}
+
+// URL returns the base URL for the httpd endpoint.
+func (s *LocalServer) URL() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	//todo fix URL
+	return "http://127.0.0.1"
+}
+
+func (s *LocalServer) TcpAddr() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return "tcp://127.0.0.1"
+}
+
+//todo add Server interface method
+
+
+
+
+
+type client struct {
+	URLFn func() string
+}
+
+func (c *client) URL() string {
+	return c.URLFn()
+}
+
+// Query executes a query against the server and returns the results.
+func (s *client) Query(query string) (results string, err error) {
+	return s.QueryWithParams(query, nil)
+}
+
+// MustQuery executes a query against the server and returns the results.
+func (s *client) MustQuery(query string) string {
+	results, err := s.Query(query)
+	if err != nil {
+		panic(err)
+	}
+	return results
+}
+
+func (s *client) QueryWithParams(query string, values url.Values) (results string, err error) {
+	var v url.Values
+	if values == nil {
+		v = url.Values{}
+	} else {
+		v, _ = url.ParseQuery(values.Encode())
+	}
+	v.Set("q", query)
+	return s.HTTPPost(s.URL()+"/query?"+v.Encode(), nil)
+}
+
+func (s *client) MustQueryWithParams(query string, values url.Values) string {
+	results, err := s.QueryWithParams(query, values)
+	if err != nil {
+		panic(err)
+	}
+	return results
+}
+
+
+// TOOLS
+// HTTPGet makes an HTTP GET request to the server and returns the response.
+func (s *client) HTTPGet(url string) (results string, err error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	body := strings.TrimSpace(string(MustReadAll(resp.Body)))
+	switch resp.StatusCode {
+	case http.StatusBadRequest:
+		if !expectPattern(".*error parsing query*.", body) {
+			return "", fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
+		}
+		return body, nil
+	case http.StatusOK:
+		return body, nil
+	default:
+		return "", fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
+	}
+}
+
+// HTTPPost makes an HTTP POST request to the server and returns the response.
+func (s *client) HTTPPost(url string, content []byte) (results string, err error) {
+	buf := bytes.NewBuffer(content)
+	resp, err := http.Post(url, "application/json", buf)
+	if err != nil {
+		return "", err
+	}
+	body := strings.TrimSpace(string(MustReadAll(resp.Body)))
+	switch resp.StatusCode {
+	case http.StatusBadRequest:
+		if !expectPattern(".*error parsing query*.", body) {
+			return "", fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
+		}
+		return body, nil
+	case http.StatusOK, http.StatusNoContent:
+		return body, nil
+	default:
+		return "", fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
+	}
+}
+
+
+
+type WriteError struct {
+	body       string
+	statusCode int
+}
+
+func (wr WriteError) StatusCode() int {
+	return wr.statusCode
+}
+
+func (wr WriteError) Body() string {
+	return wr.body
+}
+
+func (wr WriteError) Error() string {
+	return fmt.Sprintf("invalid status code: code=%d, body=%s", wr.statusCode, wr.body)
+}
+
+// Write executes a write against the server and returns the results.
+func (s *client) Write(db, rp, body string, params url.Values) (results string, err error) {
+	if params == nil {
+		params = url.Values{}
+	}
+	if params.Get("db") == "" {
+		params.Set("db", db)
+	}
+	if params.Get("rp") == "" {
+		params.Set("rp", rp)
+	}
+	resp, err := http.Post(s.URL()+"/write?"+params.Encode(), "", strings.NewReader(body))
+	if err != nil {
+		return "", err
+	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return "", WriteError{statusCode: resp.StatusCode, body: string(MustReadAll(resp.Body))}
+	}
+	return string(MustReadAll(resp.Body)), nil
+}
+
+// MustWrite executes a write to the server. Panic on error.
+func (s *client) MustWrite(db, rp, body string, params url.Values) string {
+	results, err := s.Write(db, rp, body, params)
+	if err != nil {
+		panic(err)
+	}
+	return results
+}
+
+func NewRetentionPolicySpec(name string, rf int, duration time.Duration) *meta.RetentionPolicySpec {
+	return &meta.RetentionPolicySpec{Name: name, ReplicaN: &rf, Duration: &duration}
+}
+
+func maxInt64() string {
+	maxInt64, _ := json.Marshal(^int64(0))
+	return string(maxInt64)
+}
+
+func now() time.Time {
+	return time.Now().UTC()
+}
+
+func yesterday() time.Time {
+	return now().Add(-1 * time.Hour * 24)
+}
+
+func mustParseTime(layout, value string) time.Time {
+	tm, err := time.Parse(layout, value)
+	if err != nil {
+		panic(err)
+	}
+	return tm
+}
+
+func mustParseLocation(tzname string) *time.Location {
+	loc, err := time.LoadLocation(tzname)
+	if err != nil {
+		panic(err)
+	}
+	return loc
+}
+
+// MustReadAll reads r. Panic on error.
+func MustReadAll(r io.Reader) []byte {
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+func RemoteEnabled() bool {
+	return os.Getenv("URL") != ""
+}
+
+func expectPattern(exp, act string) bool {
+	return regexp.MustCompile(exp).MatchString(act)
+}
+
+type Query struct {
+	name     string
+	command  string
+	params   url.Values
+	exp, act string
+	pattern  bool
+	skip     bool
+	repeat   int
+	once     bool
+}
+
+// Execute runs the command and returns an err if it fails
+func (q *Query) Execute(s Server) (err error) {
+	if q.params == nil {
+		q.act, err = s.Query(q.command)
+		return
+	}
+	q.act, err = s.QueryWithParams(q.command, q.params)
+	return
+}
+
+func (q *Query) success() bool {
+	if q.pattern {
+		return expectPattern(q.exp, q.act)
+	}
+	return q.exp == q.act
+}
+
+func (q *Query) Error(err error) string {
+	return fmt.Sprintf("%s: %v", q.name, err)
+}
+
+func (q *Query) failureMessage() string {
+	return fmt.Sprintf("%s: unexpected results\nquery:  %s\nparams:  %v\nexp:    %s\nactual: %s\n", q.name, q.command, q.params, q.exp, q.act)
+}
+
+type Write struct {
+	db   string
+	rp   string
+	data string
+}
+
+func (w *Write) duplicate() *Write {
+	return &Write{
+		db:   w.db,
+		rp:   w.rp,
+		data: w.data,
+	}
+}
+
+type Writes []*Write
+
+func (a Writes) duplicate() Writes {
+	writes := make(Writes, 0, len(a))
+	for _, w := range a {
+		writes = append(writes, w.duplicate())
+	}
+	return writes
+}
+
+type Tests map[string]Test
+
+type Test struct {
+	initialized bool
+	writes      Writes
+	params      url.Values
+	db          string
+	rp          string
+	exp         string
+	queries     []*Query
+}
+
+func NewTest(db, rp string) Test {
+	return Test{
+		db: db,
+		rp: rp,
+	}
+}
+
+func (t Test) duplicate() Test {
+	test := Test{
+		initialized: t.initialized,
+		writes:      t.writes.duplicate(),
+		db:          t.db,
+		rp:          t.rp,
+		exp:         t.exp,
+		queries:     make([]*Query, len(t.queries)),
+	}
+
+	if t.params != nil {
+		t.params = url.Values{}
+		for k, a := range t.params {
+			vals := make([]string, len(a))
+			copy(vals, a)
+			test.params[k] = vals
+		}
+	}
+	copy(test.queries, t.queries)
+	return test
+}
+
+func (t *Test) addQueries(q ...*Query) {
+	t.queries = append(t.queries, q...)
+}
+
+func (t *Test) database() string {
+	if t.db != "" {
+		return t.db
+	}
+	return "db0"
+}
+
+func (t *Test) retentionPolicy() string {
+	if t.rp != "" {
+		return t.rp
+	}
+	return "default"
+}
+
+func (t *Test) init(s Server) error {
+	if len(t.writes) == 0 || t.initialized {
+		return nil
+	}
+	if t.db == "" {
+		t.db = "db0"
+	}
+	if t.rp == "" {
+		t.rp = "rp0"
+	}
+
+	if err := writeTestData(s, t); err != nil {
+		return err
+	}
+
+	t.initialized = true
+
+	return nil
+}
+
+func writeTestData(s Server, t *Test) error {
+	for i, w := range t.writes {
+		if w.db == "" {
+			w.db = t.database()
+		}
+		if w.rp == "" {
+			w.rp = t.retentionPolicy()
+		}
+
+		if err := s.CreateDatabaseAndRetentionPolicy(w.db, NewRetentionPolicySpec(w.rp, 1, 0), true); err != nil {
+			return err
+		}
+		if res, err := s.Write(w.db, w.rp, w.data, t.params); err != nil {
+			return fmt.Errorf("write #%d: %s", i, err)
+		} else if t.exp != res {
+			return fmt.Errorf("unexpected results\nexp: %s\ngot: %s\n", t.exp, res)
+		}
+	}
+
+	return nil
+}
+
+func configureLogging(s Server) {
+	// Set the logger to discard unless verbose is on
+	if !verboseServerLogs {
+		s.SetLogOutput(ioutil.Discard)
+	}
 }
