@@ -3,7 +3,7 @@ cnosdb-restore(1)
 
 NAME
 ----
-cnosdb-restore - Restores databases or specific shards to an CnosdDB instance
+cnosdb-restore - Restores databases or specific shards to an CnosDB instance
 
 SYNOPSIS
 --------
