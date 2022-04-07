@@ -8,8 +8,8 @@ cnosdb-config - Generate configuration files for CnosDB
 SYNOPSIS
 --------
 [verse]
-'cnosdb' config (-config <path>)
-'cnosdb config' -config /dev/null
+'cnosdb' config (--config <path>)
+'cnosdb config' --config /dev/null
 
 DESCRIPTION
 -----------
@@ -21,10 +21,10 @@ When using this command to regenerate a configuration file in place, be sure to 
 
 ===
 # DO NOT USE!
-$ cnosdb config -config cnosdb.conf > cnosdb.conf
+$ cnosdb config --config cnosdb.conf > cnosdb.conf
 
 # PROPER METHOD!
-$ cnosdb config -config cnosdb.conf > cnosdb.conf.tmp && \
+$ cnosdb config --config cnosdb.conf > cnosdb.conf.tmp && \
       mv cnosdb.conf.tmp cnosdb.conf
 ===
 
@@ -34,7 +34,7 @@ The second command version will force 'cnosdb config' to output the default conf
 
 OPTIONS
 -------
--config <path>::
+--config <path>::
   Customize the default configuration file to load. Disables automatic loading when the path is */dev/null*.
 
 include::footer.txt[]

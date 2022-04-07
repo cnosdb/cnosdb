@@ -10,6 +10,7 @@ MAN1_TXT += cnosdb-config.txt
 MAN1_TXT += cnosdb-restore.txt
 MAN1_TXT += cnosdb-run.txt
 MAN1_TXT += cnosdb-version.txt
+MAN1_TXT += cnosdb-inspect.txt
 
 MAN_TXT = $(MAN1_TXT)
 MAN_XML = $(patsubst %.txt,%.xml,$(MAN_TXT))

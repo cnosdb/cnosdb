@@ -1,0 +1,256 @@
+cnosdb_inspect(1)
+=================
+
+NAME
+----
+cnosdb-inspect - Displays detailed information about InfluxDB data files
+
+SYNOPSIS
+--------
+[verse]
+'cnosdb_inspect buildtsi' --datadir <data_dir> --waldir <wal_dir> [ options ]
+'cnosdb_inspect deletetsm' --measurement <measurement_name> [ arguments ] <path>
+'cnosdb_inspect dumptsi' [ options ] <index_path>
+'cnosdb_inspect dumptsm' [ options ] <path>
+'cnosdb_inspect dumptsmwal' [ options ] <wal_dir>
+'cnosdb_inspect export' [ options ]
+'cnosdb_inspect report' [ options ] <path>
+'cnosdb_inspect report-disk' [ options ] <path>
+'cnosdb_inspect reporttsi' -db-path <path-to-db> [ options ]
+'cnosdb_inspect verify' [ options ]
+'cnosdb_inspect verify-seriesfile' [ options ]
+'cnosdb_inspect verifytombstone' [ options ]
+
+DESCRIPTION
+-----------
+Displays detailed information about InfluxDB data files through one of the
+following commands.
+
+*buildtsi*::
+   Converts in-memory (TSM-based) shards to TSI.
+
+*deletetsm*::
+   Bulk deletes a measurement from a raw TSM file.
+
+*dumptsi*::
+   Dumps low-level details about TSI files.
+
+*dumptsm*::
+   Dumps low-level details about TSM files.
+
+*dumptsmwal*::
+   Dump all data from a WAL file.
+
+*export*::
+   Exports raw data from a shard in InfluxDB line protocol format.
+
+*report*::
+   Displays a shard level report.
+
+*report-disk*::
+   Reports disk usage by shards and measurements.
+
+*reporttsi*::
+   Reports on cardinality for shards and measurements.
+
+*verify*::
+   Verifies the integrity of TSM files.
+
+*verify-seriesfile*::
+   Verifies the integrity of series files.
+
+*verify-tombstone*::
+   Verifies the integrity of tombstones.
+
+BUILDTSI OPTIONS
+----------------
+--batch-size::
+   The size of the batches written to the index. Default value is 10000.
+
+--compact-series-file::
+   Does not rebuild the index. Compacts the existing series file, including offline series. Iterates series in each segment and rewrites non-tombstoned series in the index to a new .tmp file next to the segment. Once all segments are converted, the temporary files overwrite the original segments.
+
+--concurrency::
+   The number of workers to dedicate to shard index building. Defaults to GOMAXPROCS value.
+
+--database <db_name>::
+   The name of the database.
+
+--datadir <data_dir>::
+   The path to the data directory.
+
+--max-cache-size::
+   The maximum size of the cache before it starts rejecting writes. This value overrides the configuration setting for [data] cache-max-memory-size. Default value is 1073741824.
+
+--max-log-file-size::
+   The maximum size of the log file. Default value is 1048576.
+
+--retention <rp_name>::
+   The name of the retention policy.
+
+--shard <shard_ID>::
+   The identifier of the shard.
+
+--v::
+   Flag to enable output in verbose mode.
+
+--waldir <wal_dir>::
+   The directory for the WAL (Write Ahead Log) files.
+
+DELETSTSM OPTIONS
+-----------------
+--measurement::
+   The name of the measurement to delete from TSM files.
+
+--sanitize::
+   Flag to remove all keys containing non-printable Unicode characters from TSM files.
+
+--v::
+   Optional. Flag to enable verbose logging.
+
+DUMPTSI OPTIONS
+---------------
+--series-file <series_path>::
+   Path to the _series directory under the database data directory. Required.
+
+--series::
+   Dump raw series data.
+
+--measurements::
+   Dump raw measurement data.
+
+--tag-keys::
+   Dump raw tag keys.
+
+--tag-values::
+   Dump raw tag values.
+
+--tag-value-series::
+   Dump raw series for each tag value.
+
+--measurement-filter <regular_expression>::
+   Filter data by measurement regular expression.
+
+--tag-key-filter <regular_expression>::
+   Filter data by tag key regular expression.
+
+--tag-value-filter <regular_expresssion>::
+   Filter data by tag value regular expression.
+
+DUMPTSM OPTIONS
+---------------
+--index::
+   Flag to dump raw index data. Default value is false.
+
+--blocks::
+   Flag to dump raw block data. Default value is false.
+
+--all::
+   Flag to dump all data. Caution: This may print a lot of information. Default value is false.
+
+--filter-key <key_name>::
+   Display only index data and block data that match this key substring. Default value is "".
+
+DUMPTSMWAL OPTIONS
+------------------
+--show-duplicates::
+   Flag to show keys which have duplicate or out-of-order timestamps.If a user writes points with timestamps set by the client, then multiple points with the same timestamp (or with time-descending timestamps) can be written.
+
+EXPORT OPTIONS
+--------------
+--compress::
+   The flag to compress the output using gzip compression. Default value is false.
+
+--database <db_name>::
+   The name of the database to export. Default value is "".
+
+--datadir <data_dir>::
+   The path to the data directory. Default value is "$HOME/.cnosdb/data".
+
+--end <timestamp>::
+   The timestamp for the end of the time range. Must be in RFC3339 format.
+
+--lponly::
+   Output data in line protocol format only. Does not include comments or data definition language (DDL), like CREATE DATABASE.
+
+--out <export_dir> or -out -::
+   Location to export shard data.Specify an export directory to export a file, or add a hyphen after out (-out -) to export shard data to standard out (stdout) and send status messages to standard error (stderr).Default value is "$HOME/.cnosdb/export".
+
+--retention <rp_name>::
+   The name of the retention policy to export. Default value is "".
+
+--start <timestamp>::
+   The timestamp for the start of the time range. The timestamp string must be in RFC3339 format.
+
+--waldir <wal_dir>::
+   Path to the WAL directory. Default value is "$HOME/.cnosdb/wal".
+
+REPORT OPTIONS
+--------------
+<path>::
+   The path to the CnosDB data directory.
+
+--pattern "<regular expression/wildcard>"::
+   The regular expression or wildcard pattern to match included files. Default value is "".
+
+--detailed::
+   The flag to report detailed cardinality estimates. Default value is false.
+
+--exact::
+   The flag to report exact cardinality counts instead of estimates. Default value is false. Note: This can use a lot of memory.
+
+REPORT-DISK OPTIONS
+-------------------
+<path>::
+   Path to the directory with .tsm file(s) to report disk usage for. Default location is "$HOME/.cnosdb/data".
+
+--detailed::
+   Include this flag to report disk usage by measurement.
+
+
+REPORTTSI OPTIONS
+-----------------
+--db-path <path-to-db>::
+   The path to the database.
+
+--top <n>::
+   Limits the results to the top specified number within each shard.
+
+VERIFY OPTIONS
+--------------
+--dir <storage_root>::
+   The path to the storage root directory.Default value is "/root/.cnosdb".
+
+VERIFY-SERIESFILE OPTIONS
+-------------------------
+--c <number>::
+   Specifies the number of concurrent workers to run for this command.Default is equal to the value of GOMAXPROCS. If performance is adversely impacted, you can set a lower value.
+
+--dir <path>::
+   Specifies the root data path. Defaults to ~/.cnosdb/data.
+
+--db <db_name>::
+   Restricts verifying series files to the specified database in the data directory.
+
+--series-file <path>::
+   Path to a specific series file; overrides -db and -dir.
+
+--v::
+   Enables verbose logging.
+
+VERIFYTOMBSTONE OPTIONS
+-----------------------
+
+--dir <path>::
+   Specifies the root data path. Defaults to ~/.cnosdb/data.This path can be arbitrary, for example, it doesn’t need to be an CnosDB data directory.
+
+--v::
+   Enables verbose logging.Confirms a file is being verified and displays progress every 5 million tombstone entries.
+
+--vv::
+   Enables very verbose logging. Displays progress for every series key and time range in the tombstone files.Timestamps are displayed in nanoseconds since the Epoch (1970-01-01T00:00:00Z).
+
+--vvv::
+   Enables very very verbose logging. Displays progress for every series key and time range in the tombstone files.Timestamps are displayed in RFC3339 format with nanosecond precision.
+
+include::footer.txt[]

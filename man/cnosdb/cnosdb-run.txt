@@ -9,8 +9,8 @@ SYNOPSIS
 --------
 [verse]
 [verse]
-'cnosdb' [-config <path>] [-pidfile <path>] [-cpuprofile <path>] [-memprofile <path>]
-'cnosdb run' [-config <path>] [-pidfile <path>] [-cpuprofile <path>] [-memprofile <path>]
+'cnosdb' [--config <path>] [--pidfile <path>] [--cpuprofile <path>] [--memprofile <path>]
+'cnosdb run' [--config <path>] [--pidfile <path>] [--cpuprofile <path>] [--memprofile <path>]
 
 DESCRIPTION
 -----------

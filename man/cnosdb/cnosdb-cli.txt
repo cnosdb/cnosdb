@@ -10,7 +10,7 @@ SYNOPSIS
 [verse]
 'cnosdb-cli' [options]
 'cnosdb-cli' help
-'cnosdb-cli' import -path <path> (-compressed) [options]
+'cnosdb-cli' import --path <path> (-compressed) [options]
 'cnosdb-cli' export [options] --out <path>
 
 DESCRIPTION
