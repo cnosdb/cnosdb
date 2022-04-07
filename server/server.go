@@ -58,11 +58,11 @@ type Server struct {
 	Node       *cnosdb.Node
 	NewNode    bool
 	metaServer *meta.Server
-	metaClient meta.MetaClient
+	meta.MetaClient
 
-	tsdbStore                *tsdb.Store
+	TSDBStore                *tsdb.Store
 	queryExecutor            *query.Executor
-	pointsWriter             *coordinator.PointsWriter
+	PointsWriter             *coordinator.PointsWriter
 	shardWriter              *coordinator.ShardWriter
 	hintedHandoff            *hh.Service
 	subscriber               *subscriber.Service
@@ -144,8 +144,8 @@ func (s *Server) Close() {
 		_ = service.Close()
 	}
 
-	if s.pointsWriter != nil {
-		_ = s.pointsWriter.Close()
+	if s.PointsWriter != nil {
+		_ = s.PointsWriter.Close()
 	}
 
 	if s.queryExecutor != nil {
@@ -153,12 +153,12 @@ func (s *Server) Close() {
 	}
 
 	// Close the TSDBStore, no more reads or writes at this point
-	if s.tsdbStore != nil {
-		_ = s.tsdbStore.Close()
+	if s.TSDBStore != nil {
+		_ = s.TSDBStore.Close()
 	}
 
-	if s.metaClient != nil {
-		_ = s.metaClient.Close()
+	if s.MetaClient != nil {
+		_ = s.MetaClient.Close()
 	}
 
 	_ = s.httpListener.Close()
@@ -195,43 +195,43 @@ func (s *Server) initMetaStore() error {
 func (s *Server) initTSDBStore() error {
 	s.monitor = monitor.New(s, s.Config.Monitor)
 
-	s.tsdbStore = tsdb.NewStore(s.Config.Data.Dir)
-	s.tsdbStore.EngineOptions.Config = s.Config.Data
+	s.TSDBStore = tsdb.NewStore(s.Config.Data.Dir)
+	s.TSDBStore.EngineOptions.Config = s.Config.Data
 
-	s.tsdbStore.EngineOptions.EngineVersion = s.Config.Data.Engine
-	s.tsdbStore.EngineOptions.IndexVersion = s.Config.Data.Index
+	s.TSDBStore.EngineOptions.EngineVersion = s.Config.Data.Engine
+	s.TSDBStore.EngineOptions.IndexVersion = s.Config.Data.Index
 
 	s.shardWriter = coordinator.NewShardWriter(time.Duration(s.Config.Coordinator.ShardWriterTimeout),
 		s.Config.Coordinator.MaxRemoteWriteConnections)
-	s.shardWriter.MetaClient = s.metaClient
+	s.shardWriter.MetaClient = s.MetaClient
 
-	s.hintedHandoff = hh.NewService(s.Config.HintedHandoff, s.shardWriter, s.metaClient)
+	s.hintedHandoff = hh.NewService(s.Config.HintedHandoff, s.shardWriter, s.MetaClient)
 	s.hintedHandoff.Monitor = s.monitor
 
-	s.pointsWriter = coordinator.NewPointsWriter()
-	s.pointsWriter.WriteTimeout = time.Duration(s.Config.Coordinator.WriteTimeout)
-	s.pointsWriter.MetaClient = s.metaClient
-	s.pointsWriter.HintedHandoff = s.hintedHandoff
-	s.pointsWriter.TSDBStore = s.tsdbStore
-	s.pointsWriter.ShardWriter = s.shardWriter
-	s.pointsWriter.Node = s.Node
+	s.PointsWriter = coordinator.NewPointsWriter()
+	s.PointsWriter.WriteTimeout = time.Duration(s.Config.Coordinator.WriteTimeout)
+	s.PointsWriter.MetaClient = s.MetaClient
+	s.PointsWriter.HintedHandoff = s.hintedHandoff
+	s.PointsWriter.TSDBStore = s.TSDBStore
+	s.PointsWriter.ShardWriter = s.shardWriter
+	s.PointsWriter.Node = s.Node
 
 	s.subscriber = subscriber.NewService(s.Config.Subscriber)
-	s.subscriber.MetaClient = s.metaClient
+	s.subscriber.MetaClient = s.MetaClient
 
 	s.queryExecutor = query.NewExecutor()
 	s.queryExecutor.StatementExecutor = &coordinator.StatementExecutor{
-		MetaClient:  s.metaClient,
+		MetaClient:  s.MetaClient,
 		TaskManager: s.queryExecutor.TaskManager,
-		TSDBStore:   s.tsdbStore,
+		TSDBStore:   s.TSDBStore,
 		ShardMapper: &coordinator.LocalShardMapper{
-			MetaClient: s.metaClient,
+			MetaClient: s.MetaClient,
 			TSDBStore: coordinator.LocalTSDBStore{
-				Store: s.tsdbStore,
+				Store: s.TSDBStore,
 			},
 		},
 		Monitor:           s.monitor,
-		PointsWriter:      s.pointsWriter,
+		PointsWriter:      s.PointsWriter,
 		MaxSelectPointN:   s.Config.Coordinator.MaxSelectPointN,
 		MaxSelectSeriesN:  s.Config.Coordinator.MaxSelectSeriesN,
 		MaxSelectBucketsN: s.Config.Coordinator.MaxSelectBucketsN,
@@ -241,20 +241,20 @@ func (s *Server) initTSDBStore() error {
 	s.queryExecutor.TaskManager.MaxConcurrentQueries = s.Config.Coordinator.MaxConcurrentQueries
 
 	s.coordinatorService = coordinator.NewService(s.Config.Coordinator)
-	s.coordinatorService.TSDBStore = s.tsdbStore
-	s.coordinatorService.MetaClient = s.metaClient
+	s.coordinatorService.TSDBStore = s.TSDBStore
+	s.coordinatorService.MetaClient = s.MetaClient
 
 	s.snapshotterService = snapshotter.NewService()
-	s.snapshotterService.TSDBStore = s.tsdbStore
-	s.snapshotterService.MetaClient = s.metaClient
+	s.snapshotterService.TSDBStore = s.TSDBStore
+	s.snapshotterService.MetaClient = s.MetaClient
 
 	// Open TSDB store.
-	if err := s.tsdbStore.Open(); err != nil {
+	if err := s.TSDBStore.Open(); err != nil {
 		return fmt.Errorf("open tsdb store: %s", err)
 	}
 
 	// Open the points writer service
-	if err := s.pointsWriter.Open(); err != nil {
+	if err := s.PointsWriter.Open(); err != nil {
 		return fmt.Errorf("open points writer: %s", err)
 	}
 
@@ -289,13 +289,13 @@ func (s *Server) initHTTPServer() error {
 
 	h := NewHandler(&s.Config.HTTPD)
 	h.Version = "0.0.0"
-	h.metaClient = s.metaClient
-	h.QueryAuthorizer = meta.NewQueryAuthorizer(s.metaClient)
-	h.WriteAuthorizer = meta.NewWriteAuthorizer(s.metaClient)
+	h.metaClient = s.MetaClient
+	h.QueryAuthorizer = meta.NewQueryAuthorizer(s.MetaClient)
+	h.WriteAuthorizer = meta.NewWriteAuthorizer(s.MetaClient)
 	h.QueryExecutor = s.queryExecutor
-	h.StorageStore = storage.NewStore(s.tsdbStore, s.metaClient)
+	h.StorageStore = storage.NewStore(s.TSDBStore, s.MetaClient)
 	h.Monitor = s.monitor
-	h.PointsWriter = s.pointsWriter
+	h.PointsWriter = s.PointsWriter
 	h.logger = logger.BgLogger()
 	h.Open()
 
@@ -317,8 +317,8 @@ func (s *Server) initTCPServer() error {
 }
 
 func (s *Server) initMonitor() error {
-	s.monitor.MetaClient = s.metaClient
-	s.monitor.PointsWriter = (*monitorPointsWriter)(s.pointsWriter)
+	s.monitor.MetaClient = s.MetaClient
+	s.monitor.PointsWriter = (*monitorPointsWriter)(s.PointsWriter)
 	return s.monitor.Open()
 }
 
@@ -357,17 +357,17 @@ func (s *Server) initMetaClient() error {
 		}
 		s.logger.Info("joined cluster", zap.String("peers", strings.Join(s.Node.Peers, ",")))
 	}
-	s.metaClient = metaCli
+	s.MetaClient = metaCli
 
 	// s.metaClient.SetTLS(s.metaUseTLS)
 
-	if err := s.metaClient.Open(); err != nil {
+	if err := s.MetaClient.Open(); err != nil {
 		return err
 	}
 
 	// if the node ID is > 0 then we need to initialize the metaclient
 	if s.Node.ID > 0 {
-		s.metaClient.WaitForDataChanged()
+		s.MetaClient.WaitForDataChanged()
 	}
 
 	return nil
@@ -510,8 +510,8 @@ func (s *Server) remoteAddr(addr string) string {
 func (s *Server) Statistics(tags map[string]string) []models.Statistic {
 	var statistics []models.Statistic
 	statistics = append(statistics, s.queryExecutor.Statistics(tags)...)
-	statistics = append(statistics, s.tsdbStore.Statistics(tags)...)
-	statistics = append(statistics, s.pointsWriter.Statistics(tags)...)
+	statistics = append(statistics, s.TSDBStore.Statistics(tags)...)
+	statistics = append(statistics, s.PointsWriter.Statistics(tags)...)
 	for _, srv := range s.services {
 		if m, ok := srv.(monitor.Reporter); ok {
 			statistics = append(statistics, m.Statistics(tags)...)
@@ -526,7 +526,7 @@ func (s *Server) initContinueQuery() error {
 	}
 
 	s.continuousQuerierService = continuous_querier.NewService(s.Config.ContinuousQuery)
-	s.continuousQuerierService.MetaClient = s.metaClient
+	s.continuousQuerierService.MetaClient = s.MetaClient
 	s.continuousQuerierService.QueryExecutor = s.queryExecutor
 	s.continuousQuerierService.Monitor = s.monitor
 	return nil

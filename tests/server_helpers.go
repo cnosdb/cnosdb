@@ -33,7 +33,6 @@ type Server interface {
 	URL() string
 	TcpAddr() string
 	Open() error
-	SetLogOutput(w io.Writer)
 	Close()
 	Closed() bool
 
@@ -52,7 +51,7 @@ type Server interface {
 }
 
 // NewServer returns a new instance of Server
-func NewServer(c *Config)  {
+func NewServer(c *Config) Server {
 	srv:= server.NewServer(c.Config)
 	s := LocalServer{
 		client: &client{},
@@ -60,8 +59,7 @@ func NewServer(c *Config)  {
 		Config: c,
 	}
 	s.client.URLFn = s.URL
-	//todo implement Server interface
-	//return &s
+	return &s
 }
 
 //
@@ -154,12 +152,61 @@ func (s *LocalServer) TcpAddr() string {
 	defer s.mu.RUnlock()
 	return "tcp://127.0.0.1"
 }
-
 //todo add Server interface method
+func (s *LocalServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.MetaClient.CreateDatabase(db)
+}
 
+func (s *LocalServer) CreateDatabaseAndRetentionPolicy(db string, rp *meta.RetentionPolicySpec, makeDefault bool) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, err := s.MetaClient.CreateDatabase(db); err != nil {
+		return err
+	} else if _, err := s.MetaClient.CreateRetentionPolicy(db, rp, makeDefault); err != nil {
+		return err
+	}
+	return nil
+}
 
+func (s *LocalServer) CreateSubscription(database, rp, name, mode string, destinations []string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.MetaClient.CreateSubscription(database, rp, name, mode, destinations)
+}
 
+func (s *LocalServer) DropDatabase(db string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
+	if err := s.TSDBStore.DeleteDatabase(db); err != nil {
+		return err
+	}
+	return s.MetaClient.DropDatabase(db)
+}
+
+func (s *LocalServer) Reset() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, db := range s.MetaClient.Databases() {
+		if err := s.DropDatabase(db.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *LocalServer) WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.PointsWriter == nil {
+		return fmt.Errorf("server closed")
+	}
+
+	return s.PointsWriter.WritePoints(database, retentionPolicy, consistencyLevel, user, points)
+}
 
 type client struct {
 	URLFn func() string
@@ -502,11 +549,4 @@ func writeTestData(s Server, t *Test) error {
 	}
 
 	return nil
-}
-
-func configureLogging(s Server) {
-	// Set the logger to discard unless verbose is on
-	if !verboseServerLogs {
-		s.SetLogOutput(ioutil.Discard)
-	}
 }
