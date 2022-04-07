@@ -14,7 +14,8 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reporttsi"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
-	
+	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/verify-tombstone"
+
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,9 @@ func main() {
 
 	verifyCmd := verify.GetCommand()
 	mainCmd.AddCommand(verifyCmd)
+
+	verifytombstoneCmd := verifytombstone.GetCommand()
+	mainCmd.AddCommand(verifytombstoneCmd)
 
 	verifySeriesfileCmd := seriesfile.GetCommand()
 	mainCmd.AddCommand(verifySeriesfileCmd)
