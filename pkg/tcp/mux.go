@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	// DefaultTimeout Default Header timeout 
+	// DefaultTimeout Default Header timeout
 	DefaultTimeout = 30 * time.Second
 )
 

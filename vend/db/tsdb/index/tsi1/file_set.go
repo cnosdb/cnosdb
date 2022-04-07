@@ -29,6 +29,11 @@ func NewFileSet(levels []CompactionLevel, sfile *tsdb.SeriesFile, files []File) 
 		files:  files,
 	}, nil
 }
+func NewFileSet1(files []File) *FileSet {
+	return &FileSet{
+		files: files,
+	}
+}
 
 // bytes estimates the memory footprint of this FileSet, in bytes.
 func (fs *FileSet) bytes() int {

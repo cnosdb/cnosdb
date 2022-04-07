@@ -4,6 +4,11 @@ import (
 	"bufio"
 	"compress/gzip"
 	"fmt"
+	"github.com/cnosdb/cnosdb/pkg/escape"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+	"github.com/spf13/cobra"
 	"io"
 	"math"
 	"os"
@@ -14,12 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cnosdb/cnosdb/vend/cnosql"
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
-	"github.com/cnosdb/cnosdb/pkg/escape"
-	"github.com/spf13/cobra"
 )
 
 const examples = `aaa

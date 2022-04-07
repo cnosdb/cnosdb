@@ -5,17 +5,43 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/_import"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/cli"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/export"
+	"github.com/spf13/cobra"
 )
 
+var (
+	version string
+)
+
+func init() {
+	if version == "" {
+		version = "unknown"
+	}
+}
+
 func main() {
-	cliCmd := cli.GetCommand()
+	cliCmd := cli.GetCommand(version)
 	importCmd := _import.GetCommand()
 	cliCmd.AddCommand(importCmd)
-	exportCmd := export.GetCommand()
-	cliCmd.AddCommand(exportCmd)
+	printVersionCmd := printVersionCmd()
+	cliCmd.AddCommand(printVersionCmd)
 
 	if err := cliCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
+	}
+}
+
+func printVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Long:  "Display the version and exit",
+		Short: "Display the version and exit",
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd:   true,
+			DisableNoDescFlag:   true,
+			DisableDescriptions: true,
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("CnosDB shell version: v%s\n", version)
+		},
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+	"github.com/cnosdb/cnosdb/vend/storage"
 	"github.com/pkg/errors"
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
@@ -115,6 +116,10 @@ func (s *Server) Open() error {
 	}
 
 	if err := s.initHTTPServer(); err != nil {
+		return err
+	}
+
+	if err := s.initMonitor(); err != nil {
 		return err
 	}
 
@@ -277,6 +282,7 @@ func (s *Server) initHTTPServer() error {
 	h.QueryAuthorizer = meta.NewQueryAuthorizer(s.metaClient)
 	h.WriteAuthorizer = meta.NewWriteAuthorizer(s.metaClient)
 	h.QueryExecutor = s.queryExecutor
+	h.StorageStore = storage.NewStore(s.tsdbStore, s.metaClient)
 	h.Monitor = s.monitor
 	h.PointsWriter = s.pointsWriter
 	h.logger = logger.BgLogger()
@@ -297,6 +303,12 @@ func (s *Server) initTCPServer() error {
 	s.tcpListener = network.ListenString(s.tcpMux, NodeMuxHeader)
 
 	return nil
+}
+
+func (s *Server) initMonitor() error {
+	s.monitor.MetaClient = s.metaClient
+	s.monitor.PointsWriter = (*monitorPointsWriter)(s.pointsWriter)
+	return s.monitor.Open()
 }
 
 func (s *Server) openServices() error {
@@ -525,6 +537,31 @@ func writeErrorWithCode(w http.ResponseWriter, errMsg string, code int) {
 	_, _ = w.Write(b)
 }
 
+// httpError writes an error to the client in a standard format.
+func (h *Handler) httpError(w http.ResponseWriter, errmsg string, code int) {
+	if code == http.StatusUnauthorized {
+		// If an unauthorized header will be sent back, add a WWW-Authenticate header
+		// as an authorization challenge.
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=\"%s\"", h.config.Realm))
+	} else if code/100 != 2 {
+		sz := math.Min(float64(len(errmsg)), 1024.0)
+		w.Header().Set("X-CnosDB-Error", errmsg[:int(sz)])
+	}
+	response := Response{Err: errors.New(errmsg)}
+	if rw, ok := w.(ResponseWriter); ok {
+		h.writeHeader(w, code)
+		rw.WriteResponse(response)
+		return
+	}
+
+	// Default implementation if the response writer hasn't been replaced
+	// with our special response writer type.
+	w.Header().Add("Content-Type", "application/json")
+	h.writeHeader(w, code)
+	b, _ := json.Marshal(response)
+	w.Write(b)
+}
+
 func writeJson(w http.ResponseWriter, data interface{}) {
 	js, err := json.MarshalIndent(data, "", " ")
 	if err != nil {
@@ -590,4 +627,13 @@ func (r *Response) Error() error {
 		}
 	}
 	return nil
+}
+
+// monitorPointsWriter is a wrapper around `coordinator.PointsWriter` that helps
+// to prevent a circular dependency between the `cluster` and `monitor` packages.
+type monitorPointsWriter coordinator.PointsWriter
+
+func (pw *monitorPointsWriter) WritePoints(database, retentionPolicy string, points models.Points) error {
+
+	return (*coordinator.PointsWriter)(pw).WritePointsPrivileged(database, retentionPolicy, models.ConsistencyLevelAny, points)
 }

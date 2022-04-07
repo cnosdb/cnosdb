@@ -6,14 +6,11 @@ import (
 	"strings"
 
 	"github.com/cnosdb/cnosdb/client"
-
 	"github.com/spf13/cobra"
 )
 
 var (
-	version string
-
-	commandLine = newCommandLine(version)
+	commandLine *CommandLine
 
 	// promptForPassword
 	promptForPassword = false
@@ -31,13 +28,8 @@ const (
 	defaultPPS = 0
 )
 
-func init() {
-	if version == "" {
-		version = "0.0.1"
-	}
-}
-
-func GetCommand() *cobra.Command {
+func GetCommand(version string) *cobra.Command {
+	commandLine = newCommandLine(version)
 	c := &cobra.Command{
 		Use:     "cnosdb-cli",
 		Long:    description,
@@ -84,4 +76,4 @@ var description = `CnosDB shell`
 var examples = `  cnosdb-cli
   cnosdb-cli --format=json --pretty
   cnosdb-cli import --path dba-export.txt
-  cnosdb-cli export --database dba --out dba-export.txt`
+`
