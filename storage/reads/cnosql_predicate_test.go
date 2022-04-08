@@ -82,7 +82,7 @@ func TestHasFieldValueKey(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			expr, err := reads.NodeToExpr(predicate, nil)
 			if err != nil {
-				t.Fatalf("unexpected error converting predicate to InfluxQL expression: %v", err)
+				t.Fatalf("unexpected error converting predicate to cnosQL expression: %v", err)
 			}
 			if !reads.HasFieldValueKey(expr) {
 				t.Fatalf("did not find a field reference in %v", expr)
