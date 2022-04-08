@@ -1282,7 +1282,16 @@ func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupRPN
 				// OSS doesn't use Owners but if we are importing this from Enterprise, we'll want to clear it out
 				// to avoid any issues if they ever export this DB again to bring back to Enterprise.
 				// sgImport.Shards[k].Owners = []ShardOwner{}
-				sgImport.Shards[k].Owners = []ShardOwner{ShardOwner{NodeID: 0}}
+
+				dataNodeCount := len(data.DataNodes)
+				if dataNodeCount == 1 {
+					sgImport.Shards[k].Owners = []ShardOwner{{NodeID: 0}}
+				} else {
+					nodeIndex := int(data.Index % uint64(dataNodeCount))
+					nodeID := data.DataNodes[nodeIndex%dataNodeCount].ID
+					sgImport.Shards[k].Owners = []ShardOwner{{NodeID: nodeID}}
+					nodeIndex++
+				}
 			}
 		}
 	}
