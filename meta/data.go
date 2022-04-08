@@ -1284,6 +1284,9 @@ func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupRPN
 				// sgImport.Shards[k].Owners = []ShardOwner{}
 
 				dataNodeCount := len(data.DataNodes)
+				if dataNodeCount == 0 {
+					dataNodeCount = 1
+				}
 				if dataNodeCount == 1 {
 					sgImport.Shards[k].Owners = []ShardOwner{{NodeID: 0}}
 				} else {
