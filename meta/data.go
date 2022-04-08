@@ -12,10 +12,10 @@ import (
 	"unicode"
 
 	"github.com/cnosdb/cnosdb"
+	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
-	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -1281,7 +1281,8 @@ func (data *Data) importOneDB(other Data, backupDBName, restoreDBName, backupRPN
 				sgImport.Shards[k].ID = data.MaxShardID
 				// OSS doesn't use Owners but if we are importing this from Enterprise, we'll want to clear it out
 				// to avoid any issues if they ever export this DB again to bring back to Enterprise.
-				sgImport.Shards[k].Owners = []ShardOwner{}
+				// sgImport.Shards[k].Owners = []ShardOwner{}
+				sgImport.Shards[k].Owners = []ShardOwner{ShardOwner{NodeID: 0}}
 			}
 		}
 	}

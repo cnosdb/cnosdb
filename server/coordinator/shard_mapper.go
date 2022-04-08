@@ -438,6 +438,6 @@ func (a *LocalShardMapping) Close() error {
 
 // Source contains the database and retention policy source for data.
 type Source struct {
-	Database string
+	Database        string
 	RetentionPolicy string
 }
