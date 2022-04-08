@@ -3,7 +3,7 @@ cnosdb_inspect(1)
 
 NAME
 ----
-cnosdb-inspect - Displays detailed information about InfluxDB data files
+cnosdb-inspect - Displays detailed information about CnosDB data files
 
 SYNOPSIS
 --------
@@ -23,7 +23,7 @@ SYNOPSIS
 
 DESCRIPTION
 -----------
-Displays detailed information about InfluxDB data files through one of the
+Displays detailed information about CnosDB data files through one of the
 following commands.
 
 *buildtsi*::
@@ -42,7 +42,7 @@ following commands.
    Dump all data from a WAL file.
 
 *export*::
-   Exports raw data from a shard in InfluxDB line protocol format.
+   Exports raw data from a shard in CnosDB line protocol format.
 
 *report*::
    Displays a shard level report.
