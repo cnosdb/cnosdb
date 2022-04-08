@@ -1088,30 +1088,116 @@ func (s *Shard) Export(w io.Writer, basePath string, start time.Time, end time.T
 // Restore restores data to the underlying engine for the shard.
 // The shard is reopened after restore.
 func (s *Shard) Restore(r io.Reader, basePath string) error {
-	if err := func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-		// Special case - we can still restore to a disabled shard, so we should
-		// only check if the engine is closed and not care if the shard is
-		// disabled.
-		if s._engine == nil {
-			return ErrEngineClosed
-		}
+	// Special case - we can still restore to a disabled shard, so we should
+	// only check if the engine is closed and not care if the shard is
+	// disabled.
+	if s._engine == nil {
+		return ErrEngineClosed
+	}
 
-		// Restore to engine.
-		return s._engine.Restore(r, basePath)
-	}(); err != nil {
+	// Restore to engine.
+	if err := s._engine.Restore(r, basePath); err != nil {
 		return err
 	}
 
 	// Close shard.
-	if err := s.Close(); err != nil {
+	if err := s.closeNoLock(); err != nil {
 		return err
 	}
 
 	// Reopen engine.
-	return s.Open()
+	return s.openNoLock()
+}
+
+func (s *Shard) openNoLock() error {
+	if err := func() error {
+		// Return if the shard is already open
+		if s._engine != nil {
+			return nil
+		}
+
+		seriesIDSet := NewSeriesIDSet()
+
+		// Initialize underlying index.
+		ipath := filepath.Join(s.path, "index")
+		idx, err := NewIndex(s.id, s.database, ipath, seriesIDSet, s.sfile, s.options)
+		if err != nil {
+			return err
+		}
+
+		idx.WithLogger(s.baseLogger)
+
+		// Open index.
+		if err := idx.Open(); err != nil {
+			return err
+		}
+		s.index = idx
+
+		// Initialize underlying engine.
+		e, err := NewEngine(s.id, idx, s.path, s.walPath, s.sfile, s.options)
+		if err != nil {
+			return err
+		}
+
+		// Set log output on the engine.
+		e.WithLogger(s.baseLogger)
+
+		// Disable compactions while loading the index
+		e.SetEnabled(false)
+
+		// Open engine.
+		if err := e.Open(); err != nil {
+			return err
+		}
+
+		// Load metadata index for the inmem index only.
+		// If the shard already has data, this is what loads the series ids into the series file, even
+		// if we are on TSI indexing.
+		if err := e.LoadMetadataIndex(s.id, s.index); err != nil {
+			return err
+		}
+		s._engine = e
+
+		return nil
+	}(); err != nil {
+		s.closeNoLock()
+		return NewShardError(s.id, err)
+	}
+
+	if s.EnableOnOpen {
+		// enable writes, queries and compactions
+		s.setEnabledNoLock(true)
+	}
+
+	return nil
+}
+
+func (s *Shard) setEnabledNoLock(enabled bool) {
+	// Prevent writes and queries
+	s.enabled = enabled
+	if s._engine != nil && !s.CompactionDisabled {
+		// Disable background compactions and snapshotting
+		s._engine.SetEnabled(enabled)
+	}
+}
+
+func (s *Shard) closeNoLock() error {
+	if s._engine == nil {
+		return nil
+	}
+
+	err := s._engine.Close()
+	if err == nil {
+		s._engine = nil
+	}
+
+	if e := s.index.Close(); e == nil {
+		s.index = nil
+	}
+	return err
 }
 
 // Import imports data to the underlying engine for the shard. r should
