@@ -19,8 +19,10 @@ fn test_add_series() {
         value: Vec::<u8>::from("test"),
     });
     fidx.add_series(SeriesInfo {
-        id: 0,
+        id: 123,
         fields,
         tags,
     });
+
+    fidx.close();
 }

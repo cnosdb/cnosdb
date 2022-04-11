@@ -1,23 +1,23 @@
-use protos::tskv::ts_kv_client::TsKvClient;
+use protos::kv_service::{tskv_service_client, Tag, FieldInfo, FieldType, AddSeriesRpcRequest};
 
 #[actix_rt::test]
 async fn test_call_add_series() {
     let mut conn =
-        TsKvClient::connect("http://127.0.0.1:31006").await.unwrap();
+        tskv_service_client::connect("http://127.0.0.1:31006").await.unwrap();
 
-    let mut tags = Vec::<protos::tskv::Tag>::new();
-    tags.push(protos::tskv::Tag {
+    let mut tags = Vec::<Tag>::new();
+    tags.push(Tag {
         key: Vec::<u8>::from("host"),
         value: Vec::<u8>::from("node1"),
     });
-    let mut fields = Vec::<protos::tskv::FieldInfo>::new();
-    fields.push(protos::tskv::FieldInfo {
-        field_type: protos::tskv::FieldType::Integer as i32, //enum
+    let mut fields = Vec::<FieldInfo>::new();
+    fields.push(FieldInfo {
+        field_type: FieldType::Integer as i32, //enum
         name: Vec::<u8>::from("cpu"),
         id: 0,
     });
-    let req = protos::tskv::AddSeriesRpcRequest {
-        protocol_version: 1,
+    let req = AddSeriesRpcRequest {
+        version: 1,
         series_id: 10010,
         tags,
         fields,
