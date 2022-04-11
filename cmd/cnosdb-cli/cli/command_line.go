@@ -414,7 +414,7 @@ func (c *CommandLine) setDatabaseAndRP(cmd string) {
 						if i == 0 {
 							name = v.(string)
 						}
-						if i == 4 {
+						if i == 4 && v == true {
 							c.pointConfig.RetentionPolicy = name
 							fmt.Printf("Using rp %s\n", name)
 						}
