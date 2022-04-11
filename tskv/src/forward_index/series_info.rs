@@ -73,6 +73,7 @@ impl SeriesInfo {
     }
 }
 
+#[derive(Debug)]
 pub struct SeriesInfoSimplified {
     pub id: SeriesID,
     pub offset: usize,
