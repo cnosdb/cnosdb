@@ -1,21 +1,21 @@
-mod series_info;
 mod field_info;
+mod series_info;
 mod tags;
 mod tests;
 
+use crate::file_manager::FileManager;
+use crate::{direct_io, FileSync};
+use crc32fast;
+use hashbrown::HashMap;
+use libc::munlock;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_traits::cast::ToPrimitive;
+use series_info::{SeriesID, SeriesInfo, SeriesInfoSimplified};
 use std::any::Any;
 use std::borrow::Borrow;
 use std::fs;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
-use hashbrown::HashMap;
-use series_info::{SeriesID, SeriesInfo, SeriesInfoSimplified};
-use crate::{direct_io, FileSync};
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use crate::file_manager::FileManager;
-use crc32fast;
-use num_traits::cast::ToPrimitive;
-use libc::munlock;
 
 const VERSION: u8 = 1;
 const V1_HEAD_LEN: usize = 2 + 1 + 1 + 4;
@@ -29,8 +29,12 @@ pub struct ForwardIndex {
 
 impl ForwardIndex {
     pub fn new(path: &str) -> Self {
-        let file = FileManager::get_instance().open_file_with(
-            path, &fs::OpenOptions::new().read(true).write(true).create(true)).unwrap();
+        let file = FileManager::get_instance()
+            .open_file_with(
+                path,
+                &fs::OpenOptions::new().read(true).write(true).create(true),
+            )
+            .unwrap();
 
         let mut fi = ForwardIndex {
             file_path: PathBuf::from(path),
@@ -47,8 +51,6 @@ impl ForwardIndex {
         loop {
             p = self.load_slices(p);
             if p == self.file.len().try_into().unwrap() {
-                println!("{}", p);
-                println!("{}", self.file.len());
                 break;
             }
         }
@@ -80,21 +82,31 @@ impl ForwardIndex {
 
             //read version
             let version = u8::from_be_bytes(
-                buf[info_offset + 2..info_offset + 2 + 1].try_into().unwrap());
+                buf[info_offset + 2..info_offset + 2 + 1]
+                    .try_into()
+                    .unwrap(),
+            );
             if version != VERSION {
                 continue;
             }
 
             //read type
             let elem_type = u8::from_be_bytes(
-                buf[info_offset + 2 + 1..info_offset + 2 + 2].try_into().unwrap());
+                buf[info_offset + 2 + 1..info_offset + 2 + 2]
+                    .try_into()
+                    .unwrap(),
+            );
             let elem_type = ElemType::try_from(elem_type).unwrap();
 
             //check crc
             let data_crc_number = u32::from_be_bytes(
-                buf[info_offset + 2 + 2..info_offset + 2 + 6].try_into().unwrap());
+                buf[info_offset + 2 + 2..info_offset + 2 + 6]
+                    .try_into()
+                    .unwrap(),
+            );
             let calculate_crc = crc32fast::hash(
-                buf[info_offset + 2 + 6..info_offset + 2 + 6 + data_len as usize].borrow());
+                buf[info_offset + 2 + 6..info_offset + 2 + 6 + data_len as usize].borrow(),
+            );
             if data_crc_number != calculate_crc {
                 panic!("crc check err");
             }
@@ -103,7 +115,8 @@ impl ForwardIndex {
             match ElemType::try_from(elem_type).unwrap() {
                 ElemType::Add => {
                     let info = SeriesInfo::decoded(
-                        &buf[info_offset + 2 + 6..info_offset + 2 + 6 + data_len as usize].to_vec());
+                        &buf[info_offset + 2 + 6..info_offset + 2 + 6 + data_len as usize].to_vec(),
+                    );
                     let mut simplified_info = info.simplified();
                     simplified_info.offset = info_offset;
                     self.series_info_set.insert(info.id, info.simplified());
@@ -149,20 +162,28 @@ impl ForwardIndex {
         self.encode(ElemType::Del, id.to_be_bytes().to_vec())
     }
 
+    /// If SeriesInfo does not exist, insert SeriesInfo
     pub fn add_series(&mut self, info: SeriesInfo) {
         let size = self.file.len();
 
         let mut simplified_info = info.simplified();
         simplified_info.set_offset(size.try_into().unwrap());
 
-        self.file.write_at(size, &self.add_encode(&info)).unwrap();
-
-        self.series_info_set.insert(info.id, simplified_info);
+        match self.series_info_set.entry(info.id) {
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                entry.insert(simplified_info);
+                self.file.write_at(size, &self.add_encode(&info)).unwrap();
+            }
+            hashbrown::hash_map::Entry::Occupied(entry) => {
+                //continue
+            }
+        }
     }
 
     pub fn del_series(&mut self, id: SeriesID) {
-        self.file.write_at(self.file.len(), &self.del_encode(id)).unwrap();
-
+        self.file
+            .write_at(self.file.len(), &self.del_encode(id))
+            .unwrap();
         self.series_info_set.remove(id.borrow());
     }
 
@@ -174,12 +195,8 @@ impl ForwardIndex {
                 SeriesInfo
             }
              */
-            Some(..) => {
-                Option::None
-            }
-            None => {
-                Option::None
-            }
+            Some(..) => Option::None,
+            None => Option::None,
         }
     }
 

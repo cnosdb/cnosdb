@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
 use crate::forward_index::field_info::{FieldID, FieldInfo};
 use crate::forward_index::tags::Tag;
-use utils::bkdr_hash::hash_with_bytes;
-use serde::{Serialize, Deserialize};
 use bincode;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use utils::bkdr_hash::hash_with_bytes;
 
 pub type SeriesID = u64;
 

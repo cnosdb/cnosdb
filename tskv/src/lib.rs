@@ -5,6 +5,7 @@
 mod direct_io;
 mod error;
 mod file_manager;
+mod forward_index;
 mod kvcore;
 mod lru_cache;
 mod memcache;
@@ -13,7 +14,6 @@ mod points;
 mod runtime;
 mod tsm;
 mod wal;
-mod forward_index;
 
 pub use direct_io::*;
 pub use error::*;
