@@ -404,6 +404,24 @@ func (c *CommandLine) setDatabaseAndRP(cmd string) {
 		}
 		c.pointConfig.RetentionPolicy = rp
 		fmt.Printf("Using rp %s\n", rp)
+	} else {
+		response, _ := c.client.Query(client.Query{Command: fmt.Sprintf("SHOW RETENTION POLICIES ON %q", db)})
+		for _, result := range response.Results {
+			for _, row := range result.Series {
+				for _, values := range row.Values {
+					var name string
+					for i, v := range values {
+						if i == 0 {
+							name = v.(string)
+						}
+						if i == 4 {
+							c.pointConfig.RetentionPolicy = name
+							fmt.Printf("Using rp %s\n", name)
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -963,7 +981,7 @@ func (c *CommandLine) printSettings() {
 
 func (c *CommandLine) logo() {
 	logo :=
-`
+		`
                                   _   _
                                  | | | |
   ___   _ __     ___    ___    __| | | |__
