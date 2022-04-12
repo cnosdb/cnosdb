@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{option::{TseriesFamDesc, MAX_MEMCACHE_SIZE}, tseries_family, MemCache, TseriesFamily, Version};
+use crate::{
+    option::{TseriesFamDesc, MAX_MEMCACHE_SIZE},
+    tseries_family, MemCache, TseriesFamily, Version,
+};
 
 pub struct VersionSet {
     ts_families: HashMap<u32, TseriesFamily>,
@@ -35,7 +38,14 @@ impl VersionSet {
         }
     }
 
-    pub fn switch_memcache(&mut self, tf_id:u32, seq: u64){
+    pub fn new_default() -> Self {
+        Self {
+            ts_families: Default::default(),
+            ts_families_names: Default::default(),
+        }
+    }
+
+    pub fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         let tf = self.ts_families.get_mut(&tf_id).unwrap();
         let mem = Arc::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq));
         tf.switch_memcache(mem.clone());

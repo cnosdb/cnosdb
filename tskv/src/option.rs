@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-pub const MAX_MEMCACHE_SIZE: u64 = 100 * 1024 * 1024;  //100M 
+pub const MAX_MEMCACHE_SIZE: u64 = 100 * 1024 * 1024; //100M
 
 pub struct Options {
     pub(crate) front_cpu: usize,

@@ -198,7 +198,7 @@ impl WriteAheadLogDiskFileWriter {
             Err(err) => Err(Error::FileIOError { source: err }),
         };
 
-        self.writer.sync_all(FileSync::Soft);
+        let _ = self.writer.sync_all(FileSync::Soft);
 
         self.size += buf.len() as u64;
 
