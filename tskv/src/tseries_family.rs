@@ -1,6 +1,9 @@
 use std::{
     rc::Rc,
-    sync::{atomic::{AtomicU64, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use crate::{option::TseriesFamOpt, MemCache};
@@ -70,7 +73,7 @@ impl SuperVersion {
 
 pub struct Summary {}
 pub struct TseriesFamily {
-    tf_id: u32, 
+    tf_id: u32,
     mut_cache: Arc<MemCache>,
     immut_cache: Vec<Arc<MemCache>>,
     super_version: Arc<SuperVersion>,
@@ -93,7 +96,7 @@ impl TseriesFamily {
         let mm = Arc::new(cache);
         let cf = Arc::new(opt);
         Self {
-            tf_id, 
+            tf_id,
             seq_no: version.seq_no,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
@@ -111,12 +114,17 @@ impl TseriesFamily {
         }
     }
 
-    pub fn switch_memcache(&mut self, cache: Arc<MemCache>){
+    pub fn switch_memcache(&mut self, cache: Arc<MemCache>) {
         self.immut_cache.push(self.mut_cache.clone());
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
-        let vers = SuperVersion::new(self.tf_id, 
-            cache.clone(), self.immut_cache.clone(), 
-            self.version.clone(), self.opts.clone(), self.super_version_id.load(Ordering::SeqCst));
+        let vers = SuperVersion::new(
+            self.tf_id,
+            cache.clone(),
+            self.immut_cache.clone(),
+            self.version.clone(),
+            self.opts.clone(),
+            self.super_version_id.load(Ordering::SeqCst),
+        );
         self.super_version = Arc::new(vers);
         self.mut_cache = cache;
     }
