@@ -16,6 +16,7 @@ mod tseries_family;
 mod tsm;
 mod version_set;
 mod wal;
+mod summary;
 
 pub use direct_io::*;
 pub use error::*;
@@ -28,3 +29,4 @@ pub use runtime::*;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
+pub use summary::*;

@@ -23,3 +23,11 @@ pub fn init(level: LevelFilter, file_path: &str) {
     ));
     CombinedLogger::init(logger).unwrap();
 }
+
+
+#[test]
+fn test(){
+    use log::LevelFilter::Trace;
+    init(Trace, "./test.log");
+    info!("hello log");
+}
