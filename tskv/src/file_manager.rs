@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::{fs, thread};
 
-use crate::{direct_io, error, run_io_task, AsyncContext, File, IoTask, TaskType};
+use crate::{direct_io, error, run_io_task, AsyncContext, File, IoTask, TaskType, make_io_task};
+use futures::channel::oneshot::{Sender, self};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
@@ -93,7 +94,23 @@ impl FileManager {
             .map_err(|err| FileError::UnableToSyncFile { source: err })
     }
 
-    pub async fn write_at(&self, file: direct_io::File, pos: u64, size: u64) {}
+    pub async fn write_at(&self, file: direct_io::File, pos: u64, buf: &mut [u8]) {
+        let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
+        let task = make_io_task(
+            TaskType::FrontWrite,
+            buf.as_mut_ptr(),
+            buf.len(),
+            pos,
+            Arc::new(file),
+            cb,
+        );
+
+        self.put_io_task(task).unwrap();
+
+        self.async_rt.try_wakeup();
+
+        let ret = rx.await.unwrap();
+    }
 
     pub async fn read_at(&self, file: direct_io::File, pos: u64, size: u64) {}
 
@@ -159,6 +176,8 @@ mod test {
         );
 
         file_manager.put_io_task(task).unwrap();
+
+        file_manager.async_rt.try_wakeup();
 
         let ret = rx.await.unwrap();
         file_manager.sync_all(FileSync::Hard).await.unwrap();
