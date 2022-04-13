@@ -1,4 +1,3 @@
-/*
 use crate::forward_index::field_info::{FieldID, FieldInfo};
 use crate::forward_index::tags::Tag;
 use bincode;

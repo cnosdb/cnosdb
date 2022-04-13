@@ -1,4 +1,3 @@
-/*
 use serde::{Deserialize, Serialize};
 
 pub type FieldID = u64;
@@ -17,4 +16,3 @@ pub enum ValueType {
     Boolean,
     String,
 }
-*/
