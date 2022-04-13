@@ -50,23 +50,23 @@ pub struct MemEntry {
 #[allow(dead_code)]
 pub struct MemCache {
     // partiton id
-    partition_id: u16,
+    tf_id: u32,
     //wal seq number
     seq_no: u64,
     //max mem buffer size convert to immcache
-    max_buf_size: u32,
+    max_buf_size: u64,
     //block <filed_id, buffer>
     //filed_id contain the field type
     data_cache: HashMap<u64, MemEntry>,
     //current size
-    cache_size: u32,
+    cache_size: u64,
 }
 
 impl MemCache {
-    pub fn new(partiton_id: u16, max_size: u32, seq: u64) -> Self {
+    pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
         let cache = HashMap::new();
         Self {
-            partition_id: partiton_id,
+            tf_id,
             max_buf_size: max_size,
             data_cache: cache,
             seq_no: seq,

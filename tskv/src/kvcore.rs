@@ -1,17 +1,21 @@
-use std::rc::Rc;
-
 use tokio::sync::oneshot;
 
 use crate::error::Result;
 use crate::option::Options;
 use crate::option::QueryOption;
+use crate::version_set;
 use crate::FileManager;
+use crate::Version;
+use crate::VersionSet;
 use crate::WorkerQueue;
+use once_cell::sync::OnceCell;
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 #[derive(Clone)]
 pub struct TsKv {
-    kvctx: Rc<KvContext>,
+    kvctx: Arc<KvContext>,
+    version_set: Arc<VersionSet>,
 }
 
 pub struct Entry {
@@ -20,12 +24,24 @@ pub struct Entry {
 
 impl TsKv {
     pub fn open(opt: Options) -> Self {
-        let kvctx = Rc::new(KvContext::new(opt));
-        // let _err = kvctx.Recover();
-        Self { kvctx }
+        let kvctx = Arc::new(KvContext::new(opt));
+        let vs = Self::recover();
+        Self {
+            kvctx,
+            version_set: Arc::new(vs),
+        }
+    }
+    pub fn recover() -> VersionSet {
+        //todo! recover from manifest and build VersionSet
+        VersionSet::new_default()
+    }
+    pub fn get_instance() -> &'static Self {
+        static INSTANCE: OnceCell<TsKv> = OnceCell::new();
+        INSTANCE.get_or_init(|| Self::open(Options::from_env()))
     }
     pub async fn write(&self, write_batch: Vec<Entry>) -> Result<()> {
-        self.kvctx.shard_write(0, write_batch).await;
+        //wal
+        let _ = self.kvctx.shard_write(0, write_batch).await;
         Ok(())
     }
 
@@ -45,7 +61,7 @@ enum KvStatus {
 #[allow(dead_code)]
 pub(crate) struct KvContext {
     pub file_manager: &'static FileManager,
-    front_handler: Rc<WorkerQueue>,
+    front_handler: Arc<WorkerQueue>,
     handler: Vec<JoinHandle<()>>,
     status: KvStatus,
 }
@@ -54,7 +70,7 @@ pub(crate) struct KvContext {
 impl KvContext {
     pub fn new(opt: Options) -> Self {
         let file_manager = FileManager::get_instance();
-        let front_work_queue = Rc::new(WorkerQueue::new(opt.front_cpu));
+        let front_work_queue = Arc::new(WorkerQueue::new(opt.front_cpu));
         let worker_handle = Vec::with_capacity(opt.back_cpu);
         Self {
             file_manager: file_manager,
@@ -74,9 +90,8 @@ impl KvContext {
         let (tx, rx) = oneshot::channel();
         self.front_handler.work_queue.spawn(partion_id, async move {
             let err = 0;
-            //wal.write_entry;
             //memcache.insert();
-            tx.send(err);
+            let _ = tx.send(err);
         });
         rx.await.unwrap();
         Ok(())
