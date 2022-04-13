@@ -1,8 +1,8 @@
-use ValueType::Float;
 use crate::forward_index::field_info::{FieldInfo, ValueType};
-use crate::forward_index::ForwardIndex;
 use crate::forward_index::series_info::SeriesInfo;
 use crate::forward_index::tags::Tag;
+use crate::forward_index::ForwardIndex;
+use ValueType::Float;
 
 #[test]
 fn test_add_series() {
