@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
 #[derive(Snafu, Debug)]
-pub enum Error {
+pub enum FileError {
     #[snafu(display("Unable to open file: {}", source))]
     UnableToOpenFile { source: std::io::Error },
 
@@ -24,7 +24,7 @@ pub enum Error {
     Cancel,
 }
 
-type Result<T> = std::result::Result<T, Error>;
+type Result<T> = std::result::Result<T, FileError>;
 
 pub struct FileManager {
     file_system: direct_io::FileSystem,
@@ -66,40 +66,40 @@ impl FileManager {
     ) -> Result<direct_io::File> {
         self.file_system
             .open_with(path, options)
-            .map_err(|err| Error::UnableToOpenFile { source: err })
+            .map_err(|err| FileError::UnableToOpenFile { source: err })
     }
 
     pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
         self.file_system
             .open(path)
-            .map_err(|err| Error::UnableToOpenFile { source: err })
+            .map_err(|err| FileError::UnableToOpenFile { source: err })
     }
 
     pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
         self.file_system
             .create(path)
-            .map_err(|err| Error::UnableToOpenFile { source: err })
+            .map_err(|err| FileError::UnableToOpenFile { source: err })
     }
 
     pub async fn sync_all(&self, sync: direct_io::FileSync) -> Result<()> {
         self.file_system
             .sync_all(sync)
-            .map_err(|err| Error::UnableToSyncFile { source: err })
+            .map_err(|err| FileError::UnableToSyncFile { source: err })
     }
 
     pub async fn sync_data(&self, sync: direct_io::FileSync) -> Result<()> {
         self.file_system
             .sync_data(sync)
-            .map_err(|err| Error::UnableToSyncFile { source: err })
+            .map_err(|err| FileError::UnableToSyncFile { source: err })
     }
 
     pub async fn write_at(&self, file: direct_io::File, pos: u64, size: u64) {}
 
     pub async fn read_at(&self, file: direct_io::File, pos: u64, size: u64) {}
 
-    fn put_io_task(&self, task: IoTask) -> Result<()> {
-        if !self.async_rt.is_closed() {
-            return Err(Error::Cancel);
+    pub fn put_io_task(&self, task: IoTask) -> Result<()> {
+        if self.async_rt.is_closed() {
+            return Err(FileError::Cancel);
         }
         if task.is_pri_high() {
             let _ = self.async_rt.high_op_queue.push(task);
@@ -114,10 +114,16 @@ impl FileManager {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
+    use futures::channel::oneshot;
+
+    use crate::{make_io_task, FileSync, TaskType};
+
     use super::FileManager;
 
     #[test]
-    fn test() {
+    fn test_get_instance() {
         let file_manager_1 = FileManager::get_instance();
         println!("0x{:X}", file_manager_1 as *const FileManager as usize);
         let file_manager_2 = FileManager::get_instance();
@@ -133,5 +139,29 @@ mod test {
             file_manager_1 as *const FileManager as usize,
             &file_manager_3 as *const FileManager as usize
         );
+    }
+
+    #[tokio::test]
+    async fn test_io_task() {
+        let file_manager = FileManager::get_instance();
+
+        let mut buf = vec![1_u8; 1024];
+        let file = file_manager.create_file("/tmp/test/a.hex").unwrap();
+
+        let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
+        let task = make_io_task(
+            TaskType::FrontWrite,
+            buf.as_mut_ptr(),
+            buf.len(),
+            0,
+            Arc::new(file),
+            cb,
+        );
+
+        file_manager.put_io_task(task).unwrap();
+
+        let ret = rx.await.unwrap();
+        file_manager.sync_all(FileSync::Hard).await.unwrap();
+        ret.unwrap();
     }
 }
