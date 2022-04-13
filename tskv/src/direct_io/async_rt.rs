@@ -22,6 +22,25 @@ pub struct IoTask {
     cb: OnceSender<Result<usize>>,
 }
 
+pub fn make_io_task(
+    task_type: TaskType,
+    ptr: *mut u8,
+    size: usize,
+    offset: u64,
+    fd: Arc<File>,
+    cb: OnceSender<Result<usize>>,
+) -> IoTask {
+    IoTask {
+        task_type,
+        priority: 0,
+        ptr,
+        size,
+        offset,
+        fd,
+        cb,
+    }
+}
+
 #[derive(PartialEq)]
 pub enum TaskType {
     BackRead,

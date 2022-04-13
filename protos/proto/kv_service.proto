@@ -12,8 +12,8 @@ message PingResponse {
 }
 
 message Tag {
-  bytes key = 1;
-  bytes value = 2;
+  bytes key = 1; // tag key utf-8 bytes
+  bytes value = 2; // tag value utf-8 bytes
 }
 
 enum FieldType {
@@ -26,7 +26,7 @@ enum FieldType {
 
 message FieldInfo {
   FieldType field_type = 1;
-  bytes name = 2;
+  bytes name = 2; // field name utf-8 bytes
   uint64 id = 3;
 }
 
@@ -58,12 +58,12 @@ message GetSeriesInfoRpcResponse {
 
 message WriteRowsRpcRequest {
   uint64 version = 1;
-  bytes rows = 2;
+  bytes rows = 2; // flatbuffers bytes ( models::Write )
 }
 
 message WriteRowsRpcResponse {
   uint64 version = 1;
-  bytes rows = 2;
+  bytes rows = 2; // flatbuffers bytes ( models::Write )
 }
 
 service TSKVService {

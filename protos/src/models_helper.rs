@@ -2,7 +2,7 @@ use std::{borrow::BorrowMut, time};
 
 use flatbuffers::{self, Vector, WIPOffset};
 
-use crate::models::*;
+use crate::models::{self, *};
 
 pub fn build_row_field<'a>(
     _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
@@ -32,75 +32,4 @@ pub fn build_row<'a>(
     row_builder.add_key(&RowKey::new(series_id, timestamp));
     row_builder.add_fields(fields);
     row_builder.finish()
-}
-
-pub fn build_write_wal_entry<'a>(
-    _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    rows: &Vec<WIPOffset<Row<'a>>>,
-) -> WIPOffset<WriteWALEntry<'a>> {
-    let rows = Some(_fbb.create_vector(rows));
-
-    WriteWALEntry::create(_fbb, &WriteWALEntryArgs { rows })
-}
-
-pub fn build_delete_wal_entry_item(series_id: u64, field_id: u64) -> DeleteWALEntryItem {
-    DeleteWALEntryItem::new(series_id, field_id)
-}
-
-pub fn build_delete_wal_entry<'a>(
-    fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    items: &'a Vec<DeleteWALEntryItem>,
-) -> WIPOffset<DeleteWALEntry<'a>> {
-    let items = Some(fbb.create_vector(items));
-
-    DeleteWALEntry::create(fbb, &DeleteWALEntryArgs { items })
-}
-
-pub fn build_delete_range_wal_entry<'a>(
-    fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    items: &Vec<DeleteWALEntryItem>,
-    min: u64,
-    max: u64,
-) -> WIPOffset<DeleteRangeWALEntry<'a>> {
-    let items = Some(fbb.create_vector(items));
-
-    DeleteRangeWALEntry::create(fbb, &DeleteRangeWALEntryArgs { items, min, max })
-}
-
-pub fn build_wal_entry<'a>(
-    seq: u64,
-    fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    series_id: u64,
-    entry_type: WALEntryType,
-    value_type: WALEntryUnion,
-    value: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
-) -> WIPOffset<WALEntry<'a>> {
-    WALEntry::create(
-        fbb,
-        &WALEntryArgs {
-            seq,
-            type_: entry_type,
-            series_id,
-            value_type,
-            value,
-        },
-    )
-}
-
-#[test]
-fn test_build_write_wal_entry() {
-    for _ in 0..10 {
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-
-        let float_value = Some(fbb.create_vector(3.14_f64.to_le_bytes().as_slice()));
-        let float_field = build_row_field(&mut fbb, 1, FieldType::Float, float_value);
-
-        let row = build_row(&mut fbb, 1, 1000, &vec![float_field]);
-
-        let entry = build_write_wal_entry(&mut fbb, &vec![row]);
-        fbb.finish(entry, None);
-
-        let bytes = fbb.finished_data();
-        println!("{:?}", bytes);
-    }
 }

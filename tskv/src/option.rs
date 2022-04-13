@@ -5,9 +5,9 @@ pub const MAX_MEMCACHE_SIZE: u64 = 100 * 1024 * 1024; //100M
 pub struct Options {
     pub(crate) front_cpu: usize,
     pub(crate) back_cpu: usize,
-    pub(crate) enable_wal: bool,
     pub(crate) task_buffer_size: usize,
     pub(crate) lrucache: CacheConfig,
+    pub(crate) wal: WalConfig,
     // pub(crate) write_batch: WriteBatchConfig,
     pub(crate) compact_conf: CompactConfig,
 }
@@ -26,9 +26,9 @@ impl Default for Options {
         Self {
             front_cpu: Default::default(),
             back_cpu: Default::default(),
-            enable_wal: Default::default(),
             task_buffer_size: Default::default(),
             lrucache: Default::default(),
+            wal: Default::default(),
             compact_conf: Default::default(),
         }
     }
@@ -37,6 +37,25 @@ impl Default for Options {
 #[derive(Default)]
 pub struct CacheConfig {}
 
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct WalConfig {
+    pub enabled: bool,
+    pub dir: String,
+    pub sync: bool,
+}
+
+impl Default for WalConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            dir: Default::default(),
+            sync: true,
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub struct WriteBatchConfig {}
 #[derive(Default)]
 pub struct CompactConfig {}
