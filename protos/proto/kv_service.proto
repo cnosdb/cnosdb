@@ -58,12 +58,12 @@ message GetSeriesInfoRpcResponse {
 
 message WriteRowsRpcRequest {
   uint64 version = 1;
-  bytes rows = 2; // flatbuffers bytes ( models::Write )
+  bytes rows = 2; // flatbuffers bytes ( models::Rows )
 }
 
 message WriteRowsRpcResponse {
   uint64 version = 1;
-  bytes rows = 2; // flatbuffers bytes ( models::Write )
+  bytes rows = 2; // flatbuffers bytes ( models::Rows )
 }
 
 service TSKVService {
