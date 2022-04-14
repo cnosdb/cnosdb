@@ -5,13 +5,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crc32fast;
 use futures::channel::oneshot;
 use lazy_static::lazy_static;
 use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::direct_io::{make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType};
+use crate::{
+    direct_io::{make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType},
+    file_manager,
+};
 use protos::models;
 use walkdir::IntoIter;
 
@@ -22,16 +26,6 @@ lazy_static! {
 }
 
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
-
-const WAL_CRC_ALGORITHM: &crc::Algorithm<u32> = &crc::Algorithm {
-    poly: 0x8005,
-    init: 0xffff,
-    refin: false,
-    refout: false,
-    xorout: 0x0000,
-    check: 0xaee7,
-    residue: 0x0000,
-};
 
 pub enum WalTask {
     Write {
@@ -223,7 +217,7 @@ impl WalEntryBlockInner {
         // TODO: check
         Self {
             typ,
-            crc: get_checksum(bytes),
+            crc: crc32fast::hash(bytes),
             len: bytes.len() as u32,
             buf: bytes.into(),
         }
@@ -294,8 +288,7 @@ struct WalFile {
 pub struct WalFileManager {
     config: option::WalConfig,
 
-    file_manager: &'static FileManager,
-    crc_algorithm: &'static crc::Algorithm<u32>,
+    file_manager: Arc<FileManager>,
 
     current_dir_path: PathBuf,
     current_file: WalFile,
@@ -305,7 +298,7 @@ unsafe impl Send for WalFileManager {}
 unsafe impl Sync for WalFileManager {}
 
 impl WalFileManager {
-    pub fn new(file_manager: &'static FileManager, config: option::WalConfig) -> Self {
+    pub fn new(file_manager: Arc<FileManager>, config: option::WalConfig) -> Self {
         let mut fs_options = Options::default();
         let fs_options = fs_options
             .max_resident(1)
@@ -330,14 +323,13 @@ impl WalFileManager {
         let current_dir_path = PathBuf::from(dir);
         let dir = current_dir_path.join(*last);
 
-        let current_file = Self::get_or_create_wal_file(id, file_manager, dir).unwrap();
+        let current_file = Self::get_or_create_wal_file(id, file_manager.as_ref(), dir).unwrap();
         // let current_file = Arc::new(Mutex::new(current_file));
 
         WalFileManager {
             config,
 
             file_manager,
-            crc_algorithm: &WAL_CRC_ALGORITHM,
 
             current_dir_path,
             current_file,
@@ -373,15 +365,21 @@ impl WalFileManager {
         file_manager: &FileManager,
         path: P,
     ) -> WalResult<WalFile> {
-        let file = file_manager
-            .create_file(path)
+        let file = if file_manager::try_exists(path.as_ref()) {
+            file_manager.open_file(path)
+        } else {
+            file_manager.create_file(path)
+        };
+        let file = file
             .and_then(|f| Ok(f))
             .context(FailedWithFileManagerSnafu)?;
+
+        let size = file.len();
 
         Ok(WalFile {
             id,
             file: Arc::new(file),
-            size: 0,
+            size,
         })
     }
 
@@ -399,11 +397,11 @@ impl WalFileManager {
             let file_name = self
                 .current_dir_path
                 .join(format!("_{:05}.wal", current_file.id));
-            current_file.file = self
+            let file = self
                 .file_manager
                 .create_file(file_name)
-                .context(FailedWithFileManagerSnafu)
-                .map(|file| Arc::new(file))?;
+                .context(FailedWithFileManagerSnafu)?;
+            current_file.file = Arc::new(file);
         }
         Ok(())
     }
@@ -414,28 +412,26 @@ impl WalFileManager {
         // let mut writer = self.current_file.lock().unwrap();
         // writer.writer.write(&WalEntryBlock::new_write(rows))
 
-        let writer = &self.current_file;
-
         let wal_block = WalEntryBlockInner::from_bytes(WalEntryType::Write, rows);
-        let mut buf = wal_block.to_bytes();
+        let buf = wal_block.to_bytes();
 
-        let (io_cb, io_rx) = oneshot::channel::<crate::error::Result<usize>>();
-        let task = make_io_task(
-            TaskType::Wal,
-            buf.as_mut_ptr(),
-            buf.len(),
-            0,
-            Arc::clone(&writer.file),
-            io_cb,
-        );
+        let writer = &mut self.current_file;
+        {
+            writer
+                .file
+                .write_at(writer.size, buf.as_slice())
+                .map_err(|err| WalError::FailedWithStdIO { source: err })?;
 
-        self.file_manager
-            .put_io_task(task)
-            .map_err(|err| WalError::FailedWithIoTask)?;
-
-        let ret = io_rx
-            .await
-            .map_err(|err| WalError::FailedWithChannelReceive)?;
+            // TODO codes below may produce "future cannot be sent between threads safely" in `kvcore.rs`."
+            // self.file_manager
+            //     .write_at(Arc::clone(&writer.file), writer.size, buf.as_mut_slice())
+            //     .await;
+        }
+        writer.size += buf.len() as u64;
+        writer
+            .file
+            .sync_all(FileSync::Soft)
+            .context(FailedWithStdIOSnafu)?;
 
         Ok(())
     }
@@ -446,26 +442,18 @@ impl WalFileManager {
         // let mut writer = self.current_file.lock().unwrap();
         // writer.writer.write(&WalEntryBlock::new_delete(columns))
 
-        let writer = &self.current_file;
-
-        let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
         let wal_block = WalEntryBlockInner::from_bytes(WalEntryType::Delete, columns);
         let mut buf = wal_block.to_bytes();
 
-        let task = make_io_task(
-            TaskType::Wal,
-            buf.as_mut_ptr(),
-            buf.len(),
-            0,
-            Arc::clone(&writer.file),
-            cb,
-        );
-
+        let writer = &mut self.current_file;
         self.file_manager
-            .put_io_task(task)
-            .map_err(|err| WalError::FailedWithIoTask)?;
-
-        let ret = rx.await.map_err(|err| WalError::FailedWithChannelReceive)?;
+            .write_at(Arc::clone(&writer.file), writer.size, buf.as_mut_slice())
+            .await;
+        writer.size += buf.len() as u64;
+        writer
+            .file
+            .sync_all(FileSync::Soft)
+            .context(FailedWithStdIOSnafu)?;
 
         Ok(())
     }
@@ -476,27 +464,19 @@ impl WalFileManager {
         // let mut writer = self.current_file.lock().unwrap();
         // writer.writer.write(&WalEntryBlock::new_delete_range(columns_with_range))
 
-        let writer = &self.current_file;
-
-        let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
         let wal_block =
             WalEntryBlockInner::from_bytes(WalEntryType::DeleteRange, columns_with_range);
         let mut buf = wal_block.to_bytes();
 
-        let task = make_io_task(
-            TaskType::Wal,
-            buf.as_mut_ptr(),
-            buf.len(),
-            0,
-            Arc::clone(&writer.file),
-            cb,
-        );
-
+        let writer = &mut self.current_file;
         self.file_manager
-            .put_io_task(task)
-            .map_err(|err| WalError::FailedWithIoTask)?;
-
-        let ret = rx.await.map_err(|err| WalError::FailedWithChannelReceive)?;
+            .write_at(Arc::clone(&writer.file), writer.size, buf.as_mut_slice())
+            .await;
+        writer.size += buf.len() as u64;
+        writer
+            .file
+            .sync_all(FileSync::Soft)
+            .context(FailedWithStdIOSnafu)?;
 
         Ok(())
     }
@@ -545,14 +525,6 @@ pub fn reader<'a>(f: File) -> WalReader<'a> {
         cursor: f.into_cursor(),
         phantom: PhantomData,
     }
-}
-
-fn get_checksum(data: &[u8]) -> u32 {
-    // TODO: can crc::Crc be global, or a singleton instance
-    let crc_builder = crc::Crc::<u32>::new(&WAL_CRC_ALGORITHM);
-    let mut crc_digest = crc_builder.digest();
-    crc_digest.update(data);
-    crc_digest.finalize()
 }
 
 // struct WalWriter {
@@ -694,7 +666,7 @@ mod test {
 
     use crate::{
         file_manager, option,
-        wal::{get_checksum, WalEntryBlock, WalEntryType, WalReader},
+        wal::{WalEntryBlock, WalEntryType, WalReader},
         FileManager,
     };
 
@@ -849,14 +821,14 @@ mod test {
 
     #[tokio::test]
     async fn test_write_entry() {
-        let file_manager = file_manager::FileManager::get_instance();
+        let file_manager = Arc::new(file_manager::FileManager::new());
 
         let wal_config = option::WalConfig {
             dir: String::from(DIR),
             ..Default::default()
         };
 
-        let mut mgr = WalFileManager::new(file_manager, wal_config);
+        let mut mgr = WalFileManager::new(file_manager.clone(), wal_config);
 
         for i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -887,14 +859,14 @@ mod test {
 
     #[test]
     fn test_read_entry() {
-        let file_manager = file_manager::FileManager::get_instance();
+        let file_manager = Arc::new(file_manager::FileManager::new());
 
         let wal_config = crate::option::WalConfig {
             dir: String::from("/tmp/test/"),
             ..Default::default()
         };
 
-        let mgr = WalFileManager::new(file_manager, wal_config);
+        let mgr = WalFileManager::new(file_manager.clone(), wal_config);
 
         let wal_files = list_filenames("/tmp/test/");
         for wal_file in wal_files {
@@ -929,14 +901,14 @@ mod test {
 
     #[tokio::test]
     async fn test_read_and_write() {
-        let file_manager = file_manager::FileManager::get_instance();
+        let file_manager = Arc::new(file_manager::FileManager::new());
 
         let wal_config = crate::option::WalConfig {
             dir: String::from(DIR),
             ..Default::default()
         };
 
-        let mut mgr = WalFileManager::new(file_manager, wal_config);
+        let mut mgr = WalFileManager::new(file_manager.clone(), wal_config);
 
         for i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -980,18 +952,18 @@ mod test {
                     WalEntryBlock::Write(block) => {
                         let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
                         writed_crcs.push(block.crc);
-                        readed_crcs.push(get_checksum(&block.buf[..block.len as usize]));
+                        readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
                     }
                     WalEntryBlock::Delete(block) => {
                         let de_block = flatbuffers::root::<models::ColumnKeys>(&block.buf).unwrap();
                         writed_crcs.push(block.crc);
-                        readed_crcs.push(get_checksum(&block.buf[..block.len as usize]));
+                        readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
                     }
                     WalEntryBlock::DeleteRange(block) => {
                         let de_block =
                             flatbuffers::root::<models::ColumnKeysWithRange>(&block.buf).unwrap();
                         writed_crcs.push(block.crc);
-                        readed_crcs.push(get_checksum(&block.buf[..block.len as usize]));
+                        readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
                     }
                     _ => {}
                 };

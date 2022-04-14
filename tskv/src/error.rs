@@ -9,6 +9,10 @@ pub enum Error {
     IO { source: std::io::Error },
     #[snafu(display("async file system stopped"))]
     Cancel,
+    #[snafu(display("fails to send to channel"))]
+    Send,
+    #[snafu(display("fails to receive from channel"))]
+    Receive,
     #[snafu(display("invalid flatbuffers: {}", source))]
     InvalidFlatbuffer {
         source: flatbuffers::InvalidFlatbuffer,

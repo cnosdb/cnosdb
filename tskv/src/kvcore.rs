@@ -1,7 +1,11 @@
 use futures::channel::mpsc;
+use futures::channel::mpsc::unbounded;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
+use futures::executor::ThreadPool;
+use futures::task::Spawn;
+use futures::task::SpawnExt;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures::TryFutureExt;
@@ -31,26 +35,33 @@ pub struct Entry {
 
 #[derive(Clone)]
 pub struct TsKv {
+    options: Options,
     kvctx: Arc<KvContext>,
     version_set: Arc<VersionSet>,
-    file_manager: &'static FileManager,
+    file_manager: Arc<FileManager>,
 
-    wal_manager: WalFileManager,
+    pool: Arc<ThreadPool>,
+    wal_sender: UnboundedSender<WalTask>,
 }
 
 impl TsKv {
     pub fn open(opt: Options) -> Result<Self> {
-        let kvctx = Arc::new(KvContext::new(opt));
+        let kvctx = Arc::new(KvContext::new(opt.clone()));
         let vs = Self::recover();
 
-        let file_manager = FileManager::get_instance();
+        // let file_manager = FileManager::get_instance();
+        let (sender, receiver) = unbounded();
 
         let core = Self {
+            options: opt,
             kvctx,
             version_set: Arc::new(vs),
-            file_manager,
-            wal_manager: WalFileManager::new(file_manager, WalConfig::default()),
+            file_manager: Arc::new(FileManager::new()),
+            pool: Arc::new(ThreadPool::new().unwrap()),
+            wal_sender: sender,
         };
+
+        core.run_wal_job(receiver);
 
         Ok(core)
     }
@@ -66,13 +77,37 @@ impl TsKv {
     }
 
     pub async fn write(&mut self, write_batch: WriteRowsRpcRequest) -> Result<()> {
-        self.wal_manager
-            .write(write_batch.rows.as_slice())
+        let (cb, rx) = oneshot::channel();
+        self.wal_sender
+            .send(WalTask::Write {
+                rows: write_batch.rows,
+                cb,
+            })
             .await
-            .map_err(|err| Error::WriteAheadLog { source: err })?;
+            .map_err(|err| Error::Send)?;
+        rx.await.unwrap().unwrap();
 
-        let _ = self.kvctx.shard_write(0, write_batch).await;
+        // let _ = self.kvctx.shard_write(0, write_batch).await;
         Ok(())
+    }
+
+    pub fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
+        let fm = Arc::clone(&self.file_manager);
+        let wal_opt = self.options.wal.clone();
+        let f = async move {
+            let mut wal_manager = WalFileManager::new(fm, wal_opt);
+            while let Some(x) = receiver.next().await {
+                match x {
+                    WalTask::Write { rows, cb } => {
+                        let ret = wal_manager.write(&rows).await;
+                        let ret = cb.send(WalResult::Ok(()));
+                    }
+                }
+            }
+        };
+        self.pool.spawn_ok(async move {
+            f.await;
+        });
     }
 
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
@@ -133,20 +168,43 @@ impl KvContext {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
+    use futures::{channel::oneshot, future::join_all, SinkExt};
     use protos::kv_service;
 
-    use crate::TsKv;
+    use crate::{option::WalConfig, wal::WalTask, TsKv};
+
+    fn get_tskv() -> TsKv {
+        let opt = crate::option::Options {
+            wal: WalConfig {
+                dir: String::from("/tmp/test/"),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        TsKv::open(opt).unwrap()
+    }
 
     #[tokio::test]
     async fn test_write() {
-        let mut opt = crate::option::Options::default();
-        opt.wal.dir = String::from("/tmp/test");
-
-        let mut core = TsKv::open(opt).unwrap();
+        let mut tskv = get_tskv();
 
         let rows = b"Hello world".to_vec();
         let request = kv_service::WriteRowsRpcRequest { version: 1, rows };
 
-        core.write(request).await.unwrap();
+        tskv.write(request).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_write() {
+        let mut tskv = get_tskv();
+
+        for i in 0..2 {
+            let rows = b"Hello world".to_vec();
+            let request = kv_service::WriteRowsRpcRequest { version: 1, rows };
+            tskv.write(request).await.unwrap();
+        }
     }
 }
