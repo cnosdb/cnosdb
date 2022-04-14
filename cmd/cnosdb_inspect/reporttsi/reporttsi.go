@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"text/tabwriter"
 
-	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
 
@@ -120,7 +120,7 @@ func GetCommand() *cobra.Command {
 
 func run(cmd *cobra.Command) error {
 	opt.sfile = tsdb.NewSeriesFile(opt.seriesFilePath)
-	opt.sfile.Logger = logger.New(os.Stderr)
+	opt.sfile.Logger = logger.NewLoggerWithWriter(os.Stderr)
 	if err := opt.sfile.Open(); err != nil {
 		return err
 	}

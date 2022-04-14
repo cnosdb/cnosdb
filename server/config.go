@@ -3,13 +3,12 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
-	
+
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
@@ -24,6 +23,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 
 	"github.com/BurntSushi/toml"
+	"go.uber.org/zap"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 )
@@ -124,7 +124,8 @@ func (c *Config) FromToml(input string) error {
 	input = re.ReplaceAllStringFunc(input, func(in string) string {
 		in = strings.TrimSpace(in)
 		out := "[coordinator]"
-		log.Printf("deprecated config option %s replaced with %s; %s will not be supported in a future release\n", in, out, in)
+		logger.Info("config option deprecated, will not be supported in a future release",
+			zap.String("deprecated", in), zap.String("replaced_with", out))
 		return out
 	})
 

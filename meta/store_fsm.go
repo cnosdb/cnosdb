@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/cnosdb/cnosdb/vend/cnosql"
 	internal "github.com/cnosdb/cnosdb/meta/internal"
+	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 )

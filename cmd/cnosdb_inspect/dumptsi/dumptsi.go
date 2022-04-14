@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
@@ -105,7 +105,7 @@ func GetCommand() *cobra.Command {
 }
 func (opt *Options) run() (rErr error) {
 	sfile := tsdb.NewSeriesFile(opt.seriesFilePath)
-	sfile.Logger = logger.New(opt.Stderr)
+	sfile.Logger = logger.NewLoggerWithWriter(opt.Stderr)
 	if err := sfile.Open(); err != nil {
 		return err
 	}

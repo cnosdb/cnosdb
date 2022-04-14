@@ -17,7 +17,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/line"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/limiter"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"go.uber.org/zap"
@@ -57,11 +57,7 @@ func (cmd *Command) Run(args []string) (err error) {
 
 	var log = zap.NewNop()
 	if cmd.verbose {
-		cfg := logger.Config{Format: "logfmt"}
-		log, err = cfg.New(os.Stdout)
-		if err != nil {
-			return err
-		}
+		log = logger.NewLoggerWithWriter(os.Stdout)
 	}
 
 	fmt.Fprintf(cmd.Stdout, "opening shard at path %q\n\n", cmd.path)

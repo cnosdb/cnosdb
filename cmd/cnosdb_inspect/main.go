@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	
+
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/buildtsi"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/deletetsm"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsi"

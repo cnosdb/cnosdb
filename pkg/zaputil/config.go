@@ -1,4 +1,4 @@
-package log
+package zaputil
 
 import (
 	"go.uber.org/zap"

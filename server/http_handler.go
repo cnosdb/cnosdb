@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -163,7 +164,8 @@ type Handler struct {
 	requestTracker *RequestTracker
 	writeThrottler *Throttler
 
-	logger *zap.Logger
+	logger       *zap.Logger
+	accessLogger *log.Logger
 }
 
 // 创建 Handler 的实例，并设置 router
@@ -173,6 +175,8 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		router:         mux.NewRouter(),
 		stats:          &Statistics{},
 		requestTracker: NewRequestTracker(),
+		logger:         zap.NewNop(),
+		accessLogger:   log.New(os.Stderr, "[httpd] ", 0),
 	}
 
 	h.writeThrottler = NewThrottler(conf.MaxConcurrentWriteLimit, conf.MaxEnqueuedWriteLimit)
@@ -221,7 +225,21 @@ func NewHandler(conf *HTTPConfig) *Handler {
 }
 
 func (h *Handler) Open() {
+	if h.config.LogEnabled {
+		path := "stderr"
 
+		if h.config.AccessLogPath != "" {
+			f, err := os.OpenFile(h.config.AccessLogPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+			if err != nil {
+				h.logger.Error("unable to open access log, falling back to stderr",
+					zap.Error(err), zap.String("path", h.config.AccessLogPath))
+				return
+			}
+			h.accessLogger = log.New(f, "", 0)
+			path = h.config.AccessLogPath
+		}
+		h.logger.Info("opened HTTP access log", zap.String("path", path))
+	}
 }
 
 // 响应 HTTP 请求
@@ -800,7 +818,7 @@ func (h *Handler) AddRoutes(routes ...route) {
 		handler = WrapWithRequestID(handler)
 
 		if h.config.LogEnabled && r.LoggingEnabled {
-			handler = WrapWithLogger(handler, h.config.AccessLogStatusFilters)
+			handler = h.WrapWithLogger(handler, h.config.AccessLogStatusFilters)
 		}
 		handler = WrapWithRecovery(handler)
 
@@ -864,21 +882,21 @@ func WrapWithRequestID(inner http.Handler) http.Handler {
 }
 
 // WrapWithLogger
-func WrapWithLogger(inner http.Handler, filters []StatusFilter) http.Handler {
+func (h *Handler) WrapWithLogger(inner http.Handler, filters []StatusFilter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		l := &ResponseLogger{w: w}
 		inner.ServeHTTP(l, r)
 
 		if StatusFilters(filters).Match(l.Status()) {
-			logger.BgLogger().Info(buildLogLine(l, r, start))
+			h.accessLogger.Println(buildLogLine(l, r, start))
 		}
 
 		// Log server errors.
 		if l.Status()/100 == 5 {
 			errStr := l.Header().Get(headerErrorMsg)
 			if errStr != "" {
-				logger.BgLogger().Error(fmt.Sprintf("[%d] - %q", l.Status(), errStr))
+				logger.Error(fmt.Sprintf("[%d] - %q", l.Status(), errStr))
 			}
 		}
 	})
@@ -894,14 +912,14 @@ func WrapWithRecovery(inner http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				logLine := buildLogLine(l, r, start)
 				logLine = fmt.Sprintf("%s [panic:%s] %s", logLine, err, debug.Stack())
-				logger.BgLogger().Error(logLine)
+				logger.Error(logLine)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), 500)
 				//atomic.AddInt64(&h.stats.RecoveredPanics, 1) // Capture the panic in _internal stats.
 
 				if willCrash {
-					logger.BgLogger().Error("\n\n=====\nAll goroutines now follow:")
+					logger.Error("\n\n=====\nAll goroutines now follow:")
 					buf := debug.Stack()
-					logger.BgLogger().Error(fmt.Sprintf("%s\n", buf))
+					logger.Error(fmt.Sprintf("%s\n", buf))
 					os.Exit(1) // If we panic then the Go server will recover.
 				}
 			}
@@ -1328,7 +1346,7 @@ func WrapWithAuthenticate(inner serveAuthenticateFunc, conf *HTTPConfig, metaCli
 				claims, ok := token.Claims.(jwt.MapClaims)
 				if !ok {
 					writeErrorUnauthorized(w, "problem authenticating token", conf.Realm)
-					logger.BgLogger().Info("Could not assert JWT token claims as jwt.MapClaims")
+					logger.Info("Could not assert JWT token claims as jwt.MapClaims")
 					return
 				}
 

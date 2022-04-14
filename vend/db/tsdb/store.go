@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/estimator"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/estimator/hll"
