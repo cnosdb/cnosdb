@@ -12,11 +12,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/common"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-	"github.com/cnosdb/cnosdb/meta"
 	"go.uber.org/zap"
 )
 

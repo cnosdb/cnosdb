@@ -1,4 +1,4 @@
-package log
+package zaputil
 
 import (
 	"encoding/base64"
@@ -14,9 +14,12 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+//const DefaultLogTimeFormat = "2006/01/02 15:04:05.000 -07:00"
+const DefaultLogTimeFormat = "2006-01-02T15:04:05.000000Z07:00"
+
 // DefaultTimeEncoder serializes time.Time to a human-readable formatted string
 func DefaultTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-	s := t.Format("2006/01/02 15:04:05.000 -07:00")
+	s := t.Format(DefaultLogTimeFormat)
 	if e, ok := enc.(*textEncoder); ok {
 		for _, c := range []byte(s) {
 			e.buf.AppendByte(c)
@@ -24,6 +27,11 @@ func DefaultTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 		return
 	}
 	enc.AppendString(s)
+}
+
+func DefaultDurationEncoder(d time.Duration, enc zapcore.PrimitiveArrayEncoder) {
+	val := float64(d) / float64(time.Millisecond)
+	enc.AppendString(fmt.Sprintf("%.3fms", val))
 }
 
 // ShortCallerEncoder serializes a caller in file:line format.
@@ -115,7 +123,7 @@ func NewTextEncoder(cfg *Config) zapcore.Encoder {
 		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.CapitalLevelEncoder,
 		EncodeTime:     DefaultTimeEncoder,
-		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeDuration: DefaultDurationEncoder,
 		EncodeCaller:   ShortCallerEncoder,
 	}
 	if cfg.DisableTimestamp {
@@ -131,6 +139,8 @@ func NewTextEncoder(cfg *Config) zapcore.Encoder {
 		}
 	case "json":
 		return zapcore.NewJSONEncoder(cc)
+	case "console":
+		return zapcore.NewConsoleEncoder(cc)
 	default:
 		panic(fmt.Sprintf("unsupport log format: %s", cfg.Format))
 	}

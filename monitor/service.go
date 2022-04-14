@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb/vend/db/logger"
-	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"go.uber.org/zap"
 )
 

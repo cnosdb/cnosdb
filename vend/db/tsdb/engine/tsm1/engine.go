@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/bytesutil"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/estimator"
