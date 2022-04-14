@@ -28,13 +28,13 @@ pub enum FileError {
 type Result<T> = std::result::Result<T, FileError>;
 
 pub struct FileManager {
-    file_system: direct_io::FileSystem,
+    file_system: Arc<direct_io::FileSystem>,
     async_rt: Arc<AsyncContext>,
     thread_pool: Mutex<Vec<thread::JoinHandle<()>>>,
 }
 
 impl FileManager {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let fs_options = direct_io::Options::default();
         let thread_num = fs_options.get_thread_num();
         let rt = Arc::new(AsyncContext::new(fs_options.get_thread_num()));
@@ -49,7 +49,7 @@ impl FileManager {
         }
 
         return Self {
-            file_system: direct_io::FileSystem::new(&fs_options),
+            file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
             async_rt: rt,
             thread_pool: Mutex::new(pool),
         };
@@ -94,14 +94,14 @@ impl FileManager {
             .map_err(|err| FileError::UnableToSyncFile { source: err })
     }
 
-    pub async fn write_at(&self, file: direct_io::File, pos: u64, buf: &mut [u8]) {
+    pub async fn write_at(&self, file: Arc<direct_io::File>, pos: u64, buf: &mut [u8]) {
         let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
         let task = make_io_task(
             TaskType::FrontWrite,
             buf.as_mut_ptr(),
             buf.len(),
             pos,
-            Arc::new(file),
+            file,
             cb,
         );
 
@@ -126,6 +126,14 @@ impl FileManager {
             let _ = self.async_rt.write_queue.push(task);
         }
         Ok(())
+    }
+}
+
+/// Case `std::fs::try_exists` is unstable, so copied the same logic to here
+pub fn try_exists(path: impl AsRef<Path>) -> bool {
+    match std::fs::metadata(path) {
+        Ok(_) => true,
+        Err(_) => false,
     }
 }
 

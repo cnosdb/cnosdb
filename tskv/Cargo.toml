@@ -9,9 +9,8 @@ utils = {path = "../utils"}
 
 chrono = "0.4"
 core_affinity = "0.5.10"
-crc = "2.1"
 crossbeam = "0.8.1"
-futures = "0.3"
+futures = { version = "0.3", features = ["std", "thread-pool"] }
 flatbuffers = "2.1"
 lazy_static = "1.4"
 libc = "0.2"

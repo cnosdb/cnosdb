@@ -2,6 +2,7 @@
 
 pub const MAX_MEMCACHE_SIZE: u64 = 100 * 1024 * 1024; //100M
 
+#[derive(Clone)]
 pub struct Options {
     pub(crate) front_cpu: usize,
     pub(crate) back_cpu: usize,
@@ -34,7 +35,7 @@ impl Default for Options {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CacheConfig {}
 
 #[allow(dead_code)]
@@ -57,7 +58,7 @@ impl Default for WalConfig {
 
 #[allow(dead_code)]
 pub struct WriteBatchConfig {}
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CompactConfig {}
 
 pub struct TimeRange {}
