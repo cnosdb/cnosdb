@@ -1,3 +1,4 @@
+/*
 mod field_info;
 mod series_info;
 mod tags;
@@ -172,9 +173,15 @@ impl ForwardIndex {
         let mut simplified_info = info.simplified();
         simplified_info.set_offset(size.try_into().unwrap());
 
-        self.file.write_at(size, &self.add_encode(&info)).unwrap();
-
-        self.series_info_set.insert(info.id, simplified_info);
+        match self.series_info_set.entry(info.id) {
+            hashbrown::hash_map::Entry::Occupied(entry) => {
+                //continue
+            }
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                entry.insert(simplified_info);
+                self.file.write_at(size, &self.add_encode(&info)).unwrap();
+            }
+        }
     }
 
     pub fn del_series(&mut self, id: SeriesID) {
@@ -219,3 +226,4 @@ impl ElemType {
         *self as u8
     }
 }
+*/

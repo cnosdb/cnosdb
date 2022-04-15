@@ -1,3 +1,4 @@
+/*
 use crate::forward_index::field_info::{FieldInfo, ValueType};
 use crate::forward_index::series_info::SeriesInfo;
 use crate::forward_index::tags::Tag;
@@ -26,3 +27,4 @@ fn test_add_series() {
 
     fidx.close();
 }
+*/
