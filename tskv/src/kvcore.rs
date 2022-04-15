@@ -17,6 +17,7 @@ use crate::option::Options;
 use crate::option::QueryOption;
 use crate::option::WalConfig;
 use crate::version_set;
+use crate::wal;
 use crate::wal::WalFileManager;
 use crate::wal::WalResult;
 use crate::wal::WalTask;
@@ -99,8 +100,8 @@ impl TsKv {
             while let Some(x) = receiver.next().await {
                 match x {
                     WalTask::Write { rows, cb } => {
-                        let ret = wal_manager.write(&rows).await;
-                        let ret = cb.send(WalResult::Ok(()));
+                        let ret = wal_manager.write(wal::WalEntryType::Write, &rows).await;
+                        let _ = cb.send(ret);
                     }
                 }
             }

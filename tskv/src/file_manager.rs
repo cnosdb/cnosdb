@@ -1,11 +1,11 @@
 use std::borrow::BorrowMut;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::{fs, thread};
 
-use crate::{direct_io, error, run_io_task, AsyncContext, File, IoTask, TaskType, make_io_task};
-use futures::channel::oneshot::{Sender, self};
+use crate::{direct_io, error, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
+use futures::channel::oneshot::{self, Sender};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
@@ -82,6 +82,14 @@ impl FileManager {
             .map_err(|err| FileError::UnableToOpenFile { source: err })
     }
 
+    pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
+        if try_exists(path.as_ref()) {
+            self.open_file(path)
+        } else {
+            self.create_file(path)
+        }
+    }
+
     pub async fn sync_all(&self, sync: direct_io::FileSync) -> Result<()> {
         self.file_system
             .sync_all(sync)
@@ -129,12 +137,43 @@ impl FileManager {
     }
 }
 
+pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
+    let mut list = Vec::new();
+
+    for file_name in walkdir::WalkDir::new(dir)
+        .min_depth(1)
+        .max_depth(1)
+        .into_iter()
+        .filter_map(|e| {
+            let dir_entry = match e {
+                Ok(dir_entry) if dir_entry.file_type().is_file() => dir_entry,
+                _ | Err(_) => {
+                    return None;
+                }
+            };
+            dir_entry
+                .file_name()
+                .to_str()
+                .map(|file_name| file_name.to_string())
+        })
+    {
+        list.push(file_name);
+    }
+
+    list
+}
+
 /// Case `std::fs::try_exists` is unstable, so copied the same logic to here
 pub fn try_exists(path: impl AsRef<Path>) -> bool {
     match std::fs::metadata(path) {
         Ok(_) => true,
         Err(_) => false,
     }
+}
+
+pub fn make_wal_file_name(path: &str, sequence: u64) -> PathBuf {
+    let p = format!("{}/_{:05}.wal", path, sequence);
+    PathBuf::from(p)
 }
 
 #[cfg(test)]
