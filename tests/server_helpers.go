@@ -52,7 +52,7 @@ type Server interface {
 
 // NewServer returns a new instance of Server
 func NewServer(c *Config) Server {
-	srv := server.NewServer(c.Config)
+	srv:= server.NewServer(c.Config)
 	s := LocalServer{
 		client: &client{},
 		Server: srv,
@@ -181,15 +181,14 @@ func (s *LocalServer) URL() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	//todo fix URL
-	return "http://127.0.0.1"
+	return "http://127.0.0.1:0"
 }
 
 func (s *LocalServer) TcpAddr() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return "tcp://127.0.0.1"
+	return "tcp://127.0.0.1:0"
 }
-
 //todo add Server interface method
 func (s *LocalServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
 	s.mu.RLock()
@@ -287,6 +286,7 @@ func (s *client) MustQueryWithParams(query string, values url.Values) string {
 	return results
 }
 
+
 // TOOLS
 // HTTPGet makes an HTTP GET request to the server and returns the response.
 func (s *client) HTTPGet(url string) (results string, err error) {
@@ -328,6 +328,8 @@ func (s *client) HTTPPost(url string, content []byte) (results string, err error
 		return "", fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
 	}
 }
+
+
 
 type WriteError struct {
 	body       string

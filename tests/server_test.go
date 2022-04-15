@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -44,12 +45,13 @@ func TestMain(m *testing.M) {
 		benchServer = OpenDefaultServer(c)
 
 		if testing.Verbose() {
-			fmt.Println("================ Running all tests for index ================")
+			fmt.Println("================ Running all tests #{indexType} index ================")
 		}
 
 		if curr := m.Run(); r == 0 {
 			r = curr
 		}
+
 
 		benchServer.Close()
 		if testing.Verbose() {
@@ -58,3 +60,44 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(r)
 }
+
+// Ensure that HTTP responses include the InfluxDB version.
+func TestServer_HTTPResponseVersion(t *testing.T) {
+	if RemoteEnabled() {
+		t.Skip("Skipping.  Cannot change version of remote server")
+	}
+	version := "vunknown"
+	s := OpenServerWithVersion(NewConfig(), version)
+	defer s.Close()
+
+	resp, _ := http.Get(s.URL() + "/query")
+	got := resp.Header.Get("X-Cnosdb-Version")
+	if got != version {
+		t.Errorf("Server responded with incorrect version, exp %s, got %s", version, got)
+	}
+}
+
+func TestServer_DatabaseCommands(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := tests.load(t, "database_commands")
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
+
+
