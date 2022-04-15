@@ -52,7 +52,7 @@ type Server interface {
 
 // NewServer returns a new instance of Server
 func NewServer(c *Config) Server {
-	srv:= server.NewServer(c.Config)
+	srv := server.NewServer(c.Config)
 	s := LocalServer{
 		client: &client{},
 		Server: srv,
@@ -65,7 +65,6 @@ func NewServer(c *Config) Server {
 // OpenServer opens a test server
 func OpenServer(c *Config) Server {
 	s := NewServer(c)
-	// todo add log
 	if err := s.Open(); err != nil {
 		panic(err.Error())
 	}
@@ -149,8 +148,7 @@ type LocalServer struct {
 // the size of series files so that they can all be addressable in the process.
 func (s *LocalServer) Open() error {
 	if runtime.GOARCH == "386" {
-		//todo fix usage
-		//s.Server.tsdbStore.SeriesFileMaxSize = 1 << 27
+		s.Server.TSDBStore.SeriesFileMaxSize = 1 << 27
 	}
 	return s.Server.Open()
 }
@@ -169,8 +167,6 @@ func (s *LocalServer) Close() {
 		}
 	}
 
-	// Nil the server so our deadlock detector goroutine can determine if we completed writes
-	// without timing out
 	s.Server = nil
 }
 
@@ -193,6 +189,7 @@ func (s *LocalServer) TcpAddr() string {
 	defer s.mu.RUnlock()
 	return "tcp://127.0.0.1"
 }
+
 //todo add Server interface method
 func (s *LocalServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
 	s.mu.RLock()
@@ -290,7 +287,6 @@ func (s *client) MustQueryWithParams(query string, values url.Values) string {
 	return results
 }
 
-
 // TOOLS
 // HTTPGet makes an HTTP GET request to the server and returns the response.
 func (s *client) HTTPGet(url string) (results string, err error) {
@@ -332,8 +328,6 @@ func (s *client) HTTPPost(url string, content []byte) (results string, err error
 		return "", fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
 	}
 }
-
-
 
 type WriteError struct {
 	body       string

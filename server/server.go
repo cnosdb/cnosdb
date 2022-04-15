@@ -85,7 +85,7 @@ type Server struct {
 	MemProfile            string
 	MemProfileWriteCloser io.WriteCloser
 
-	logger *zap.Logger
+	Logger *zap.Logger
 }
 
 func NewServer(c *Config) *Server {
@@ -93,7 +93,7 @@ func NewServer(c *Config) *Server {
 		Config:  c,
 		err:     make(chan error),
 		closing: make(chan struct{}),
-		logger:  logger.BgLogger(),
+		Logger:  logger.BgLogger(),
 	}
 
 	return s
@@ -345,7 +345,7 @@ func (s *Server) initMetaClient() error {
 	if s.Config.Cluster == false {
 		metaCli = meta.NewClient(s.Config.Meta)
 	} else {
-		s.logger.Info("waiting to be added to cluster")
+		s.Logger.Info("waiting to be added to cluster")
 		metaCli = meta.NewRemoteClient()
 		for {
 			if len(s.Node.Peers) == 0 {
@@ -355,7 +355,7 @@ func (s *Server) initMetaClient() error {
 			metaCli.SetMetaServers(s.Node.Peers)
 			break
 		}
-		s.logger.Info("joined cluster", zap.String("peers", strings.Join(s.Node.Peers, ",")))
+		s.Logger.Info("joined cluster", zap.String("peers", strings.Join(s.Node.Peers, ",")))
 	}
 	s.MetaClient = metaCli
 
@@ -387,11 +387,11 @@ func (s *Server) startHTTPServer() {
 
 	go utils.WithRecovery(func() {
 		err := s.httpServer.Serve(s.httpListener)
-		s.logger.Error("http server error", zap.Error(err))
+		s.Logger.Error("http server error", zap.Error(err))
 	}, nil)
 
 	if err := s.httpMux.Serve(); err != nil {
-		s.logger.Error("start http/tcp server error", zap.Error(err))
+		s.Logger.Error("start http/tcp server error", zap.Error(err))
 	}
 }
 
@@ -408,15 +408,15 @@ func (s *Server) startNodeServer() {
 			// Wait for next connection.
 			conn, err := s.tcpListener.Accept()
 			if err != nil && strings.Contains(err.Error(), "connection closed") {
-				s.logger.Error("DATA node listener closed")
+				s.Logger.Error("DATA node listener closed")
 			} else if err != nil {
-				s.logger.Error("Error accepting DATA node request", zap.Error(err))
+				s.Logger.Error("Error accepting DATA node request", zap.Error(err))
 				continue
 			}
 
 			var r Request
 			if err := json.NewDecoder(conn).Decode(&r); err != nil {
-				s.logger.Error("Error reading request", zap.Error(err))
+				s.Logger.Error("Error reading request", zap.Error(err))
 			}
 
 			switch r.Type {
@@ -427,7 +427,7 @@ func (s *Server) startNodeServer() {
 				}
 
 				if len(r.Peers) == 0 {
-					s.logger.Error("Invalid MetaServerInfo: empty Peers")
+					s.Logger.Error("Invalid MetaServerInfo: empty Peers")
 					conn.Close()
 					continue
 				}
@@ -435,14 +435,14 @@ func (s *Server) startNodeServer() {
 				s.joinCluster(conn, r.Peers)
 
 			default:
-				s.logger.Error(fmt.Sprintf("request type unknown: %v", r.Type))
+				s.Logger.Error(fmt.Sprintf("request type unknown: %v", r.Type))
 			}
 			conn.Close()
 		}
 	}()
 
 	if err := s.tcpMux.Serve(); err != nil {
-		s.logger.Error("start node server error", zap.Error(err))
+		s.Logger.Error("start node server error", zap.Error(err))
 	}
 }
 
@@ -450,7 +450,7 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 	metaClient := meta.NewRemoteClient()
 	metaClient.SetMetaServers(peers)
 	if err := metaClient.Open(); err != nil {
-		s.logger.Error("error open MetaClient", zap.Error(err))
+		s.Logger.Error("error open MetaClient", zap.Error(err))
 		return
 	}
 
@@ -467,7 +467,7 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 
 	n, err := metaClient.CreateDataNode(s.HTTPAddr(), s.TCPAddr())
 	for err != nil {
-		s.logger.Error("unable to create data node. retry in 1s", zap.Error(err))
+		s.Logger.Error("unable to create data node. retry in 1s", zap.Error(err))
 		time.Sleep(time.Second)
 		n, err = metaClient.CreateDataNode(s.HTTPAddr(), s.TCPAddr())
 	}
@@ -477,13 +477,13 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 	s.Node.Peers = peers
 
 	if err := s.Node.Save(""); err != nil {
-		s.logger.Error("error save node", zap.Error(err))
+		s.Logger.Error("error save node", zap.Error(err))
 		return
 	}
 	s.NewNode = false
 
 	if err := json.NewEncoder(conn).Encode(n); err != nil {
-		s.logger.Error("error writing response", zap.Error(err))
+		s.Logger.Error("error writing response", zap.Error(err))
 	}
 
 }

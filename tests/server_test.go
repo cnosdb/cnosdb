@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
@@ -33,11 +34,14 @@ func TestMain(m *testing.M) {
 		c.RetentionPolicy.Enabled = false
 		c.Monitor.StoreEnabled = false
 		c.Subscriber.Enabled = false
-		c.ContinuousQuery.Enabled = false
+		c.ContinuousQuery.Enabled = true
 		c.Data.MaxValuesPerTag = 1000000 // 1M
 		c.Data.Index = indexType
+		c.Log = logger.NewDefaultLogConfig()
+		if err := logger.InitZapLogger(c.Log); err != nil {
+			fmt.Printf("parse log config: %s\n", err)
+		}
 		benchServer = OpenDefaultServer(c)
-
 
 		if testing.Verbose() {
 			fmt.Println("================ Running all tests for index ================")
@@ -47,7 +51,6 @@ func TestMain(m *testing.M) {
 			r = curr
 		}
 
-
 		benchServer.Close()
 		if testing.Verbose() {
 			fmt.Println()
@@ -55,5 +58,3 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(r)
 }
-
-
