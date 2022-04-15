@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use crate::{option::TseriesFamOpt, MemCache};
+use crate::{kv_option::TseriesFamOpt, MemCache};
 
 pub struct TimeRange {
     max_ts: u64,
