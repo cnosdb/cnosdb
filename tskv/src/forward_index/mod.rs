@@ -1,3 +1,4 @@
+/*
 mod field_info;
 mod series_info;
 mod tags;
@@ -225,3 +226,4 @@ impl ElemType {
         *self as u8
     }
 }
+*/

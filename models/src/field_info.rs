@@ -23,34 +23,18 @@ pub enum ValueType {
     String,
 }
 
-impl From<protos::models::FieldType> for ValueType {
-    fn from(t: protos::models::FieldType) -> Self {
-        match t {
-            protos::models::FieldType::Float => ValueType::Float,
-            protos::models::FieldType::Integer => ValueType::Integer,
-            protos::models::FieldType::Unsigned => ValueType::Unsigned,
-            protos::models::FieldType::Boolean => ValueType::Boolean,
-            protos::models::FieldType::String => ValueType::String,
-            _ => ValueType::Unknown,
-        }
-    }
-}
-
 impl FieldInfo {
-    pub fn new(id: u64, name: Vec<u8>, value_type: ValueType) -> Self {
+    pub fn new() -> Self {
         FieldInfo {
-            id,
-            name,
-            value_type,
+            id: 0,
+            name: FieldName::new(),
+            value_type: ValueType::Unknown,
         }
     }
 
-    pub fn cal_fid(name: &FieldName, sid: SeriesID) -> FieldID {
-        let mut hash = Hash::from(sid);
-        hash.hash_with(name).number()
-    }
     pub fn update_id(&mut self, series_id: SeriesID) {
-        self.id = Self::cal_fid(&self.name, series_id);
+        let mut hash = Hash::from(series_id);
+        self.id = hash.hash_with(&self.name).number();
     }
 
     pub fn format_check(&self) -> Result<(), String> {
@@ -58,9 +42,6 @@ impl FieldInfo {
             return Err(String::from("TagKey exceeds the FIELD_NAME_MAX_LEN"));
         }
         Ok(())
-    }
-    pub fn filed_id(&self) -> FieldID {
-        self.id
     }
 }
 
