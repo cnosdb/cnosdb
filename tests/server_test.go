@@ -3,12 +3,12 @@ package tests
 import (
 	"flag"
 	"fmt"
-	"github.com/cnosdb/cnosdb/pkg/logger"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
@@ -43,8 +43,6 @@ func TestMain(m *testing.M) {
 		}
 		benchServer = OpenDefaultServer(c)
 
-
-
 		if testing.Verbose() {
 			fmt.Println("================ Running all tests for index ================")
 		}
@@ -53,7 +51,6 @@ func TestMain(m *testing.M) {
 			r = curr
 		}
 
-
 		benchServer.Close()
 		if testing.Verbose() {
 			fmt.Println()
@@ -61,5 +58,3 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(r)
 }
-
-
