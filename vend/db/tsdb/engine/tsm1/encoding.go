@@ -234,7 +234,7 @@ func BlockType(block []byte) (byte, error) {
 }
 
 // BlockCount returns the number of timestamps encoded in block.
-func BlockCount(block []byte) int {
+func BlockCount(block []byte) (int, error) {
 	if len(block) <= encodedBlockHeaderSize {
 		panic(fmt.Sprintf("count of short block: got %v, exp %v", len(block), encodedBlockHeaderSize))
 	}
@@ -243,7 +243,7 @@ func BlockCount(block []byte) int {
 	if err != nil {
 		panic(fmt.Sprintf("BlockCount: error unpacking block: %s", err.Error()))
 	}
-	return CountTimestamps(tb)
+	return CountTimestamps(tb), nil
 }
 
 // DecodeBlock takes a byte slice and decodes it into values of the appropriate type
