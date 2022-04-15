@@ -3,6 +3,7 @@ package tests
 import (
 	"flag"
 	"fmt"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"math/rand"
 	"os"
 	"testing"
@@ -33,10 +34,15 @@ func TestMain(m *testing.M) {
 		c.RetentionPolicy.Enabled = false
 		c.Monitor.StoreEnabled = false
 		c.Subscriber.Enabled = false
-		c.ContinuousQuery.Enabled = false
+		c.ContinuousQuery.Enabled = true
 		c.Data.MaxValuesPerTag = 1000000 // 1M
 		c.Data.Index = indexType
+		c.Log = logger.NewDefaultLogConfig()
+		if err := logger.InitZapLogger(c.Log); err != nil {
+			fmt.Printf("parse log config: %s\n", err)
+		}
 		benchServer = OpenDefaultServer(c)
+
 
 
 		if testing.Verbose() {

@@ -65,7 +65,6 @@ func NewServer(c *Config) Server {
 // OpenServer opens a test server
 func OpenServer(c *Config) Server {
 	s := NewServer(c)
-	// todo add log
 	if err := s.Open(); err != nil {
 		panic(err.Error())
 	}
@@ -149,8 +148,7 @@ type LocalServer struct {
 // the size of series files so that they can all be addressable in the process.
 func (s *LocalServer) Open() error {
 	if runtime.GOARCH == "386" {
-		//todo fix usage
-		//s.Server.tsdbStore.SeriesFileMaxSize = 1 << 27
+		s.Server.TSDBStore.SeriesFileMaxSize = 1 << 27
 	}
 	return s.Server.Open()
 }
@@ -169,8 +167,6 @@ func (s *LocalServer) Close() {
 		}
 	}
 
-	// Nil the server so our deadlock detector goroutine can determine if we completed writes
-	// without timing out
 	s.Server = nil
 }
 
