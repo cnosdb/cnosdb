@@ -1,3 +1,4 @@
+/*
 use crate::forward_index::field_info::{FieldID, FieldInfo};
 use crate::forward_index::tags::Tag;
 use bincode;
@@ -35,6 +36,7 @@ impl SeriesInfo {
 
     pub fn calculation_series_id(&mut self) {
         //series id
+        /*
         self.tags.sort_by(|a, b| -> Ordering {
             return if a.key < b.key {
                 Ordering::Less
@@ -44,6 +46,7 @@ impl SeriesInfo {
                 Ordering::Equal
             };
         });
+        */
         let mut data = Vec::<u8>::new();
         for tag in self.tags.iter_mut() {
             data.append(&mut tag.bytes())
@@ -103,3 +106,4 @@ impl SeriesInfoSimplified {
         }
     }
 }
+*/
