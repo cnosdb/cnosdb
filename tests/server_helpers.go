@@ -62,6 +62,47 @@ func NewServer(c *Config) Server {
 	return &s
 }
 
+// OpenServer opens a test server
+func OpenServer(c *Config) Server {
+	s := NewServer(c)
+	// todo add log
+	if err := s.Open(); err != nil {
+		panic(err.Error())
+	}
+	return s
+}
+
+// OpenServerWithVersion open
+func OpenServerWithVersion(c *Config, version string) Server {
+	// We can't change the version of a remote server.  The test needs to
+	// be skipped if using this func.
+	if RemoteEnabled() {
+		panic("OpenServerWithVersion not support with remote server")
+	}
+
+	srv := server.NewServer(c.Config)
+	s := LocalServer{
+		client: &client{},
+		Server: srv,
+		Config: c,
+	}
+	s.client.URLFn = s.URL
+
+	if err := s.Open(); err != nil {
+		panic(err.Error())
+	}
+	return &s
+}
+
+// OpenDefaultServer opens a test server with a default database & retention policy
+func OpenDefaultServer(c *Config) Server {
+	s := OpenServer(c)
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		panic(err)
+	}
+	return s
+}
+
 //
 type Config struct {
 	rootPath string
