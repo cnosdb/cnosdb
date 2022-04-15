@@ -1,19 +1,8 @@
-# RUST_DIRECT_FIO
+# RUST User space memcache and use direct_io to write/read file 
+adapted from: `git@github.com:pingw33n/rust_direct_fio.git`
+and use thread pool to write direct_io support async interface
 
-cloned from: `git@github.com:pingw33n/rust_direct_fio.git`
-
-author: `Dmytro Lysai <d@emphased.net>`
-
-## Example
-
-### Direct read / write
-
-todo
-
-### 
-
-todo
-
-## License
-
-MIT/Apache-2.0
+# future
+add metric to monitor 
+add more test cases and bench test cases
+support io_uring

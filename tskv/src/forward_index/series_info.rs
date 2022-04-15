@@ -106,4 +106,19 @@ impl SeriesInfoSimplified {
         }
     }
 }
+
+#[test]
+fn test_decode() {
+    let mut test = SeriesInfo::new();
+    test.id = 1;
+    let t1 = Tag {
+        key: [1, 2, 3].to_vec(),
+        value: [1, 2, 3, 4].to_vec(),
+    };
+    test.tags.push(t1);
+    let buf = test.encode();
+    let test2 = SeriesInfo::decoded(&buf);
+    print!("test log {:?} ", test2);
+    assert_eq!(test, test2)
+}
 */

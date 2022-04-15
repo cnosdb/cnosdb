@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    option::{TseriesFamDesc, MAX_MEMCACHE_SIZE},
+    kv_option::{TseriesFamDesc, MAX_MEMCACHE_SIZE},
     tseries_family, MemCache, TseriesFamily, Version,
 };
 

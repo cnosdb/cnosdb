@@ -99,16 +99,14 @@ impl SeriesInfo {
 
 #[cfg(test)]
 mod tests_series_info {
-    use crate::{FieldInfo, TagFromParts, FieldInfoFromParts, SeriesInfo, Tag, ValueType};
+    use crate::{FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, TagFromParts, ValueType};
 
     #[test]
     fn test_series_info_encode_and_decode() {
         let mut info = SeriesInfo::new();
         info.add_tag(Tag::from_parts("hello", "123")).unwrap();
-        info.add_field_info(FieldInfo::from_parts(
-            Vec::from("cpu"),
-            ValueType::Integer,
-        )).unwrap();
+        info.add_field_info(FieldInfo::from_parts(Vec::from("cpu"), ValueType::Integer))
+            .unwrap();
         let data = info.encode();
         let new_info = SeriesInfo::decoded(&data);
         assert_eq!(info, new_info);
