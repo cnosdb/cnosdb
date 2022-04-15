@@ -29,40 +29,21 @@ table Row {
     fields: [RowField];
 }
 
-enum WALEntryType: byte {
-    Write = 1,
-    Delete,
-    DeleteRange,
-}
-
-table WriteWALEntry {
+table Rows {
     rows: [Row];
 }
 
-struct DeleteWALEntryItem {
+struct ColumnKey {
     series_id: uint64;
     field_id: uint64;
 }
 
-table DeleteWALEntry {
-    items: [DeleteWALEntryItem];
+table ColumnKeys {
+    column_keys: [ColumnKey];
 }
 
-table DeleteRangeWALEntry {
-    items: [DeleteWALEntryItem];
+table ColumnKeysWithRange {
+    column_keys: [ColumnKey];
     min: uint64;
     max: uint64;
-}
-
-union WALEntryUnion {
-    Write: WriteWALEntry,
-    Delete: DeleteWALEntry,
-    DeleteRange: DeleteRangeWALEntry,
-}
-
-table WALEntry {
-    seq: uint64;
-    type: WALEntryType = Write;
-    series_id: uint64;
-    value: WALEntryUnion;
 }

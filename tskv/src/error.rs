@@ -1,4 +1,6 @@
+use crate::wal;
 use snafu::Snafu;
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Snafu, Debug)]
@@ -7,4 +9,21 @@ pub enum Error {
     IO { source: std::io::Error },
     #[snafu(display("async file system stopped"))]
     Cancel,
+    #[snafu(display("fails to send to channel"))]
+    Send,
+    #[snafu(display("fails to receive from channel"))]
+    Receive,
+    #[snafu(display("invalid flatbuffers: {}", source))]
+    InvalidFlatbuffer {
+        source: flatbuffers::InvalidFlatbuffer,
+    },
+    #[snafu(display("parse flatbuffers: {}", source))]
+    ParseFlatbuffer { source: ParseFlatbufferError },
+    #[snafu(display("unable to write wal: {}", source))]
+    WriteAheadLog { source: wal::WalError },
+}
+
+#[derive(Snafu, Debug)]
+pub enum ParseFlatbufferError {
+    Error,
 }
