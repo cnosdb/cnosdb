@@ -2,6 +2,7 @@ package tests
 
 import (
 	"flag"
+	"fmt"
 	"math/rand"
 	"os"
 	"testing"
@@ -27,7 +28,32 @@ func TestMain(m *testing.M) {
 
 	var r int
 	for _, indexType = range tsdb.RegisteredIndexes() {
+		//setup server
+		c := NewConfig()
+		c.RetentionPolicy.Enabled = false
+		c.Monitor.StoreEnabled = false
+		c.Subscriber.Enabled = false
+		c.ContinuousQuery.Enabled = false
+		c.Data.MaxValuesPerTag = 1000000 // 1M
+		c.Data.Index = indexType
+		benchServer = OpenDefaultServer(c)
 
+
+		if testing.Verbose() {
+			fmt.Println("================ Running all tests for index ================")
+		}
+
+		if curr := m.Run(); r == 0 {
+			r = curr
+		}
+
+
+		benchServer.Close()
+		if testing.Verbose() {
+			fmt.Println()
+		}
 	}
 	os.Exit(r)
 }
+
+
