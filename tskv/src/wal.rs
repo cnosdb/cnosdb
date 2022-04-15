@@ -1,13 +1,24 @@
-use std::path::{Path, PathBuf};
+use std::{
+    any::Any,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
+use crc32fast;
+use futures::channel::oneshot;
 use lazy_static::lazy_static;
+use protos::models;
 use regex::Regex;
-use snafu::Snafu;
+use snafu::prelude::*;
+use tokio::sync::Mutex as AsyncMutex;
+use walkdir::IntoIter;
 
-use crate::direct_io::{File, FileSync, FileSystem, Options};
-use protos::models::*;
-
-use crate::FileManager;
+use crate::{
+    compute,
+    direct_io::{make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType},
+    file_manager, option, FileManager,
+};
 
 lazy_static! {
     static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new("_.*\\.wal").unwrap();
@@ -15,248 +26,467 @@ lazy_static! {
 
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
+pub enum WalTask {
+    Write {
+        rows: Vec<u8>,
+        cb: oneshot::Sender<WalResult<()>>,
+    },
+}
+
+// pub struct WalScheduler {
+//     sender: Sender<WalTask>,
+// }
+
+// impl WalScheduler {
+//     pub async fn write(&mut self, rows: Vec<u8>) -> WalResult<()> {
+//         let (cb, rx) = oneshot::channel::<WalResult<()>>();
+//         let task = WalTask::Write { rows, cb };
+//         self.sender.send(task).await;
+
+//         rx.await.map_err(|_| WalError::FailedWithChannelReceive)?
+//     }
+// }
+
 #[derive(Snafu, Debug)]
-pub enum Error {
-    #[snafu(display("Unable to walk dir: {}", source))]
+pub enum WalError {
+    #[snafu(display("Unable to walk dir : {}", source))]
     UnableToWalkDir { source: walkdir::Error },
 
     #[snafu(display("File {} has wrong name format to have an id", file_name))]
     InvalidFileName { file_name: String },
 
-    #[snafu(display("Error with file: {}", source))]
-    FileManagerError { source: super::file_manager::Error },
+    #[snafu(display("Error with file : {}", source))]
+    FailedWithFileManager {
+        source: super::file_manager::FileError,
+    },
 
-    #[snafu(display("{}", source))]
-    FileIOError { source: std::io::Error },
+    #[snafu(display("Error with std::io : {}", source))]
+    FailedWithStdIO { source: std::io::Error },
+
+    #[snafu(display("Error with receiving from channel"))]
+    FailedWithChannelReceive,
+
+    #[snafu(display("Error with sending from channel"))]
+    FailedWithChannelSend,
+
+    #[snafu(display("Error with IO task"))]
+    FailedWithIoTask,
 }
 
-type Result<T> = std::result::Result<T, Error>;
+pub type WalResult<T> = std::result::Result<T, WalError>;
+
+#[repr(u8)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub enum WalEntryType {
+    Write = 1,
+    Delete = 2,
+    DeleteRange = 3,
+    Unknown = 127,
+}
+
+impl From<u8> for WalEntryType {
+    fn from(typ: u8) -> Self {
+        match typ {
+            1 => WalEntryType::Write,
+            2 => WalEntryType::Delete,
+            3 => WalEntryType::DeleteRange,
+            _ => WalEntryType::Unknown,
+        }
+    }
+}
+
+pub enum WalEntryBlock {
+    Write(WalEntryBlockInner),
+    Delete(WalEntryBlockInner),
+    DeleteRange(WalEntryBlockInner),
+}
+
+pub struct WalEntryBlockInner {
+    pub typ: WalEntryType,
+    pub crc: u32,
+    pub len: u32,
+    pub buf: Vec<u8>,
+}
 
 struct WalConfig {}
 
-struct WriteAheadLogManager {
-    dir: String,
-    file_manager: &'static FileManager,
-
-    current_dir_path: PathBuf,
-    current_file_id: u64,
-    current_file_writer: Option<WriteAheadLogDiskFileWriter>,
-}
-
-impl WriteAheadLogManager {
-    pub fn new(file_manager: &'static FileManager, dir: String) -> Self {
-        let mut fs_options = Options::default();
-        let fs_options = fs_options
-            .max_resident(1)
-            .max_non_resident(0)
-            .page_len_scale(1);
-
-        WriteAheadLogManager {
-            dir: dir.clone(),
-            file_manager,
-
-            current_dir_path: PathBuf::from(dir),
-            current_file_id: 0,
-            current_file_writer: None,
-        }
-    }
-
-    fn list_wal_filenames(dir: &String) -> Vec<String> {
-        let mut list = Vec::new();
-
-        for file_name in walkdir::WalkDir::new(dir)
-            .min_depth(1)
-            .max_depth(1)
-            .into_iter()
-            .filter_map(|e| {
-                let dir_entry = match e {
-                    Ok(dir_entry) if dir_entry.file_type().is_file() => dir_entry,
-                    _ | Err(_) => {
-                        return None;
-                    }
-                };
-                dir_entry
-                    .file_name()
-                    .to_str()
-                    .map(|file_name| file_name.to_string())
-            })
-        {
-            list.push(file_name);
-        }
-
-        list
-    }
-
-    fn get_id_by_file_name(file_name: &String) -> Result<u64> {
-        if !WAL_FILE_NAME_PATTERN.is_match(file_name) {
-            return Err(Error::InvalidFileName {
-                file_name: file_name.clone(),
-            });
-        }
-        let parts: Vec<&str> = file_name.split(".").collect();
-        if parts.len() != 2 {
-            Err(Error::InvalidFileName {
-                file_name: file_name.clone(),
-            })
-        } else {
-            parts
-                .first()
-                .unwrap()
-                .split_at(1)
-                .1
-                .parse::<u64>()
-                .map_err(|err| Error::InvalidFileName {
-                    file_name: file_name.clone(),
-                })
-        }
-    }
-
-    fn get_wal_file<P: AsRef<Path>>(&self, path: P) -> Result<File> {
-        self.file_manager
-            .open_file(path)
-            .map_err(|err| Error::FileManagerError { source: err })
-    }
-
-    fn new_wal_file(&mut self) -> Result<()> {
-        self.current_file_id = self.current_file_id + 1;
-        if self.current_file_writer.is_none() {
-            let file_name = self
-                .current_dir_path
-                .join(format!("_{:05}.wal", self.current_file_id));
-            self.current_file_writer = Some(
-                self.file_manager
-                    .create_file(file_name)
-                    .map_err(|err| Error::FileManagerError { source: err })
-                    .map(|file| WriteAheadLogDiskFileWriter::new(file))?,
-            );
-        }
-        Ok(())
-    }
-
-    fn roll_wal_file(&mut self) -> Result<()> {
-        let writer = &self.current_file_writer;
-        match writer {
-            Some(w) if w.size > SEGMENT_SIZE => self.new_wal_file(),
-            None => self.new_wal_file(),
-            _ => Ok(()),
-        }
-    }
-
-    pub fn open(&mut self) -> Result<()> {
-        let segments = Self::list_wal_filenames(&self.dir);
-        if segments.len() > 0 {
-            let last = segments.last().unwrap();
-            let id = Self::get_id_by_file_name(last)?;
-            self.current_file_id = id;
-            let file = self.get_wal_file(self.current_dir_path.join(last))?;
-            self.current_file_writer = Some(WriteAheadLogDiskFileWriter::new(file));
-        }
-
-        Ok(())
-    }
-
-    pub fn write(&mut self, entry: &WALEntry) -> Result<()> {
-        self.roll_wal_file()?;
-
-        let writer = &mut self.current_file_writer;
-        match writer {
-            Some(w) => w.write(entry),
-            None => Err(Error::FileIOError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, "No writer initialized."),
-            }),
-        }
-    }
-}
-
-pub struct WriteAheadLogDiskFileWriter {
-    writer: File,
+#[derive(Clone)]
+struct WalFile {
+    id: u64,
+    file: File,
     size: u64,
 }
 
-impl WriteAheadLogDiskFileWriter {
-    pub fn new(file: File) -> Self {
-        Self {
-            writer: file,
-            size: 0,
+#[derive(Clone)]
+pub struct WalFileManager {
+    config: option::WalConfig,
+
+    file_manager: Arc<FileManager>,
+
+    current_dir_path: PathBuf,
+    current_file: WalFile,
+}
+
+unsafe impl Send for WalFileManager {}
+unsafe impl Sync for WalFileManager {}
+
+pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64)> {
+    let segments = file_manager::list_file_names(dir);
+    if segments.is_empty() {
+        return None;
+    }
+    let mut max_id = 1;
+    let mut max_index = 0;
+    for (i, file_name) in segments.iter().enumerate() {
+        match get_id_by_file_name(&file_name) {
+            Ok(id) => {
+                if max_id < id {
+                    max_id = id;
+                    max_index = i;
+                }
+            }
+            Err(_) => continue,
         }
     }
+    let max_file_name = segments.get(max_index).unwrap();
+    Some((PathBuf::from(max_file_name), max_id))
+}
 
-    pub fn write(&mut self, wal_entry: &WALEntry) -> Result<()> {
-        let ret = self.append(wal_entry._tab.buf);
-        match ret {
-            Ok(u64) => Ok(()),
-            Err(e) => Err(e),
-        }
+fn get_id_by_file_name(file_name: &String) -> WalResult<u64> {
+    if !WAL_FILE_NAME_PATTERN.is_match(file_name) {
+        return Err(WalError::InvalidFileName {
+            file_name: file_name.clone(),
+        });
     }
+    let parts: Vec<&str> = file_name.split(".").collect();
+    if parts.len() != 2 {
+        Err(WalError::InvalidFileName {
+            file_name: file_name.clone(),
+        })
+    } else {
+        parts
+            .first()
+            .unwrap()
+            .split_at(1)
+            .1
+            .parse::<u64>()
+            .map_err(|err| WalError::InvalidFileName {
+                file_name: file_name.clone(),
+            })
+    }
+}
 
-    fn append(&mut self, buf: &[u8]) -> Result<u64> {
-        // todo: 1. wrap buf (option: compress)
-        // 2. write entry
-        // 3. return bytes writed
-        let ret = match self.writer.write_at(self.size, buf) {
-            Ok(_) => Ok(buf.len() as u64),
-            Err(err) => Err(Error::FileIOError { source: err }),
+impl WalFileManager {
+    pub fn new(file_manager: Arc<FileManager>, config: option::WalConfig) -> Self {
+        let dir = config.dir.clone();
+
+        let (last, seq) = match get_max_sequence_file_name(PathBuf::from(dir.clone())) {
+            Some((file, seq)) => (file, seq),
+            None => {
+                let seq = 1;
+                (file_manager::make_wal_file_name(&dir, seq), seq)
+            }
         };
 
-        let _ = self.writer.sync_all(FileSync::Soft);
+        let current_dir_path = PathBuf::from(dir);
 
-        self.size += buf.len() as u64;
+        let file = file_manager
+            .open_create_file(current_dir_path.join(last))
+            .context(FailedWithFileManagerSnafu)
+            .unwrap();
+        let size = file.len();
 
-        ret
+        WalFileManager {
+            config,
+            file_manager,
+            current_dir_path,
+            current_file: WalFile {
+                id: seq,
+                file,
+                size,
+            },
+        }
     }
 
-    pub fn sync(&self) -> Result<()> {
-        self.writer
-            .sync_all(FileSync::Soft)
-            .map_err(|err| Error::FileIOError { source: err })
+    fn roll_wal_file(&mut self) -> WalResult<()> {
+        let current_file = &mut self.current_file;
+        if current_file.size > SEGMENT_SIZE {
+            current_file.id += 1;
+            let file_name =
+                file_manager::make_wal_file_name(self.config.dir.as_str(), current_file.id);
+            let file = self
+                .file_manager
+                .create_file(file_name)
+                .context(FailedWithFileManagerSnafu)?;
+            current_file.file = file;
+        }
+        Ok(())
     }
 
-    pub fn flush(&self) -> Result<()> {
-        self.writer
-            .sync_all(FileSync::Hard)
-            .map_err(|err| Error::FileIOError { source: err })
+    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> WalResult<()> {
+        self.roll_wal_file()?;
+
+        let writer = &mut self.current_file;
+        {
+            let typ = typ as u8;
+            let mut pos = writer.size;
+            writer
+                .file
+                .write_at(pos, &[typ])
+                .and_then(|size| {
+                    pos += size as u64;
+                    let crc = crc32fast::hash(data);
+                    writer.file.write_at(pos, &crc.to_be_bytes())
+                })
+                .and_then(|size| {
+                    pos += size as u64;
+                    let len = data.len() as u32;
+                    dbg!(len.to_be_bytes());
+                    writer.file.write_at(pos, &len.to_be_bytes())
+                })
+                .and_then(|size| {
+                    pos += size as u64;
+                    writer.file.write_at(pos, data)
+                })
+                .and_then(|size| {
+                    pos += size as u64;
+                    if self.config.sync {
+                        writer.file.sync_all(FileSync::Soft)
+                    } else {
+                        Ok(())
+                    }
+                })
+                .map_err(|err| WalError::FailedWithStdIO { source: err })?;
+
+            // TODO codes below may produce "future cannot be sent between threads safely" in `kvcore.rs`."
+            // self.file_manager
+            //     .write_at(Arc::clone(&writer.file), writer.size, buf.as_mut_slice())
+            //     .await;
+
+            // write & fsync succeed
+            writer.size = pos;
+        }
+
+        Ok(())
     }
 }
 
-struct WriteAheadLogReader {
-    reader: File,
+/// Get a WriteAheadLogReader. Used for loading file to cache.
+/// ```
+/// use util::direct_fio::{File, FileSystem, Options};
+///
+/// let file_system: FileSystem = FileSystem::new(&Options::default());
+/// let file: File = file_system.open("_00001.wal").unwrap();
+///
+/// let mut reader: WriteAheadLogReader = reader(file);
+/// while let Some(block) = reader.next_wal_entry() {
+///     // ...
+/// }
+/// ```
+pub fn reader<'a>(f: File) -> WalReader<'a> {
+    WalReader {
+        cursor: f.into_cursor(),
+        phantom: PhantomData,
+    }
 }
 
-// pub(crate) fn pread_exact_or_eof(
-//     file: &File,
-//     mut buf: &mut [u8],
-//     offset: u64,
-// ) -> Result<usize> {
-//     let mut total = 0_usize;
-//     while !buf.is_empty() {
-//         match file.read_at(buf, offset + u64::try_from(total).unwrap()) {
-//             Ok(0) => break,
-//             Ok(n) => {
-//                 total += n;
-//                 let tmp = buf;
-//                 buf = &mut tmp[n..];
+// struct WalWriter {
+//     cursor: FileCursor,
+//     size: u64,
+// }
+
+// impl WalWriter {
+//     pub fn new(cursor: FileCursor) -> Self {
+//         Self { cursor, size: 0 }
+//     }
+
+//     pub fn write(&mut self, wal_entry: &WalEntryBlock) -> WalResult<()> {
+//         if let Some(WalEntryBlockInner { typ, crc, len, buf }) = wal_entry.inner() {
+//             let ret = self.append(typ.code(), *crc, *len, &buf);
+//             match ret {
+//                 Ok(u64) => Ok(()),
+//                 Err(e) => Err(e),
 //             }
-//             Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-//             Err(e) => return Err(e.into()),
+//         } else {
+//             // do not need write anything.
+//             Ok(())
 //         }
 //     }
-//     Ok(total)
+
+//     fn append(&mut self, typ: u32, crc: u32, data_len: u32, data: &[u8]) -> WalResult<()> {
+//         let ret = self
+//             .cursor
+//             .write(typ.to_be_bytes().as_slice())
+//             //.await
+//             .and_then(|()| self.cursor.write(crc.to_be_bytes().as_slice()))
+//             .and_then(|()| self.cursor.write(data_len.to_be_bytes().as_slice()))
+//             .and_then(|()| self.cursor.write(data))
+//             // TODO: run sync in a Future
+//             .and_then(|()| self.cursor.sync_all(FileSync::Soft))
+//             .context(FailedWithStdIOSnafu);
+
+//         self.size += 8 + data_len as u64;
+
+//         ret
+//     }
+
+//     pub fn sync(&self) -> WalResult<()> {
+//         self.cursor
+//             .sync_all(FileSync::Soft)
+//             .context(FailedWithStdIOSnafu)
+//     }
+
+//     pub fn flush(&self) -> WalResult<()> {
+//         self.cursor
+//             .sync_all(FileSync::Hard)
+//             .context(FailedWithStdIOSnafu)
+//     }
 // }
+
+pub struct WalReader<'a> {
+    cursor: FileCursor,
+    phantom: PhantomData<&'a Self>,
+}
+
+impl<'a> WalReader<'_> {
+    pub fn new(cursor: FileCursor) -> Self {
+        Self {
+            cursor,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
+        let mut header_buf = [0_u8; 9];
+
+        dbg!(self.cursor.pos());
+        let read_bytes = self.cursor.read(&mut header_buf[..]).unwrap();
+        if read_bytes < 8 {
+            return None;
+        }
+        let typ = header_buf[0];
+        let crc = compute::decode_be_u32(header_buf[1..5].into());
+        let data_len = compute::decode_be_u32(header_buf[5..9].try_into().unwrap());
+        if data_len <= 0 {
+            return None;
+        }
+        dbg!(data_len);
+
+        // TODO use a synchronized pool to get buffer
+        let mut buf = vec![0_u8; 1024];
+        dbg!(self.cursor.pos());
+        let buf = &mut buf.as_mut_slice()[0..data_len as usize];
+        let read_bytes = self.cursor.read(buf).unwrap();
+
+        let inner_block = WalEntryBlockInner {
+            typ: typ.into(),
+            crc,
+            len: read_bytes as u32,
+            buf: buf.to_vec(),
+        };
+        match inner_block.typ {
+            WalEntryType::Write => Some(WalEntryBlock::Write(inner_block)),
+            WalEntryType::Delete => Some(WalEntryBlock::Delete(inner_block)),
+            WalEntryType::DeleteRange => Some(WalEntryBlock::DeleteRange(inner_block)),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
-    use std::{borrow::BorrowMut, time};
+    use core::panic;
+    use std::{borrow::BorrowMut, sync::Arc, time};
 
     use chrono::Utc;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use rand;
 
-    use protos::models::*;
+    use crate::{
+        direct_io::{FileCursor, FileSync},
+        file_manager::list_file_names,
+        File,
+    };
+    use protos::models;
 
-    use crate::{file_manager, FileManager};
+    use crate::{
+        file_manager, option,
+        wal::{WalEntryBlock, WalEntryType, WalReader},
+        FileManager,
+    };
 
-    use super::WriteAheadLogManager;
+    use super::{WalEntryBlockInner, WalFileManager};
+
+    const DIR: &'static str = "/tmp/test/";
+
+    impl crate::wal::WalEntryBlock {
+        pub fn new_write(bytes: &[u8]) -> Self {
+            Self::Write(WalEntryBlockInner::from_bytes(WalEntryType::Write, bytes))
+        }
+
+        pub fn new_delete(bytes: &[u8]) -> Self {
+            Self::Delete(WalEntryBlockInner::from_bytes(WalEntryType::Delete, bytes))
+        }
+
+        pub fn new_delete_range(bytes: &[u8]) -> Self {
+            Self::DeleteRange(WalEntryBlockInner::from_bytes(
+                WalEntryType::DeleteRange,
+                bytes,
+            ))
+        }
+    }
+    impl WalEntryBlockInner {
+        pub fn from_bytes(typ: WalEntryType, bytes: &[u8]) -> Self {
+            Self {
+                typ,
+                crc: crc32fast::hash(bytes),
+                len: bytes.len() as u32,
+                buf: bytes.into(),
+            }
+        }
+
+        pub fn size(&self) -> u32 {
+            self.len + 10
+        }
+    }
+
+    impl From<&models::Rows<'_>> for WalEntryBlockInner {
+        fn from(entry: &models::Rows) -> Self {
+            Self::from_bytes(WalEntryType::Write, entry._tab.buf)
+        }
+    }
+
+    impl<'a> From<&'a WalEntryBlockInner> for models::Rows<'a> {
+        fn from(block: &'a WalEntryBlockInner) -> Self {
+            flatbuffers::root::<models::Rows<'a>>(&block.buf[0..block.len as usize]).unwrap()
+        }
+    }
+
+    impl From<&models::ColumnKeys<'_>> for WalEntryBlockInner {
+        fn from(cols: &models::ColumnKeys<'_>) -> Self {
+            Self::from_bytes(WalEntryType::Delete, cols._tab.buf)
+        }
+    }
+
+    impl<'a> From<&'a WalEntryBlockInner> for models::ColumnKeys<'a> {
+        fn from(block: &'a WalEntryBlockInner) -> Self {
+            flatbuffers::root::<models::ColumnKeys<'a>>(&block.buf[0..block.len as usize]).unwrap()
+        }
+    }
+
+    impl From<&models::ColumnKeysWithRange<'_>> for WalEntryBlockInner {
+        fn from(cols: &models::ColumnKeysWithRange<'_>) -> Self {
+            Self::from_bytes(WalEntryType::DeleteRange, cols._tab.buf)
+        }
+    }
+
+    impl<'a> From<&'a WalEntryBlockInner> for models::ColumnKeysWithRange<'a> {
+        fn from(block: &'a WalEntryBlockInner) -> Self {
+            flatbuffers::root::<models::ColumnKeysWithRange<'a>>(&block.buf[0..block.len as usize])
+                .unwrap()
+        }
+    }
 
     fn random_series_id() -> u64 {
         rand::random::<u64>()
@@ -265,25 +495,25 @@ mod test {
         rand::random::<u64>()
     }
 
-    fn random_wal_entry_type() -> WALEntryType {
+    fn random_wal_entry_type() -> WalEntryType {
         let rand = rand::random::<u8>() % 3;
         match rand {
-            0 => WALEntryType::Write,
-            1 => WALEntryType::Delete,
-            _ => WALEntryType::DeleteRange,
+            0 => WalEntryType::Write,
+            1 => WalEntryType::Delete,
+            _ => WalEntryType::DeleteRange,
         }
     }
 
     fn random_field<'a>(
         _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         field_id: u64,
-        type_: FieldType,
+        type_: models::FieldType,
         value: WIPOffset<Vector<u8>>,
-    ) -> WIPOffset<RowField<'a>> {
+    ) -> WIPOffset<models::RowField<'a>> {
         let fbb = _fbb.borrow_mut();
-        RowField::create(
+        models::RowField::create(
             fbb,
-            &RowFieldArgs {
+            &models::RowFieldArgs {
                 field_id,
                 type_,
                 value: Some(value),
@@ -291,7 +521,7 @@ mod test {
         )
     }
 
-    fn random_row<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WIPOffset<Row<'a>> {
+    fn random_row<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WIPOffset<models::Row<'a>> {
         let fbb = _fbb.borrow_mut();
 
         let series_id = random_series_id();
@@ -299,23 +529,23 @@ mod test {
         let float_v = fbb.create_vector(rand::random::<f64>().to_be_bytes().as_slice());
         let string_v = fbb.create_vector("Hello world.".as_bytes());
 
-        let mut fields: Vec<WIPOffset<RowField>> = vec![];
+        let mut fields: Vec<WIPOffset<models::RowField>> = vec![];
         fields.push(random_field(
             fbb,
             random_field_id(),
-            FieldType::Float,
+            models::FieldType::Float,
             float_v,
         ));
         fields.push(random_field(
             fbb,
             random_field_id(),
-            FieldType::Float,
+            models::FieldType::Float,
             string_v,
         ));
         let vec = fbb.create_vector(&fields);
 
-        let mut row_builder = RowBuilder::new(fbb);
-        row_builder.add_key(&RowKey::new(series_id, timestamp));
+        let mut row_builder = models::RowBuilder::new(fbb);
+        row_builder.add_key(&models::RowKey::new(series_id, timestamp));
         row_builder.add_fields(vec);
 
         row_builder.finish()
@@ -323,109 +553,240 @@ mod test {
 
     fn random_write_wal_entry<'a>(
         _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<WriteWALEntry<'a>> {
+    ) -> WIPOffset<models::Rows<'a>> {
         let fbb = _fbb.borrow_mut();
 
-        let mut rows: Vec<WIPOffset<Row>> = vec![];
+        let mut rows: Vec<WIPOffset<models::Row>> = vec![];
         rows.push(random_row(fbb));
         rows.push(random_row(fbb));
         let vec = fbb.create_vector(&rows);
 
-        WriteWALEntry::create(fbb, &WriteWALEntryArgs { rows: Some(vec) })
+        models::Rows::create(fbb, &models::RowsArgs { rows: Some(vec) })
     }
 
-    fn random_delete_wal_entry_item() -> DeleteWALEntryItem {
-        DeleteWALEntryItem::new(random_series_id(), random_field_id())
+    fn random_delete_wal_entry_item() -> models::ColumnKey {
+        models::ColumnKey::new(random_series_id(), random_field_id())
     }
 
     fn random_delete_wal_entry<'a>(
         _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<DeleteWALEntry<'a>> {
+    ) -> WIPOffset<models::ColumnKeys<'a>> {
         let fbb = _fbb.borrow_mut();
 
-        let mut items: Vec<DeleteWALEntryItem> = vec![];
+        let mut items: Vec<models::ColumnKey> = vec![];
         for _ in 0..10 {
             items.push(random_delete_wal_entry_item());
         }
 
         let vec = fbb.create_vector(&items);
 
-        DeleteWALEntry::create(fbb, &DeleteWALEntryArgs { items: Some(vec) })
+        models::ColumnKeys::create(
+            fbb,
+            &models::ColumnKeysArgs {
+                column_keys: Some(vec),
+            },
+        )
     }
 
     fn random_delete_range_wal_entry<'a>(
         _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<DeleteRangeWALEntry<'a>> {
+    ) -> WIPOffset<models::ColumnKeysWithRange<'a>> {
         let fbb = _fbb.borrow_mut();
-        let mut items: Vec<DeleteWALEntryItem> = vec![];
+        let mut items: Vec<models::ColumnKey> = vec![];
         for _ in 0..10 {
             items.push(random_delete_wal_entry_item());
         }
 
         let vec = fbb.create_vector(&items);
 
-        DeleteRangeWALEntry::create(
+        models::ColumnKeysWithRange::create(
             fbb,
-            &DeleteRangeWALEntryArgs {
-                items: Some(vec),
+            &models::ColumnKeysWithRangeArgs {
+                column_keys: Some(vec),
                 min: 1,
                 max: 100,
             },
         )
     }
 
-    fn random_wal_entry<'a>(
-        _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<WALEntry<'a>> {
+    fn random_wal_entry_block<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WalEntryBlock {
         let fbb = _fbb.borrow_mut();
 
         let entry_type = random_wal_entry_type();
-        let entry_union = match entry_type {
-            WALEntryType::Write => (
-                WALEntryUnion::Write,
-                random_write_wal_entry(fbb).as_union_value(),
-            ),
-            WALEntryType::Delete => (
-                WALEntryUnion::Delete,
-                random_delete_wal_entry(fbb).as_union_value(),
-            ),
-            WALEntryType::DeleteRange => (
-                WALEntryUnion::DeleteRange,
-                random_delete_range_wal_entry(fbb).as_union_value(),
-            ),
+        match entry_type {
+            WalEntryType::Write => {
+                let ptr = random_write_wal_entry(fbb);
+                fbb.finish(ptr, None);
+                WalEntryBlock::new_write(fbb.finished_data())
+            }
+            WalEntryType::Delete => {
+                let ptr = random_delete_wal_entry(fbb);
+                fbb.finish(ptr, None);
+                WalEntryBlock::new_delete(fbb.finished_data())
+            }
+            WalEntryType::DeleteRange => {
+                let ptr = random_delete_range_wal_entry(fbb);
+                fbb.finish(ptr, None);
+                WalEntryBlock::new_delete_range(fbb.finished_data())
+            }
             _ => panic!("Invalid entry type"),
-        };
-
-        WALEntry::create(
-            fbb,
-            &WALEntryArgs {
-                seq: 1,
-                type_: entry_type,
-                series_id: random_series_id(),
-                value_type: entry_union.0,
-                value: Some(entry_union.1),
-            },
-        )
+        }
     }
 
-    #[test]
-    fn write_entry() {
-        let file_manager = file_manager::FileManager::get_instance();
+    #[tokio::test]
+    async fn test_write_entry() {
+        let file_manager = Arc::new(file_manager::FileManager::new());
 
-        let mut writer = WriteAheadLogManager::new(&file_manager, String::from("/tmp/test/"));
-        writer.open().unwrap();
+        let wal_config = option::WalConfig {
+            dir: String::from(DIR),
+            ..Default::default()
+        };
+
+        let mut mgr = WalFileManager::new(file_manager.clone(), wal_config);
 
         for i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
 
-            let entry = random_wal_entry(&mut fbb);
-            fbb.finish(entry, None);
+            let entry = random_wal_entry_block(&mut fbb);
 
             let bytes = fbb.finished_data();
-            println!("{:?}", bytes);
+            dbg!(bytes.len());
 
-            let de_entry = flatbuffers::root::<WALEntry>(bytes).unwrap();
-            writer.write(&de_entry).unwrap();
+            match entry {
+                WalEntryBlock::Write(block) => {
+                    let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                    mgr.write(WalEntryType::Write, &block.buf).await.unwrap();
+                }
+                WalEntryBlock::Delete(block) => {
+                    let de_block = flatbuffers::root::<models::ColumnKeys>(&block.buf).unwrap();
+                    mgr.write(WalEntryType::Delete, &block.buf).await.unwrap();
+                }
+                WalEntryBlock::DeleteRange(block) => {
+                    let de_block =
+                        flatbuffers::root::<models::ColumnKeysWithRange>(&block.buf).unwrap();
+                    mgr.write(WalEntryType::DeleteRange, &block.buf)
+                        .await
+                        .unwrap();
+                }
+                _ => {}
+            };
+        }
+    }
+
+    #[test]
+    fn test_read_entry() {
+        let file_manager = Arc::new(file_manager::FileManager::new());
+
+        let wal_config = crate::option::WalConfig {
+            dir: String::from("/tmp/test/"),
+            ..Default::default()
+        };
+
+        let mgr = WalFileManager::new(file_manager.clone(), wal_config);
+
+        let wal_files = list_file_names("/tmp/test/");
+        for wal_file in wal_files {
+            let file = mgr
+                .file_manager
+                .open_file(mgr.current_dir_path.join(wal_file))
+                .unwrap();
+            let cursor: FileCursor = file.into();
+
+            let mut reader = WalReader::new(cursor);
+
+            while let Some(entry) = reader.next_wal_entry() {
+                match entry {
+                    WalEntryBlock::Write(block) => {
+                        let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                        dbg!(de_block);
+                    }
+                    WalEntryBlock::Delete(block) => {
+                        let de_block = flatbuffers::root::<models::ColumnKeys>(&block.buf).unwrap();
+                        dbg!(de_block);
+                    }
+                    WalEntryBlock::DeleteRange(block) => {
+                        let de_block =
+                            flatbuffers::root::<models::ColumnKeysWithRange>(&block.buf).unwrap();
+                        dbg!(de_block);
+                    }
+                    _ => panic!("Invalid WalEntry"),
+                };
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_and_write() {
+        let file_manager = Arc::new(file_manager::FileManager::new());
+
+        let wal_config = crate::option::WalConfig {
+            dir: String::from(DIR),
+            ..Default::default()
+        };
+
+        let mut mgr = WalFileManager::new(file_manager.clone(), wal_config);
+
+        for i in 0..10 {
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+
+            let entry = random_wal_entry_block(&mut fbb);
+
+            let bytes = fbb.finished_data();
+            dbg!(bytes.len());
+
+            match entry {
+                WalEntryBlock::Write(block) => {
+                    let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                    mgr.write(WalEntryType::Write, &block.buf).await.unwrap();
+                }
+                WalEntryBlock::Delete(block) => {
+                    let de_block = flatbuffers::root::<models::ColumnKeys>(&block.buf).unwrap();
+                    mgr.write(WalEntryType::Delete, &block.buf).await.unwrap();
+                }
+                WalEntryBlock::DeleteRange(block) => {
+                    let de_block =
+                        flatbuffers::root::<models::ColumnKeysWithRange>(&block.buf).unwrap();
+                    mgr.write(WalEntryType::DeleteRange, &block.buf)
+                        .await
+                        .unwrap();
+                }
+                _ => {}
+            };
+        }
+
+        let wal_files = list_file_names(DIR);
+        for wal_file in wal_files {
+            let file = mgr
+                .file_manager
+                .open_file(mgr.current_dir_path.join(wal_file))
+                .unwrap();
+            let cursor: FileCursor = file.into();
+
+            let mut reader = WalReader::new(cursor);
+            let mut writed_crcs = Vec::<u32>::new();
+            let mut readed_crcs = Vec::<u32>::new();
+            while let Some(entry) = reader.next_wal_entry() {
+                match entry {
+                    WalEntryBlock::Write(block) => {
+                        let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                        writed_crcs.push(block.crc);
+                        readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
+                    }
+                    WalEntryBlock::Delete(block) => {
+                        let de_block = flatbuffers::root::<models::ColumnKeys>(&block.buf).unwrap();
+                        writed_crcs.push(block.crc);
+                        readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
+                    }
+                    WalEntryBlock::DeleteRange(block) => {
+                        let de_block =
+                            flatbuffers::root::<models::ColumnKeysWithRange>(&block.buf).unwrap();
+                        writed_crcs.push(block.crc);
+                        readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
+                    }
+                    _ => {}
+                };
+            }
+            assert_eq!(writed_crcs, readed_crcs);
         }
     }
 }

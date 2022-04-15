@@ -2,6 +2,7 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
+mod compute;
 mod direct_io;
 mod error;
 mod file_manager;

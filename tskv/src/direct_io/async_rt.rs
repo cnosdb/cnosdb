@@ -12,6 +12,8 @@ use std::thread;
 
 const QUEUE_SIZE: usize = 1 << 10;
 
+const WAKEUP_THRESHOLD: usize = 3;
+
 pub struct IoTask {
     pub task_type: TaskType,
     priority: u32,
@@ -20,6 +22,25 @@ pub struct IoTask {
     offset: u64,
     fd: Arc<File>,
     cb: OnceSender<Result<usize>>,
+}
+
+pub fn make_io_task(
+    task_type: TaskType,
+    ptr: *mut u8,
+    size: usize,
+    offset: u64,
+    fd: Arc<File>,
+    cb: OnceSender<Result<usize>>,
+) -> IoTask {
+    IoTask {
+        task_type,
+        priority: 0,
+        ptr,
+        size,
+        offset,
+        fd,
+        cb,
+    }
 }
 
 #[derive(PartialEq)]
@@ -115,12 +136,24 @@ impl AsyncContext {
 
         let mut state = self.thread_state.lock();
         for iter in state.iter_mut() {
-            if *iter == false {
-                *iter = true;
+            if *iter == true {
+                *iter = false;
                 break;
             }
         }
         self.thread_conv.notify_all();
+    }
+
+    pub fn try_wakeup(&self) {
+        let sum = self.read_queue.len() + self.write_queue.len() + self.high_op_queue.len();
+        let need_wakeup = if let Some(v) = sum.checked_div(self.get_active_thread()) {
+            v > WAKEUP_THRESHOLD
+        } else {
+            true
+        };
+        if need_wakeup {
+            self.wake_up_one();
+        }
     }
 
     fn closed(&self) {
