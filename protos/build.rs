@@ -105,6 +105,7 @@ mod flatbuffers_generated;
                 .arg("-o")
                 .arg(&output_dir_final)
                 .arg("--rust")
+                .arg("--gen-mutable")
                 .arg("--gen-onefile")
                 .arg("--gen-name-strings")
                 .arg("--filename-suffix")
