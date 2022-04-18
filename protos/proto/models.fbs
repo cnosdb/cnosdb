@@ -33,6 +33,27 @@ table Rows {
     rows: [Row];
 }
 
+table Tag {
+    key: [ubyte];
+    value: [ubyte];
+}
+
+table Field {
+    name: [ubyte];
+    type: FieldType;
+    value: [ubyte];
+}
+
+table Point {
+    tags: [Tag];
+    fields: [Field];
+    timestamp: uint64;
+}
+
+table Points {
+    points: [Point];
+}
+
 struct ColumnKey {
     series_id: uint64;
     field_id: uint64;
