@@ -2,8 +2,7 @@ use futures::Stream;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::{
     AddSeriesRpcRequest, AddSeriesRpcResponse, GetSeriesInfoRpcRequest, GetSeriesInfoRpcResponse,
-    PingRequest, PingResponse, WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest,
-    WriteRowsRpcResponse,
+    PingRequest, PingResponse, WriteRowsRpcRequest, WriteRowsRpcResponse, WritePointsRpcRequest, WritePointsRpcResponse,
 };
 use protos::models::{PingBody, PingBodyBuilder};
 use std::pin::Pin;
@@ -13,7 +12,6 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
 pub struct TskvServiceImpl {
-    pub sender: UnboundedSender<tskv::Task>,
 }
 
 #[tonic::async_trait]
@@ -71,14 +69,13 @@ impl TskvService for TskvServiceImpl {
         tokio::spawn(async move {
             while let Some(result) = stream.next().await {
                 match result {
-                    Ok(_req) => {
-                        resp_sender
-                            .send(Ok(WriteRowsRpcResponse {
-                                version: 1,
-                                rows: vec![],
-                            }))
-                            .await
-                            .expect("successful");
+                    Ok(req) => {
+                        tx.send(Ok(WriteRowsRpcResponse {
+                            version: 1,
+                            ..Default::default()
+                        }))
+                        .await
+                        .expect("successful");
                     }
                     Err(status) => {
                         match resp_sender.send(Err(status)).await {
@@ -104,35 +101,20 @@ impl TskvService for TskvServiceImpl {
         request: Request<Streaming<WritePointsRpcRequest>>,
     ) -> Result<Response<Self::WritePointsStream>, Status> {
         let mut stream = request.into_inner();
-        let (resp_sender, resp_receiver) = mpsc::channel(128);
-        let req_sender = self.sender.clone();
+        let (tx, rx) = mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(result) = stream.next().await {
                 match result {
-                    Ok(req) => {
-                        // 1. send Request to handler
-                        let (tx, rx) = oneshot::channel();
-                        let ret = req_sender
-                            .send(tskv::Task::WritePoints { req, tx })
-                            .map_err(|err| tonic::Status::internal(err.to_string()));
-
-                        // 2. if something wrong when sending Request
-                        if let Err(err) = ret {
-                            resp_sender.send(Err(err)).await.expect("successful");
-                            continue;
-                        }
-                        // 3. receive Response from handler
-                        let ret = match rx.await {
-                            Ok(Ok(resp)) => Ok(resp),
-                            Ok(Err(err)) => Err(tonic::Status::internal(err.to_string())),
-                            Err(err) => Err(tonic::Status::internal(err.to_string())),
-                        };
-
-                        // 4. send Response out of this Stream
-                        resp_sender.send(ret).await.expect("successful");
+                    Ok(_req) => {
+                        tx.send(Ok(WritePointsRpcResponse {
+                            version: 1,
+                            ..Default::default()
+                        }))
+                        .await
+                        .expect("successful");
                     }
-                    Err(status) => {
-                        match resp_sender.send(Err(status)).await {
+                    Err(err) => {
+                        match tx.send(Err(err)).await {
                             Ok(_) => (),
                             Err(_err) => break, // response was droped
                         }
@@ -142,7 +124,7 @@ impl TskvService for TskvServiceImpl {
             println!("stream ended");
         });
         // echo just write the same data that was received
-        let out_stream = ReceiverStream::new(resp_receiver);
+        let out_stream = ReceiverStream::new(rx);
 
         Ok(Response::new(Box::pin(out_stream)))
     }
