@@ -57,6 +57,9 @@ func GetCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			var log = zap.NewNop()
+			if len(args) == 0 || len(args) > 1 {
+				return errors.New("shard path is required, there are can be only one")
+			}
 			opt.path = args[0]
 			if opt.path == "" {
 				return errors.New("shard-path is required")
@@ -82,7 +85,7 @@ func GetCommand() *cobra.Command {
 			fmt.Fprintln(opt.Stdout, sc.String())
 
 			if !opt.force {
-				fmt.Fprint(opt.Stdout, "Proceed? [N] ")
+				fmt.Fprint(opt.Stdout, "Proceed? [N/Y] ")
 				scan := bufio.NewScanner(os.Stdin)
 				scan.Scan()
 				if scan.Err() != nil {
@@ -109,7 +112,11 @@ func GetCommand() *cobra.Command {
 			return nil
 		},
 	}
-	c.PersistentFlags().StringVar(&opt.path, "path", "", "Path to shard to be compacted.")
+
+	c.SetUsageFunc(func(command *cobra.Command) error {
+		printUsage()
+		return nil
+	})
 	c.PersistentFlags().BoolVar(&opt.force, "force", false, "force compaction without prompting")
 	c.PersistentFlags().BoolVar(&opt.verbose, "verbose", false, "Enable verbose logging")
 	return c
@@ -295,6 +302,16 @@ func (sc *shardCompactor) String() string {
 	}
 
 	return sb.String()
+}
+
+func printUsage() {
+	fmt.Println(`Usage:
+  cnosdb_tools compact [flags]
+
+Flags:
+      --force         force compaction without prompting
+  -h, --help          help for compact
+      --verbose       Enable verbose logging`)
 }
 
 type tsmReaders []*tsm1.TSMReader
