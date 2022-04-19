@@ -102,39 +102,6 @@ func OpenDefaultServer(c *Config) Server {
 	return s
 }
 
-//
-type Config struct {
-	rootPath string
-	*server.Config
-}
-
-func NewConfig() *Config {
-	root, err := os.MkdirTemp("", "tests-cnosdb-")
-	if err != nil {
-		panic(err)
-	}
-
-	c := &Config{rootPath: root, Config: server.NewConfig()}
-	c.BindAddress = "127.0.0.1:0"
-	c.Coordinator.WriteTimeout = toml.Duration(30 * time.Second)
-
-	c.Meta.Dir = filepath.Join(c.rootPath, "meta")
-
-	c.Data.Dir = filepath.Join(c.rootPath, "data")
-	c.Data.WALDir = filepath.Join(c.rootPath, "wal")
-	c.Data.QueryLogEnabled = verboseServerLogs
-	c.Data.TraceLoggingEnabled = verboseServerLogs
-	c.Data.Index = indexType
-
-	c.HTTPD.Enabled = true
-	c.HTTPD.BindAddress = "127.0.0.1:0"
-	c.HTTPD.LogEnabled = verboseServerLogs
-
-	c.Monitor.StoreEnabled = false
-
-	return c
-}
-
 // LocalServer is a Server that is running in-proess and can be accessed directly
 type LocalServer struct {
 	mu sync.RWMutex
@@ -158,7 +125,6 @@ func (s *LocalServer) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	//todo fix usage
 	s.Server.Close()
 
 	if cleanupData {
@@ -180,17 +146,15 @@ func (s *LocalServer) Closed() bool {
 func (s *LocalServer) URL() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	//todo fix URL
-	return "http://127.0.0.1:0"
+	return "http://127.0.0.1:8086"
 }
 
 func (s *LocalServer) TcpAddr() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return "tcp://127.0.0.1:0"
+	return "tcp://127.0.0.1:8086"
 }
 
-//todo add Server interface method
 func (s *LocalServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -373,6 +337,38 @@ func (s *client) MustWrite(db, rp, body string, params url.Values) string {
 		panic(err)
 	}
 	return results
+}
+
+type Config struct {
+	rootPath string
+	*server.Config
+}
+
+func NewConfig() *Config {
+	root, err := os.MkdirTemp("", "tests-cnosdb-")
+	if err != nil {
+		panic(err)
+	}
+
+	c := &Config{rootPath: root, Config: server.NewConfig()}
+	c.BindAddress = "127.0.0.1:0"
+	c.Coordinator.WriteTimeout = toml.Duration(30 * time.Second)
+
+	c.Meta.Dir = filepath.Join(c.rootPath, "meta")
+
+	c.Data.Dir = filepath.Join(c.rootPath, "data")
+	c.Data.WALDir = filepath.Join(c.rootPath, "wal")
+	c.Data.QueryLogEnabled = verboseServerLogs
+	c.Data.TraceLoggingEnabled = verboseServerLogs
+	c.Data.Index = indexType
+
+	c.HTTPD.Enabled = true
+	c.HTTPD.BindAddress = "127.0.0.1:0"
+	c.HTTPD.LogEnabled = verboseServerLogs
+
+	c.Monitor.StoreEnabled = false
+
+	return c
 }
 
 func NewRetentionPolicySpec(name string, rf int, duration time.Duration) *meta.RetentionPolicySpec {

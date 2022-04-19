@@ -67,7 +67,19 @@ func TestServer_HTTPResponseVersion(t *testing.T) {
 		t.Skip("Skipping.  Cannot change version of remote server")
 	}
 	version := "vunknown"
-	s := OpenServerWithVersion(NewConfig(), version)
+	c := NewConfig()
+	c.RetentionPolicy.Enabled = false
+	c.Monitor.StoreEnabled = false
+	c.Subscriber.Enabled = false
+	c.ContinuousQuery.Enabled = true
+	c.Data.MaxValuesPerTag = 1000000 // 1M
+	c.Data.Index = indexType
+	c.Log = logger.NewDefaultLogConfig()
+
+	if err := logger.InitZapLogger(c.Log); err != nil {
+		fmt.Printf("parse log config: %s\n", err)
+	}
+	s := OpenServerWithVersion(c, version)
 	defer s.Close()
 
 	resp, _ := http.Get(s.URL() + "/query")
@@ -79,7 +91,18 @@ func TestServer_HTTPResponseVersion(t *testing.T) {
 
 func TestServer_DatabaseCommands(t *testing.T) {
 	t.Parallel()
-	s := OpenServer(NewConfig())
+	c := NewConfig()
+	c.RetentionPolicy.Enabled = false
+	c.Monitor.StoreEnabled = false
+	c.Subscriber.Enabled = false
+	c.ContinuousQuery.Enabled = true
+	c.Data.MaxValuesPerTag = 1000000 // 1M
+	c.Data.Index = indexType
+	c.Log = logger.NewDefaultLogConfig()
+	if err := logger.InitZapLogger(c.Log); err != nil {
+		fmt.Printf("parse log config: %s\n", err)
+	}
+	s := OpenServer(c)
 	defer s.Close()
 
 	test := tests.load(t, "database_commands")

@@ -62,7 +62,7 @@ func init() {
 			&Query{
 				name:    "show database should succeed",
 				command: `SHOW DATABASES`,
-				exp:     `{"results":[{"statement_id":0,"series":[{"name":"databases","columns":["name"],"values":[["db0"],["db0_r"]]}]}]}`,
+				exp:     `{"results":[{"statement_id":0,"series":[{"name":"databases","columns":["name"],"values":[["db0"],["db1"],["db0_r"]]}]}]}`,
 			},
 			&Query{
 				name:    "create database should not error with existing database",
@@ -77,7 +77,7 @@ func init() {
 			&Query{
 				name:    "create database with retention duration should error if retention policy is different",
 				command: `CREATE DATABASE db1 WITH DURATION 24h`,
-				exp:     `{"results":[{"statement_id":0,"error":"retention policy conflicts with an existing policy"}]}`,
+				exp:     `{"results":[{"statement_id":0,"error":"retention policy conflicts with an existing retention policy"}]}`,
 			},
 			&Query{
 				name:    "create database should error with bad retention duration",
@@ -87,7 +87,7 @@ func init() {
 			&Query{
 				name:    "show database should succeed",
 				command: `SHOW DATABASES`,
-				exp:     `{"results":[{"statement_id":0,"series":[{"name":"databases","columns":["name"],"values":[["db0"],["db0_r"],["db1"]]}]}]}`,
+				exp:     `{"results":[{"statement_id":0,"series":[{"name":"databases","columns":["name"],"values":[["db0"],["db1"],["db0_r"]]}]}]}`,
 			},
 			&Query{
 				name:    "drop database db0 should succeed",
