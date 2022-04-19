@@ -2,11 +2,12 @@ package meta
 
 import (
 	"fmt"
-	"github.com/cnosdb/cnosdb/pkg/logger"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
+
+	"github.com/cnosdb/cnosdb/pkg/logger"
 
 	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/pkg/network"
@@ -101,6 +102,7 @@ func (s *Server) initMetaStore() {
 	httpAddr := s.remoteAddr(s.Config.HTTPD.HTTPBindAddress)
 	tcpAddr := s.remoteAddr(s.Config.HTTPD.HTTPBindAddress)
 	s.store = newStore(s.Config, httpAddr, tcpAddr)
+	s.store.withLogger(s.logger)
 	s.store.node = s.Node
 }
 

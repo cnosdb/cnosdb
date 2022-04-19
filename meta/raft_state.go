@@ -1,18 +1,26 @@
 package meta
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
+	"go.uber.org/zap"
 )
 
 // Raft configuration.
@@ -35,7 +43,7 @@ type raftState struct {
 	raftLayer *raftLayer
 	ln        net.Listener
 	addr      string
-	logger    hclog.Logger
+	logger    *zap.Logger
 	path      string
 }
 
@@ -43,11 +51,12 @@ func newRaftState(c *ServerConfig, addr string) *raftState {
 	return &raftState{
 		config: c,
 		addr:   addr,
-		logger: hclog.New(&hclog.LoggerOptions{
-			Name:  "raft-state",
-			Level: hclog.LevelFromString("INFO"),
-		}),
+		logger: zap.NewNop(),
 	}
+}
+
+func (r *raftState) withLogger(log *zap.Logger) {
+	r.logger = log.With(zap.String("service", "raft-state"))
 }
 
 func (r *raftState) open(s *store, ln net.Listener) error {
@@ -60,7 +69,16 @@ func (r *raftState) open(s *store, ln net.Listener) error {
 	config.LogOutput = ioutil.Discard
 
 	if r.config.ClusterTracing {
-		config.Logger = r.logger
+		//config.Logger = hclog.New(&hclog.LoggerOptions{
+		//	Name:   "raft-state",
+		//	Level:  hclog.Info,
+		//	Output: zap.NewStdLog(r.logger).Writer(),
+		//})
+		config.Logger = &hclogWrapper{
+			logger: r.logger,
+			name:   "raft-state",
+			level:  hclog.Info,
+		}
 	}
 	config.HeartbeatTimeout = time.Duration(r.config.HeartbeatTimeout)
 	config.ElectionTimeout = time.Duration(r.config.ElectionTimeout)
@@ -97,7 +115,7 @@ func (r *raftState) open(s *store, ln net.Listener) error {
 	r.raft = ra
 
 	if configFuture := ra.GetConfiguration(); configFuture.Error() != nil {
-		r.logger.Info("failed to get raft configuration", configFuture.Error())
+		r.logger.Info("failed to get raft configuration", zap.Error(configFuture.Error()))
 		return configFuture.Error()
 	} else {
 		newConfig := configFuture.Configuration()
@@ -136,9 +154,9 @@ func (r *raftState) logLeaderChanges() {
 		case <-r.raft.LeaderCh():
 			peers, err := r.peers()
 			if err != nil {
-				r.logger.Info("failed to lookup peers", "error", err)
+				r.logger.Info("failed to lookup peers", zap.Error(err))
 			}
-			r.logger.Info(r.raft.String(), "peers", peers)
+			r.logger.Info(r.raft.String(), zap.Strings("peers", peers))
 		}
 	}
 }
@@ -209,7 +227,7 @@ func (r *raftState) addVoter(addr string) error {
 
 	var servers []raft.Server
 	if configFuture := r.raft.GetConfiguration(); configFuture.Error() != nil {
-		r.logger.Info("failed to get raft configuration", configFuture.Error())
+		r.logger.Info("failed to get raft configuration", zap.Error(configFuture.Error()))
 		return configFuture.Error()
 	} else {
 		servers = configFuture.Configuration().Servers
@@ -238,7 +256,7 @@ func (r *raftState) removeVoter(addr string) error {
 
 	var servers []raft.Server
 	if cfu := r.raft.GetConfiguration(); cfu.Error() != nil {
-		r.logger.Info("failed to get raft configuration", cfu.Error())
+		r.logger.Info("failed to get raft configuration", zap.Error(cfu.Error()))
 		return cfu.Error()
 	} else {
 		servers = cfu.Configuration().Servers
@@ -266,7 +284,7 @@ func (r *raftState) removeVoter(addr string) error {
 func (r *raftState) peers() ([]string, error) {
 
 	if configFuture := r.raft.GetConfiguration(); configFuture.Error() != nil {
-		r.logger.Info("failed to get raft configuration", configFuture.Error())
+		r.logger.Info("failed to get raft configuration", zap.Error(configFuture.Error()))
 		return []string{}, configFuture.Error()
 	} else {
 		peers := []string{}
@@ -340,3 +358,233 @@ func (l *raftLayer) Accept() (net.Conn, error) {
 
 // Close closes the layer.
 func (l *raftLayer) Close() error { return l.ln.Close() }
+
+type hclogWrapper struct {
+	logger *zap.Logger
+	name   string
+	level  hclog.Level
+}
+
+func (l *hclogWrapper) renderSlice(v reflect.Value) string {
+	var buf bytes.Buffer
+
+	buf.WriteRune('[')
+
+	for i := 0; i < v.Len(); i++ {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+
+		sv := v.Index(i)
+
+		var val string
+
+		switch sv.Kind() {
+		case reflect.String:
+			val = sv.String()
+		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64:
+			val = strconv.FormatInt(sv.Int(), 10)
+		case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			val = strconv.FormatUint(sv.Uint(), 10)
+		default:
+			val = fmt.Sprintf("%v", sv.Interface())
+		}
+
+		if strings.ContainsAny(val, " \t\n\r") {
+			buf.WriteByte('"')
+			buf.WriteString(val)
+			buf.WriteByte('"')
+		} else {
+			buf.WriteString(val)
+		}
+	}
+
+	buf.WriteRune(']')
+
+	return buf.String()
+}
+
+func (l *hclogWrapper) renderArgs(args ...interface{}) (hclog.CapturedStacktrace, []zap.Field) {
+	var logFields []zap.Field
+
+	var stacktrace hclog.CapturedStacktrace
+
+	if args != nil && len(args) > 0 {
+		if len(args)%2 != 0 {
+			cs, ok := args[len(args)-1].(hclog.CapturedStacktrace)
+			if ok {
+				args = args[:len(args)-1]
+				stacktrace = cs
+			} else {
+				extra := args[len(args)-1]
+				args = append(args[:len(args)-1], hclog.MissingKey, extra)
+			}
+		}
+
+	FOR:
+		for i := 0; i < len(args); i = i + 2 {
+			var (
+				val zap.Field
+			)
+
+			var key string
+			switch st := args[i].(type) {
+			case string:
+				key = st
+			default:
+				key = fmt.Sprintf("%s", st)
+			}
+
+			switch st := args[i+1].(type) {
+			case string:
+				val = zap.String(key, st)
+			case int:
+				val = zap.Int(key, st)
+			case int64:
+				val = zap.Int64(key, st)
+			case int32:
+				val = zap.Int32(key, st)
+			case int16:
+				val = zap.Int16(key, st)
+			case int8:
+				val = zap.Int8(key, st)
+			case uint:
+				val = zap.Uint(key, st)
+			case uint64:
+				val = zap.Uint64(key, st)
+			case uint32:
+				val = zap.Uint32(key, st)
+			case uint16:
+				val = zap.Uint16(key, st)
+			case uint8:
+				val = zap.Uint8(key, st)
+			case hclog.CapturedStacktrace:
+				stacktrace = st
+				continue FOR
+			case hclog.Format:
+				val = zap.String(key, fmt.Sprintf(st[0].(string), st[1:]...))
+			default:
+				v := reflect.ValueOf(st)
+				if v.Kind() == reflect.Slice {
+					val = zap.String(key, l.renderSlice(v))
+				} else {
+					val = zap.String(key, fmt.Sprintf("%v", st))
+				}
+			}
+
+			logFields = append(logFields, val)
+		}
+	}
+
+	return stacktrace, logFields
+}
+
+func (l *hclogWrapper) Log(level hclog.Level, msg string, args ...interface{}) {
+	stacktrace, logFields := l.renderArgs(args)
+
+	switch level {
+	case hclog.Trace, hclog.Debug:
+		l.logger.Debug(msg, logFields...)
+
+		if stacktrace != "" {
+			l.logger.Debug(string(stacktrace))
+		}
+	case hclog.Info:
+		l.logger.Info(msg, logFields...)
+
+		if stacktrace != "" {
+			l.logger.Info(string(stacktrace))
+		}
+	case hclog.Warn:
+		l.logger.Warn(msg, logFields...)
+
+		if stacktrace != "" {
+			l.logger.Warn(string(stacktrace))
+		}
+	case hclog.Error:
+		l.logger.Error(msg, logFields...)
+
+		if stacktrace != "" {
+			l.logger.Error(string(stacktrace))
+		}
+	default:
+		l.logger.Info(msg, logFields...)
+
+		if stacktrace != "" {
+			l.logger.Info(string(stacktrace))
+		}
+	}
+}
+
+func (l *hclogWrapper) Trace(msg string, args ...interface{}) {
+	l.Log(hclog.Trace, msg, args...)
+}
+
+func (l *hclogWrapper) Debug(msg string, args ...interface{}) {
+	l.Log(hclog.Debug, msg, args...)
+}
+
+func (l *hclogWrapper) Info(msg string, args ...interface{}) {
+	l.Log(hclog.Info, msg, args...)
+}
+
+func (l *hclogWrapper) Warn(msg string, args ...interface{}) {
+	l.Log(hclog.Warn, msg, args...)
+}
+
+func (l *hclogWrapper) Error(msg string, args ...interface{}) {
+	l.Log(hclog.Error, msg, args...)
+}
+
+func (l *hclogWrapper) IsTrace() bool { return l.level == hclog.Trace }
+
+func (l *hclogWrapper) IsDebug() bool { return l.level == hclog.Debug }
+
+func (l *hclogWrapper) IsInfo() bool { return l.level == hclog.Info }
+
+func (l *hclogWrapper) IsWarn() bool { return l.level == hclog.Warn }
+
+func (l *hclogWrapper) IsError() bool { return l.level == hclog.Error }
+
+func (l *hclogWrapper) ImpliedArgs() []interface{} { return []interface{}{} }
+
+func (l *hclogWrapper) With(args ...interface{}) hclog.Logger {
+	_, fields := l.renderArgs(args...)
+	return &hclogWrapper{
+		logger: l.logger.With(fields...),
+	}
+}
+
+func (l *hclogWrapper) Name() string { return l.name }
+
+func (l *hclogWrapper) Named(name string) hclog.Logger {
+	sl := *l
+
+	if sl.name != "" {
+		sl.name = sl.name + "." + name
+	} else {
+		sl.name = name
+	}
+
+	return &sl
+}
+
+func (l *hclogWrapper) ResetNamed(name string) hclog.Logger {
+	sl := *l
+
+	sl.name = name
+
+	return &sl
+}
+
+func (l *hclogWrapper) SetLevel(level hclog.Level) {
+	atomic.StoreInt32((*int32)(&l.level), int32(level))
+}
+
+func (l *hclogWrapper) StandardLogger(opts *hclog.StandardLoggerOptions) *log.Logger {
+	return zap.NewStdLog(l.logger)
+}
+
+func (l *hclogWrapper) StandardWriter(opts *hclog.StandardLoggerOptions) io.Writer {
+	return ioutil.Discard
+}

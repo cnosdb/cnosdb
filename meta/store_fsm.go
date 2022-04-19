@@ -10,6 +10,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
+	"go.uber.org/zap"
 )
 
 // storeFSM represents the finite state machine used by Store to interact with Raft.
@@ -114,9 +115,9 @@ func (fsm *storeFSM) applyRemovePeerCommand(cmd *internal.Command) interface{} {
 	// Only do this if you are the leader
 	if fsm.raftState.isLeader() {
 		//Remove that node from the peer
-		fsm.logger.Printf("removing voter: %s", addr)
+		fsm.logger.Info("removing voter", zap.String("addr", addr))
 		if err := fsm.raftState.removeVoter(addr); err != nil {
-			fsm.logger.Printf("error removing peer: %s", err)
+			fsm.logger.Error("error removing peer", zap.Error(err))
 		}
 	}
 
