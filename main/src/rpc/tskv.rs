@@ -2,16 +2,16 @@ use futures::Stream;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::{
     AddSeriesRpcRequest, AddSeriesRpcResponse, GetSeriesInfoRpcRequest, GetSeriesInfoRpcResponse,
-    PingRequest, PingResponse, WriteRowsRpcRequest, WriteRowsRpcResponse,
+    PingRequest, PingResponse, WriteRowsRpcRequest, WriteRowsRpcResponse, WritePointsRpcRequest, WritePointsRpcResponse,
 };
 use protos::models::{PingBody, PingBodyBuilder};
 use std::pin::Pin;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
-// use tskv::TsKv;
 
-pub struct TskvServiceImpl {}
+pub struct TskvServiceImpl {
+}
 
 #[tonic::async_trait]
 impl TskvService for TskvServiceImpl {
@@ -68,8 +68,44 @@ impl TskvService for TskvServiceImpl {
         tokio::spawn(async move {
             while let Some(result) = stream.next().await {
                 match result {
-                    Ok(_req) => {
+                    Ok(req) => {
                         tx.send(Ok(WriteRowsRpcResponse {
+                            version: 1,
+                            ..Default::default()
+                        }))
+                        .await
+                        .expect("successful");
+                    }
+                    Err(err) => {
+                        match tx.send(Err(err)).await {
+                            Ok(_) => (),
+                            Err(_err) => break, // response was droped
+                        }
+                    }
+                }
+            }
+            println!("stream ended");
+        });
+        // echo just write the same data that was received
+        let out_stream = ReceiverStream::new(rx);
+
+        Ok(Response::new(Box::pin(out_stream)))
+    }
+
+    type WritePointsStream =
+        Pin<Box<dyn Stream<Item = Result<WritePointsRpcResponse, Status>> + Send + Sync + 'static>>;
+
+    async fn write_points(
+        &self,
+        request: Request<Streaming<WritePointsRpcRequest>>,
+    ) -> Result<Response<Self::WritePointsStream>, Status> {
+        let mut stream = request.into_inner();
+        let (tx, rx) = mpsc::channel(128);
+        tokio::spawn(async move {
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(_req) => {
+                        tx.send(Ok(WritePointsRpcResponse {
                             version: 1,
                             ..Default::default()
                         }))
