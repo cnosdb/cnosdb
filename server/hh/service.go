@@ -3,9 +3,7 @@ package hh
 import (
 	"expvar"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,9 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb/vend/common"
-	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/vend/common"
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+
+	"go.uber.org/zap"
 )
 
 // ErrHintedHandoffDisabled is returned when attempting to use a
@@ -39,7 +40,7 @@ type Service struct {
 	processors map[uint64]*NodeProcessor
 
 	statMap *expvar.Map
-	Logger  *log.Logger
+	Logger  *zap.Logger
 	cfg     Config
 
 	shardWriter shardWriter
@@ -69,7 +70,7 @@ func NewService(c Config, w shardWriter, m metaClient) *Service {
 		closing:     make(chan struct{}),
 		processors:  make(map[uint64]*NodeProcessor),
 		statMap:     common.NewStatistics(key, "hh", tags),
-		Logger:      log.New(os.Stderr, "[handoff] ", log.LstdFlags),
+		Logger:      zap.NewNop(),
 		shardWriter: w,
 		MetaClient:  m,
 	}
@@ -83,7 +84,7 @@ func (s *Service) Open() error {
 		// Allow Open to proceed, but don't do anything.
 		return nil
 	}
-	s.Logger.Printf("Starting hinted handoff service")
+	s.Logger.Info("Starting hinted handoff service")
 	s.closing = make(chan struct{})
 
 	// Register diagnostics if a Monitor service is available.
@@ -92,7 +93,7 @@ func (s *Service) Open() error {
 	}
 
 	// Create the root directory if it doesn't already exist.
-	s.Logger.Printf("Using data dir: %v", s.cfg.Dir)
+	s.Logger.Info("Using data dir", zap.String("Dir", s.cfg.Dir))
 	if err := os.MkdirAll(s.cfg.Dir, 0700); err != nil {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
@@ -125,7 +126,7 @@ func (s *Service) Open() error {
 
 // Close closes the hinted handoff service.
 func (s *Service) Close() error {
-	s.Logger.Println("shutting down hh service")
+	s.Logger.Info("shutting down hh service")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -148,8 +149,8 @@ func (s *Service) Close() error {
 	return nil
 }
 
-// SetLogger sets the internal logger to the logger passed in.
-func (s *Service) SetLogger(l *log.Logger) {
+// WithLogger sets the internal logger to the logger passed in.
+func (s *Service) WithLogger(l *zap.Logger) {
 	s.Logger = l
 }
 
@@ -235,13 +236,13 @@ func (s *Service) purgeInactiveProcessors() {
 				for k, v := range s.processors {
 					lm, err := v.LastModified()
 					if err != nil {
-						s.Logger.Printf("failed to determine LastModified for processor %d: %s", k, err.Error())
+						s.Logger.Info("failed to determine LastModified for processor", zap.Uint64("node", k), zap.Error(err))
 						continue
 					}
 
 					active, err := v.Active()
 					if err != nil {
-						s.Logger.Printf("failed to determine if node %d is active: %s", k, err.Error())
+						s.Logger.Info("failed to determine if node is active", zap.Uint64("node", k), zap.Error(err))
 						continue
 					}
 					if active {
@@ -255,11 +256,11 @@ func (s *Service) purgeInactiveProcessors() {
 					}
 
 					if err := v.Close(); err != nil {
-						s.Logger.Printf("failed to close node processor %d: %s", k, err.Error())
+						s.Logger.Info("failed to close node processor", zap.Uint64("node", k), zap.Error(err))
 						continue
 					}
 					if err := v.Purge(); err != nil {
-						s.Logger.Printf("failed to purge node processor %d: %s", k, err.Error())
+						s.Logger.Info("failed to purge node processor", zap.Uint64("node", k), zap.Error(err))
 						continue
 					}
 					delete(s.processors, k)

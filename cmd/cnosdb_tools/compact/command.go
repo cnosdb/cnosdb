@@ -16,7 +16,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/line"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/limiter"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/spf13/cobra"
@@ -65,11 +65,7 @@ func GetCommand() *cobra.Command {
 				return errors.New("shard-path is required")
 			}
 			if opt.verbose {
-				cfg := logger.Config{Format: "logfmt"}
-				log, err = cfg.New(os.Stdout)
-				if err != nil {
-					return err
-				}
+				log = logger.NewLoggerWithWriter(os.Stdout)
 			}
 
 			fmt.Fprintf(opt.Stdout, "opening shard at path %q\n\n", opt.path)

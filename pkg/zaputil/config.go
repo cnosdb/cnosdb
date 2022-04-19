@@ -1,4 +1,4 @@
-package log
+package zaputil
 
 import (
 	"go.uber.org/zap"
@@ -24,7 +24,7 @@ type FileConfig struct {
 // Config "comment"
 type Config struct {
 	// Log level.
-	Level string `toml:"level"`
+	Level zapcore.Level `toml:"level"`
 	// Log format. one of json, text, or console.
 	Format string `toml:"format"`
 	// Disable automatic timestamps in output.

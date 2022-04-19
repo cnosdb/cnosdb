@@ -18,7 +18,7 @@ func WithRecovery(exec func(), recoverFn func(r interface{})) {
 			recoverFn(r)
 		}
 		if r != nil {
-			logger.BgLogger().Error("panic in the recoverable goroutine",
+			logger.Error("panic in the recoverable goroutine",
 				zap.Reflect("r", r),
 				zap.Stack("stack trace"))
 		}

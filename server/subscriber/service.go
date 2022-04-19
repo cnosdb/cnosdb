@@ -10,8 +10,8 @@ import (
 
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/server/coordinator"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"go.uber.org/zap"
 )

@@ -3,8 +3,6 @@ package meta
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -15,6 +13,7 @@ import (
 	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
+	"go.uber.org/zap"
 )
 
 // Retention policy settings.
@@ -42,7 +41,7 @@ type store struct {
 	dataChanged chan struct{}
 	path        string
 	opened      bool
-	logger      *log.Logger
+	logger      *zap.Logger
 
 	raftAddr string
 	httpAddr string
@@ -60,21 +59,25 @@ func newStore(c *Config, httpAddr, raftAddr string) *store {
 		dataChanged: make(chan struct{}),
 		path:        c.Dir,
 		config:      c,
+		logger:      zap.NewNop(),
 		httpAddr:    httpAddr,
 		raftAddr:    raftAddr,
-	}
-	if c.HTTPD.LoggingEnabled {
-		s.logger = log.New(os.Stderr, "[metastore] ", log.LstdFlags)
-	} else {
-		s.logger = log.New(ioutil.Discard, "", 0)
 	}
 
 	return &s
 }
 
+func (s *store) withLogger(log *zap.Logger) {
+	if s.config.HTTPD.LoggingEnabled {
+		s.logger = log.With(zap.String("service", "meta-store"))
+	} else {
+		s.logger = zap.NewNop()
+	}
+}
+
 // open opens and initializes the raft store.
 func (s *store) open(raftln net.Listener) error {
-	s.logger.Printf("Using data dir: %v", s.path)
+	s.logger.Info("Open meta store", zap.String("data-dir", s.path))
 
 	if err := s.setOpen(); err != nil {
 		return err
@@ -178,6 +181,7 @@ func (s *store) openRaft(raftln net.Listener) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rs := newRaftState(s.config.HTTPD, s.raftAddr)
+	rs.withLogger(s.logger)
 	rs.path = s.path
 
 	if err := rs.open(s, raftln); err != nil {
@@ -418,13 +422,13 @@ func (s *store) removeMetaNode(n *NodeInfo) (*NodeInfo, error) {
 
 	if err := s.raftState.removeVoter(n.TCPHost); err != nil {
 		s.mu.RUnlock()
-		s.logger.Printf("removeMeta remove voter failed: %s", err.Error())
+		s.logger.Error("removeMeta remove voter failed", zap.Error(err))
 		return nil, err
 	}
 	s.mu.RUnlock()
 
 	if err := s.callDeleteMetaNode(n.ID); err != nil {
-		s.logger.Printf("removeMeta remove meta node failed: %s", err.Error())
+		s.logger.Error("removeMeta remove meta node failed", zap.Error(err))
 		return nil, err
 	}
 

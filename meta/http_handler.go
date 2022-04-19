@@ -15,6 +15,7 @@ import (
 	"time"
 
 	internal "github.com/cnosdb/cnosdb/meta/internal"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/uuid"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gorilla/mux"
@@ -39,10 +40,9 @@ type Handler struct {
 
 	router *mux.Router
 
-	logger         *zap.Logger
-	loggingEnabled bool // Log every HTTP access.
-	pprofEnabled   bool
-	store          interface {
+	logger       *zap.Logger
+	pprofEnabled bool
+	store        interface {
 		afterIndex(index uint64) <-chan struct{}
 		index() uint64
 		leader() string
@@ -528,10 +528,10 @@ func (h *Handler) AddRoutes(routes ...route) {
 		handler = WrapWithVersionHeader(handler, h.Version)
 		handler = WrapWithRequestID(handler)
 
-		if h.loggingEnabled && r.LoggingEnabled {
-			handler = WrapWithLogger(handler, r.Name, h.logger)
+		if h.config.LoggingEnabled && r.LoggingEnabled {
+			handler = h.WrapWithLogger(handler, r.Name)
 		}
-		handler = WrapWithRecovery(handler, r.Name, h.logger)
+		handler = WrapWithRecovery(handler, r.Name)
 
 		h.router.Handle(r.Path, handler).Methods(r.Method).Name(r.Name)
 	}
@@ -558,19 +558,18 @@ func WrapWithRequestID(inner http.Handler) http.Handler {
 }
 
 // WrapWithLogger
-func WrapWithLogger(inner http.Handler, name string, weblog *zap.Logger) http.Handler {
+func (h *Handler) WrapWithLogger(inner http.Handler, name string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		l := &ResponseLogger{w: w}
 		inner.ServeHTTP(l, r)
 
-		logLine := buildLogLine(l, r, start)
-		weblog.Info(logLine)
+		h.logger.Info(buildLogLine(l, r, start))
 	})
 }
 
 // WrapWithRecovery
-func WrapWithRecovery(inner http.Handler, name string, weblog *zap.Logger) http.Handler {
+func WrapWithRecovery(inner http.Handler, name string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		l := &ResponseLogger{w: w}
@@ -581,7 +580,7 @@ func WrapWithRecovery(inner http.Handler, name string, weblog *zap.Logger) http.
 				runtime.Stack(b, false)
 				logLine := buildLogLine(l, r, start)
 				logLine = fmt.Sprintf("%s [panic:%s]\n%s", logLine, err, string(b))
-				weblog.Info(logLine)
+				logger.Error(logLine)
 			}
 		}()
 
@@ -623,7 +622,7 @@ func WrapWithGzipResponseWriter(inner http.Handler) http.Handler {
 }
 
 func (h *Handler) httpError(err error, w http.ResponseWriter, status int) {
-	if h.loggingEnabled {
+	if h.config.LoggingEnabled {
 		h.logger.Error("http error", zap.Error(err))
 	}
 	http.Error(w, err.Error(), status)

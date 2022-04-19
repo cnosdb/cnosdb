@@ -11,13 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	
-	"github.com/cnosdb/cnosdb/vend/db/logger"
+
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
-	
+
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -45,7 +45,7 @@ func NewOptions() *Options {
 	return &Options{
 		Stderr:      os.Stderr,
 		Stdout:      os.Stdout,
-		Logger:      zap.NewNop(),
+		Logger:      logger.NewLoggerWithWriter(os.Stderr),
 		batchSize:   defaultBatchSize,
 		concurrency: runtime.GOMAXPROCS(0),
 	}
