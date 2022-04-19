@@ -306,7 +306,7 @@ func (sc *shardCompactor) String() string {
 
 func printUsage() {
 	fmt.Println(`Usage:
-  cnosdb_tools compact [flags]
+  cnosdb_tools compact [flags] <shard-path>
 
 Flags:
       --force         force compaction without prompting
