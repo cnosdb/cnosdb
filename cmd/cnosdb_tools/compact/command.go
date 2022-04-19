@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/limiter"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
@@ -28,8 +28,8 @@ var (
 	_ binary.Writer
 )
 
-// Command represents the program execution for "cnosdb-tools compact".
-type Command struct {
+// Options represents the program execution for "cnosdb-tools compact".
+type Options struct {
 	// Standard input/output, overridden for testing.
 	Stderr io.Writer
 	Stdout io.Writer
@@ -40,85 +40,86 @@ type Command struct {
 	verbose bool
 }
 
-// NewCommand returns a new instance of the export Command.
-func NewCommand() *Command {
-	return &Command{
+// NewOptions returns a new instance of the export Command.
+func NewOptions() *Options {
+	return &Options{
 		Stderr: os.Stderr,
 		Stdout: os.Stdout,
 	}
 }
 
-// Run executes the export command using the specified args.
-func (cmd *Command) Run(args []string) (err error) {
-	err = cmd.parseFlags(args)
-	if err != nil {
-		return err
-	}
+var opt = NewOptions()
 
-	var log = zap.NewNop()
-	if cmd.verbose {
-		cfg := logger.Config{Format: "logfmt"}
-		log, err = cfg.New(os.Stdout)
-		if err != nil {
-			return err
-		}
-	}
+func GetCommand() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "compact",
+		Short: "fully compacts the specified shard.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			var log = zap.NewNop()
+			if len(args) == 0 || len(args) > 1 {
+				return errors.New("shard path is required, there are can be only one")
+			}
+			opt.path = args[0]
+			if opt.path == "" {
+				return errors.New("shard-path is required")
+			}
+			if opt.verbose {
+				cfg := logger.Config{Format: "logfmt"}
+				log, err = cfg.New(os.Stdout)
+				if err != nil {
+					return err
+				}
+			}
 
-	fmt.Fprintf(cmd.Stdout, "opening shard at path %q\n\n", cmd.path)
+			fmt.Fprintf(opt.Stdout, "opening shard at path %q\n\n", opt.path)
 
-	sc, err := newShardCompactor(cmd.path, log)
-	if err != nil {
-		return err
-	}
+			sc, err := newShardCompactor(opt.path, log)
+			if err != nil {
+				return err
+			}
 
-	fmt.Fprintln(cmd.Stdout)
-	fmt.Fprintln(cmd.Stdout, "The following files will be compacted:")
-	fmt.Fprintln(cmd.Stdout)
-	fmt.Fprintln(cmd.Stdout, sc.String())
+			fmt.Fprintln(opt.Stdout)
+			fmt.Fprintln(opt.Stdout, "The following files will be compacted:")
+			fmt.Fprintln(opt.Stdout)
+			fmt.Fprintln(opt.Stdout, sc.String())
 
-	if !cmd.force {
-		fmt.Fprint(cmd.Stdout, "Proceed? [N] ")
-		scan := bufio.NewScanner(os.Stdin)
-		scan.Scan()
-		if scan.Err() != nil {
-			return fmt.Errorf("error reading STDIN: %v", scan.Err())
-		}
+			if !opt.force {
+				fmt.Fprint(opt.Stdout, "Proceed? [N/Y] ")
+				scan := bufio.NewScanner(os.Stdin)
+				scan.Scan()
+				if scan.Err() != nil {
+					return fmt.Errorf("error reading STDIN: %v", scan.Err())
+				}
 
-		if strings.ToLower(scan.Text()) != "y" {
+				if strings.ToLower(scan.Text()) != "y" {
+					return nil
+				}
+			}
+
+			fmt.Fprintln(opt.Stdout, "Compacting shard.")
+
+			err = sc.CompactShard()
+			if err != nil {
+				return fmt.Errorf("compaction failed: %v", err)
+			}
+
+			fmt.Fprintln(opt.Stdout, "Compaction succeeded. New files:")
+			for _, f := range sc.newTSM {
+				fmt.Fprintf(opt.Stdout, "  %s\n", f)
+			}
+
 			return nil
-		}
+		},
 	}
 
-	fmt.Fprintln(cmd.Stdout, "Compacting shard.")
-
-	err = sc.CompactShard()
-	if err != nil {
-		return fmt.Errorf("compaction failed: %v", err)
-	}
-
-	fmt.Fprintln(cmd.Stdout, "Compaction succeeded. New files:")
-	for _, f := range sc.newTSM {
-		fmt.Fprintf(cmd.Stdout, "  %s\n", f)
-	}
-
-	return nil
-}
-
-func (cmd *Command) parseFlags(args []string) error {
-	fs := flag.NewFlagSet("compact-shard", flag.ContinueOnError)
-	fs.StringVar(&cmd.path, "path", "", "path of shard to be compacted")
-	fs.BoolVar(&cmd.force, "force", false, "Force compaction without prompting")
-	fs.BoolVar(&cmd.verbose, "verbose", false, "Enable verbose logging")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	if cmd.path == "" {
-		return errors.New("shard-path is required")
-	}
-
-	return nil
+	c.SetUsageFunc(func(command *cobra.Command) error {
+		printUsage()
+		return nil
+	})
+	c.PersistentFlags().BoolVar(&opt.force, "force", false, "force compaction without prompting")
+	c.PersistentFlags().BoolVar(&opt.verbose, "verbose", false, "Enable verbose logging")
+	return c
 }
 
 type shardCompactor struct {
@@ -301,6 +302,16 @@ func (sc *shardCompactor) String() string {
 	}
 
 	return sb.String()
+}
+
+func printUsage() {
+	fmt.Println(`Usage:
+  cnosdb_tools compact [flags]
+
+Flags:
+      --force         force compaction without prompting
+  -h, --help          help for compact
+      --verbose       Enable verbose logging`)
 }
 
 type tsmReaders []*tsm1.TSMReader
