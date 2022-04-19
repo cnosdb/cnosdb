@@ -31,18 +31,13 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 
 // InitLoggerWithWriteSyncer initializes a zap logger with specified write syncer.
 func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
-	level := zap.NewAtomicLevel()
-	err := level.UnmarshalText([]byte(cfg.Level))
-	if err != nil {
-		return nil, nil, err
-	}
-	core := NewTextCore(newZapTextEncoder(cfg), output, level)
+	core := NewTextCore(newZapTextEncoder(cfg), output, cfg.Level)
 	opts = append(cfg.buildOptions(output), opts...)
 	lg := zap.New(core, opts...)
 	r := &ZapProperties{
 		Core:   core,
 		Syncer: output,
-		Level:  level,
+		Level:  cfg.Level,
 	}
 
 	return lg, r, nil
@@ -73,5 +68,5 @@ func initFileLog(cfg *FileConfig) (*lumberjack.Logger, error) {
 type ZapProperties struct {
 	Core   zapcore.Core
 	Syncer zapcore.WriteSyncer
-	Level  zap.AtomicLevel
+	Level  zapcore.Level
 }

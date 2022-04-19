@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-//const DefaultLogTimeFormat = "2006/01/02 15:04:05.000 -07:00"
 const DefaultLogTimeFormat = "2006-01-02T15:04:05.000000Z07:00"
 
 // DefaultTimeEncoder serializes time.Time to a human-readable formatted string

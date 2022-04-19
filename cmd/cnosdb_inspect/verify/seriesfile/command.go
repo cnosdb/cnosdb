@@ -2,8 +2,6 @@ package seriesfile
 
 import (
 	"fmt"
-	"github.com/cnosdb/cnosdb/pkg/logger"
-	"github.com/spf13/cobra"
 	"io"
 	"io/ioutil"
 	"os"
@@ -11,6 +9,10 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+
+	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 type Options struct {
@@ -39,9 +41,9 @@ func GetCommand() *cobra.Command {
 		Short: "Verifies the integrity of Series files.",
 		Run: func(cmd *cobra.Command, args []string) {
 			config := logger.NewDefaultLogConfig()
-			config.Level = "WARN"
+			config.Level = zapcore.WarnLevel
 			if opt.verbose {
-				config.Level = "INFO"
+				config.Level = zapcore.InfoLevel
 			}
 			vLogger, err := logger.NewLoggerWithConfigAndWriter(config, opt.Stdout)
 			if err != nil {

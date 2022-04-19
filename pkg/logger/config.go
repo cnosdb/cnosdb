@@ -1,12 +1,15 @@
 package logger
 
-import "github.com/cnosdb/cnosdb/pkg/zaputil"
+import (
+	"github.com/cnosdb/cnosdb/pkg/zaputil"
+	"go.uber.org/zap/zapcore"
+)
 
 const (
 	DefaultLogTimeFormat = "2006-01-02T15:04:05.000000Z07:00"
 	// DefaultLogFormat is the default format of the log.
 	DefaultLogFormat = "text"
-	DefaultLogLevel  = "INFO"
+	DefaultLogLevel  = zapcore.InfoLevel
 
 	// DefaultLogMaxSize is the default size of log files.
 	DefaultLogMaxSize = 300 // MB
@@ -41,7 +44,7 @@ func NewDefaultLogConfig() *Config {
 }
 
 // NewLogConfig "comment"
-func NewLogConfig(level, format string, fileCfg LogFileConfig, disableTimestamp bool, opts ...func(*zaputil.Config)) *Config {
+func NewLogConfig(level zapcore.Level, format string, fileCfg LogFileConfig, disableTimestamp bool, opts ...func(*zaputil.Config)) *Config {
 	c := &Config{
 		Config: zaputil.Config{
 			Level:            level,
