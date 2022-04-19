@@ -4,13 +4,13 @@ pub const MAX_MEMCACHE_SIZE: u64 = 100 * 1024 * 1024; //100M
 
 #[derive(Clone)]
 pub struct Options {
-    pub(crate) front_cpu: usize,
-    pub(crate) back_cpu: usize,
-    pub(crate) task_buffer_size: usize,
-    pub(crate) lrucache: CacheConfig,
-    pub(crate) wal: WalConfig,
+    pub front_cpu: usize,
+    pub back_cpu: usize,
+    pub task_buffer_size: usize,
+    pub lrucache: CacheConfig,
+    pub wal: WalConfig,
     // pub(crate) write_batch: WriteBatchConfig,
-    pub(crate) compact_conf: CompactConfig,
+    pub compact_conf: CompactConfig,
 }
 
 impl Options {

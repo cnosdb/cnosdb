@@ -176,20 +176,6 @@ impl AsyncContext {
     pub fn get_active_thread(&self) -> usize {
         self.worker_count.load(Ordering::Acquire)
     }
-
-    pub fn add_task(&mut self, task: IoTask) -> Result<()> {
-        if !self.is_closed() {
-            return Err(Error::Cancel);
-        }
-        if task.is_pri_high() {
-            let _ = self.high_op_queue.push(task);
-        } else if task.task_type == TaskType::BackRead {
-            let _ = self.read_queue.push(task);
-        } else if task.task_type == TaskType::BackWrite {
-            let _ = self.write_queue.push(task);
-        }
-        Ok(())
-    }
 }
 
 pub fn run_io_task(async_rt: Arc<AsyncContext>, index: usize) {
