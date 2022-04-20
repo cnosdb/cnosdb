@@ -180,8 +180,7 @@ func (s *LocalServer) Closed() bool {
 func (s *LocalServer) URL() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	//todo fix URL
-	return "http://127.0.0.1:0"
+	return s.Server.URL()
 }
 
 func (s *LocalServer) TcpAddr() string {

@@ -57,7 +57,7 @@ func (ReadGroupRequest_Group) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_715e4bf4cdf1f73d, []int{1, 0}
 }
 
-// TODO(jlapacik): This field is only used in unit tests.
+// TODO: This field is only used in unit tests.
 // Specifically the two tests in group_resultset_test.go.
 // This field should be removed and the tests that depend
 // on it refactored.

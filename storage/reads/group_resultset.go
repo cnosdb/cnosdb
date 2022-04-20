@@ -118,7 +118,7 @@ func (g *groupResultSet) sort() (int, error) {
 // seriesHasPoints reads the first block of TSM data to verify the series has points for
 // the time range of the query.
 func (g *groupResultSet) seriesHasPoints(row *SeriesRow) bool {
-	// TODO(sgc): this is expensive. Storage engine must provide efficient time range queries of series keys.
+	// TODO: this is expensive. Storage engine must provide efficient time range queries of series keys.
 	cur := g.mb.createCursor(*row)
 	var ts []int64
 	switch c := cur.(type) {
@@ -149,7 +149,7 @@ func (g *groupResultSet) seriesHasPoints(row *SeriesRow) bool {
 func groupNoneNextGroup(g *groupResultSet) GroupCursor {
 	cur, err := g.newCursorFn()
 	if err != nil {
-		// TODO(sgc): store error
+		// TODO: store error
 		return nil
 	} else if cur == nil {
 		return nil
