@@ -46,7 +46,6 @@ func GetCommand() *cobra.Command {
 
 			d := &CnosDB{
 				Server: server.NewServer(config),
-				Logger: logger.BgLogger(),
 			}
 
 			if err := d.Server.Open(); err != nil {
@@ -72,7 +71,6 @@ func GetCommand() *cobra.Command {
 
 type CnosDB struct {
 	Server *server.Server
-	Logger *zap.Logger
 }
 
 // ParseConfig parses the config at path.
@@ -80,7 +78,7 @@ type CnosDB struct {
 func ParseConfig(path string) (*server.Config, error) {
 	// Use demo configuration if no config path is specified.
 	if path == "" {
-		logger.BgLogger().Info("No configuration provided, using default settings")
+		logger.Info("No configuration provided, using default settings")
 		if config, err := server.NewDemoConfig(); err != nil {
 			return config, err
 		} else {
@@ -91,7 +89,7 @@ func ParseConfig(path string) (*server.Config, error) {
 		}
 	}
 
-	logger.BgLogger().Info("Loading configuration file", zap.String("path", path))
+	logger.Info("Loading configuration file", zap.String("path", path))
 
 	config := server.NewConfig()
 	if err := config.FromTomlFile(path); err != nil {

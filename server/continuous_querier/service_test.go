@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
-	"github.com/cnosdb/cnosdb/vend/db/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 )
@@ -694,7 +694,7 @@ func NewTestService(t *testing.T) *Service {
 
 	// Set Logger to write to dev/null so stdout isn't polluted.
 	if testing.Verbose() {
-		s.WithLogger(logger.New(os.Stderr))
+		s.WithLogger(logger.NewLoggerWithWriter(os.Stderr))
 	}
 
 	// Add a couple test databases and CQs.

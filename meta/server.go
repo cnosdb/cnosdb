@@ -7,8 +7,9 @@ import (
 	"net/http/pprof"
 	"os"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/pkg/logger"
+
+	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/pkg/utils"
 	"github.com/soheilhy/cmux"
@@ -47,7 +48,7 @@ type Server struct {
 func NewServer(c *Config) *Server {
 	s := &Server{
 		Config: c,
-		logger: logger.BgLogger(),
+		logger: logger.L(),
 	}
 
 	return s
@@ -101,6 +102,7 @@ func (s *Server) initMetaStore() {
 	httpAddr := s.remoteAddr(s.Config.HTTPD.HTTPBindAddress)
 	tcpAddr := s.remoteAddr(s.Config.HTTPD.HTTPBindAddress)
 	s.store = newStore(s.Config, httpAddr, tcpAddr)
+	s.store.withLogger(s.logger)
 	s.store.node = s.Node
 }
 
@@ -117,7 +119,7 @@ func (s *Server) initNetwork(ln net.Listener) error {
 
 	h := NewHandler(s.Config.HTTPD)
 	h.Version = "0.0.0"
-	h.logger = logger.BgLogger()
+	h.logger = s.logger
 	h.store = s.store
 	h.Open()
 

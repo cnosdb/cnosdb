@@ -1,16 +1,13 @@
-package log
+package zaputil
 
 import (
 	"os"
-	"sync/atomic"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
-
-var _globalL, _globalP, _globalS atomic.Value
 
 // InitLogger initializes a zap logger.
 func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
@@ -28,24 +25,21 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		}
 		output = stdOut
 	}
-	return InitLoggerWithWriteSyncer(cfg, output, opts...)
+	lg, prop, err := InitLoggerWithWriteSyncer(cfg, output, opts...)
+	return lg, prop, err
 }
 
 // InitLoggerWithWriteSyncer initializes a zap logger with specified write syncer.
 func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
-	level := zap.NewAtomicLevel()
-	err := level.UnmarshalText([]byte(cfg.Level))
-	if err != nil {
-		return nil, nil, err
-	}
-	core := NewTextCore(newZapTextEncoder(cfg), output, level)
+	core := NewTextCore(newZapTextEncoder(cfg), output, cfg.Level)
 	opts = append(cfg.buildOptions(output), opts...)
 	lg := zap.New(core, opts...)
 	r := &ZapProperties{
 		Core:   core,
 		Syncer: output,
-		Level:  level,
+		Level:  cfg.Level,
 	}
+
 	return lg, r, nil
 }
 
@@ -74,25 +68,5 @@ func initFileLog(cfg *FileConfig) (*lumberjack.Logger, error) {
 type ZapProperties struct {
 	Core   zapcore.Core
 	Syncer zapcore.WriteSyncer
-	Level  zap.AtomicLevel
-}
-
-// L returns the global Logger, which can be reconfigured with ReplaceGlobals.
-// It's safe for concurrent use.
-func L() *zap.Logger {
-	return _globalL.Load().(*zap.Logger)
-}
-
-// S returns the global SugaredLogger, which can be reconfigured with
-// ReplaceGlobals. It's safe for concurrent use.
-func S() *zap.SugaredLogger {
-	return _globalS.Load().(*zap.SugaredLogger)
-}
-
-// ReplaceGlobals replaces the global Logger and SugaredLogger.
-// It's safe for concurrent use.
-func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) {
-	_globalL.Store(logger)
-	_globalS.Store(logger.Sugar())
-	_globalP.Store(props)
+	Level  zapcore.Level
 }

@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-
 	"io"
 	"math"
 	"net"
@@ -93,7 +92,7 @@ func NewServer(c *Config) *Server {
 		Config:  c,
 		err:     make(chan error),
 		closing: make(chan struct{}),
-		Logger:  logger.BgLogger(),
+		Logger:  logger.L(),
 	}
 
 	return s
@@ -196,6 +195,7 @@ func (s *Server) initTSDBStore() error {
 	s.monitor = monitor.New(s, s.Config.Monitor)
 
 	s.TSDBStore = tsdb.NewStore(s.Config.Data.Dir)
+	s.TSDBStore.WithLogger(s.Logger)
 	s.TSDBStore.EngineOptions.Config = s.Config.Data
 
 	s.TSDBStore.EngineOptions.EngineVersion = s.Config.Data.Engine
@@ -206,9 +206,11 @@ func (s *Server) initTSDBStore() error {
 	s.shardWriter.MetaClient = s.MetaClient
 
 	s.hintedHandoff = hh.NewService(s.Config.HintedHandoff, s.shardWriter, s.MetaClient)
+	s.hintedHandoff.WithLogger(s.Logger)
 	s.hintedHandoff.Monitor = s.monitor
 
 	s.PointsWriter = coordinator.NewPointsWriter()
+	s.PointsWriter.WithLogger(s.Logger)
 	s.PointsWriter.WriteTimeout = time.Duration(s.Config.Coordinator.WriteTimeout)
 	s.PointsWriter.MetaClient = s.MetaClient
 	s.PointsWriter.HintedHandoff = s.hintedHandoff
@@ -217,9 +219,11 @@ func (s *Server) initTSDBStore() error {
 	s.PointsWriter.Node = s.Node
 
 	s.subscriber = subscriber.NewService(s.Config.Subscriber)
+	s.subscriber.WithLogger(s.Logger)
 	s.subscriber.MetaClient = s.MetaClient
 
 	s.queryExecutor = query.NewExecutor()
+	s.queryExecutor.WithLogger(s.Logger)
 	s.queryExecutor.StatementExecutor = &coordinator.StatementExecutor{
 		MetaClient:  s.MetaClient,
 		TaskManager: s.queryExecutor.TaskManager,
@@ -241,10 +245,12 @@ func (s *Server) initTSDBStore() error {
 	s.queryExecutor.TaskManager.MaxConcurrentQueries = s.Config.Coordinator.MaxConcurrentQueries
 
 	s.coordinatorService = coordinator.NewService(s.Config.Coordinator)
+	s.coordinatorService.WithLogger(s.Logger)
 	s.coordinatorService.TSDBStore = s.TSDBStore
 	s.coordinatorService.MetaClient = s.MetaClient
 
 	s.snapshotterService = snapshotter.NewService()
+	s.snapshotterService.WithLogger(s.Logger)
 	s.snapshotterService.TSDBStore = s.TSDBStore
 	s.snapshotterService.MetaClient = s.MetaClient
 
@@ -296,7 +302,7 @@ func (s *Server) initHTTPServer() error {
 	h.StorageStore = storage.NewStore(s.TSDBStore, s.MetaClient)
 	h.Monitor = s.monitor
 	h.PointsWriter = s.PointsWriter
-	h.logger = logger.BgLogger()
+	h.logger = s.Logger
 	h.Open()
 
 	s.httpHandler = h
@@ -344,9 +350,11 @@ func (s *Server) initMetaClient() error {
 	var metaCli meta.MetaClient
 	if s.Config.Cluster == false {
 		metaCli = meta.NewClient(s.Config.Meta)
+		metaCli.WithLogger(s.Logger)
 	} else {
 		s.Logger.Info("waiting to be added to cluster")
 		metaCli = meta.NewRemoteClient()
+		metaCli.WithLogger(s.Logger)
 		for {
 			if len(s.Node.Peers) == 0 {
 				time.Sleep(time.Second)
@@ -364,6 +372,7 @@ func (s *Server) initMetaClient() error {
 	if err := s.MetaClient.Open(); err != nil {
 		return err
 	}
+	s.MetaClient.WithLogger(s.Logger)
 
 	// if the node ID is > 0 then we need to initialize the metaclient
 	if s.Node.ID > 0 {
@@ -526,6 +535,7 @@ func (s *Server) initContinueQuery() error {
 	}
 
 	s.continuousQuerierService = continuous_querier.NewService(s.Config.ContinuousQuery)
+	s.continuousQuerierService.WithLogger(s.Logger)
 	s.continuousQuerierService.MetaClient = s.MetaClient
 	s.continuousQuerierService.QueryExecutor = s.queryExecutor
 	s.continuousQuerierService.Monitor = s.monitor
