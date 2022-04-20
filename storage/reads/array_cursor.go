@@ -27,7 +27,7 @@ func newAggregateArrayCursor(ctx context.Context, agg *datatypes.Aggregate, curs
 	case datatypes.AggregateTypeCount:
 		return newCountArrayCursor(cursor)
 	default:
-		// TODO(sgc): should be validated higher up
+		// TODO: should be validated higher up
 		panic("invalid aggregate")
 	}
 }
@@ -41,7 +41,7 @@ func newSumArrayCursor(cur cursors.Cursor) cursors.Cursor {
 	case cursors.UnsignedArrayCursor:
 		return newUnsignedArraySumCursor(cur)
 	default:
-		// TODO(sgc): propagate an error instead?
+		// TODO: propagate an error instead?
 		return nil
 	}
 }

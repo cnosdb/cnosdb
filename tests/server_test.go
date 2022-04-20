@@ -4,13 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+	"go.uber.org/zap/zapcore"
 )
 
 // Global server used by benchmarks
@@ -39,19 +39,19 @@ func TestMain(m *testing.M) {
 		c.Data.MaxValuesPerTag = 1000000 // 1M
 		c.Data.Index = indexType
 		c.Log = logger.NewDefaultLogConfig()
+		c.Log.Level = zapcore.ErrorLevel
 		if err := logger.InitZapLogger(c.Log); err != nil {
 			fmt.Printf("parse log config: %s\n", err)
 		}
 		benchServer = OpenDefaultServer(c)
 
 		if testing.Verbose() {
-			fmt.Println("================ Running all tests #{indexType} index ================")
+			fmt.Printf("================ Running all tests #{%v} index ================\n", indexType)
 		}
 
 		if curr := m.Run(); r == 0 {
 			r = curr
 		}
-
 
 		benchServer.Close()
 		if testing.Verbose() {
@@ -59,22 +59,6 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(r)
-}
-
-// Ensure that HTTP responses include the InfluxDB version.
-func TestServer_HTTPResponseVersion(t *testing.T) {
-	if RemoteEnabled() {
-		t.Skip("Skipping.  Cannot change version of remote server")
-	}
-	version := "vunknown"
-	s := OpenServerWithVersion(NewConfig(), version)
-	defer s.Close()
-
-	resp, _ := http.Get(s.URL() + "/query")
-	got := resp.Header.Get("X-Cnosdb-Version")
-	if got != version {
-		t.Errorf("Server responded with incorrect version, exp %s, got %s", version, got)
-	}
 }
 
 func TestServer_DatabaseCommands(t *testing.T) {
@@ -97,7 +81,3 @@ func TestServer_DatabaseCommands(t *testing.T) {
 		})
 	}
 }
-
-
-
-

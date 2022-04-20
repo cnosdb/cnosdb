@@ -262,7 +262,7 @@ group:
 			rs := reads.NewGroupResultSet(context.Background(), &datatypes.ReadGroupRequest{
 				Group:     tt.group,
 				GroupKeys: tt.keys,
-				// TODO(jlapacik):
+				// TODO:
 				//     Hints is not used except for the tests in this file.
 				//     Eventually this field should be removed entirely.
 				Hints: hints,
@@ -388,7 +388,7 @@ group:
 			rs := reads.NewGroupResultSet(context.Background(), &datatypes.ReadGroupRequest{
 				Group:     datatypes.GroupBy,
 				GroupKeys: tt.keys,
-				// TODO(jlapacik):
+				// TODO:
 				//     Hints is not used except for the tests in this file.
 				//     Eventually this field should be removed entirely.
 				Hints: hints,

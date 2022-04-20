@@ -230,7 +230,7 @@ func decodeTagSequenceSource(data map[string]interface{}) (TagSource, error) {
 	var s TagSequenceSource
 
 	if v, ok := data["format"].(string); ok {
-		// TODO(sgc): validate format string
+		// TODO: validate format string
 		s.Format = v
 	} else {
 		s.Format = "value%s"
