@@ -13,6 +13,9 @@ pub struct Tag {
 }
 
 impl Tag {
+    pub fn new(key: TagKey, value: TagValue) -> Self {
+        Self { key, value }
+    }
     pub fn format_check(&self) -> Result<(), String> {
         if self.key.len() == 0 {
             return Err(String::from("Key cannot be empty"));
@@ -31,8 +34,8 @@ impl Tag {
 
     pub fn bytes(&mut self) -> Vec<u8> {
         let mut data = Vec::<u8>::new();
-        data.append(&mut self.key);
-        data.append(&mut self.value);
+        data.append(&mut self.key.clone());
+        data.append(&mut self.value.clone());
         data
     }
 }

@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use super::*;
 use utils::bkdr_hash::{Hash, HashWith};
 
@@ -23,12 +25,25 @@ pub enum ValueType {
     String,
 }
 
+impl From<protos::models::FieldType> for ValueType {
+    fn from(t: protos::models::FieldType) -> Self {
+        match t {
+            protos::models::FieldType::Float => ValueType::Float,
+            protos::models::FieldType::Integer => ValueType::Integer,
+            protos::models::FieldType::Unsigned => ValueType::Unsigned,
+            protos::models::FieldType::Boolean => ValueType::Boolean,
+            protos::models::FieldType::String => ValueType::String,
+            _ => ValueType::Unknown,
+        }
+    }
+}
+
 impl FieldInfo {
-    pub fn new() -> Self {
+    pub fn new(id: u64, name: Vec<u8>, value_type: ValueType) -> Self {
         FieldInfo {
-            id: 0,
-            name: FieldName::new(),
-            value_type: ValueType::Unknown,
+            id,
+            name,
+            value_type,
         }
     }
 
