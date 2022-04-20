@@ -13,9 +13,9 @@ use protos::kv_service::WriteRowsRpcRequest;
 use protos::models;
 
 use crate::error::Result;
-use crate::option::Options;
-use crate::option::QueryOption;
-use crate::option::WalConfig;
+use crate::kv_option::Options;
+use crate::kv_option::QueryOption;
+use crate::kv_option::WalConfig;
 use crate::version_set;
 use crate::wal;
 use crate::wal::WalFileManager;
@@ -174,10 +174,10 @@ mod test {
     use futures::{channel::oneshot, future::join_all, SinkExt};
     use protos::kv_service;
 
-    use crate::{option::WalConfig, wal::WalTask, TsKv};
+    use crate::{kv_option::WalConfig, wal::WalTask, TsKv};
 
     fn get_tskv() -> TsKv {
-        let opt = crate::option::Options {
+        let opt = crate::kv_option::Options {
             wal: WalConfig {
                 dir: String::from("/tmp/test/"),
                 ..Default::default()

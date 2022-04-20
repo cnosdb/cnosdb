@@ -2,7 +2,7 @@ use crate::error::Result;
 use flatbuffers::Push;
 use futures::future::ok;
 use protos::models::FieldType;
-use std::{collections::HashMap, rc::Rc};
+use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, Copy)]
@@ -85,7 +85,7 @@ impl MemCache {
         match field_type {
             FieldType::Unsigned => {
                 let data = DataType::U64(U64Cell { ts, val });
-                self.insert(filed_id, ts, data);
+                self.insert(filed_id, data);
             }
             // FieldType::Integer(t) =>{
             //     self.insert(filed_id, ts, val)
@@ -97,8 +97,9 @@ impl MemCache {
         };
         Ok(())
     }
-    pub fn insert(&mut self, filed_id: u64, ts: u64, val: DataType) {
+    pub fn insert(&mut self, filed_id: u64, val: DataType) {
         let entry = self.data_cache.get_mut(&filed_id);
+        let ts = val.timestamp();
         if let Some(item) = entry {
             if item.ts_max < ts {
                 item.ts_max = ts;
