@@ -8,13 +8,13 @@
 |        SDK         |      开发Java和Golang的客户端程序      | 2022-03-14  |
 | Prometheus adapter |      开发与Prometheus的集成程序        | 2022-03-21  |
 |     cnosdb         |          backup/restore             | 2022-03-31  |
-|   cnosdb_inspect   | 完成cnosdb_inspect中关于磁盘上文件的所有操作 | 2022-04 |
-|    cnosdb_tools    |     完成cnosdb_tools中手动运维工具     | 2022-04   |
+|   cnosdb-inspect   | 完成cnosdb-inspect中关于磁盘上文件的所有操作 | 2022-04 |
+|    cnosdb-tools    |     完成cnosdb-tools中手动运维工具     | 2022-04   |
 |      JDBC          |         提供JDBC客户端程序            |  2022-05     |
 |     cnosdb-ctl     |            集群运维工具             |    2022-05   |
 |         解耦        |       解耦查询和存储，使用GRPC通信        | 2022-07-15 |
 
-cnosdb_inspect包含以下内容：
+cnosdb-inspect包含以下内容：
 - buildtsi：重建tsi索引文件
 - deletetsm：按条件删除.tsm文件中的数据
 - dumptsi：转储tsi文件中的内容
@@ -28,7 +28,7 @@ cnosdb_inspect包含以下内容：
 - reportdisk：查看TSM文件磁盘和分片的使用情况，用来评估磁盘规划
 - verify-tombstone：验证tombstone文件的完整性
 
-cnosdb_tools包含以下内容：
+cnosdb-tools包含以下内容：
 - compact-shard：手动压缩分片
 - export：与 cnosdb-tools import 一起使用，可以将分片导出为新的持续时间
 - import：与 cnosdb-tools export 一起使用，可以将分片导入为新的保留策略
