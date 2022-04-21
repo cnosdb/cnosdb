@@ -190,7 +190,7 @@ func (c *indexSeriesCursor) Next() *reads.SeriesRow {
 	c.row.Field = c.field.n
 
 	if c.cond != nil && c.hasValueExpr {
-		// TODO(sgc): lazily evaluate valueCond
+		// TODO: lazily evaluate valueCond
 		c.row.ValueCond = cnosql.Reduce(c.cond, c)
 		if reads.IsTrueBooleanLiteral(c.row.ValueCond) {
 			// we've reduced the expression to "true"

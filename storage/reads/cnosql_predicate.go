@@ -28,7 +28,7 @@ func NodeToExpr(node *datatypes.Node, remap map[string]string) (cnosql.Expr, err
 		return nil, nil
 	}
 
-	// TODO(edd): It would be preferable if RewriteRegexConditions was a
+	// TODO: It would be preferable if RewriteRegexConditions was a
 	// package level function in cnosql.
 	stmt := &cnosql.SelectStatement{
 		Condition: v.exprs[0],
@@ -110,7 +110,7 @@ func (v *nodeToExprVisitor) Visit(n *datatypes.Node) NodeVisitor {
 		case datatypes.ComparisonNotEqual:
 			be.Op = cnosql.NEQ
 		case datatypes.ComparisonStartsWith:
-			// TODO(sgc): rewrite to anchored RE, as index does not support startsWith yet
+			// TODO: rewrite to anchored RE, as index does not support startsWith yet
 			v.err = errors.New("startsWith not implemented")
 			return nil
 		case datatypes.ComparisonRegex:
@@ -155,7 +155,7 @@ func (v *nodeToExprVisitor) Visit(n *datatypes.Node) NodeVisitor {
 			v.exprs = append(v.exprs, &cnosql.StringLiteral{Val: val.StringValue})
 
 		case *datatypes.Node_RegexValue:
-			// TODO(sgc): consider hashing the RegexValue and cache compiled version
+			// TODO: consider hashing the RegexValue and cache compiled version
 			re, err := regexp.Compile(val.RegexValue)
 			if err != nil {
 				v.err = err
