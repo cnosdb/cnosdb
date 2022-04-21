@@ -16,7 +16,6 @@ require (
 	github.com/hashicorp/go-hclog v0.12.2
 	github.com/hashicorp/raft v1.3.1
 	github.com/hashicorp/raft-boltdb v0.0.0-20210422161416-485fa74b0b01
-	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/jwilder/encoding v0.0.0-20170811194829-b4e1701a28ef
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/klauspost/pgzip v1.2.5

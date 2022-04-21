@@ -2,7 +2,7 @@ package reads
 
 import "github.com/cnosdb/cnosdb/vend/cnosql"
 
-// TODO(sgc): build expression evaluator that does not use cnosql AST
+// TODO: build expression evaluator that does not use cnosql AST
 
 type expression interface {
 	EvalBool(v Valuer) bool

@@ -121,14 +121,14 @@ func (s *Store) ReadFilter(ctx context.Context, req *datatypes.ReadFilterRequest
 	if err != nil {
 		return nil, err
 	}
-	if len(shardIDs) == 0 { // TODO(jeff): this was a typed nil
+	if len(shardIDs) == 0 { // TODO: this was a typed nil
 		return nil, nil
 	}
 
 	var cur reads.SeriesCursor
 	if ic, err := newIndexSeriesCursor(ctx, req.Predicate, s.TSDBStore.Shards(shardIDs)); err != nil {
 		return nil, err
-	} else if ic == nil { // TODO(jeff): this was a typed nil
+	} else if ic == nil { // TODO: this was a typed nil
 		return nil, nil
 	} else {
 		cur = ic

@@ -396,11 +396,11 @@ func (s *Server) startHTTPServer() {
 
 	go utils.WithRecovery(func() {
 		err := s.httpServer.Serve(s.httpListener)
-		s.Logger.Error("http server error", zap.Error(err))
+		s.Logger.Info("http server stop", zap.Error(err))
 	}, nil)
 
 	if err := s.httpMux.Serve(); err != nil {
-		s.Logger.Error("start http/tcp server error", zap.Error(err))
+		s.Logger.Info("start http/tcp server stop", zap.Error(err))
 	}
 }
 
@@ -497,7 +497,12 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 
 }
 
+func (s *Server) URL() string {
+	return "http://" + s.httpListener.Addr().String()
+}
+
 // HTTPAddr returns the HTTP address used by other nodes for HTTP queries and writes.
+//todo: Get dynamic address
 func (s *Server) HTTPAddr() string {
 	return s.remoteAddr(s.Config.HTTPD.BindAddress)
 }
