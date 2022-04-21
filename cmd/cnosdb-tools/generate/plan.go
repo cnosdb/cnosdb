@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/errlist"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/pkg/errors"
 )

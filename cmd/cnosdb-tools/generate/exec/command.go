@@ -11,11 +11,11 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/profile"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
-	"github.com/cnosdb/cnosdb/vend/db/pkg/data/gen"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/profile"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/data/gen"
 )
 
 // Command represents the program execution for "store query".

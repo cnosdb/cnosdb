@@ -6,11 +6,11 @@ import (
 	"io"
 	"time"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/tlv"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/tlv"
 )
 
 type Writer struct {

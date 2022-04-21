@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/errlist"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/shard"
+	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/data/gen"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/shard"
-	"github.com/cnosdb/cnosdb/meta"
 )
 
 type Generator struct {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 )
 
 type TagCardinalities []int

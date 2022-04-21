@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/errlist"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/line"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/errlist"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/binary"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/line"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/limiter"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
@@ -302,7 +302,7 @@ func (sc *shardCompactor) String() string {
 
 func printUsage() {
 	fmt.Println(`Usage:
-  cnosdb_tools compact [flags] <shard-path>
+  cnosdb-tools compact [flags] <shard-path>
 
 Flags:
       --force         force compaction without prompting

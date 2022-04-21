@@ -1,37 +1,44 @@
-package line
+package text
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"strconv"
-	"time"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/escape"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
 )
 
 type Writer struct {
 	w   *bufio.Writer
 	key []byte
 	err error
+	m   Mode
 }
 
-func NewWriter(w io.Writer) *Writer {
+type Mode bool
+
+const (
+	Series Mode = false
+	Values Mode = true
+)
+
+func NewWriter(w io.Writer, mode Mode) *Writer {
 	var wr *bufio.Writer
 	if wr, _ = w.(*bufio.Writer); wr == nil {
 		wr = bufio.NewWriter(w)
 	}
 	return &Writer{
-		w: wr,
+		w:   wr,
+		key: make([]byte, 1024),
+		m:   mode,
 	}
 }
 
 func (w *Writer) NewBucket(start, end int64) (format.BucketWriter, error) {
-	fmt.Fprintf(w.w, "# new shard group start: %s -> end: %s\n", time.Unix(0, start).UTC(), time.Unix(0, end).UTC())
 	return w, nil
 }
 
@@ -43,16 +50,19 @@ func (w *Writer) BeginSeries(name, field []byte, typ cnosql.DataType, tags model
 		return
 	}
 
-	w.key = models.AppendMakeKey(w.key[:0], name, tags)
-	w.key = append(w.key, ' ')
-	w.key = append(w.key, escape.Bytes(field)...)
-	w.key = append(w.key, '=')
+	if w.m == Series {
+		w.key = models.AppendMakeKey(w.key[:0], name, tags)
+		w.key = append(w.key, ' ')
+		w.key = append(w.key, escape.Bytes(field)...)
+		w.w.Write(w.key)
+		w.w.WriteByte('\n')
+	}
 }
 
 func (w *Writer) EndSeries() {}
 
 func (w *Writer) WriteIntegerCursor(cur tsdb.IntegerArrayCursor) {
-	if w.err != nil {
+	if w.err != nil || w.m == Series {
 		return
 	}
 
@@ -63,7 +73,7 @@ func (w *Writer) WriteIntegerCursor(cur tsdb.IntegerArrayCursor) {
 			break
 		}
 		for i := range a.Timestamps {
-			buf = buf[:len(w.key)] // Re-slice buf to be "<series_key> <field>=".
+			buf = buf[:0]
 
 			buf = strconv.AppendInt(buf, a.Values[i], 10)
 			buf = append(buf, 'i')
@@ -78,7 +88,7 @@ func (w *Writer) WriteIntegerCursor(cur tsdb.IntegerArrayCursor) {
 }
 
 func (w *Writer) WriteFloatCursor(cur tsdb.FloatArrayCursor) {
-	if w.err != nil {
+	if w.err != nil || w.m == Series {
 		return
 	}
 
@@ -89,7 +99,7 @@ func (w *Writer) WriteFloatCursor(cur tsdb.FloatArrayCursor) {
 			break
 		}
 		for i := range a.Timestamps {
-			buf = buf[:len(w.key)] // Re-slice buf to be "<series_key> <field>=".
+			buf = buf[:0]
 
 			buf = strconv.AppendFloat(buf, a.Values[i], 'g', -1, 64)
 			buf = append(buf, ' ')
@@ -103,7 +113,7 @@ func (w *Writer) WriteFloatCursor(cur tsdb.FloatArrayCursor) {
 }
 
 func (w *Writer) WriteUnsignedCursor(cur tsdb.UnsignedArrayCursor) {
-	if w.err != nil {
+	if w.err != nil || w.m == Series {
 		return
 	}
 
@@ -114,7 +124,7 @@ func (w *Writer) WriteUnsignedCursor(cur tsdb.UnsignedArrayCursor) {
 			break
 		}
 		for i := range a.Timestamps {
-			buf = buf[:len(w.key)] // Re-slice buf to be "<series_key> <field>=".
+			buf = buf[:0]
 
 			buf = strconv.AppendUint(buf, a.Values[i], 10)
 			buf = append(buf, 'u')
@@ -129,7 +139,7 @@ func (w *Writer) WriteUnsignedCursor(cur tsdb.UnsignedArrayCursor) {
 }
 
 func (w *Writer) WriteBooleanCursor(cur tsdb.BooleanArrayCursor) {
-	if w.err != nil {
+	if w.err != nil || w.m == Series {
 		return
 	}
 
@@ -140,7 +150,7 @@ func (w *Writer) WriteBooleanCursor(cur tsdb.BooleanArrayCursor) {
 			break
 		}
 		for i := range a.Timestamps {
-			buf = buf[:len(w.key)] // Re-slice buf to be "<series_key> <field>=".
+			buf = buf[:0]
 
 			buf = strconv.AppendBool(buf, a.Values[i])
 			buf = append(buf, ' ')
@@ -154,7 +164,7 @@ func (w *Writer) WriteBooleanCursor(cur tsdb.BooleanArrayCursor) {
 }
 
 func (w *Writer) WriteStringCursor(cur tsdb.StringArrayCursor) {
-	if w.err != nil {
+	if w.err != nil || w.m == Series {
 		return
 	}
 
@@ -165,7 +175,7 @@ func (w *Writer) WriteStringCursor(cur tsdb.StringArrayCursor) {
 			break
 		}
 		for i := range a.Timestamps {
-			buf = buf[:len(w.key)] // Re-slice buf to be "<series_key> <field>=".
+			buf = buf[:0]
 
 			buf = append(buf, '"')
 			buf = append(buf, models.EscapeStringField(a.Values[i])...)

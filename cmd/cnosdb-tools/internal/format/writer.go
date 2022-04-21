@@ -3,10 +3,10 @@ package format
 import (
 	"fmt"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/storage"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/storage"
 )
 
 var (

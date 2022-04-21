@@ -3,9 +3,8 @@ package init
 //
 import (
 	"github.com/spf13/cobra"
-
-	//"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/generate"
-	//"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
+	//"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate"
+	//"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 )
 
 //

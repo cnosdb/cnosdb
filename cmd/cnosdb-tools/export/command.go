@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/binary"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/line"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/internal/format/text"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_tools/server"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/binary"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/line"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/text"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 	"go.uber.org/zap"
 )
 
