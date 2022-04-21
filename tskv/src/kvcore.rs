@@ -1,13 +1,9 @@
-use std::cell::RefCell;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-use ::models::AbstractPoints;
 use once_cell::sync::OnceCell;
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
 use protos::models;
-use tokio::runtime::Builder;
-use tokio::sync::RwLock;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
     oneshot,
@@ -20,7 +16,6 @@ use crate::{
     wal::{self, WalFileManager, WalResult, WalTask},
     Error, FileManager, Version, VersionSet, WorkerQueue,
 };
-use crate::{MemCache, Task};
 
 pub struct Entry {
     pub series_id: u64,
@@ -55,6 +50,11 @@ impl TsKv {
     pub fn recover() -> VersionSet {
         //todo! recover from manifest and build VersionSet
         VersionSet::new_default()
+    }
+
+    pub fn get_instance() -> &'static Self {
+        static INSTANCE: OnceCell<TsKv> = OnceCell::new();
+        INSTANCE.get_or_init(|| Self::open(Options::from_env()).unwrap())
     }
 
     pub async fn write(
@@ -106,7 +106,9 @@ impl TsKv {
                 }
             }
         };
-        tokio::spawn(f);
+        tokio::spawn(async move {
+            f.await;
+        });
     }
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
         let f = async move {
