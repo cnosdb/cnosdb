@@ -3,18 +3,18 @@ package main
 import (
 	"fmt"
 
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/buildtsi"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/deletetsm"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsi"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsm"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/dumptsmwal"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/export"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/report"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reportdisk"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/reporttsi"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/seriesfile"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/tsm"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb_inspect/verify/verify-tombstone"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/buildtsi"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/deletetsm"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/dumptsi"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/dumptsm"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/dumptsmwal"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/export"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/report"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/reportdisk"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/reporttsi"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/verify/seriesfile"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/verify/tsm"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-inspect/verify/verify-tombstone"
 
 	"github.com/spf13/cobra"
 )
@@ -67,8 +67,8 @@ func main() {
 
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
-		Use:  "cnosdb_inspect",
-		Long: "cnosdb_inspect Inspect is an CnosDB disk utility",
+		Use:  "cnosdb-inspect",
+		Long: "cnosdb-inspect Inspect is an CnosDB disk utility",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableNoDescFlag:   true,

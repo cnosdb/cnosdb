@@ -229,7 +229,7 @@ func sortKeys(vals map[string]counter) (keys []string) {
 // printUsage prints the usage message to STDOUT.
 var usage = `Displays shard level report.
 
-Usage: cnosdb_inspect report [flags]
+Usage: cnosdb-inspect report [flags]
 
    --pattern <pattern>
            Include only files matching a pattern.

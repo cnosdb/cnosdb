@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Options represents the program execution for "cnosdb_inspect verifytombstone".
+// Options represents the program execution for "cnosdb-inspect verifytombstone".
 type Options struct {
 	Stderr    io.Writer
 	Stdout    io.Writer

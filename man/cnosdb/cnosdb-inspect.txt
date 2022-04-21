@@ -1,4 +1,4 @@
-cnosdb_inspect(1)
+cnosdb-inspect(1)
 =================
 
 NAME
@@ -8,18 +8,18 @@ cnosdb-inspect - Displays detailed information about CnosDB data files
 SYNOPSIS
 --------
 [verse]
-'cnosdb_inspect buildtsi' --datadir <data_dir> --waldir <wal_dir> [ options ]
-'cnosdb_inspect deletetsm' --measurement <measurement_name> [ arguments ] <path>
-'cnosdb_inspect dumptsi' [ options ] <index_path>
-'cnosdb_inspect dumptsm' [ options ] <path>
-'cnosdb_inspect dumptsmwal' [ options ] <wal_dir>
-'cnosdb_inspect export' [ options ]
-'cnosdb_inspect report' [ options ] <path>
-'cnosdb_inspect report-disk' [ options ] <path>
-'cnosdb_inspect reporttsi' -db-path <path-to-db> [ options ]
-'cnosdb_inspect verify' [ options ]
-'cnosdb_inspect verify-seriesfile' [ options ]
-'cnosdb_inspect verifytombstone' [ options ]
+'cnosdb-inspect buildtsi' --datadir <data_dir> --waldir <wal_dir> [ options ]
+'cnosdb-inspect deletetsm' --measurement <measurement_name> [ arguments ] <path>
+'cnosdb-inspect dumptsi' [ options ] <index_path>
+'cnosdb-inspect dumptsm' [ options ] <path>
+'cnosdb-inspect dumptsmwal' [ options ] <wal_dir>
+'cnosdb-inspect export' [ options ]
+'cnosdb-inspect report' [ options ] <path>
+'cnosdb-inspect report-disk' [ options ] <path>
+'cnosdb-inspect reporttsi' -db-path <path-to-db> [ options ]
+'cnosdb-inspect verify' [ options ]
+'cnosdb-inspect verify-seriesfile' [ options ]
+'cnosdb-inspect verifytombstone' [ options ]
 
 DESCRIPTION
 -----------
