@@ -3,11 +3,16 @@ name = "protos"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+test = []
+
 [dependencies]
+chrono = "0.4"
 flatbuffers = "2.1"
-prost = "0.9"
-tonic = "0.6"
+prost = "0.10"
+rand = "0.8"
+tonic = "0.7"
 
 [build-dependencies]
-tonic-build = "0.6"
-prost-build = "0.9"
+prost-build = "0.10"
+tonic-build = "0.7"

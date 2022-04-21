@@ -21,6 +21,9 @@ mod tsm;
 mod version_set;
 mod wal;
 
+use protos::kv_service::WritePointsRpcResponse;
+use tokio::sync::oneshot;
+
 pub use direct_io::*;
 pub use error::*;
 pub use file_manager::*;
@@ -35,3 +38,19 @@ pub use summary::*;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
+
+#[derive(Debug)]
+pub enum Task {
+    AddSeries {
+        req: protos::kv_service::AddSeriesRpcRequest,
+        tx: oneshot::Sender<wal::WalResult<()>>,
+    },
+    GetSeriesInfo {
+        req: protos::kv_service::GetSeriesInfoRpcRequest,
+        tx: oneshot::Sender<wal::WalResult<()>>,
+    },
+    WritePoints {
+        req: protos::kv_service::WritePointsRpcRequest,
+        tx: oneshot::Sender<std::result::Result<WritePointsRpcResponse, Error>>,
+    },
+}
