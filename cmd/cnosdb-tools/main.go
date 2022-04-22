@@ -4,7 +4,6 @@ package main
 import (
 	"fmt"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/export"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/importer"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/compact"
 
@@ -36,8 +35,6 @@ func main() {
 	export := export.GetCommand()
 	mainCmd.AddCommand(export)
 
-// 	importer := importer.GetCommand()
-// 	mainCmd.AddCommand(importer)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
