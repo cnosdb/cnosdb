@@ -3,8 +3,8 @@ package export
 import (
 	"compress/gzip"
 	"errors"
-	"flag"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"math"
 	"os"
@@ -25,8 +25,10 @@ var (
 	_ binary.Writer
 )
 
-// Command represents the program execution for "store query".
-type Command struct {
+var opt = NewOption(server.NewSingleServer())
+
+// Options represents the program execution for "store query".
+type Options struct {
 	// Standard input/output, overridden for testing.
 	Stderr io.Writer
 	Stdout io.Writer
@@ -46,79 +48,114 @@ type Command struct {
 	print         bool
 }
 
-// NewCommand returns a new instance of the export Command.
-func NewCommand(server server.Interface) *Command {
-	return &Command{
+func GetCommand() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "export",
+		Short: "the export tool transforms existing shards to a new shard duration in order to consolidate into fewer shards.",
+
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			//The error process is very naive before!
+
+			if opt.database == "" {
+				return errors.New("database is required")
+			}
+
+			switch opt.format {
+			case "line", "binary", "series", "values", "discard":
+			default:
+				return fmt.Errorf("invalid format '%s'", opt.format)
+			}
+
+			if opt.conflictPath == "" && !opt.ignore {
+				return errors.New("missing conflict-path")
+			}
+
+			if err != nil {
+				return err
+			}
+
+			err = opt.server.Open(opt.configPath)
+
+			if err != nil {
+				return err
+			}
+
+			defer opt.server.Close()
+
+			e, err := opt.openExporter()
+			if err != nil {
+				return err
+			}
+			defer e.Close()
+
+			e.PrintPlan(opt.Stderr)
+
+			if opt.print {
+				return nil
+			}
+
+			if !opt.ignore {
+				if f, err := os.Create(opt.conflictPath); err != nil {
+					return err
+				} else {
+					opt.conflicts = gzip.NewWriter(f)
+					defer func() {
+						opt.conflicts.Close()
+						f.Close()
+					}()
+				}
+			}
+
+			var wr format.Writer
+			switch opt.format {
+			case "line":
+				wr = line.NewWriter(opt.Stdout)
+			case "binary":
+				wr = binary.NewWriter(opt.Stdout, opt.database, opt.rp, opt.shardDuration)
+			case "series":
+				wr = text.NewWriter(opt.Stdout, text.Series)
+			case "values":
+				wr = text.NewWriter(opt.Stdout, text.Values)
+			case "discard":
+				wr = format.Discard
+			}
+			defer func() {
+				err = wr.Close()
+			}()
+
+			if opt.conflicts != nil {
+				wr = format.NewConflictWriter(wr, line.NewWriter(opt.conflicts))
+			} else {
+				wr = format.NewConflictWriter(wr, format.DevNull)
+			}
+
+			return e.WriteTo(wr)
+		},
+	}
+
+	c.PersistentFlags().StringVar(&opt.configPath, "config", "", "Config file")
+	c.PersistentFlags().StringVar(&opt.database, "database", "", "Database name")
+	c.PersistentFlags().StringVar(&opt.rp, "rp", "", "Retention policy name")
+	c.PersistentFlags().StringVar(&opt.format, "format", "line", "Output format (line, binary)")
+	c.PersistentFlags().StringVar(&opt.conflictPath, "conflict-path", "", "File name for writing field conflicts using line protocol and gzipped")
+	c.PersistentFlags().BoolVar(&opt.ignore, "no-conflict-path", false, "Disable writing field conflicts to a file")
+	c.PersistentFlags().Var(&opt.r, "range", "Range of target shards to export (default: all)")
+	c.PersistentFlags().BoolVar(&opt.print, "print-only", false, "Print plan to stderr and exit")
+	c.PersistentFlags().DurationVar(&opt.shardDuration, "shard-duration", time.Hour*24*7, "Target shard duration")
+
+	return c
+}
+
+// NewOption returns a new instance of the export Options.
+func NewOption(server server.Interface) *Options {
+	return &Options{
 		Stderr: os.Stderr,
 		Stdout: os.Stdout,
 		server: server,
 	}
 }
 
-// Run executes the export command using the specified args.
-func (cmd *Command) Run(args []string) (err error) {
-	err = cmd.parseFlags(args)
-	if err != nil {
-		return err
-	}
-
-	err = cmd.server.Open(cmd.configPath)
-	if err != nil {
-		return err
-	}
-	defer cmd.server.Close()
-
-	e, err := cmd.openExporter()
-	if err != nil {
-		return err
-	}
-	defer e.Close()
-
-	e.PrintPlan(cmd.Stderr)
-
-	if cmd.print {
-		return nil
-	}
-
-	if !cmd.ignore {
-		if f, err := os.Create(cmd.conflictPath); err != nil {
-			return err
-		} else {
-			cmd.conflicts = gzip.NewWriter(f)
-			defer func() {
-				cmd.conflicts.Close()
-				f.Close()
-			}()
-		}
-	}
-
-	var wr format.Writer
-	switch cmd.format {
-	case "line":
-		wr = line.NewWriter(cmd.Stdout)
-	case "binary":
-		wr = binary.NewWriter(cmd.Stdout, cmd.database, cmd.rp, cmd.shardDuration)
-	case "series":
-		wr = text.NewWriter(cmd.Stdout, text.Series)
-	case "values":
-		wr = text.NewWriter(cmd.Stdout, text.Values)
-	case "discard":
-		wr = format.Discard
-	}
-	defer func() {
-		err = wr.Close()
-	}()
-
-	if cmd.conflicts != nil {
-		wr = format.NewConflictWriter(wr, line.NewWriter(cmd.conflicts))
-	} else {
-		wr = format.NewConflictWriter(wr, format.DevNull)
-	}
-
-	return e.WriteTo(wr)
-}
-
-func (cmd *Command) openExporter() (*exporter, error) {
+func (cmd *Options) openExporter() (*exporter, error) {
 	cfg := &exporterConfig{Database: cmd.database, RP: cmd.rp, ShardDuration: cmd.shardDuration, Min: cmd.r.Min(), Max: cmd.r.Max()}
 	e, err := newExporter(cmd.server, cfg)
 	if err != nil {
@@ -128,42 +165,13 @@ func (cmd *Command) openExporter() (*exporter, error) {
 	return e, e.Open()
 }
 
-func (cmd *Command) parseFlags(args []string) error {
-	fs := flag.NewFlagSet("export", flag.ContinueOnError)
-	fs.StringVar(&cmd.configPath, "config", "", "Config file")
-	fs.StringVar(&cmd.database, "database", "", "Database name")
-	fs.StringVar(&cmd.rp, "rp", "", "Retention policy name")
-	fs.StringVar(&cmd.format, "format", "line", "Output format (line, binary)")
-	fs.StringVar(&cmd.conflictPath, "conflict-path", "", "File name for writing field conflicts using line protocol and gzipped")
-	fs.BoolVar(&cmd.ignore, "no-conflict-path", false, "Disable writing field conflicts to a file")
-	fs.Var(&cmd.r, "range", "Range of target shards to export (default: all)")
-	fs.BoolVar(&cmd.print, "print-only", false, "Print plan to stderr and exit")
-	fs.DurationVar(&cmd.shardDuration, "duration", time.Hour*24*7, "Target shard duration")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	if cmd.database == "" {
-		return errors.New("database is required")
-	}
-
-	switch cmd.format {
-	case "line", "binary", "series", "values", "discard":
-	default:
-		return fmt.Errorf("invalid format '%s'", cmd.format)
-	}
-
-	if cmd.conflictPath == "" && !cmd.ignore {
-		return errors.New("missing conflict-path")
-	}
-
-	return nil
-}
-
 type rangeValue struct {
 	min, max uint64
 	set      bool
+}
+
+func (rv *rangeValue) Type() string {
+	return "rangeValue"
 }
 
 func (rv *rangeValue) Min() uint64 { return rv.min }
