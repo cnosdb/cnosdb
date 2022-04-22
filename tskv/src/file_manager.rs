@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::{fs, thread};
 
-use crate::{direct_io, error, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
+use crate::direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
 use futures::channel::oneshot::{self, Sender};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -33,6 +33,11 @@ pub struct FileManager {
     thread_pool: Mutex<Vec<thread::JoinHandle<()>>>,
 }
 
+pub fn get_file_manager() -> &'static FileManager {
+    static INSTANCE: OnceCell<FileManager> = OnceCell::new();
+    INSTANCE.get_or_init(|| FileManager::new())
+}
+
 impl FileManager {
     pub fn new() -> Self {
         let fs_options = direct_io::Options::default();
@@ -53,11 +58,6 @@ impl FileManager {
             async_rt: rt,
             thread_pool: Mutex::new(pool),
         };
-    }
-
-    pub fn get_instance() -> &'static Self {
-        static INSTANCE: OnceCell<FileManager> = OnceCell::new();
-        INSTANCE.get_or_init(|| Self::new())
     }
 
     pub fn open_file_with(
@@ -182,15 +182,18 @@ mod test {
 
     use futures::channel::oneshot;
 
-    use crate::{make_io_task, FileSync, TaskType};
+    use crate::{
+        direct_io::{make_io_task, FileSync, TaskType},
+        file_manager,
+    };
 
     use super::FileManager;
 
     #[test]
     fn test_get_instance() {
-        let file_manager_1 = FileManager::get_instance();
+        let file_manager_1 = file_manager::get_file_manager();
         println!("0x{:X}", file_manager_1 as *const FileManager as usize);
-        let file_manager_2 = FileManager::get_instance();
+        let file_manager_2 = file_manager::get_file_manager();
         println!("0x{:X}", file_manager_2 as *const FileManager as usize);
         assert_eq!(
             file_manager_1 as *const FileManager as usize,
@@ -207,7 +210,7 @@ mod test {
 
     #[tokio::test]
     async fn test_io_task() {
-        let file_manager = FileManager::get_instance();
+        let file_manager = file_manager::get_file_manager();
 
         let mut buf = vec![1_u8; 1024];
         let file = file_manager.create_file("/tmp/test/a.hex").unwrap();

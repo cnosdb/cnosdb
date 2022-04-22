@@ -50,7 +50,7 @@ impl Default for WalConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            dir: Default::default(),
+            dir: "/tmp/test".to_string(),
             sync: true,
         }
     }

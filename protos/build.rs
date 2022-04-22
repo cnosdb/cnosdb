@@ -44,7 +44,6 @@ mod flatbuffers_generated;
             .out_dir(&output_dir_final)
             .file_descriptor_set_path(&descriptor_set_path)
             .compile_well_known_types(true)
-            .format(true)
             .compile_with_config(config, proto_file_paths, &[proto_files_dir.as_path()])
             .expect("Failed to generate protobuf file {}.");
 
