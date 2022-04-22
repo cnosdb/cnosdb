@@ -17,12 +17,13 @@ jobs:
       uses: actions/setup-go@v2
       with:
         go-version: 1.17
-
-    - name: Dependent
-      run: go mod tidy
       
     - name: Build
-      run: go build -v ./...
+      run: go install -v ./...
 
-#   - name: Test
-#     run: go test -v ./...
+    - name: Test
+      run: go test -v ./...
+    
+    - name: Vet
+      run: go vet -v ./...
+      
