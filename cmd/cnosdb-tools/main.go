@@ -36,8 +36,8 @@ func main() {
 	export := export.GetCommand()
 	mainCmd.AddCommand(export)
 
-	importer := importer.GetCommand()
-	mainCmd.AddCommand(importer)
+// 	importer := importer.GetCommand()
+// 	mainCmd.AddCommand(importer)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
