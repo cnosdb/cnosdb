@@ -6,7 +6,6 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/compact"
 
-	_ "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/export"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/exec"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/init"
 	_ "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/help"
