@@ -77,7 +77,7 @@ func init() {
 			&Query{
 				name:    "create database with retention duration should error if retention policy is different",
 				command: `CREATE DATABASE db1 WITH DURATION 24h`,
-				exp:     `{"results":[{"statement_id":0,"error":"retention policy conflicts with an existing policy"}]}`,
+				exp:     `{"results":[{"statement_id":0,"error":"retention policy conflicts with an existing retention policy"}]}`,
 			},
 			&Query{
 				name:    "create database should error with bad retention duration",
