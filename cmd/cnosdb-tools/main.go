@@ -30,6 +30,9 @@ func main() {
 
 	compact := compact.GetCommand()
 	mainCmd.AddCommand(compact)
+	
+	importer := importer.GetCommand()
+	mainCmd.AddCommand(importer)
 
 	if err := mainCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
