@@ -178,8 +178,7 @@ impl KvContext {
         entry: WritePointsRpcRequest,
     ) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.front_handler.add_task(partion_id, async move {
-            let ps = flatbuffers::root::<models::Points>(&entry.points).unwrap();
+        self.front_handler.work_queue.add_task(partion_id, async move {
             let err = 0;
             //todo
             let _ = tx.send(err);
