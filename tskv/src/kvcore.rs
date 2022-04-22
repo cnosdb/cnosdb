@@ -139,7 +139,7 @@ impl KvContext {
 
     pub async fn shard_write(&self, partion_id: usize, _entry: WriteRowsRpcRequest) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.front_handler.work_queue.spawn(partion_id, async move {
+        self.front_handler.work_queue.add_task(partion_id, async move {
             let err = 0;
             //memcache.insert();
             let _ = tx.send(err);

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-protos = { path = "../protos" }
+protos = { path = "../protos", features = ["test"]}
 utils = {path = "../utils"}
 
 chrono = "0.4"
