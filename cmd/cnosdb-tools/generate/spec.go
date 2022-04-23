@@ -41,6 +41,10 @@ func (t *TagCardinalities) Set(tags string) error {
 	return nil
 }
 
+func (t *TagCardinalities) Type() string {
+	return "TagCardinalities"
+}
+
 type StorageSpec struct {
 	StartTime     string
 	Database      string
