@@ -17,6 +17,7 @@ import (
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb"
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine"
 
+	genexec "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/exec"
 	geninit "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/init"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +28,9 @@ func main() {
 
 	geninit := geninit.GetCommand()
 	mainCmd.AddCommand(geninit)
+
+	genexec := genexec.GetCommand()
+	mainCmd.AddCommand(genexec)
 
 	compact := compact.GetCommand()
 	mainCmd.AddCommand(compact)
