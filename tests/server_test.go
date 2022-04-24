@@ -204,7 +204,56 @@ func TestServer_Query_DeleteSeries_TagFilter(t *testing.T) {
 	}
 }
 
+func TestServer_Query_DropAndRecreateSeries(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
 
+	test := tests.load(t, "drop_and_recreate_series")
+
+	if err := s.CreateDatabaseAndRetentionPolicy(test.database(), NewRetentionPolicySpec(test.retentionPolicy(), 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+
+	// Re-write data and test again.
+	retest := tests.load(t, "drop_and_recreate_series_retest")
+
+	for i, query := range retest.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := retest.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
 
 
 
