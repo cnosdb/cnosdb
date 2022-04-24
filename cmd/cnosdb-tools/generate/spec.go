@@ -1,7 +1,6 @@
 package generate
 
 import (
-	"flag"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -54,15 +53,6 @@ type StorageSpec struct {
 	ShardDuration time.Duration
 }
 
-func (a *StorageSpec) AddFlags(fs *flag.FlagSet) {
-	fs.StringVar(&a.StartTime, "start-time", "", "Start time")
-	fs.StringVar(&a.Database, "db", "db", "Name of database to create")
-	fs.StringVar(&a.Retention, "rp", "rp", "Name of retention policy")
-	fs.IntVar(&a.ReplicaN, "rf", 1, "Replication factor")
-	fs.IntVar(&a.ShardCount, "shards", 1, "Number of shards to create")
-	fs.DurationVar(&a.ShardDuration, "shard-duration", 24*time.Hour, "Shard duration (default 24h)")
-}
-
 func (a *StorageSpec) Plan(server server.Interface) (*StoragePlan, error) {
 	plan := &StoragePlan{
 		Database:      a.Database,
@@ -91,12 +81,6 @@ func (a *StorageSpec) Plan(server server.Interface) (*StoragePlan, error) {
 type SchemaSpec struct {
 	Tags                    TagCardinalities
 	PointsPerSeriesPerShard int
-}
-
-func (s *SchemaSpec) AddFlags(fs *flag.FlagSet) {
-	s.Tags = []int{10, 10, 10}
-	fs.Var(&s.Tags, "t", "Tag cardinality")
-	fs.IntVar(&s.PointsPerSeriesPerShard, "p", 100, "Points per series per shard")
 }
 
 func (s *SchemaSpec) Plan(sp *StoragePlan) (*SchemaPlan, error) {
