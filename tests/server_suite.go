@@ -588,6 +588,28 @@ func init() {
 		},
 	}
 
+	tests["show_database_no_auth"] = Test{
+		queries: []*Query{
+			&Query{
+				name:    "create database db1",
+				command: `CREATE DATABASE db1`,
+				exp:     `{"results":[{"statement_id":0}]}`,
+				once:    true,
+			},
+			&Query{
+				name:    "create database db2",
+				command: `CREATE DATABASE db2`,
+				exp:     `{"results":[{"statement_id":0}]}`,
+				once:    true,
+			},
+			&Query{
+				name:    "show",
+				command: `SHOW DATABASES`,
+				exp:     `{"results":[{"statement_id":0,"series":[{"name":"databases","columns":["name"],"values":[["db1"],["db2"]]}]}]}`,
+			},
+		},
+	}
+
 
 }
 
