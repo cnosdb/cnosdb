@@ -354,4 +354,3 @@ func TestServer_ShowDatabases_NoAuth(t *testing.T) {
 		})
 	}
 }
-

@@ -2,101 +2,96 @@ package init
 
 //
 import (
+	"errors"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 	"github.com/spf13/cobra"
-	//"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate"
-	//"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
+	"io"
+	"os"
+	"time"
 )
 
-//
-//// Command represents the program execution for "store query".
-//type Options struct {
-//	Stdin  io.Reader
-//	Stdout io.Writer
-//	Stderr io.Writer
-//	server server.Interface
-//
-//	configPath string
-//	printOnly  bool
-//	spec       generate.StorageSpec
-//}
+// Options represents the program execution for "store query".
+type Options struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+	server server.Interface
 
-//type ossServer struct {
-//	logger   *zap.Logger
-//	config   *run.Config
-//	noClient bool
-//	client   *meta.Client
-//	mc       server.MetaClient
-//}
+	configPath string
+	printOnly  bool
+	spec       generate.StorageSpec
+}
 
-//var opt = NewOptions()
-//
-//// NewCommand returns a new instance of Command.
-//func NewOptions() *Options {
-//	return &Options{
-//		Stdin:  os.Stdin,
-//		Stdout: os.Stdout,
-//		Stderr: os.Stderr,
-//		//server: server,
-//	}
-//}
-//
+var opt = NewOptions(server.NewSingleServer())
+
+//// NewOptions returns a new instance of Options.
+func NewOptions(server server.Interface) *Options {
+	return &Options{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		server: server,
+	}
+}
+
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "gen-init",
 		Short: "creates database and retention policy metadata",
 
-		Run: func(cmd *cobra.Command, args []string) {
-			//if err := Run(opt, args); err != nil {
-			//	fmt.Println(err)
-			//}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run(opt)
 		},
 	}
+	c.PersistentFlags().StringVar(&opt.configPath, "config", "", "Config file")
+	c.PersistentFlags().BoolVar(&opt.printOnly, "print", false, "Print data spec only")
+
+	c.PersistentFlags().StringVar(&opt.spec.StartTime, "start-time", "", "Start time")
+	c.PersistentFlags().StringVar(&opt.spec.Database, "db", "db", "Name of database to create")
+	c.PersistentFlags().StringVar(&opt.spec.Retention, "rp", "rp", "Name of retention policy")
+	c.PersistentFlags().IntVar(&opt.spec.ReplicaN, "rf", 1, "Replication factor")
+	c.PersistentFlags().IntVar(&opt.spec.ShardCount, "shards", 1, "Number of shards to create")
+	c.PersistentFlags().DurationVar(&opt.spec.ShardDuration, "shard-duration", 24*time.Hour, "Shard duration (default 24h)")
 	return c
 }
 
 //
-//func Run(opt *Options, args []string) (err error) {
-//	err = opt.parseFlags(args)
-//	if err != nil {
-//		return err
-//	}
-//
-//	err = opt.server.Open(opt.configPath)
-//	if err != nil {
-//		return err
-//	}
-//
-//	plan, err := opt.spec.Plan(opt.server)
-//	if err != nil {
-//		return err
-//	}
-//
-//	plan.PrintPlan(opt.Stdout)
-//
-//	if !opt.printOnly {
-//		return plan.InitMetadata(opt.server.MetaClient())
-//	}
-//
-//	return nil
-//}
-////
-//func (opt *Options) parseFlags(args []string) error {
-//	fs := flag.NewFlagSet("gen-init", flag.ContinueOnError)
-//	fs.StringVar(&opt.configPath, "config", "", "Config file")
-//	fs.BoolVar(&opt.printOnly, "print", false, "Print data spec only")
-//	//opt.spec.AddFlags(fs)
-//
-//	if err := fs.Parse(args); err != nil {
-//		return err
-//	}
-//
-//	if opt.spec.Database == "" {
-//		return errors.New("database is required")
-//	}
-//
-//	if opt.spec.Retention == "" {
-//		return errors.New("retention policy is required")
-//	}
-//
-//	return nil
-//}
+func run(opt *Options) (err error) {
+
+	err = parseFlags()
+	if err != nil {
+		return err
+	}
+
+	err = opt.server.Open(opt.configPath)
+	if err != nil {
+		return err
+	}
+
+	plan, err := opt.spec.Plan(opt.server)
+	if err != nil {
+		return err
+	}
+
+	plan.PrintPlan(opt.Stdout)
+
+	if !opt.printOnly {
+		return plan.InitMetadata(opt.server.MetaClient())
+	}
+
+	return nil
+}
+
+func parseFlags() error {
+
+	if opt.spec.Database == "" {
+		return errors.New("database is required")
+	}
+
+	if opt.spec.Retention == "" {
+		return errors.New("retention policy is required")
+	}
+
+	return nil
+}
