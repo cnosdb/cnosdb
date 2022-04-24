@@ -173,3 +173,184 @@ func TestServer_Query_DeleteSeries(t *testing.T) {
 		}
 	}
 }
+
+func TestServer_Query_DeleteSeries_TagFilter(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := tests.load(t, "delete_series_time_tag_filter")
+
+	if err := s.CreateDatabaseAndRetentionPolicy(test.database(), NewRetentionPolicySpec(test.retentionPolicy(), 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_DropAndRecreateSeries(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := tests.load(t, "drop_and_recreate_series")
+
+	if err := s.CreateDatabaseAndRetentionPolicy(test.database(), NewRetentionPolicySpec(test.retentionPolicy(), 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+
+	// Re-write data and test again.
+	retest := tests.load(t, "drop_and_recreate_series_retest")
+
+	for i, query := range retest.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := retest.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_DropSeriesFromRegex(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := tests.load(t, "drop_series_from_regex")
+
+	if err := s.CreateDatabaseAndRetentionPolicy(test.database(), NewRetentionPolicySpec(test.retentionPolicy(), 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_RetentionPolicyCommands(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.Meta.RetentionAutoCreate = false
+	s := OpenServer(c)
+	defer s.Close()
+
+	test := tests.load(t, "retention_policy_commands")
+
+	// Create a database.
+	if _, err := s.CreateDatabase(test.database()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_DatabaseRetentionPolicyAutoCreate(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := tests.load(t, "retention_policy_auto_create")
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_ShowDatabases_NoAuth(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := tests.load(t, "show_database_no_auth")
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(fmt.Sprintf("command: %s - err: %s", query.command, query.Error(err)))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
