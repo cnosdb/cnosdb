@@ -458,7 +458,7 @@ func init() {
 			&Query{
 				name:    "show retention policy should succeed",
 				command: `SHOW RETENTION POLICIES ON db0`,
-				exp:     `{"results":[{"statement_id":0,"series":[{"columns":["name","duration","shardGroupDuration","replicaN","default"],"values":[["rp0","1h0m0s","1h0m0s",1,false]]}]}]}`,
+				exp:     `{"results":[{"statement_id":0,"series":[{"columns":["name","duration","groupDuration","replicaN","default"],"values":[["rp0","1h0m0s","1h0m0s",1,false]]}]}]}`,
 			},
 			&Query{
 				name:    "alter retention policy should succeed",
