@@ -3,8 +3,8 @@ package exec
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"strings"
@@ -18,8 +18,8 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/pkg/data/gen"
 )
 
-// Command represents the program execution for "store query".
-type Command struct {
+// Options represents the program execution for "store query".
+type Options struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -49,9 +49,12 @@ type Dependencies struct {
 	SeriesGeneratorFilter SeriesGeneratorFilter
 }
 
-// NewCommand returns a new instance of Command.
-func NewCommand(deps Dependencies) *Command {
-	return &Command{
+var deps = Dependencies{Server: server.NewSingleServer()}
+var opt = NewOptions(deps)
+
+// NewOptions returns a new instance of Options.
+func NewOptions(deps Dependencies) *Options {
+	return &Options{
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
@@ -60,82 +63,99 @@ func NewCommand(deps Dependencies) *Command {
 	}
 }
 
-func (cmd *Command) Run(args []string) (err error) {
-	err = cmd.parseFlags(args)
+func GetCommand() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "gen-exec",
+		Short: "generates data",
+
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run(opt)
+		},
+	}
+	c.PersistentFlags().StringVar(&opt.configPath, "config", "", "Config file")
+	c.PersistentFlags().StringVar(&opt.schemaPath, "schema", "", "Schema TOML file")
+	c.PersistentFlags().BoolVar(&opt.printOnly, "print", false, "Print data spec only")
+	c.PersistentFlags().BoolVar(&opt.noTSI, "no-tsi", false, "Skip building TSI index")
+	c.PersistentFlags().BoolVar(&opt.example, "example", false, "Print an example toml schema to STDOUT")
+	c.PersistentFlags().IntVar(&opt.concurrency, "c", 1, "Number of shards to generate concurrently")
+	c.PersistentFlags().StringVar(&opt.profile.CPU, "cpuprofile", "", "Collect a CPU profile")
+	c.PersistentFlags().StringVar(&opt.profile.Memory, "memprofile", "", "Collect a memory profile")
+
+	c.PersistentFlags().StringVar(&opt.storageSpec.StartTime, "start-time", "", "Start time")
+	c.PersistentFlags().StringVar(&opt.storageSpec.Database, "db", "db", "Name of database to create")
+	c.PersistentFlags().StringVar(&opt.storageSpec.Retention, "rp", "rp", "Name of retention policy")
+	c.PersistentFlags().IntVar(&opt.storageSpec.ReplicaN, "rf", 1, "Replication factor")
+	c.PersistentFlags().IntVar(&opt.storageSpec.ShardCount, "shards", 1, "Number of shards to create")
+	c.PersistentFlags().DurationVar(&opt.storageSpec.ShardDuration, "shard-duration", 24*time.Hour, "Shard duration (default 24h)")
+
+	opt.schemaSpec.Tags = []int{10, 10, 10}
+	c.PersistentFlags().Var(&opt.schemaSpec.Tags, "t", "Tag cardinality")
+	c.PersistentFlags().IntVar(&opt.schemaSpec.PointsPerSeriesPerShard, "p", 100, "Points per series per shard")
+	return c
+}
+
+func run(opt *Options) (err error) {
+
+	err = parseFlags()
 	if err != nil {
 		return err
 	}
 
-	if cmd.example {
-		return cmd.printExample()
+	if opt.example {
+		return printExample()
 	}
 
-	err = cmd.server.Open(cmd.configPath)
+	err = opt.server.Open(opt.configPath)
 	if err != nil {
 		return err
 	}
 
-	storagePlan, err := cmd.storageSpec.Plan(cmd.server)
+	storagePlan, err := opt.storageSpec.Plan(opt.server)
 	if err != nil {
 		return err
 	}
 
-	storagePlan.PrintPlan(cmd.Stdout)
+	storagePlan.PrintPlan(opt.Stdout)
 
 	var spec *gen.Spec
-	if cmd.schemaPath != "" {
+	if opt.schemaPath != "" {
 		var err error
-		spec, err = gen.NewSpecFromPath(cmd.schemaPath)
+		spec, err = gen.NewSpecFromPath(opt.schemaPath)
 		if err != nil {
 			return err
 		}
 	} else {
-		schemaPlan, err := cmd.schemaSpec.Plan(storagePlan)
+		schemaPlan, err := opt.schemaSpec.Plan(storagePlan)
 		if err != nil {
 			return err
 		}
 
-		schemaPlan.PrintPlan(cmd.Stdout)
-		spec = cmd.planToSpec(schemaPlan)
+		schemaPlan.PrintPlan(opt.Stdout)
+		spec = planToSpec(schemaPlan)
 	}
 
-	if cmd.printOnly {
+	if opt.printOnly {
 		return nil
 	}
 
-	if err = storagePlan.InitFileSystem(cmd.server.MetaClient()); err != nil {
+	if err = storagePlan.InitFileSystem(opt.server.MetaClient()); err != nil {
 		return err
 	}
 
-	return cmd.exec(storagePlan, spec)
+	return exec(storagePlan, spec)
 }
 
-func (cmd *Command) parseFlags(args []string) error {
-	fs := flag.NewFlagSet("gen-init", flag.ContinueOnError)
-	fs.StringVar(&cmd.configPath, "config", "", "Config file")
-	fs.StringVar(&cmd.schemaPath, "schema", "", "Schema TOML file")
-	fs.BoolVar(&cmd.printOnly, "print", false, "Print data spec only")
-	fs.BoolVar(&cmd.noTSI, "no-tsi", false, "Skip building TSI index")
-	fs.BoolVar(&cmd.example, "example", false, "Print an example toml schema to STDOUT")
-	fs.IntVar(&cmd.concurrency, "c", 1, "Number of shards to generate concurrently")
-	fs.StringVar(&cmd.profile.CPU, "cpuprofile", "", "Collect a CPU profile")
-	fs.StringVar(&cmd.profile.Memory, "memprofile", "", "Collect a memory profile")
-	cmd.storageSpec.AddFlags(fs)
-	cmd.schemaSpec.AddFlags(fs)
+func parseFlags() error {
 
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	if cmd.example {
+	if opt.example {
 		return nil
 	}
 
-	if cmd.storageSpec.Database == "" {
+	if opt.storageSpec.Database == "" {
 		return errors.New("database is required")
 	}
 
-	if cmd.storageSpec.Retention == "" {
+	if opt.storageSpec.Retention == "" {
 		return errors.New("retention policy is required")
 	}
 
@@ -158,7 +178,7 @@ fields = [
 ]`))
 )
 
-func (cmd *Command) planToSpec(p *generate.SchemaPlan) *gen.Spec {
+func planToSpec(p *generate.SchemaPlan) *gen.Spec {
 	var sb strings.Builder
 	if err := tomlSchema.Execute(&sb, p); err != nil {
 		panic(err)
@@ -171,7 +191,7 @@ func (cmd *Command) planToSpec(p *generate.SchemaPlan) *gen.Spec {
 	return spec
 }
 
-func (cmd *Command) exec(storagePlan *generate.StoragePlan, spec *gen.Spec) error {
+func exec(storagePlan *generate.StoragePlan, spec *gen.Spec) error {
 	groups := storagePlan.ShardGroups()
 	gens := make([]gen.SeriesGenerator, len(groups))
 	for i := range gens {
@@ -181,12 +201,12 @@ func (cmd *Command) exec(storagePlan *generate.StoragePlan, spec *gen.Spec) erro
 			End:   sgi.EndTime,
 		}
 		gens[i] = gen.NewSeriesGeneratorFromSpec(spec, tr)
-		if cmd.filter != nil {
-			gens[i] = cmd.filter(sgi, gens[i])
+		if opt.filter != nil {
+			gens[i] = opt.filter(sgi, gens[i])
 		}
 	}
 
-	stop := cmd.profile.Start()
+	stop := opt.profile.Start()
 	defer stop()
 
 	start := time.Now().UTC()
@@ -196,7 +216,7 @@ func (cmd *Command) exec(storagePlan *generate.StoragePlan, spec *gen.Spec) erro
 		fmt.Printf("Total time: %0.1f seconds\n", elapsed.Seconds())
 	}()
 
-	g := Generator{Concurrency: cmd.concurrency, BuildTSI: !cmd.noTSI}
+	g := Generator{Concurrency: opt.concurrency, BuildTSI: !opt.noTSI}
 	return g.Run(context.Background(), storagePlan.Database, storagePlan.ShardPath(), storagePlan.NodeShardGroups(), gens)
 }
 
@@ -368,7 +388,7 @@ fields = [
 ]
 `
 
-func (cmd *Command) printExample() error {
-	fmt.Fprint(cmd.Stdout, exampleSchema)
+func printExample() error {
+	fmt.Fprint(opt.Stdout, exampleSchema)
 	return nil
 }
