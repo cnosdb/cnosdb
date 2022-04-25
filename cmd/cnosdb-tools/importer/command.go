@@ -1,8 +1,6 @@
 package importer
 
 import (
-	"github.com/pkg/errors"
-	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"time"
@@ -12,6 +10,9 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+	
+	"github.com/pkg/errors"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
