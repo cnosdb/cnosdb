@@ -1,6 +1,8 @@
-use std::convert::TryInto;
-use std::io::{Error, ErrorKind, Result, SeekFrom};
-use std::ops::Deref;
+use std::{
+    convert::TryInto,
+    io::{Error, ErrorKind, Result, SeekFrom},
+    ops::Deref,
+};
 
 use super::File;
 
@@ -25,37 +27,36 @@ impl FileCursor {
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let read = self.file.read_at(self.pos, buf)?;
-        self.seek(SeekFrom::Current(read.try_into().unwrap()))
-            .unwrap();
+        self.seek(SeekFrom::Current(read.try_into().unwrap())).unwrap();
         Ok(read)
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<()> {
         self.file.write_at(self.pos, buf)?;
-        self.seek(SeekFrom::Current(buf.len().try_into().unwrap()))
-            .unwrap();
+        self.seek(SeekFrom::Current(buf.len().try_into().unwrap())).unwrap();
         Ok(())
     }
 
     pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         self.pos = match pos {
-            SeekFrom::Start(pos) => Some(pos),
-            SeekFrom::End(delta) => {
-                if delta >= 0 {
-                    self.len().checked_add(delta as u64)
-                } else {
-                    self.len().checked_sub(-delta as u64)
-                }
-            }
-            SeekFrom::Current(delta) => {
-                if delta >= 0 {
-                    self.pos.checked_add(delta as u64)
-                } else {
-                    self.pos.checked_sub(-delta as u64)
-                }
-            }
-        }
-        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "underflow or overflow during seek"))?;
+                       SeekFrom::Start(pos) => Some(pos),
+                       SeekFrom::End(delta) => {
+                           if delta >= 0 {
+                               self.len().checked_add(delta as u64)
+                           } else {
+                               self.len().checked_sub(-delta as u64)
+                           }
+                       },
+                       SeekFrom::Current(delta) => {
+                           if delta >= 0 {
+                               self.pos.checked_add(delta as u64)
+                           } else {
+                               self.pos.checked_sub(-delta as u64)
+                           }
+                       },
+                   }.ok_or_else(|| {
+                        Error::new(ErrorKind::InvalidInput, "underflow or overflow during seek")
+                    })?;
         Ok(self.pos)
     }
 }
@@ -76,14 +77,15 @@ impl Deref for FileCursor {
 
 #[cfg(test)]
 mod test {
-    use crate::direct_io::*;
-    use std::io::prelude::*;
-    use std::io::BufWriter;
+    use std::io::{prelude::*, BufWriter};
+
     use tempfile::NamedTempFile;
+
+    use crate::direct_io::*;
 
     #[test]
     fn copy() {
-        let fs = FileSystem::new(&Options::default().max_resident(2).max_non_resident(2));
+        let fs = FileSystem::new(Options::default().max_resident(2).max_non_resident(2));
 
         let file_len: usize = (fs.max_page_len() as f64 * 5.3) as usize;
 

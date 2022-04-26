@@ -40,12 +40,7 @@ pub struct Version {
 
 impl Version {
     pub fn new(id: u32, seq_no: u64, name: String, level_info: LevelInfo) -> Self {
-        Self {
-            id,
-            seq_no,
-            name,
-            level_info,
-        }
+        Self { id, seq_no, name, level_info }
     }
 
     pub fn get_name(&self) -> &str {
@@ -63,22 +58,14 @@ pub struct SuperVersion {
 }
 
 impl SuperVersion {
-    pub fn new(
-        id: u32,
-        mut_cache: Arc<RwLock<MemCache>>,
-        immut_cache: Vec<Arc<RwLock<MemCache>>>,
-        cur_version: Arc<Version>,
-        opt: Arc<TseriesFamOpt>,
-        version_id: u64,
-    ) -> Self {
-        Self {
-            id,
-            mut_cache,
-            immut_cache,
-            cur_version,
-            opt,
-            version_id,
-        }
+    pub fn new(id: u32,
+               mut_cache: Arc<RwLock<MemCache>>,
+               immut_cache: Vec<Arc<RwLock<MemCache>>>,
+               cur_version: Arc<Version>,
+               opt: Arc<TseriesFamOpt>,
+               version_id: u64)
+               -> Self {
+        Self { id, mut_cache, immut_cache, cur_version, opt, version_id }
     }
 }
 
@@ -86,56 +73,49 @@ pub struct Summary {}
 pub struct TseriesFamily {
     tf_id: u32,
     mut_cache: Arc<RwLock<MemCache>>,
-    immut_cache: Vec<Arc<RwLock<MemCache>>>, //todo: need to del RwLock in memcache
+    immut_cache: Vec<Arc<RwLock<MemCache>>>, // todo: need to del RwLock in memcache
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
     opts: Arc<TseriesFamOpt>,
-    //min seq_no keep in the tsfam memcache
+    // min seq_no keep in the tsfam memcache
     seq_no: u64,
 }
 
-//todo: cal ref count
+// todo: cal ref count
 impl TseriesFamily {
-    pub fn new(
-        tf_id: u32,
-        name: String,
-        cache: MemCache,
-        version: Arc<Version>,
-        opt: TseriesFamOpt,
-    ) -> Self {
+    pub fn new(tf_id: u32,
+               name: String,
+               cache: MemCache,
+               version: Arc<Version>,
+               opt: TseriesFamOpt)
+               -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let cf = Arc::new(opt);
-        Self {
-            tf_id,
-            seq_no: version.seq_no,
-            mut_cache: mm.clone(),
-            immut_cache: Default::default(),
-            super_version: Arc::new(SuperVersion::new(
-                tf_id,
-                mm,
-                Default::default(),
-                version.clone(),
-                cf.clone(),
-                0,
-            )),
-            super_version_id: AtomicU64::new(0),
-            version: version,
-            opts: cf,
-        }
+        Self { tf_id,
+               seq_no: version.seq_no,
+               mut_cache: mm.clone(),
+               immut_cache: Default::default(),
+               super_version: Arc::new(SuperVersion::new(tf_id,
+                                                         mm,
+                                                         Default::default(),
+                                                         version.clone(),
+                                                         cf.clone(),
+                                                         0)),
+               super_version_id: AtomicU64::new(0),
+               version,
+               opts: cf }
     }
 
     pub fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
         self.immut_cache.push(self.mut_cache.clone());
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
-        let vers = SuperVersion::new(
-            self.tf_id,
-            cache.clone(),
-            self.immut_cache.clone(),
-            self.version.clone(),
-            self.opts.clone(),
-            self.super_version_id.load(Ordering::SeqCst),
-        );
+        let vers = SuperVersion::new(self.tf_id,
+                                     cache.clone(),
+                                     self.immut_cache.clone(),
+                                     self.version.clone(),
+                                     self.opts.clone(),
+                                     self.super_version_id.load(Ordering::SeqCst));
         self.super_version = Arc::new(vers);
         self.mut_cache = cache;
     }

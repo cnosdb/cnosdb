@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::mem::swap;
+use std::{collections::HashMap, mem::swap};
 
 // No clone, no copy! That asserts that an LRUHandle exists only once.
 type LRUHandle<T> = *mut LRUNode<T>;
@@ -18,14 +17,7 @@ struct LRUList<T> {
 /// This is likely unstable; more investigation is needed into correct behavior!
 impl<T> LRUList<T> {
     fn new() -> LRUList<T> {
-        LRUList {
-            head: LRUNode {
-                data: None,
-                next: None,
-                prev: None,
-            },
-            count: 0,
-        }
+        LRUList { head: LRUNode { data: None, next: None, prev: None }, count: 0 }
     }
 
     /// Inserts new element at front (least recently used element)
@@ -33,11 +25,9 @@ impl<T> LRUList<T> {
         self.count += 1;
         // Not first element
         if self.head.next.is_some() {
-            let mut new = Box::new(LRUNode {
-                data: Some(elem),
-                next: None,
-                prev: Some(&mut self.head as *mut LRUNode<T>),
-            });
+            let mut new = Box::new(LRUNode { data: Some(elem),
+                                             next: None,
+                                             prev: Some(&mut self.head as *mut LRUNode<T>) });
             let newp = new.as_mut() as *mut LRUNode<T>;
 
             // Set up the node after the new one
@@ -49,11 +39,9 @@ impl<T> LRUList<T> {
             newp
         } else {
             // First node; the only node right now is an empty head node
-            let mut new = Box::new(LRUNode {
-                data: Some(elem),
-                next: None,
-                prev: Some(&mut self.head as *mut LRUNode<T>),
-            });
+            let mut new = Box::new(LRUNode { data: Some(elem),
+                                             next: None,
+                                             prev: Some(&mut self.head as *mut LRUNode<T>) });
             let newp = new.as_mut() as *mut LRUNode<T>;
 
             // Set tail
@@ -140,11 +128,7 @@ impl<T> LRUList<T> {
     }
 
     fn _testing_head_ref(&self) -> Option<&T> {
-        if let Some(ref first) = self.head.next {
-            first.data.as_ref()
-        } else {
-            None
-        }
+        if let Some(ref first) = self.head.next { first.data.as_ref() } else { None }
     }
 }
 
@@ -167,12 +151,7 @@ pub struct Cache<T> {
 impl<T> Cache<T> {
     pub fn new(capacity: usize) -> Cache<T> {
         assert!(capacity > 0);
-        Cache {
-            list: LRUList::new(),
-            map: HashMap::with_capacity(1024),
-            cap: capacity,
-            id: 0,
-        }
+        Cache { list: LRUList::new(), map: HashMap::with_capacity(1024), cap: capacity, id: 0 }
     }
 
     /// Returns an ID that is unique for this cache and that can be used to partition the cache
@@ -217,7 +196,7 @@ impl<T> Cache<T> {
             Some(&(ref elem, ref lru_handle)) => {
                 self.list.reinsert_front(*lru_handle);
                 Some(elem)
-            }
+            },
         }
     }
 
@@ -228,15 +207,14 @@ impl<T> Cache<T> {
             Some((elem, lru_handle)) => {
                 self.list.remove(lru_handle);
                 Some(elem)
-            }
+            },
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::LRUList;
-    use super::*;
+    use super::{LRUList, *};
 
     fn make_key(a: u8, b: u8, c: u8) -> CacheKey {
         [a, b, c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -347,19 +325,19 @@ mod tests {
         let handle2 = lru.insert(22);
         let handle3 = lru.insert(244);
 
-        assert_eq!(lru._testing_head_ref().map(|r| (*r)).unwrap(), 244);
+        assert_eq!(lru._testing_head_ref().copied().unwrap(), 244);
 
         lru.reinsert_front(handle1);
 
-        assert_eq!(lru._testing_head_ref().map(|r| (*r)).unwrap(), 56);
+        assert_eq!(lru._testing_head_ref().copied().unwrap(), 56);
 
         lru.reinsert_front(handle3);
 
-        assert_eq!(lru._testing_head_ref().map(|r| (*r)).unwrap(), 244);
+        assert_eq!(lru._testing_head_ref().copied().unwrap(), 244);
 
         lru.reinsert_front(handle2);
 
-        assert_eq!(lru._testing_head_ref().map(|r| (*r)).unwrap(), 22);
+        assert_eq!(lru._testing_head_ref().copied().unwrap(), 22);
 
         assert_eq!(lru.remove_last(), Some(56));
         assert_eq!(lru.remove_last(), Some(244));
@@ -370,21 +348,19 @@ mod tests {
     fn test_blockcache_lru_reinsert_2() {
         let mut lru = LRUList::<usize>::new();
 
-        let handles = vec![
-            lru.insert(0),
-            lru.insert(1),
-            lru.insert(2),
-            lru.insert(3),
-            lru.insert(4),
-            lru.insert(5),
-            lru.insert(6),
-            lru.insert(7),
-            lru.insert(8),
-        ];
+        let handles = vec![lru.insert(0),
+                           lru.insert(1),
+                           lru.insert(2),
+                           lru.insert(3),
+                           lru.insert(4),
+                           lru.insert(5),
+                           lru.insert(6),
+                           lru.insert(7),
+                           lru.insert(8),];
 
         for i in 0..9 {
             lru.reinsert_front(handles[i]);
-            assert_eq!(lru._testing_head_ref().map(|x| *x), Some(i));
+            assert_eq!(lru._testing_head_ref().copied(), Some(i));
         }
     }
 
@@ -395,7 +371,7 @@ mod tests {
         let handle = lru.insert(3);
 
         lru.reinsert_front(handle);
-        assert_eq!(lru._testing_head_ref().map(|x| *x), Some(3));
+        assert_eq!(lru._testing_head_ref().copied(), Some(3));
         assert_eq!(lru.remove_last(), Some(3));
         assert_eq!(lru.remove_last(), None);
         assert_eq!(lru.remove_last(), None);
