@@ -1,13 +1,16 @@
 pub mod internal;
 pub mod lock;
 
-use std::alloc;
-use std::ops::{Deref, DerefMut};
-use std::ptr::NonNull;
+use std::{
+    alloc,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 
-use super::Scope;
 use internal::{PagePtr, Page_};
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+
+use super::Scope;
 
 /// Logical page identifier.
 pub type PageId = u32;
@@ -54,10 +57,7 @@ pub struct Page {
 
 impl Page {
     pub(super) fn new(size: usize, align: usize) -> Self {
-        Self {
-            dirty: false,
-            bytes: AlignedBuf::new(size, align),
-        }
+        Self { dirty: false, bytes: AlignedBuf::new(size, align) }
     }
 
     pub fn is_dirty(&self) -> bool {

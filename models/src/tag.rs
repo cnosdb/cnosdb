@@ -17,10 +17,10 @@ impl Tag {
         Self { key, value }
     }
     pub fn format_check(&self) -> Result<(), String> {
-        if self.key.len() == 0 {
+        if self.key.is_empty() {
             return Err(String::from("Key cannot be empty"));
         }
-        if self.value.len() == 0 {
+        if self.value.is_empty() {
             return Err(String::from("Value cannot be empty"));
         }
         if self.key.len() > TAG_KEY_MAX_LEN {
@@ -46,10 +46,7 @@ pub trait TagFromParts<T1, T2> {
 
 impl TagFromParts<&str, &str> for Tag {
     fn from_parts(key: &str, value: &str) -> Self {
-        Tag {
-            key: key.as_bytes().to_vec(),
-            value: value.as_bytes().to_vec(),
-        }
+        Tag { key: key.as_bytes().to_vec(), value: value.as_bytes().to_vec() }
     }
 }
 

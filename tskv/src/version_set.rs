@@ -25,39 +25,31 @@ impl VersionSet {
             let seq = ver.seq_no;
             for item in desc.iter() {
                 if item.name == name {
-                    let tf = TseriesFamily::new(
-                        id,
-                        name.clone(),
-                        MemCache::new(id, 100 * 1024 * 1024, seq),
-                        ver.clone(),
-                        item.opt.clone(),
-                    );
+                    let tf = TseriesFamily::new(id,
+                                                name.clone(),
+                                                MemCache::new(id, 100 * 1024 * 1024, seq),
+                                                ver.clone(),
+                                                item.opt.clone());
                     ts_families.insert(id, tf);
                     ts_families_names.insert(name.clone(), id);
                 }
             }
         }
 
-        Self {
-            ts_families,
-            ts_families_names,
-        }
+        Self { ts_families, ts_families_names }
     }
 
     pub fn new_default() -> Self {
-        Self {
-            ts_families: Default::default(),
-            ts_families_names: Default::default(),
-        }
+        Self { ts_families: Default::default(), ts_families_names: Default::default() }
     }
 
     pub fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         let tf = self.ts_families.get_mut(&tf_id).unwrap();
         let mem = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq)));
-        tf.switch_memcache(mem.clone());
+        tf.switch_memcache(mem);
     }
 
-    //todo: deal with add tsf and del tsf
+    // todo: deal with add tsf and del tsf
     pub fn get_tsfamily(&self, sid: u64) -> Option<&TseriesFamily> {
         let partid = sid as u32 % self.ts_families.len() as u32;
         self.ts_families.get(&partid)

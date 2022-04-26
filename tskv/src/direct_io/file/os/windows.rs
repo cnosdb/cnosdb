@@ -1,15 +1,16 @@
-use std::convert::TryFrom;
-use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
-use std::io::{Error, Result};
-use std::mem::MaybeUninit;
-use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::AsRawHandle;
-use std::path::Path;
-use winapi::shared::minwindef::*;
-use winapi::um::fileapi::*;
-use winapi::um::minwinbase::OVERLAPPED;
-use winapi::um::winbase::FILE_FLAG_NO_BUFFERING;
+use std::{
+    convert::TryFrom,
+    fs::{File, OpenOptions},
+    io::{prelude::*, Error, Result},
+    mem::MaybeUninit,
+    os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+    path::Path,
+};
+
+use winapi::{
+    shared::minwindef::*,
+    um::{fileapi::*, minwinbase::OVERLAPPED, winbase::FILE_FLAG_NO_BUFFERING},
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FileId(u64);
@@ -35,13 +36,11 @@ pub fn read_at(file: &File, pos: u64, buf: &mut [u8]) -> Result<usize> {
     let mut bytes: DWORD = 0;
     let mut ov = overlapped(pos);
     check_err(unsafe {
-        ReadFile(
-            file.as_raw_handle(),
-            buf.as_mut_ptr() as LPVOID,
-            DWORD::try_from(buf.len()).unwrap(),
-            &mut bytes,
-            &mut ov,
-        )
+        ReadFile(file.as_raw_handle(),
+                 buf.as_mut_ptr() as LPVOID,
+                 DWORD::try_from(buf.len()).unwrap(),
+                 &mut bytes,
+                 &mut ov)
     })?;
     Ok(usize::try_from(bytes).unwrap())
 }
@@ -50,13 +49,11 @@ pub fn write_at(file: &File, pos: u64, buf: &[u8]) -> Result<usize> {
     let mut bytes: DWORD = 0;
     let mut ov = overlapped(pos);
     check_err(unsafe {
-        ReadFile(
-            file.as_raw_handle(),
-            buf.as_ptr() as LPVOID,
-            DWORD::try_from(buf.len()).unwrap(),
-            &mut bytes,
-            &mut ov,
-        )
+        ReadFile(file.as_raw_handle(),
+                 buf.as_ptr() as LPVOID,
+                 DWORD::try_from(buf.len()).unwrap(),
+                 &mut bytes,
+                 &mut ov)
     })?;
     Ok(bytes as usize)
 }
@@ -71,9 +68,5 @@ fn overlapped(pos: u64) -> OVERLAPPED {
 }
 
 fn check_err(r: BOOL) -> Result<()> {
-    if r == FALSE {
-        Err(Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if r == FALSE { Err(Error::last_os_error()) } else { Ok(()) }
 }

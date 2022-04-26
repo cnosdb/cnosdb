@@ -1,7 +1,9 @@
-use super::*;
-use protos::models::Point;
 use std::cmp::Ordering;
+
+use protos::models::Point;
 use utils::bkdr_hash::{Hash, HashWith};
+
+use super::*;
 
 pub type SeriesID = u64;
 
@@ -14,11 +16,7 @@ pub struct SeriesInfo {
 
 impl SeriesInfo {
     pub fn new() -> Self {
-        SeriesInfo {
-            id: 0,
-            tags: Vec::new(),
-            field_infos: Vec::new(),
-        }
+        SeriesInfo { id: 0, tags: Vec::new(), field_infos: Vec::new() }
     }
 
     pub fn add_tag(&mut self, tag: Tag) -> Result<(), String> {
@@ -64,14 +62,14 @@ impl SeriesInfo {
 
     pub fn sort_tags(tags: &mut Vec<Tag>) {
         tags.sort_by(|a, b| -> Ordering {
-            return if a.key < b.key {
-                Ordering::Less
-            } else if a.key > b.key {
-                Ordering::Greater
-            } else {
-                Ordering::Equal
-            };
-        })
+                if a.key < b.key {
+                    Ordering::Less
+                } else if a.key > b.key {
+                    Ordering::Greater
+                } else {
+                    Ordering::Equal
+                }
+            })
     }
 
     pub fn cal_sid(tags: &mut Vec<Tag>) -> SeriesID {
@@ -87,7 +85,7 @@ impl SeriesInfo {
     pub fn update_id(&mut self) {
         self.id = Self::cal_sid(&mut self.tags);
 
-        //field id
+        // field id
         for field_info in &mut self.field_infos {
             field_info.update_id(self.id);
         }
@@ -129,11 +127,7 @@ impl From<Point<'_>> for SeriesInfo {
             }
         }
 
-        let mut info = SeriesInfo {
-            id: 0,
-            tags: tags,
-            field_infos: fileds,
-        };
+        let mut info = SeriesInfo { id: 0, tags, field_infos: fileds };
         info.update_id();
         info
     }
@@ -148,8 +142,7 @@ mod tests_series_info {
     fn test_series_info_encode_and_decode() {
         let mut info = SeriesInfo::new();
         info.add_tag(Tag::from_parts("hello", "123")).unwrap();
-        info.add_field_info(FieldInfo::from_parts(Vec::from("cpu"), ValueType::Integer))
-            .unwrap();
+        info.add_field_info(FieldInfo::from_parts(Vec::from("cpu"), ValueType::Integer)).unwrap();
         let data = info.encode();
         let new_info = SeriesInfo::decoded(&data);
         assert_eq!(info, new_info);
@@ -159,40 +152,27 @@ mod tests_series_info {
     fn test_from() {
         let mut fb = flatbuffers::FlatBufferBuilder::new();
 
-        //build tag
+        // build tag
         let tag_k = fb.create_vector("tag_k".as_bytes());
         let tag_v = fb.create_vector("tag_v".as_bytes());
-        let tag = models::Tag::create(
-            &mut fb,
-            &models::TagArgs {
-                key: Some(tag_k),
-                value: Some(tag_v),
-            },
-        );
-        //build filed
+        let tag =
+            models::Tag::create(&mut fb, &models::TagArgs { key: Some(tag_k), value: Some(tag_v) });
+        // build filed
         let f_n = fb.create_vector("filed_name".as_bytes());
         let f_v = fb.create_vector("filed_value".as_bytes());
 
-        let filed = models::Field::create(
-            &mut fb,
-            &models::FieldArgs {
-                name: Some(f_n),
-                type_: protos::models::FieldType::Integer,
-                value: Some(f_v),
-            },
-        );
-        //build series_info
-        let fields = Some(fb.create_vector(&vec![filed]));
-        let tags = Some(fb.create_vector(&vec![tag]));
-        //build point
-        let point = models::Point::create(
-            &mut fb,
-            &models::PointArgs {
-                tags,
-                fields,
-                timestamp: 1,
-            },
-        );
+        let filed =
+            models::Field::create(&mut fb,
+                                  &models::FieldArgs { name: Some(f_n),
+                                                       type_:
+                                                           protos::models::FieldType::Integer,
+                                                       value: Some(f_v) });
+        // build series_info
+        let fields = Some(fb.create_vector(&[filed]));
+        let tags = Some(fb.create_vector(&[tag]));
+        // build point
+        let point =
+            models::Point::create(&mut fb, &models::PointArgs { tags, fields, timestamp: 1 });
 
         fb.finish(point, None);
         let buf = fb.finished_data();

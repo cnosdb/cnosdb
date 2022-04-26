@@ -14,24 +14,20 @@ pub struct Options {
 }
 
 impl Options {
-    //todo:
+    // todo:
     pub fn from_env() -> Self {
-        Self {
-            ..Default::default()
-        }
+        Self { ..Default::default() }
     }
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            front_cpu: Default::default(),
-            back_cpu: Default::default(),
-            task_buffer_size: Default::default(),
-            lrucache: Default::default(),
-            wal: Default::default(),
-            compact_conf: Default::default(),
-        }
+        Self { front_cpu: Default::default(),
+               back_cpu: Default::default(),
+               task_buffer_size: Default::default(),
+               lrucache: Default::default(),
+               wal: Default::default(),
+               compact_conf: Default::default() }
     }
 }
 
@@ -48,11 +44,7 @@ pub struct WalConfig {
 
 impl Default for WalConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            dir: "/tmp/test".to_string(),
-            sync: true,
-        }
+        Self { enabled: true, dir: "/tmp/test".to_string(), sync: true }
     }
 }
 
@@ -82,14 +74,12 @@ pub struct TseriesFamOpt {
 
 impl Default for TseriesFamOpt {
     fn default() -> Self {
-        Self {
-            max_level: 6,
-            max_bytes_for_level_base: 256 * 1024 * 1024,
-            level_ratio: 16f64,
-            target_file_size_base: 64 * 1024 * 1024,
-            file_number_compact_trigger: 4,
-            max_compact_size: 2 * 1024 * 1024 * 1024,
-        }
+        Self { max_level: 6,
+               max_bytes_for_level_base: 256 * 1024 * 1024,
+               level_ratio: 16f64,
+               target_file_size_base: 64 * 1024 * 1024,
+               file_number_compact_trigger: 4,
+               max_compact_size: 2 * 1024 * 1024 * 1024 }
     }
 }
 
@@ -106,10 +96,6 @@ pub struct MemCacheOpt {
 
 impl Default for MemCacheOpt {
     fn default() -> Self {
-        Self {
-            tf_id: 0,
-            max_size: 100 * 1024 * 1024,
-            seq_no: 0,
-        }
+        Self { tf_id: 0, max_size: 100 * 1024 * 1024, seq_no: 0 }
     }
 }
