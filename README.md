@@ -12,9 +12,9 @@
 
 | title | content | time |
 | :---: | :---: | :---: |
-| 完成cnosdb-2.0存储引擎 | 完成基本的read/write/grpc | 2022-05-01 |
-| 完成存储引擎和查询引擎适配（cnosdb-2.0） | 改造cnosdb当前的查询引擎为grpc call，复用cnosdb查询引擎 | 2022-07-15 |
-| cnosdb-2.0 cluster | 完成cnosdb-next的集群版、查询引擎和存储引擎插件化 | 2022-09-30 |
+| 完成cnosdb-2.0存储引擎 | 完成基本的read/write/grpc | 2022-06 |
+| 完成存储引擎和查询引擎适配（cnosdb-2.0） | 改造cnosdb当前的查询引擎为grpc call，复用cnosdb查询引擎 |  |
+| cnosdb-2.0 cluster | 完成cnosdb-next的集群版、查询引擎和存储引擎插件化 |  |
 | ecosystem | 生态系统开发，上下游软件生态代码社区贡献 |  |
 | 云原生和多租户适配 | 多个云厂商的上架，适配 |  |
 
