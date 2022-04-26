@@ -13,13 +13,15 @@ pub mod kv_option;
 mod kvcore;
 mod lru_cache;
 mod memcache;
-mod points;
 mod runtime;
 mod summary;
 mod tseries_family;
 mod tsm;
 mod version_set;
 mod wal;
+
+use protos::kv_service::WritePointsRpcResponse;
+use tokio::sync::oneshot;
 
 pub use direct_io::*;
 pub use error::*;
@@ -29,9 +31,24 @@ pub use kv_option::Options;
 pub use kvcore::*;
 pub use lru_cache::*;
 pub use memcache::*;
-pub use points::*;
 pub use runtime::*;
 pub use summary::*;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
+
+#[derive(Debug)]
+pub enum Task {
+    AddSeries {
+        req: protos::kv_service::AddSeriesRpcRequest,
+        tx: oneshot::Sender<wal::WalResult<()>>,
+    },
+    GetSeriesInfo {
+        req: protos::kv_service::GetSeriesInfoRpcRequest,
+        tx: oneshot::Sender<wal::WalResult<()>>,
+    },
+    WritePoints {
+        req: protos::kv_service::WritePointsRpcRequest,
+        tx: oneshot::Sender<std::result::Result<WritePointsRpcResponse, Error>>,
+    },
+}

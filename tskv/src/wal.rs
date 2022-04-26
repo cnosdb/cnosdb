@@ -2,22 +2,20 @@ use std::{
     any::Any,
     marker::PhantomData,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
 };
 
 use crc32fast;
-use futures::channel::oneshot;
 use lazy_static::lazy_static;
 use protos::models;
 use regex::Regex;
 use snafu::prelude::*;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::oneshot;
 use walkdir::IntoIter;
 
 use crate::{
     compute,
     direct_io::{make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType},
-    file_manager, option, FileManager,
+    file_manager, kv_option, FileManager,
 };
 
 lazy_static! {
@@ -28,24 +26,10 @@ const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
 pub enum WalTask {
     Write {
-        rows: Vec<u8>,
+        points: Vec<u8>,
         cb: oneshot::Sender<WalResult<()>>,
     },
 }
-
-// pub struct WalScheduler {
-//     sender: Sender<WalTask>,
-// }
-
-// impl WalScheduler {
-//     pub async fn write(&mut self, rows: Vec<u8>) -> WalResult<()> {
-//         let (cb, rx) = oneshot::channel::<WalResult<()>>();
-//         let task = WalTask::Write { rows, cb };
-//         self.sender.send(task).await;
-
-//         rx.await.map_err(|_| WalError::FailedWithChannelReceive)?
-//     }
-// }
 
 #[derive(Snafu, Debug)]
 pub enum WalError {
@@ -108,8 +92,6 @@ pub struct WalEntryBlockInner {
     pub buf: Vec<u8>,
 }
 
-struct WalConfig {}
-
 #[derive(Clone)]
 struct WalFile {
     id: u64,
@@ -119,10 +101,7 @@ struct WalFile {
 
 #[derive(Clone)]
 pub struct WalFileManager {
-    config: option::WalConfig,
-
-    file_manager: Arc<FileManager>,
-
+    config: kv_option::WalConfig,
     current_dir_path: PathBuf,
     current_file: WalFile,
 }
@@ -177,7 +156,7 @@ fn get_id_by_file_name(file_name: &String) -> WalResult<u64> {
 }
 
 impl WalFileManager {
-    pub fn new(file_manager: Arc<FileManager>, config: option::WalConfig) -> Self {
+    pub fn new(config: kv_option::WalConfig) -> Self {
         let dir = config.dir.clone();
 
         let (last, seq) = match get_max_sequence_file_name(PathBuf::from(dir.clone())) {
@@ -190,7 +169,7 @@ impl WalFileManager {
 
         let current_dir_path = PathBuf::from(dir);
 
-        let file = file_manager
+        let file = file_manager::get_file_manager()
             .open_create_file(current_dir_path.join(last))
             .context(FailedWithFileManagerSnafu)
             .unwrap();
@@ -198,7 +177,6 @@ impl WalFileManager {
 
         WalFileManager {
             config,
-            file_manager,
             current_dir_path,
             current_file: WalFile {
                 id: seq,
@@ -214,8 +192,7 @@ impl WalFileManager {
             current_file.id += 1;
             let file_name =
                 file_manager::make_wal_file_name(self.config.dir.as_str(), current_file.id);
-            let file = self
-                .file_manager
+            let file = file_manager::get_file_manager()
                 .create_file(file_name)
                 .context(FailedWithFileManagerSnafu)?;
             current_file.file = file;
@@ -241,7 +218,6 @@ impl WalFileManager {
                 .and_then(|size| {
                     pos += size as u64;
                     let len = data.len() as u32;
-                    dbg!(len.to_be_bytes());
                     writer.file.write_at(pos, &len.to_be_bytes())
                 })
                 .and_then(|size| {
@@ -396,7 +372,7 @@ impl<'a> WalReader<'_> {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::{borrow::BorrowMut, sync::Arc, time};
+    use std::borrow::BorrowMut;
 
     use chrono::Utc;
     use flatbuffers::{self, Vector, WIPOffset};
@@ -404,14 +380,13 @@ mod test {
     use rand;
 
     use crate::{
-        direct_io::{FileCursor, FileSync},
+        direct_io::{File, FileCursor, FileSync},
         file_manager::list_file_names,
-        File,
     };
-    use protos::models;
+    use protos::{models, models_helper};
 
     use crate::{
-        file_manager, option,
+        file_manager, kv_option,
         wal::{WalEntryBlock, WalEntryType, WalReader},
         FileManager,
     };
@@ -451,15 +426,15 @@ mod test {
         }
     }
 
-    impl From<&models::Rows<'_>> for WalEntryBlockInner {
-        fn from(entry: &models::Rows) -> Self {
+    impl From<&models::Points<'_>> for WalEntryBlockInner {
+        fn from(entry: &models::Points) -> Self {
             Self::from_bytes(WalEntryType::Write, entry._tab.buf)
         }
     }
 
-    impl<'a> From<&'a WalEntryBlockInner> for models::Rows<'a> {
+    impl<'a> From<&'a WalEntryBlockInner> for models::Points<'a> {
         fn from(block: &'a WalEntryBlockInner) -> Self {
-            flatbuffers::root::<models::Rows<'a>>(&block.buf[0..block.len as usize]).unwrap()
+            flatbuffers::root::<models::Points<'a>>(&block.buf[0..block.len as usize]).unwrap()
         }
     }
 
@@ -504,64 +479,11 @@ mod test {
         }
     }
 
-    fn random_field<'a>(
-        _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        field_id: u64,
-        type_: models::FieldType,
-        value: WIPOffset<Vector<u8>>,
-    ) -> WIPOffset<models::RowField<'a>> {
-        let fbb = _fbb.borrow_mut();
-        models::RowField::create(
-            fbb,
-            &models::RowFieldArgs {
-                field_id,
-                type_,
-                value: Some(value),
-            },
-        )
-    }
-
-    fn random_row<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WIPOffset<models::Row<'a>> {
-        let fbb = _fbb.borrow_mut();
-
-        let series_id = random_series_id();
-        let timestamp = Utc::now().timestamp() as u64;
-        let float_v = fbb.create_vector(rand::random::<f64>().to_be_bytes().as_slice());
-        let string_v = fbb.create_vector("Hello world.".as_bytes());
-
-        let mut fields: Vec<WIPOffset<models::RowField>> = vec![];
-        fields.push(random_field(
-            fbb,
-            random_field_id(),
-            models::FieldType::Float,
-            float_v,
-        ));
-        fields.push(random_field(
-            fbb,
-            random_field_id(),
-            models::FieldType::Float,
-            string_v,
-        ));
-        let vec = fbb.create_vector(&fields);
-
-        let mut row_builder = models::RowBuilder::new(fbb);
-        row_builder.add_key(&models::RowKey::new(series_id, timestamp));
-        row_builder.add_fields(vec);
-
-        row_builder.finish()
-    }
-
     fn random_write_wal_entry<'a>(
         _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<models::Rows<'a>> {
+    ) -> WIPOffset<models::Points<'a>> {
         let fbb = _fbb.borrow_mut();
-
-        let mut rows: Vec<WIPOffset<models::Row>> = vec![];
-        rows.push(random_row(fbb));
-        rows.push(random_row(fbb));
-        let vec = fbb.create_vector(&rows);
-
-        models::Rows::create(fbb, &models::RowsArgs { rows: Some(vec) })
+        models_helper::create_random_points(fbb, 5)
     }
 
     fn random_delete_wal_entry_item() -> models::ColumnKey {
@@ -635,14 +557,12 @@ mod test {
 
     #[tokio::test]
     async fn test_write_entry() {
-        let file_manager = Arc::new(file_manager::FileManager::new());
-
-        let wal_config = option::WalConfig {
+        let wal_config = kv_option::WalConfig {
             dir: String::from(DIR),
             ..Default::default()
         };
 
-        let mut mgr = WalFileManager::new(file_manager.clone(), wal_config);
+        let mut mgr = WalFileManager::new(wal_config);
 
         for i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -654,7 +574,7 @@ mod test {
 
             match entry {
                 WalEntryBlock::Write(block) => {
-                    let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                    let de_block = flatbuffers::root::<models::Points>(&block.buf).unwrap();
                     mgr.write(WalEntryType::Write, &block.buf).await.unwrap();
                 }
                 WalEntryBlock::Delete(block) => {
@@ -675,19 +595,16 @@ mod test {
 
     #[test]
     fn test_read_entry() {
-        let file_manager = Arc::new(file_manager::FileManager::new());
-
-        let wal_config = crate::option::WalConfig {
+        let wal_config = crate::kv_option::WalConfig {
             dir: String::from("/tmp/test/"),
             ..Default::default()
         };
 
-        let mgr = WalFileManager::new(file_manager.clone(), wal_config);
+        let mgr = WalFileManager::new(wal_config);
 
         let wal_files = list_file_names("/tmp/test/");
         for wal_file in wal_files {
-            let file = mgr
-                .file_manager
+            let file = file_manager::get_file_manager()
                 .open_file(mgr.current_dir_path.join(wal_file))
                 .unwrap();
             let cursor: FileCursor = file.into();
@@ -697,7 +614,7 @@ mod test {
             while let Some(entry) = reader.next_wal_entry() {
                 match entry {
                     WalEntryBlock::Write(block) => {
-                        let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                        let de_block = flatbuffers::root::<models::Points>(&block.buf).unwrap();
                         dbg!(de_block);
                     }
                     WalEntryBlock::Delete(block) => {
@@ -717,14 +634,12 @@ mod test {
 
     #[tokio::test]
     async fn test_read_and_write() {
-        let file_manager = Arc::new(file_manager::FileManager::new());
-
-        let wal_config = crate::option::WalConfig {
+        let wal_config = crate::kv_option::WalConfig {
             dir: String::from(DIR),
             ..Default::default()
         };
 
-        let mut mgr = WalFileManager::new(file_manager.clone(), wal_config);
+        let mut mgr = WalFileManager::new(wal_config);
 
         for i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -736,7 +651,7 @@ mod test {
 
             match entry {
                 WalEntryBlock::Write(block) => {
-                    let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                    let de_block = flatbuffers::root::<models::Points>(&block.buf).unwrap();
                     mgr.write(WalEntryType::Write, &block.buf).await.unwrap();
                 }
                 WalEntryBlock::Delete(block) => {
@@ -756,8 +671,7 @@ mod test {
 
         let wal_files = list_file_names(DIR);
         for wal_file in wal_files {
-            let file = mgr
-                .file_manager
+            let file = file_manager::get_file_manager()
                 .open_file(mgr.current_dir_path.join(wal_file))
                 .unwrap();
             let cursor: FileCursor = file.into();
@@ -768,7 +682,7 @@ mod test {
             while let Some(entry) = reader.next_wal_entry() {
                 match entry {
                     WalEntryBlock::Write(block) => {
-                        let de_block = flatbuffers::root::<models::Rows>(&block.buf).unwrap();
+                        let de_block = flatbuffers::root::<models::Points>(&block.buf).unwrap();
                         writed_crcs.push(block.crc);
                         readed_crcs.push(crc32fast::hash(&block.buf[..block.len as usize]));
                     }

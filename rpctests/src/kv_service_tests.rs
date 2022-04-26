@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod test {
+    use tokio::sync::mpsc;
+    use tokio_stream::wrappers::ReceiverStream;
     use tonic::Request;
 
-    use protos::kv_service::*;
-    use protos::models::*;
+    use protos::{self, kv_service::*, models::*, models_helper};
 
     #[tokio::test]
     async fn test_tskv_ping() {
@@ -21,7 +22,7 @@ mod test {
         let decoded_payload = flatbuffers::root::<PingBody>(&finished_data);
         assert!(decoded_payload.is_ok());
 
-        let mut client = TskvServiceClient::connect("http://[::1]:10000")
+        let mut client = TskvServiceClient::connect("http://127.0.0.1:31006")
             .await
             .unwrap();
 
@@ -41,6 +42,49 @@ mod test {
             eprintln!("{}", e);
         } else {
             println!("ping_resp:body(flatbuffer): {:?}", ping_response_body);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tskv_write_points() {
+        let (tx, rx) = mpsc::channel(1);
+        tokio::spawn(async move {
+            for _ in 0..10 {
+                let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                let points = models_helper::create_random_points(&mut fbb, 1);
+                fbb.finish(points, None);
+                let points = fbb.finished_data().to_vec();
+                tx.send(WritePointsRpcRequest {
+                    version: 1,
+                    database: "database".to_string(),
+                    points,
+                })
+                .await
+                .unwrap();
+            }
+        });
+        let req_stream = ReceiverStream::from(rx);
+
+        let mut client = tskv_service_client::TskvServiceClient::connect("http://127.0.0.1:31006")
+            .await
+            .unwrap();
+
+        let mut resp_stream = client.write_points(req_stream).await.unwrap().into_inner();
+
+        loop {
+            match resp_stream.message().await {
+                Ok(Some(item)) => {
+                    println!("\trecived: {:?}", item);
+                }
+                Ok(None) => {
+                    println!("\t stream finished.");
+                    break;
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    break;
+                }
+            }
         }
     }
 }

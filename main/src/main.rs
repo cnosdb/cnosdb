@@ -2,8 +2,9 @@ use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand};
 use once_cell::sync::Lazy;
-use tokio::runtime::Runtime;
-// use tskv;
+use tokio::{runtime::Runtime, sync::mpsc};
+
+use protos::kv_service::tskv_service_server::TskvServiceServer;
 
 mod rpc;
 
@@ -66,6 +67,11 @@ enum SubCommand {
     Query {},
 }
 
+/// To run cnosdb-cli:
+///
+/// ```bash
+/// cargo run -- tskv --cpu 1 --memory 64 debug
+/// ```
 fn main() -> Result<(), std::io::Error> {
     install_crash_handler();
     let config = Cli::parse();
@@ -81,17 +87,22 @@ fn main() -> Result<(), std::io::Error> {
             }
             SubCommand::Run {} => todo!(),
             SubCommand::Tskv { debug } => {
-                println!(" tskv {}", debug);
+                println!("TSKV {}", debug);
 
                 let host = config.host.parse::<SocketAddr>().expect("Invalid host");
 
-                // tskv::TsKv::open();
-                //./target/debug/main -c 1 -m 11 tskv
+                let (sender, receiver) = mpsc::unbounded_channel();
+
+                let tskv = tskv::TsKv::open(tskv::kv_option::Options::default()).unwrap();
+                tskv::TsKv::start(tskv, receiver);
+
+                let tskv_impl = rpc::tskv::TskvServiceImpl { sender };
+
+                let tskv_service = TskvServiceServer::new(tskv_impl);
+
                 let mut builder = tonic::transport::server::Server::builder();
-                let tskv_impl = rpc::tskv::TskvServiceImpl {};
-                let tskv_service =
-                    protos::kv_service::tskv_service_server::TskvServiceServer::new(tskv_impl);
                 let router = builder.add_service(tskv_service);
+
                 if let Err(e) = router.serve(host).await {
                     eprintln!("{}", e);
                     std::process::exit(1)
