@@ -7,9 +7,10 @@ edition = "2021"
 
 [dependencies]
 actix-rt = "2.7.0"
-protos = {path = "../protos"}
+protos = {path = "../protos", features = ["test"]}
 
 [dev-dependencies]
 flatbuffers = "2.1"
-tonic = "0.6"
+tonic = "0.7"
 tokio = { version = "1.17", features = ["full"] }
+tokio-stream = "0.1"

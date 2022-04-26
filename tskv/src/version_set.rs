@@ -1,4 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use tokio::sync::RwLock;
 
 use crate::{
     kv_option::{TseriesFamDesc, MAX_MEMCACHE_SIZE},
@@ -47,7 +53,13 @@ impl VersionSet {
 
     pub fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         let tf = self.ts_families.get_mut(&tf_id).unwrap();
-        let mem = Arc::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq));
+        let mem = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq)));
         tf.switch_memcache(mem.clone());
+    }
+
+    //todo: deal with add tsf and del tsf
+    pub fn get_tsfamily(&self, sid: u64) -> Option<&TseriesFamily> {
+        let partid = sid as u32 % self.ts_families.len() as u32;
+        self.ts_families.get(&partid)
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::{fs, thread};
 
-use crate::{direct_io, error, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
+use crate::direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
 use futures::channel::oneshot::{self, Sender};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -33,6 +33,11 @@ pub struct FileManager {
     thread_pool: Mutex<Vec<thread::JoinHandle<()>>>,
 }
 
+pub fn get_file_manager() -> &'static FileManager {
+    static INSTANCE: OnceCell<FileManager> = OnceCell::new();
+    INSTANCE.get_or_init(|| FileManager::new())
+}
+
 impl FileManager {
     pub fn new() -> Self {
         let fs_options = direct_io::Options::default();
@@ -53,11 +58,6 @@ impl FileManager {
             async_rt: rt,
             thread_pool: Mutex::new(pool),
         };
-    }
-
-    pub fn get_instance() -> &'static Self {
-        static INSTANCE: OnceCell<FileManager> = OnceCell::new();
-        INSTANCE.get_or_init(|| Self::new())
     }
 
     pub fn open_file_with(
@@ -178,19 +178,22 @@ pub fn make_wal_file_name(path: &str, sequence: u64) -> PathBuf {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
     use futures::channel::oneshot;
+    use std::sync::Arc;
+    use tokio::runtime::Builder;
 
-    use crate::{make_io_task, FileSync, TaskType};
+    use crate::{
+        direct_io::{make_io_task, FileSync, TaskType},
+        file_manager,
+    };
 
     use super::FileManager;
 
     #[test]
     fn test_get_instance() {
-        let file_manager_1 = FileManager::get_instance();
+        let file_manager_1 = file_manager::get_file_manager();
         println!("0x{:X}", file_manager_1 as *const FileManager as usize);
-        let file_manager_2 = FileManager::get_instance();
+        let file_manager_2 = file_manager::get_file_manager();
         println!("0x{:X}", file_manager_2 as *const FileManager as usize);
         assert_eq!(
             file_manager_1 as *const FileManager as usize,
@@ -207,10 +210,10 @@ mod test {
 
     #[tokio::test]
     async fn test_io_task() {
-        let file_manager = FileManager::get_instance();
+        let file_manager = file_manager::get_file_manager();
 
         let mut buf = vec![1_u8; 1024];
-        let file = file_manager.create_file("/tmp/test/a.hex").unwrap();
+        let file = file_manager.create_file("./a.hex").unwrap();
 
         let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
         let task = make_io_task(
@@ -229,5 +232,20 @@ mod test {
         let ret = rx.await.unwrap();
         file_manager.sync_all(FileSync::Hard).await.unwrap();
         ret.unwrap();
+    }
+    #[test]
+    fn test_file() {
+        let file_manager = file_manager::get_file_manager();
+        let rt = Builder::new_current_thread()
+            // let rt = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async move {
+            let mut buf = vec![1_u8; 1024];
+            let file = Arc::new(file_manager.create_file("./test_lyt.log").unwrap());
+
+            file_manager.write_at(file.clone(), 0, &mut buf[..]).await;
+        });
     }
 }
