@@ -1,12 +1,16 @@
-use std::sync::Arc;
-use std::thread::JoinHandle;
+use std::{cell::RefCell, sync::Arc, thread::JoinHandle};
 
 use once_cell::sync::OnceCell;
-use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
-use protos::models;
-use tokio::sync::{
-    mpsc::{self, UnboundedReceiver, UnboundedSender},
-    oneshot,
+use protos::{
+    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
+    models,
+};
+use tokio::{
+    runtime::Builder,
+    sync::{
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        oneshot, RwLock,
+    },
 };
 
 use crate::{
@@ -14,7 +18,7 @@ use crate::{
     kv_option::{Options, QueryOption, WalConfig},
     version_set,
     wal::{self, WalFileManager, WalResult, WalTask},
-    Error, FileManager, Version, VersionSet, WorkerQueue,
+    Error, FileManager, MemCache, Task, Version, VersionSet, WorkerQueue,
 };
 
 pub struct Entry {
@@ -35,12 +39,7 @@ impl TsKv {
 
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let core = Self {
-            options: opt,
-            kvctx,
-            version_set: Arc::new(vs),
-            wal_sender: sender,
-        };
+        let core = Self { options: opt, kvctx, version_set: Arc::new(vs), wal_sender: sender };
 
         core.run_wal_job(receiver);
 
@@ -48,42 +47,30 @@ impl TsKv {
     }
 
     pub fn recover() -> VersionSet {
-        //todo! recover from manifest and build VersionSet
+        // todo! recover from manifest and build VersionSet
         VersionSet::new_default()
     }
 
-    pub fn get_instance() -> &'static Self {
-        static INSTANCE: OnceCell<TsKv> = OnceCell::new();
-        INSTANCE.get_or_init(|| Self::open(Options::from_env()).unwrap())
-    }
-
-    pub async fn write(
-        &self,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
+    pub async fn write(&self,
+                       write_batch: WritePointsRpcRequest)
+                       -> Result<WritePointsRpcResponse> {
         let (cb, rx) = oneshot::channel();
         self.wal_sender
-            .send(WalTask::Write {
-                points: write_batch.points,
-                cb,
-            })
+            .send(WalTask::Write { points: write_batch.points, cb })
             .map_err(|err| Error::Send)?;
         rx.await.unwrap().unwrap();
 
         // let _ = self.kvctx.shard_write(0, write_batch).await;
-        Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        })
+        Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
     pub fn insert_cache(&self, buf: &[u8]) {
         let ps = flatbuffers::root::<models::Points>(buf).unwrap();
         for p in ps.points().unwrap().iter() {
             let s = AbstractPoints::from(p);
-            //use sid to dispatch to tsfamily
-            //so if you change the colume name
-            //please keep the series id
+            // use sid to dispatch to tsfamily
+            // so if you change the colume name
+            // please keep the series id
             let sid = s.series_id();
 
             let tsf = self.version_set.get_tsfamily(sid).unwrap();
@@ -102,7 +89,7 @@ impl TsKv {
                         let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
                         dbg!(points);
                         let _ = cb.send(ret);
-                    }
+                    },
                 }
             }
         };
@@ -119,13 +106,13 @@ impl TsKv {
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
-                            }
+                            },
                             Err(err) => {
                                 let _ret = tx.send(Err(err));
-                            }
+                            },
                         }
                         dbg!("TSKV write points completed.");
-                    }
+                    },
                     _ => panic!("unimplented."),
                 }
             }
@@ -158,31 +145,27 @@ impl KvContext {
     pub fn new(opt: Options) -> Self {
         let front_work_queue = Arc::new(WorkerQueue::new(opt.front_cpu));
         let worker_handle = Vec::with_capacity(opt.back_cpu);
-        Self {
-            front_handler: front_work_queue,
-            handler: worker_handle,
-            status: KvStatus::Init,
-        }
+        Self { front_handler: front_work_queue, handler: worker_handle, status: KvStatus::Init }
     }
 
     pub fn recover(&mut self) -> Result<()> {
-        //todo: index wal summary shardinfo recover here.
+        // todo: index wal summary shardinfo recover here.
         self.status = KvStatus::Recover;
         Ok(())
     }
 
-    pub async fn shard_write(
-        &self,
-        partion_id: usize,
-        mem: Arc<RwLock<MemCache>>,
-        entry: WritePointsRpcRequest,
-    ) -> Result<()> {
+    pub async fn shard_write(&self,
+                             partion_id: usize,
+                             mem: Arc<RwLock<MemCache>>,
+                             entry: WritePointsRpcRequest)
+                             -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.front_handler.work_queue.add_task(partion_id, async move {
-            let err = 0;
-            //todo
-            let _ = tx.send(err);
-        })?;
+        self.front_handler.add_task(partion_id, async move {
+                               let ps = flatbuffers::root::<models::Points>(&entry.points).unwrap();
+                               let err = 0;
+                               // todo
+                               let _ = tx.send(err);
+                           })?;
         rx.await.unwrap();
         Ok(())
     }
@@ -201,13 +184,9 @@ mod test {
     use crate::{kv_option::WalConfig, wal::WalTask, TsKv};
 
     fn get_tskv() -> TsKv {
-        let opt = crate::kv_option::Options {
-            wal: WalConfig {
-                dir: String::from("/tmp/test/"),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/"),
+                                                               ..Default::default() },
+                                              ..Default::default() };
 
         TsKv::open(opt).unwrap()
     }
@@ -218,11 +197,7 @@ mod test {
 
         let database = "db".to_string();
         let points = b"Hello world".to_vec();
-        let request = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
 
         tskv.write(request).await.unwrap();
     }
@@ -234,11 +209,7 @@ mod test {
         for i in 0..2 {
             let database = "db".to_string();
             let points = b"Hello world".to_vec();
-            let request = kv_service::WritePointsRpcRequest {
-                version: 1,
-                database,
-                points,
-            };
+            let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
             tskv.write(request).await.unwrap();
         }
     }

@@ -1,5 +1,6 @@
-use crate::{FieldID, FieldInfo, SeriesID, SeriesInfo, Tag, ValueType};
 use protos::models::Point;
+
+use crate::{FieldID, FieldInfo, SeriesID, SeriesInfo, Tag, ValueType};
 
 #[derive(Debug)]
 pub struct AbstractPoint {
@@ -52,20 +53,12 @@ impl From<Point<'_>> for AbstractPoints {
                 let val_type = f.type_().into();
                 let val = f.value().unwrap().to_vec();
                 let fid = FieldInfo::cal_fid(&field_name, sid);
-                fileds.push(AbstractPoint {
-                    filed_id: fid,
-                    val_type: val_type,
-                    value: val,
-                });
+                fileds.push(AbstractPoint { filed_id: fid, val_type, value: val });
             }
         }
         let ts = p.timestamp();
 
-        Self {
-            series_id: sid,
-            timestamp: ts,
-            fileds: fileds,
-        }
+        Self { series_id: sid, timestamp: ts, fileds }
     }
 }
 
@@ -73,46 +66,33 @@ impl From<Point<'_>> for AbstractPoints {
 mod test_points {
     use protos::models;
 
-    use crate::{tag, AbstractPoints};
+    use crate::{AbstractPoints};
 
     #[test]
     fn test_from() {
         let mut fb = flatbuffers::FlatBufferBuilder::new();
 
-        //build tag
+        // build tag
         let tag_k = fb.create_vector("tag_k".as_bytes());
         let tag_v = fb.create_vector("tag_v".as_bytes());
-        let tag = models::Tag::create(
-            &mut fb,
-            &models::TagArgs {
-                key: Some(tag_k),
-                value: Some(tag_v),
-            },
-        );
-        //build filed
+        let tag =
+            models::Tag::create(&mut fb, &models::TagArgs { key: Some(tag_k), value: Some(tag_v) });
+        // build filed
         let f_n = fb.create_vector("filed_name".as_bytes());
         let f_v = fb.create_vector("filed_value".as_bytes());
 
-        let filed = models::Field::create(
-            &mut fb,
-            &models::FieldArgs {
-                name: Some(f_n),
-                type_: protos::models::FieldType::Integer,
-                value: Some(f_v),
-            },
-        );
-        //build series_info
-        let fields = Some(fb.create_vector(&vec![filed]));
-        let tags = Some(fb.create_vector(&vec![tag]));
-        //build point
-        let point = models::Point::create(
-            &mut fb,
-            &models::PointArgs {
-                tags,
-                fields,
-                timestamp: 1,
-            },
-        );
+        let filed =
+            models::Field::create(&mut fb,
+                                  &models::FieldArgs { name: Some(f_n),
+                                                       type_:
+                                                           protos::models::FieldType::Integer,
+                                                       value: Some(f_v) });
+        // build series_info
+        let fields = Some(fb.create_vector(&[filed]));
+        let tags = Some(fb.create_vector(&[tag]));
+        // build point
+        let point =
+            models::Point::create(&mut fb, &models::PointArgs { tags, fields, timestamp: 1 });
 
         fb.finish(point, None);
         let buf = fb.finished_data();

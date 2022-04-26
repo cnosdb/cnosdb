@@ -1,5 +1,6 @@
-use super::*;
 use utils::bkdr_hash::{Hash, HashWith};
+
+use super::*;
 
 const FIELD_NAME_MAX_LEN: usize = 512;
 
@@ -24,12 +25,8 @@ pub enum ValueType {
 }
 
 impl FieldInfo {
-    pub fn new() -> Self {
-        FieldInfo {
-            id: 0,
-            name: FieldName::new(),
-            value_type: ValueType::Unknown,
-        }
+    pub fn new(id: u64, name: Vec<u8>, value_type: ValueType) -> Self {
+        FieldInfo { id, name, value_type }
     }
 
     pub fn update_id(&mut self, series_id: SeriesID) {
@@ -51,21 +48,13 @@ pub trait FieldInfoFromParts<T1, T2> {
 
 impl FieldInfoFromParts<FieldName, ValueType> for FieldInfo {
     fn from_parts(name: FieldName, value_type: ValueType) -> Self {
-        FieldInfo {
-            id: 0,
-            name,
-            value_type,
-        }
+        FieldInfo { id: 0, name, value_type }
     }
 }
 
 impl FieldInfoFromParts<&str, ValueType> for FieldInfo {
     fn from_parts(name: &str, value_type: ValueType) -> Self {
-        FieldInfo {
-            id: 0,
-            name: name.as_bytes().to_vec(),
-            value_type,
-        }
+        FieldInfo { id: 0, name: name.as_bytes().to_vec(), value_type }
     }
 }
 

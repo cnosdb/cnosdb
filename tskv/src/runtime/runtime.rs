@@ -1,10 +1,9 @@
-use crate::error::Result;
-use crate::task::ArcTask;
-use crate::Error;
+use std::{future::Future, thread};
+
 use core_affinity::CoreId;
 use crossbeam::channel::{unbounded, Sender};
-use std::future::Future;
-use std::thread;
+
+use crate::{error::Result, task::ArcTask, Error};
 
 pub struct Runtime {
     queues: Vec<Sender<ArcTask>>,
@@ -31,11 +30,9 @@ impl Runtime {
     }
 
     pub fn add_task<F>(&self, index: usize, task: F) -> Result<()>
-    where
-        F: Future<Output = ()> + Send + 'static,
+        where F: Future<Output = ()> + Send + 'static
     {
-        Ok(self.queues[index]
-            .send(ArcTask::new(task, self.queues[index].clone()))
-            .map_err(|_| Error::Send)?) //
+        self.queues[index].send(ArcTask::new(task, self.queues[index].clone()))
+                             .map_err(|_| Error::Send) //
     }
 }

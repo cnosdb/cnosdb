@@ -21,9 +21,6 @@ mod tsm;
 mod version_set;
 mod wal;
 
-use protos::kv_service::WritePointsRpcResponse;
-use tokio::sync::oneshot;
-
 pub use direct_io::*;
 pub use error::*;
 pub use file_manager::*;
@@ -32,9 +29,10 @@ pub use kv_option::Options;
 pub use kvcore::*;
 pub use lru_cache::*;
 pub use memcache::*;
-pub use record_file::*;
+use protos::kv_service::WritePointsRpcResponse;
 pub use runtime::*;
 pub use summary::*;
+use tokio::sync::oneshot;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
