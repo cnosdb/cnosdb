@@ -63,7 +63,8 @@ pub struct Summary {
 impl Summary {
     //create a new summary file
     pub async fn new(tf_desc: &[TseriesFamDesc]) {
-        let mut db = VersionEdit::new(0, 0, 0, vec![], vec![]);
+        //todo:
+        // let mut db = VersionEdit::new(0, 0, 0, vec![], vec![]);
     }
     //recover from summary file
     pub async fn recover() {}

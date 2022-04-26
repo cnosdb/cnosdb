@@ -178,9 +178,9 @@ pub fn make_wal_file_name(path: &str, sequence: u64) -> PathBuf {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
     use futures::channel::oneshot;
+    use std::sync::Arc;
+    use tokio::runtime::Builder;
 
     use crate::{
         direct_io::{make_io_task, FileSync, TaskType},
@@ -213,7 +213,7 @@ mod test {
         let file_manager = file_manager::get_file_manager();
 
         let mut buf = vec![1_u8; 1024];
-        let file = file_manager.create_file("/tmp/test/a.hex").unwrap();
+        let file = file_manager.create_file("./a.hex").unwrap();
 
         let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
         let task = make_io_task(
@@ -232,5 +232,20 @@ mod test {
         let ret = rx.await.unwrap();
         file_manager.sync_all(FileSync::Hard).await.unwrap();
         ret.unwrap();
+    }
+    #[test]
+    fn test_file() {
+        let file_manager = file_manager::get_file_manager();
+        let rt = Builder::new_current_thread()
+            // let rt = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async move {
+            let mut buf = vec![1_u8; 1024];
+            let file = Arc::new(file_manager.create_file("./test_lyt.log").unwrap());
+
+            file_manager.write_at(file.clone(), 0, &mut buf[..]).await;
+        });
     }
 }

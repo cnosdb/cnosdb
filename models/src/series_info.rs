@@ -62,8 +62,8 @@ impl SeriesInfo {
         }
     }
 
-    pub fn sort_tags(&mut self) {
-        self.tags.sort_by(|a, b| -> Ordering {
+    pub fn sort_tags(tags: &mut Vec<Tag>) {
+        tags.sort_by(|a, b| -> Ordering {
             return if a.key < b.key {
                 Ordering::Less
             } else if a.key > b.key {
@@ -74,19 +74,27 @@ impl SeriesInfo {
         })
     }
 
-    pub fn update_id(&mut self) {
-        //series id
-        self.sort_tags();
+    pub fn cal_sid(tags: &mut Vec<Tag>) -> SeriesID {
         let mut data = Vec::<u8>::new();
-        for tag in self.tags.iter_mut() {
+        SeriesInfo::sort_tags(tags);
+        for tag in tags.iter_mut() {
             data.append(&mut tag.bytes())
         }
-        self.id = Hash::new().hash_with(&data).number();
+        let sid = Hash::new().hash_with(&data).number();
+        sid
+    }
+
+    pub fn update_id(&mut self) {
+        self.id = Self::cal_sid(&mut self.tags);
 
         //field id
         for field_info in &mut self.field_infos {
             field_info.update_id(self.id);
         }
+    }
+
+    pub fn series_id(&self) -> SeriesID {
+        self.id
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -107,7 +115,7 @@ impl From<Point<'_>> for SeriesInfo {
             for f in fit.into_iter() {
                 let field_name = f.name().unwrap().to_vec();
                 let t = f.type_().into();
-                let val = f.value().unwrap().to_vec();
+                // let val = f.value().unwrap().to_vec();
                 let filed = FieldInfo::new(0, field_name, t);
                 fileds.push(filed);
             }
@@ -133,13 +141,9 @@ impl From<Point<'_>> for SeriesInfo {
 
 #[cfg(test)]
 mod tests_series_info {
-    use std::borrow::BorrowMut;
-
     use protos::models;
 
-    use crate::{
-        field_info, FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, TagFromParts, ValueType,
-    };
+    use crate::{FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, TagFromParts, ValueType};
     #[test]
     fn test_series_info_encode_and_decode() {
         let mut info = SeriesInfo::new();

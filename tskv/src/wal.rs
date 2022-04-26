@@ -102,7 +102,6 @@ struct WalFile {
 #[derive(Clone)]
 pub struct WalFileManager {
     config: kv_option::WalConfig,
-
     current_dir_path: PathBuf,
     current_file: WalFile,
 }

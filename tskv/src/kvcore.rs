@@ -1,9 +1,13 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+use ::models::AbstractPoints;
 use once_cell::sync::OnceCell;
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
 use protos::models;
+use tokio::runtime::Builder;
+use tokio::sync::RwLock;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
     oneshot,
@@ -16,17 +20,16 @@ use crate::{
     wal::{self, WalFileManager, WalResult, WalTask},
     Error, FileManager, Version, VersionSet, WorkerQueue,
 };
+use crate::{MemCache, Task};
 
 pub struct Entry {
     pub series_id: u64,
 }
 
-#[derive(Clone)]
 pub struct TsKv {
     options: Options,
     kvctx: Arc<KvContext>,
     version_set: Arc<VersionSet>,
-
     wal_sender: UnboundedSender<WalTask>,
 }
 
@@ -41,7 +44,6 @@ impl TsKv {
             options: opt,
             kvctx,
             version_set: Arc::new(vs),
-
             wal_sender: sender,
         };
 
@@ -53,11 +55,6 @@ impl TsKv {
     pub fn recover() -> VersionSet {
         //todo! recover from manifest and build VersionSet
         VersionSet::new_default()
-    }
-
-    pub fn get_instance() -> &'static Self {
-        static INSTANCE: OnceCell<TsKv> = OnceCell::new();
-        INSTANCE.get_or_init(|| Self::open(Options::from_env()).unwrap())
     }
 
     pub async fn write(
@@ -80,6 +77,21 @@ impl TsKv {
         })
     }
 
+    pub fn insert_cache(&self, buf: &[u8]) {
+        let ps = flatbuffers::root::<models::Points>(buf).unwrap();
+        for p in ps.points().unwrap().iter() {
+            let s = AbstractPoints::from(p);
+            //use sid to dispatch to tsfamily
+            //so if you change the colume name
+            //please keep the series id
+            let sid = s.series_id();
+
+            let tsf = self.version_set.get_tsfamily(sid).unwrap();
+            for f in s.fileds().iter() {
+                let fid = f.filed_id();
+            }
+        }
+    }
     pub fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
         let wal_opt = self.options.wal.clone();
         let f = async move {
@@ -94,11 +106,31 @@ impl TsKv {
                 }
             }
         };
-        tokio::spawn(async move {
-            f.await;
-        });
+        tokio::spawn(f);
     }
+    pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
+        let f = async move {
+            while let Some(command) = req_rx.recv().await {
+                match command {
+                    Task::WritePoints { req, tx } => {
+                        dbg!("TSKV writing points.");
+                        match tskv.write(req).await {
+                            Ok(resp) => {
+                                let _ret = tx.send(Ok(resp));
+                            }
+                            Err(err) => {
+                                let _ret = tx.send(Err(err));
+                            }
+                        }
+                        dbg!("TSKV write points completed.");
+                    }
+                    _ => panic!("unimplented."),
+                }
+            }
+        };
 
+        tokio::spawn(f);
+    }
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
     }
@@ -137,13 +169,19 @@ impl KvContext {
         Ok(())
     }
 
-    pub async fn shard_write(&self, partion_id: usize, _entry: WriteRowsRpcRequest) -> Result<()> {
+    pub async fn shard_write(
+        &self,
+        partion_id: usize,
+        mem: Arc<RwLock<MemCache>>,
+        entry: WritePointsRpcRequest,
+    ) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        self.front_handler.work_queue.add_task(partion_id, async move {
+        self.front_handler.add_task(partion_id, async move {
+            let ps = flatbuffers::root::<models::Points>(&entry.points).unwrap();
             let err = 0;
-            //memcache.insert();
+            //todo
             let _ = tx.send(err);
-        });
+        })?;
         rx.await.unwrap();
         Ok(())
     }

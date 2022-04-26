@@ -91,30 +91,10 @@ fn main() -> Result<(), std::io::Error> {
 
                 let host = config.host.parse::<SocketAddr>().expect("Invalid host");
 
-                let (sender, mut receiver) = mpsc::unbounded_channel();
+                let (sender, receiver) = mpsc::unbounded_channel();
 
                 let tskv = tskv::TsKv::open(tskv::kv_option::Options::default()).unwrap();
-
-                // tskv.write
-                tokio::spawn(async move {
-                    while let Some(command) = receiver.recv().await {
-                        match command {
-                            tskv::Task::WritePoints { req, tx } => {
-                                dbg!("TSKV writing points.");
-                                match tskv.write(req).await {
-                                    Ok(resp) => {
-                                        let _ret = tx.send(Ok(resp));
-                                    }
-                                    Err(err) => {
-                                        let _ret = tx.send(Err(err));
-                                    }
-                                }
-                                dbg!("TSKV write points completed.");
-                            }
-                            _ => panic!("unimplented."),
-                        }
-                    }
-                });
+                tskv::TsKv::start(tskv, receiver);
 
                 let tskv_impl = rpc::tskv::TskvServiceImpl { sender };
 

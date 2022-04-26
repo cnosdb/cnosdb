@@ -1,6 +1,7 @@
-use crate::error::Result;
+use crate::{compute, error::Result};
 use flatbuffers::Push;
 use futures::future::ok;
+use models::ValueType;
 use protos::models::FieldType;
 use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
 
@@ -78,21 +79,36 @@ impl MemCache {
         seq: u64,
         filed_id: u64,
         ts: u64,
-        field_type: FieldType,
-        val: u64,
+        field_type: ValueType,
+        buf: &[u8],
     ) -> Result<()> {
         self.seq_no = seq;
         match field_type {
-            FieldType::Unsigned => {
+            ValueType::Unsigned => {
+                let val = compute::decode_be_u64(buf);
                 let data = DataType::U64(U64Cell { ts, val });
                 self.insert(filed_id, data);
             }
-            // FieldType::Integer(t) =>{
-            //     self.insert(filed_id, ts, val)
-            // },
-            // FieldType::Float(t) =>{},
-            // FieldType::String => {},
-            // FieldType::Boolean => {},
+            ValueType::Integer => {
+                let val = compute::decode_be_i64(buf);
+                let data = DataType::I64(I64Cell { ts, val });
+                self.insert(filed_id, data);
+            }
+            ValueType::Float => {
+                let val = compute::decode_be_f64(buf);
+                let data = DataType::F64(F64Cell { ts, val });
+                self.insert(filed_id, data);
+            }
+            ValueType::String => {
+                let val = Vec::from(buf);
+                let data = DataType::Str(StrCell { ts, val });
+                self.insert(filed_id, data);
+            }
+            ValueType::Boolean => {
+                let val = compute::decode_be_bool(buf);
+                let data = DataType::Bool(BoolCell { ts, val });
+                self.insert(filed_id, data)
+            }
             _ => todo!(),
         };
         Ok(())
@@ -100,6 +116,7 @@ impl MemCache {
     pub fn insert(&mut self, filed_id: u64, val: DataType) {
         let entry = self.data_cache.get_mut(&filed_id);
         let ts = val.timestamp();
+        //todo: if not exit insert into
         if let Some(item) = entry {
             if item.ts_max < ts {
                 item.ts_max = ts;

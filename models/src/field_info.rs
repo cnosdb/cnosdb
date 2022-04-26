@@ -1,5 +1,3 @@
-use std::any::TypeId;
-
 use super::*;
 use utils::bkdr_hash::{Hash, HashWith};
 
@@ -47,9 +45,12 @@ impl FieldInfo {
         }
     }
 
+    pub fn cal_fid(name: &FieldName, sid: SeriesID) -> FieldID {
+        let mut hash = Hash::from(sid);
+        hash.hash_with(name).number()
+    }
     pub fn update_id(&mut self, series_id: SeriesID) {
-        let mut hash = Hash::from(series_id);
-        self.id = hash.hash_with(&self.name).number();
+        self.id = Self::cal_fid(&self.name, series_id);
     }
 
     pub fn format_check(&self) -> Result<(), String> {
@@ -57,6 +58,9 @@ impl FieldInfo {
             return Err(String::from("TagKey exceeds the FIELD_NAME_MAX_LEN"));
         }
         Ok(())
+    }
+    pub fn filed_id(&self) -> FieldID {
+        self.id
     }
 }
 
