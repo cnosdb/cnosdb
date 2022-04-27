@@ -24,6 +24,7 @@ snafu = "0.7"
 tokio = { version = "1.17", features = ["full"] }
 walkdir = "2.3"
 async-trait = "0.1"
+async-recursion = "1.0.0"
 bytes = "1.1"
 dashmap = "5.2"
 evmap = "10.0"

@@ -19,6 +19,7 @@ mod tseries_family;
 mod tsm;
 mod version_set;
 mod wal;
+mod log_file;
 
 pub use direct_io::*;
 pub use error::*;
@@ -35,6 +36,7 @@ use tokio::sync::oneshot;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
+pub use log_file::*;
 
 #[derive(Debug)]
 pub enum Task {
