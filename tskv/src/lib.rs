@@ -19,6 +19,7 @@ mod tseries_family;
 mod tsm;
 mod version_set;
 mod wal;
+mod log_file;
 
 use protos::kv_service::WritePointsRpcResponse;
 use tokio::sync::oneshot;
@@ -36,6 +37,7 @@ pub use summary::*;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
+pub use log_file::*;
 
 #[derive(Debug)]
 pub enum Task {
