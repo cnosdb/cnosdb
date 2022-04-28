@@ -2,6 +2,7 @@ mod errors;
 mod file;
 mod reader;
 mod writer;
+mod record;
 
 use crate::direct_io;
 use crate::file_manager;
@@ -10,6 +11,7 @@ pub use errors::*;
 pub use file::*;
 pub use reader::*;
 pub use writer::*;
+pub use record::*;
 
 // record
 // |      4       |     2     |       1      |     1     | len  |      4       |

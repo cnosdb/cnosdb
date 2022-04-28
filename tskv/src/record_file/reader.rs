@@ -75,7 +75,7 @@ impl Reader {
 
     // Result<data_type, data_version, data>, if Result is err, it means EOF.
     #[async_recursion]
-    pub async fn read_record(&mut self) -> LogFileResult<(u8, u8, Vec<u8>)> {
+    pub async fn read_record(&mut self) -> LogFileResult<Record> {
         let (origin_pos, buf) = self
             .read_buf(
                 RECORD_MAGIC_NUMBER_LEN
@@ -124,7 +124,7 @@ impl Reader {
             return self.read_record().await;
         }
 
-        Ok((data_type, data_version, data))
+        Ok(Record { data_type, data_version, data })
     }
 
     async fn load_buf(&mut self) -> LogFileResult<()> {
@@ -165,17 +165,15 @@ impl From<&str> for Reader {
 #[tokio::test]
 async fn test_reader() {
     let mut r = Reader::from("/tmp/test.log_file");
-    let mut i = 0;
 
     loop {
         match r.read_record().await {
             Ok(record) => {
-                // println!("{}, {},{},{:?}", i, record.0, record.1, record.2);
+                println!("{}, {}, {:?}", record.data_type, record.data_version, record.data);
             }
             Err(_) => {
                 break;
             }
         }
-        i = i + 1;
     }
 }
