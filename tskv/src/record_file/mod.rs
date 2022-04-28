@@ -1,6 +1,7 @@
 mod errors;
 mod file;
 mod reader;
+mod record;
 mod writer;
 
 use crate::direct_io;
@@ -9,6 +10,7 @@ use crate::file_manager;
 pub use errors::*;
 pub use file::*;
 pub use reader::*;
+pub use record::*;
 pub use writer::*;
 
 // record
