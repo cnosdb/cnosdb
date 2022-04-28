@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cnosdb/cnosdb/client"
+
 	"github.com/spf13/cobra"
 )
 

@@ -5,12 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
-	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
-	"github.com/cnosdb/cnosdb/pkg/network"
-	"github.com/cnosdb/cnosdb/server/snapshotter"
-	gzip "github.com/klauspost/pgzip"
-	"github.com/spf13/cobra"
 	"io"
 	"log"
 	"math"
@@ -18,6 +12,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
+
+	gzip "github.com/klauspost/pgzip"
+	"github.com/spf13/cobra"
 )
 
 var backupExamples = `  cnosdb backup --start 2021-10-10T12:12:00Z`

@@ -15,6 +15,7 @@ import (
 
 	internal "github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util/internal"
 	"github.com/cnosdb/cnosdb/server/snapshotter"
+
 	"github.com/gogo/protobuf/proto"
 )
 
