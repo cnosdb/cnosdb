@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Options represents the program execution for "cnosdb-inspect verifytombstone".
+// Options represents the program execution for "cnosdb-inspect verify-tombstone".
 type Options struct {
 	Stderr    io.Writer
 	Stdout    io.Writer
@@ -38,7 +38,7 @@ var opt = NewOptions()
 
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "verifytombstone",
+		Use:   "verify-tombstone",
 		Short: "Verifies the integrity of tombstones.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opt.files = args
