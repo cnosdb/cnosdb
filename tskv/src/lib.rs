@@ -13,13 +13,13 @@ pub mod kv_option;
 mod kvcore;
 mod lru_cache;
 mod memcache;
+mod record_file;
 mod runtime;
 mod summary;
 mod tseries_family;
 mod tsm;
 mod version_set;
 mod wal;
-mod record_file;
 
 use protos::kv_service::WritePointsRpcResponse;
 use tokio::sync::oneshot;
@@ -32,12 +32,12 @@ pub use kv_option::Options;
 pub use kvcore::*;
 pub use lru_cache::*;
 pub use memcache::*;
+pub use record_file::*;
 pub use runtime::*;
 pub use summary::*;
 pub use tseries_family::*;
 pub use tsm::*;
 pub use version_set::*;
-pub use record_file::*;
 
 #[derive(Debug)]
 pub enum Task {
