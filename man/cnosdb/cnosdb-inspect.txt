@@ -19,7 +19,7 @@ SYNOPSIS
 'cnosdb-inspect reporttsi' -db-path <path-to-db> [ options ]
 'cnosdb-inspect verify' [ options ]
 'cnosdb-inspect verify-seriesfile' [ options ]
-'cnosdb-inspect verifytombstone' [ options ]
+'cnosdb-inspect verify-tombstone' [ options ]
 
 DESCRIPTION
 -----------
@@ -238,7 +238,7 @@ VERIFY-SERIESFILE OPTIONS
 --v::
    Enables verbose logging.
 
-VERIFYTOMBSTONE OPTIONS
+VERIFY-TOMBSTONE OPTIONS
 -----------------------
 
 --dir <path>::
