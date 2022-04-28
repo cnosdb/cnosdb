@@ -27,7 +27,7 @@ impl Writer {
         data_version: u8,
         data_type: u8,
         data: &Vec<u8>,
-    ) -> LogFileResult<u64> {
+    ) -> RecordFileResult<u64> {
         let mut buf = Vec::<u8>::with_capacity(
             RECORD_MAGIC_NUMBER_LEN
                 + RECORD_DATA_SIZE_LEN
@@ -62,7 +62,7 @@ impl Writer {
             match self
                 .file
                 .write_at(pos, &buf[p..p + write_len])
-                .map_err(|err| LogFileError::WriteFile { source: err })
+                .map_err(|err| RecordFileError::WriteFile { source: err })
             {
                 Ok(_) => {
                     p += write_len;
@@ -77,22 +77,22 @@ impl Writer {
         Ok(origin_pos)
     }
 
-    pub async fn soft_sync(&self) -> LogFileResult<()> {
+    pub async fn soft_sync(&self) -> RecordFileResult<()> {
         self.file
             .sync_all(FileSync::Soft)
-            .map_err(|err| LogFileError::SyncFile { source: err })
+            .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
-    pub async fn hard_sync(&self) -> LogFileResult<()> {
+    pub async fn hard_sync(&self) -> RecordFileResult<()> {
         self.file
             .sync_all(FileSync::Hard)
-            .map_err(|err| LogFileError::SyncFile { source: err })
+            .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
-    pub async fn close(&mut self) -> LogFileResult<()> {
+    pub async fn close(&mut self) -> RecordFileResult<()> {
         self.file
             .sync_all(FileSync::Hard)
-            .map_err(|err| LogFileError::SyncFile { source: err })
+            .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 }
 
@@ -103,7 +103,7 @@ impl From<&str> for Writer {
 }
 
 #[tokio::test]
-async fn test_writer() -> Result<(), LogFileError> {
+async fn test_writer() -> Result<(), RecordFileError> {
     let mut w = Writer::from("/tmp/test.log_file");
     for i in 0..10 {
         let pos = w.write_record(1, 1, &Vec::from("hello")).await?;

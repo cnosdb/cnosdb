@@ -32,9 +32,9 @@ impl Reader {
         }
     }
 
-    async fn set_pos(&mut self, pos: usize) -> LogFileResult<()> {
+    async fn set_pos(&mut self, pos: usize) -> RecordFileResult<()> {
         if pos > self.file.len().to_usize().unwrap() {
-            return Err(LogFileError::InvalidPos);
+            return Err(RecordFileError::InvalidPos);
         }
 
         return if self.pos > pos {
@@ -60,7 +60,7 @@ impl Reader {
         };
     }
 
-    async fn find_magic(&mut self) -> LogFileResult<()> {
+    async fn find_magic(&mut self) -> RecordFileResult<()> {
         loop {
             let (origin_pos, data) = self.read_buf(RECORD_MAGIC_NUMBER_LEN).await?;
             let magic_number = u32::from_le_bytes(data.try_into().unwrap());
@@ -75,7 +75,7 @@ impl Reader {
 
     // Result<data_type, data_version, data>, if Result is err, it means EOF.
     #[async_recursion]
-    pub async fn read_record(&mut self) -> LogFileResult<Record> {
+    pub async fn read_record(&mut self) -> RecordFileResult<Record> {
         let (origin_pos, buf) = self
             .read_buf(
                 RECORD_MAGIC_NUMBER_LEN
@@ -132,17 +132,17 @@ impl Reader {
         })
     }
 
-    async fn load_buf(&mut self) -> LogFileResult<()> {
+    async fn load_buf(&mut self) -> RecordFileResult<()> {
         self.buf_len = self
             .file
             .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
-            .map_err(|err| LogFileError::ReadFile { source: err })?;
+            .map_err(|err| RecordFileError::ReadFile { source: err })?;
         self.buf_use = 0;
         Ok(())
     }
 
     // result: origin_pos, data
-    async fn read_buf(&mut self, size: usize) -> LogFileResult<(usize, Vec<u8>)> {
+    async fn read_buf(&mut self, size: usize) -> RecordFileResult<(usize, Vec<u8>)> {
         if self.buf_len - self.buf_use < size {
             self.load_buf().await?;
         }
@@ -156,7 +156,7 @@ impl Reader {
 
             Ok((origin_pos, data))
         } else {
-            Err(LogFileError::EOF)
+            Err(RecordFileError::EOF)
         };
     }
 }

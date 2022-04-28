@@ -3,7 +3,7 @@ use snafu;
 use snafu::Snafu;
 
 #[derive(Snafu, Debug)]
-pub enum LogFileError {
+pub enum RecordFileError {
     #[snafu(display("Error with write file : {}", source))]
     WriteFile {
         source: std::io::Error,
@@ -34,4 +34,4 @@ pub enum LogFileError {
     InvalidPos,
 }
 
-pub type LogFileResult<T> = std::result::Result<T, LogFileError>;
+pub type RecordFileResult<T> = std::result::Result<T, RecordFileError>;
