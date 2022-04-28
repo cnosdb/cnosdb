@@ -9,18 +9,18 @@ mod windows;
 
 #[cfg(target_os = "macos")]
 pub use macos::*;
-
 #[cfg(unix)]
 pub use unix::*;
-
 #[cfg(windows)]
 pub use windows::*;
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use std::fs::{File, OpenOptions};
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn file_id() {
@@ -45,6 +45,6 @@ mod test {
     #[test]
     fn open_() {
         let tmpf = NamedTempFile::new().unwrap();
-        open(&tmpf.path(), &OpenOptions::new().read(true)).unwrap();
+        open(&tmpf.path(), OpenOptions::new().read(true)).unwrap();
     }
 }

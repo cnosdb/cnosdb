@@ -3,21 +3,23 @@ mod os;
 mod scope;
 pub mod system;
 
-use dashmap::DashMap;
-use static_assertions::*;
-use std::convert::TryFrom;
-use std::fs::OpenOptions;
-use std::io::Result;
-use std::ops::{Deref, DerefMut};
-use std::path::Path;
-use std::sync::Arc;
+use std::{
+    cmp,
+    convert::TryFrom,
+    fs::OpenOptions,
+    io::Result,
+    ops::{Deref, DerefMut},
+    path::Path,
+    sync::Arc,
+};
 
-use crate::direct_io::cache::{self, PageId, Scope};
 use cursor::FileCursor;
+use dashmap::DashMap;
 use os::*;
 use scope::FileScope;
+use static_assertions::*;
 
-use std::cmp;
+use crate::direct_io::cache::{self, PageId, Scope};
 
 type CacheHandle = cache::CacheHandle<FileScope>;
 type ScopeHandle = cache::ScopeHandle<FileScope>;
@@ -87,7 +89,7 @@ impl File {
 
     pub fn read_at(&self, mut pos: u64, mut buf: &mut [u8]) -> Result<usize> {
         let mut read = 0_usize;
-        while buf.len() > 0 {
+        while !buf.is_empty() {
             let (id, offset) = self.page_id_at(pos);
             let page = self.page(id)?;
             let page = page.read();
@@ -107,7 +109,7 @@ impl File {
 
     pub fn write_at(&self, mut pos: u64, mut buf: &[u8]) -> Result<usize> {
         let len = buf.len();
-        while buf.len() > 0 {
+        while !buf.is_empty() {
             let (id, offset) = self.page_id_at(pos);
             let page = self.page(id)?;
             let mut page = page.write();
@@ -219,11 +221,8 @@ impl Drop for PageWriteGuard<'_> {
         let file_len = self.page.0.scope().len();
         let new_file_len = pos + self.len as u64;
 
-        let update = if self.len > self.old_len {
-            file_len < new_file_len
-        } else {
-            file_len > new_file_len
-        };
+        let update =
+            if self.len > self.old_len { file_len < new_file_len } else { file_len > new_file_len };
         if update {
             self.page.0.scope().set_len(new_file_len);
         }
@@ -239,43 +238,25 @@ impl PageRef {
     pub fn read(&self) -> PageReadGuard<'_> {
         let inner = self.0.read();
         let (_, len) = self.span();
-        PageReadGuard {
-            page: self,
-            inner,
-            len,
-        }
+        PageReadGuard { page: self, inner, len }
     }
 
     pub fn try_read(&self) -> Option<PageReadGuard> {
         let inner = self.0.try_read()?;
         let (_, len) = self.span();
-        Some(PageReadGuard {
-            page: self,
-            inner,
-            len,
-        })
+        Some(PageReadGuard { page: self, inner, len })
     }
 
     pub fn write(&self) -> PageWriteGuard<'_> {
         let inner = self.0.write();
         let (_, len) = self.span();
-        PageWriteGuard {
-            page: self,
-            inner,
-            old_len: len,
-            len,
-        }
+        PageWriteGuard { page: self, inner, old_len: len, len }
     }
 
     pub fn try_write(&self) -> Option<PageWriteGuard> {
         let inner = self.0.try_write()?;
         let (_, len) = self.span();
-        Some(PageWriteGuard {
-            page: self,
-            inner,
-            old_len: len,
-            len,
-        })
+        Some(PageWriteGuard { page: self, inner, old_len: len, len })
     }
 
     fn span(&self) -> (u64, usize) {
@@ -285,19 +266,19 @@ impl PageRef {
 
 #[cfg(test)]
 mod test {
-    use crate::direct_io::*;
-    use std::fs::File as StdFile;
-    use std::io::prelude::*;
-    use std::io::SeekFrom;
+    use std::{
+        fs::File as StdFile,
+        io::{prelude::*, SeekFrom},
+    };
+
     use tempfile::NamedTempFile;
 
+    use crate::direct_io::*;
+
     fn new(max_resident: usize, max_non_resident: usize, page_len_scale: usize) -> FileSystem {
-        FileSystem::new(
-            Options::default()
-                .max_resident(max_resident)
-                .max_non_resident(max_non_resident)
-                .page_len_scale(page_len_scale),
-        )
+        FileSystem::new(Options::default().max_resident(max_resident)
+                                          .max_non_resident(max_non_resident)
+                                          .page_len_scale(page_len_scale))
     }
 
     fn file_len(file: &StdFile) -> u64 {

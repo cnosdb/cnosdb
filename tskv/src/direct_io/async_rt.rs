@@ -1,14 +1,20 @@
-use crate::direct_io::File;
-use crate::error::Error;
-use crate::error::Result;
 use core::slice;
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+    thread,
+};
+
 use crossbeam::queue::ArrayQueue;
 use futures::channel::oneshot::Sender as OnceSender;
-use parking_lot::Condvar;
-use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::thread;
+use parking_lot::{Condvar, Mutex};
+
+use crate::{
+    direct_io::File,
+    error::{Error, Result},
+};
 
 const QUEUE_SIZE: usize = 1 << 10;
 
@@ -24,23 +30,14 @@ pub struct IoTask {
     cb: OnceSender<Result<usize>>,
 }
 
-pub fn make_io_task(
-    task_type: TaskType,
-    ptr: *mut u8,
-    size: usize,
-    offset: u64,
-    fd: Arc<File>,
-    cb: OnceSender<Result<usize>>,
-) -> IoTask {
-    IoTask {
-        task_type,
-        priority: 0,
-        ptr,
-        size,
-        offset,
-        fd,
-        cb,
-    }
+pub fn make_io_task(task_type: TaskType,
+                    ptr: *mut u8,
+                    size: usize,
+                    offset: u64,
+                    fd: Arc<File>,
+                    cb: OnceSender<Result<usize>>)
+                    -> IoTask {
+    IoTask { task_type, priority: 0, ptr, size, offset, fd, cb }
 }
 
 #[derive(PartialEq)]
@@ -61,29 +58,25 @@ impl IoTask {
             match self.task_type {
                 TaskType::BackRead | TaskType::FrontRead => {
                     let buf = slice::from_raw_parts_mut(self.ptr, self.size);
-                    let ret = self
-                        .fd
-                        .read_at(self.offset, buf)
-                        .map_err(|e| Error::IO { source: e });
+                    let ret =
+                        self.fd.read_at(self.offset, buf).map_err(|e| Error::IO { source: e });
                     let _ = self.cb.send(ret);
-                }
+                },
                 TaskType::BackWrite | TaskType::FrontWrite | TaskType::Wal => {
                     let buf = slice::from_raw_parts(self.ptr, self.size);
-                    let ret = self
-                        .fd
-                        .write_at(self.offset, buf)
-                        .map_err(|e| Error::IO { source: e });
+                    let ret =
+                        self.fd.write_at(self.offset, buf).map_err(|e| Error::IO { source: e });
                     let _ = self.cb.send(ret);
-                }
+                },
             }
         }
     }
     pub fn is_pri_high(&self) -> bool {
-        let ret = self.task_type == TaskType::FrontWrite
-            || self.task_type == TaskType::FrontRead
-            || self.task_type == TaskType::Wal
-            || self.priority > 0;
-        ret
+        
+        self.task_type == TaskType::FrontWrite
+                  || self.task_type == TaskType::FrontRead
+                  || self.task_type == TaskType::Wal
+                  || self.priority > 0
     }
 }
 
@@ -101,23 +94,21 @@ pub struct AsyncContext {
 
 impl AsyncContext {
     pub fn new(thread_num: usize) -> Self {
-        Self {
-            read_queue: ArrayQueue::new(QUEUE_SIZE),
-            write_queue: ArrayQueue::new(QUEUE_SIZE),
-            high_op_queue: ArrayQueue::new(QUEUE_SIZE),
-            worker_count: AtomicUsize::new(thread_num),
-            total_count: thread_num,
-            thread_state: Mutex::new(vec![false; thread_num]),
-            // thread_pool: Mutex::new(spawn_in_pool(thread_num)),
-            thread_conv: Condvar::default(),
-            closed: AtomicBool::new(false),
-        }
+        Self { read_queue: ArrayQueue::new(QUEUE_SIZE),
+               write_queue: ArrayQueue::new(QUEUE_SIZE),
+               high_op_queue: ArrayQueue::new(QUEUE_SIZE),
+               worker_count: AtomicUsize::new(thread_num),
+               total_count: thread_num,
+               thread_state: Mutex::new(vec![false; thread_num]),
+               // thread_pool: Mutex::new(spawn_in_pool(thread_num)),
+               thread_conv: Condvar::default(),
+               closed: AtomicBool::new(false) }
     }
     pub fn wait(&self, id: usize) {
         let mut state = self.thread_state.lock();
         if !self.high_op_queue.is_empty()
-            || !self.read_queue.is_empty()
-            || !self.write_queue.is_empty()
+           || !self.read_queue.is_empty()
+           || !self.write_queue.is_empty()
         {
             return;
         }
@@ -136,7 +127,7 @@ impl AsyncContext {
 
         let mut state = self.thread_state.lock();
         for iter in state.iter_mut() {
-            if *iter == true {
+            if *iter {
                 *iter = false;
                 break;
             }

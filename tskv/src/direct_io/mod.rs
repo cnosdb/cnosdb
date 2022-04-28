@@ -7,9 +7,12 @@ mod async_rt;
 mod cache;
 mod file;
 
+pub use std::fs::OpenOptions;
+
 pub use async_rt::*;
 pub use cache::PageId;
-pub use file::cursor::FileCursor;
-pub use file::system::{FileSystem, Options};
-pub use file::{File, FileSync};
-pub use std::fs::OpenOptions;
+pub use file::{
+    cursor::FileCursor,
+    system::{FileSystem, Options},
+    File, FileSync,
+};

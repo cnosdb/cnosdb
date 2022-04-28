@@ -12,7 +12,7 @@ use crate::{
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
 pub struct CompactMeta {
-    pub file_id: u64, //file id
+    pub file_id: u64, // file id
     pub ts_min: u64,
     pub ts_max: u64,
 }
@@ -27,20 +27,13 @@ pub struct VersionEdit {
 }
 
 impl VersionEdit {
-    pub fn new(
-        level: u32,
-        seq_no: u64,
-        log_seq: u64,
-        add_files: Vec<CompactMeta>,
-        del_files: Vec<CompactMeta>,
-    ) -> Self {
-        Self {
-            level,
-            seq_no,
-            log_seq,
-            add_files,
-            del_files,
-        }
+    pub fn new(level: u32,
+               seq_no: u64,
+               log_seq: u64,
+               add_files: Vec<CompactMeta>,
+               del_files: Vec<CompactMeta>)
+               -> Self {
+        Self { level, seq_no, log_seq, add_files, del_files }
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
@@ -52,8 +45,8 @@ impl VersionEdit {
 }
 
 pub struct Summary {
-    //writer
-    //seq_id
+    // writer
+    // seq_id
     versions: HashMap<u32, Arc<Version>>,
     c_options: HashMap<u32, Arc<TseriesFamOpt>>,
     file_id: u64,
@@ -61,12 +54,12 @@ pub struct Summary {
 }
 
 impl Summary {
-    //create a new summary file
+    // create a new summary file
     pub async fn new(tf_desc: &[TseriesFamDesc]) {
-        //todo:
+        // todo:
         // let mut db = VersionEdit::new(0, 0, 0, vec![], vec![]);
     }
-    //recover from summary file
+    // recover from summary file
     pub async fn recover() {}
     // apply version edit to summary file
     // and write to memory struct

@@ -1,0 +1,22 @@
+# https://rust-coding-guidelines.github.io/rust-coding-guidelines-zh/safe-guides/Appendix/templates/rustfmt.toml.html
+version = "Two"
+use_small_heuristics="MAX"
+indent_style="Visual" 
+enum_discrim_align_threshold = 10 
+match_block_trailing_comma=true
+imports_granularity="Crate" 
+group_imports="StdExternalCrate" 
+format_macro_matchers=true 
+force_explicit_abi=false 
+comment_width=100
+wrap_comments=true
+normalize_comments=true
+report_fixme="Unnumbered"
+condense_wildcard_suffixes=true
+newline_style="Unix"
+merge_derives = false
+
+# ignore dir
+ignore = [
+     "docs",
+]

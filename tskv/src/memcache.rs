@@ -1,9 +1,11 @@
-use crate::{compute, error::Result};
+use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
+
 use flatbuffers::Push;
 use futures::future::ok;
 use models::ValueType;
 use protos::models::FieldType;
-use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
+
+use crate::{compute, error::Result};
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, Copy)]
@@ -52,63 +54,56 @@ pub struct MemEntry {
 pub struct MemCache {
     // partiton id
     tf_id: u32,
-    //wal seq number
+    // wal seq number
     seq_no: u64,
-    //max mem buffer size convert to immcache
+    // max mem buffer size convert to immcache
     max_buf_size: u64,
-    //block <filed_id, buffer>
-    //filed_id contain the field type
+    // block <filed_id, buffer>
+    // filed_id contain the field type
     data_cache: HashMap<u64, MemEntry>,
-    //current size
+    // current size
     cache_size: u64,
 }
 
 impl MemCache {
     pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
         let cache = HashMap::new();
-        Self {
-            tf_id,
-            max_buf_size: max_size,
-            data_cache: cache,
-            seq_no: seq,
-            cache_size: 0,
-        }
+        Self { tf_id, max_buf_size: max_size, data_cache: cache, seq_no: seq, cache_size: 0 }
     }
-    pub fn insert_raw(
-        &mut self,
-        seq: u64,
-        filed_id: u64,
-        ts: u64,
-        field_type: ValueType,
-        buf: &[u8],
-    ) -> Result<()> {
+    pub fn insert_raw(&mut self,
+                      seq: u64,
+                      filed_id: u64,
+                      ts: u64,
+                      field_type: ValueType,
+                      buf: &[u8])
+                      -> Result<()> {
         self.seq_no = seq;
         match field_type {
             ValueType::Unsigned => {
                 let val = compute::decode_be_u64(buf);
                 let data = DataType::U64(U64Cell { ts, val });
                 self.insert(filed_id, data);
-            }
+            },
             ValueType::Integer => {
                 let val = compute::decode_be_i64(buf);
                 let data = DataType::I64(I64Cell { ts, val });
                 self.insert(filed_id, data);
-            }
+            },
             ValueType::Float => {
                 let val = compute::decode_be_f64(buf);
                 let data = DataType::F64(F64Cell { ts, val });
                 self.insert(filed_id, data);
-            }
+            },
             ValueType::String => {
                 let val = Vec::from(buf);
                 let data = DataType::Str(StrCell { ts, val });
                 self.insert(filed_id, data);
-            }
+            },
             ValueType::Boolean => {
                 let val = compute::decode_be_bool(buf);
                 let data = DataType::Bool(BoolCell { ts, val });
                 self.insert(filed_id, data)
-            }
+            },
             _ => todo!(),
         };
         Ok(())
@@ -116,7 +111,7 @@ impl MemCache {
     pub fn insert(&mut self, filed_id: u64, val: DataType) {
         let entry = self.data_cache.get_mut(&filed_id);
         let ts = val.timestamp();
-        //todo: if not exit insert into
+        // todo: if not exit insert into
         if let Some(item) = entry {
             if item.ts_max < ts {
                 item.ts_max = ts;
@@ -133,6 +128,6 @@ impl MemCache {
     }
 
     pub fn is_full(&self) -> bool {
-        return self.cache_size >= self.max_buf_size;
+        self.cache_size >= self.max_buf_size
     }
 }

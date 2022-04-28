@@ -1,10 +1,9 @@
 #[cfg(test)]
 mod test {
+    use protos::{self, kv_service::*, models::*, models_helper};
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
     use tonic::Request;
-
-    use protos::{self, kv_service::*, models::*, models_helper};
 
     #[tokio::test]
     async fn test_tskv_ping() {
@@ -22,16 +21,11 @@ mod test {
         let decoded_payload = flatbuffers::root::<PingBody>(&finished_data);
         assert!(decoded_payload.is_ok());
 
-        let mut client = TskvServiceClient::connect("http://127.0.0.1:31006")
-            .await
-            .unwrap();
+        let mut client = TskvServiceClient::connect("http://127.0.0.1:31006").await.unwrap();
 
-        let resp = client
-            .ping(Request::new(PingRequest {
-                version: 10,
-                body: finished_data.to_vec(),
-            }))
-            .await;
+        let resp = client.ping(Request::new(PingRequest { version: 10,
+                                                          body: finished_data.to_vec() }))
+                         .await;
         assert!(resp.is_ok());
 
         let ping_response = resp.unwrap().into_inner();
@@ -54,20 +48,18 @@ mod test {
                 let points = models_helper::create_random_points(&mut fbb, 1);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
-                tx.send(WritePointsRpcRequest {
-                    version: 1,
-                    database: "database".to_string(),
-                    points,
-                })
-                .await
-                .unwrap();
+                tx.send(WritePointsRpcRequest { version: 1,
+                                                database: "database".to_string(),
+                                                points })
+                  .await
+                  .unwrap();
             }
         });
         let req_stream = ReceiverStream::from(rx);
 
-        let mut client = tskv_service_client::TskvServiceClient::connect("http://127.0.0.1:31006")
-            .await
-            .unwrap();
+        let mut client =
+            tskv_service_client::TskvServiceClient::connect("http://127.0.0.1:31006").await
+                                                                                     .unwrap();
 
         let mut resp_stream = client.write_points(req_stream).await.unwrap().into_inner();
 
@@ -75,15 +67,15 @@ mod test {
             match resp_stream.message().await {
                 Ok(Some(item)) => {
                     println!("\trecived: {:?}", item);
-                }
+                },
                 Ok(None) => {
                     println!("\t stream finished.");
                     break;
-                }
+                },
                 Err(err) => {
                     println!("{}", err);
                     break;
-                }
+                },
             }
         }
     }
