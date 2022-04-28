@@ -26,7 +26,7 @@ const (
 	useBitmapN = 25
 )
 
-// Option represents the program execution for "cnosdb reporttsi".
+// Option represents the program execution for "cnosdb report-tsi".
 type Option struct {
 	dbPath        string
 	shardPaths    map[uint64]string

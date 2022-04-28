@@ -22,7 +22,7 @@ cnosdb-inspect包含以下内容：
 - dumptsmwal：转储wal文件中的内容
 - export：将CnosDB中的数据导出为 Line Protocol 格式的数据，可以使用cnosdb-cli import导入到CnosDB
 - report：显示所有分片中series的元数据
-- reporttsi：计算series基数的精确计数
+- report-tsi：计算series基数的精确计数
 - verify：验证verify文件的完整性
 - Verify-seriesfile：验证series文件的完整性
 - reportdisk：查看TSM文件磁盘和分片的使用情况，用来评估磁盘规划
