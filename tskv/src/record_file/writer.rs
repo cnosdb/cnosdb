@@ -21,12 +21,13 @@ impl Writer {
         }
     }
 
+    // Returns the POS of record in the file
     pub async fn write_record(
         &mut self,
         data_version: u8,
         data_type: u8,
         data: &Vec<u8>,
-    ) -> LogFileResult<()> {
+    ) -> LogFileResult<u64> {
         let mut buf = Vec::<u8>::with_capacity(
             RECORD_MAGIC_NUMBER_LEN
                 + RECORD_DATA_SIZE_LEN
@@ -51,6 +52,7 @@ impl Writer {
         //write file
         let mut p = 0;
         let mut pos = self.file.len();
+        let origin_pos = pos;
         while p < buf.len() {
             let mut write_len = BLOCK_SIZE - pos.to_usize().unwrap() % BLOCK_SIZE;
             if write_len > buf.len() - p {
@@ -72,7 +74,7 @@ impl Writer {
             }
         }
 
-        Ok(())
+        Ok(origin_pos)
     }
 
     pub async fn soft_sync(&self) -> LogFileResult<()> {
@@ -104,7 +106,8 @@ impl From<&str> for Writer {
 async fn test_writer() -> Result<(), LogFileError> {
     let mut w = Writer::from("/tmp/test.log_file");
     for i in 0..10 {
-        w.write_record(1, 1, &Vec::from("hello")).await?;
+        let pos = w.write_record(1, 1, &Vec::from("hello")).await?;
+        println!("{}", pos);
     }
     w.close().await?;
     Ok(())

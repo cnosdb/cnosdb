@@ -124,7 +124,12 @@ impl Reader {
             return self.read_record().await;
         }
 
-        Ok(Record { data_type, data_version, data })
+        Ok(Record {
+            pos: origin_pos.to_u64().unwrap(),
+            data_type,
+            data_version,
+            data,
+        })
     }
 
     async fn load_buf(&mut self) -> LogFileResult<()> {
@@ -169,7 +174,10 @@ async fn test_reader() {
     loop {
         match r.read_record().await {
             Ok(record) => {
-                println!("{}, {}, {:?}", record.data_type, record.data_version, record.data);
+                println!(
+                    "{}, {}, {}, {:?}",
+                    record.pos, record.data_type, record.data_version, record.data
+                );
             }
             Err(_) => {
                 break;
