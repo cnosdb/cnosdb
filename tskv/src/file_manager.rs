@@ -57,8 +57,8 @@ impl FileManager {
         }
 
         Self { file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
-                      async_rt: rt,
-                      thread_pool: Mutex::new(pool) }
+               async_rt: rt,
+               thread_pool: Mutex::new(pool) }
     }
 
     pub fn open_file_with(&self,

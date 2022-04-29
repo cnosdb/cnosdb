@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
-use bincode::Result;
-use hashbrown::HashMap;
+use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    kv_option::{TseriesFamDesc, TseriesFamOpt},
-    Version, VersionSet,
+    context::GlobalContext,
+    error::{Error, Result},
+    file_utils,
+    kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
+    record_file::{Reader, Writer},
+    KvContext, LevelInfo, Version, VersionSet,
 };
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
@@ -15,15 +18,24 @@ pub struct CompactMeta {
     pub file_id: u64, // file id
     pub ts_min: u64,
     pub ts_max: u64,
+    pub level: u32,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct VersionEdit {
     pub level: u32,
+
+    pub has_seq_no: bool,
     pub seq_no: u64,
+    pub has_log_seq: bool,
     pub log_seq: u64,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
+
+    pub del_tsf: bool,
+    pub add_tsf: bool,
+    pub tsf_id: u32,
+    pub tsf_name: String,
 }
 
 impl VersionEdit {
@@ -33,34 +45,119 @@ impl VersionEdit {
                add_files: Vec<CompactMeta>,
                del_files: Vec<CompactMeta>)
                -> Self {
-        Self { level, seq_no, log_seq, add_files, del_files }
+        Self { level,
+               seq_no,
+               log_seq,
+               add_files,
+               del_files,
+               del_tsf: false,
+               add_tsf: false,
+               tsf_id: 0,
+               tsf_name: String::from(""),
+               has_seq_no: false,
+               has_log_seq: false }
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self)
+        bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
     }
     pub fn decode(buf: &Vec<u8>) -> Result<Self> {
-        bincode::deserialize(buf)
+        bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
     }
 }
 
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+#[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
+#[repr(u8)]
+enum EditType {
+    SummaryEdit, // 0
+}
+
 pub struct Summary {
-    // writer
-    // seq_id
-    versions: HashMap<u32, Arc<Version>>,
-    c_options: HashMap<u32, Arc<TseriesFamOpt>>,
-    file_id: u64,
+    file_no: u64,
     version_set: Arc<Mutex<VersionSet>>,
+    ctx: GlobalContext,
 }
 
 impl Summary {
     // create a new summary file
-    pub async fn new(tf_desc: &[TseriesFamDesc]) {
-        // todo:
-        // let mut db = VersionEdit::new(0, 0, 0, vec![], vec![]);
+    pub async fn new(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
+        let db = VersionEdit::new(0, 0, 1, vec![], vec![]);
+        let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
+        let buf = db.encode()?;
+        let _ = w.write_record(1, EditType::SummaryEdit.into(), &buf)
+                 .map_err(|e| Error::LogRecordErr { source: (e) })
+                 .await?;
+        w.hard_sync().map_err(|e| Error::LogRecordErr { source: e }).await?;
+        let ctx = GlobalContext::default();
+        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
+        let vs = Self::recover(tf_desc, rd, &ctx).await?;
+        Ok(Self { file_no: 0, version_set: Arc::new(Mutex::new(vs)), ctx })
     }
     // recover from summary file
-    pub async fn recover() {}
+    pub async fn recover(tf_cfg: &[TseriesFamDesc],
+                         mut rd: Box<Reader>,
+                         ctx: &GlobalContext)
+                         -> Result<VersionSet> {
+        let mut edits: HashMap<u32, Vec<VersionEdit>> = HashMap::default();
+        edits.insert(0, vec![]);
+        let mut tf_names: HashMap<u32, String> = HashMap::default();
+        tf_names.insert(0, "default".to_string());
+        loop {
+            let res = rd.read_record().await.map_err(|e| Error::LogRecordErr { source: (e) });
+            match res {
+                Ok(result) => {
+                    let ed = VersionEdit::decode(&result.data)?;
+                    if ed.add_tsf {
+                        edits.insert(ed.tsf_id, vec![]);
+                        tf_names.insert(ed.tsf_id, ed.tsf_name);
+                    } else if ed.del_tsf {
+                        edits.remove(&ed.tsf_id);
+                        tf_names.remove(&ed.tsf_id);
+                    } else if let Some(data) = edits.get_mut(&ed.tsf_id) {
+                        data.push(ed);
+                    }
+                },
+                Err(_) => break,
+            }
+        }
+
+        let mut versions = HashMap::new();
+        for (id, eds) in edits {
+            let tsf_name = tf_names.get(&id).unwrap().to_owned();
+            // let cf_opts = cf_options.remove(cf_name).unwrap_or_default();
+
+            let mut files: HashMap<u64, CompactMeta> = HashMap::new();
+            let mut max_log = 0;
+            for e in eds {
+                if e.has_seq_no {
+                    ctx.set_last_seq(e.seq_no);
+                }
+                if e.has_log_seq {
+                    ctx.set_log_seq(e.log_seq);
+                }
+                max_log = std::cmp::max(max_log, e.log_seq);
+                for m in e.del_files {
+                    files.remove(&m.file_id);
+                }
+                for m in e.add_files {
+                    files.insert(m.file_id, m);
+                }
+            }
+            let mut levels = HashMap::new();
+            let test: CompactMeta = CompactMeta::default();
+            // according files map to recover levels_info;
+            for (fd, meta) in files {
+                let info = levels.entry(meta.level).or_insert(LevelInfo::init(meta.level));
+                info.apply(&meta);
+            }
+            let lvls = levels.into_values().collect();
+            let ver = Version::new(id, max_log, tsf_name, lvls);
+            versions.insert(id, Arc::new(ver));
+        }
+        let vs = VersionSet::new(tf_cfg, versions);
+        Ok(vs)
+    }
     // apply version edit to summary file
     // and write to memory struct
     pub async fn apply_version_edit() {}
@@ -78,4 +175,13 @@ fn test_version_edit() {
     let buf = ve.encode().unwrap();
     let ve2 = VersionEdit::decode(&buf).unwrap();
     assert_eq!(ve2, ve);
+}
+
+fn test_enum_convert() {
+    let t = EditType::SummaryEdit;
+    let i: u8 = t.into();
+    let y: u8 = EditType::SummaryEdit.into();
+    dbg!(y, i);
+    let zero: EditType = 1u8.try_into().unwrap();
+    assert_eq!(zero, EditType::SummaryEdit);
 }

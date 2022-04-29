@@ -32,15 +32,15 @@ mod tests {
         let q = WorkerQueue::new(2);
         let num = 3;
         let (tx, rx) = oneshot::channel();
-        q.work_queue.add_task(num % q.core_num, async move {
-                        let mut sum: u64 = 0;
-                        let mut i = 1000000;
-                        while i > 0 {
-                            sum += i;
-                            i -= 1;
-                        }
-                        tx.send(sum).unwrap();
-                    });
+        let _ = q.work_queue.add_task(num % q.core_num, async move {
+                                let mut sum: u64 = 0;
+                                let mut i = 1000000;
+                                while i > 0 {
+                                    sum += i;
+                                    i = i - 1;
+                                }
+                                tx.send(sum).unwrap();
+                            });
 
         println!("work queue calu {}", rx.blocking_recv().unwrap());
     }

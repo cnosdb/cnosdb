@@ -1,8 +1,6 @@
 use core::panic;
 use std::{env, fs, io::Write, ops::Deref, path::PathBuf, process::Command};
 
-
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project_root_dir = env::current_dir()?;
     let proto_files_dir = project_root_dir.join("proto");

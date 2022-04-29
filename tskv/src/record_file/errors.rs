@@ -1,6 +1,6 @@
+use snafu::{self, Snafu};
+
 use crate::file_manager;
-use snafu;
-use snafu::Snafu;
 
 #[derive(Snafu, Debug)]
 pub enum RecordFileError {

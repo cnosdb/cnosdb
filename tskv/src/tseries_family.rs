@@ -12,35 +12,64 @@ use std::{
 use models::ValueType;
 use tokio::sync::RwLock;
 
-use crate::{kv_option::TseriesFamOpt, DataType, MemCache};
+use crate::{kv_option::TseriesFamOpt, CompactMeta, DataType, MemCache};
+
+// let const
 
 #[derive(Default)]
 pub struct TimeRange {
     max_ts: u64,
     min_ts: u64,
 }
-pub struct BlockFile {}
+pub struct BlockFile {
+    file_id: u64,
+}
 
 #[derive(Default)]
 pub struct LevelInfo {
-    files: Vec<Arc<BlockFile>>,
+    files: Vec<BlockFile>,
     level: u32,
     cur_size: u64,
     max_size: u64,
     ts_range: TimeRange,
 }
 
+impl LevelInfo {
+    pub fn init(level: u32) -> Self {
+        Self { files: Vec::new(),
+               level,
+               cur_size: 0,
+               max_size: 0,
+               ts_range: TimeRange { max_ts: 0, min_ts: 0 } }
+    }
+    pub fn apply(&mut self, delta: &CompactMeta) {
+        self.files.push(BlockFile { file_id: delta.file_id });
+        // todo: get file size
+        // self.cur_size = ;
+        if self.ts_range.max_ts < delta.ts_max {
+            self.ts_range.max_ts = delta.ts_max;
+        }
+        if self.ts_range.min_ts > delta.ts_max {
+            self.ts_range.min_ts = delta.ts_min;
+        }
+    }
+
+    pub fn level(&self) -> u32 {
+        self.level
+    }
+}
+
 #[derive(Default)]
 pub struct Version {
     pub id: u32,
-    pub seq_no: u64,
+    pub log_no: u64,
     pub name: String,
-    pub level_info: LevelInfo,
+    pub levels_info: Vec<LevelInfo>,
 }
 
 impl Version {
-    pub fn new(id: u32, seq_no: u64, name: String, level_info: LevelInfo) -> Self {
-        Self { id, seq_no, name, level_info }
+    pub fn new(id: u32, log_no: u64, name: String, levels_info: Vec<LevelInfo>) -> Self {
+        Self { id, log_no, name, levels_info }
     }
 
     pub fn get_name(&self) -> &str {
@@ -69,7 +98,6 @@ impl SuperVersion {
     }
 }
 
-pub struct Summary {}
 pub struct TseriesFamily {
     tf_id: u32,
     mut_cache: Arc<RwLock<MemCache>>,
@@ -93,7 +121,7 @@ impl TseriesFamily {
         let mm = Arc::new(RwLock::new(cache));
         let cf = Arc::new(opt);
         Self { tf_id,
-               seq_no: version.seq_no,
+               seq_no: version.log_no,
                mut_cache: mm.clone(),
                immut_cache: Default::default(),
                super_version: Arc::new(SuperVersion::new(tf_id,
@@ -103,7 +131,7 @@ impl TseriesFamily {
                                                          cf.clone(),
                                                          0)),
                super_version_id: AtomicU64::new(0),
-               version,
+               version: version,
                opts: cf }
     }
 

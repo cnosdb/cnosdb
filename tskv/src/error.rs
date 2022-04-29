@@ -16,13 +16,14 @@ pub enum Error {
     Receive,
     #[snafu(display("invalid flatbuffers: {}", source))]
     InvalidFlatbuffer { source: flatbuffers::InvalidFlatbuffer },
-    #[snafu(display("parse flatbuffers: {}", source))]
-    ParseFlatbuffer { source: ParseFlatbufferError },
+    // #[snafu(display("parse flatbuffers: {}", source))]
+    // ParseFlatbuffer { source: ParseFlatbufferError },
     #[snafu(display("unable to write wal: {}", source))]
     WriteAheadLog { source: wal::WalError },
-}
-
-#[derive(Snafu, Debug)]
-pub enum ParseFlatbufferError {
-    Error,
+    #[snafu(display("read record file block: {}", source))]
+    LogRecordErr { source: crate::record_file::RecordFileError },
+    #[snafu(display("read record file block: {}", source))]
+    Encode { source: bincode::Error },
+    #[snafu(display("read record file block: {}", source))]
+    Decode { source: bincode::Error },
 }
