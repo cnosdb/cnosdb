@@ -22,12 +22,12 @@ impl VersionSet {
         let mut ts_families_names = HashMap::new();
         for (id, ver) in vers_set {
             let name = ver.get_name().to_string();
-            let seq = ver.seq_no;
+            let seq = ver.log_no;
             for item in desc.iter() {
                 if item.name == name {
                     let tf = TseriesFamily::new(id,
                                                 name.clone(),
-                                                MemCache::new(id, 100 * 1024 * 1024, seq),
+                                                MemCache::new(id, MAX_MEMCACHE_SIZE, seq),
                                                 ver.clone(),
                                                 item.opt.clone());
                     ts_families.insert(id, tf);

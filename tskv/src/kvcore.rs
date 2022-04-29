@@ -143,8 +143,8 @@ pub(crate) struct KvContext {
 #[allow(dead_code)]
 impl KvContext {
     pub fn new(opt: Options) -> Self {
-        let front_work_queue = Arc::new(WorkerQueue::new(opt.front_cpu));
-        let worker_handle = Vec::with_capacity(opt.back_cpu);
+        let front_work_queue = Arc::new(WorkerQueue::new(opt.db.front_cpu));
+        let worker_handle = Vec::with_capacity(opt.db.back_cpu);
         Self { front_handler: front_work_queue, handler: worker_handle, status: KvStatus::Init }
     }
 

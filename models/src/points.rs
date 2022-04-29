@@ -66,7 +66,7 @@ impl From<Point<'_>> for AbstractPoints {
 mod test_points {
     use protos::models;
 
-    use crate::{AbstractPoints};
+    use crate::AbstractPoints;
 
     #[test]
     fn test_from() {

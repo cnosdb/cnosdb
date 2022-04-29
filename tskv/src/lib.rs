@@ -4,6 +4,7 @@
 #![allow(unused_imports, unused_variables)]
 
 mod compute;
+mod context;
 mod direct_io;
 mod error;
 mod file_manager;
@@ -30,6 +31,7 @@ pub use kvcore::*;
 pub use lru_cache::*;
 pub use memcache::*;
 use protos::kv_service::WritePointsRpcResponse;
+pub use record_file::*;
 pub use runtime::*;
 pub use summary::*;
 use tokio::sync::oneshot;

@@ -42,12 +42,19 @@ impl DataType {
     }
 }
 
-#[allow(dead_code)]
 pub struct MemEntry {
     ts_min: u64,
     ts_max: u64,
     field_type: FieldType,
     cells: Vec<DataType>,
+}
+impl Default for MemEntry {
+    fn default() -> Self {
+        MemEntry { ts_min: u64::MAX,
+                   ts_max: u64::MIN,
+                   field_type: FieldType::String,
+                   cells: Vec::new() }
+    }
 }
 
 #[allow(dead_code)]
@@ -109,18 +116,15 @@ impl MemCache {
         Ok(())
     }
     pub fn insert(&mut self, filed_id: u64, val: DataType) {
-        let entry = self.data_cache.get_mut(&filed_id);
         let ts = val.timestamp();
-        // todo: if not exit insert into
-        if let Some(item) = entry {
-            if item.ts_max < ts {
-                item.ts_max = ts;
-            }
-            if item.ts_min > ts {
-                item.ts_min = ts
-            }
-            item.cells.push(val);
+        let item = self.data_cache.entry(filed_id).or_insert(MemEntry::default());
+        if item.ts_max < ts {
+            item.ts_max = ts;
         }
+        if item.ts_min > ts {
+            item.ts_min = ts
+        }
+        item.cells.push(val);
     }
 
     pub fn flush() -> Result<()> {

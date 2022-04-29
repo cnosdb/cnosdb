@@ -1,5 +1,3 @@
-
-
 #[actix_rt::test]
 async fn test_call_add_series() {
     let mut conn =

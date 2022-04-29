@@ -72,11 +72,10 @@ impl IoTask {
         }
     }
     pub fn is_pri_high(&self) -> bool {
-        
         self.task_type == TaskType::FrontWrite
-                  || self.task_type == TaskType::FrontRead
-                  || self.task_type == TaskType::Wal
-                  || self.priority > 0
+        || self.task_type == TaskType::FrontRead
+        || self.task_type == TaskType::Wal
+        || self.priority > 0
     }
 }
 
