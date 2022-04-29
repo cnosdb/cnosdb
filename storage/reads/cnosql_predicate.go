@@ -5,6 +5,7 @@ import (
 
 	"github.com/cnosdb/cnosdb/storage/reads/datatypes"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
+
 	"github.com/pkg/errors"
 )
 

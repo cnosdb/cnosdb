@@ -29,6 +29,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/storage"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"

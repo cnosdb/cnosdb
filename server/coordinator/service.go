@@ -1,7 +1,6 @@
 package coordinator
 
 import (
-	//"bytes"
 	"context"
 	"encoding"
 	"encoding/binary"
@@ -17,6 +16,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/common"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+
 	"go.uber.org/zap"
 )
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
+
 	"go.uber.org/zap"
 )
 

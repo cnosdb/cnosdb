@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb"
-	"go.uber.org/zap"
-
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+
+	"go.uber.org/zap"
 )
 
 const (

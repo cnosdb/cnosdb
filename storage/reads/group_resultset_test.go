@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-
 	"github.com/cnosdb/cnosdb/storage/reads"
 	"github.com/cnosdb/cnosdb/storage/reads/datatypes"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/data/gen"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestNewGroupResultSet_Sorting(t *testing.T) {

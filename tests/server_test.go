@@ -11,6 +11,7 @@ import (
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+
 	"go.uber.org/zap/zapcore"
 )
 
