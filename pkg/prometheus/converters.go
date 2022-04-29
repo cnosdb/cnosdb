@@ -9,6 +9,7 @@ import (
 	"github.com/cnosdb/cnosdb/storage/reads/datatypes"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/storage"
+
 	"github.com/gogo/protobuf/types"
 	remote "github.com/prometheus/prometheus/prompb"
 )

@@ -5,9 +5,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 	log "github.com/cnosdb/cnosdb/pkg/logger"
 	tls "github.com/cnosdb/cnosdb/pkg/tlsconfig"
+	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 )
 
 const (

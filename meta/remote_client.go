@@ -2,7 +2,7 @@ package meta
 
 import (
 	"bytes"
-	crand "crypto/rand"
+	cRand "crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -598,7 +598,7 @@ func (c *RemoteClient) hashWithSalt(salt []byte, password string) []byte {
 // saltedHash returns a salt and salted hash of password
 func (c *RemoteClient) saltedHash(password string) (salt, hash []byte, err error) {
 	salt = make([]byte, SaltBytes)
-	if _, err := io.ReadFull(crand.Reader, salt); err != nil {
+	if _, err := io.ReadFull(cRand.Reader, salt); err != nil {
 		return nil, nil, err
 	}
 

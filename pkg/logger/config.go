@@ -2,6 +2,7 @@ package logger
 
 import (
 	"github.com/cnosdb/cnosdb/pkg/zaputil"
+
 	"go.uber.org/zap/zapcore"
 )
 

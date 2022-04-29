@@ -3,12 +3,13 @@ package server
 import (
 	"errors"
 	"fmt"
-	mainServer "github.com/cnosdb/cnosdb/server"
 	"os"
 	"time"
 
 	"github.com/cnosdb/cnosdb/meta"
+	mainServer "github.com/cnosdb/cnosdb/server"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+
 	"go.uber.org/zap"
 )
 

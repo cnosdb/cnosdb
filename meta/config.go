@@ -10,8 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/BurntSushi/toml"
 	"github.com/cnosdb/cnosdb/pkg/logger"
+
+	"github.com/BurntSushi/toml"
 	"go.uber.org/zap"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"

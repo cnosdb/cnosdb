@@ -4,11 +4,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 )
 

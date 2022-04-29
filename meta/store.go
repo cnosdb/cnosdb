@@ -11,6 +11,7 @@ import (
 
 	"github.com/cnosdb/cnosdb"
 	internal "github.com/cnosdb/cnosdb/meta/internal"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"

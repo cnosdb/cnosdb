@@ -2,9 +2,9 @@ package rp
 
 import (
 	"errors"
-	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"time"
 
+	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 )
 

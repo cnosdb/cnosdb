@@ -7,11 +7,11 @@ import (
 	"net/http/pprof"
 	"os"
 
-	"github.com/cnosdb/cnosdb/pkg/logger"
-
 	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/pkg/utils"
+
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
 )
