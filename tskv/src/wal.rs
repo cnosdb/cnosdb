@@ -4,7 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-
 use lazy_static::lazy_static;
 use protos::models;
 use regex::Regex;
@@ -341,7 +340,6 @@ mod test {
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use protos::{models, models_helper};
-    
 
     use super::{WalEntryBlockInner, WalFileManager};
     use crate::{

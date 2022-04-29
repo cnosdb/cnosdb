@@ -565,8 +565,6 @@ impl<T: Scope> CacheInner<T> {
         // TODO reuse pages.
         let page = Page_::new(scope, id, data);
 
-        
-
         self.add_page(page, PageCountKind::Cold { resident: true })
     }
 }
@@ -639,9 +637,7 @@ impl<T: Scope> Cache<T> {
         let (donor_page, mut page, page_io) = loop {
             let mut inner = self.inner.lock();
 
-            let page = {
-                scope.page_map_r().get(&id).map(|page| *page.iter().next().unwrap())
-            };
+            let page = { scope.page_map_r().get(&id).map(|page| *page.iter().next().unwrap()) };
             if let Some(mut page) = page {
                 let page = unsafe { page.as_mut() };
                 if page.io().is_running() {

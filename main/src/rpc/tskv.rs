@@ -99,41 +99,41 @@ impl TskvService for TskvServiceImpl {
         let mut stream = request.into_inner();
         let (resp_sender, resp_receiver) = mpsc::channel(128);
         let req_sender = self.sender.clone();
-        tokio::spawn(async move {
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(req) => {
-                        // 1. send Request to handler
-                        let (tx, rx) = oneshot::channel();
-                        let ret =
-                            req_sender.send(tskv::Task::WritePoints { req, tx })
-                                      .map_err(|err| tonic::Status::internal(err.to_string()));
+        // let f =
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(req) => {
+                    // 1. send Request to handler
+                    let (tx, rx) = oneshot::channel();
+                    let ret = req_sender.send(tskv::Task::WritePoints { req, tx })
+                                        .map_err(|err| tonic::Status::internal(err.to_string()));
 
-                        // 2. if something wrong when sending Request
-                        if let Err(err) = ret {
-                            resp_sender.send(Err(err)).await.expect("successful");
-                            continue;
-                        }
-                        // 3. receive Response from handler
-                        let ret = match rx.await {
-                            Ok(Ok(resp)) => Ok(resp),
-                            Ok(Err(err)) => Err(tonic::Status::internal(err.to_string())),
-                            Err(err) => Err(tonic::Status::internal(err.to_string())),
-                        };
+                    // 2. if something wrong when sending Request
+                    if let Err(err) = ret {
+                        resp_sender.send(Err(err)).await.expect("successful");
+                        continue;
+                    }
+                    // 3. receive Response from handler
+                    let ret = match rx.await {
+                        Ok(Ok(resp)) => Ok(resp),
+                        Ok(Err(err)) => Err(tonic::Status::internal(err.to_string())),
+                        Err(err) => Err(tonic::Status::internal(err.to_string())),
+                    };
 
-                        // 4. send Response out of this Stream
-                        resp_sender.send(ret).await.expect("successful");
-                    },
-                    Err(status) => {
-                        match resp_sender.send(Err(status)).await {
-                            Ok(_) => (),
-                            Err(_err) => break, // response was droped
-                        }
-                    },
-                }
+                    // 4. send Response out of this Stream
+                    resp_sender.send(ret).await.expect("successful");
+                },
+                Err(status) => {
+                    match resp_sender.send(Err(status)).await {
+                        Ok(_) => (),
+                        Err(_err) => break, // response was droped
+                    }
+                },
             }
-            println!("stream ended");
-        });
+        }
+        println!("stream ended");
+
+        // tokio::spawn(f);
         // echo just write the same data that was received
         let out_stream = ReceiverStream::new(resp_receiver);
 

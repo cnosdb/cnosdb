@@ -33,6 +33,6 @@ impl Runtime {
         where F: Future<Output = ()> + Send + 'static
     {
         self.queues[index].send(ArcTask::new(task, self.queues[index].clone()))
-                             .map_err(|_| Error::Send) //
+                          .map_err(|_| Error::Send) //
     }
 }
