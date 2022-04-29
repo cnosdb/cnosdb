@@ -6,18 +6,20 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
-	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosdb/server/snapshotter"
-	tarstream "github.com/cnosdb/cnosdb/vend/db/pkg/tar"
-	gzip "github.com/klauspost/pgzip"
-	"github.com/spf13/cobra"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/cnosdb/cnosdb/cmd/cnosdb/backup_util"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/server/snapshotter"
+	tarstream "github.com/cnosdb/cnosdb/vend/db/pkg/tar"
+
+	gzip "github.com/klauspost/pgzip"
+	"github.com/spf13/cobra"
 )
 
 type options struct {

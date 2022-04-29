@@ -3,18 +3,20 @@ package dumptsi
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"text/tabwriter"
+
 	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/index/tsi1"
+
 	"github.com/spf13/cobra"
-	"io"
-	"os"
-	"path/filepath"
-	"regexp"
-	"text/tabwriter"
 )
 
 type Options struct {

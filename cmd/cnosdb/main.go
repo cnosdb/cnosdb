@@ -10,6 +10,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/options"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/restore"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/run"
+
 	"github.com/spf13/cobra"
 )
 

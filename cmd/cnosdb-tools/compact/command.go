@@ -19,6 +19,7 @@ import (
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/limiter"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb/engine/tsm1"
+
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

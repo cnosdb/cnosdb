@@ -3,12 +3,14 @@ package init
 //
 import (
 	"errors"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate"
-	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
-	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"time"
+
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
+
+	"github.com/spf13/cobra"
 )
 
 // Options represents the program execution for "store query".

@@ -11,6 +11,7 @@ import (
 	"runtime"
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
+
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 )
