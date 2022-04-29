@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
+
 	"runtime"
 )
 

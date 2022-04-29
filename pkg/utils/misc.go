@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
+
 	"go.uber.org/zap"
 )
 

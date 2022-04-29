@@ -8,6 +8,7 @@ import (
 
 	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"go.uber.org/zap"
