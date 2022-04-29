@@ -17,6 +17,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/line"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/internal/format/text"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/server"
+
 	"go.uber.org/zap"
 )
 

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/BurntSushi/toml"
 	"github.com/cnosdb/cnosdb/server"
+
+	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
+
 )
 
 var config_examples = `  cnosdb config`

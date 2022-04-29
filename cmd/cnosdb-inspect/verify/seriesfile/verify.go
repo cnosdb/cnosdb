@@ -2,13 +2,15 @@ package seriesfile
 
 import (
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-	"go.uber.org/zap"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
+
+	"go.uber.org/zap"
 )
 
 // Verify contains configuration for running verification of series files.

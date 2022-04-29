@@ -3,7 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
-	mainserver "github.com/cnosdb/cnosdb/server"
+	mainServer "github.com/cnosdb/cnosdb/server"
 	"os"
 	"time"
 
@@ -44,7 +44,7 @@ func NewSingleServer() *singleServer {
 
 type singleServer struct {
 	logger   *zap.Logger
-	config   *mainserver.Config
+	config   *mainServer.Config
 	noClient bool
 	client   *meta.Client
 	mc       MetaClient
@@ -88,14 +88,14 @@ func (s *singleServer) NodeID() uint64          { return 0 }
 
 // ParseConfig parses the config at path.
 // It returns a demo configuration if path is blank.
-func (s *singleServer) parseConfig(path string) (*mainserver.Config, error) {
+func (s *singleServer) parseConfig(path string) (*mainServer.Config, error) {
 	path = s.resolvePath(path)
 	// Use demo configuration if no config path is specified.
 	if path == "" {
 		return nil, errors.New("missing config file")
 	}
 
-	config := mainserver.NewConfig()
+	config := mainServer.NewConfig()
 	if err := config.FromTomlFile(path); err != nil {
 		return nil, err
 	}

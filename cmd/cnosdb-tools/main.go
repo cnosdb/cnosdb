@@ -6,8 +6,8 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/compact"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/export"
-	genexec "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/exec"
-	geninit "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/init"
+	genExec "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/exec"
+	genInit "github.com/cnosdb/cnosdb/cmd/cnosdb-tools/generate/init"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/importer"
 
 	"github.com/spf13/cobra"
@@ -17,10 +17,10 @@ func main() {
 
 	mainCmd := GetCommand()
 
-	geninit := geninit.GetCommand()
+	geninit := genInit.GetCommand()
 	mainCmd.AddCommand(geninit)
 
-	genexec := genexec.GetCommand()
+	genexec := genExec.GetCommand()
 	mainCmd.AddCommand(genexec)
 
 	compact := compact.GetCommand()

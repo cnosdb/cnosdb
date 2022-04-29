@@ -1,10 +1,6 @@
 // Package help is the help subcommand of the cnosdb command.
 package help
 
-
-
-
-
 const usage = `
 Tools for managing and querying CnosDB.
 

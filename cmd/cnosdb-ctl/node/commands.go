@@ -5,6 +5,7 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
 	"github.com/cnosdb/cnosdb/meta"
+
 	"github.com/spf13/cobra"
 )
 

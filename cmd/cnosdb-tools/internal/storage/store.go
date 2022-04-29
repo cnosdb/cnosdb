@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 )
 
 type MetaClient interface {
