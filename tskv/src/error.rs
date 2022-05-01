@@ -26,4 +26,6 @@ pub enum Error {
     Encode { source: bincode::Error },
     #[snafu(display("read record file block: {}", source))]
     Decode { source: bincode::Error },
+    #[snafu(display("error apply edits to summary"))]
+    ErrApplyEdit,
 }

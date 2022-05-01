@@ -3,6 +3,7 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use crate::{
     context::GlobalContext,
@@ -13,6 +14,7 @@ use crate::{
     KvContext, LevelInfo, Version, VersionSet,
 };
 
+const MAX_BATCH_SIZE: usize = 64;
 #[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
 pub struct CompactMeta {
     pub file_id: u64, // file id
@@ -160,7 +162,62 @@ impl Summary {
     }
     // apply version edit to summary file
     // and write to memory struct
-    pub async fn apply_version_edit() {}
+    pub async fn apply_version_edit(&self, eds: &[VersionEdit]) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub struct SummaryProcesser {
+    summary: Box<Summary>,
+    cbs: Vec<Sender<Result<()>>>,
+    edits: Vec<VersionEdit>,
+}
+
+impl SummaryProcesser {
+    pub fn new(summary: Box<Summary>) -> Self {
+        Self { summary, cbs: vec![], edits: vec![] }
+    }
+
+    pub fn batch(&mut self, mut task: SummaryTask) -> bool {
+        let mut need_apply = self.edits.len() > MAX_BATCH_SIZE;
+        if task.edits.len() == 1 && (task.edits[0].del_tsf || task.edits[0].add_tsf) {
+            need_apply = true;
+        }
+        self.edits.append(&mut task.edits);
+        self.cbs.push(task.cb);
+        need_apply
+    }
+
+    pub async fn apply(&mut self) {
+        let edits = std::mem::take(&mut self.edits);
+        match self.summary.apply_version_edit(&edits).await {
+            Ok(()) => {
+                for cb in self.cbs.drain(..) {
+                    let _ = cb.send(Ok(()));
+                }
+            },
+            Err(e) => {
+                for cb in self.cbs.drain(..) {
+                    let _ = cb.send(Err(Error::ErrApplyEdit));
+                }
+            },
+        }
+    }
+}
+pub struct SummaryTask {
+    pub edits: Vec<VersionEdit>,
+    pub cb: Sender<Result<()>>,
+}
+
+#[derive(Clone)]
+pub struct SummaryScheduler {
+    sender: UnboundedSender<SummaryTask>,
+}
+
+impl SummaryScheduler {
+    pub fn new(sender: UnboundedSender<SummaryTask>) -> Self {
+        Self { sender }
+    }
 }
 
 #[test]
