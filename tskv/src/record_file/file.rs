@@ -7,5 +7,5 @@ pub fn open_file(path: &PathBuf) -> RecordFileResult<direct_io::File> {
                                                     &fs::OpenOptions::new().read(true)
                                                                            .write(true)
                                                                            .create(true))
-                                    .map_err(|err| RecordFileError::OpenFile { source: err })
+                                    .map_err(|err| RecordFileError::OpenFile)
 }

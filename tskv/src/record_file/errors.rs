@@ -1,6 +1,6 @@
 use snafu::{self, Snafu};
 
-use crate::file_manager;
+use crate::{error, file_manager};
 
 #[derive(Snafu, Debug)]
 pub enum RecordFileError {
@@ -14,10 +14,8 @@ pub enum RecordFileError {
         source: std::io::Error,
     },
 
-    #[snafu(display("Error with open file : {}", source))]
-    OpenFile {
-        source: file_manager::FileError,
-    },
+    #[snafu(display("Error with open file"))]
+    OpenFile,
 
     #[snafu(display("Error with sync file : {}", source))]
     SyncFile {

@@ -4,9 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use lazy_static::lazy_static;
 use protos::models;
-use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::oneshot;
 use walkdir::IntoIter;
@@ -16,10 +14,6 @@ use crate::{
     direct_io::{make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType},
     file_manager, kv_option, FileManager,
 };
-
-lazy_static! {
-    static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new("_.*\\.wal").unwrap();
-}
 
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
@@ -35,8 +29,8 @@ pub enum WalError {
     #[snafu(display("File {} has wrong name format to have an id", file_name))]
     InvalidFileName { file_name: String },
 
-    #[snafu(display("Error with file : {}", source))]
-    FailedWithFileManager { source: super::file_manager::FileError },
+    #[snafu(display("Error with file"))]
+    FailedWithFileManager,
 
     #[snafu(display("Error with std::io : {}", source))]
     FailedWithStdIO { source: std::io::Error },
@@ -103,50 +97,12 @@ pub struct WalFileManager {
 unsafe impl Send for WalFileManager {}
 unsafe impl Sync for WalFileManager {}
 
-pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64)> {
-    let segments = file_manager::list_file_names(dir);
-    if segments.is_empty() {
-        return None;
-    }
-    let mut max_id = 1;
-    let mut max_index = 0;
-    for (i, file_name) in segments.iter().enumerate() {
-        match get_id_by_file_name(file_name) {
-            Ok(id) => {
-                if max_id < id {
-                    max_id = id;
-                    max_index = i;
-                }
-            },
-            Err(_) => continue,
-        }
-    }
-    let max_file_name = segments.get(max_index).unwrap();
-    Some((PathBuf::from(max_file_name), max_id))
-}
-
-fn get_id_by_file_name(file_name: &String) -> WalResult<u64> {
-    if !WAL_FILE_NAME_PATTERN.is_match(file_name) {
-        return Err(WalError::InvalidFileName { file_name: file_name.clone() });
-    }
-    let parts: Vec<&str> = file_name.split('.').collect();
-    if parts.len() != 2 {
-        Err(WalError::InvalidFileName { file_name: file_name.clone() })
-    } else {
-        parts.first()
-             .unwrap()
-             .split_at(1)
-             .1
-             .parse::<u64>()
-             .map_err(|err| WalError::InvalidFileName { file_name: file_name.clone() })
-    }
-}
-
 impl WalFileManager {
     pub fn new(config: kv_option::WalConfig) -> Self {
         let dir = config.dir.clone();
 
-        let (last, seq) = match get_max_sequence_file_name(PathBuf::from(dir.clone())) {
+        let (last, seq) = match file_manager::get_max_sequence_file_name(PathBuf::from(dir.clone()))
+        {
             Some((file, seq)) => (file, seq),
             None => {
                 let seq = 1;
@@ -157,7 +113,7 @@ impl WalFileManager {
         let current_dir_path = PathBuf::from(dir);
 
         let file = file_manager::get_file_manager().open_create_file(current_dir_path.join(last))
-                                                   .context(FailedWithFileManagerSnafu)
+                                                   //    .context(FailedWithFileManagerSnafu)
                                                    .unwrap();
         let size = file.len();
 
@@ -170,8 +126,9 @@ impl WalFileManager {
             current_file.id += 1;
             let file_name =
                 file_manager::make_wal_file_name(self.config.dir.as_str(), current_file.id);
-            let file = file_manager::get_file_manager().create_file(file_name)
-                                                       .context(FailedWithFileManagerSnafu)?;
+            let file =
+                file_manager::get_file_manager().create_file(file_name)
+                                                .map_err(|e| WalError::FailedWithFileManager)?;
             current_file.file = file;
         }
         Ok(())

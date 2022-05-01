@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
-use futures::TryFutureExt;
+use futures::{future::ok, TryFutureExt};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
@@ -8,7 +8,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 use crate::{
     context::GlobalContext,
     error::{Error, Result},
-    file_utils,
+    file_manager,
     kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
     record_file::{Reader, Writer},
     KvContext, LevelInfo, Version, VersionSet,
@@ -85,16 +85,19 @@ impl Summary {
     // create a new summary file
     pub async fn new(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
         let db = VersionEdit::new(0, 0, 1, vec![], vec![]);
-        let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
+        let mut w = Writer::new(&file_manager::get_summary_file(&db_opt.db_path, 0));
         let buf = db.encode()?;
         let _ = w.write_record(1, EditType::SummaryEdit.into(), &buf)
                  .map_err(|e| Error::LogRecordErr { source: (e) })
                  .await?;
         w.hard_sync().map_err(|e| Error::LogRecordErr { source: e }).await?;
         let ctx = GlobalContext::default();
-        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
+        let rd = Box::new(Reader::new(&file_manager::get_summary_file(&db_opt.db_path, 0)));
         let vs = Self::recover(tf_desc, rd, &ctx).await?;
         Ok(Self { file_no: 0, version_set: Arc::new(Mutex::new(vs)), ctx })
+    }
+    pub fn version_set(&self) -> Arc<Mutex<VersionSet>> {
+        self.version_set.clone()
     }
     // recover from summary file
     pub async fn recover(tf_cfg: &[TseriesFamDesc],
@@ -163,6 +166,10 @@ impl Summary {
     // apply version edit to summary file
     // and write to memory struct
     pub async fn apply_version_edit(&self, eds: &[VersionEdit]) -> Result<()> {
+        if eds.is_empty() {
+            return Ok(());
+        }
+
         Ok(())
     }
 }

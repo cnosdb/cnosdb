@@ -6,6 +6,14 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
+    #[snafu(display("Unable to open file: {}", source))]
+    UnableToOpenFile { source: std::io::Error },
+    #[snafu(display("Unable to write file: {}", source))]
+    UnableToWriteBytes { source: std::io::Error },
+    #[snafu(display("Unable to sync file: {}", source))]
+    UnableToSyncFile { source: std::io::Error },
+    #[snafu(display("File {} has wrong name format to have an id", file_name))]
+    InvalidFileName { file_name: String },
     #[snafu(display("{}", source))]
     IO { source: std::io::Error },
     #[snafu(display("async file system stopped"))]

@@ -8,28 +8,21 @@ use std::{
 };
 
 use futures::channel::oneshot::{self, Sender};
+use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use regex::Regex;
 use snafu::{ResultExt, Snafu};
 
-use crate::direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
+use crate::{
+    direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType},
+    Error, Result,
+};
 
-#[derive(Snafu, Debug)]
-pub enum FileError {
-    #[snafu(display("Unable to open file: {}", source))]
-    UnableToOpenFile { source: std::io::Error },
-
-    #[snafu(display("Unable to write file: {}", source))]
-    UnableToWriteBytes { source: std::io::Error },
-
-    #[snafu(display("Unable to sync file: {}", source))]
-    UnableToSyncFile { source: std::io::Error },
-
-    #[snafu(display("async file system stopped"))]
-    Cancel,
+lazy_static! {
+    static ref WAL_PATTERN: Regex = Regex::new("_.*\\.wal").unwrap();
+    static ref SUMARRY_PATTERN: Regex = Regex::new("_.*\\.summary").unwrap();
 }
-
-type Result<T> = std::result::Result<T, FileError>;
 
 pub struct FileManager {
     file_system: Arc<direct_io::FileSystem>,
@@ -67,15 +60,15 @@ impl FileManager {
                           -> Result<direct_io::File> {
         self.file_system
             .open_with(path, options)
-            .map_err(|err| FileError::UnableToOpenFile { source: err })
+            .map_err(|err| Error::UnableToOpenFile { source: err })
     }
 
     pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
-        self.file_system.open(path).map_err(|err| FileError::UnableToOpenFile { source: err })
+        self.file_system.open(path).map_err(|err| Error::UnableToOpenFile { source: err })
     }
 
     pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
-        self.file_system.create(path).map_err(|err| FileError::UnableToOpenFile { source: err })
+        self.file_system.create(path).map_err(|err| Error::UnableToOpenFile { source: err })
     }
 
     pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
@@ -83,11 +76,11 @@ impl FileManager {
     }
 
     pub async fn sync_all(&self, sync: direct_io::FileSync) -> Result<()> {
-        self.file_system.sync_all(sync).map_err(|err| FileError::UnableToSyncFile { source: err })
+        self.file_system.sync_all(sync).map_err(|err| Error::UnableToSyncFile { source: err })
     }
 
     pub async fn sync_data(&self, sync: direct_io::FileSync) -> Result<()> {
-        self.file_system.sync_data(sync).map_err(|err| FileError::UnableToSyncFile { source: err })
+        self.file_system.sync_data(sync).map_err(|err| Error::UnableToSyncFile { source: err })
     }
 
     pub async fn write_at(&self, file: Arc<direct_io::File>, pos: u64, buf: &mut [u8]) {
@@ -105,7 +98,7 @@ impl FileManager {
 
     pub fn put_io_task(&self, task: IoTask) -> Result<()> {
         if self.async_rt.is_closed() {
-            return Err(FileError::Cancel);
+            return Err(Error::Cancel);
         }
         if task.is_pri_high() {
             let _ = self.async_rt.high_op_queue.push(task);
@@ -157,6 +150,50 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
 pub fn make_wal_file_name(path: &str, sequence: u64) -> PathBuf {
     let p = format!("{}/_{:05}.wal", path, sequence);
     PathBuf::from(p)
+}
+
+pub fn get_summary_file(path: &str, file_no: u64) -> PathBuf {
+    let p = format!("{}/_{:06}.summary", path, file_no);
+    PathBuf::from(p)
+}
+
+pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64)> {
+    let segments = list_file_names(dir);
+    if segments.is_empty() {
+        return None;
+    }
+    let mut max_id = 1;
+    let mut max_index = 0;
+    for (i, file_name) in segments.iter().enumerate() {
+        match get_id_by_file_name(file_name) {
+            Ok(id) => {
+                if max_id < id {
+                    max_id = id;
+                    max_index = i;
+                }
+            },
+            Err(_) => continue,
+        }
+    }
+    let max_file_name = segments.get(max_index).unwrap();
+    Some((PathBuf::from(max_file_name), max_id))
+}
+
+pub fn get_id_by_file_name(file_name: &String) -> Result<u64> {
+    if !WAL_PATTERN.is_match(file_name) {
+        return Err(Error::InvalidFileName { file_name: file_name.clone() });
+    }
+    let parts: Vec<&str> = file_name.split('.').collect();
+    if parts.len() != 2 {
+        Err(Error::InvalidFileName { file_name: file_name.clone() })
+    } else {
+        parts.first()
+             .unwrap()
+             .split_at(1)
+             .1
+             .parse::<u64>()
+             .map_err(|err| Error::InvalidFileName { file_name: file_name.clone() })
+    }
 }
 
 #[cfg(test)]
