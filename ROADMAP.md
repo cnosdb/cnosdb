@@ -60,10 +60,11 @@ JDBC:提供JDBC客户端程序
 为了cnosdb能够稳定地提供数据的维护工作，需要完成以上任务。
 从长远的角度来看，为了能够与cnosdb-2.0相结合，需要解耦cnosdb1.0的查询层和存储层，中间使用GRPC通信
 
+cnosdb-1.0 release
 
+> benchtest 参考[tsdb-comparisons](https://github.com/cnosdb/tsdb-comparisons)
 
-
-
+> 即将release文档 [repo](https://github.com/cnosdb/docs/tree/latest)
 
 ## cnosdb-2.0 RoadMap
 > 点击查看 [cnosdb-1.0 RoadMap](#cnosdb-10-roadmap)
