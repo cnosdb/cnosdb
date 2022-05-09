@@ -1,4 +1,5 @@
 mod field_info;
+mod points;
 mod series_info;
 mod tag;
 

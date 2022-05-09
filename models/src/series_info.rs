@@ -72,19 +72,27 @@ impl SeriesInfo {
             })
     }
 
-    pub fn update_id(&mut self) {
-        //series id
-        self.sort_tags();
+    pub fn cal_sid(tags: &mut Vec<Tag>) -> SeriesID {
         let mut data = Vec::<u8>::new();
-        for tag in self.tags.iter_mut() {
+        SeriesInfo::sort_tags(tags);
+        for tag in tags.iter_mut() {
             data.append(&mut tag.bytes())
         }
-        self.id = Hash::new().hash_with(&data).number();
+        let sid = Hash::new().hash_with(&data).number();
+        sid
+    }
+
+    pub fn update_id(&mut self) {
+        self.id = Self::cal_sid(&mut self.tags);
 
         // field id
         for field_info in &mut self.field_infos {
             field_info.update_id(self.id);
         }
+    }
+
+    pub fn series_id(&self) -> SeriesID {
+        self.id
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -127,8 +135,9 @@ impl From<Point<'_>> for SeriesInfo {
 
 #[cfg(test)]
 mod tests_series_info {
-    use crate::{FieldInfo, TagFromParts, FieldInfoFromParts, SeriesInfo, Tag, ValueType};
+    use protos::models;
 
+    use crate::{FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, TagFromParts, ValueType};
     #[test]
     fn test_series_info_encode_and_decode() {
         let mut info = SeriesInfo::new();

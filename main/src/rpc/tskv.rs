@@ -14,7 +14,6 @@ use tokio::sync::{
     oneshot,
 };
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use tonic::codegen::http::status;
 use tonic::{Request, Response, Status, Streaming};
 
 pub struct TskvServiceImpl {

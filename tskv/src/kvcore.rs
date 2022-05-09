@@ -1,5 +1,6 @@
 use std::{cell::RefCell, sync::Arc, thread::JoinHandle};
 
+use ::models::AbstractPoints;
 use once_cell::sync::OnceCell;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -93,9 +94,7 @@ impl TsKv {
                 }
             }
         };
-        tokio::spawn(async move {
-            f.await;
-        });
+        tokio::spawn(f);
     }
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
         let f = async move {
