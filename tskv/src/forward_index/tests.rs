@@ -1,30 +1,15 @@
-/*
-use crate::forward_index::field_info::{FieldInfo, ValueType};
-use crate::forward_index::series_info::SeriesInfo;
-use crate::forward_index::tags::Tag;
-use crate::forward_index::ForwardIndex;
-use ValueType::Float;
+use super::*;
 
-#[test]
-fn test_add_series() {
-    let mut fidx = ForwardIndex::new("/tmp/test");
+#[tokio::test]
+async fn test_forward_index() {
+    let mut fidx = ForwardIndex::from("/tmp/test.fidx");
+    fidx.load_cache_file().await.unwrap();
 
-    let mut fields = Vec::<FieldInfo>::new();
-    fields.push(FieldInfo {
-        id: 1,
-        value_type: Float,
-    });
-    let mut tags = Vec::<Tag>::new();
-    tags.push(Tag {
-        key: Vec::<u8>::from("app"),
-        value: Vec::<u8>::from("test"),
-    });
-    fidx.add_series(SeriesInfo {
-        id: 123,
-        fields,
-        tags,
-    });
+    let mut series_info = SeriesInfo::new();
+    series_info.tags.push(Tag::from_parts("hello", "123"));
+    series_info.field_infos.push(FieldInfo::from_parts("cpu", ValueType::Float));
 
-    fidx.close();
+    fidx.add_series_info_if_not_exists(series_info).await.unwrap();
+
+    fidx.close().await.unwrap();
 }
-*/

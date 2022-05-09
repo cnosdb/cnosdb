@@ -14,7 +14,13 @@ pub struct FieldInfo {
     pub value_type: ValueType,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Copy, Clone)]
+pub struct AbstractFieldInfo {
+    pub id: FieldID,
+    pub value_type: ValueType,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone)]
 pub enum ValueType {
     Unknown,
     Float,
@@ -40,6 +46,13 @@ impl From<protos::models::FieldType> for ValueType {
 impl FieldInfo {
     pub fn new(id: u64, name: Vec<u8>, value_type: ValueType) -> Self {
         FieldInfo { id, name, value_type }
+    }
+
+    pub fn to_abstract(&self) -> AbstractFieldInfo {
+        AbstractFieldInfo {
+            id: self.id,
+            value_type: self.value_type,
+        }
     }
 
     pub fn cal_fid(name: &FieldName, sid: SeriesID) -> FieldID {

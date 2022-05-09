@@ -14,9 +14,29 @@ pub struct SeriesInfo {
     pub field_infos: Vec<FieldInfo>,
 }
 
+pub struct AbstractSeriesInfo {
+    pub id: SeriesID,
+    pub pos: u64,
+    pub abstract_field_infos: Vec<AbstractFieldInfo>,
+}
+
 impl SeriesInfo {
     pub fn new() -> Self {
         SeriesInfo { id: 0, tags: Vec::new(), field_infos: Vec::new() }
+    }
+
+    pub fn to_abstract(&self, pos: u64) -> AbstractSeriesInfo {
+        AbstractSeriesInfo {
+            id: self.id,
+            pos,
+            abstract_field_infos: {
+                let mut abs_infos = Vec::<AbstractFieldInfo>::new();
+                for field_info in &self.field_infos {
+                    abs_infos.push(field_info.to_abstract())
+                }
+                abs_infos
+            },
+        }
     }
 
     pub fn add_tag(&mut self, tag: Tag) -> Result<(), String> {
@@ -138,6 +158,7 @@ mod tests_series_info {
     use protos::models;
 
     use crate::{FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, TagFromParts, ValueType};
+
     #[test]
     fn test_series_info_encode_and_decode() {
         let mut info = SeriesInfo::new();
