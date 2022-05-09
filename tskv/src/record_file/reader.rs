@@ -67,10 +67,10 @@ impl Reader {
     #[async_recursion]
     pub async fn read_record(&mut self) -> RecordFileResult<Record> {
         let (origin_pos, buf) = self.read_buf(RECORD_MAGIC_NUMBER_LEN
-                                              + RECORD_DATA_SIZE_LEN
-                                              + RECORD_DATA_VERSION_LEN
-                                              + RECORD_DATA_TYPE_LEN)
-                                    .await?;
+            + RECORD_DATA_SIZE_LEN
+            + RECORD_DATA_VERSION_LEN
+            + RECORD_DATA_TYPE_LEN)
+            .await?;
 
         let mut p = 0;
         let magic_number =
@@ -95,7 +95,7 @@ impl Reader {
                 self.set_pos(origin_pos + 1).await?;
                 self.find_magic().await?;
                 return self.read_record().await;
-            },
+            }
         };
 
         let (_, crc32_number_buf) = self.read_buf(RECORD_CRC32_NUMBER_LEN).await?;
@@ -116,8 +116,8 @@ impl Reader {
 
     async fn load_buf(&mut self) -> RecordFileResult<()> {
         self.buf_len = self.file
-                           .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
-                           .map_err(|err| RecordFileError::ReadFile { source: err })?;
+            .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
+            .map_err(|err| RecordFileError::ReadFile { source: err })?;
         self.buf_use = 0;
         Ok(())
     }
@@ -140,12 +140,61 @@ impl Reader {
             Err(RecordFileError::EOF)
         };
     }
+
+    pub async fn read_one(&self, pos: usize) -> RecordFileResult<Record> {
+        let mut head_buf = Vec::<u8>::new();
+        let head_len = RECORD_MAGIC_NUMBER_LEN
+            + RECORD_DATA_SIZE_LEN + RECORD_DATA_VERSION_LEN + RECORD_DATA_TYPE_LEN;
+        head_buf.resize(head_len, 0);
+        let len = self.file.read_at(pos.to_u64().unwrap(), &mut head_buf)
+            .map_err(|err| { RecordFileError::ReadFile { source: err } })?;
+        if len != head_len {
+            return Err(RecordFileError::InvalidPos);
+        }
+
+        let mut p = 0;
+        let magic_number =
+            u32::from_le_bytes(head_buf[p..p + RECORD_MAGIC_NUMBER_LEN].try_into().unwrap());
+        if magic_number != MAGIC_NUMBER {
+            return Err(RecordFileError::InvalidPos);
+        }
+        p += RECORD_MAGIC_NUMBER_LEN;
+        let data_size = u16::from_le_bytes(head_buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
+        p += RECORD_DATA_SIZE_LEN;
+        let data_version =
+            u8::from_le_bytes(head_buf[p..p + RECORD_DATA_VERSION_LEN].try_into().unwrap());
+        p += RECORD_DATA_VERSION_LEN;
+        let data_type = u8::from_le_bytes(head_buf[p..p + RECORD_DATA_TYPE_LEN].try_into().unwrap());
+
+        let mut data = Vec::<u8>::new();
+        data.resize(data_size.to_usize().unwrap(), 0);
+        let read_data_len = self.file.read_at(
+            pos.to_u64().unwrap() + head_len.to_u64().unwrap(), &mut data)
+            .map_err(|err| { RecordFileError::ReadFile { source: err } })?;
+        if read_data_len != data_size.into() {
+            return Err(RecordFileError::InvalidPos);
+        }
+
+        Ok(Record {
+            pos: pos.to_u64().unwrap(),
+            data_type,
+            data_version,
+            data,
+        })
+    }
 }
 
 impl From<&str> for Reader {
     fn from(path: &str) -> Self {
         Reader::new(&PathBuf::from(path))
     }
+}
+
+#[tokio::test]
+async fn test_reader_read_one() {
+    let r = Reader::from("/tmp/test.log_file");
+    let record = r.read_one(68).await.unwrap();
+    println!("{}, {}, {}, {:?}", record.pos, record.data_type, record.data_version, record.data);
 }
 
 #[tokio::test]
@@ -157,10 +206,10 @@ async fn test_reader() {
             Ok(record) => {
                 println!("{}, {}, {}, {:?}",
                          record.pos, record.data_type, record.data_version, record.data);
-            },
+            }
             Err(_) => {
                 break;
-            },
+            }
         }
     }
 }
