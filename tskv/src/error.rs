@@ -19,7 +19,7 @@ pub enum Error {
     // #[snafu(display("parse flatbuffers: {}", source))]
     // ParseFlatbuffer { source: ParseFlatbufferError },
     #[snafu(display("unable to write wal: {}", source))]
-    WriteAheadLog { source: wal::WalError },
+    Wal { source: wal::WalError },
     #[snafu(display("read record file block: {}", source))]
     LogRecordErr { source: crate::record_file::RecordFileError },
     #[snafu(display("read record file block: {}", source))]
