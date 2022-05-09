@@ -82,7 +82,8 @@ fn main() -> Result<(), std::io::Error> {
 
                        let (sender, receiver) = mpsc::unbounded_channel();
 
-                       let tskv = tskv::TsKv::open(tskv::kv_option::Options::default()).unwrap();
+                       let tskv =
+                           tskv::TsKv::open(tskv::kv_option::Options::default()).await.unwrap();
                        tskv::TsKv::start(tskv, receiver);
 
                        let tskv_impl = rpc::tskv::TskvServiceImpl { sender };

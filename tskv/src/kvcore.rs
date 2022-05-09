@@ -10,15 +10,15 @@ use tokio::{
     runtime::Builder,
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot, RwLock,
+        oneshot, Mutex, RwLock,
     },
 };
 
 use crate::{
     error::Result,
-    kv_option::{Options, QueryOption, WalConfig},
+    kv_option::{DBOptions, Options, QueryOption, WalConfig},
     version_set,
-    wal::{self, WalFileManager, WalResult, WalTask},
+    wal::{self, WalEntryType, WalManager, WalResult, WalTask},
     Error, FileManager, MemCache, Task, Version, VersionSet, WorkerQueue,
 };
 
@@ -29,27 +29,34 @@ pub struct Entry {
 pub struct TsKv {
     options: Options,
     kvctx: Arc<KvContext>,
-    version_set: Arc<VersionSet>,
+    version_set: Arc<RwLock<VersionSet>>,
+
     wal_sender: UnboundedSender<WalTask>,
 }
 
 impl TsKv {
-    pub fn open(opt: Options) -> Result<Self> {
+    pub async fn open(opt: Options) -> Result<Self> {
         let kvctx = Arc::new(KvContext::new(opt.clone()));
-        let vs = Self::recover();
+        let vs = Self::recover(opt.clone()).await;
 
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let core = Self { options: opt, kvctx, version_set: Arc::new(vs), wal_sender: sender };
-
+        let core = Self { options: opt,
+                          kvctx,
+                          version_set: Arc::new(RwLock::new(vs)),
+                          wal_sender: sender };
         core.run_wal_job(receiver);
 
         Ok(core)
     }
 
-    pub fn recover() -> VersionSet {
+    pub async fn recover(opt: Options) -> VersionSet {
         // todo! recover from manifest and build VersionSet
-        VersionSet::new_default()
+        let mut version_set = VersionSet::new_default();
+        let wal_manager = WalManager::new(opt.wal);
+        wal_manager.recover(&mut version_set).await.unwrap();
+
+        version_set
     }
 
     pub async fn write(&self,
@@ -65,8 +72,11 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
-    pub fn insert_cache(&self, buf: &[u8]) {
+    pub async fn insert_cache(&self, buf: &[u8]) {
         let ps = flatbuffers::root::<models::Points>(buf).unwrap();
+
+        let version_set = self.version_set.read().await;
+
         for p in ps.points().unwrap().iter() {
             let s = AbstractPoints::from(p);
             // use sid to dispatch to tsfamily
@@ -74,16 +84,17 @@ impl TsKv {
             // please keep the series id
             let sid = s.series_id();
 
-            let tsf = self.version_set.get_tsfamily(sid).unwrap();
+            let tsf = version_set.get_tsfamily(sid).unwrap();
             for f in s.fileds().iter() {
                 let fid = f.filed_id();
             }
         }
     }
+
     pub fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
         let wal_opt = self.options.wal.clone();
+        let mut wal_manager = WalManager::new(wal_opt);
         let f = async move {
-            let mut wal_manager = WalFileManager::new(wal_opt);
             while let Some(x) = receiver.recv().await {
                 match x {
                     WalTask::Write { points, cb } => {
@@ -96,6 +107,7 @@ impl TsKv {
         };
         tokio::spawn(f);
     }
+
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
         let f = async move {
             while let Some(command) = req_rx.recv().await {
@@ -182,17 +194,24 @@ mod test {
 
     use crate::{kv_option::WalConfig, wal::WalTask, TsKv};
 
-    fn get_tskv() -> TsKv {
+    async fn get_tskv() -> TsKv {
         let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/"),
                                                                ..Default::default() },
                                               ..Default::default() };
 
-        TsKv::open(opt).unwrap()
+        TsKv::open(opt).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_init() {
+        let tskv = get_tskv().await;
+
+        dbg!("Ok");
     }
 
     #[tokio::test]
     async fn test_write() {
-        let tskv = get_tskv();
+        let tskv = get_tskv().await;
 
         let database = "db".to_string();
         let points = b"Hello world".to_vec();
@@ -203,7 +222,7 @@ mod test {
 
     #[tokio::test]
     async fn test_concurrent_write() {
-        let tskv = get_tskv();
+        let tskv = get_tskv().await;
 
         for i in 0..2 {
             let database = "db".to_string();
