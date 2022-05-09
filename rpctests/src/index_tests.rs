@@ -1,5 +1,7 @@
 #[actix_rt::test]
 async fn test_call_add_series() {
+    use protos::kv_service::{tskv_service_client, AddSeriesRpcRequest, FieldInfo, FieldType, Tag};
+
     let mut conn =
         tskv_service_client::TskvServiceClient::connect("http://127.0.0.1:31006").await.unwrap();
 

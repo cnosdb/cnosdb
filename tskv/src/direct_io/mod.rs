@@ -7,8 +7,6 @@ mod async_rt;
 mod cache;
 mod file;
 
-pub use std::fs::OpenOptions;
-
 pub use async_rt::*;
 pub use cache::PageId;
 pub use file::{

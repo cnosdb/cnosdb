@@ -37,6 +37,15 @@ impl HashWith<&Vec<u8>> for Hash {
     }
 }
 
+impl HashWith<&[u8]> for Hash {
+    fn hash_with(&mut self, data: &[u8]) -> &Hash {
+        for c in data {
+            self.0 = self.0.wrapping_mul(SEED).wrapping_add(*c as u64);
+        }
+        self
+    }
+}
+
 impl HashWith<&str> for Hash {
     fn hash_with(&mut self, data: &str) -> &Hash {
         for c in data.as_bytes() {
