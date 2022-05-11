@@ -30,6 +30,19 @@ pub enum ValueType {
     String,
 }
 
+impl From<u8> for ValueType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Float,
+            1 => Self::Integer,
+            2 => Self::Boolean,
+            3 => Self::String,
+            4 => Self::Unsigned,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 impl From<protos::models::FieldType> for ValueType {
     fn from(t: protos::models::FieldType) -> Self {
         match t {
@@ -49,10 +62,7 @@ impl FieldInfo {
     }
 
     pub fn to_abstract(&self) -> AbstractFieldInfo {
-        AbstractFieldInfo {
-            id: self.id,
-            value_type: self.value_type,
-        }
+        AbstractFieldInfo { id: self.id, value_type: self.value_type }
     }
 
     pub fn cal_fid(name: &FieldName, sid: SeriesID) -> FieldID {

@@ -3,6 +3,7 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
+mod compaction;
 mod compute;
 mod context;
 mod direct_io;
@@ -22,10 +23,11 @@ mod tsm;
 mod version_set;
 mod wal;
 
+pub use compaction::*;
 pub use direct_io::*;
 pub use error::*;
 pub use file_manager::*;
-pub use file_utils::*;
+pub use file_utils::make_summary_file;
 pub use kv_option::Options;
 pub use kvcore::*;
 pub use lru_cache::*;

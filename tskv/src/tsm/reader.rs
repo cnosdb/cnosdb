@@ -151,7 +151,6 @@ impl TsmIndexReader {
     }
 
     fn next_index_entry(&mut self) -> Result<IndexEntry> {
-
         let mut buf = [0u8; 2];
         let filed_len = 8;
         let mut filed_id = vec![0; 8];

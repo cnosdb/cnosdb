@@ -279,8 +279,12 @@ impl WalFile {
                                             },
                                             _ => models::ValueType::Unknown,
                                         };
-
-                                        tsf.put_mutcache(fid, val, dtype, e.seq, p.timestamp())
+                                        // todo: change fbs timestamp to i64
+                                        tsf.put_mutcache(fid,
+                                                         val,
+                                                         dtype,
+                                                         e.seq,
+                                                         p.timestamp() as i64)
                                            .await
                                     }
                                 }
