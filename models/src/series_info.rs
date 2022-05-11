@@ -26,17 +26,15 @@ impl SeriesInfo {
     }
 
     pub fn to_abstract(&self, pos: u64) -> AbstractSeriesInfo {
-        AbstractSeriesInfo {
-            id: self.id,
-            pos,
-            abstract_field_infos: {
-                let mut abs_infos = Vec::<AbstractFieldInfo>::new();
-                for field_info in &self.field_infos {
-                    abs_infos.push(field_info.to_abstract())
-                }
-                abs_infos
-            },
-        }
+        AbstractSeriesInfo { id: self.id,
+                             pos,
+                             abstract_field_infos: {
+                                 let mut abs_infos = Vec::<AbstractFieldInfo>::new();
+                                 for field_info in &self.field_infos {
+                                     abs_infos.push(field_info.to_abstract())
+                                 }
+                                 abs_infos
+                             } }
     }
 
     pub fn add_tag(&mut self, tag: Tag) -> Result<(), String> {

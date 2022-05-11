@@ -1,7 +1,7 @@
 use std::error::Error;
 
-//note: encode/decode adapted from influxdb_iox
-//https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
+// note: encode/decode adapted from influxdb_iox
+// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 /// Encodes a slice of unsigned 64-bit integers into `dst`.
 ///
@@ -38,9 +38,10 @@ fn u64_to_i64_vector(src: &[u64]) -> Vec<i64> {
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
-    use super::super::integer::Encoding;
-    use super::super::simple8b;
-    use super::*;
+    use super::{
+        super::{integer::Encoding, simple8b},
+        *,
+    };
 
     #[test]
     fn encode_no_values() {
@@ -78,20 +79,11 @@ mod tests {
 
     #[test]
     fn encode_rle() {
-        let tests = vec![
-            Test {
-                name: String::from("no delta"),
-                input: vec![123; 8],
-            },
-            Test {
-                name: String::from("delta increasing"),
-                input: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-            },
-            Test {
-                name: String::from("delta decreasing"),
-                input: vec![350, 200, 50],
-            },
-        ];
+        let tests = vec![Test { name: String::from("no delta"), input: vec![123; 8] },
+                         Test { name: String::from("delta increasing"),
+                                input: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
+                         Test { name: String::from("delta decreasing"),
+                                input: vec![350, 200, 50] },];
 
         for test in tests {
             let mut dst = vec![];
@@ -100,12 +92,7 @@ mod tests {
             encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
-            assert_eq!(
-                &dst[0] >> 4,
-                Encoding::Rle as u8,
-                "didn't use rle on {:?}",
-                src
-            );
+            assert_eq!(&dst[0] >> 4, Encoding::Rle as u8, "didn't use rle on {:?}", src);
             let mut got = vec![];
             decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
@@ -130,10 +117,8 @@ mod tests {
 
     #[test]
     fn encode_simple8b() {
-        let tests = vec![Test {
-            name: String::from("positive"),
-            input: vec![1, 11, 3124, 123543256, 2398567984273478],
-        }];
+        let tests = vec![Test { name: String::from("positive"),
+                                input: vec![1, 11, 3124, 123543256, 2398567984273478] }];
 
         for test in tests {
             let mut dst = vec![];

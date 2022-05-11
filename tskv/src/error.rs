@@ -26,4 +26,10 @@ pub enum Error {
     Encode { source: bincode::Error },
     #[snafu(display("read record file block: {}", source))]
     Decode { source: bincode::Error },
+    #[snafu(display("error apply edits to summary"))]
+    ErrApplyEdit,
+    #[snafu(display("read tsm block file error: {}", reason))]
+    ReadTsmErr { reason: String },
+    #[snafu(display("write tsm block file error: {}", reason))]
+    WriteTsmErr { reason: String },
 }

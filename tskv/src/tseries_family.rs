@@ -148,7 +148,7 @@ impl TseriesFamily {
         self.mut_cache = cache;
     }
 
-    pub async fn put_mutcache(&self, fid: u64, val: &[u8], dtype: ValueType, seq: u64, ts: u64) {
+    pub async fn put_mutcache(&self, fid: u64, val: &[u8], dtype: ValueType, seq: u64, ts: i64) {
         let mut mem = self.super_version.mut_cache.write().await;
         let _ = mem.insert_raw(seq, fid, ts, dtype, val);
     }

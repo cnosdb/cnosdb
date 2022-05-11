@@ -3,6 +3,7 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use crate::{
     context::GlobalContext,
@@ -13,12 +14,28 @@ use crate::{
     KvContext, LevelInfo, Version, VersionSet,
 };
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default)]
+const MAX_BATCH_SIZE: usize = 64;
+#[derive(Serialize, Deserialize, PartialEq, Debug, Default, Clone)]
 pub struct CompactMeta {
     pub file_id: u64, // file id
     pub ts_min: u64,
     pub ts_max: u64,
     pub level: u32,
+    pub high_seq: u64,
+    pub low_seq: u64,
+}
+impl CompactMeta {
+    pub fn new(file_id: u64, level: u32) -> Self {
+        Self { file_id,
+               ts_min: u64::MAX,
+               ts_max: u64::MIN,
+               level,
+               high_seq: u64::MIN,
+               low_seq: u64::MIN }
+    }
+    pub fn file_id(&self) -> u64 {
+        self.file_id
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -39,17 +56,12 @@ pub struct VersionEdit {
 }
 
 impl VersionEdit {
-    pub fn new(level: u32,
-               seq_no: u64,
-               log_seq: u64,
-               add_files: Vec<CompactMeta>,
-               del_files: Vec<CompactMeta>)
-               -> Self {
-        Self { level,
-               seq_no,
-               log_seq,
-               add_files,
-               del_files,
+    pub fn new() -> Self {
+        Self { level: 0,
+               seq_no: 0,
+               log_seq: 0,
+               add_files: vec![],
+               del_files: vec![],
                del_tsf: false,
                add_tsf: false,
                tsf_id: 0,
@@ -63,6 +75,22 @@ impl VersionEdit {
     }
     pub fn decode(buf: &Vec<u8>) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
+    }
+    pub fn add_file(&mut self, tsf_id: u32, log_seq: u64, seq_no: u64, meta: CompactMeta) {
+        self.has_log_seq = true;
+        self.log_seq = log_seq;
+        self.has_seq_no = true;
+        self.seq_no = seq_no;
+        self.add_files.push(meta);
+    }
+    // todo:
+    pub fn del_file(&mut self) {}
+
+    pub fn set_log_seq(&mut self, log_seq: u64) {
+        self.log_seq = log_seq;
+    }
+    pub fn set_tsf_id(&mut self, tsf_id: u32) {
+        self.tsf_id = tsf_id;
     }
 }
 
@@ -82,7 +110,7 @@ pub struct Summary {
 impl Summary {
     // create a new summary file
     pub async fn new(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
-        let db = VersionEdit::new(0, 0, 1, vec![], vec![]);
+        let db = VersionEdit::new();
         let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
         let buf = db.encode()?;
         let _ = w.write_record(1, EditType::SummaryEdit.into(), &buf)
@@ -160,7 +188,62 @@ impl Summary {
     }
     // apply version edit to summary file
     // and write to memory struct
-    pub async fn apply_version_edit() {}
+    pub async fn apply_version_edit(&self, eds: &[VersionEdit]) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub struct SummaryProcesser {
+    summary: Box<Summary>,
+    cbs: Vec<Sender<Result<()>>>,
+    edits: Vec<VersionEdit>,
+}
+
+impl SummaryProcesser {
+    pub fn new(summary: Box<Summary>) -> Self {
+        Self { summary, cbs: vec![], edits: vec![] }
+    }
+
+    pub fn batch(&mut self, mut task: SummaryTask) -> bool {
+        let mut need_apply = self.edits.len() > MAX_BATCH_SIZE;
+        if task.edits.len() == 1 && (task.edits[0].del_tsf || task.edits[0].add_tsf) {
+            need_apply = true;
+        }
+        self.edits.append(&mut task.edits);
+        self.cbs.push(task.cb);
+        need_apply
+    }
+
+    pub async fn apply(&mut self) {
+        let edits = std::mem::take(&mut self.edits);
+        match self.summary.apply_version_edit(&edits).await {
+            Ok(()) => {
+                for cb in self.cbs.drain(..) {
+                    let _ = cb.send(Ok(()));
+                }
+            },
+            Err(e) => {
+                for cb in self.cbs.drain(..) {
+                    let _ = cb.send(Err(Error::ErrApplyEdit));
+                }
+            },
+        }
+    }
+}
+pub struct SummaryTask {
+    pub edits: Vec<VersionEdit>,
+    pub cb: Sender<Result<()>>,
+}
+
+#[derive(Clone)]
+pub struct SummaryScheduler {
+    sender: UnboundedSender<SummaryTask>,
+}
+
+impl SummaryScheduler {
+    pub fn new(sender: UnboundedSender<SummaryTask>) -> Self {
+        Self { sender }
+    }
 }
 
 #[test]
@@ -171,7 +254,7 @@ fn test_version_edit() {
     let mut compact2 = CompactMeta::default();
     compact2.file_id = 101;
     let del_list = vec![compact2];
-    let ve = VersionEdit::new(1, 2, 3, add_list, del_list);
+    let ve = VersionEdit::new();
     let buf = ve.encode().unwrap();
     let ve2 = VersionEdit::decode(&buf).unwrap();
     assert_eq!(ve2, ve);

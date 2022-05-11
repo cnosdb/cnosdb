@@ -1,8 +1,9 @@
-use integer_encoding::VarInt;
 use std::{convert::TryInto, error::Error};
 
-//note: encode/decode adapted from influxdb_iox
-//https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
+use integer_encoding::VarInt;
+
+// note: encode/decode adapted from influxdb_iox
+// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 /// A compressed encoding using Snappy compression. Snappy is the only available
 /// string compression format at this time.
@@ -22,14 +23,13 @@ pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
 
     // strings shouldn't be longer than 64kb
     let length_of_lengths = src.len() * super::MAX_VAR_INT_32;
-    let sum_of_lengths: usize = src
-        .iter()
-        .map(|s| {
-            let len = s.len();
-            assert!(len < MAX_I32);
-            len
-        })
-        .sum();
+    let sum_of_lengths: usize = src.iter()
+                                   .map(|s| {
+                                       let len = s.len();
+                                       assert!(len < MAX_I32);
+                                       len
+                                   })
+                                   .sum();
     let source_size = 2 + length_of_lengths + sum_of_lengths;
 
     // determine the maximum possible length needed for the buffer, which
@@ -149,14 +149,10 @@ mod tests {
         let mut dst = vec![];
 
         encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(
-            dst,
-            vec![
-                16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0, 50, 13, 8,
-                0, 51, 13, 8, 0, 52, 13, 8, 0, 53, 13, 8, 0, 54, 13, 8, 0, 55, 13, 8, 32, 56, 7,
-                118, 97, 108, 117, 101, 32, 57
-            ]
-        );
+        assert_eq!(dst,
+                   vec![16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0,
+                        50, 13, 8, 0, 51, 13, 8, 0, 52, 13, 8, 0, 53, 13, 8, 0, 54, 13, 8, 0, 55,
+                        13, 8, 32, 56, 7, 118, 97, 108, 117, 101, 32, 57]);
     }
 
     #[test]
@@ -196,28 +192,20 @@ mod tests {
 
         decode(&src, &mut dst).expect("failed to decode src");
 
-        let dst_as_strings: Vec<_> = dst
-            .iter()
-            .map(|s| std::str::from_utf8(s).unwrap())
-            .collect();
+        let dst_as_strings: Vec<_> = dst.iter().map(|s| std::str::from_utf8(s).unwrap()).collect();
         assert_eq!(dst_as_strings, vec!["v1"]);
     }
 
     #[test]
     fn decode_multi_compressed() {
-        let src = vec![
-            16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0, 50, 13, 8, 0,
-            51, 13, 8, 0, 52, 13, 8, 0, 53, 13, 8, 0, 54, 13, 8, 0, 55, 13, 8, 32, 56, 7, 118, 97,
-            108, 117, 101, 32, 57,
-        ];
+        let src = vec![16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0, 50,
+                       13, 8, 0, 51, 13, 8, 0, 52, 13, 8, 0, 53, 13, 8, 0, 54, 13, 8, 0, 55, 13,
+                       8, 32, 56, 7, 118, 97, 108, 117, 101, 32, 57,];
         let mut dst = vec![];
 
         decode(&src, &mut dst).expect("failed to decode src");
 
-        let dst_as_strings: Vec<_> = dst
-            .iter()
-            .map(|s| std::str::from_utf8(s).unwrap())
-            .collect();
+        let dst_as_strings: Vec<_> = dst.iter().map(|s| std::str::from_utf8(s).unwrap()).collect();
         let expected: Vec<_> = (0..10).map(|i| format!("value {}", i)).collect();
         assert_eq!(dst_as_strings, expected);
     }
@@ -229,10 +217,7 @@ mod tests {
 
         decode(&src, &mut dst).expect("failed to decode src");
 
-        let dst_as_strings: Vec<_> = dst
-            .iter()
-            .map(|s| std::str::from_utf8(s).unwrap())
-            .collect();
+        let dst_as_strings: Vec<_> = dst.iter().map(|s| std::str::from_utf8(s).unwrap()).collect();
         assert_eq!(dst_as_strings, vec!["☃"]);
     }
 

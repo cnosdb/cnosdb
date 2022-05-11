@@ -1,9 +1,9 @@
+mod errors;
 mod forward_index;
 mod tests;
-mod errors;
 
-pub use forward_index::*;
 pub use errors::*;
+pub use forward_index::*;
+use models::*;
 
 use crate::record_file;
-use models::*;

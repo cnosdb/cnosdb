@@ -154,6 +154,10 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
     }
 }
 
+pub fn make_tsm_file_name(path: &str, sequence: u64) -> PathBuf {
+    let p = format!("{}/_{:06}.tsm", path, sequence);
+    PathBuf::from(p)
+}
 pub fn make_wal_file_name(path: &str, sequence: u64) -> PathBuf {
     let p = format!("{}/_{:05}.wal", path, sequence);
     PathBuf::from(p)
