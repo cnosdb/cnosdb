@@ -1,7 +1,8 @@
-use integer_encoding::VarInt;
 use std::{cmp, convert::TryInto, error::Error};
-//note: encode/decode adapted from influxdb_iox
-//https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
+
+use integer_encoding::VarInt;
+// note: encode/decode adapted from influxdb_iox
+// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 /// The header consists of one byte indicating the compression type.
 const HEADER_LEN: usize = 1;
@@ -41,7 +42,7 @@ pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
             dst[index] |= 128 >> (n & 7); // Set current bit on current byte.
         } else {
             dst[index] &= !(128 >> (n & 7)); // Clear current bit on current
-                                             // byte.
+            // byte.
         }
         n += 1;
     }
