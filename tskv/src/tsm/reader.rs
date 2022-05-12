@@ -15,6 +15,7 @@ pub struct FileBlock {
     pub max_ts: i64,
     pub offset: u64,
     pub size: u64,
+    pub val_off: u64,
     pub filed_type: ValueType,
     // pub filed_id: u64,
     pub reader_idx: usize,
@@ -28,23 +29,23 @@ impl FileBlock {
                offset: 0,
                size: 0,
                filed_type: ValueType::Unknown,
-               //    filed_id: 0,
+               val_off: 0,
                reader_idx: 0 }
     }
 }
 
 // #[derive(Debug)]
-pub struct TsmBlockReader {
-    reader: FileCursor,
+pub struct TsmBlockReader<'a> {
+    reader: &'a mut FileCursor,
 }
 
-impl TsmBlockReader {
-    pub fn new(r: FileCursor) -> Self {
-        Self { reader: r }
+impl<'a> TsmBlockReader<'a> {
+    pub fn new(reader: &'a mut FileCursor) -> Self {
+        Self { reader }
     }
 }
 
-impl BlockReader for TsmBlockReader {
+impl<'a> BlockReader for TsmBlockReader<'a> {
     fn decode(&mut self, block: &FileBlock) -> Result<DataBlock> {
         self.reader
             .seek(SeekFrom::Start(block.offset))
@@ -58,17 +59,10 @@ impl BlockReader for TsmBlockReader {
         // TODO: skip 32-bit CRC checksum at beginning of block for now
         let mut idx = 4;
 
+        let len = block.val_off - block.offset - 4; // 32-bit crc
         // first decode the timestamp block.
         let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES); // 1000 is the max block size
-        // size of timestamp block 需要确认一下
-        let (len, n) = u64::decode_var(&data[idx..]).ok_or_else(|| {
-                                                        Error::ReadTsmErr {
-                    reason: "unable to decode timestamp".to_string(),
-                }
-                                                    })?;
-
-        idx += n;
-        coders::timestamp::decode(&data[idx..idx + (len as usize)], &mut ts)
+        coders::timestamp::decode(&data[idx..idx+(len as usize)], &mut ts)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         idx += len as usize;
         //// TODO: skip 32-bit data CRC checksum at beginning of block for now
@@ -123,8 +117,8 @@ impl BlockReader for TsmBlockReader {
     }
 }
 
-pub struct TsmIndexReader {
-    r: FileCursor,
+pub struct TsmIndexReader<'a> {
+    r: &'a mut FileCursor,
 
     curr_offset: u64,
     end_offset: u64,
@@ -133,8 +127,8 @@ pub struct TsmIndexReader {
     next: Option<IndexEntry>,
 }
 
-impl TsmIndexReader {
-    pub fn try_new(mut r: FileCursor, len: usize) -> Result<Self> {
+impl<'a> TsmIndexReader<'a> {
+    pub fn try_new(r: &'a mut FileCursor, len: usize) -> Result<Self> {
         r.seek(SeekFrom::End(-8)).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         let mut buf = [0u8; 8];
         r.read(&mut buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
@@ -195,15 +189,26 @@ impl TsmIndexReader {
         let offset = u64::from_be_bytes(buf);
 
         // read block size
-        self.r.read(&mut buf[..4]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        self.curr_offset += 4;
-        let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.curr_offset += 8;
+        let size = u64::from_be_bytes(buf);
 
-        Ok(FileBlock { min_ts, max_ts, offset, filed_type, size: size as u64, reader_idx: 0 })
+        // read value offset
+        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.curr_offset += 8;
+        let val_off = u64::from_be_bytes(buf);
+
+        Ok(FileBlock { min_ts,
+                       max_ts,
+                       offset,
+                       filed_type,
+                       size: size as u64,
+                       val_off,
+                       reader_idx: 0 })
     }
 }
 
-impl Iterator for TsmIndexReader {
+impl<'a> Iterator for TsmIndexReader<'a> {
     type Item = Result<IndexEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -243,13 +248,30 @@ impl Iterator for TsmIndexReader {
 
 #[cfg(test)]
 mod test {
-    use crate::{file_manager, FileManager, TsmBlockReader};
+    use crate::{
+        file_manager, BlockReader, DataBlock, FileManager, TsmBlockReader, TsmIndexReader,
+    };
 
     #[test]
     fn tsm_reader_test() {
         let fs = FileManager::new();
-        let fs = fs.create_file("./reader_test.log").unwrap();
-        let fs_cursor = fs.into_cursor();
-        let rd = TsmBlockReader::new(fs_cursor);
+        let fs = fs.open_file("./writer_test.tsm").unwrap();
+        let len = fs.len();
+        let mut fs_cursor = fs.into_cursor();
+        let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
+        let mut blocks = Vec::new();
+        for res in &mut index.unwrap() {
+            let entry = res.unwrap();
+            let key = entry.filed_id();
+
+            blocks.push(entry.block);
+        }
+
+        let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
+        let ori = DataBlock::U64Block { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
+        for block in blocks {
+            let data = block_reader.decode(&block).expect("error decoding block data");
+            assert_eq!(ori, data);
+        }
     }
 }

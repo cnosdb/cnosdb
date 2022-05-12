@@ -73,27 +73,14 @@ impl DataBlock {
             },
         }
     }
-    // todo:
+
     pub fn time_range(&self, start: usize, end: usize) -> (i64, i64) {
-        if self.is_empty() {
-            return (0, 0);
-        }
         match self {
-            DataBlock::U64Block { ts, .. } => {
-                (ts.first().unwrap().to_owned(), ts.last().unwrap().to_owned())
-            },
-            DataBlock::I64Block { ts, .. } => {
-                (ts.first().unwrap().to_owned(), ts.last().unwrap().to_owned())
-            },
-            DataBlock::StrBlock { ts, .. } => {
-                (ts.first().unwrap().to_owned(), ts.last().unwrap().to_owned())
-            },
-            DataBlock::F64Block { ts, .. } => {
-                (ts.first().unwrap().to_owned(), ts.last().unwrap().to_owned())
-            },
-            DataBlock::BoolBlock { ts, .. } => {
-                (ts.first().unwrap().to_owned(), ts.last().unwrap().to_owned())
-            },
+            DataBlock::U64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::I64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::StrBlock { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::F64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::BoolBlock { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
         }
     }
     pub fn batch_insert(&mut self, cells: &Vec<DataType>) {
@@ -255,34 +242,34 @@ impl DataBlock {
         let mut data_buf = vec![];
         match self {
             DataBlock::BoolBlock { ts, val, .. } => {
-                coders::timestamp::encode(&ts, &mut ts_buf)
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::boolean::encode(&val, &mut data_buf)
+                coders::boolean::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
             DataBlock::U64Block { ts, val, .. } => {
-                coders::timestamp::encode(&ts, &mut ts_buf)
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::unsigned::encode(&val, &mut data_buf)
+                coders::unsigned::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
             DataBlock::I64Block { ts, val, .. } => {
-                coders::timestamp::encode(&ts, &mut ts_buf)
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::integer::encode(&val, &mut data_buf)
+                coders::integer::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
             DataBlock::StrBlock { ts, val, .. } => {
-                coders::timestamp::encode(&ts, &mut ts_buf)
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
-                coders::string::encode(&strs, &mut data_buf)
+                coders::string::encode(&strs[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
             DataBlock::F64Block { ts, val, .. } => {
-                coders::timestamp::encode(&ts, &mut ts_buf)
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::float::encode(&val, &mut data_buf)
+                coders::float::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
         }
