@@ -584,3 +584,59 @@ func writeTestData(s Server, t *Test) error {
 
 	return nil
 }
+
+// RemoteServer remote access to HTTP API of CnosDB server
+type RemoteServer struct {
+	*client
+	url string
+}
+
+func (r RemoteServer) TcpAddr() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) Open() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) Close() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) Closed() bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) CreateDatabaseAndRetentionPolicy(db string, rp *meta.RetentionPolicySpec, makeDefault bool) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) CreateSubscription(database, rp, name, mode string, destinations []string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) DropDatabase(db string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) Reset() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r RemoteServer) WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error {
+	//TODO implement me
+	panic("implement me")
+}
