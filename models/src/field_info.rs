@@ -43,6 +43,19 @@ impl From<u8> for ValueType {
     }
 }
 
+impl From<ValueType> for u8 {
+    fn from(value: ValueType) -> Self {
+        match value {
+            ValueType::Float => 0,
+            ValueType::Integer => 1,
+            ValueType::Boolean => 2,
+            ValueType::String => 3,
+            ValueType::Unsigned => 4,
+            ValueType::Unknown => 5,
+        }
+    }
+}
+
 impl From<protos::models::FieldType> for ValueType {
     fn from(t: protos::models::FieldType) -> Self {
         match t {
