@@ -10,7 +10,7 @@ use crate::{compute, error::Result};
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct DataCell<T> {
-    pub ts: u64,
+    pub ts: i64,
     pub val: T,
 }
 
@@ -31,7 +31,7 @@ pub enum DataType {
 }
 
 impl DataType {
-    pub fn timestamp(&self) -> u64 {
+    pub fn timestamp(&self) -> i64 {
         match *self {
             DataType::U64(U64Cell { ts, .. }) => ts,
             DataType::I64(I64Cell { ts, .. }) => ts,
@@ -43,15 +43,15 @@ impl DataType {
 }
 
 pub struct MemEntry {
-    ts_min: u64,
-    ts_max: u64,
+    ts_min: i64,
+    ts_max: i64,
     field_type: FieldType,
     cells: Vec<DataType>,
 }
 impl Default for MemEntry {
     fn default() -> Self {
-        MemEntry { ts_min: u64::MAX,
-                   ts_max: u64::MIN,
+        MemEntry { ts_min: i64::MAX,
+                   ts_max: i64::MIN,
                    field_type: FieldType::String,
                    cells: Vec::new() }
     }
@@ -80,7 +80,7 @@ impl MemCache {
     pub fn insert_raw(&mut self,
                       seq: u64,
                       filed_id: u64,
-                      ts: u64,
+                      ts: i64,
                       field_type: ValueType,
                       buf: &[u8])
                       -> Result<()> {

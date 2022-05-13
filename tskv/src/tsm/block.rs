@@ -1,16 +1,22 @@
-use std::fmt::Error;
+// use std::fmt::Error;
 
+use models::ValueType;
 use protos::models::FieldType;
 
-use crate::{memcache::DataType, BoolCell, Byte, F64Cell, I64Cell, StrCell, U64Cell};
+use super::coders;
+use crate::{
+    error::{Error, Result},
+    memcache::DataType,
+    BoolCell, Byte, F64Cell, I64Cell, StrCell, U64Cell,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataBlock {
-    U64Block { index: u32, ts: Vec<u64>, val: Vec<u64> },
-    I64Block { index: u32, ts: Vec<u64>, val: Vec<i64> },
-    StrBlock { index: u32, ts: Vec<u64>, val: Vec<Byte> },
-    F64Block { index: u32, ts: Vec<u64>, val: Vec<f64> },
-    BoolBlock { index: u32, ts: Vec<u64>, val: Vec<bool> },
+    U64Block { index: u32, ts: Vec<i64>, val: Vec<u64> },
+    I64Block { index: u32, ts: Vec<i64>, val: Vec<i64> },
+    StrBlock { index: u32, ts: Vec<i64>, val: Vec<Byte> },
+    F64Block { index: u32, ts: Vec<i64>, val: Vec<f64> },
+    BoolBlock { index: u32, ts: Vec<i64>, val: Vec<bool> },
 }
 
 impl DataBlock {
@@ -67,7 +73,17 @@ impl DataBlock {
             },
         }
     }
-    pub fn batch_insert(&mut self, cells: Vec<DataType>) {
+
+    pub fn time_range(&self, start: usize, end: usize) -> (i64, i64) {
+        match self {
+            DataBlock::U64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::I64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::StrBlock { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::F64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::BoolBlock { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+        }
+    }
+    pub fn batch_insert(&mut self, cells: &Vec<DataType>) {
         for iter in cells.iter() {
             match iter {
                 DataType::U64(item) => {
@@ -114,7 +130,15 @@ impl DataBlock {
             Self::BoolBlock { ts, .. } => ts.len(),
         }
     }
-
+    pub fn filed_type(&self) -> ValueType {
+        match &self {
+            DataBlock::U64Block { .. } => ValueType::Unsigned,
+            DataBlock::I64Block { .. } => ValueType::Integer,
+            DataBlock::StrBlock { .. } => ValueType::String,
+            DataBlock::F64Block { .. } => ValueType::Float,
+            DataBlock::BoolBlock { .. } => ValueType::Boolean,
+        }
+    }
     pub fn get_type(&self) -> DataType {
         match &self {
             DataBlock::U64Block { index, ts, val } => DataType::U64(U64Cell::default()),
@@ -192,7 +216,7 @@ impl DataBlock {
             }
         }
     }
-    fn rebuild_vec(blocks: &mut [Self], dst: &mut Vec<Option<DataType>>) -> Option<u64> {
+    fn rebuild_vec(blocks: &mut [Self], dst: &mut Vec<Option<DataType>>) -> Option<i64> {
         let mut min_ts = None;
         for (block, dst) in blocks.iter_mut().zip(dst) {
             if dst.is_none() {
@@ -212,22 +236,46 @@ impl DataBlock {
         }
         min_ts
     }
-}
-
-pub struct FileBlock {
-    pub min_ts: u64,
-    pub max_ts: u64,
-    pub offset: u32,
-    pub size: u32,
-    pub filed_type: FieldType,
-}
-
-pub trait BlockReader {
-    fn decode(&mut self, block: &FileBlock) -> Result<DataBlock, Error>;
-}
-
-pub trait BlockWriter {
-    fn encode(&mut self, block: &DataBlock) -> Result<FileBlock, Error>;
+    // todo:
+    pub fn encode(&mut self, start: usize, end: usize) -> Result<(Vec<u8>, Vec<u8>)> {
+        let mut ts_buf = vec![];
+        let mut data_buf = vec![];
+        match self {
+            DataBlock::BoolBlock { ts, val, .. } => {
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::boolean::encode(&val[start..end], &mut data_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            },
+            DataBlock::U64Block { ts, val, .. } => {
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::unsigned::encode(&val[start..end], &mut data_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            },
+            DataBlock::I64Block { ts, val, .. } => {
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::integer::encode(&val[start..end], &mut data_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            },
+            DataBlock::StrBlock { ts, val, .. } => {
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
+                coders::string::encode(&strs[start..end], &mut data_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            },
+            DataBlock::F64Block { ts, val, .. } => {
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::float::encode(&val[start..end], &mut data_buf)
+                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            },
+        }
+        Ok((ts_buf, data_buf))
+    }
+    pub fn decode() {}
 }
 
 #[test]
