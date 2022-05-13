@@ -483,6 +483,62 @@ func TestServer_Write_LineProtocol_Integer(t *testing.T) {
 	}
 }
 
+func TestServer_Write_LineProtocol_Unsigned(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 1*time.Hour), true); err != nil {
+		t.Fatal(err)
+	}
+
+	now := now()
+	//100u not support
+	if res, err := s.Write("db0", "rp0", `cpu,host=server01 value=100 `+strconv.FormatInt(now.UnixNano(), 10), nil); err != nil {
+		t.Fatal(err)
+	} else if exp := ``; exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+
+	// Verify the data was written.
+	if res, err := s.Query(`SELECT * FROM db0.rp0.cpu GROUP BY *`); err != nil {
+		t.Fatal(err)
+	} else if exp := fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[["%s",100]]}]}]}`, now.Format(time.RFC3339Nano)); exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+}
+
+func TestServer_Write_LineProtocol_Partial(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 1*time.Hour), true); err != nil {
+		t.Fatal(err)
+	}
+
+	now := now()
+	points := []string{
+		"cpu,host=server01 value=100 " + strconv.FormatInt(now.UnixNano(), 10),
+		"cpu,host=server01 value=NaN " + strconv.FormatInt(now.UnixNano(), 20),
+		"cpu,host=server01 value=NaN " + strconv.FormatInt(now.UnixNano(), 30),
+	}
+	if res, err := s.Write("db0", "rp0", strings.Join(points, "\n"), nil); err == nil {
+		t.Fatal("expected error. got nil", err)
+	} else if exp := ``; exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	} else if exp := "partial write"; !strings.Contains(err.Error(), exp) {
+		t.Fatalf("unexpected error: exp\nexp: %v\ngot: %v", exp, err)
+	}
+
+	// Verify the data was written.
+	if res, err := s.Query(`SELECT * FROM db0.rp0.cpu GROUP BY *`); err != nil {
+		t.Fatal(err)
+	} else if exp := fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[["%s",100]]}]}]}`, now.Format(time.RFC3339Nano)); exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+}
+
 // Ensure the server can query with default databases (via param) and default retention policy
 func TestServer_Query_DefaultDBAndRP(t *testing.T) {
 
@@ -517,6 +573,88 @@ func TestServer_Query_DefaultDBAndRP(t *testing.T) {
 			params:  url.Values{"db": []string{"db0"}},
 			command: `SELECT * FROM rp0.air GROUP BY *`,
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_ShowShardsNonInf(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 1000000*time.Hour), true); err != nil {
+		t.Fatal(err)
+	}
+
+	points := []string{
+		"cpu,host=server01 value=100 1621440001000000000",
+	}
+	if _, err := s.Write("db0", "rp0", strings.Join(points, "\n"), nil); err != nil {
+		t.Fatal("unexpected error: ", err)
+	}
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp1", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write("db0", "rp1", strings.Join(points, "\n"), nil); err != nil {
+		t.Fatal("unexpected error: ", err)
+	}
+
+	// inf shard has no expiry_time, shard with expiry has correct expiry_time
+	exp := `{"results":[{"statement_id":0,"series":[{"name":"db0","columns":` +
+		`["id","database","rp","shard_group","start_time","end_time","expiry_time","owners"],"values":[` +
+		`[2,"db0","rp0",1,"2021-05-17T00:00:00Z","2021-05-24T00:00:00Z","2135-06-22T16:00:00Z","0"],` +
+		`[4,"db0","rp1",2,"2021-05-17T00:00:00Z","2021-05-24T00:00:00Z","2021-05-24T00:00:00Z","0"]]}]}]}`
+	// Verify the data was written.
+	if res, err := s.Query(`show shards`); err != nil {
+		t.Fatal(err)
+	} else if exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+}
+
+func TestServer_Query_Multiple_Measurements(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	// Make sure we do writes for measurements that will span across shards
+	writes := []string{
+		fmt.Sprintf("cpu,host=server01 value=100,core=4 %d", mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf("cpu1,host=server02 value=50,core=2 %d", mustParseTime(time.RFC3339Nano, "2015-01-01T00:00:00Z").UnixNano()),
+	}
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "measurement in one shard but not another shouldn't panic server",
+			command: `SELECT host,value  FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","host","value"],"values":[["2000-01-01T00:00:00Z","server01",100]]}]}]}`,
+		},
+		&Query{
+			name:    "measurement in one shard but not another shouldn't panic server",
+			command: `SELECT host,value  FROM db0.rp0.cpu GROUP BY host`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","host","value"],"values":[["2000-01-01T00:00:00Z","server01",100]]}]}]}`,
 		},
 	}...)
 
