@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -492,10 +493,42 @@ func TestServer_Write_LineProtocol_Unsigned(t *testing.T) {
 	}
 
 	now := now()
+	//100u not support
 	if res, err := s.Write("db0", "rp0", `cpu,host=server01 value=100 `+strconv.FormatInt(now.UnixNano(), 10), nil); err != nil {
 		t.Fatal(err)
 	} else if exp := ``; exp != res {
 		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+
+	// Verify the data was written.
+	if res, err := s.Query(`SELECT * FROM db0.rp0.cpu GROUP BY *`); err != nil {
+		t.Fatal(err)
+	} else if exp := fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[["%s",100]]}]}]}`, now.Format(time.RFC3339Nano)); exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+}
+
+func TestServer_Write_LineProtocol_Partial(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 1*time.Hour), true); err != nil {
+		t.Fatal(err)
+	}
+
+	now := now()
+	points := []string{
+		"cpu,host=server01 value=100 " + strconv.FormatInt(now.UnixNano(), 10),
+		"cpu,host=server01 value=NaN " + strconv.FormatInt(now.UnixNano(), 20),
+		"cpu,host=server01 value=NaN " + strconv.FormatInt(now.UnixNano(), 30),
+	}
+	if res, err := s.Write("db0", "rp0", strings.Join(points, "\n"), nil); err == nil {
+		t.Fatal("expected error. got nil", err)
+	} else if exp := ``; exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	} else if exp := "partial write"; !strings.Contains(err.Error(), exp) {
+		t.Fatalf("unexpected error: exp\nexp: %v\ngot: %v", exp, err)
 	}
 
 	// Verify the data was written.
