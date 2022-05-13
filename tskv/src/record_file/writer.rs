@@ -24,11 +24,11 @@ impl Writer {
                               data: &Vec<u8>)
                               -> RecordFileResult<u64> {
         let mut buf = Vec::<u8>::with_capacity(RECORD_MAGIC_NUMBER_LEN
-            + RECORD_DATA_SIZE_LEN
-            + RECORD_DATA_VERSION_LEN
-            + RECORD_DATA_TYPE_LEN
-            + data.len()
-            + RECORD_CRC32_NUMBER_LEN);
+                                               + RECORD_DATA_SIZE_LEN
+                                               + RECORD_DATA_VERSION_LEN
+                                               + RECORD_DATA_TYPE_LEN
+                                               + data.len()
+                                               + RECORD_CRC32_NUMBER_LEN);
 
         // build buf
         buf.append(&mut MAGIC_NUMBER.to_le_bytes().to_vec()); // magic_number
@@ -37,7 +37,7 @@ impl Writer {
         buf.append(&mut data_type.to_le_bytes().to_vec()); //data_type
         buf.append(&mut data.to_vec()); //data
         buf.append(&mut crc32fast::hash(buf[RECORD_MAGIC_NUMBER_LEN..].borrow()).to_le_bytes()
-            .to_vec()); // crc32_number
+                                                                                .to_vec()); // crc32_number
 
         // write file
         let mut p = 0;
@@ -49,17 +49,18 @@ impl Writer {
                 write_len = buf.len() - p;
             }
 
-            match self.file.lock()
-                .write_at(pos, &buf[p..p + write_len])
-                .map_err(|err| RecordFileError::WriteFile { source: err })
+            match self.file
+                      .lock()
+                      .write_at(pos, &buf[p..p + write_len])
+                      .map_err(|err| RecordFileError::WriteFile { source: err })
             {
                 Ok(_) => {
                     p += write_len;
                     pos += write_len.to_u64().unwrap();
-                }
+                },
                 Err(e) => {
                     return Err(e);
-                }
+                },
             }
         }
 
@@ -67,15 +68,24 @@ impl Writer {
     }
 
     pub async fn soft_sync(&self) -> RecordFileResult<()> {
-        self.file.lock().sync_all(FileSync::Soft).map_err(|err| RecordFileError::SyncFile { source: err })
+        self.file
+            .lock()
+            .sync_all(FileSync::Soft)
+            .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
     pub async fn hard_sync(&self) -> RecordFileResult<()> {
-        self.file.lock().sync_all(FileSync::Hard).map_err(|err| RecordFileError::SyncFile { source: err })
+        self.file
+            .lock()
+            .sync_all(FileSync::Hard)
+            .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
     pub async fn close(&mut self) -> RecordFileResult<()> {
-        self.file.lock().sync_all(FileSync::Hard).map_err(|err| RecordFileError::SyncFile { source: err })
+        self.file
+            .lock()
+            .sync_all(FileSync::Hard)
+            .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 }
 

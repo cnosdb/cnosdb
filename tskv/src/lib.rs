@@ -45,11 +45,11 @@ pub use version_set::*;
 pub enum Task {
     AddSeries {
         req: protos::kv_service::AddSeriesRpcRequest,
-        tx: oneshot::Sender<wal::WalResult<()>>,
+        tx: oneshot::Sender<Result<()>>,
     },
     GetSeriesInfo {
         req: protos::kv_service::GetSeriesInfoRpcRequest,
-        tx: oneshot::Sender<wal::WalResult<()>>,
+        tx: oneshot::Sender<Result<()>>,
     },
     WritePoints {
         req: protos::kv_service::WritePointsRpcRequest,

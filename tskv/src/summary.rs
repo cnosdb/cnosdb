@@ -3,7 +3,7 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 use futures::TryFutureExt;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
+use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender, RwLock};
 
 use crate::{
     context::GlobalContext,
@@ -95,6 +95,7 @@ impl VersionEdit {
 }
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+
 #[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
 enum EditType {
@@ -103,8 +104,8 @@ enum EditType {
 
 pub struct Summary {
     file_no: u64,
-    version_set: Arc<Mutex<VersionSet>>,
-    ctx: GlobalContext,
+    version_set: Arc<RwLock<VersionSet>>,
+    ctx: Arc<GlobalContext>,
 }
 
 impl Summary {
@@ -117,16 +118,22 @@ impl Summary {
                  .map_err(|e| Error::LogRecordErr { source: (e) })
                  .await?;
         w.hard_sync().map_err(|e| Error::LogRecordErr { source: e }).await?;
-        let ctx = GlobalContext::default();
-        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
-        let vs = Self::recover(tf_desc, rd, &ctx).await?;
-        Ok(Self { file_no: 0, version_set: Arc::new(Mutex::new(vs)), ctx })
+        Self::recover(tf_desc, db_opt).await
     }
+
+    pub async fn recover(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
+        let ctx = Arc::new(GlobalContext::default());
+        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
+        let vs = Self::recover_version(tf_desc, rd, &ctx).await?;
+
+        Ok(Self { file_no: 0, version_set: Arc::new(RwLock::new(vs)), ctx })
+    }
+
     // recover from summary file
-    pub async fn recover(tf_cfg: &[TseriesFamDesc],
-                         mut rd: Box<Reader>,
-                         ctx: &GlobalContext)
-                         -> Result<VersionSet> {
+    pub async fn recover_version(tf_cfg: &[TseriesFamDesc],
+                                 mut rd: Box<Reader>,
+                                 ctx: &GlobalContext)
+                                 -> Result<VersionSet> {
         let mut edits: HashMap<u32, Vec<VersionEdit>> = HashMap::default();
         edits.insert(0, vec![]);
         let mut tf_names: HashMap<u32, String> = HashMap::default();
@@ -190,6 +197,10 @@ impl Summary {
     // and write to memory struct
     pub async fn apply_version_edit(&self, eds: &[VersionEdit]) -> Result<()> {
         Ok(())
+    }
+
+    pub fn version_set(&self) -> Arc<RwLock<VersionSet>> {
+        self.version_set.clone()
     }
 }
 

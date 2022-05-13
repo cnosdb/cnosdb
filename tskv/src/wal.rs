@@ -7,6 +7,8 @@ use std::{
 
 use crc32fast;
 use lazy_static::lazy_static;
+use models::TagFromParts;
+use parking_lot::Mutex;
 use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
@@ -17,12 +19,8 @@ use walkdir::IntoIter;
 use crate::{
     compute,
     direct_io::{self, make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType},
-    file_manager, kv_option, FileManager, MemCache, VersionSet,
+    error, file_manager, file_utils, kv_option, Error, FileManager, MemCache, Result, VersionSet,
 };
-
-lazy_static! {
-    static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new("_.*\\.wal").unwrap();
-}
 
 const SEGMENT_HEADER_SIZE: usize = 32;
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
@@ -31,31 +29,12 @@ const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 const BLOCK_HEADER_SIZE: usize = 17;
 
 pub enum WalTask {
-    Write { points: Vec<u8>, cb: oneshot::Sender<WalResult<usize>> },
+    Write {
+        points: Arc<Vec<u8>>,
+        // (seq_no, writen_size)
+        cb: oneshot::Sender<Result<(u64, usize)>>,
+    },
 }
-
-#[derive(Snafu, Debug)]
-pub enum WalError {
-    #[snafu(display("Unable to walk dir : {}", source))]
-    UnableToWalkDir { source: walkdir::Error },
-
-    #[snafu(display("File {} has wrong name format to have an id", file_name))]
-    InvalidFileName { file_name: String },
-
-    #[snafu(display("Error with file : {}", source))]
-    FailedWithFileManager { source: super::file_manager::FileError },
-
-    #[snafu(display("Error with std::io : {}", source))]
-    FailedWithStdIO { source: std::io::Error },
-
-    #[snafu(display("Error with IO task"))]
-    FailedWithIoTask,
-
-    #[snafu(display("Error with flatbuffers"))]
-    FlatBuffers { source: flatbuffers::InvalidFlatbuffer },
-}
-
-pub type WalResult<T> = std::result::Result<T, WalError>;
 
 #[repr(u8)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
@@ -116,7 +95,7 @@ pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64
     let mut max_id = 1;
     let mut max_index = 0;
     for (i, file_name) in segments.iter().enumerate() {
-        match get_id_by_file_name(&file_name) {
+        match file_utils::get_wal_file_id(&file_name) {
             Ok(id) => {
                 if max_id < id {
                     max_id = id;
@@ -128,23 +107,6 @@ pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64
     }
     let max_file_name = segments.get(max_index).unwrap();
     Some((PathBuf::from(max_file_name), max_id))
-}
-
-fn get_id_by_file_name(file_name: &String) -> WalResult<u64> {
-    if !WAL_FILE_NAME_PATTERN.is_match(file_name) {
-        return Err(WalError::InvalidFileName { file_name: file_name.clone() });
-    }
-    let parts: Vec<&str> = file_name.split('.').collect();
-    if parts.len() != 2 {
-        Err(WalError::InvalidFileName { file_name: file_name.clone() })
-    } else {
-        parts.first()
-             .unwrap()
-             .split_at(1)
-             .1
-             .parse::<u64>()
-             .map_err(|err| WalError::InvalidFileName { file_name: file_name.clone() })
-    }
 }
 
 struct WalFile {
@@ -160,13 +122,13 @@ struct WalFile {
 }
 
 impl WalFile {
-    fn reade_header(cursor: &mut FileCursor) -> WalResult<[u8; SEGMENT_HEADER_SIZE]> {
+    fn reade_header(cursor: &mut FileCursor) -> Result<[u8; SEGMENT_HEADER_SIZE]> {
         let mut header_buf = [0_u8; SEGMENT_HEADER_SIZE];
 
         let min_sequence: u64;
         let max_sequence: u64;
-        cursor.seek(SeekFrom::Start(0)).context(FailedWithStdIOSnafu)?;
-        let readed = cursor.read(&mut header_buf[..]).context(FailedWithStdIOSnafu)?;
+        cursor.seek(SeekFrom::Start(0)).context(error::IOSnafu)?;
+        let readed = cursor.read(&mut header_buf[..]).context(error::IOSnafu)?;
 
         Ok(header_buf)
     }
@@ -174,23 +136,21 @@ impl WalFile {
     pub fn open(id: u64,
                 path: impl AsRef<Path>,
                 config: Arc<kv_option::WalConfig>)
-                -> WalResult<Self> {
+                -> Result<Self> {
         // TODO: Check path
         let path = path.as_ref();
 
         // Get file and check if new file
         let mut new_file = false;
         let file = if file_manager::try_exists(path) {
-            let f = file_manager::get_file_manager().open_file(path)
-                                                    .context(FailedWithFileManagerSnafu)?;
+            let f = file_manager::get_file_manager().open_file(path)?;
             if f.len() == 0 {
                 new_file = true;
             }
             f
         } else {
             new_file = true;
-            file_manager::get_file_manager().create_file(path)
-                                            .context(FailedWithFileManagerSnafu)?
+            file_manager::get_file_manager().create_file(path)?
         };
 
         // Get metadata; if new file then write header
@@ -203,9 +163,9 @@ impl WalFile {
             header_buf[..4].copy_from_slice(SEGMENT_MAGIC.as_slice());
             file.write_at(0, &header_buf)
                 .and_then(|_| file.sync_all(FileSync::Hard))
-                .context(FailedWithStdIOSnafu)?;
+                .context(error::IOSnafu)?;
         } else {
-            file.read_at(0, &mut header_buf[..]).context(FailedWithStdIOSnafu)?;
+            file.read_at(0, &mut header_buf[..]).context(error::IOSnafu)?;
             min_sequence = compute::decode_be_u64(&header_buf[4..12]);
             max_sequence = compute::decode_be_u64(&header_buf[12..20]);
         }
@@ -222,26 +182,34 @@ impl WalFile {
     }
 
     pub async fn recover_version_set(path: impl AsRef<Path>,
-                                     version_set: &mut VersionSet)
-                                     -> WalResult<()> {
+                                     version_set: Arc<RwLock<VersionSet>>)
+                                     -> Result<()> {
         let tmp_walfile = WalFile::open(0, path, Arc::new(kv_option::WalConfig::default()))?;
         let mut reader = WalReader::new(tmp_walfile.file.into())?;
+        let version_set = version_set.read().await;
         while let Some(e) = reader.next_wal_entry() {
             match e.typ {
                 WalEntryType::Write => {
                     let entry =
-                        flatbuffers::root::<fb_models::Points>(&e.buf).context(FlatBuffersSnafu)?;
+                        flatbuffers::root::<fb_models::Points>(&e.buf).context(error::InvalidFlatbufferSnafu)?;
                     if let Some(points) = entry.points() {
                         for p in points.iter() {
+                            let mut point_tags: Vec<models::Tag> = vec![];
                             let sid = if let Some(tags) = p.tags() {
-                                let mut hasher = bkdr_hash::Hash::new();
                                 for t in tags.iter() {
-                                    let k = t.key().expect("tag key");
-                                    let v = t.value().expect("tag value");
-                                    hasher.hash_with(k);
-                                    hasher.hash_with(v);
+                                    let tag_key = if let Some(tag_key) = t.key() {
+                                        tag_key.to_vec()
+                                    } else {
+                                        continue;
+                                    };
+                                    let tag_value = if let Some(tag_value) = t.value() {
+                                        tag_value.to_vec()
+                                    } else {
+                                        vec![]
+                                    };
+                                    point_tags.push(models::Tag::from_parts(tag_key, tag_value));
                                 }
-                                hasher.number()
+                                models::SeriesInfo::cal_sid(&mut point_tags)
                             } else {
                                 // TODO error: no tags
                                 0
@@ -249,11 +217,8 @@ impl WalFile {
                             if let Some(tsf) = version_set.get_tsfamily(sid) {
                                 if let Some(fields) = p.fields() {
                                     for f in fields.iter() {
-                                        let mut hasher = bkdr_hash::Hash::new();
                                         let fid = if let Some(field_name) = f.name() {
-                                            hasher.hash_with(&sid.to_be_bytes()[..]);
-                                            hasher.hash_with(field_name);
-                                            hasher.number()
+                                            models::FieldInfo::cal_fid(&field_name.to_vec(), sid)
                                         } else {
                                             // TODO error: no field name
                                             0
@@ -307,7 +272,7 @@ impl WalFile {
         Ok(())
     }
 
-    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> WalResult<usize> {
+    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> Result<(u64, usize)> {
         let typ = typ as u8;
         let mut pos = self.size;
         let mut seq = self.max_sequence;
@@ -342,7 +307,7 @@ impl WalFile {
                 pos += size as u64;
                 if self.config.sync { self.file.sync_all(FileSync::Soft) } else { Ok(()) }
             })
-            .map_err(|err| WalError::FailedWithStdIO { source: err })?;
+            .context(error::IOSnafu)?;
 
         seq += 1;
 
@@ -351,18 +316,18 @@ impl WalFile {
         self.size = pos;
         self.max_sequence = seq;
 
-        Ok(writen_size)
+        Ok((seq, writen_size))
     }
 
-    pub async fn flush(&mut self) -> WalResult<()> {
+    pub async fn flush(&mut self) -> Result<()> {
         // Write header
         self.header_buf[4..12].copy_from_slice(&self.min_sequence.to_be_bytes());
         self.header_buf[12..20].copy_from_slice(&self.max_sequence.to_be_bytes());
 
-        self.file.write_at(0, &self.header_buf).context(FailedWithStdIOSnafu)?;
+        self.file.write_at(0, &self.header_buf).context(error::IOSnafu)?;
 
         // Do fsync
-        self.file.sync_all(FileSync::Hard).context(FailedWithStdIOSnafu)?;
+        self.file.sync_all(FileSync::Hard).context(error::IOSnafu)?;
 
         Ok(())
     }
@@ -386,16 +351,18 @@ impl WalManager {
             Some((file, seq)) => (file, seq),
             None => {
                 let seq = 1;
-                (file_manager::make_wal_file_name(&config.dir.clone(), seq), seq)
+                (file_utils::make_wal_file(&config.dir.clone(), seq), seq)
             },
         };
 
         let current_dir_path = PathBuf::from(config.dir.clone());
+        if !file_manager::try_exists(&current_dir_path) {
+            std::fs::create_dir_all(&current_dir_path).unwrap();
+        }
         let current_file_path = current_dir_path.join(last);
 
-        let file = file_manager::get_file_manager().open_create_file(current_file_path.clone())
-                                                   .context(FailedWithFileManagerSnafu)
-                                                   .unwrap();
+        let file =
+            file_manager::get_file_manager().open_create_file(current_file_path.clone()).unwrap();
         let size = file.len();
 
         let current_file = WalFile::open(seq, current_file_path.clone(), config.clone()).unwrap();
@@ -407,26 +374,26 @@ impl WalManager {
         self.current_file.max_sequence
     }
 
-    async fn roll_wal_file(&mut self) -> WalResult<()> {
+    async fn roll_wal_file(&mut self) -> Result<()> {
         if self.current_file.size > SEGMENT_SIZE {
             let id = self.current_file.id;
             let max_sequence = self.current_file.max_sequence;
 
             self.current_file.flush().await?;
 
-            let new_file_name = file_manager::make_wal_file_name(self.config.dir.as_str(), id);
+            let new_file_name = file_utils::make_wal_file(self.config.dir.as_str(), id);
             let new_file = WalFile::open(id, new_file_name, self.config.clone())?;
             self.current_file = new_file;
         }
         Ok(())
     }
 
-    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> WalResult<usize> {
+    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> Result<(u64, usize)> {
         self.roll_wal_file().await?;
         self.current_file.write(typ, data).await
     }
 
-    pub async fn recover(&self, version_set: &mut VersionSet) -> WalResult<()> {
+    pub async fn recover(&self, version_set: Arc<RwLock<VersionSet>>) -> Result<()> {
         WalFile::recover_version_set(&self.current_file.path, version_set).await
     }
 }
@@ -443,7 +410,7 @@ impl WalManager {
 ///     // ...
 /// }
 /// ```
-pub fn reader<'a>(f: File) -> WalResult<WalReader<'a>> {
+pub fn reader<'a>(f: File) -> Result<WalReader<'a>> {
     WalReader::new(f.into_cursor())
 }
 
@@ -456,7 +423,7 @@ pub struct WalReader<'a> {
 }
 
 impl<'a> WalReader<'_> {
-    pub fn new(mut cursor: FileCursor) -> WalResult<Self> {
+    pub fn new(mut cursor: FileCursor) -> Result<Self> {
         let header_buf = WalFile::reade_header(&mut cursor)?;
 
         Ok(Self { cursor,
@@ -681,20 +648,18 @@ mod test {
             let mut reader = WalReader::new(cursor).unwrap();
 
             while let Some(entry) = reader.next_wal_entry() {
+                dbg!(entry.typ, entry.seq, entry.crc, entry.len);
                 match entry.typ {
                     WalEntryType::Write => {
                         let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                        dbg!(de_block);
                     },
                     WalEntryType::Delete => {
                         let de_block =
                             flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                        dbg!(de_block);
                     },
                     WalEntryType::DeleteRange => {
                         let de_block =
                             flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
-                        dbg!(de_block);
                     },
                     _ => panic!("Invalid WalEntry"),
                 };
