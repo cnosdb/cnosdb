@@ -18,11 +18,17 @@ pub enum ForwardIndexError {
         source: record_file::RecordFileError,
     },
 
+    #[snafu(display("Unrecognized action"))]
     Action,
 
+    #[snafu(display("Unrecognized version"))]
     Version,
 
+    #[snafu(display("Unrecognized FieldType"))]
     FieldType,
+
+    #[snafu(display("Series not exists"))]
+    SeriesNotExists,
 }
 
 pub type ForwardIndexResult<T> = std::result::Result<T, ForwardIndexError>;

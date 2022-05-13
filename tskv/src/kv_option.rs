@@ -1,6 +1,10 @@
 #![allow(dead_code)]
 
-pub const MAX_MEMCACHE_SIZE: u64 = 128 * 1024 * 1024; //128M
+use std::path::PathBuf;
+use crate::forward_index::ForwardIndexConfig;
+
+pub const MAX_MEMCACHE_SIZE: u64 = 128 * 1024 * 1024;
+//128M
 pub const MAX_SUMMARY_SIZE: u64 = 128 * 1024 * 1024; //128M
 
 #[derive(Clone)]
@@ -15,14 +19,17 @@ pub struct DBOptions {
 
 impl Default for DBOptions {
     fn default() -> Self {
-        Self { front_cpu: 2,
-               back_cpu: 2,
-               max_summary_size: MAX_SUMMARY_SIZE, // 128MB
-               create_if_missing: false,
-               db_path: "db".to_string(),
-               db_name: "db".to_string() }
+        Self {
+            front_cpu: 2,
+            back_cpu: 2,
+            max_summary_size: MAX_SUMMARY_SIZE, // 128MB
+            create_if_missing: false,
+            db_path: "db".to_string(),
+            db_name: "db".to_string(),
+        }
     }
 }
+
 #[derive(Clone)]
 pub struct Options {
     pub db: DBOptions,
@@ -30,6 +37,7 @@ pub struct Options {
     pub wal: WalConfig,
     // pub(crate) write_batch: WriteBatchConfig,
     pub compact_conf: CompactConfig,
+    pub forward_index_conf: ForwardIndexConfig,
 }
 
 impl Options {
@@ -41,10 +49,13 @@ impl Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { db: Default::default(),
-               lrucache: Default::default(),
-               wal: Default::default(),
-               compact_conf: Default::default() }
+        Self {
+            db: Default::default(),
+            lrucache: Default::default(),
+            wal: Default::default(),
+            compact_conf: Default::default(),
+            forward_index_conf: Default::default(),
+        }
     }
 }
 
@@ -67,6 +78,7 @@ impl Default for WalConfig {
 
 #[allow(dead_code)]
 pub struct WriteBatchConfig {}
+
 #[derive(Default, Clone)]
 pub struct CompactConfig {}
 
@@ -91,12 +103,14 @@ pub struct TseriesFamOpt {
 
 impl Default for TseriesFamOpt {
     fn default() -> Self {
-        Self { max_level: 6,
-               max_bytes_for_level_base: 256 * 1024 * 1024,
-               level_ratio: 16f64,
-               target_file_size_base: 64 * 1024 * 1024,
-               file_number_compact_trigger: 4,
-               max_compact_size: 2 * 1024 * 1024 * 1024 }
+        Self {
+            max_level: 6,
+            max_bytes_for_level_base: 256 * 1024 * 1024,
+            level_ratio: 16f64,
+            target_file_size_base: 64 * 1024 * 1024,
+            file_number_compact_trigger: 4,
+            max_compact_size: 2 * 1024 * 1024 * 1024,
+        }
     }
 }
 
