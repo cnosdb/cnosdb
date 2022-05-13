@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -484,6 +485,7 @@ func TestServer_Write_LineProtocol_Integer(t *testing.T) {
 
 // Ensure the server can query with default databases (via param) and default retention policy
 func TestServer_Query_DefaultDBAndRP(t *testing.T) {
+
 	t.Parallel()
 	s := OpenServer(NewConfig())
 	defer s.Close()
