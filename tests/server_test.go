@@ -539,6 +539,42 @@ func TestServer_Write_LineProtocol_Partial(t *testing.T) {
 	}
 }
 
+func TestServer_ShowShardsNonInf(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 1000000*time.Hour), true); err != nil {
+		t.Fatal(err)
+	}
+
+	points := []string{
+		"cpu,host=server01 value=100 1621440001000000000",
+	}
+	if _, err := s.Write("db0", "rp0", strings.Join(points, "\n"), nil); err != nil {
+		t.Fatal("unexpected error: ", err)
+	}
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp1", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write("db0", "rp1", strings.Join(points, "\n"), nil); err != nil {
+		t.Fatal("unexpected error: ", err)
+	}
+
+	// inf shard has no expiry_time, shard with expiry has correct expiry_time
+	exp := `{"results":[{"statement_id":0,"series":[{"name":"db0","columns":` +
+		`["id","database","rp","shard_group","start_time","end_time","expiry_time","owners"],"values":[` +
+		`[2,"db0","rp0",1,"2021-05-17T00:00:00Z","2021-05-24T00:00:00Z","2135-06-22T16:00:00Z","0"],` +
+		`[4,"db0","rp1",2,"2021-05-17T00:00:00Z","2021-05-24T00:00:00Z","2021-05-24T00:00:00Z","0"]]}]}]}`
+	// Verify the data was written.
+	if res, err := s.Query(`show shards`); err != nil {
+		t.Fatal(err)
+	} else if exp != res {
+		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+	}
+}
+
 // Ensure the server can query with default databases (via param) and default retention policy
 func TestServer_Query_DefaultDBAndRP(t *testing.T) {
 
