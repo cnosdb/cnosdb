@@ -2,12 +2,14 @@ use std::{borrow::Borrow, fs, hash::Hasher, io::Read, path::PathBuf};
 
 use async_recursion::async_recursion;
 use num_traits::ToPrimitive;
+use parking_lot::Mutex;
+use direct_io::File;
 
 use super::*;
 
 pub struct Reader {
     path: PathBuf,
-    file: direct_io::File,
+    file: Mutex<File>,
     buf: Vec<u8>,
     pos: usize,
     buf_len: usize,
@@ -19,11 +21,11 @@ impl Reader {
         let file = open_file(path).unwrap();
         let mut buf = Vec::<u8>::new();
         buf.resize(READER_BUF_SIZE, 0);
-        Reader { path: path.clone(), file, buf, pos: 0, buf_len: 0, buf_use: 0 }
+        Reader { path: path.clone(), file: Mutex::new(file), buf, pos: 0, buf_len: 0, buf_use: 0 }
     }
 
     async fn set_pos(&mut self, pos: usize) -> RecordFileResult<()> {
-        if pos > self.file.len().to_usize().unwrap() {
+        if pos > self.file.lock().len().to_usize().unwrap() {
             return Err(RecordFileError::InvalidPos);
         }
 
@@ -115,9 +117,10 @@ impl Reader {
     }
 
     async fn load_buf(&mut self) -> RecordFileResult<()> {
-        self.buf_len = self.file
-                           .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
-                           .map_err(|err| RecordFileError::ReadFile { source: err })?;
+      
+        self.buf_len = self.file.lock()
+            .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
+            .map_err(|err| RecordFileError::ReadFile { source: err })?;
         self.buf_use = 0;
         Ok(())
     }
@@ -148,9 +151,8 @@ impl Reader {
                        + RECORD_DATA_VERSION_LEN
                        + RECORD_DATA_TYPE_LEN;
         head_buf.resize(head_len, 0);
-        let len = self.file
-                      .read_at(pos.to_u64().unwrap(), &mut head_buf)
-                      .map_err(|err| RecordFileError::ReadFile { source: err })?;
+        let len = self.file.lock().read_at(pos.to_u64().unwrap(), &mut head_buf)
+            .map_err(|err| { RecordFileError::ReadFile { source: err } })?;
         if len != head_len {
             return Err(RecordFileError::InvalidPos);
         }
@@ -173,10 +175,9 @@ impl Reader {
 
         let mut data = Vec::<u8>::new();
         data.resize(data_size.to_usize().unwrap(), 0);
-        let read_data_len =
-            self.file
-                .read_at(pos.to_u64().unwrap() + head_len.to_u64().unwrap(), &mut data)
-                .map_err(|err| RecordFileError::ReadFile { source: err })?;
+        let read_data_len = self.file.lock().read_at(
+            pos.to_u64().unwrap() + head_len.to_u64().unwrap(), &mut data)
+            .map_err(|err| { RecordFileError::ReadFile { source: err } })?;
         if read_data_len != data_size.into() {
             return Err(RecordFileError::InvalidPos);
         }

@@ -26,6 +26,8 @@ pub enum Error {
     Encode { source: bincode::Error },
     #[snafu(display("read record file block: {}", source))]
     Decode { source: bincode::Error },
+    #[snafu(display("Forward Index: : {}", source))]
+    ForwardIndexErr { source: crate::forward_index::ForwardIndexError },
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
     #[snafu(display("read tsm block file error: {}", reason))]

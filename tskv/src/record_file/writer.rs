@@ -1,19 +1,20 @@
 use std::{borrow::Borrow, fs, path::PathBuf};
 
 use num_traits::ToPrimitive;
+use parking_lot::Mutex;
 
 use super::*;
 use crate::{direct_io::File, file_manager, FileSync};
 
 pub struct Writer {
     path: PathBuf,
-    file: File,
+    file: Mutex<File>,
 }
 
 impl Writer {
     pub fn new(path: &PathBuf) -> Self {
         let file = open_file(path).unwrap();
-        Writer { path: path.clone(), file }
+        Writer { path: path.clone(), file: Mutex::new(file) }
     }
 
     // Returns the POS of record in the file
@@ -23,11 +24,11 @@ impl Writer {
                               data: &Vec<u8>)
                               -> RecordFileResult<u64> {
         let mut buf = Vec::<u8>::with_capacity(RECORD_MAGIC_NUMBER_LEN
-                                               + RECORD_DATA_SIZE_LEN
-                                               + RECORD_DATA_VERSION_LEN
-                                               + RECORD_DATA_TYPE_LEN
-                                               + data.len()
-                                               + RECORD_CRC32_NUMBER_LEN);
+            + RECORD_DATA_SIZE_LEN
+            + RECORD_DATA_VERSION_LEN
+            + RECORD_DATA_TYPE_LEN
+            + data.len()
+            + RECORD_CRC32_NUMBER_LEN);
 
         // build buf
         buf.append(&mut MAGIC_NUMBER.to_le_bytes().to_vec()); // magic_number
@@ -36,11 +37,11 @@ impl Writer {
         buf.append(&mut data_type.to_le_bytes().to_vec()); //data_type
         buf.append(&mut data.to_vec()); //data
         buf.append(&mut crc32fast::hash(buf[RECORD_MAGIC_NUMBER_LEN..].borrow()).to_le_bytes()
-                                                                                .to_vec()); // crc32_number
+            .to_vec()); // crc32_number
 
         // write file
         let mut p = 0;
-        let mut pos = self.file.len();
+        let mut pos = self.file.lock().len();
         let origin_pos = pos;
         while p < buf.len() {
             let mut write_len = BLOCK_SIZE - pos.to_usize().unwrap() % BLOCK_SIZE;
@@ -48,17 +49,17 @@ impl Writer {
                 write_len = buf.len() - p;
             }
 
-            match self.file
-                      .write_at(pos, &buf[p..p + write_len])
-                      .map_err(|err| RecordFileError::WriteFile { source: err })
+            match self.file.lock()
+                .write_at(pos, &buf[p..p + write_len])
+                .map_err(|err| RecordFileError::WriteFile { source: err })
             {
                 Ok(_) => {
                     p += write_len;
                     pos += write_len.to_u64().unwrap();
-                },
+                }
                 Err(e) => {
                     return Err(e);
-                },
+                }
             }
         }
 
@@ -66,15 +67,15 @@ impl Writer {
     }
 
     pub async fn soft_sync(&self) -> RecordFileResult<()> {
-        self.file.sync_all(FileSync::Soft).map_err(|err| RecordFileError::SyncFile { source: err })
+        self.file.lock().sync_all(FileSync::Soft).map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
     pub async fn hard_sync(&self) -> RecordFileResult<()> {
-        self.file.sync_all(FileSync::Hard).map_err(|err| RecordFileError::SyncFile { source: err })
+        self.file.lock().sync_all(FileSync::Hard).map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
     pub async fn close(&mut self) -> RecordFileResult<()> {
-        self.file.sync_all(FileSync::Hard).map_err(|err| RecordFileError::SyncFile { source: err })
+        self.file.lock().sync_all(FileSync::Hard).map_err(|err| RecordFileError::SyncFile { source: err })
     }
 }
 
