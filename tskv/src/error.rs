@@ -5,33 +5,64 @@ use crate::wal;
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Snafu, Debug)]
+#[snafu(visibility(pub))]
 pub enum Error {
     #[snafu(display("{}", source))]
     IO { source: std::io::Error },
+
+    #[snafu(display("Unable to open file: {}", source))]
+    OpenFile { source: std::io::Error },
+
+    #[snafu(display("Error with read file : {}", source))]
+    ReadFile { source: std::io::Error },
+
+    #[snafu(display("Unable to write file: {}", source))]
+    WriteFile { source: std::io::Error },
+
+    #[snafu(display("Unable to sync file: {}", source))]
+    SyncFile { source: std::io::Error },
+
+    #[snafu(display("File {} has wrong name format: {}", file_name, message))]
+    InvalidFileName { file_name: String, message: String },
+
     #[snafu(display("async file system stopped"))]
     Cancel,
+
     #[snafu(display("fails to send to channel"))]
     Send,
+
     #[snafu(display("fails to receive from channel"))]
-    Receive,
+    Receive { source: tokio::sync::oneshot::error::RecvError },
+
     #[snafu(display("invalid flatbuffers: {}", source))]
     InvalidFlatbuffer { source: flatbuffers::InvalidFlatbuffer },
-    // #[snafu(display("parse flatbuffers: {}", source))]
-    // ParseFlatbuffer { source: ParseFlatbufferError },
-    #[snafu(display("unable to write wal: {}", source))]
-    Wal { source: wal::WalError },
+
+    #[snafu(display("tag key must be valid UTF-8: {:?}", source))]
+    InvalidTagKey { source: std::string::FromUtf8Error },
+
+    #[snafu(display("tag key must be valid UTF-8: {:?}", source))]
+    InvalidTagValue { source: std::string::FromUtf8Error },
+
     #[snafu(display("read record file block: {}", source))]
     LogRecordErr { source: crate::record_file::RecordFileError },
+
     #[snafu(display("read record file block: {}", source))]
     Encode { source: bincode::Error },
+
     #[snafu(display("read record file block: {}", source))]
     Decode { source: bincode::Error },
     #[snafu(display("Forward Index: : {}", source))]
     ForwardIndexErr { source: crate::forward_index::ForwardIndexError },
+
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
+
     #[snafu(display("read tsm block file error: {}", reason))]
     ReadTsmErr { reason: String },
+
     #[snafu(display("write tsm block file error: {}", reason))]
     WriteTsmErr { reason: String },
+
+    #[snafu(display("unable to walk dir : {}", source))]
+    UnableToWalkDir { source: walkdir::Error },
 }

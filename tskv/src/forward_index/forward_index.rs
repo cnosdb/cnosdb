@@ -47,7 +47,9 @@ impl ForwardIndex {
                        file_path: path.clone() }
     }
 
-    pub async fn add_series_info_if_not_exists(&mut self, mut series_info: SeriesInfo) -> ForwardIndexResult<()> {
+    pub async fn add_series_info_if_not_exists(&mut self,
+                                               mut series_info: SeriesInfo)
+                                               -> ForwardIndexResult<()> {
         series_info.update_id();
         match self.series_info_set.entry(series_info.series_id()) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
@@ -187,9 +189,6 @@ pub struct ForwardIndexConfig {
 
 impl Default for ForwardIndexConfig {
     fn default() -> Self {
-        ForwardIndexConfig {
-            path: PathBuf::from("/tmp/test/tskv.fidx")
-        }
+        ForwardIndexConfig { path: PathBuf::from("/tmp/test/tskv.fidx") }
     }
 }
-

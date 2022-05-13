@@ -1,27 +1,31 @@
-use std::{cell::RefCell, sync::Arc, thread::JoinHandle};
+use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, sync::Arc, thread::JoinHandle};
 
-use ::models::{AbstractPoints, SeriesInfo, Tag, FieldInfo, FieldInfoFromParts, ValueType};
-use crate::forward_index::ForwardIndex;
-
+use ::models::{AbstractPoints, FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, ValueType};
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models,
+    models as fb_models,
 };
+use snafu::ResultExt;
 use tokio::{
     runtime::Builder,
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot, Mutex, RwLock,
+        oneshot, RwLock,
     },
 };
 
 use crate::{
-    error::Result,
+    context::GlobalContext,
+    error::{self, Result},
+    file_manager, file_utils,
+    forward_index::ForwardIndex,
     kv_option::{DBOptions, Options, QueryOption, WalConfig},
     version_set,
-    wal::{self, WalEntryType, WalManager, WalResult, WalTask},
-    Error, FileManager, MemCache, Task, Version, VersionSet, WorkerQueue,
+    wal::{self, WalEntryType, WalManager, WalTask},
+    Error, FileManager, MemCache, Reader, Summary, Task, Version, VersionEdit, VersionSet,
+    WorkerQueue,
 };
 
 pub struct Entry {
@@ -29,7 +33,7 @@ pub struct Entry {
 }
 
 pub struct TsKv {
-    options: Options,
+    options: Arc<Options>,
     kvctx: Arc<KvContext>,
     version_set: Arc<RwLock<VersionSet>>,
 
@@ -39,99 +43,142 @@ pub struct TsKv {
 
 impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
-        let kvctx = Arc::new(KvContext::new(opt.clone()));
-        let vs = Self::recover(opt.clone()).await;
-        let mut fidx = ForwardIndex::new(&opt.forward_index_conf.path);
-        fidx.load_cache_file().await.map_err(|err| { Error::LogRecordErr { source: err } })?;
-
-        let (sender, receiver) = mpsc::unbounded_channel();
-
-        let core = Self {
-            options: opt,
-            kvctx,
-            forward_index: Arc::new(RwLock::new(fidx)),
-            version_set: Arc::new(RwLock::new(vs)),
-            wal_sender: sender,
-        };
-        core.run_wal_job(receiver);
+        let shared_options = Arc::new(opt);
+        let kvctx = Arc::new(KvContext::new(shared_options.clone()));
+        let version_set = Self::recover(shared_options.clone()).await;
+        let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
+        fidx.load_cache_file().await.map_err(|err| Error::LogRecordErr { source: err })?;
+        let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
+        let core = Self { options: shared_options,
+                          kvctx,
+                          forward_index: Arc::new(RwLock::new(fidx)),
+                          version_set,
+                          wal_sender };
+        core.run_wal_job(wal_receiver);
 
         Ok(core)
     }
 
-    pub async fn recover(opt: Options) -> VersionSet {
-        // todo! recover from manifest and build VersionSet
-        let mut version_set = VersionSet::new_default();
-        let wal_manager = WalManager::new(opt.wal);
-        wal_manager.recover(&mut version_set).await.unwrap();
+    async fn recover(opt: Arc<Options>) -> Arc<RwLock<VersionSet>> {
+        if !file_manager::try_exists(&opt.db.db_path) {
+            std::fs::create_dir_all(&opt.db.db_path).context(error::IOSnafu).unwrap();
+        }
+        let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
+        let summary = if file_manager::try_exists(&summary_file) {
+            Summary::recover(&[], &opt.db).await.unwrap()
+        } else {
+            Summary::new(&[], &opt.db).await.unwrap()
+        };
+        let version_set = summary.version_set();
+        let wal_manager = WalManager::new(opt.wal.clone());
+        wal_manager.recover(version_set.clone()).await.unwrap();
 
-        version_set
+        version_set.clone()
     }
 
     pub async fn write(&self,
                        write_batch: WritePointsRpcRequest)
                        -> Result<WritePointsRpcResponse> {
-        let entry = flatbuffers::root::<protos::models::Points>(&write_batch.points).map_err(|err| {
-            Error::InvalidFlatbuffer { source: err }
-        })?;
-        for point in entry.points().unwrap() {
+        let shared_write_batch = Arc::new(write_batch.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+
+        // get or create forward index
+        for point in fb_points.points().unwrap() {
             let mut info = SeriesInfo::new();
             for tag in point.tags().unwrap() {
-                info.tags.push(Tag::new(tag.key().unwrap().to_vec(),
-                                        tag.value().unwrap().to_vec()));
+                info.tags
+                    .push(Tag::new(tag.key().unwrap().to_vec(), tag.value().unwrap().to_vec()));
             }
             for field in point.fields().unwrap() {
-                info.field_infos.push(FieldInfo::from_parts(
-                    field.name().unwrap().to_vec(),
-                    ValueType::from(field.type_()),
-                ))
+                info.field_infos.push(FieldInfo::from_parts(field.name().unwrap().to_vec(),
+                                                            ValueType::from(field.type_())))
             }
-            self.forward_index.write().await.add_series_info_if_not_exists(info)
-                .await.map_err(|err| {
-                Error::ForwardIndexErr { source: err }
-            })?;
+            self.forward_index
+                .write()
+                .await
+                .add_series_info_if_not_exists(info)
+                .await
+                .context(error::ForwardIndexErrSnafu)?;
         }
 
-
+        // write wal
         let (cb, rx) = oneshot::channel();
         self.wal_sender
-            .send(WalTask::Write { points: write_batch.points, cb })
+            .send(WalTask::Write { points: shared_write_batch.clone(), cb })
             .map_err(|err| Error::Send)?;
-        rx.await.unwrap().unwrap();
+        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+
+        // write memcache
+        if let Some(points) = fb_points.points() {
+            let version_set = self.version_set.read().await;
+            for point in points.iter() {
+                let p = AbstractPoints::from(point);
+                let sid = p.series_id();
+                if let Some(tsf) = version_set.get_tsfamily(sid) {
+                    for f in p.fileds().iter() {
+                        tsf.put_mutcache(f.filed_id(),
+                                         &f.value,
+                                         f.val_type,
+                                         seq,
+                                         point.timestamp() as i64)
+                           .await
+                    }
+                } else {
+                    println!("[WARN] ts_family for sid {} nto found.", sid);
+                }
+            }
+        }
 
         // let _ = self.kvctx.shard_write(0, write_batch).await;
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
-    pub async fn insert_cache(&self, buf: &[u8]) {
-        let ps = flatbuffers::root::<models::Points>(buf).unwrap();
-
-        let version_set = self.version_set.read().await;
-
-        for p in ps.points().unwrap().iter() {
-            let s = AbstractPoints::from(p);
-            // use sid to dispatch to tsfamily
-            // so if you change the colume name
-            // please keep the series id
-            let sid = s.series_id();
-
-            let tsf = version_set.get_tsfamily(sid).unwrap();
-            for f in s.fileds().iter() {
-                let fid = f.filed_id();
+    pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {
+        let ps =
+            flatbuffers::root::<fb_models::Points>(buf).context(error::InvalidFlatbufferSnafu)?;
+        if let Some(points) = ps.points() {
+            let version_set = self.version_set.read().await;
+            for point in points.iter() {
+                let p = AbstractPoints::from(point);
+                // use sid to dispatch to tsfamily
+                // so if you change the colume name
+                // please keep the series id
+                let sid = p.series_id();
+                if let Some(tsf) = version_set.get_tsfamily(sid) {
+                    for f in p.fileds().iter() {
+                        tsf.put_mutcache(f.filed_id(),
+                                         &f.value,
+                                         f.val_type,
+                                         seq,
+                                         point.timestamp() as i64)
+                           .await
+                    }
+                }
             }
         }
+
+        Ok(())
     }
 
-    pub fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
+    fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
         let wal_opt = self.options.wal.clone();
         let mut wal_manager = WalManager::new(wal_opt);
         let f = async move {
             while let Some(x) = receiver.recv().await {
                 match x {
                     WalTask::Write { points, cb } => {
+                        // write wal
                         let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
-                        dbg!(points);
-                        let _ = cb.send(ret);
-                    }
+                        let send_ret = cb.send(ret);
+                        match send_ret {
+                            Ok(wal_result) => {
+                                println!("[WARN] send WAL write result succeed.")
+                            },
+                            Err(err) => {
+                                println!("[WARN] send WAL write result failed.")
+                            },
+                        }
+                    },
                 }
             }
         };
@@ -147,13 +194,13 @@ impl TsKv {
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
-                            }
+                            },
                             Err(err) => {
                                 let _ret = tx.send(Err(err));
-                            }
+                            },
                         }
                         dbg!("TSKV write points completed.");
-                    }
+                    },
                     _ => panic!("unimplented."),
                 }
             }
@@ -183,7 +230,7 @@ pub(crate) struct KvContext {
 
 #[allow(dead_code)]
 impl KvContext {
-    pub fn new(opt: Options) -> Self {
+    pub fn new(opt: Arc<Options>) -> Self {
         let front_work_queue = Arc::new(WorkerQueue::new(opt.db.front_cpu));
         let worker_handle = Vec::with_capacity(opt.db.back_cpu);
         Self { front_handler: front_work_queue, handler: worker_handle, status: KvStatus::Init }
@@ -202,11 +249,12 @@ impl KvContext {
                              -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.front_handler.add_task(partion_id, async move {
-            let ps = flatbuffers::root::<models::Points>(&entry.points).unwrap();
-            let err = 0;
-            // todo
-            let _ = tx.send(err);
-        })?;
+                               let ps =
+                                   flatbuffers::root::<fb_models::Points>(&entry.points).unwrap();
+                               let err = 0;
+                               // todo
+                               let _ = tx.send(err);
+                           })?;
         rx.await.unwrap();
         Ok(())
     }
@@ -225,13 +273,9 @@ mod test {
     use crate::{kv_option::WalConfig, wal::WalTask, TsKv};
 
     async fn get_tskv() -> TsKv {
-        let opt = crate::kv_option::Options {
-            wal: WalConfig {
-                dir: String::from("/tmp/test/"),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/"),
+                                                               ..Default::default() },
+                                              ..Default::default() };
 
         TsKv::open(opt).await.unwrap()
     }

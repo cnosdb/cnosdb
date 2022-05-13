@@ -12,7 +12,10 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
-use crate::direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType};
+use crate::{
+    direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType},
+    error, Error, Result,
+};
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
@@ -28,8 +31,6 @@ pub enum FileError {
     #[snafu(display("async file system stopped"))]
     Cancel,
 }
-
-type Result<T> = std::result::Result<T, FileError>;
 
 pub struct FileManager {
     file_system: Arc<direct_io::FileSystem>,
@@ -65,17 +66,15 @@ impl FileManager {
                           path: impl AsRef<Path>,
                           options: &fs::OpenOptions)
                           -> Result<direct_io::File> {
-        self.file_system
-            .open_with(path, options)
-            .map_err(|err| FileError::UnableToOpenFile { source: err })
+        self.file_system.open_with(path, options).context(error::OpenFileSnafu)
     }
 
     pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
-        self.file_system.open(path).map_err(|err| FileError::UnableToOpenFile { source: err })
+        self.file_system.open(path).context(error::OpenFileSnafu)
     }
 
     pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
-        self.file_system.create(path).map_err(|err| FileError::UnableToOpenFile { source: err })
+        self.file_system.create(path).context(error::OpenFileSnafu)
     }
 
     pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
@@ -83,11 +82,11 @@ impl FileManager {
     }
 
     pub async fn sync_all(&self, sync: direct_io::FileSync) -> Result<()> {
-        self.file_system.sync_all(sync).map_err(|err| FileError::UnableToSyncFile { source: err })
+        self.file_system.sync_all(sync).context(error::SyncFileSnafu)
     }
 
     pub async fn sync_data(&self, sync: direct_io::FileSync) -> Result<()> {
-        self.file_system.sync_data(sync).map_err(|err| FileError::UnableToSyncFile { source: err })
+        self.file_system.sync_data(sync).context(error::SyncFileSnafu)
     }
 
     pub async fn write_at(&self, file: Arc<direct_io::File>, pos: u64, buf: &mut [u8]) {
@@ -105,7 +104,7 @@ impl FileManager {
 
     pub fn put_io_task(&self, task: IoTask) -> Result<()> {
         if self.async_rt.is_closed() {
-            return Err(FileError::Cancel);
+            return Err(Error::Cancel);
         }
         if task.is_pri_high() {
             let _ = self.async_rt.high_op_queue.push(task);
@@ -156,10 +155,6 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
 
 pub fn make_tsm_file_name(path: &str, sequence: u64) -> PathBuf {
     let p = format!("{}/_{:06}.tsm", path, sequence);
-    PathBuf::from(p)
-}
-pub fn make_wal_file_name(path: &str, sequence: u64) -> PathBuf {
-    let p = format!("{}/_{:05}.wal", path, sequence);
     PathBuf::from(p)
 }
 
