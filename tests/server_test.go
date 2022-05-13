@@ -539,6 +539,61 @@ func TestServer_Write_LineProtocol_Partial(t *testing.T) {
 	}
 }
 
+// Ensure the server can query with default databases (via param) and default retention policy
+func TestServer_Query_DefaultDBAndRP(t *testing.T) {
+
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air value=1.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano())},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "default db and rp",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * FROM air GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "default rp exists",
+			command: `show retention policies ON db0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["name","duration","groupDuration","replicaN","default"],"values":[["autogen","0s","168h0m0s",1,false],["rp0","0s","168h0m0s",1,true]]}]}]}`,
+		},
+		&Query{
+			name:    "default rp",
+			command: `SELECT * FROM db0..air GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "default dp",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * FROM rp0.air GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
 func TestServer_ShowShardsNonInf(t *testing.T) {
 	t.Parallel()
 	s := OpenServer(NewConfig())
@@ -575,40 +630,31 @@ func TestServer_ShowShardsNonInf(t *testing.T) {
 	}
 }
 
-// Ensure the server can query with default databases (via param) and default retention policy
-func TestServer_Query_DefaultDBAndRP(t *testing.T) {
-
+func TestServer_Query_Multiple_Measurements(t *testing.T) {
 	t.Parallel()
 	s := OpenServer(NewConfig())
 	defer s.Close()
 
+	// Make sure we do writes for measurements that will span across shards
+	writes := []string{
+		fmt.Sprintf("cpu,host=server01 value=100,core=4 %d", mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf("cpu1,host=server02 value=50,core=2 %d", mustParseTime(time.RFC3339Nano, "2015-01-01T00:00:00Z").UnixNano()),
+	}
 	test := NewTest("db0", "rp0")
 	test.writes = Writes{
-		&Write{data: fmt.Sprintf(`air value=1.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano())},
+		&Write{data: strings.Join(writes, "\n")},
 	}
 
 	test.addQueries([]*Query{
 		&Query{
-			name:    "default db and rp",
-			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT * FROM air GROUP BY *`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
+			name:    "measurement in one shard but not another shouldn't panic server",
+			command: `SELECT host,value  FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","host","value"],"values":[["2000-01-01T00:00:00Z","server01",100]]}]}]}`,
 		},
 		&Query{
-			name:    "default rp exists",
-			command: `show retention policies ON db0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["name","duration","groupDuration","replicaN","default"],"values":[["autogen","0s","168h0m0s",1,false],["rp0","0s","168h0m0s",1,true]]}]}]}`,
-		},
-		&Query{
-			name:    "default rp",
-			command: `SELECT * FROM db0..air GROUP BY *`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
-		},
-		&Query{
-			name:    "default dp",
-			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT * FROM rp0.air GROUP BY *`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","value"],"values":[["2000-01-01T01:00:00Z",1]]}]}]}`,
+			name:    "measurement in one shard but not another shouldn't panic server",
+			command: `SELECT host,value  FROM db0.rp0.cpu GROUP BY host`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","host","value"],"values":[["2000-01-01T00:00:00Z","server01",100]]}]}]}`,
 		},
 	}...)
 
