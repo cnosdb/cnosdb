@@ -357,7 +357,6 @@ func TestServer_ShowDatabases_NoAuth(t *testing.T) {
 	}
 }
 
-
 // Ensure user commands work.
 func TestServer_UserCommands(t *testing.T) {
 	t.Parallel()
@@ -481,3 +480,28 @@ func TestServer_Write_LineProtocol_Integer(t *testing.T) {
 		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
 	}
 }
+
+// Ensure the server can create a single point via line protocol with unsigned type and read it back.
+//TODO Fail
+//func TestServer_Write_LineProtocol_Unsigned(t *testing.T) {
+//	t.Parallel()
+//	s := OpenServer(NewConfig())
+//	defer s.Close()
+//
+//	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 1*time.Hour), true); err != nil {
+//		t.Fatal(err)
+//	}
+//	now := now()
+//	if res, err := s.Write("db0", "rp0", `air,station=LianYunGang value=100u `+strconv.FormatInt(now.UnixNano(), 10), nil); err != nil {
+//		t.Fatal(err)
+//	} else if exp := ``; exp != res {
+//		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+//	}
+//
+//	// Verify the data was written.
+//	if res, err := s.Query(`SELECT * FROM db0.rp0.air GROUP BY *`); err != nil {
+//		t.Fatal(err)
+//	} else if exp := fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"station":"LianYunGang"},"columns":["time","value"],"values":[["%s",100]]}]}]}`, now.Format(time.RFC3339Nano)); exp != res {
+//		t.Fatalf("unexpected results\nexp: %s\ngot: %s\n", exp, res)
+//	}
+//}
