@@ -726,3 +726,46 @@ func TestServer_Query_IdenticalTagValues(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_NonExistent(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1 ` + strconv.FormatInt(now.UnixNano(), 10)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "selecting value should succeed",
+			command: `SELECT value FROM db0.rp0.cpu`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","value"],"values":[["%s",1]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting non-existent should succeed",
+			command: `SELECT foo FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
