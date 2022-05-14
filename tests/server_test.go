@@ -1030,3 +1030,73 @@ func TestServer_Query_Now(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_EpochPrecision(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1.0 ` + strconv.FormatInt(now.UnixNano(), 10)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "nanosecond precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"n"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()),
+		},
+		&Query{
+			name:    "microsecond precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"u"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Microsecond)),
+		},
+		&Query{
+			name:    "millisecond precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"ms"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Millisecond)),
+		},
+		&Query{
+			name:    "second precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"s"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Second)),
+		},
+		&Query{
+			name:    "minute precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"m"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Minute)),
+		},
+		&Query{
+			name:    "hour precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"h"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Hour)),
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
