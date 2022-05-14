@@ -769,3 +769,95 @@ func TestServer_Query_NonExistent(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_Math(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+	writes := []string{
+		"float value=42 " + strconv.FormatInt(now.UnixNano(), 10),
+		"integer value=42i " + strconv.FormatInt(now.UnixNano(), 10),
+	}
+
+	test := NewTest("db", "rp")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "SELECT multiple of float value",
+			command: `SELECT value * 2 from db.rp.float`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"float","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT multiple of float value",
+			command: `SELECT 2 * value from db.rp.float`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"float","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT multiple of integer value",
+			command: `SELECT value * 2 from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT float multiple of integer value",
+			command: `SELECT value * 2.0 from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of float value",
+			command: `SELECT value * value from db.rp.float`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"float","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of integer value",
+			command: `SELECT value * value from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of integer, float value",
+			command: `SELECT value * value,float from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value","float"],"values":[["%s",1764,null]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of integer value with alias",
+			command: `SELECT value * value as square from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","square"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT sum of aggregates",
+			command: `SELECT max(value) + min(value) from db.rp.integer`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","max_min"],"values":[["1970-01-01T00:00:00Z",84]]}]}]}`,
+		},
+		&Query{
+			name:    "SELECT square of enclosed integer value",
+			command: `SELECT ((value) * (value)) from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of enclosed integer value",
+			command: `SELECT (value * value) from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
