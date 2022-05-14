@@ -937,3 +937,43 @@ func TestServer_Query_Count(t *testing.T) {
 	}
 }
 
+func TestServer_Query_MaxSelectSeriesN(t *testing.T) {
+	t.Parallel()
+	config := NewConfig()
+	config.Coordinator.MaxSelectSeriesN = 3
+	s := OpenServer(config)
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1.0 0`},
+		&Write{data: `cpu,host=server02 value=1.0 0`},
+		&Write{data: `cpu,host=server03 value=1.0 0`},
+		&Write{data: `cpu,host=server04 value=1.0 0`},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "exceeed max series",
+			command: `SELECT COUNT(value) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"error":"max-select-series limit exceeded: (4/3)"}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
