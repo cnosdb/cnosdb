@@ -861,3 +861,79 @@ func TestServer_Query_Math(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_Count(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	writes := []string{
+		`cpu,host=server01 value=1.0 ` + strconv.FormatInt(now.UnixNano(), 10),
+		`ram value1=1.0,value2=2.0 ` + strconv.FormatInt(now.UnixNano(), 10),
+	}
+
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	hour_ago := now.Add(-time.Hour).UTC()
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "selecting count(value) should succeed",
+			command: `SELECT count(value) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "selecting count(value) with where time should return result",
+			command: fmt.Sprintf(`SELECT count(value) FROM db0.rp0.cpu WHERE time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","count"],"values":[["%s",1]]}]}]}`, hour_ago.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting count(value) with filter that excludes all results should return 0",
+			command: fmt.Sprintf(`SELECT count(value) FROM db0.rp0.cpu WHERE value=100 AND time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "selecting count(value1) with matching filter against value2 should return correct result",
+			command: fmt.Sprintf(`SELECT count(value1) FROM db0.rp0.ram WHERE value2=2 AND time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"ram","columns":["time","count"],"values":[["%s",1]]}]}]}`, hour_ago.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting count(value1) with non-matching filter against value2 should return correct result",
+			command: fmt.Sprintf(`SELECT count(value1) FROM db0.rp0.ram WHERE value2=3 AND time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "selecting count(*) should expand the wildcard",
+			command: `SELECT count(*) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","count_value"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "selecting count(2) should error",
+			command: `SELECT count(2) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"error":"expected field argument in count()"}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
