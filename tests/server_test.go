@@ -977,3 +977,56 @@ func TestServer_Query_MaxSelectSeriesN(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_Now(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1.0 ` + strconv.FormatInt(now.UnixNano(), 10)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "where with time < now() should work",
+			command: `SELECT * FROM db0.rp0.cpu where time < now()`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","host","value"],"values":[["%s","server01",1]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "where with time < now() and GROUP BY * should work",
+			command: `SELECT * FROM db0.rp0.cpu where time < now() GROUP BY *`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[["%s",1]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "where with time > now() should return an empty result",
+			command: `SELECT * FROM db0.rp0.cpu where time > now()`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "where with time > now() with GROUP BY * should return an empty result",
+			command: `SELECT * FROM db0.rp0.cpu where time > now() GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
