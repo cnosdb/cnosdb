@@ -675,3 +675,604 @@ func TestServer_Query_Multiple_Measurements(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_IdenticalTagValues(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	writes := []string{
+		fmt.Sprintf("cpu,t1=val1 value=1 %d", mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf("cpu,t2=val2 value=2 %d", mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+		fmt.Sprintf("cpu,t1=val2 value=3 %d", mustParseTime(time.RFC3339Nano, "2000-01-01T00:02:00Z").UnixNano()),
+	}
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "measurements with identical tag values - SELECT *, no GROUP BY",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"t1":"","t2":"val2"},"columns":["time","value"],"values":[["2000-01-01T00:01:00Z",2]]},{"name":"cpu","tags":{"t1":"val1","t2":""},"columns":["time","value"],"values":[["2000-01-01T00:00:00Z",1]]},{"name":"cpu","tags":{"t1":"val2","t2":""},"columns":["time","value"],"values":[["2000-01-01T00:02:00Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "measurements with identical tag values - SELECT *, with GROUP BY",
+			command: `SELECT value FROM db0.rp0.cpu GROUP BY t1,t2`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"t1":"","t2":"val2"},"columns":["time","value"],"values":[["2000-01-01T00:01:00Z",2]]},{"name":"cpu","tags":{"t1":"val1","t2":""},"columns":["time","value"],"values":[["2000-01-01T00:00:00Z",1]]},{"name":"cpu","tags":{"t1":"val2","t2":""},"columns":["time","value"],"values":[["2000-01-01T00:02:00Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "measurements with identical tag values - SELECT value no GROUP BY",
+			command: `SELECT value FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","value"],"values":[["2000-01-01T00:00:00Z",1],["2000-01-01T00:01:00Z",2],["2000-01-01T00:02:00Z",3]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_NonExistent(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1 ` + strconv.FormatInt(now.UnixNano(), 10)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "selecting value should succeed",
+			command: `SELECT value FROM db0.rp0.cpu`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","value"],"values":[["%s",1]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting non-existent should succeed",
+			command: `SELECT foo FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Math(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+	writes := []string{
+		"float value=42 " + strconv.FormatInt(now.UnixNano(), 10),
+		"integer value=42i " + strconv.FormatInt(now.UnixNano(), 10),
+	}
+
+	test := NewTest("db", "rp")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "SELECT multiple of float value",
+			command: `SELECT value * 2 from db.rp.float`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"float","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT multiple of float value",
+			command: `SELECT 2 * value from db.rp.float`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"float","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT multiple of integer value",
+			command: `SELECT value * 2 from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT float multiple of integer value",
+			command: `SELECT value * 2.0 from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value"],"values":[["%s",84]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of float value",
+			command: `SELECT value * value from db.rp.float`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"float","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of integer value",
+			command: `SELECT value * value from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of integer, float value",
+			command: `SELECT value * value,float from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value","float"],"values":[["%s",1764,null]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of integer value with alias",
+			command: `SELECT value * value as square from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","square"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT sum of aggregates",
+			command: `SELECT max(value) + min(value) from db.rp.integer`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","max_min"],"values":[["1970-01-01T00:00:00Z",84]]}]}]}`,
+		},
+		&Query{
+			name:    "SELECT square of enclosed integer value",
+			command: `SELECT ((value) * (value)) from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "SELECT square of enclosed integer value",
+			command: `SELECT (value * value) from db.rp.integer`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"integer","columns":["time","value_value"],"values":[["%s",1764]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Count(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	writes := []string{
+		`cpu,host=server01 value=1.0 ` + strconv.FormatInt(now.UnixNano(), 10),
+		`ram value1=1.0,value2=2.0 ` + strconv.FormatInt(now.UnixNano(), 10),
+	}
+
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	hour_ago := now.Add(-time.Hour).UTC()
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "selecting count(value) should succeed",
+			command: `SELECT count(value) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "selecting count(value) with where time should return result",
+			command: fmt.Sprintf(`SELECT count(value) FROM db0.rp0.cpu WHERE time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","count"],"values":[["%s",1]]}]}]}`, hour_ago.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting count(value) with filter that excludes all results should return 0",
+			command: fmt.Sprintf(`SELECT count(value) FROM db0.rp0.cpu WHERE value=100 AND time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "selecting count(value1) with matching filter against value2 should return correct result",
+			command: fmt.Sprintf(`SELECT count(value1) FROM db0.rp0.ram WHERE value2=2 AND time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"ram","columns":["time","count"],"values":[["%s",1]]}]}]}`, hour_ago.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting count(value1) with non-matching filter against value2 should return correct result",
+			command: fmt.Sprintf(`SELECT count(value1) FROM db0.rp0.ram WHERE value2=3 AND time >= '%s'`, hour_ago.Format(time.RFC3339Nano)),
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "selecting count(*) should expand the wildcard",
+			command: `SELECT count(*) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","count_value"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "selecting count(2) should error",
+			command: `SELECT count(2) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"error":"expected field argument in count()"}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_MaxSelectSeriesN(t *testing.T) {
+	t.Parallel()
+	config := NewConfig()
+	config.Coordinator.MaxSelectSeriesN = 3
+	s := OpenServer(config)
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1.0 0`},
+		&Write{data: `cpu,host=server02 value=1.0 0`},
+		&Write{data: `cpu,host=server03 value=1.0 0`},
+		&Write{data: `cpu,host=server04 value=1.0 0`},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "exceeed max series",
+			command: `SELECT COUNT(value) FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"error":"max-select-series limit exceeded: (4/3)"}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Now(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1.0 ` + strconv.FormatInt(now.UnixNano(), 10)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "where with time < now() should work",
+			command: `SELECT * FROM db0.rp0.cpu where time < now()`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","host","value"],"values":[["%s","server01",1]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "where with time < now() and GROUP BY * should work",
+			command: `SELECT * FROM db0.rp0.cpu where time < now() GROUP BY *`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[["%s",1]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "where with time > now() should return an empty result",
+			command: `SELECT * FROM db0.rp0.cpu where time > now()`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "where with time > now() with GROUP BY * should return an empty result",
+			command: `SELECT * FROM db0.rp0.cpu where time > now() GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_EpochPrecision(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: `cpu,host=server01 value=1.0 ` + strconv.FormatInt(now.UnixNano(), 10)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "nanosecond precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"n"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()),
+		},
+		&Query{
+			name:    "microsecond precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"u"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Microsecond)),
+		},
+		&Query{
+			name:    "millisecond precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"ms"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Millisecond)),
+		},
+		&Query{
+			name:    "second precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"s"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Second)),
+		},
+		&Query{
+			name:    "minute precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"m"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Minute)),
+		},
+		&Query{
+			name:    "hour precision",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			params:  url.Values{"epoch": []string{"h"}},
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[[%d,1]]}]}]}`, now.UnixNano()/int64(time.Hour)),
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Tags(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	writes := []string{
+		fmt.Sprintf("cpu,host=server01 value=100,core=4 %d", now.UnixNano()),
+		fmt.Sprintf("cpu,host=server02 value=50,core=2 %d", now.Add(1).UnixNano()),
+
+		fmt.Sprintf("cpu1,host=server01,region=us-west value=100 %d", mustParseTime(time.RFC3339Nano, "2015-02-28T01:03:36.703820946Z").UnixNano()),
+		fmt.Sprintf("cpu1,host=server02 value=200 %d", mustParseTime(time.RFC3339Nano, "2010-02-28T01:03:37.703820946Z").UnixNano()),
+		fmt.Sprintf("cpu1,host=server03 value=300 %d", mustParseTime(time.RFC3339Nano, "2012-02-28T01:03:38.703820946Z").UnixNano()),
+
+		fmt.Sprintf("cpu2,host=server01 value=100 %d", mustParseTime(time.RFC3339Nano, "2015-02-28T01:03:36.703820946Z").UnixNano()),
+		fmt.Sprintf("cpu2 value=200 %d", mustParseTime(time.RFC3339Nano, "2012-02-28T01:03:38.703820946Z").UnixNano()),
+
+		fmt.Sprintf("cpu3,company=acme01 value=100 %d", mustParseTime(time.RFC3339Nano, "2015-02-28T01:03:36.703820946Z").UnixNano()),
+		fmt.Sprintf("cpu3 value=200 %d", mustParseTime(time.RFC3339Nano, "2012-02-28T01:03:38.703820946Z").UnixNano()),
+
+		fmt.Sprintf("status_code,url=http://www.example.com value=404 %d", mustParseTime(time.RFC3339Nano, "2015-07-22T08:13:54.929026672Z").UnixNano()),
+		fmt.Sprintf("status_code,url=https://influxdb.com value=418 %d", mustParseTime(time.RFC3339Nano, "2015-07-22T09:52:24.914395083Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "tag without field should return error",
+			command: `SELECT host FROM db0.rp0.cpu`,
+			exp:     `{"results":[{"statement_id":0,"error":"statement must have at least one field in select clause"}]}`,
+			skip:    true, // FIXME(benbjohnson): tags should stream as values
+		},
+		&Query{
+			name:    "field with tag should succeed",
+			command: `SELECT host, value FROM db0.rp0.cpu`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","host","value"],"values":[["%s","server01",100],["%s","server02",50]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "field with tag and GROUP BY should succeed",
+			command: `SELECT host, value FROM db0.rp0.cpu GROUP BY host`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","host","value"],"values":[["%s","server01",100]]},{"name":"cpu","tags":{"host":"server02"},"columns":["time","host","value"],"values":[["%s","server02",50]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "field with two tags should succeed",
+			command: `SELECT host, value, core FROM db0.rp0.cpu`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","host","value","core"],"values":[["%s","server01",100,4],["%s","server02",50,2]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "field with two tags and GROUP BY should succeed",
+			command: `SELECT host, value, core FROM db0.rp0.cpu GROUP BY host`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","host","value","core"],"values":[["%s","server01",100,4]]},{"name":"cpu","tags":{"host":"server02"},"columns":["time","host","value","core"],"values":[["%s","server02",50,2]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "select * with tags should succeed",
+			command: `SELECT * FROM db0.rp0.cpu`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","columns":["time","core","host","value"],"values":[["%s",4,"server01",100],["%s",2,"server02",50]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "select * with tags with GROUP BY * should succeed",
+			command: `SELECT * FROM db0.rp0.cpu GROUP BY *`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","core","value"],"values":[["%s",4,100]]},{"name":"cpu","tags":{"host":"server02"},"columns":["time","core","value"],"values":[["%s",2,50]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "group by tag",
+			command: `SELECT value FROM db0.rp0.cpu GROUP by host`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"cpu","tags":{"host":"server01"},"columns":["time","value"],"values":[["%s",100]]},{"name":"cpu","tags":{"host":"server02"},"columns":["time","value"],"values":[["%s",50]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "single field (EQ tag value1)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server01'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (2 EQ tags)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server01' AND region = 'us-west'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (OR different tags)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server03' OR region = 'us-west'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2012-02-28T01:03:38.703820946Z",300],["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (OR with non-existent tag value)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server01' OR host = 'server66'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (OR with all tag values)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server01' OR host = 'server02' OR host = 'server03'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2010-02-28T01:03:37.703820946Z",200],["2012-02-28T01:03:38.703820946Z",300],["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (1 EQ and 1 NEQ tag)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server01' AND region != 'us-west'`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "single field (EQ tag value2)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host = 'server02'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2010-02-28T01:03:37.703820946Z",200]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (NEQ tag value1)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host != 'server01'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2010-02-28T01:03:37.703820946Z",200],["2012-02-28T01:03:38.703820946Z",300]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (NEQ tag value1 AND NEQ tag value2)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host != 'server01' AND host != 'server02'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2012-02-28T01:03:38.703820946Z",300]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (NEQ tag value1 OR NEQ tag value2)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host != 'server01' OR host != 'server02'`, // Yes, this is always true, but that's the point.
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu1","columns":["time","value"],"values":[["2010-02-28T01:03:37.703820946Z",200],["2012-02-28T01:03:38.703820946Z",300],["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (NEQ tag value1 AND NEQ tag value2 AND NEQ tag value3)",
+			command: `SELECT value FROM db0.rp0.cpu1 WHERE host != 'server01' AND host != 'server02' AND host != 'server03'`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "single field (NEQ tag value1, point without any tags)",
+			command: `SELECT value FROM db0.rp0.cpu2 WHERE host != 'server01'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu2","columns":["time","value"],"values":[["2012-02-28T01:03:38.703820946Z",200]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (NEQ tag value1, point without any tags)",
+			command: `SELECT value FROM db0.rp0.cpu3 WHERE company !~ /acme01/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu3","columns":["time","value"],"values":[["2012-02-28T01:03:38.703820946Z",200]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (regex tag match)",
+			command: `SELECT value FROM db0.rp0.cpu3 WHERE company =~ /acme01/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu3","columns":["time","value"],"values":[["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (regex tag match)",
+			command: `SELECT value FROM db0.rp0.cpu3 WHERE company !~ /acme[23]/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"cpu3","columns":["time","value"],"values":[["2012-02-28T01:03:38.703820946Z",200],["2015-02-28T01:03:36.703820946Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (regex tag match with escaping)",
+			command: `SELECT value FROM db0.rp0.status_code WHERE url !~ /https\:\/\/influxdb\.com/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"status_code","columns":["time","value"],"values":[["2015-07-22T08:13:54.929026672Z",404]]}]}]}`,
+		},
+		&Query{
+			name:    "single field (regex tag match with escaping)",
+			command: `SELECT value FROM db0.rp0.status_code WHERE url =~ /https\:\/\/influxdb\.com/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"status_code","columns":["time","value"],"values":[["2015-07-22T09:52:24.914395083Z",418]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
