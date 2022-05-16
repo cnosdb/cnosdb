@@ -591,52 +591,101 @@ type RemoteServer struct {
 	url string
 }
 
-func (r RemoteServer) TcpAddr() string {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) TcpAddr() string {
+	// What does this func means?
+	u, err := url.Parse(r.url)
+	if err != nil {
+		// how to deal with this error?
+		return ""
+	}
+	return "tcp://" + u.Host
 }
 
-func (r RemoteServer) Open() error {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) Open() error {
+	resp, err := http.Get(r.URL() + "/ping")
+	if err != nil {
+		return err
+	}
+	body := strings.TrimSpace(string(MustReadAll(resp.Body)))
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status code: code=%d, body=%s", resp.StatusCode, body)
+	}
+	return nil
 }
 
-func (r RemoteServer) Close() {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) Close() {
+	// ignore, We can't close a remote server
 }
 
-func (r RemoteServer) Closed() bool {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) Closed() bool {
+	return true
 }
 
-func (r RemoteServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) CreateDatabase(db string) (*meta.DatabaseInfo, error) {
+	statement := fmt.Sprintf("CREATE+DATABASE+%s", db)
+
+	_, err := r.HTTPPost(r.URL()+"/query?q="+statement, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &meta.DatabaseInfo{}, nil
 }
 
-func (r RemoteServer) CreateDatabaseAndRetentionPolicy(db string, rp *meta.RetentionPolicySpec, makeDefault bool) error {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) CreateDatabaseAndRetentionPolicy(db string, rp *meta.RetentionPolicySpec, makeDefault bool) error {
+	if _, err := r.CreateDatabase(db); err != nil {
+		return err
+	}
+
+	statement := fmt.Sprintf("CREATE+RETENTION+POLICY+%s+ON+\"%s\"+DURATION+%s+REPLICATION+%v+SHARD+DURATION+%s",
+		rp.Name, db, rp.Duration, *rp.ReplicaN, rp.ShardGroupDuration)
+	if makeDefault {
+		statement += "+DEFAULT"
+	}
+
+	_, err := r.HTTPPost(r.URL()+"/query?q="+statement, nil)
+	return err
 }
 
-func (r RemoteServer) CreateSubscription(database, rp, name, mode string, destinations []string) error {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) CreateSubscription(database, rp, name, mode string, destinations []string) error {
+	dsts := make([]string, 0, len(destinations))
+	for _, d := range destinations {
+		dsts = append(dsts, "'"+d+"'")
+	}
+
+	statement := fmt.Sprintf("CREATE+SUBSCRIPTION+%s+ON+\"%s\".\"%s\"+DESTINATIONS+%v+%s",
+		name, database, rp, mode, strings.Join(dsts, ","))
+
+	_, err := r.HTTPPost(r.URL()+"/query?q="+statement, nil)
+	return err
 }
 
-func (r RemoteServer) DropDatabase(db string) error {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) DropDatabase(db string) error {
+	statement := fmt.Sprintf("DROP+DATABASE+%s", db)
+
+	_, err := r.HTTPPost(r.URL()+"/query?q="+statement, nil)
+	return err
 }
 
-func (r RemoteServer) Reset() error {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) Reset() error {
+	statement := fmt.Sprintf("SHOW+DATABASES")
+	res, err := r.HTTPPost(r.URL()+"/query?q="+statement, nil)
+	if err != nil {
+		return err
+	}
+
+	resp := &server.Response{}
+	if resp.UnmarshalJSON([]byte(res)); err != nil {
+		return err
+	}
+
+	for _, db := range resp.Results[0].Series[0].Values {
+		if err := r.DropDatabase(fmt.Sprintf("%s", db[0])); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (r RemoteServer) WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error {
-	//TODO implement me
-	panic("implement me")
+func (r *RemoteServer) WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error {
+	panic("not implemented")
 }
