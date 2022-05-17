@@ -28,6 +28,8 @@ var indexType string
 var cleanupData bool
 var seed int64
 
+var LosAngeles = mustParseLocation("America/Los_Angeles")
+
 // Server represents a test wrapper for server.Server.
 type Server interface {
 	URL() string
@@ -52,6 +54,27 @@ type Server interface {
 
 // NewServer returns a new instance of Server
 func NewServer(c *Config) Server {
+
+	err := os.Setenv("URL", "http://ipaddress:port")
+	if err != nil {
+		return nil
+	}
+
+	if url := os.Getenv("URL"); url != "" {
+		s := &RemoteServer{
+			url: url,
+			client: &client{
+				URLFn: func() string {
+					return url
+				},
+			},
+		}
+		if err := s.Reset(); err != nil {
+			panic(err.Error())
+		}
+		return s
+	}
+
 	srv := server.NewServer(c.Config)
 	s := LocalServer{
 		client: &client{},
