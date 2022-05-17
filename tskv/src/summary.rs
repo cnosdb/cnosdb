@@ -204,6 +204,10 @@ impl Summary {
     pub fn version_set(&self) -> Arc<RwLock<VersionSet>> {
         self.version_set.clone()
     }
+
+    pub fn global_context(&self) -> Arc<GlobalContext> {
+        self.ctx.clone()
+    }
 }
 
 pub struct SummaryProcesser {

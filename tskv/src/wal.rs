@@ -114,7 +114,7 @@ pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64
     Some((PathBuf::from(max_file_name), max_id))
 }
 
-struct WalFile {
+struct WalWriter {
     id: u64,
     file: File,
     size: u64,
@@ -126,7 +126,7 @@ struct WalFile {
     max_sequence: u64,
 }
 
-impl WalFile {
+impl WalWriter {
     fn reade_header(cursor: &mut FileCursor) -> Result<[u8; SEGMENT_HEADER_SIZE]> {
         let mut header_buf = [0_u8; SEGMENT_HEADER_SIZE];
 
@@ -184,97 +184,6 @@ impl WalFile {
                   header_buf,
                   min_sequence,
                   max_sequence })
-    }
-
-    pub async fn recover_version_set(path: impl AsRef<Path>,
-                                     version_set: Arc<RwLock<VersionSet>>)
-                                     -> Result<()> {
-        let tmp_walfile = WalFile::open(0, path, Arc::new(kv_option::WalConfig::default()))?;
-        let mut reader = WalReader::new(tmp_walfile.file.into())?;
-        let version_set = version_set.read().await;
-        while let Some(e) = reader.next_wal_entry() {
-            match e.typ {
-                WalEntryType::Write => {
-                    let entry =
-                        flatbuffers::root::<fb_models::Points>(&e.buf).context(error::InvalidFlatbufferSnafu)?;
-                    if let Some(points) = entry.points() {
-                        for p in points.iter() {
-                            let mut point_tags: Vec<models::Tag> = vec![];
-                            let sid = if let Some(tags) = p.tags() {
-                                for t in tags.iter() {
-                                    let tag_key = if let Some(tag_key) = t.key() {
-                                        tag_key.to_vec()
-                                    } else {
-                                        continue;
-                                    };
-                                    let tag_value = if let Some(tag_value) = t.value() {
-                                        tag_value.to_vec()
-                                    } else {
-                                        vec![]
-                                    };
-                                    point_tags.push(models::Tag::from_parts(tag_key, tag_value));
-                                }
-                                models::SeriesInfo::cal_sid(&mut point_tags)
-                            } else {
-                                // TODO error: no tags
-                                0
-                            };
-                            if let Some(tsf) = version_set.get_tsfamily(sid) {
-                                if let Some(fields) = p.fields() {
-                                    for f in fields.iter() {
-                                        let fid = if let Some(field_name) = f.name() {
-                                            models::FieldInfo::cal_fid(&field_name.to_vec(), sid)
-                                        } else {
-                                            // TODO error: no field name
-                                            0
-                                        };
-                                        let val = if let Some(value) = f.value() {
-                                            value
-                                        } else {
-                                            &[0_u8; 0][..]
-                                        };
-                                        let dtype = match f.type_() {
-                                            fb_models::FieldType::Float => models::ValueType::Float,
-                                            fb_models::FieldType::Integer => {
-                                                models::ValueType::Integer
-                                            },
-                                            fb_models::FieldType::Unsigned => {
-                                                models::ValueType::Unsigned
-                                            },
-                                            fb_models::FieldType::Boolean => {
-                                                models::ValueType::Boolean
-                                            },
-                                            fb_models::FieldType::String => {
-                                                models::ValueType::String
-                                            },
-                                            _ => models::ValueType::Unknown,
-                                        };
-                                        // todo: change fbs timestamp to i64
-                                        tsf.put_mutcache(fid,
-                                                         val,
-                                                         dtype,
-                                                         e.seq,
-                                                         p.timestamp() as i64)
-                                           .await
-                                    }
-                                }
-                            } else {
-                                // TODO error: no tseries family
-                            }
-                        }
-                    }
-                },
-                WalEntryType::Delete => {
-                    // TODO delete a memcache entry
-                },
-                WalEntryType::DeleteRange => {
-                    // TODO delete range in a memcache
-                },
-                _ => {},
-            };
-        }
-
-        Ok(())
     }
 
     pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> Result<(u64, usize)> {
@@ -342,7 +251,7 @@ pub struct WalManager {
     config: Arc<kv_option::WalConfig>,
 
     current_dir: PathBuf,
-    current_file: WalFile,
+    current_file: WalWriter,
 }
 
 unsafe impl Send for WalManager {}
@@ -370,7 +279,7 @@ impl WalManager {
             file_manager::get_file_manager().open_create_file(current_file_path.clone()).unwrap();
         let size = file.len();
 
-        let current_file = WalFile::open(seq, current_file_path.clone(), config.clone()).unwrap();
+        let current_file = WalWriter::open(seq, current_file_path.clone(), config.clone()).unwrap();
 
         WalManager { config, current_dir: current_dir_path, current_file }
     }
@@ -387,7 +296,7 @@ impl WalManager {
             self.current_file.flush().await?;
 
             let new_file_name = file_utils::make_wal_file(self.config.dir.as_str(), id);
-            let new_file = WalFile::open(id, new_file_name, self.config.clone())?;
+            let new_file = WalWriter::open(id, new_file_name, self.config.clone())?;
             self.current_file = new_file;
         }
         Ok(())
@@ -398,8 +307,117 @@ impl WalManager {
         self.current_file.write(typ, data).await
     }
 
-    pub async fn recover(&self, version_set: Arc<RwLock<VersionSet>>) -> Result<()> {
-        WalFile::recover_version_set(&self.current_file.path, version_set).await
+    pub async fn recover(&self,
+                         version_set: Arc<RwLock<VersionSet>>,
+                         global_context: Arc<GlobalContext>)
+                         -> Result<()> {
+        let min_log_seq = global_context.log_seq();
+        println!("[WARN] [wal] recovering version set from seq '{}'", &min_log_seq);
+        let mut max_log_seq = min_log_seq;
+
+        let wal_files = file_manager::list_file_names(&self.current_dir);
+        for file_name in wal_files {
+            let id = file_utils::get_wal_file_id(&file_name)?;
+            if id < min_log_seq {
+                continue;
+            }
+            max_log_seq = id;
+            let tmp_walfile = WalWriter::open(id,
+                                              self.current_dir.join(file_name),
+                                              Arc::new(kv_option::WalConfig::default()))?;
+            let mut reader = WalReader::new(tmp_walfile.file.into())?;
+            let version_set = version_set.read().await;
+            while let Some(e) = reader.next_wal_entry() {
+                match e.typ {
+                    WalEntryType::Write => {
+                        let entry = flatbuffers::root::<fb_models::Points>(&e.buf)
+                        .context(error::InvalidFlatbufferSnafu)?;
+                        if let Some(points) = entry.points() {
+                            for p in points.iter() {
+                                let mut point_tags: Vec<models::Tag> = vec![];
+                                let sid = if let Some(tags) = p.tags() {
+                                    for t in tags.iter() {
+                                        let tag_key = if let Some(tag_key) = t.key() {
+                                            tag_key.to_vec()
+                                        } else {
+                                            continue;
+                                        };
+                                        let tag_value = if let Some(tag_value) = t.value() {
+                                            tag_value.to_vec()
+                                        } else {
+                                            vec![]
+                                        };
+                                        point_tags.push(models::Tag::from_parts(tag_key,
+                                                                                tag_value));
+                                    }
+                                    models::SeriesInfo::cal_sid(&mut point_tags)
+                                } else {
+                                    // TODO error: no tags
+                                    0
+                                };
+                                if let Some(tsf) = version_set.get_tsfamily(sid) {
+                                    if let Some(fields) = p.fields() {
+                                        for f in fields.iter() {
+                                            let fid = if let Some(field_name) = f.name() {
+                                                models::FieldInfo::cal_fid(&field_name.to_vec(),
+                                                                           sid)
+                                            } else {
+                                                // TODO error: no field name
+                                                0
+                                            };
+                                            let val = if let Some(value) = f.value() {
+                                                value
+                                            } else {
+                                                &[0_u8; 0][..]
+                                            };
+                                            let dtype = match f.type_() {
+                                                fb_models::FieldType::Float => {
+                                                    models::ValueType::Float
+                                                },
+                                                fb_models::FieldType::Integer => {
+                                                    models::ValueType::Integer
+                                                },
+                                                fb_models::FieldType::Unsigned => {
+                                                    models::ValueType::Unsigned
+                                                },
+                                                fb_models::FieldType::Boolean => {
+                                                    models::ValueType::Boolean
+                                                },
+                                                fb_models::FieldType::String => {
+                                                    models::ValueType::String
+                                                },
+                                                _ => models::ValueType::Unknown,
+                                            };
+                                            // todo: change fbs timestamp to i64
+                                            tsf.put_mutcache(fid,
+                                                             val,
+                                                             dtype,
+                                                             e.seq,
+                                                             p.timestamp() as i64)
+                                               .await
+                                        }
+                                    }
+                                } else {
+                                    // TODO error: no tseries family
+                                }
+                            }
+                        }
+                    },
+                    WalEntryType::Delete => {
+                        // TODO delete a memcache entry
+                    },
+                    WalEntryType::DeleteRange => {
+                        // TODO delete range in a memcache
+                    },
+                    _ => {},
+                };
+            }
+        }
+
+        global_context.set_log_seq(max_log_seq);
+        println!("[WARN] [wal] version set recovered, log_seq is '{}'", &max_log_seq);
+
+        Ok(())
     }
 }
 
@@ -410,7 +428,7 @@ impl WalManager {
 /// let file_system: FileSystem = FileSystem::new(&Options::default());
 /// let file: File = file_system.open("_00001.wal").unwrap();
 ///
-/// let mut reader: WriteAheadLogReader = reader(file);
+/// let mut reader: WalReader = reader(file.into_cursor());
 /// while let Some(block) = reader.next_wal_entry() {
 ///     // ...
 /// }
@@ -429,7 +447,7 @@ pub struct WalReader<'a> {
 
 impl<'a> WalReader<'_> {
     pub fn new(mut cursor: FileCursor) -> Result<Self> {
-        let header_buf = WalFile::reade_header(&mut cursor)?;
+        let header_buf = WalWriter::reade_header(&mut cursor)?;
 
         Ok(Self { cursor,
                   header_buf,
@@ -439,7 +457,7 @@ impl<'a> WalReader<'_> {
     }
 
     pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
-        dbg!(self.cursor.pos());
+        println!("[DEBUG] [wal] WalReader: cursor.pos={}", self.cursor.pos());
         let read_bytes = self.cursor.read(&mut self.block_header_buf[..]).unwrap();
         if read_bytes < 8 {
             return None;
@@ -451,8 +469,7 @@ impl<'a> WalReader<'_> {
         if data_len <= 0 {
             return None;
         }
-        dbg!(data_len);
-        dbg!(self.cursor.pos());
+        println!("[DEBUG] [wal] WalReader: data_len={}", data_len);
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
@@ -504,7 +521,8 @@ mod test {
 
     impl<'a> From<&'a WalEntryBlock> for fb_models::ColumnKeys<'a> {
         fn from(block: &'a WalEntryBlock) -> Self {
-            flatbuffers::root::<fb_models::ColumnKeys<'a>>(&block.buf[0..block.len as usize]).unwrap()
+            flatbuffers::root::<fb_models::ColumnKeys<'a>>(&block.buf[0..block.len as usize])
+                .unwrap()
         }
     }
 
@@ -516,8 +534,10 @@ mod test {
 
     impl<'a> From<&'a WalEntryBlock> for fb_models::ColumnKeysWithRange<'a> {
         fn from(block: &'a WalEntryBlock) -> Self {
-            flatbuffers::root::<fb_models::ColumnKeysWithRange<'a>>(&block.buf[0..block.len as usize])
-                .unwrap()
+            flatbuffers::root::<fb_models::ColumnKeysWithRange<'a>>(
+                &block.buf[0..block.len as usize],
+            )
+            .unwrap()
         }
     }
 
@@ -571,11 +591,10 @@ mod test {
 
         let vec = fbb.create_vector(&items);
 
-        fb_models::ColumnKeysWithRange::create(fbb,
-                                            &fb_models::ColumnKeysWithRangeArgs { column_keys:
-                                                                                   Some(vec),
-                                                                               min: 1,
-                                                                               max: 100 })
+        fb_models::ColumnKeysWithRange::create(
+            fbb,
+            &fb_models::ColumnKeysWithRangeArgs { column_keys: Some(vec), min: 1, max: 100 },
+        )
     }
 
     fn random_wal_entry_block<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WalEntryBlock {
@@ -662,7 +681,8 @@ mod test {
                     },
                     WalEntryType::DeleteRange => {
                         let de_block =
-                            flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
+                            flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf)
+                                .unwrap();
                     },
                     _ => panic!("Invalid WalEntry"),
                 };
@@ -727,7 +747,8 @@ mod test {
                     },
                     WalEntryType::DeleteRange => {
                         let de_block =
-                            flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
+                            flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf)
+                                .unwrap();
                         writed_crcs.push(entry.crc);
                         readed_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
                     },

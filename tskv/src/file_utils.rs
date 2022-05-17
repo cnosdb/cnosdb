@@ -7,8 +7,8 @@ use snafu::ResultExt;
 use crate::{error, Error, Result};
 
 lazy_static! {
-    static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new("summary-\\d{6}").unwrap();
-    static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new("_.\\d{5}\\.wal").unwrap();
+    static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();
+    static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new(r"_.\d{5}\.wal").unwrap();
 }
 
 pub fn make_summary_file(path: &str, number: u64) -> PathBuf {
@@ -24,15 +24,15 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
     if !check_summary_file_name(file_name) {
         return Err(Error::InvalidFileName {
             file_name: file_name.to_string(),
-            message: "summary file name does not contain an id".to_string()
+            message: "summary file name does not contain an id".to_string(),
         });
     }
     let (_, file_number) = file_name.split_at(8);
     file_number.parse::<u64>().map_err(|_| {
                                   Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "sumary file name contains an invalid id".to_string()
-        }
+        file_name: file_name.to_string(),
+        message: "sumary file name contains an invalid id".to_string(),
+    }
                               })
 }
 
@@ -54,9 +54,9 @@ pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
     let file_number = &file_name[1..7];
     file_number.parse::<u64>().map_err(|_| {
                                   Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "wal file name contains an invalid id".to_string()
-        }
+        file_name: file_name.to_string(),
+        message: "wal file name contains an invalid id".to_string(),
+    }
                               })
 }
 
