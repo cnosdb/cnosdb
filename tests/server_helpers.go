@@ -55,11 +55,6 @@ type Server interface {
 // NewServer returns a new instance of Server
 func NewServer(c *Config) Server {
 
-	err := os.Setenv("URL", "http://ipaddress:port")
-	if err != nil {
-		return nil
-	}
-
 	if url := os.Getenv("URL"); url != "" {
 		s := &RemoteServer{
 			url: url,
