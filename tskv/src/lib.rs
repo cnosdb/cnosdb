@@ -15,6 +15,7 @@ pub mod kv_option;
 mod kvcore;
 mod lru_cache;
 mod memcache;
+mod reader;
 mod record_file;
 mod runtime;
 mod summary;
@@ -23,23 +24,11 @@ mod tsm;
 mod version_set;
 mod wal;
 
-pub use compaction::*;
-pub use direct_io::*;
-pub use error::*;
-pub use file_manager::*;
-pub use file_utils::make_summary_file;
+pub use error::{Error, Result};
 pub use kv_option::Options;
-pub use kvcore::*;
-pub use lru_cache::*;
-pub use memcache::*;
+pub use kvcore::TsKv;
 use protos::kv_service::WritePointsRpcResponse;
-pub use record_file::*;
-pub use runtime::*;
-pub use summary::*;
 use tokio::sync::oneshot;
-pub use tseries_family::*;
-pub use tsm::*;
-pub use version_set::*;
 
 #[derive(Debug)]
 pub enum Task {

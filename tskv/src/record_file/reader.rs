@@ -182,7 +182,7 @@ impl Reader {
                 .lock()
                 .read_at(pos.to_u64().unwrap() + head_len.to_u64().unwrap(), &mut data)
                 .map_err(|err| RecordFileError::ReadFile { source: err })?;
-        if read_data_len != data_size.into() {
+        if read_data_len != data_size as usize {
             return Err(RecordFileError::InvalidPos);
         }
 

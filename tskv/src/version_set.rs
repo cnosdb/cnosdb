@@ -8,7 +8,8 @@ use tokio::sync::RwLock;
 
 use crate::{
     kv_option::{TseriesFamDesc, MAX_MEMCACHE_SIZE},
-    tseries_family, MemCache, TseriesFamily, Version,
+    memcache::MemCache,
+    tseries_family::{TseriesFamily, Version},
 };
 
 pub struct VersionSet {

@@ -5,8 +5,9 @@ use models::ValueType;
 
 use super::{coders, MAX_BLOCK_VALUES};
 use crate::{
+    direct_io::FileCursor,
     error::{Error, Result},
-    BlockReader, DataBlock, FileCursor, IndexEntry,
+    tsm::{BlockReader, DataBlock, IndexEntry},
 };
 
 #[derive(Debug, Clone)]
@@ -249,7 +250,8 @@ impl<'a> Iterator for TsmIndexReader<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        file_manager, BlockReader, DataBlock, FileManager, TsmBlockReader, TsmIndexReader,
+        file_manager::FileManager,
+        tsm::{BlockReader, DataBlock, TsmBlockReader, TsmIndexReader},
     };
 
     #[test]

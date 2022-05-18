@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use num_traits::ToPrimitive;
 
 use super::*;
-use crate::{Record, RecordFileError, RecordFileResult};
+use crate::record_file::{Record, RecordFileError, RecordFileResult};
 
 const VERSION: u8 = 1;
 

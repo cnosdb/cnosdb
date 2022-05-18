@@ -4,7 +4,10 @@ use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 
 use super::*;
-use crate::{direct_io::File, file_manager, FileSync};
+use crate::{
+    direct_io::{File, FileSync},
+    file_manager,
+};
 
 pub struct Writer {
     path: PathBuf,

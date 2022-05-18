@@ -5,8 +5,9 @@ use std::{
 
 use super::{block, MAX_BLOCK_VALUES};
 use crate::{
+    direct_io::FileCursor,
     error::{Error, Result},
-    DataBlock, FileBlock, FileCursor,
+    tsm::{DataBlock, FileBlock},
 };
 
 // A TSM file is composed for four sections: header, blocks, index and the footer.
@@ -164,8 +165,10 @@ mod test {
     use std::collections::HashMap;
 
     use crate::{
-        file_manager, tsm::coders, DataBlock, FileManager, FileSync, FooterBuilder, StrCell,
-        TsmBlockWriter, TsmIndexBuilder,
+        direct_io::FileSync,
+        file_manager::{self, FileManager},
+        memcache::StrCell,
+        tsm::{coders, DataBlock, FooterBuilder, TsmBlockWriter, TsmIndexBuilder},
     };
     #[test]
     fn test_str_encode() {
