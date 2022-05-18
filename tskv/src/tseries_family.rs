@@ -12,7 +12,11 @@ use std::{
 use models::ValueType;
 use tokio::sync::RwLock;
 
-use crate::{kv_option::TseriesFamOpt, CompactMeta, DataType, MemCache};
+use crate::{
+    kv_option::TseriesFamOpt,
+    memcache::{DataType, MemCache},
+    summary::CompactMeta,
+};
 
 // let const
 

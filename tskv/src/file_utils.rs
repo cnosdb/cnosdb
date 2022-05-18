@@ -60,6 +60,11 @@ pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
                               })
 }
 
+pub fn make_tsm_file_name(path: &str, sequence: u64) -> PathBuf {
+    let p = format!("{}/_{:06}.tsm", path, sequence);
+    PathBuf::from(p)
+}
+
 #[cfg(test)]
 mod test {
     use crate::file_utils;

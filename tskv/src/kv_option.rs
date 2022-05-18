@@ -24,7 +24,7 @@ impl Default for DBOptions {
                back_cpu: 2,
                max_summary_size: MAX_SUMMARY_SIZE, // 128MB
                create_if_missing: false,
-               db_path: "db".to_string(),
+               db_path: "dev/db".to_string(),
                db_name: "db".to_string() }
     }
 }
@@ -69,7 +69,7 @@ pub struct WalConfig {
 
 impl Default for WalConfig {
     fn default() -> Self {
-        Self { enabled: true, dir: "/tmp/test".to_string(), sync: true }
+        Self { enabled: true, dir: "dev/wal".to_string(), sync: true }
     }
 }
 

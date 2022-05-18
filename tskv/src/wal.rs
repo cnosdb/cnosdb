@@ -18,8 +18,13 @@ use walkdir::IntoIter;
 
 use crate::{
     compute,
-    direct_io::{self, make_io_task, File, FileCursor, FileSync, FileSystem, Options, TaskType},
-    error, file_manager, file_utils, kv_option, Error, FileManager, MemCache, Result, VersionSet,
+    context::GlobalContext,
+    direct_io::{File, FileCursor, FileSync},
+    error::{self, Error, Result},
+    file_manager::{self, FileManager},
+    file_utils, kv_option,
+    memcache::MemCache,
+    version_set::VersionSet,
 };
 
 const SEGMENT_HEADER_SIZE: usize = 32;
@@ -472,11 +477,9 @@ mod test {
 
     use crate::{
         direct_io::{File, FileCursor, FileSync},
-        file_manager,
-        file_manager::list_file_names,
+        file_manager::{self, list_file_names, FileManager},
         kv_option,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
-        FileManager,
     };
 
     const DIR: &'static str = "/tmp/test/";

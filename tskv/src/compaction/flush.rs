@@ -1,10 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    compaction::FlushRequest,
     context::GlobalContext,
     error::{Error, Result},
+    file_utils::make_tsm_file_name,
     kv_option::TseriesFamOpt,
-    make_tsm_file_name, CompactMeta, FlushRequest, MemCache, VersionEdit,
+    memcache::MemCache,
+    summary::{CompactMeta, VersionEdit},
 };
 
 // 构建flush task 将memcache中的数据 flush到 tsm文件中

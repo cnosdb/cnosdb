@@ -10,8 +10,10 @@ use crate::{
     error::{Error, Result},
     file_utils,
     kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
+    kvcore::KvContext,
     record_file::{Reader, Writer},
-    KvContext, LevelInfo, Version, VersionSet,
+    tseries_family::{LevelInfo, Version},
+    version_set::VersionSet,
 };
 
 const MAX_BATCH_SIZE: usize = 64;

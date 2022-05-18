@@ -6,8 +6,7 @@ use protos::models::FieldType;
 use super::coders;
 use crate::{
     error::{Error, Result},
-    memcache::DataType,
-    BoolCell, Byte, F64Cell, I64Cell, StrCell, U64Cell,
+    memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell},
 };
 
 #[derive(Debug, Clone, PartialEq)]

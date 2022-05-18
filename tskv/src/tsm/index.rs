@@ -1,6 +1,6 @@
 use models::ValueType;
 
-use crate::{compute::decode_be_u64, FileBlock};
+use crate::{compute::decode_be_u64, tsm::FileBlock};
 
 #[derive(Debug, Clone)]
 pub struct IndexEntry {
