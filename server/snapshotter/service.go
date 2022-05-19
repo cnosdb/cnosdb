@@ -301,7 +301,7 @@ func (s *Service) writeDatabaseInfo(conn net.Conn, database string) error {
 		dbs = append(dbs, *db)
 	} else {
 		// we'll allow collecting info on all databases
-		dbs = s.MetaClient.(*meta.Client).Databases()
+		dbs = s.MetaClient.Data().Databases
 	}
 
 	for _, db := range dbs {
