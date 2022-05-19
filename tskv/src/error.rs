@@ -37,12 +37,6 @@ pub enum Error {
     #[snafu(display("invalid flatbuffers: {}", source))]
     InvalidFlatbuffer { source: flatbuffers::InvalidFlatbuffer },
 
-    #[snafu(display("tag key must be valid UTF-8: {:?}", source))]
-    InvalidTagKey { source: std::string::FromUtf8Error },
-
-    #[snafu(display("tag key must be valid UTF-8: {:?}", source))]
-    InvalidTagValue { source: std::string::FromUtf8Error },
-
     #[snafu(display("read record file block: {}", source))]
     LogRecordErr { source: crate::record_file::RecordFileError },
 

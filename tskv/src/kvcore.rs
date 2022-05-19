@@ -71,13 +71,19 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(&[], &opt.db).await.unwrap()
+            Summary::recover(&[TseriesFamDesc { name: "default".to_string(),
+                                                opt: TseriesFamOpt::default() }],
+                             &opt.db).await
+                                     .unwrap()
         } else {
-            Summary::new(&[], &opt.db).await.unwrap()
+            Summary::new(&[TseriesFamDesc { name: "default".to_string(),
+                                            opt: TseriesFamOpt::default() }],
+                         &opt.db).await
+                                 .unwrap()
         };
         let version_set = summary.version_set();
         let wal_manager = WalManager::new(opt.wal.clone());
-        wal_manager.recover(version_set.clone()).await.unwrap();
+        wal_manager.recover(version_set.clone(), summary.global_context()).await.unwrap();
 
         version_set.clone()
     }
@@ -86,7 +92,8 @@ impl TsKv {
                        write_batch: WritePointsRpcRequest)
                        -> Result<WritePointsRpcResponse> {
         let shared_write_batch = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
+            .context(error::InvalidFlatbufferSnafu)?;
 
         // get or create forward index
         for point in fb_points.points().unwrap() {
@@ -130,7 +137,7 @@ impl TsKv {
                            .await
                     }
                 } else {
-                    println!("[WARN] ts_family for sid {} nto found.", sid);
+                    println!("[WARN] [tskv] ts_family for sid {} not found.", sid);
                 }
             }
         }
@@ -167,6 +174,7 @@ impl TsKv {
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
+        println!("[WARN] [tskv] job 'WAL' starting.");
         let wal_opt = self.options.wal.clone();
         let mut wal_manager = WalManager::new(wal_opt);
         let f = async move {
@@ -177,9 +185,7 @@ impl TsKv {
                         let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
                         let send_ret = cb.send(ret);
                         match send_ret {
-                            Ok(wal_result) => {
-                                println!("[WARN] send WAL write result succeed.")
-                            },
+                            Ok(wal_result) => {},
                             Err(err) => {
                                 println!("[WARN] send WAL write result failed.")
                             },
@@ -189,14 +195,16 @@ impl TsKv {
             }
         };
         tokio::spawn(f);
+        println!("[WARN] [tskv] job 'WAL' started.");
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
+        println!("[WARN] [tskv] job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
-                        dbg!("TSKV writing points.");
+                        println!("[WARN] [tskv] writing points.");
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
@@ -205,7 +213,7 @@ impl TsKv {
                                 let _ret = tx.send(Err(err));
                             },
                         }
-                        dbg!("TSKV write points completed.");
+                        println!("[WARN] [tskv] write points completed.");
                     },
                     _ => panic!("unimplented."),
                 }
@@ -213,6 +221,7 @@ impl TsKv {
         };
 
         tokio::spawn(f);
+        println!("[WARN] [tskv] job 'main' started.");
     }
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)

@@ -120,24 +120,24 @@ impl FileManager {
 pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
     let mut list = Vec::new();
 
-    for file_name in walkdir::WalkDir::new(dir).min_depth(1)
-                                               .max_depth(1)
-                                               .into_iter()
-                                               .filter_map(|e| {
-                                                   let dir_entry = match e {
-                                                       Ok(dir_entry)
-                                                           if dir_entry.file_type().is_file() =>
-                                                       {
-                                                           dir_entry
-                                                       },
-                                                       _ | Err(_) => {
-                                                           return None;
-                                                       },
-                                                   };
-                                                   dir_entry.file_name()
-                                                            .to_str()
-                                                            .map(|file_name| file_name.to_string())
-                                               })
+    for file_name in
+        walkdir::WalkDir::new(dir).min_depth(1)
+                                  .max_depth(1)
+                                  .sort_by_file_name()
+                                  .into_iter()
+                                  .filter_map(|e| {
+                                      let dir_entry = match e {
+                                          Ok(dir_entry) if dir_entry.file_type().is_file() => {
+                                              dir_entry
+                                          },
+                                          _ | Err(_) => {
+                                              return None;
+                                          },
+                                      };
+                                      dir_entry.file_name()
+                                               .to_str()
+                                               .map(|file_name| file_name.to_string())
+                                  })
     {
         list.push(file_name);
     }

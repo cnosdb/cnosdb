@@ -1,6 +1,7 @@
 # IDE
-/.idea
-/.vscode
+/.idea/
+/.vscode/
+/dev/
 
 # Cargo
 **/target
