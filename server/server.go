@@ -27,6 +27,7 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/storage"
+
 	// Initialize the engine package
 	_ "github.com/cnosdb/cnosdb/vend/db/tsdb/engine"
 	// Initialize the index package
@@ -253,6 +254,7 @@ func (s *Server) initTSDBStore() error {
 	s.snapshotterService.WithLogger(s.Logger)
 	s.snapshotterService.TSDBStore = s.TSDBStore
 	s.snapshotterService.MetaClient = s.MetaClient
+	s.snapshotterService.Node = s.Node
 
 	// Open TSDB store.
 	if err := s.TSDBStore.Open(); err != nil {
@@ -444,7 +446,7 @@ func (s *Server) startNodeServer() {
 				s.joinCluster(conn, r.Peers)
 
 			default:
-				s.Logger.Error(fmt.Sprintf("request type unknown: %v", r.Type))
+				s.Logger.Error(fmt.Sprintf("node service request type unknown: %v", r.Type))
 			}
 			conn.Close()
 		}

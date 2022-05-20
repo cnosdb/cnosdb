@@ -5,6 +5,7 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/node"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/shard"
 
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,8 @@ func main() {
 	mainCmd.AddCommand(node.GetRemoveMetaCommand())
 	mainCmd.AddCommand(node.GetAddDataCommand())
 	mainCmd.AddCommand(node.GetRemoveDataCommand())
+	mainCmd.AddCommand(shard.GetCopyShardCommand())
+	mainCmd.AddCommand(shard.GetRemoveShardCommand())
 	mainCmd.AddCommand(printVersion())
 
 	if err := mainCmd.Execute(); err != nil {

@@ -189,6 +189,10 @@ func NewHandler(conf *HTTPConfig) *Handler {
 			h.serveOptions,
 		},
 		{
+			"metajson", http.MethodGet, "/metajson", true, true,
+			h.serveMetaJson,
+		},
+		{
 			"query", http.MethodPost, "/query", false, true,
 			h.serveQuery,
 		},
@@ -252,6 +256,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // serveOptions returns an empty response to comply with OPTIONS pre-flight requests
 func (h *Handler) serveOptions(w http.ResponseWriter, r *http.Request) {
 	writeHeader(w, http.StatusNoContent)
+}
+
+func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
+	b, err := json.Marshal(h.metaClient.Data())
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Write(b)
 }
 
 // serveQuery parses an incoming query and, if valid, executes the query.

@@ -956,6 +956,17 @@ func (c *RemoteClient) DropSubscription(database, rp, name string) error {
 	)
 }
 
+// UpdateShardOwners add or delete owners for the given shard id.
+func (c *RemoteClient) UpdateShardOwners(shardID uint64, addOwners []uint64, delOwners []uint64) error {
+	return c.retryUntilExec(internal.Command_UpdateShardOwnersCommand, internal.E_UpdateShardOwnersCommand_Command,
+		&internal.UpdateShardOwnersCommand{
+			ID:        proto.Uint64(shardID),
+			AddOwners: addOwners,
+			DelOwners: delOwners,
+		},
+	)
+}
+
 func (c *RemoteClient) SetData(data *Data) error {
 	return c.retryUntilExec(internal.Command_SetDataCommand, internal.E_SetDataCommand_Command,
 		&internal.SetDataCommand{

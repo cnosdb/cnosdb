@@ -139,6 +139,7 @@ message Command {
 		DeleteDataNodeCommand            = 28;
 		SetMetaNodeCommand               = 29;
 		DropShardCommand                 = 30;
+		UpdateShardOwnersCommand         = 31;
 	}
 
 	required Type type = 1;
@@ -396,4 +397,13 @@ message DropShardCommand {
 		optional DropShardCommand command = 130;
 	}
 	required uint64 ID = 1;
+}
+
+message UpdateShardOwnersCommand {
+	extend Command {
+		optional UpdateShardOwnersCommand command = 131;
+	}
+	required uint64 ID = 1;
+	repeated uint64 AddOwners = 2;
+	repeated uint64 DelOwners = 3;
 }
