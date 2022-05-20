@@ -114,6 +114,8 @@ type MetaClient interface {
 	Data() Data
 	WaitForDataChanged() chan struct{}
 
+	UpdateShardOwners(shardID uint64, addOwners []uint64, delOwners []uint64) error
+
 	Load() error
 	MarshalBinary() ([]byte, error)
 	WithLogger(log *zap.Logger)
@@ -1034,6 +1036,28 @@ func (c *Client) DropSubscription(database, rp, name string) error {
 
 	if err := data.DropSubscription(database, rp, name); err != nil {
 		return err
+	}
+
+	if err := c.commit(data); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UpdateShardOwners add or delete owners for the given shard id.
+func (c *Client) UpdateShardOwners(shardID uint64, addOwners []uint64, delOwners []uint64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	data := c.cacheData.Clone()
+
+	for _, owner := range addOwners {
+		data.AddShardOwner(shardID, owner)
+	}
+
+	for _, owner := range delOwners {
+		data.RemoveShardOwner(shardID, owner)
 	}
 
 	if err := c.commit(data); err != nil {

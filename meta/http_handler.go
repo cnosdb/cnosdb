@@ -18,7 +18,6 @@ import (
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/uuid"
 
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/raft"
@@ -77,6 +76,10 @@ func NewHandler(conf *ServerConfig) *Handler {
 		{
 			"snapshot", http.MethodGet, "/", true, true,
 			h.serveSnapshot,
+		},
+		{
+			"metajson", http.MethodGet, "/metajson", true, true,
+			h.serveMetaJson,
 		},
 		{
 			"ping", http.MethodGet, "/ping", true, true,
@@ -173,6 +176,26 @@ func (h *Handler) serveSnapshot(w http.ResponseWriter, r *http.Request) {
 		h.httpError(fmt.Errorf("server closed"), w, http.StatusInternalServerError)
 		return
 	}
+}
+
+func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
+	if h.isClosed() {
+		h.httpError(fmt.Errorf("server closed"), w, http.StatusInternalServerError)
+		return
+	}
+
+	ss, err := h.store.snapshot()
+	if err != nil {
+		h.httpError(err, w, http.StatusInternalServerError)
+		return
+	}
+	b, err := json.Marshal(ss)
+	if err != nil {
+		h.httpError(err, w, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Write(b)
 }
 
 // servePing will return if the server is up, or if specified will check the status

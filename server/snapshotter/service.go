@@ -2,6 +2,7 @@
 package snapshotter
 
 import (
+	"archive/tar"
 	"bytes"
 	"encoding"
 	"encoding/binary"
@@ -40,6 +41,7 @@ type Service struct {
 		Database(name string) *meta.DatabaseInfo
 		Data() meta.Data
 		SetData(data *meta.Data) error
+		UpdateShardOwners(shardID uint64, addOwners []uint64, delOwners []uint64) error
 	}
 
 	TSDBStore interface {
@@ -50,6 +52,7 @@ type Service struct {
 		SetShardEnabled(shardID uint64, enabled bool) error
 		RestoreShard(id uint64, r io.Reader) error
 		CreateShard(database, retentionPolicy string, shardID uint64, enabled bool) error
+		DeleteShard(shardID uint64) error
 	}
 
 	Listener net.Listener
@@ -151,8 +154,12 @@ func (s *Service) handleConn(conn net.Conn) error {
 		return s.writeRetentionPolicyInfo(conn, r.BackupDatabase, r.BackupRetentionPolicy)
 	case RequestMetaStoreUpdate:
 		return s.updateMetaStore(conn, bytes, r.BackupDatabase, r.RestoreDatabase, r.BackupRetentionPolicy, r.RestoreRetentionPolicy)
+	case RequestCopyShard:
+		return s.copyShardToDest(conn, r.CopyShardDestHost, r.ShardID)
+	case RequestRemoveShard:
+		return s.removeShardCopy(conn, r.ShardID)
 	default:
-		return fmt.Errorf("request type unknown: %v", r.Type)
+		return fmt.Errorf("snapshotter request type unknown: %v", r.Type)
 	}
 
 	return nil
@@ -164,6 +171,12 @@ func (s *Service) updateShardsLive(conn net.Conn) error {
 		return err
 	}
 	sid := binary.BigEndian.Uint64(sidBytes[:])
+
+	metaData := s.MetaClient.Data()
+	dbName, rp, _ := metaData.ShardDBRetentionAndInfo(sid)
+	if err := s.TSDBStore.CreateShard(dbName, rp, sid, true); err != nil {
+		return err
+	}
 
 	if err := s.TSDBStore.SetShardEnabled(sid, false); err != nil {
 		return err
@@ -205,6 +218,92 @@ func (s *Service) updateMetaStore(conn net.Conn, bits []byte, backupDBName, rest
 
 	err = s.respondIDMap(conn, IDMap)
 	return err
+}
+
+// copy a shard to remote host
+func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64) error {
+	localAddr := s.Listener.Addr().String()
+	s.Logger.Info("copy shard command ",
+		zap.String("Local", localAddr),
+		zap.String("Dest", destHost),
+		zap.Uint64("ShardID", shardID))
+
+	data := s.MetaClient.Data()
+	info := data.DataNodeByAddr(destHost)
+	if info == nil {
+		io.WriteString(conn, "Can't found data node: "+destHost)
+		return nil
+	}
+
+	dbName, rp, shardInfo := data.ShardDBRetentionAndInfo(shardID)
+	fmt.Printf("====%s %s %+v\n", dbName, rp, shardInfo)
+
+	if !shardInfo.OwnedBy(s.Node.ID) {
+		io.WriteString(conn, "Can't found shard in: "+localAddr)
+		return nil
+	}
+
+	if shardInfo.OwnedBy(info.ID) {
+		io.WriteString(conn, fmt.Sprintf("Shard %d already in %s", shardID, destHost))
+		return nil
+	}
+
+	go func() {
+		reader, writer := io.Pipe()
+		defer reader.Close()
+
+		go func() {
+			defer writer.Close()
+			if err := s.TSDBStore.BackupShard(shardID, time.Time{}, writer); err != nil {
+				s.Logger.Error("Error backup shard", zap.Error(err))
+			}
+		}()
+
+		tr := tar.NewReader(reader)
+		client := NewClient(destHost)
+		if err := client.UploadShard(shardID, shardID, dbName, rp, tr); err != nil {
+			s.Logger.Error("Error upload shard", zap.Error(err))
+			return
+		}
+
+		if err := s.MetaClient.UpdateShardOwners(shardID, []uint64{info.ID}, nil); err != nil {
+			s.Logger.Error("Error update owner", zap.Error(err))
+			return
+		}
+
+		s.Logger.Info("Success Copy Shard ", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
+	}()
+
+	io.WriteString(conn, "Copying ......")
+
+	return nil
+}
+
+// remove a shard replication
+func (s *Service) removeShardCopy(conn net.Conn, shardID uint64) error {
+	localAddr := s.Listener.Addr().String()
+	s.Logger.Info("copy shard command ",
+		zap.String("Local", localAddr),
+		zap.Uint64("ShardID", shardID))
+
+	data := s.MetaClient.Data()
+	_, _, shardInfo := data.ShardDBRetentionAndInfo(shardID)
+	if !shardInfo.OwnedBy(s.Node.ID) {
+		io.WriteString(conn, "Can't found shard in: "+localAddr)
+		return nil
+	}
+
+	if err := s.TSDBStore.DeleteShard(shardID); err != nil {
+		io.WriteString(conn, err.Error())
+		return err
+	}
+
+	if err := s.MetaClient.UpdateShardOwners(shardID, nil, []uint64{s.Node.ID}); err != nil {
+		io.WriteString(conn, err.Error())
+		return err
+	}
+	io.WriteString(conn, "Success ")
+	return nil
 }
 
 // iterate over a list of newDB's that should have just been added to the metadata
@@ -441,12 +540,19 @@ const (
 	// RequestShardUpdate will initiate the upload of a shard data tar file
 	// and have the engine import the data.
 	RequestShardUpdate
+
+	// RequestCopyShard represents a request for copy a shard to dest host
+	RequestCopyShard
+
+	// RequestRemoveShard represents a request for remove a shard copy
+	RequestRemoveShard
 )
 
 // Request represents a request for a specific backup or for information
 // about the shards on this server for a database or retention policy.
 type Request struct {
 	Type                   RequestType
+	CopyShardDestHost      string
 	BackupDatabase         string
 	RestoreDatabase        string
 	BackupRetentionPolicy  string

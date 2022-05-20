@@ -157,6 +157,16 @@ func (data *Data) DataNode(id uint64) *NodeInfo {
 	return nil
 }
 
+// DataNode returns a node by host.
+func (data *Data) DataNodeByAddr(host string) *NodeInfo {
+	for i := range data.DataNodes {
+		if data.DataNodes[i].Host == host || data.DataNodes[i].TCPHost == host {
+			return &data.DataNodes[i]
+		}
+	}
+	return nil
+}
+
 // CreateDataNode adds a node to the metadata.
 func (data *Data) CreateDataNode(host, tcpHost string) error {
 	// Ensure a node with the same host doesn't already exist.
@@ -574,6 +584,71 @@ func (data *Data) DropShard(id uint64) {
 						data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].DeletedAt = time.Now()
 					}
 					return
+				}
+			}
+		}
+	}
+}
+
+// ShardDBRetentionAndOwners returns database name RP name and owners for the specified shard id.
+func (data *Data) ShardDBRetentionAndInfo(id uint64) (string, string, ShardInfo) {
+	for dbidx, dbi := range data.Databases {
+		for rpidx, rpi := range dbi.RetentionPolicies {
+			for sgidx, rg := range rpi.ShardGroups {
+				for sidx, s := range rg.Shards {
+					if s.ID == id {
+						return data.Databases[dbidx].Name,
+							data.Databases[dbidx].RetentionPolicies[rpidx].Name,
+							data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].Shards[sidx].clone()
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", ShardInfo{ID: id}
+}
+
+// RemoveShardOwner remove a owner for the specified shard id.
+func (data *Data) RemoveShardOwner(shardID, nodeID uint64) {
+	for dbidx, dbi := range data.Databases {
+		for rpidx, rpi := range dbi.RetentionPolicies {
+			for sgidx, rg := range rpi.ShardGroups {
+				for sidx, s := range rg.Shards {
+					if s.ID == shardID {
+						owners := data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].Shards[sidx].Owners
+						for idx, owner := range owners {
+							if owner.NodeID == nodeID {
+								data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].Shards[sidx].Owners = append(owners[:idx], owners[idx+1:]...)
+								return
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// RemoveShardOwner add a owner for the specified shard id.
+func (data *Data) AddShardOwner(shardID, nodeID uint64) {
+	for dbidx, dbi := range data.Databases {
+		for rpidx, rpi := range dbi.RetentionPolicies {
+			for sgidx, rg := range rpi.ShardGroups {
+				for sidx, s := range rg.Shards {
+					if s.ID == shardID {
+						owners := data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].Shards[sidx].Owners
+						for _, owner := range owners {
+							if owner.NodeID == nodeID {
+								return
+							}
+						}
+
+						owners = append(owners, ShardOwner{NodeID: nodeID})
+						data.Databases[dbidx].RetentionPolicies[rpidx].ShardGroups[sgidx].Shards[sidx].Owners = owners
+
+						return
+					}
 				}
 			}
 		}

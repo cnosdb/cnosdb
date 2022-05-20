@@ -91,6 +91,8 @@ func (fsm *storeFSM) Apply(l *raft.Log) interface{} {
 			return fsm.applyCreateDataNodeCommand(&cmd)
 		case internal.Command_DeleteDataNodeCommand:
 			return fsm.applyDeleteDataNodeCommand(&cmd)
+		case internal.Command_UpdateShardOwnersCommand:
+			return fsm.applyUpdateShardOwnersCommand(&cmd)
 		default:
 			panic(fmt.Errorf("cannot apply command: %x", l.Data))
 		}
@@ -577,6 +579,24 @@ func (fsm *storeFSM) applyDeleteDataNodeCommand(cmd *internal.Command) interface
 	if err := other.DeleteDataNode(v.GetID()); err != nil {
 		return err
 	}
+	fsm.data = other
+	return nil
+}
+
+func (fsm *storeFSM) applyUpdateShardOwnersCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_UpdateShardOwnersCommand_Command)
+	v := ext.(*internal.UpdateShardOwnersCommand)
+
+	other := fsm.data.Clone()
+
+	for _, owner := range v.GetAddOwners() {
+		other.AddShardOwner(v.GetID(), owner)
+	}
+
+	for _, owner := range v.GetDelOwners() {
+		other.RemoveShardOwner(v.GetID(), owner)
+	}
+
 	fsm.data = other
 	return nil
 }
