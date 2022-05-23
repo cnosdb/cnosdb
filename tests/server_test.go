@@ -1533,3 +1533,1331 @@ func TestServer_Query_SelectTwoNegativePoints(t *testing.T) {
 }
 
 
+// Ensure the server can query with relative time.
+func TestServer_Query_SelectRelativeTime(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+	yesterday := yesterday()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf("air,station=XiaoMaiDao01 temperature=100 %s\nair,station=XiaoMaiDao01 temperature=200 %s", strconv.FormatInt(yesterday.UnixNano(), 10), strconv.FormatInt(now.UnixNano(), 10))},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "single point with time pre-calculated for past time queries yesterday",
+			command: `SELECT * FROM db0.rp0.air where time >= '` + yesterday.Add(-1*time.Minute).Format(time.RFC3339Nano) + `' GROUP BY *`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["%s",100],["%s",200]]}]}]}`, yesterday.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "single point with time pre-calculated for relative time queries now",
+			command: `SELECT * FROM db0.rp0.air where time >= now() - 1m GROUP BY *`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["%s",200]]}]}]}`, now.Format(time.RFC3339Nano)),
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various simple derivative queries.
+func TestServer_Query_SelectRawDerivative(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf("air temperature=210 1278010021000000000\nair temperature=10 1278010022000000000")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate single derivate",
+			command: `SELECT derivative(temperature) from db0.rp0.air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",-200]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivate with unit",
+			command: `SELECT derivative(temperature, 10s) from db0.rp0.air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",-2000]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various simple non_negative_derivative queries.
+func TestServer_Query_SelectRawNonNegativeDerivative(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010021000000000
+air temperature=15 1278010022000000000
+air temperature=10 1278010023000000000
+air temperature=20 1278010024000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate single non_negative_derivative",
+			command: `SELECT non_negative_derivative(temperature) from db0.rp0.air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","non_negative_derivative"],"values":[["2010-07-01T18:47:02Z",5],["2010-07-01T18:47:04Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate single non_negative_derivative",
+			command: `SELECT non_negative_derivative(temperature, 10s) from db0.rp0.air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","non_negative_derivative"],"values":[["2010-07-01T18:47:02Z",50],["2010-07-01T18:47:04Z",100]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
+// Ensure the server can handle various group by time derivative queries.
+func TestServer_Query_SelectGroupByTimeDerivative(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=15 1278010021000000000
+air temperature=20 1278010022000000000
+air temperature=25 1278010023000000000
+
+air0,station=XiaoMaiDao01 visibility=10,pressure=100 1278010020000000000
+air0,station=XiaoMaiDao01 visibility=30,pressure=100 1278010021000000000
+air0,station=XiaoMaiDao01 visibility=32,pressure=100 1278010022000000000
+air0,station=XiaoMaiDao01 visibility=47,pressure=100 1278010023000000000
+air0,station=XiaoMaiDao02 visibility=40,pressure=100 1278010020000000000
+air0,station=XiaoMaiDao02 visibility=45,pressure=100 1278010021000000000
+air0,station=XiaoMaiDao02 visibility=84,pressure=100 1278010022000000000
+air0,station=XiaoMaiDao02 visibility=101,pressure=100 1278010023000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate derivative of count with unit default (2s) group by time",
+			command: `SELECT derivative(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of count with unit 4s group by time",
+			command: `SELECT derivative(count(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",4],["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mean with unit default (2s) group by time",
+			command: `SELECT derivative(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mean with unit 4s group by time",
+			command: `SELECT derivative(mean(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of median with unit default (2s) group by time",
+			command: `SELECT derivative(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of median with unit 4s group by time",
+			command: `SELECT derivative(median(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mode with unit default (2s) group by time",
+			command: `SELECT derivative(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mode with unit 4s group by time",
+			command: `SELECT derivative(mode(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+
+		&Query{
+			name:    "calculate derivative of sum with unit default (2s) group by time",
+			command: `SELECT derivative(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of sum with unit 4s group by time",
+			command: `SELECT derivative(sum(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of first with unit default (2s) group by time",
+			command: `SELECT derivative(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of first with unit 4s group by time",
+			command: `SELECT derivative(first(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of last with unit default (2s) group by time",
+			command: `SELECT derivative(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of last with unit 4s group by time",
+			command: `SELECT derivative(last(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of min with unit default (2s) group by time",
+			command: `SELECT derivative(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of min with unit 4s group by time",
+			command: `SELECT derivative(min(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of max with unit default (2s) group by time",
+			command: `SELECT derivative(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of max with unit 4s group by time",
+			command: `SELECT derivative(max(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of percentile with unit default (2s) group by time",
+			command: `SELECT derivative(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of percentile with unit 4s group by time",
+			command: `SELECT derivative(percentile(temperature, 50), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of visibility divided by aggregate",
+			command: `SELECT non_negative_derivative(mean(visibility), 1s) / last(pressure) * 100 AS usage FROM db0.rp0.air0 WHERE time >= '2010-07-01 18:47:00' AND time <= '2010-07-01 18:47:03' GROUP BY station, time(1s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air0","tags":{"station":"XiaoMaiDao01"},"columns":["time","usage"],"values":[["2010-07-01T18:47:00Z",null],["2010-07-01T18:47:01Z",20],["2010-07-01T18:47:02Z",2],["2010-07-01T18:47:03Z",15]]},{"name":"air0","tags":{"station":"XiaoMaiDao02"},"columns":["time","usage"],"values":[["2010-07-01T18:47:00Z",null],["2010-07-01T18:47:01Z",5],["2010-07-01T18:47:02Z",39],["2010-07-01T18:47:03Z",17]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
+// Ensure the server can handle various group by time derivative queries.
+func TestServer_Query_SelectGroupByTimeDerivativeWithFill(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=20 1278010021000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate derivative of count with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",-2]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of count with unit 4s group by time with fill  0",
+			command: `SELECT derivative(count(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",4],["2010-07-01T18:47:02Z",-4]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of count with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of count with unit 4s group by time with fill previous",
+			command: `SELECT derivative(count(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mean with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",-15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mean with unit 4s group by time with fill 0",
+			command: `SELECT derivative(mean(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",30],["2010-07-01T18:47:02Z",-30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mean with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mean with unit 4s group by time with fill previous",
+			command: `SELECT derivative(mean(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of median with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",-15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of median with unit 4s group by time with fill 0",
+			command: `SELECT derivative(median(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",30],["2010-07-01T18:47:02Z",-30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of median with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of median with unit 4s group by time with fill previous",
+			command: `SELECT derivative(median(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mode with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mode with unit 4s group by time with fill 0",
+			command: `SELECT derivative(mode(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mode with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of mode with unit 4s group by time with fill previous",
+			command: `SELECT derivative(mode(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of sum with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",30],["2010-07-01T18:47:02Z",-30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of sum with unit 4s group by time with fill 0",
+			command: `SELECT derivative(sum(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",60],["2010-07-01T18:47:02Z",-60]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of sum with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of sum with unit 4s group by time with fill previous",
+			command: `SELECT derivative(sum(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of first with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of first with unit 4s group by time with fill 0",
+			command: `SELECT derivative(first(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of first with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of first with unit 4s group by time with fill previous",
+			command: `SELECT derivative(first(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of last with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of last with unit 4s group by time with fill 0",
+			command: `SELECT derivative(last(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",40],["2010-07-01T18:47:02Z",-40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of last with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of last with unit 4s group by time with fill previous",
+			command: `SELECT derivative(last(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of min with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of min with unit 4s group by time with fill 0",
+			command: `SELECT derivative(min(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of min with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of min with unit 4s group by time with fill previous",
+			command: `SELECT derivative(min(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of max with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of max with unit 4s group by time with fill 0",
+			command: `SELECT derivative(max(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",40],["2010-07-01T18:47:02Z",-40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of max with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of max with unit 4s group by time with fill previous",
+			command: `SELECT derivative(max(temperature), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of percentile with unit default (2s) group by time with fill 0",
+			command: `SELECT derivative(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of percentile with unit 4s group by time with fill 0",
+			command: `SELECT derivative(percentile(temperature, 50), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of percentile with unit default (2s) group by time with fill previous",
+			command: `SELECT derivative(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate derivative of percentile with unit 4s group by time with fill previous",
+			command: `SELECT derivative(percentile(temperature, 50), 4s) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","derivative"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various group by time difference queries.
+func TestServer_Query_SelectGroupByTimeDifference(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=15 1278010021000000000
+air temperature=20 1278010022000000000
+air temperature=25 1278010023000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate difference of count",
+			command: `SELECT difference(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of mean",
+			command: `SELECT difference(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of median",
+			command: `SELECT difference(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of mode",
+			command: `SELECT difference(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of sum",
+			command: `SELECT difference(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of first",
+			command: `SELECT difference(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of last",
+			command: `SELECT difference(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of min",
+			command: `SELECT difference(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of max",
+			command: `SELECT difference(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of percentile",
+			command: `SELECT difference(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various group by time difference queries with fill.
+func TestServer_Query_SelectGroupByTimeDifferenceWithFill(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=20 1278010021000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate difference of count with fill 0",
+			command: `SELECT difference(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",-2]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of count with fill previous",
+			command: `SELECT difference(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of mean with fill 0",
+			command: `SELECT difference(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",-15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of mean with fill previous",
+			command: `SELECT difference(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of median with fill 0",
+			command: `SELECT difference(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",-15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of median with fill previous",
+			command: `SELECT difference(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of mode with fill 0",
+			command: `SELECT difference(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of mode with fill previous",
+			command: `SELECT difference(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of sum with fill 0",
+			command: `SELECT difference(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",30],["2010-07-01T18:47:02Z",-30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of sum with fill previous",
+			command: `SELECT difference(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of first with fill 0",
+			command: `SELECT difference(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of first with fill previous",
+			command: `SELECT difference(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of last with fill 0",
+			command: `SELECT difference(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of last with fill previous",
+			command: `SELECT difference(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of min with fill 0",
+			command: `SELECT difference(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of min with fill previous",
+			command: `SELECT difference(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of max with fill 0",
+			command: `SELECT difference(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",-20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of max with fill previous",
+			command: `SELECT difference(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of percentile with fill 0",
+			command: `SELECT difference(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",-10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate difference of percentile with fill previous",
+			command: `SELECT difference(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","difference"],"values":[["2010-07-01T18:47:02Z",0]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various group by time moving average queries.
+func TestServer_Query_SelectGroupByTimeMovingAverage(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=15 1278010021000000000
+air temperature=20 1278010022000000000
+air temperature=25 1278010023000000000
+air temperature=30 1278010024000000000
+air temperature=35 1278010025000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate moving average of count",
+			command: `SELECT moving_average(count(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",1],["2010-07-01T18:47:02Z",2],["2010-07-01T18:47:04Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of mean",
+			command: `SELECT moving_average(mean(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",17.5],["2010-07-01T18:47:04Z",27.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of median",
+			command: `SELECT moving_average(median(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",17.5],["2010-07-01T18:47:04Z",27.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of mode",
+			command: `SELECT moving_average(mode(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",15],["2010-07-01T18:47:04Z",25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of sum",
+			command: `SELECT moving_average(sum(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",35],["2010-07-01T18:47:04Z",55]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of first",
+			command: `SELECT moving_average(first(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",15],["2010-07-01T18:47:04Z",25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of last",
+			command: `SELECT moving_average(last(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",20],["2010-07-01T18:47:04Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of min",
+			command: `SELECT moving_average(min(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",15],["2010-07-01T18:47:04Z",25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of max",
+			command: `SELECT moving_average(max(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",20],["2010-07-01T18:47:04Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of percentile",
+			command: `SELECT moving_average(percentile(temperature, 50), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",15],["2010-07-01T18:47:04Z",25]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various group by time moving average queries.
+func TestServer_Query_SelectGroupByTimeMovingAverageWithFill(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=15 1278010021000000000
+air temperature=30 1278010024000000000
+air temperature=35 1278010025000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate moving average of count with fill 0",
+			command: `SELECT moving_average(count(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",1],["2010-07-01T18:47:02Z",1],["2010-07-01T18:47:04Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of count with fill previous",
+			command: `SELECT moving_average(count(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",2],["2010-07-01T18:47:04Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of mean with fill 0",
+			command: `SELECT moving_average(mean(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",6.25],["2010-07-01T18:47:02Z",6.25],["2010-07-01T18:47:04Z",16.25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of mean with fill previous",
+			command: `SELECT moving_average(mean(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",12.5],["2010-07-01T18:47:04Z",22.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of median with fill 0",
+			command: `SELECT moving_average(median(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",6.25],["2010-07-01T18:47:02Z",6.25],["2010-07-01T18:47:04Z",16.25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of median with fill previous",
+			command: `SELECT moving_average(median(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",12.5],["2010-07-01T18:47:04Z",22.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of mode with fill 0",
+			command: `SELECT moving_average(mode(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",5],["2010-07-01T18:47:02Z",5],["2010-07-01T18:47:04Z",15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of mode with fill previous",
+			command: `SELECT moving_average(mode(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",10],["2010-07-01T18:47:04Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of sum with fill 0",
+			command: `SELECT moving_average(sum(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",12.5],["2010-07-01T18:47:02Z",12.5],["2010-07-01T18:47:04Z",32.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of sum with fill previous",
+			command: `SELECT moving_average(sum(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",25],["2010-07-01T18:47:04Z",45]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of first with fill 0",
+			command: `SELECT moving_average(first(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",5],["2010-07-01T18:47:02Z",5],["2010-07-01T18:47:04Z",15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of first with fill previous",
+			command: `SELECT moving_average(first(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",10],["2010-07-01T18:47:04Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of last with fill 0",
+			command: `SELECT moving_average(last(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",7.5],["2010-07-01T18:47:02Z",7.5],["2010-07-01T18:47:04Z",17.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of last with fill previous",
+			command: `SELECT moving_average(last(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",15],["2010-07-01T18:47:04Z",25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of min with fill 0",
+			command: `SELECT moving_average(min(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",5],["2010-07-01T18:47:02Z",5],["2010-07-01T18:47:04Z",15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of min with fill previous",
+			command: `SELECT moving_average(min(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",10],["2010-07-01T18:47:04Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of max with fill 0",
+			command: `SELECT moving_average(max(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",7.5],["2010-07-01T18:47:02Z",7.5],["2010-07-01T18:47:04Z",17.5]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of max with fill previous",
+			command: `SELECT moving_average(max(temperature), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",15],["2010-07-01T18:47:04Z",25]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of percentile with fill 0",
+			command: `SELECT moving_average(percentile(temperature, 50), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:00Z",5],["2010-07-01T18:47:02Z",5],["2010-07-01T18:47:04Z",15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate moving average of percentile with fill previous",
+			command: `SELECT moving_average(percentile(temperature, 50), 2) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:05' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moving_average"],"values":[["2010-07-01T18:47:02Z",10],["2010-07-01T18:47:04Z",20]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various group by time cumulative sum queries.
+func TestServer_Query_SelectGroupByTimeCumulativeSum(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=15 1278010021000000000
+air temperature=20 1278010022000000000
+air temperature=25 1278010023000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate cumulative sum of count",
+			command: `SELECT cumulative_sum(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of mean",
+			command: `SELECT cumulative_sum(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",12.5],["2010-07-01T18:47:02Z",35]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of median",
+			command: `SELECT cumulative_sum(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",12.5],["2010-07-01T18:47:02Z",35]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of mode",
+			command: `SELECT cumulative_sum(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of sum",
+			command: `SELECT cumulative_sum(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",25],["2010-07-01T18:47:02Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of first",
+			command: `SELECT cumulative_sum(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of last",
+			command: `SELECT cumulative_sum(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of min",
+			command: `SELECT cumulative_sum(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of max",
+			command: `SELECT cumulative_sum(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of percentile",
+			command: `SELECT cumulative_sum(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+// Ensure the server can handle various group by time cumulative sum queries with fill.
+func TestServer_Query_SelectGroupByTimeCumulativeSumWithFill(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=10 1278010020000000000
+air temperature=20 1278010021000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "calculate cumulative sum of count with fill 0",
+			command: `SELECT cumulative_sum(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of count with fill previous",
+			command: `SELECT cumulative_sum(count(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",2],["2010-07-01T18:47:02Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of mean with fill 0",
+			command: `SELECT cumulative_sum(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of mean with fill previous",
+			command: `SELECT cumulative_sum(mean(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of median with fill 0",
+			command: `SELECT cumulative_sum(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",15]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of median with fill previous",
+			command: `SELECT cumulative_sum(median(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",15],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of mode with fill 0",
+			command: `SELECT cumulative_sum(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of mode with fill previous",
+			command: `SELECT cumulative_sum(mode(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of sum with fill 0",
+			command: `SELECT cumulative_sum(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",30],["2010-07-01T18:47:02Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of sum with fill previous",
+			command: `SELECT cumulative_sum(sum(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",30],["2010-07-01T18:47:02Z",60]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of first with fill 0",
+			command: `SELECT cumulative_sum(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of first with fill previous",
+			command: `SELECT cumulative_sum(first(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of last with fill 0",
+			command: `SELECT cumulative_sum(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of last with fill previous",
+			command: `SELECT cumulative_sum(last(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of min with fill 0",
+			command: `SELECT cumulative_sum(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of min with fill previous",
+			command: `SELECT cumulative_sum(min(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of max with fill 0",
+			command: `SELECT cumulative_sum(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of max with fill previous",
+			command: `SELECT cumulative_sum(max(temperature)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",20],["2010-07-01T18:47:02Z",40]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of percentile with fill 0",
+			command: `SELECT cumulative_sum(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",10]]}]}]}`,
+		},
+		&Query{
+			name:    "calculate cumulative sum of percentile with fill previous",
+			command: `SELECT cumulative_sum(percentile(temperature, 50)) from db0.rp0.air where time >= '2010-07-01 18:47:00' and time <= '2010-07-01 18:47:03' group by time(2s) fill(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","cumulative_sum"],"values":[["2010-07-01T18:47:00Z",10],["2010-07-01T18:47:02Z",20]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_CumulativeCount(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`events signup=t 1005832000
+events signup=t 1048283000
+events signup=t 1784832000
+events signup=t 2000000000
+events signup=t 3084890000
+events signup=t 3838400000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "cumulative count",
+			command: `SELECT cumulative_sum(count(signup)) from db0.rp0.events where time >= 1s and time < 4s group by time(1s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"events","columns":["time","cumulative_sum"],"values":[["1970-01-01T00:00:01Z",3],["1970-01-01T00:00:02Z",4],["1970-01-01T00:00:03Z",6]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_SelectGroupByTime_MultipleAggregates(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`test,t=a x=1i 1000000000
+test,t=b y=1i 1000000000
+test,t=a x=2i 2000000000
+test,t=b y=2i 2000000000
+test,t=a x=3i 3000000000
+test,t=b y=3i 3000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "two aggregates with a group by host",
+			command: `SELECT mean(x) as x, mean(y) as y from db0.rp0.test where time >= 1s and time < 4s group by t, time(1s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"test","tags":{"t":"a"},"columns":["time","x","y"],"values":[["1970-01-01T00:00:01Z",1,null],["1970-01-01T00:00:02Z",2,null],["1970-01-01T00:00:03Z",3,null]]},{"name":"test","tags":{"t":"b"},"columns":["time","x","y"],"values":[["1970-01-01T00:00:01Z",null,1],["1970-01-01T00:00:02Z",null,2],["1970-01-01T00:00:03Z",null,3]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_MathWithFill(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=15 1278010020000000000
+`)},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "multiplication with fill previous",
+			command: `SELECT 4*mean(temperature) FROM db0.rp0.air WHERE time >= '2010-07-01 18:47:00' AND time < '2010-07-01 18:48:30' GROUP BY time(30s) FILL(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","mean"],"values":[["2010-07-01T18:47:00Z",60],["2010-07-01T18:47:30Z",60],["2010-07-01T18:48:00Z",60]]}]}]}`,
+		},
+		&Query{
+			name:    "multiplication of mode temperature with fill previous",
+			command: `SELECT 4*mode(temperature) FROM db0.rp0.air WHERE time >= '2010-07-01 18:47:00' AND time < '2010-07-01 18:48:30' GROUP BY time(30s) FILL(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","mode"],"values":[["2010-07-01T18:47:00Z",60],["2010-07-01T18:47:30Z",60],["2010-07-01T18:48:00Z",60]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
+
+
+
