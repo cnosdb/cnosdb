@@ -2857,6 +2857,239 @@ func TestServer_Query_MathWithFill(t *testing.T) {
 	}
 }
 
+// mergeMany ensures that when merging many series together and some of them have a different number
+// of points than others in a group by interval the results are correct
+func TestServer_Query_MergeMany(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	// set infinite retention policy as we are inserting data in the past and don't want retention policy enforcement to make this test racy
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+
+	writes := []string{}
+	for i := 1; i < 11; i++ {
+		for j := 1; j < 5+i%3; j++ {
+			data := fmt.Sprintf(`air,station=XiaoMaiDao_%d temperature=22 %d`, i, time.Unix(int64(j), int64(0)).UTC().UnixNano())
+			writes = append(writes, data)
+		}
+	}
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "GROUP by time",
+			command: `SELECT count(temperature) FROM db0.rp0.air WHERE time >= '1970-01-01T00:00:01Z' AND time <= '1970-01-01T00:00:06Z' GROUP BY time(1s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","count"],"values":[["1970-01-01T00:00:01Z",10],["1970-01-01T00:00:02Z",10],["1970-01-01T00:00:03Z",10],["1970-01-01T00:00:04Z",10],["1970-01-01T00:00:05Z",7],["1970-01-01T00:00:06Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "GROUP by field",
+			command: `SELECT count(temperature) FROM db0.rp0.air group by temperature`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"temperature":""},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",50]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
+func TestServer_Query_SLimitAndSOffset(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	// set infinite retention policy as we are inserting data in the past and don't want retention policy enforcement to make this test racy
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+
+	writes := []string{}
+	for i := 1; i < 10; i++ {
+		data := fmt.Sprintf(`air,region=us-east,station=XiaoMaiDao-%d temperature=%d %d`, i, i, time.Unix(int64(i), int64(0)).UnixNano())
+		writes = append(writes, data)
+	}
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "SLIMIT 2 SOFFSET 1",
+			command: `SELECT count(temperature) FROM db0.rp0.air GROUP BY * SLIMIT 2 SOFFSET 1`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"region":"us-east","station":"XiaoMaiDao-2"},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]},{"name":"air","tags":{"region":"us-east","station":"XiaoMaiDao-3"},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "SLIMIT 2 SOFFSET 3",
+			command: `SELECT count(temperature) FROM db0.rp0.air GROUP BY * SLIMIT 2 SOFFSET 3`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"region":"us-east","station":"XiaoMaiDao-4"},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]},{"name":"air","tags":{"region":"us-east","station":"XiaoMaiDao-5"},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "SLIMIT 3 SOFFSET 8",
+			command: `SELECT count(temperature) FROM db0.rp0.air GROUP BY * SLIMIT 3 SOFFSET 8`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"region":"us-east","station":"XiaoMaiDao-9"},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
+func TestServer_Query_Regex(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air1,station=XiaoMaiDao01 temperature=10 %d`, mustParseTime(time.RFC3339Nano, "2015-02-28T01:03:36.703820946Z").UnixNano()),
+		fmt.Sprintf(`air2,station=XiaoMaiDao01 temperature=20 %d`, mustParseTime(time.RFC3339Nano, "2015-02-28T01:03:36.703820946Z").UnixNano()),
+		fmt.Sprintf(`air3,station=XiaoMaiDao01 temperature=30 %d`, mustParseTime(time.RFC3339Nano, "2015-02-28T01:03:36.703820946Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "default db and rp",
+			command: `SELECT * FROM /air[13]/`,
+			params:  url.Values{"db": []string{"db0"}},
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air1","columns":["time","station","temperature"],"values":[["2015-02-28T01:03:36.703820946Z","XiaoMaiDao01",10]]},{"name":"air3","columns":["time","station","temperature"],"values":[["2015-02-28T01:03:36.703820946Z","XiaoMaiDao01",30]]}]}]}`,
+		},
+		&Query{
+			name:    "default db and rp with GROUP BY *",
+			command: `SELECT * FROM /air[13]/ GROUP BY *`,
+			params:  url.Values{"db": []string{"db0"}},
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air1","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"air3","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "specifying db and rp",
+			command: `SELECT * FROM db0.rp0./air[13]/ GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air1","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"air3","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "default db and specified rp",
+			command: `SELECT * FROM rp0./air[13]/ GROUP BY *`,
+			params:  url.Values{"db": []string{"db0"}},
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air1","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"air3","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "specified db and default rp",
+			command: `SELECT * FROM db0../air[13]/ GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air1","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"air3","tags":{"station":"XiaoMaiDao01"},"columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "map field type with a regex source",
+			command: `SELECT temperature FROM /air[13]/`,
+			params:  url.Values{"db": []string{"db0"}},
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air1","columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",10]]},{"name":"air3","columns":["time","temperature"],"values":[["2015-02-28T01:03:36.703820946Z",30]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_Int(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`int temperature=45 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		// int64
+		&Query{
+			name:    "stddev with just one point - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT STDDEV(temperature) FROM int`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"int","columns":["time","stddev"],"values":[["1970-01-01T00:00:00Z",null]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
 
 
 
