@@ -180,6 +180,17 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		accessLogger:   log.New(os.Stderr, "[httpd] ", 0),
 	}
 
+	if metaConfig, err := meta.NewDemoConfig(); err == nil {
+		h.metaClient = meta.NewClient(metaConfig)
+	} else {
+		logger.Error(fmt.Sprintf("unable to create metaclient %s", err))
+	}
+
+	err := h.metaClient.Load()
+	if err != nil {
+		logger.Error(fmt.Sprintf("unable to load metadata %s", err))
+	}
+
 	h.writeThrottler = NewThrottler(conf.MaxConcurrentWriteLimit, conf.MaxEnqueuedWriteLimit)
 	h.writeThrottler.EnqueueTimeout = conf.EnqueuedWriteTimeout
 
