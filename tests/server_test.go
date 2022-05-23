@@ -4347,19 +4347,19 @@ func TestServer_Query_TopBottomInt(t *testing.T) {
 		fmt.Sprintf(`air,station=XiaoMaiDoa07 temperature=7.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
 		fmt.Sprintf(`air,station=XiaoMaiDoa08 temperature=9.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:10Z").UnixNano()),
 
-		// memory data
+		// sea data
 		// hour 0
-		fmt.Sprintf(`memory,station=a,service=redis temperature=1000i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
-		fmt.Sprintf(`memory,station=b,service=mysql temperature=2000i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
-		fmt.Sprintf(`memory,station=b,service=redis temperature=1500i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=a,service=Pacific temperature=1000i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=b,service=Atlantic temperature=2000i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=b,service=Pacific temperature=1500i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
 		// hour 1
-		fmt.Sprintf(`memory,station=a,service=redis temperature=1001i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
-		fmt.Sprintf(`memory,station=b,service=mysql temperature=2001i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
-		fmt.Sprintf(`memory,station=b,service=redis temperature=1501i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=a,service=Pacific temperature=1001i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=b,service=Atlantic temperature=2001i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=b,service=Pacific temperature=1501i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
 		// hour 2
-		fmt.Sprintf(`memory,station=a,service=redis temperature=1002i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
-		fmt.Sprintf(`memory,station=b,service=mysql temperature=2002i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
-		fmt.Sprintf(`memory,station=b,service=redis temperature=1502i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=a,service=Pacific temperature=1002i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=b,service=Atlantic temperature=2002i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=b,service=Pacific temperature=1502i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T02:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -4465,88 +4465,88 @@ func TestServer_Query_TopBottomInt(t *testing.T) {
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","bottom"],"values":[["2000-01-01T00:00:00Z",2],["2000-01-01T00:00:10Z",3],["2000-01-01T00:00:20Z",4],["2000-01-01T01:00:00Z",3],["2000-01-01T01:00:10Z",7],["2000-01-01T01:00:20Z",6],["2000-01-01T02:00:00Z",7],["2000-01-01T02:00:10Z",9]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - 2 temperatures, two tags",
+			name:    "top - sea - 2 temperatures, two tags",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, 2), station, service FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","station","service"],"values":[["2000-01-01T01:00:00Z",2001,"b","mysql"],["2000-01-01T02:00:00Z",2002,"b","mysql"]]}]}]}`,
+			command: `SELECT TOP(temperature, 2), station, service FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","station","service"],"values":[["2000-01-01T01:00:00Z",2001,"b","Atlantic"],["2000-01-01T02:00:00Z",2002,"b","Atlantic"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - 2 temperatures, two tags",
+			name:    "bottom - sea - 2 temperatures, two tags",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, 2), station, service FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","redis"],["2000-01-01T01:00:00Z",1001,"a","redis"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, 2), station, service FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","Pacific"],["2000-01-01T01:00:00Z",1001,"a","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - station tag with limit 2",
+			name:    "top - sea - station tag with limit 2",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, station, 2) FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","station"],"values":[["2000-01-01T02:00:00Z",2002,"b"],["2000-01-01T02:00:00Z",1002,"a"]]}]}]}`,
+			command: `SELECT TOP(temperature, station, 2) FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","station"],"values":[["2000-01-01T02:00:00Z",2002,"b"],["2000-01-01T02:00:00Z",1002,"a"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - station tag with limit 2",
+			name:    "bottom - sea - station tag with limit 2",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, station, 2) FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","station"],"values":[["2000-01-01T00:00:00Z",1000,"a"],["2000-01-01T00:00:00Z",1500,"b"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, station, 2) FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","station"],"values":[["2000-01-01T00:00:00Z",1000,"a"],["2000-01-01T00:00:00Z",1500,"b"]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - station tag with limit 2, service tag in select",
+			name:    "top - sea - station tag with limit 2, service tag in select",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, station, 2), service FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","mysql"],["2000-01-01T02:00:00Z",1002,"a","redis"]]}]}]}`,
+			command: `SELECT TOP(temperature, station, 2), service FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","Atlantic"],["2000-01-01T02:00:00Z",1002,"a","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - station tag with limit 2, service tag in select",
+			name:    "bottom - sea - station tag with limit 2, service tag in select",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, station, 2), service FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","redis"],["2000-01-01T00:00:00Z",1500,"b","redis"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, station, 2), service FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","Pacific"],["2000-01-01T00:00:00Z",1500,"b","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - service tag with limit 2, station tag in select",
+			name:    "top - sea - service tag with limit 2, station tag in select",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, service, 2), station FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","service","station"],"values":[["2000-01-01T02:00:00Z",2002,"mysql","b"],["2000-01-01T02:00:00Z",1502,"redis","b"]]}]}]}`,
+			command: `SELECT TOP(temperature, service, 2), station FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","service","station"],"values":[["2000-01-01T02:00:00Z",2002,"Atlantic","b"],["2000-01-01T02:00:00Z",1502,"Pacific","b"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - service tag with limit 2, station tag in select",
+			name:    "bottom - sea - service tag with limit 2, station tag in select",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, service, 2), station FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","service","station"],"values":[["2000-01-01T00:00:00Z",1000,"redis","a"],["2000-01-01T00:00:00Z",2000,"mysql","b"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, service, 2), station FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","service","station"],"values":[["2000-01-01T00:00:00Z",1000,"Pacific","a"],["2000-01-01T00:00:00Z",2000,"Atlantic","b"]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - station and service tag with limit 2",
+			name:    "top - sea - station and service tag with limit 2",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, station, service, 2) FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","mysql"],["2000-01-01T02:00:00Z",1502,"b","redis"]]}]}]}`,
+			command: `SELECT TOP(temperature, station, service, 2) FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","Atlantic"],["2000-01-01T02:00:00Z",1502,"b","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - station and service tag with limit 2",
+			name:    "bottom - sea - station and service tag with limit 2",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, station, service, 2) FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","redis"],["2000-01-01T00:00:00Z",1500,"b","redis"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, station, service, 2) FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","Pacific"],["2000-01-01T00:00:00Z",1500,"b","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - station tag with limit 2 with service tag in select",
+			name:    "top - sea - station tag with limit 2 with service tag in select",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, station, 2), service FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","mysql"],["2000-01-01T02:00:00Z",1002,"a","redis"]]}]}]}`,
+			command: `SELECT TOP(temperature, station, 2), service FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","Atlantic"],["2000-01-01T02:00:00Z",1002,"a","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - station tag with limit 2 with service tag in select",
+			name:    "bottom - sea - station tag with limit 2 with service tag in select",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, station, 2), service FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","redis"],["2000-01-01T00:00:00Z",1500,"b","redis"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, station, 2), service FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","Pacific"],["2000-01-01T00:00:00Z",1500,"b","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "top - memory - station and service tag with limit 3",
+			name:    "top - sea - station and service tag with limit 3",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT TOP(temperature, station, service, 3) FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","mysql"],["2000-01-01T02:00:00Z",1502,"b","redis"],["2000-01-01T02:00:00Z",1002,"a","redis"]]}]}]}`,
+			command: `SELECT TOP(temperature, station, service, 3) FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","top","station","service"],"values":[["2000-01-01T02:00:00Z",2002,"b","Atlantic"],["2000-01-01T02:00:00Z",1502,"b","Pacific"],["2000-01-01T02:00:00Z",1002,"a","Pacific"]]}]}]}`,
 		},
 		&Query{
-			name:    "bottom - memory - station and service tag with limit 3",
+			name:    "bottom - sea - station and service tag with limit 3",
 			params:  url.Values{"db": []string{"db0"}},
-			command: `SELECT BOTTOM(temperature, station, service, 3) FROM memory`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"memory","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","redis"],["2000-01-01T00:00:00Z",1500,"b","redis"],["2000-01-01T00:00:00Z",2000,"b","mysql"]]}]}]}`,
+			command: `SELECT BOTTOM(temperature, station, service, 3) FROM sea`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","bottom","station","service"],"values":[["2000-01-01T00:00:00Z",1000,"a","Pacific"],["2000-01-01T00:00:00Z",1500,"b","Pacific"],["2000-01-01T00:00:00Z",2000,"b","Atlantic"]]}]}]}`,
 		},
 	}...)
 
@@ -6519,6 +6519,167 @@ func TestServer_Query_MaxRowLimit(t *testing.T) {
 	}
 }
 
+func TestServer_Query_DropAndRecreateMeasurement(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateDatabaseAndRetentionPolicy("db1", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := strings.Join([]string{
+		fmt.Sprintf(`air,station=XiaoMaiDaoA,region=chaoyang val=23.2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,station=XiaoMaiDaoB,region=chaoyang val=33.2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+	}, "\n")
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: writes},
+		&Write{db: "db1", data: writes},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "verify air measurement exists in db1",
+			command: `SELECT * FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","region","station","val"],"values":[["2000-01-01T00:00:00Z","chaoyang","XiaoMaiDaoA",23.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db1"}},
+		},
+		&Query{
+			name:    "Drop Measurement, series tags preserved tests",
+			command: `SHOW MEASUREMENTS`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"],["sea"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show series",
+			command: `SHOW SERIES`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,region=chaoyang,station=XiaoMaiDaoA"],["sea,region=chaoyang,station=XiaoMaiDaoB"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "ensure we can query for sea with both tags",
+			command: `SELECT * FROM sea where region='chaoyang' and station='XiaoMaiDaoB' GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","tags":{"region":"chaoyang","station":"XiaoMaiDaoB"},"columns":["time","val"],"values":[["2000-01-01T00:00:01Z",33.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "drop measurement air",
+			command: `DROP MEASUREMENT air`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify measurements in DB that we deleted a measurement from",
+			command: `SHOW MEASUREMENTS`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["sea"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify series",
+			command: `SHOW SERIES`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,region=chaoyang,station=XiaoMaiDaoB"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify air measurement is gone",
+			command: `SELECT * FROM air`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify air measurement is NOT gone from other DB",
+			command: `SELECT * FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","region","station","val"],"values":[["2000-01-01T00:00:00Z","chaoyang","XiaoMaiDaoA",23.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db1"}},
+		},
+		&Query{
+			name:    "verify selecting from a tag 'station' still works",
+			command: `SELECT * FROM sea where station='XiaoMaiDaoB' GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","tags":{"region":"chaoyang","station":"XiaoMaiDaoB"},"columns":["time","val"],"values":[["2000-01-01T00:00:01Z",33.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify selecting from a tag 'region' still works",
+			command: `SELECT * FROM sea where region='chaoyang' GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","tags":{"region":"chaoyang","station":"XiaoMaiDaoB"},"columns":["time","val"],"values":[["2000-01-01T00:00:01Z",33.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify selecting from a tag 'station' and 'region' still works",
+			command: `SELECT * FROM sea where region='chaoyang' and station='XiaoMaiDaoB' GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","tags":{"region":"chaoyang","station":"XiaoMaiDaoB"},"columns":["time","val"],"values":[["2000-01-01T00:00:01Z",33.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "Drop non-existant measurement",
+			command: `DROP MEASUREMENT doesntexist`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	// Test that re-inserting the measurement works fine.
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+
+	test = NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: writes},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "verify measurements after recreation",
+			command: `SHOW MEASUREMENTS`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"],["sea"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "verify air measurement has been re-inserted",
+			command: `SELECT * FROM air GROUP BY *`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"region":"chaoyang","station":"XiaoMaiDaoA"},"columns":["time","val"],"values":[["2000-01-01T00:00:00Z",23.2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
 
 
 
