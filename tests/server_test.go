@@ -1153,12 +1153,7 @@ func TestServer_Query_Tags(t *testing.T) {
 	}
 
 	test.addQueries([]*Query{
-		&Query{
-			name:    "tag without field should return error",
-			command: `SELECT station FROM db0.rp0.air`,
-			exp:     `{"results":[{"statement_id":0,"error":"statement must have at least one field in select clause"}]}`,
-			skip:    true, // FIXME(benbjohnson): tags should stream as values
-		},
+
 		&Query{
 			name:    "field with tag should succeed",
 			command: `SELECT station, temperature FROM db0.rp0.air`,
@@ -2914,7 +2909,6 @@ func TestServer_Query_MergeMany(t *testing.T) {
 	}
 }
 
-
 func TestServer_Query_SLimitAndSOffset(t *testing.T) {
 	t.Parallel()
 	s := OpenServer(NewConfig())
@@ -2972,7 +2966,6 @@ func TestServer_Query_SLimitAndSOffset(t *testing.T) {
 		})
 	}
 }
-
 
 func TestServer_Query_Regex(t *testing.T) {
 	t.Parallel()
@@ -3090,6 +3083,1112 @@ func TestServer_Query_Aggregates_Int(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_Query_Aggregates_IntMax(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`intmax value=%s %d`, maxInt64(), mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`intmax value=%s %d`, maxInt64(), mustParseTime(time.RFC3339Nano, "2000-01-01T01:00:00Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "large mean and stddev - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEAN(value), STDDEV(value) FROM intmax`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmax","columns":["time","mean","stddev"],"values":[["1970-01-01T00:00:00Z",` + maxInt64() + `,0]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_IntMany(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`intmany,station=XiaoMaiDao01 value=2.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao02 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao03 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao04 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao05 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao06 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:50Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao07 value=7.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=XiaoMaiDao08 value=9.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:10Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "mean and stddev - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEAN(value), STDDEV(value) FROM intmany WHERE time >= '2000-01-01' AND time < '2000-01-01T00:02:00Z' GROUP BY time(10m)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","mean","stddev"],"values":[["2000-01-01T00:00:00Z",5,2.138089935299395]]}]}]}`,
+		},
+		&Query{
+			name:    "first - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT FIRST(value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","first"],"values":[["2000-01-01T00:00:00Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "first - int - epoch ms",
+			params:  url.Values{"db": []string{"db0"}, "epoch": []string{"ms"}},
+			command: `SELECT FIRST(value) FROM intmany`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","first"],"values":[[%d,2]]}]}]}`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()/int64(time.Millisecond)),
+		},
+		&Query{
+			name:    "last - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT LAST(value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","last"],"values":[["2000-01-01T00:01:10Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "spread - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SPREAD(value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","spread"],"values":[["1970-01-01T00:00:00Z",7]]}]}]}`,
+		},
+		&Query{
+			name:    "median - even count - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEDIAN(value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","median"],"values":[["1970-01-01T00:00:00Z",4.5]]}]}]}`,
+		},
+		&Query{
+			name:    "median - odd count - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEDIAN(value) FROM intmany where time < '2000-01-01T00:01:10Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","median"],"values":[["1970-01-01T00:00:00Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "mode - single - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MODE(value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","mode"],"values":[["1970-01-01T00:00:00Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "mode - multiple - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MODE(value) FROM intmany where time < '2000-01-01T00:01:10Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","mode"],"values":[["1970-01-01T00:00:00Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "distinct as call - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT DISTINCT(value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","distinct"],"values":[["1970-01-01T00:00:00Z",2],["1970-01-01T00:00:00Z",4],["1970-01-01T00:00:00Z",5],["1970-01-01T00:00:00Z",7],["1970-01-01T00:00:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "distinct alt syntax - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT DISTINCT value FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","distinct"],"values":[["1970-01-01T00:00:00Z",2],["1970-01-01T00:00:00Z",4],["1970-01-01T00:00:00Z",5],["1970-01-01T00:00:00Z",7],["1970-01-01T00:00:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "count distinct - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT COUNT(DISTINCT value) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "count distinct as call - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT COUNT(DISTINCT(value)) FROM intmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",5]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_IntMany_GroupBy(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`intmany,station=server01 value=2.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server02 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server03 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server04 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server05 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server06 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:50Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server07 value=7.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server08 value=9.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:10Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "max order by time with time specified group by 10s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, max(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(10s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","max"],"values":[["2000-01-01T00:00:00Z",2],["2000-01-01T00:00:10Z",4],["2000-01-01T00:00:20Z",4],["2000-01-01T00:00:30Z",4],["2000-01-01T00:00:40Z",5],["2000-01-01T00:00:50Z",5],["2000-01-01T00:01:00Z",7],["2000-01-01T00:01:10Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "max order by time without time specified group by 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","max"],"values":[["2000-01-01T00:00:00Z",4],["2000-01-01T00:00:30Z",5],["2000-01-01T00:01:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "max order by time with time specified group by 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, max(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","max"],"values":[["2000-01-01T00:00:00Z",4],["2000-01-01T00:00:30Z",5],["2000-01-01T00:01:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "min order by time without time specified group by 15s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT min(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(15s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","min"],"values":[["2000-01-01T00:00:00Z",2],["2000-01-01T00:00:15Z",4],["2000-01-01T00:00:30Z",4],["2000-01-01T00:00:45Z",5],["2000-01-01T00:01:00Z",7]]}]}]}`,
+		},
+		&Query{
+			name:    "min order by time with time specified group by 15s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, min(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(15s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","min"],"values":[["2000-01-01T00:00:00Z",2],["2000-01-01T00:00:15Z",4],["2000-01-01T00:00:30Z",4],["2000-01-01T00:00:45Z",5],["2000-01-01T00:01:00Z",7]]}]}]}`,
+		},
+		&Query{
+			name:    "first order by time without time specified group by 15s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT first(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(15s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","first"],"values":[["2000-01-01T00:00:00Z",2],["2000-01-01T00:00:15Z",4],["2000-01-01T00:00:30Z",4],["2000-01-01T00:00:45Z",5],["2000-01-01T00:01:00Z",7]]}]}]}`,
+		},
+		&Query{
+			name:    "first order by time with time specified group by 15s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, first(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(15s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","first"],"values":[["2000-01-01T00:00:00Z",2],["2000-01-01T00:00:15Z",4],["2000-01-01T00:00:30Z",4],["2000-01-01T00:00:45Z",5],["2000-01-01T00:01:00Z",7]]}]}]}`,
+		},
+		&Query{
+			name:    "last order by time without time specified group by 15s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT last(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(15s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","last"],"values":[["2000-01-01T00:00:00Z",4],["2000-01-01T00:00:15Z",4],["2000-01-01T00:00:30Z",5],["2000-01-01T00:00:45Z",5],["2000-01-01T00:01:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "last order by time with time specified group by 15s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, last(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:14Z' group by time(15s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","last"],"values":[["2000-01-01T00:00:00Z",4],["2000-01-01T00:00:15Z",4],["2000-01-01T00:00:30Z",5],["2000-01-01T00:00:45Z",5],["2000-01-01T00:01:00Z",9]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_IntMany_OrderByDesc(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`intmany,station=server01 value=2.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server02 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server03 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server04 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server05 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server06 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:50Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server07 value=7.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+			fmt.Sprintf(`intmany,station=server08 value=9.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:10Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "aggregate order by time desc",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(value) FROM intmany where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:00Z' group by time(10s) order by time desc`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intmany","columns":["time","max"],"values":[["2000-01-01T00:01:00Z",7],["2000-01-01T00:00:50Z",5],["2000-01-01T00:00:40Z",5],["2000-01-01T00:00:30Z",4],["2000-01-01T00:00:20Z",4],["2000-01-01T00:00:10Z",4],["2000-01-01T00:00:00Z",2]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_IntOverlap(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`intoverlap,region=us-east value=20 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`intoverlap,region=us-east value=30 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`intoverlap,region=us-west value=100 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`intoverlap,region=us-east otherVal=20 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "aggregation with a null field value - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SUM(value) FROM intoverlap GROUP BY region`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intoverlap","tags":{"region":"us-east"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",50]]},{"name":"intoverlap","tags":{"region":"us-west"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "multiple aggregations - int",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SUM(value), MEAN(value) FROM intoverlap GROUP BY region`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"intoverlap","tags":{"region":"us-east"},"columns":["time","sum","mean"],"values":[["1970-01-01T00:00:00Z",50,25]]},{"name":"intoverlap","tags":{"region":"us-west"},"columns":["time","sum","mean"],"values":[["1970-01-01T00:00:00Z",100,100]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_FloatSingle(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`floatsingle value=45.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "stddev with just one point - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT STDDEV(value) FROM floatsingle`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatsingle","columns":["time","stddev"],"values":[["1970-01-01T00:00:00Z",null]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_FloatMany(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`floatmany,station=server01 value=2.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server02 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server03 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server04 value=4.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server05 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server06 value=5.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:50Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server07 value=7.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+			fmt.Sprintf(`floatmany,station=server08 value=9.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:10Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "mean and stddev - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEAN(value), STDDEV(value) FROM floatmany WHERE time >= '2000-01-01' AND time < '2000-01-01T00:02:00Z' GROUP BY time(10m)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","mean","stddev"],"values":[["2000-01-01T00:00:00Z",5,2.138089935299395]]}]}]}`,
+		},
+		&Query{
+			name:    "first - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT FIRST(value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","first"],"values":[["2000-01-01T00:00:00Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "last - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT LAST(value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","last"],"values":[["2000-01-01T00:01:10Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "spread - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SPREAD(value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","spread"],"values":[["1970-01-01T00:00:00Z",7]]}]}]}`,
+		},
+		&Query{
+			name:    "median - even count - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEDIAN(value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","median"],"values":[["1970-01-01T00:00:00Z",4.5]]}]}]}`,
+		},
+		&Query{
+			name:    "median - odd count - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MEDIAN(value) FROM floatmany where time < '2000-01-01T00:01:10Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","median"],"values":[["1970-01-01T00:00:00Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "mode - single - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MODE(value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","mode"],"values":[["1970-01-01T00:00:00Z",4]]}]}]}`,
+		},
+		&Query{
+			name:    "mode - multiple - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT MODE(value) FROM floatmany where time < '2000-01-01T00:00:10Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","mode"],"values":[["1970-01-01T00:00:00Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "distinct as call - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT DISTINCT(value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","distinct"],"values":[["1970-01-01T00:00:00Z",2],["1970-01-01T00:00:00Z",4],["1970-01-01T00:00:00Z",5],["1970-01-01T00:00:00Z",7],["1970-01-01T00:00:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "distinct alt syntax - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT DISTINCT value FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","distinct"],"values":[["1970-01-01T00:00:00Z",2],["1970-01-01T00:00:00Z",4],["1970-01-01T00:00:00Z",5],["1970-01-01T00:00:00Z",7],["1970-01-01T00:00:00Z",9]]}]}]}`,
+		},
+		&Query{
+			name:    "count distinct - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT COUNT(DISTINCT value) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "count distinct as call - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT COUNT(DISTINCT(value)) FROM floatmany`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatmany","columns":["time","count"],"values":[["1970-01-01T00:00:00Z",5]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_FloatOverlap(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`floatoverlap,region=us-east value=20.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`floatoverlap,region=us-east value=30.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`floatoverlap,region=us-west value=100.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`floatoverlap,region=us-east otherVal=20.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "aggregation with no interval - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT count(value) FROM floatoverlap WHERE time = '2000-01-01 00:00:00'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatoverlap","columns":["time","count"],"values":[["2000-01-01T00:00:00Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "sum - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SUM(value) FROM floatoverlap WHERE time >= '2000-01-01 00:00:05' AND time <= '2000-01-01T00:00:10Z' GROUP BY time(10s), region`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatoverlap","tags":{"region":"us-east"},"columns":["time","sum"],"values":[["2000-01-01T00:00:00Z",null],["2000-01-01T00:00:10Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "aggregation with a null field value - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SUM(value) FROM floatoverlap GROUP BY region`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatoverlap","tags":{"region":"us-east"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",50]]},{"name":"floatoverlap","tags":{"region":"us-west"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "multiple aggregations - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT SUM(value), MEAN(value) FROM floatoverlap GROUP BY region`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatoverlap","tags":{"region":"us-east"},"columns":["time","sum","mean"],"values":[["1970-01-01T00:00:00Z",50,25]]},{"name":"floatoverlap","tags":{"region":"us-west"},"columns":["time","sum","mean"],"values":[["1970-01-01T00:00:00Z",100,100]]}]}]}`,
+		},
+		&Query{
+			name:    "multiple aggregations with division - float",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) / mean(value) as div FROM floatoverlap GROUP BY region`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"floatoverlap","tags":{"region":"us-east"},"columns":["time","div"],"values":[["1970-01-01T00:00:00Z",2]]},{"name":"floatoverlap","tags":{"region":"us-west"},"columns":["time","div"],"values":[["1970-01-01T00:00:00Z",1]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_GroupByOffset(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`offset,region=us-east,station=serverA value=20.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`offset,region=us-east,station=serverB value=30.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`offset,region=us-west,station=serverC value=100.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "group by offset - standard",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) FROM "offset" WHERE time >= '1999-12-31T23:59:55Z' AND time < '2000-01-01T00:00:15Z' GROUP BY time(10s, 5s) FILL(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"offset","columns":["time","sum"],"values":[["1999-12-31T23:59:55Z",120],["2000-01-01T00:00:05Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "group by offset - misaligned time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) FROM "offset" WHERE time >= '2000-01-01T00:00:00Z' AND time < '2000-01-01T00:00:20Z' GROUP BY time(10s, 5s) FILL(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"offset","columns":["time","sum"],"values":[["1999-12-31T23:59:55Z",120],["2000-01-01T00:00:05Z",30],["2000-01-01T00:00:15Z",0]]}]}]}`,
+		},
+		&Query{
+			name:    "group by offset - negative time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) FROM "offset" WHERE time >= '1999-12-31T23:59:55Z' AND time < '2000-01-01T00:00:15Z' GROUP BY time(10s, -5s) FILL(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"offset","columns":["time","sum"],"values":[["1999-12-31T23:59:55Z",120],["2000-01-01T00:00:05Z",30]]}]}]}`,
+		},
+		&Query{
+			name:    "group by offset - modulo",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) FROM "offset" WHERE time >= '1999-12-31T23:59:55Z' AND time < '2000-01-01T00:00:15Z' GROUP BY time(10s, 35s) FILL(0)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"offset","columns":["time","sum"],"values":[["1999-12-31T23:59:55Z",120],["2000-01-01T00:00:05Z",30]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_Load(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`load,region=us-east,station=serverA value=20.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+			fmt.Sprintf(`load,region=us-east,station=serverB value=30.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+			fmt.Sprintf(`load,region=us-west,station=serverC value=100.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "group by multiple dimensions",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) FROM load GROUP BY region, station`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"load","tags":{"region":"us-east","station":"serverA"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",20]]},{"name":"load","tags":{"region":"us-east","station":"serverB"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",30]]},{"name":"load","tags":{"region":"us-west","station":"serverC"},"columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",100]]}]}]}`,
+		},
+		&Query{
+			name:    "group by multiple dimensions",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value)*2 FROM load`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"load","columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",300]]}]}]}`,
+		},
+		&Query{
+			name:    "group by multiple dimensions",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value)/2 FROM load`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"load","columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",75]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_AIR(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join([]string{
+			fmt.Sprintf(`air,region=uk,station=XiaoMaiDaoZ,weather=cloud value=20.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+			fmt.Sprintf(`air,region=uk,station=XiaoMaiDaoZ,weather=rain value=30.0 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+		}, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "aggregation with WHERE and AND",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(value) FROM air WHERE region='uk' AND station='XiaoMaiDaoZ'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sum"],"values":[["1970-01-01T00:00:00Z",50]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Aggregates_Math(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,station=XiaoMaiDao01,region=west,Moisture=1 visibility=10i,pressure=20i,Moisture=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao02,region=west,Moisture=2 visibility=40i,pressure=50i,Moisture=3i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao03,region=east,Moisture=3 visibility=40i,pressure=55i,Moisture=4i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao04,region=east,Moisture=4 visibility=40i,pressure=60i,Moisture=1i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao05,region=west,Moisture=1 visibility=50i,pressure=70i,Moisture=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao06,region=east,Moisture=2 visibility=50i,pressure=40i,Moisture=3i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:50Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao07,region=west,Moisture=3 visibility=70i,pressure=30i,Moisture=4i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao08,region=east,Moisture=4 visibility=90i,pressure=10i,Moisture=1i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:10Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao09,region=east,Moisture=1 visibility=5i,pressure=4i,Moisture=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:20Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "add two selectors",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(visibility) + min(visibility) FROM air WHERE time >= '2000-01-01T00:00:00Z' AND time < '2000-01-01T00:01:30Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max_min"],"values":[["2000-01-01T00:00:00Z",95]]}]}]}`,
+		},
+		&Query{
+			name:    "use math one two selectors separately",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(visibility) * 1, min(visibility) * 1 FROM air WHERE time >= '2000-01-01T00:00:00Z' AND time < '2000-01-01T00:01:30Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max","min"],"values":[["2000-01-01T00:00:00Z",90,5]]}]}]}`,
+		},
+		&Query{
+			name:    "math with a single selector",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(visibility) * 1 FROM air WHERE time >= '2000-01-01T00:00:00Z' AND time < '2000-01-01T00:01:30Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max"],"values":[["2000-01-01T00:01:10Z",90]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_AggregateSelectors(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,station=XiaoMaiDao01,region=west,Moisture=1 visibility=10i,pressure=20i,Moisture=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao02,region=west,Moisture=2 visibility=40i,pressure=50i,Moisture=3i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao03,region=east,Moisture=3 visibility=40i,pressure=55i,Moisture=4i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao04,region=east,Moisture=4 visibility=40i,pressure=60i,Moisture=1i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao05,region=west,Moisture=1 visibility=50i,pressure=70i,Moisture=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao06,region=east,Moisture=2 visibility=50i,pressure=40i,Moisture=3i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:50Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao07,region=west,Moisture=3 visibility=70i,pressure=30i,Moisture=4i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao08,region=east,Moisture=4 visibility=90i,pressure=10i,Moisture=1i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:10Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao09,region=east,Moisture=1 visibility=5i,pressure=4i,Moisture=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:20Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "baseline",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","Moisture","Moisture_1","pressure","region","station","visibility"],"values":[["2000-01-01T00:00:00Z",2,"1",20,"west","XiaoMaiDao01",10],["2000-01-01T00:00:10Z",3,"2",50,"west","XiaoMaiDao02",40],["2000-01-01T00:00:20Z",4,"3",55,"east","XiaoMaiDao03",40],["2000-01-01T00:00:30Z",1,"4",60,"east","XiaoMaiDao04",40],["2000-01-01T00:00:40Z",2,"1",70,"west","XiaoMaiDao05",50],["2000-01-01T00:00:50Z",3,"2",40,"east","XiaoMaiDao06",50],["2000-01-01T00:01:00Z",4,"3",30,"west","XiaoMaiDao07",70],["2000-01-01T00:01:10Z",1,"4",10,"east","XiaoMaiDao08",90],["2000-01-01T00:01:20Z",2,"1",4,"east","XiaoMaiDao09",5]]}]}]}`,
+        },
+		&Query{
+			name:    "max - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",90]]}]}]}`,
+		},
+		&Query{
+			name:    "max - baseline 30s - epoch ms",
+			params:  url.Values{"db": []string{"db0"}, "epoch": []string{"ms"}},
+			command: `SELECT max(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp: fmt.Sprintf(
+				`{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max"],"values":[[%d,40],[%d,50],[%d,90]]}]}]}`,
+				mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()/int64(time.Millisecond),
+				mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()/int64(time.Millisecond),
+				mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()/int64(time.Millisecond),
+			),
+		},
+		&Query{
+			name:    "max - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, max(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","max"],"values":[["2000-01-01T00:00:00Z",50,40],["2000-01-01T00:00:30Z",70,50],["2000-01-01T00:01:00Z",10,90]]}]}]}`,
+		},
+		&Query{
+			name:    "max - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, max(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",90]]}]}]}`,
+		},
+		&Query{
+			name:    "max - time and pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, pressure, max(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","max"],"values":[["2000-01-01T00:00:00Z",50,40],["2000-01-01T00:00:30Z",70,50],["2000-01-01T00:01:00Z",10,90]]}]}]}`,
+		},
+		&Query{
+			name:    "min - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT min(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","min"],"values":[["2000-01-01T00:00:00Z",10],["2000-01-01T00:00:30Z",40],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "min - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, min(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","min"],"values":[["2000-01-01T00:00:00Z",20,10],["2000-01-01T00:00:30Z",60,40],["2000-01-01T00:01:00Z",4,5]]}]}]}`,
+		},
+		&Query{
+			name:    "min - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, min(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","min"],"values":[["2000-01-01T00:00:00Z",10],["2000-01-01T00:00:30Z",40],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "min - time and pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, pressure, min(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","min"],"values":[["2000-01-01T00:00:00Z",20,10],["2000-01-01T00:00:30Z",60,40],["2000-01-01T00:01:00Z",4,5]]}]}]}`,
+		},
+		&Query{
+			name:    "max,min - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT max(visibility), min(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","max","min"],"values":[["2000-01-01T00:00:00Z",40,10],["2000-01-01T00:00:30Z",50,40],["2000-01-01T00:01:00Z",90,5]]}]}]}`,
+		},
+		&Query{
+			name:    "first - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT first(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","first"],"values":[["2000-01-01T00:00:00Z",10],["2000-01-01T00:00:30Z",40],["2000-01-01T00:01:00Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "first - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, pressure, first(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","first"],"values":[["2000-01-01T00:00:00Z",20,10],["2000-01-01T00:00:30Z",60,40],["2000-01-01T00:01:00Z",30,70]]}]}]}`,
+		},
+		&Query{
+			name:    "first - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, first(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","first"],"values":[["2000-01-01T00:00:00Z",10],["2000-01-01T00:00:30Z",40],["2000-01-01T00:01:00Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "first - time and pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, pressure, first(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","first"],"values":[["2000-01-01T00:00:00Z",20,10],["2000-01-01T00:00:30Z",60,40],["2000-01-01T00:01:00Z",30,70]]}]}]}`,
+		},
+		&Query{
+			name:    "last - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT last(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","last"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "last - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, last(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","last"],"values":[["2000-01-01T00:00:00Z",55,40],["2000-01-01T00:00:30Z",40,50],["2000-01-01T00:01:00Z",4,5]]}]}]}`,
+		},
+		&Query{
+			name:    "last - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, last(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","last"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "last - time and pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, pressure, last(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","last"],"values":[["2000-01-01T00:00:00Z",55,40],["2000-01-01T00:00:30Z",40,50],["2000-01-01T00:01:00Z",4,5]]}]}]}`,
+		},
+		&Query{
+			name:    "count - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT count(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","count"],"values":[["2000-01-01T00:00:00Z",3],["2000-01-01T00:00:30Z",3],["2000-01-01T00:01:00Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "count - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, count(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","count"],"values":[["2000-01-01T00:00:00Z",3],["2000-01-01T00:00:30Z",3],["2000-01-01T00:01:00Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "count - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, count(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"mixing aggregate and non-aggregate queries is not supported"}]}`,
+		},
+		&Query{
+			name:    "distinct - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT distinct(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","distinct"],"values":[["2000-01-01T00:00:00Z",10],["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",70],["2000-01-01T00:01:00Z",90],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "distinct - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, distinct(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","distinct"],"values":[["2000-01-01T00:00:00Z",10],["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",70],["2000-01-01T00:01:00Z",90],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "distinct - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, distinct(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"aggregate function distinct() cannot be combined with other functions or fields"}]}`,
+		},
+		&Query{
+			name:    "mean - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT mean(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","mean"],"values":[["2000-01-01T00:00:00Z",30],["2000-01-01T00:00:30Z",46.666666666666664],["2000-01-01T00:01:00Z",55]]}]}]}`,
+		},
+		&Query{
+			name:    "mean - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, mean(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","mean"],"values":[["2000-01-01T00:00:00Z",30],["2000-01-01T00:00:30Z",46.666666666666664],["2000-01-01T00:01:00Z",55]]}]}]}`,
+		},
+		&Query{
+			name:    "mean - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, mean(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"mixing aggregate and non-aggregate queries is not supported"}]}`,
+		},
+		&Query{
+			name:    "median - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT median(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","median"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "median - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, median(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","median"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "median - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, median(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"mixing aggregate and non-aggregate queries is not supported"}]}`,
+		},
+		&Query{
+			name:    "mode - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT mode(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","mode"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "mode - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, mode(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","mode"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "mode - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, mode(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"mixing aggregate and non-aggregate queries is not supported"}]}`,
+		},
+		&Query{
+			name:    "spread - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT spread(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","spread"],"values":[["2000-01-01T00:00:00Z",30],["2000-01-01T00:00:30Z",10],["2000-01-01T00:01:00Z",85]]}]}]}`,
+		},
+		&Query{
+			name:    "spread - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, spread(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","spread"],"values":[["2000-01-01T00:00:00Z",30],["2000-01-01T00:00:30Z",10],["2000-01-01T00:01:00Z",85]]}]}]}`,
+		},
+		&Query{
+			name:    "spread - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, spread(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"mixing aggregate and non-aggregate queries is not supported"}]}`,
+		},
+		&Query{
+			name:    "stddev - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT stddev(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","stddev"],"values":[["2000-01-01T00:00:00Z",17.320508075688775],["2000-01-01T00:00:30Z",5.773502691896258],["2000-01-01T00:01:00Z",44.44097208657794]]}]}]}`,
+		},
+		&Query{
+			name:    "stddev - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, stddev(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","stddev"],"values":[["2000-01-01T00:00:00Z",17.320508075688775],["2000-01-01T00:00:30Z",5.773502691896258],["2000-01-01T00:01:00Z",44.44097208657794]]}]}]}`,
+		},
+		&Query{
+			name:    "stddev - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, stddev(visibility) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"error":"mixing aggregate and non-aggregate queries is not supported"}]}`,
+		},
+		&Query{
+			name:    "percentile - baseline 30s",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT percentile(visibility, 75) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","percentile"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "percentile - time",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT time, percentile(visibility, 75) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","percentile"],"values":[["2000-01-01T00:00:00Z",40],["2000-01-01T00:00:30Z",50],["2000-01-01T00:01:00Z",70]]}]}]}`,
+		},
+		&Query{
+			name:    "percentile - pressure",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT pressure, percentile(visibility, 75) FROM air where time >= '2000-01-01T00:00:00Z' AND time <= '2000-01-01T00:01:29Z' group by time(30s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","pressure","percentile"],"values":[["2000-01-01T00:00:00Z",50,40],["2000-01-01T00:00:30Z",70,50],["2000-01-01T00:01:00Z",30,70]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
 
 
 
