@@ -1449,3 +1449,49 @@ func TestServer_Query_Common(t *testing.T) {
 	}
 }
 
+// Ensure the server can query two points.
+func TestServer_Query_SelectTwoPoints(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	now := now()
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf("air temperature=100 %s\nair temperature=200 %s", strconv.FormatInt(now.UnixNano(), 10), strconv.FormatInt(now.Add(1).UnixNano(), 10))},
+	}
+
+	test.addQueries(
+		&Query{
+			name:    "selecting two points should result in two points",
+			command: `SELECT * FROM db0.rp0.air`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["%s",100],["%s",200]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+		&Query{
+			name:    "selecting two points with GROUP BY * should result in two points",
+			command: `SELECT * FROM db0.rp0.air GROUP BY *`,
+			exp:     fmt.Sprintf(`{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["%s",100],["%s",200]]}]}]}`, now.Format(time.RFC3339Nano), now.Add(1).Format(time.RFC3339Nano)),
+		},
+	)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+
