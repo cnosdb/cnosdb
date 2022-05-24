@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"strconv"
 
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
+	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/server/snapshotter"
 	"github.com/spf13/cobra"
@@ -108,4 +111,79 @@ func GetRemoveShardCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func GetCopyShardStatusCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "copy-shard-status",
+		Short:   "show copy shard status",
+		Long:    "show copy shard status",
+		Example: "  cnosdb-ctl copy-shard-status --bind 127.0.0.1:8888 ",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+
+		RunE: func(cmd *cobra.Command, args []string) error {
+			nodes, err := getDataNodesInfo(options.Env.Bind)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Source \t Dest \t Database \t Policy \t ShardID \t Status\t StartedAt\n")
+			for _, node := range nodes {
+				request := &snapshotter.Request{
+					Type: snapshotter.RequestCopyShardStatus,
+				}
+
+				conn, err := network.Dial("tcp", node.TCPHost, snapshotter.MuxHeader)
+				if err != nil {
+					continue
+				}
+				defer conn.Close()
+
+				_, err = conn.Write([]byte{byte(request.Type)})
+				if err != nil {
+					continue
+				}
+
+				if err := json.NewEncoder(conn).Encode(request); err != nil {
+					continue
+				}
+
+				rsp := snapshotter.CopyShardInfo{}
+				if err := json.NewDecoder(conn).Decode(&rsp); err != nil {
+					continue
+				}
+
+				fmt.Printf("%s \t %s \t %s \t %s \t %d \t %s \t %s\n",
+					rsp.SrcHost, rsp.DestHost, rsp.Database, rsp.Retention,
+					rsp.ShardID, rsp.Status, rsp.StartTime.String())
+			}
+
+			return nil
+		},
+	}
+}
+
+func getDataNodesInfo(metaAddr string) ([]meta.NodeInfo, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s/datanodes", metaAddr))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf(string(b))
+	}
+
+	var nodes []meta.NodeInfo
+	if err := json.NewDecoder(resp.Body).Decode(&nodes); err != nil {
+		return nil, err
+	}
+
+	return nodes, err
 }
