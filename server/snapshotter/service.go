@@ -236,7 +236,6 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 	}
 
 	dbName, rp, shardInfo := data.ShardDBRetentionAndInfo(shardID)
-	fmt.Printf("====%s %s %+v\n", dbName, rp, shardInfo)
 
 	if !shardInfo.OwnedBy(s.Node.ID) {
 		io.WriteString(conn, "Can't found shard in: "+localAddr)
