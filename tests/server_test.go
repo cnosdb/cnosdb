@@ -6690,7 +6690,7 @@ func TestServer_Query_ShowQueries_Future(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, models.MaxNanoTime),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, models.MaxNanoTime),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -6708,7 +6708,7 @@ func TestServer_Query_ShowQueries_Future(t *testing.T) {
 		&Query{
 			name:    `show series`,
 			command: "SHOW SERIES",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
@@ -6720,7 +6720,7 @@ func TestServer_Query_ShowQueries_Future(t *testing.T) {
 		&Query{
 			name:    `show tag values`,
 			command: "SHOW TAG VALUES WITH KEY = \"location\"",
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
@@ -6761,13 +6761,13 @@ func TestServer_Query_ShowSeries(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:02Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:03Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2020-11-10T23:00:04Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2020-11-10T23:00:05Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:06Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:07Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:02Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:03Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2020-11-10T23:00:04Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2020-11-10T23:00:05Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:06Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:07Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -6779,85 +6779,85 @@ func TestServer_Query_ShowSeries(t *testing.T) {
 		&Query{
 			name:    `show series`,
 			command: "SHOW SERIES",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"],["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao01,region=uswest"],["air,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao03,region=caeast"],["wind,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series from measurement`,
 			command: "SHOW SERIES FROM air",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"],["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao01,region=uswest"],["air,location=XiaoMaiDao02,region=useast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series from regular expression`,
 			command: "SHOW SERIES FROM /air|sea/",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"],["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao01,region=uswest"],["air,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series with where tag`,
 			command: "SHOW SERIES WHERE region = 'uswest'",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=uswest"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01,region=uswest"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series where tag matches regular expression`,
 			command: "SHOW SERIES WHERE region =~ /ca.*/",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=XiaoMaiDao03,region=caeast"],["wind,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series`,
-			command: "SHOW SERIES WHERE location !~ /server0[12]/",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			command: "SHOW SERIES WHERE location !~ /XiaoMaiDao0[12]/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=XiaoMaiDao03,region=caeast"],["wind,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series with from and where`,
 			command: "SHOW SERIES FROM air WHERE region = 'useast'",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=useast"],["air,location=server02,region=useast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao02,region=useast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series with time`,
 			command: "SHOW SERIES WHERE time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"],["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao01,region=uswest"],["air,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao03,region=caeast"],["wind,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series from measurement with time`,
 			command: "SHOW SERIES FROM air WHERE time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"],["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao01,region=uswest"],["air,location=XiaoMaiDao02,region=useast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series from regular expression with time`,
 			command: "SHOW SERIES FROM /air|sea/ WHERE time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01"],["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao01,region=uswest"],["air,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao02,region=useast"],["sea,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series with where tag with time`,
 			command: "SHOW SERIES WHERE region = 'uswest' AND time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=uswest"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01,region=uswest"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series where tag matches regular expression with time`,
 			command: "SHOW SERIES WHERE region =~ /ca.*/ AND time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=XiaoMaiDao03,region=caeast"],["wind,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series with != regex and time`,
-			command: "SHOW SERIES WHERE location !~ /server0[12]/ AND time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			command: "SHOW SERIES WHERE location !~ /XiaoMaiDao0[12]/ AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=XiaoMaiDao03,region=caeast"],["wind,location=XiaoMaiDao03,region=caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show series with from and where with time`,
 			command: "SHOW SERIES FROM air WHERE region = 'useast' AND time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=useast"],["air,location=server02,region=useast"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=XiaoMaiDao01,region=useast"],["air,location=XiaoMaiDao02,region=useast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 	}...)
@@ -6963,13 +6963,13 @@ func TestServer_Query_ShowSeriesExactCardinality(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:02Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:03Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:04Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:05Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:06Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:07Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:02Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:03Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:04Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:05Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:06Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:07Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -7004,7 +7004,7 @@ func TestServer_Query_ShowSeriesExactCardinality(t *testing.T) {
 		},
 		&Query{
 			name:    `show series cardinality`,
-			command: "SHOW SERIES CARDINALITY WHERE location !~ /server0[12]/",
+			command: "SHOW SERIES CARDINALITY WHERE location !~ /XiaoMaiDao0[12]/",
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
@@ -7052,7 +7052,7 @@ func TestServer_Query_ShowSeriesExactCardinality(t *testing.T) {
 		},
 		&Query{
 			name:    `show series exact cardinality`,
-			command: "SHOW SERIES EXACT CARDINALITY WHERE location !~ /server0[12]/",
+			command: "SHOW SERIES EXACT CARDINALITY WHERE location !~ /XiaoMaiDao0[12]/",
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
@@ -7144,13 +7144,13 @@ func TestServer_Query_ShowMeasurements(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`other,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`other,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -7334,13 +7334,13 @@ func TestServer_Query_ShowMeasurementExactCardinality(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`other,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`other,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -7452,13 +7452,13 @@ func TestServer_Query_ShowTagKeys(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -7521,7 +7521,7 @@ func TestServer_Query_ShowTagKeys(t *testing.T) {
 		},
 		&Query{
 			name:    "show tag keys with time where",
-			command: "SHOW TAG KEYS WHERE location = 'server03' AND time > 0",
+			command: "SHOW TAG KEYS WHERE location = 'XiaoMaiDao03' AND time > 0",
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"wind","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
@@ -7564,13 +7564,13 @@ func TestServer_Query_ShowTagValues(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -7582,139 +7582,139 @@ func TestServer_Query_ShowTagValues(t *testing.T) {
 		&Query{
 			name:    "show tag values with key",
 			command: "SHOW TAG VALUES WITH KEY = location",
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"],["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    "show tag values with key regex",
 			command: "SHOW TAG VALUES WITH KEY =~ /lo/",
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"],["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where`,
 			command: `SHOW TAG VALUES FROM air WITH KEY = location WHERE region = 'uswest'`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key regex and where`,
 			command: `SHOW TAG VALUES FROM air WITH KEY =~ /lo/ WHERE region = 'uswest'`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where matches the regular expression`,
 			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /ca.*/`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where does not match the regular expression`,
-			command: `SHOW TAG VALUES WITH KEY = region WHERE location !~ /server0[12]/`,
+			command: `SHOW TAG VALUES WITH KEY = region WHERE location !~ /XiaoMaiDao0[12]/`,
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["region","caeast"]]},{"name":"wind","columns":["key","value"],"values":[["region","caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where partially matches the regular expression`,
 			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /us/`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where partially does not match the regular expression`,
 			command: `SHOW TAG VALUES WITH KEY = location WHERE region !~ /us/`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]},{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key in and where does not match the regular expression`,
 			command: `SHOW TAG VALUES FROM air WITH KEY IN (location, region) WHERE region = 'uswest'`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["region","uswest"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key regex and where does not match the regular expression`,
 			command: `SHOW TAG VALUES FROM air WITH KEY =~ /(location|region)/ WHERE region = 'uswest'`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["region","uswest"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and measurement matches regular expression`,
 			command: `SHOW TAG VALUES FROM /air|sea/ WITH KEY = location`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"],["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    "show tag values with key where time",
 			command: "SHOW TAG VALUES WITH KEY = location WHERE time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"],["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    "show tag values with key regex where time",
 			command: "SHOW TAG VALUES WITH KEY =~ /lo/ WHERE time > 0",
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"],["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where time`,
 			command: `SHOW TAG VALUES FROM air WITH KEY = location WHERE region = 'uswest' AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key regex and where time`,
 			command: `SHOW TAG VALUES FROM air WITH KEY =~ /lo/ WHERE region = 'uswest' AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where matches the regular expression where time`,
 			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /ca.*/ AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where does not match the regular expression where time`,
-			command: `SHOW TAG VALUES WITH KEY = region WHERE location !~ /server0[12]/ AND time > 0`,
+			command: `SHOW TAG VALUES WITH KEY = region WHERE location !~ /XiaoMaiDao0[12]/ AND time > 0`,
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["region","caeast"]]},{"name":"wind","columns":["key","value"],"values":[["region","caeast"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where partially matches the regular expression where time`,
 			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /us/ AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and where partially does not match the regular expression where time`,
 			command: `SHOW TAG VALUES WITH KEY = location WHERE region !~ /us/ AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]},{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key in and where does not match the regular expression where time`,
 			command: `SHOW TAG VALUES FROM air WITH KEY IN (location, region) WHERE region = 'uswest' AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["region","uswest"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key regex and where does not match the regular expression where time`,
 			command: `SHOW TAG VALUES FROM air WITH KEY =~ /(location|region)/ WHERE region = 'uswest' AND time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["region","uswest"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    `show tag values with key and measurement matches regular expression where time`,
 			command: `SHOW TAG VALUES FROM /air|sea/ WITH KEY = location WHERE time > 0`,
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]}]}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","XiaoMaiDao01"],["location","XiaoMaiDao02"]]},{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao02"],["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
 			name:    "show tag values with value filter",
-			command: "SHOW TAG VALUES WITH KEY = location WHERE location = 'server03'",
-			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			command: "SHOW TAG VALUES WITH KEY = location WHERE location = 'XiaoMaiDao03'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]},{"name":"wind","columns":["key","value"],"values":[["location","XiaoMaiDao03"]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
 		&Query{
@@ -7761,13 +7761,13 @@ func TestServer_Query_ShowTagKeyCardinality(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -7854,7 +7854,7 @@ func TestServer_Query_ShowTagKeyCardinality(t *testing.T) {
 		},
 		&Query{
 			name:    `show tag values cardinality with key and where does not match the regular expression`,
-			command: `SHOW TAG VALUES CARDINALITY WITH KEY = region WHERE location !~ /server0[12]/`,
+			command: `SHOW TAG VALUES CARDINALITY WITH KEY = region WHERE location !~ /XiaoMaiDao0[12]/`,
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
@@ -7896,7 +7896,7 @@ func TestServer_Query_ShowTagKeyCardinality(t *testing.T) {
 		},
 		&Query{
 			name:    `show tag values exact cardinality with key and where does not match the regular expression`,
-			command: `SHOW TAG VALUES EXACT CARDINALITY WITH KEY = region WHERE location !~ /server0[12]/`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY WITH KEY = region WHERE location !~ /XiaoMaiDao0[12]/`,
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
 			params:  url.Values{"db": []string{"db0"}},
 		},
@@ -7961,13 +7961,13 @@ func TestServer_Query_ShowFieldKeys(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 field1=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server01,region=useast field4=200,field5=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast field6=200,field7=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast field8=200,field9=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 field1=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao01,region=useast field4=200,field5=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast field6=200,field7=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast field8=200,field9=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
@@ -8025,13 +8025,13 @@ func TestServer_Query_ShowFieldKeyCardinality(t *testing.T) {
 	}
 
 	writes := []string{
-		fmt.Sprintf(`air,location=server01 field1=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=uswest field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server01,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`air,location=server02,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server01,region=useast field4=200,field5=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`sea,location=server03,region=caeast field6=200,field7=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
-		fmt.Sprintf(`wind,location=server03,region=caeast field8=200,field9=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01 field1=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=uswest field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao01,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=XiaoMaiDao02,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao01,region=useast field4=200,field5=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=XiaoMaiDao03,region=caeast field6=200,field7=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=XiaoMaiDao03,region=caeast field8=200,field9=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
 	}
 
 	test := NewTest("db0", "rp0")
