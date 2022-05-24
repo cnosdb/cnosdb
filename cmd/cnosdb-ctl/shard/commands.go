@@ -165,6 +165,54 @@ func GetCopyShardStatusCommand() *cobra.Command {
 	}
 }
 
+func GetKillCopyShardCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "kill-copy-shard",
+		Short:   "kill copy shard",
+		Long:    "kill copy shard",
+		Example: "  cnosdb-ctl kill-copy-shard 127.0.0.1:8088 127.0.0.2:8088 1234",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 3 {
+				return errors.New("Input parameters count not right, MUST be 3")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			shardID, err := strconv.ParseUint(args[2], 10, 64)
+			if err != nil {
+				return err
+			}
+
+			request := &snapshotter.Request{
+				Type:              snapshotter.RequestKillCopyShard,
+				ShardID:           shardID,
+				CopyShardDestHost: args[1],
+			}
+
+			conn, err := network.Dial("tcp", args[0], snapshotter.MuxHeader)
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			_, err = conn.Write([]byte{byte(request.Type)})
+			if err != nil {
+				return err
+			}
+
+			if err := json.NewEncoder(conn).Encode(request); err != nil {
+				return fmt.Errorf("encode snapshot request: %s", err)
+			}
+
+			bytes, _ := ioutil.ReadAll(conn)
+
+			fmt.Printf("%s\n", string(bytes))
+			return nil
+		},
+	}
+}
+
 func getDataNodesInfo(metaAddr string) ([]meta.NodeInfo, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/datanodes", metaAddr))
 	if err != nil {
