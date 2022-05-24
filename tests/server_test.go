@@ -1,8 +1,10 @@
 package tests
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"math/rand"
 	"net/url"
 	"os"
@@ -1295,7 +1297,6 @@ func TestServer_Query_Tags(t *testing.T) {
 	}
 }
 
-
 func TestServer_Query_Alias(t *testing.T) {
 	t.Parallel()
 	s := OpenServer(NewConfig())
@@ -1528,7 +1529,6 @@ func TestServer_Query_SelectTwoNegativePoints(t *testing.T) {
 	}
 }
 
-
 // Ensure the server can query with relative time.
 func TestServer_Query_SelectRelativeTime(t *testing.T) {
 	t.Parallel()
@@ -1664,7 +1664,6 @@ air temperature=20 1278010024000000000
 		})
 	}
 }
-
 
 // Ensure the server can handle various group by time derivative queries.
 func TestServer_Query_SelectGroupByTimeDerivative(t *testing.T) {
@@ -1817,7 +1816,6 @@ air0,station=XiaoMaiDao02 visibility=101,pressure=100 1278010023000000000
 		})
 	}
 }
-
 
 // Ensure the server can handle various group by time derivative queries.
 func TestServer_Query_SelectGroupByTimeDerivativeWithFill(t *testing.T) {
@@ -3910,7 +3908,7 @@ func TestServer_Query_AggregateSelectors(t *testing.T) {
 			params:  url.Values{"db": []string{"db0"}},
 			command: `SELECT * FROM air`,
 			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","moisture","moisture_1","pressure","region","station","visibility"],"values":[["2000-01-01T00:00:00Z",2,"1",20,"west","XiaoMaiDao01",10],["2000-01-01T00:00:10Z",3,"2",50,"west","XiaoMaiDao02",40],["2000-01-01T00:00:20Z",4,"3",55,"east","XiaoMaiDao03",40],["2000-01-01T00:00:30Z",1,"4",60,"east","XiaoMaiDao04",40],["2000-01-01T00:00:40Z",2,"1",70,"west","XiaoMaiDao05",50],["2000-01-01T00:00:50Z",3,"2",40,"east","XiaoMaiDao06",50],["2000-01-01T00:01:00Z",4,"3",30,"west","XiaoMaiDao07",70],["2000-01-01T00:01:10Z",1,"4",10,"east","XiaoMaiDao08",90],["2000-01-01T00:01:20Z",2,"1",4,"east","XiaoMaiDao09",5]]}]}]}`,
-        },
+		},
 		&Query{
 			name:    "max - baseline 30s",
 			params:  url.Values{"db": []string{"db0"}},
@@ -6681,6 +6679,1419 @@ func TestServer_Query_DropAndRecreateMeasurement(t *testing.T) {
 	}
 }
 
+func TestServer_Query_ShowQueries_Future(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, models.MaxNanoTime),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show measurements`,
+			command: "SHOW MEASUREMENTS",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series`,
+			command: "SHOW SERIES",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag keys`,
+			command: "SHOW TAG KEYS FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values`,
+			command: "SHOW TAG VALUES WITH KEY = \"location\"",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field keys`,
+			command: "SHOW FIELD KEYS",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["fieldKey","fieldType"],"values":[["temperature","float"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowSeries(t *testing.T) {
+	t.Parallel()
+
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:02Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:03Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2020-11-10T23:00:04Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2020-11-10T23:00:05Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:06Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:07Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show series`,
+			command: "SHOW SERIES",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series from measurement`,
+			command: "SHOW SERIES FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series from regular expression`,
+			command: "SHOW SERIES FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series with where tag`,
+			command: "SHOW SERIES WHERE region = 'uswest'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=uswest"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series where tag matches regular expression`,
+			command: "SHOW SERIES WHERE region =~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series`,
+			command: "SHOW SERIES WHERE location !~ /server0[12]/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series with from and where`,
+			command: "SHOW SERIES FROM air WHERE region = 'useast'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=useast"],["air,location=server02,region=useast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series with time`,
+			command: "SHOW SERIES WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series from measurement with time`,
+			command: "SHOW SERIES FROM air WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series from regular expression with time`,
+			command: "SHOW SERIES FROM /air|sea/ WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01"],["air,location=server01,region=useast"],["air,location=server01,region=uswest"],["air,location=server02,region=useast"],["sea,location=server02,region=useast"],["sea,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series with where tag with time`,
+			command: "SHOW SERIES WHERE region = 'uswest' AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=uswest"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series where tag matches regular expression with time`,
+			command: "SHOW SERIES WHERE region =~ /ca.*/ AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series with != regex and time`,
+			command: "SHOW SERIES WHERE location !~ /server0[12]/ AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["sea,location=server03,region=caeast"],["wind,location=server03,region=caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series with from and where with time`,
+			command: "SHOW SERIES FROM air WHERE region = 'useast' AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["key"],"values":[["air,location=server01,region=useast"],["air,location=server02,region=useast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	var once sync.Once
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			once.Do(func() {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			})
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowSeriesCardinalityEstimation(t *testing.T) {
+	if testing.Short() || os.Getenv("GORACE") != "" || os.Getenv("APPVEYOR") != "" {
+		t.Skip("Skipping test in short, race and appveyor mode.")
+	}
+
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = make(Writes, 0, 10)
+	// Add 1,000,000 series.
+	for j := 0; j < cap(test.writes); j++ {
+		writes := make([]string, 0, 50000)
+		for i := 0; i < cap(writes); i++ {
+			writes = append(writes, fmt.Sprintf(`air,l=%d,h=s%d v=1 %d`, j, i, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()))
+		}
+		test.writes = append(test.writes, &Write{data: strings.Join(writes, "\n")})
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show series cardinality`,
+			command: "SHOW SERIES CARDINALITY",
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality on db0`,
+			command: "SHOW SERIES CARDINALITY ON db0",
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			}
+
+			got := struct {
+				Results []struct {
+					Series []struct {
+						Values [][]int
+					}
+				}
+			}{}
+
+			t.Log(query.act)
+			if err := json.Unmarshal([]byte(query.act), &got); err != nil {
+				t.Error(err)
+			}
+
+			cardinality := got.Results[0].Series[0].Values[0][0]
+			if cardinality < 450000 || cardinality > 550000 {
+				t.Errorf("got cardinality %d, which is 10%% or more away from expected estimation of 500,000", cardinality)
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowSeriesExactCardinality(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:02Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:03Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:04Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:05Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:06Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:07Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show series cardinality from measurement`,
+			command: "SHOW SERIES CARDINALITY FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[4]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality from regular expression`,
+			command: "SHOW SERIES CARDINALITY FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[4]]},{"name":"sea","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality with where tag`,
+			command: "SHOW SERIES CARDINALITY WHERE region = 'uswest'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality where tag matches regular expression`,
+			command: "SHOW SERIES CARDINALITY WHERE region =~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality`,
+			command: "SHOW SERIES CARDINALITY WHERE location !~ /server0[12]/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality with from and where`,
+			command: "SHOW SERIES CARDINALITY FROM air WHERE region = 'useast'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series cardinality with WHERE time should fail`,
+			command: "SHOW SERIES CARDINALITY WHERE time > now() - 1h",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW SERIES EXACT CARDINALITY doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality`,
+			command: "SHOW SERIES EXACT CARDINALITY",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[4]]},{"name":"sea","columns":["count"],"values":[[2]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality from measurement`,
+			command: "SHOW SERIES EXACT CARDINALITY FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[4]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality from regular expression`,
+			command: "SHOW SERIES EXACT CARDINALITY FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[4]]},{"name":"sea","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality with where tag`,
+			command: "SHOW SERIES EXACT CARDINALITY WHERE region = 'uswest'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality where tag matches regular expression`,
+			command: "SHOW SERIES EXACT CARDINALITY WHERE region =~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality`,
+			command: "SHOW SERIES EXACT CARDINALITY WHERE location !~ /server0[12]/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality with from and where`,
+			command: "SHOW SERIES EXACT CARDINALITY FROM air WHERE region = 'useast'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show series exact cardinality with WHERE time should fail`,
+			command: "SHOW SERIES EXACT CARDINALITY WHERE time > now() - 1h",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW SERIES EXACT CARDINALITY doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowStats(t *testing.T) {
 
 
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
 
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.CreateSubscription("db0", "rp0", "foo", "ALL", []string{"udp://localhost:9000"}); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show shots`,
+			command: "SHOW STATS",
+			exp:     "subscriber", // Should see a subscriber stat in the json
+			pattern: true,
+			skip: true,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowMeasurements(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`other,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show measurements with limit 2`,
+			command: "SHOW MEASUREMENTS LIMIT 2",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"],["other"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements using WITH`,
+			command: "SHOW MEASUREMENTS WITH MEASUREMENT = air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements using WITH and regex`,
+			command: "SHOW MEASUREMENTS WITH MEASUREMENT =~ /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"],["sea"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements using WITH and regex - no matches`,
+			command: "SHOW MEASUREMENTS WITH MEASUREMENT =~ /.*zzzzz.*/",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements where tag matches regular expression`,
+			command: "SHOW MEASUREMENTS WHERE region =~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["other"],["sea"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements where tag does not match a regular expression`,
+			command: "SHOW MEASUREMENTS WHERE region !~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"measurements","columns":["name"],"values":[["air"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements with limit 2 and time`,
+			command: "SHOW MEASUREMENTS WHERE time > 0 LIMIT 2",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENTS doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements using WITH and time`,
+			command: "SHOW MEASUREMENTS WITH MEASUREMENT = air WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENTS doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements using WITH and regex and time`,
+			command: "SHOW MEASUREMENTS WITH MEASUREMENT =~ /air|sea/ WHERE time > 0 ",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENTS doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements using WITH and regex and time - no matches`,
+			command: "SHOW MEASUREMENTS WITH MEASUREMENT =~ /.*zzzzz.*/ WHERE time > 0 ",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENTS doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements and time where tag matches regular expression `,
+			command: "SHOW MEASUREMENTS WHERE region =~ /ca.*/ AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENTS doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurements and time where tag does not match a regular expression`,
+			command: "SHOW MEASUREMENTS WHERE region !~ /ca.*/ AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENTS doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		if i == 0 {
+			if err := test.init(s); err != nil {
+				t.Fatalf("test init failed: %s", err)
+			}
+		}
+		if query.skip {
+			t.Logf("SKIP:: %s", query.name)
+			continue
+		}
+		if err := query.Execute(s); err != nil {
+			t.Error(query.Error(err))
+		} else if !query.success() {
+			t.Error(query.failureMessage())
+		}
+	}
+}
+
+func TestServer_Query_ShowMeasurementCardinalityEstimation(t *testing.T) {
+	if testing.Short() || os.Getenv("GORACE") != "" || os.Getenv("APPVEYOR") != "" {
+		t.Skip("Skipping test in short, race and appveyor mode.")
+	}
+
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = make(Writes, 0, 10)
+	for j := 0; j < cap(test.writes); j++ {
+		writes := make([]string, 0, 10000)
+		for i := 0; i < cap(writes); i++ {
+			writes = append(writes, fmt.Sprintf(`air-%d-s%d v=1 %d`, j, i, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:01Z").UnixNano()))
+		}
+		test.writes = append(test.writes, &Write{data: strings.Join(writes, "\n")})
+	}
+
+	// These queries use index sketches to estimate cardinality.
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show measurement cardinality`,
+			command: "SHOW MEASUREMENT CARDINALITY",
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement cardinality on db0`,
+			command: "SHOW MEASUREMENT CARDINALITY ON db0",
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			}
+
+			// Manually parse result rather than comparing results string, as
+			// results are not deterministic.
+			got := struct {
+				Results []struct {
+					Series []struct {
+						Values [][]int
+					}
+				}
+			}{}
+
+			t.Log(query.act)
+			if err := json.Unmarshal([]byte(query.act), &got); err != nil {
+				t.Error(err)
+			}
+
+			cardinality := got.Results[0].Series[0].Values[0][0]
+			if cardinality < 50000 || cardinality > 150000 {
+				t.Errorf("got cardinality %d, which is 10%% or more away from expected estimation of 500,000", cardinality)
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowMeasurementExactCardinality(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`other,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show measurement cardinality using FROM and regex`,
+			command: "SHOW MEASUREMENT CARDINALITY FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement cardinality using FROM and regex - no matches`,
+			command: "SHOW MEASUREMENT CARDINALITY FROM /.*zzzzz.*/",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement cardinality where tag matches regular expression`,
+			command: "SHOW MEASUREMENT CARDINALITY WHERE region =~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement cardinality where tag does not match a regular expression`,
+			command: "SHOW MEASUREMENT CARDINALITY WHERE region !~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement cardinality with time in WHERE clauses errors`,
+			command: `SHOW MEASUREMENT CARDINALITY WHERE time > now() - 1h`,
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENT EXACT CARDINALITY doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality`,
+			command: "SHOW MEASUREMENT EXACT CARDINALITY",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[3]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality using FROM`,
+			command: "SHOW MEASUREMENT EXACT CARDINALITY FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality using FROM and regex`,
+			command: "SHOW MEASUREMENT EXACT CARDINALITY FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality using FROM and regex - no matches`,
+			command: "SHOW MEASUREMENT EXACT CARDINALITY FROM /.*zzzzz.*/",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality where tag matches regular expression`,
+			command: "SHOW MEASUREMENT EXACT CARDINALITY WHERE region =~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality where tag does not match a regular expression`,
+			command: "SHOW MEASUREMENT EXACT CARDINALITY WHERE region !~ /ca.*/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show measurement exact cardinality with time in WHERE clauses errors`,
+			command: `SHOW MEASUREMENT EXACT CARDINALITY WHERE time > now() - 1h`,
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW MEASUREMENT EXACT CARDINALITY doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowTagKeys(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show tag keys`,
+			command: "SHOW TAG KEYS",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"wind","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag keys on db0`,
+			command: "SHOW TAG KEYS ON db0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"wind","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+		},
+		&Query{
+			name:    "show tag keys from",
+			command: "SHOW TAG KEYS FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag keys from regex",
+			command: "SHOW TAG KEYS FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag keys measurement not found",
+			command: "SHOW TAG KEYS FROM doesntexist",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag keys with time`,
+			command: "SHOW TAG KEYS WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"wind","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag keys on db0 with time`,
+			command: "SHOW TAG KEYS ON db0 WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"wind","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+		},
+		&Query{
+			name:    "show tag keys with time from",
+			command: "SHOW TAG KEYS FROM air WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag keys with time from regex",
+			command: "SHOW TAG KEYS FROM /air|sea/ WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag keys with time where",
+			command: "SHOW TAG KEYS WHERE location = 'server03' AND time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["tagKey"],"values":[["location"],["region"]]},{"name":"wind","columns":["tagKey"],"values":[["location"],["region"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag keys with time measurement not found",
+			command: "SHOW TAG KEYS FROM doesntexist WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	var initialized bool
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if !initialized {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+				initialized = true
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowTagValues(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "show tag values with key",
+			command: "SHOW TAG VALUES WITH KEY = location",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag values with key regex",
+			command: "SHOW TAG VALUES WITH KEY =~ /lo/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where`,
+			command: `SHOW TAG VALUES FROM air WITH KEY = location WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key regex and where`,
+			command: `SHOW TAG VALUES FROM air WITH KEY =~ /lo/ WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where matches the regular expression`,
+			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /ca.*/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where does not match the regular expression`,
+			command: `SHOW TAG VALUES WITH KEY = region WHERE location !~ /server0[12]/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["region","caeast"]]},{"name":"wind","columns":["key","value"],"values":[["region","caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where partially matches the regular expression`,
+			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /us/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where partially does not match the regular expression`,
+			command: `SHOW TAG VALUES WITH KEY = location WHERE region !~ /us/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]},{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key in and where does not match the regular expression`,
+			command: `SHOW TAG VALUES FROM air WITH KEY IN (location, region) WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key regex and where does not match the regular expression`,
+			command: `SHOW TAG VALUES FROM air WITH KEY =~ /(location|region)/ WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and measurement matches regular expression`,
+			command: `SHOW TAG VALUES FROM /air|sea/ WITH KEY = location`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag values with key where time",
+			command: "SHOW TAG VALUES WITH KEY = location WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag values with key regex where time",
+			command: "SHOW TAG VALUES WITH KEY =~ /lo/ WHERE time > 0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where time`,
+			command: `SHOW TAG VALUES FROM air WITH KEY = location WHERE region = 'uswest' AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key regex and where time`,
+			command: `SHOW TAG VALUES FROM air WITH KEY =~ /lo/ WHERE region = 'uswest' AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where matches the regular expression where time`,
+			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /ca.*/ AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where does not match the regular expression where time`,
+			command: `SHOW TAG VALUES WITH KEY = region WHERE location !~ /server0[12]/ AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["region","caeast"]]},{"name":"wind","columns":["key","value"],"values":[["region","caeast"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where partially matches the regular expression where time`,
+			command: `SHOW TAG VALUES WITH KEY = location WHERE region =~ /us/ AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and where partially does not match the regular expression where time`,
+			command: `SHOW TAG VALUES WITH KEY = location WHERE region !~ /us/ AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"]]},{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key in and where does not match the regular expression where time`,
+			command: `SHOW TAG VALUES FROM air WITH KEY IN (location, region) WHERE region = 'uswest' AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key regex and where does not match the regular expression where time`,
+			command: `SHOW TAG VALUES FROM air WITH KEY =~ /(location|region)/ WHERE region = 'uswest' AND time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["region","uswest"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values with key and measurement matches regular expression where time`,
+			command: `SHOW TAG VALUES FROM /air|sea/ WITH KEY = location WHERE time > 0`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["key","value"],"values":[["location","server01"],["location","server02"]]},{"name":"sea","columns":["key","value"],"values":[["location","server02"],["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag values with value filter",
+			command: "SHOW TAG VALUES WITH KEY = location WHERE location = 'server03'",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["key","value"],"values":[["location","server03"]]},{"name":"wind","columns":["key","value"],"values":[["location","server03"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag values with no matching value filter",
+			command: "SHOW TAG VALUES WITH KEY = location WHERE value = 'no_such_value'",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag values with non-string value filter",
+			command: "SHOW TAG VALUES WITH KEY = location WHERE value = 5000",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	var once sync.Once
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			once.Do(func() {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			})
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowTagKeyCardinality(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server02,region=useast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast temperature=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show tag key cardinality`,
+			command: "SHOW TAG KEY CARDINALITY",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]},{"name":"wind","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag key cardinality on db0`,
+			command: "SHOW TAG KEY CARDINALITY ON db0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]},{"name":"wind","columns":["count"],"values":[[2]]}]}]}`,
+		},
+		&Query{
+			name:    "show tag key cardinality from",
+			command: "SHOW TAG KEY CARDINALITY FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag key cardinality from regex",
+			command: "SHOW TAG KEY CARDINALITY FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag key cardinality measurement not found",
+			command: "SHOW TAG KEY CARDINALITY FROM doesntexist",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag key cardinality with time in WHERE clause errors",
+			command: "SHOW TAG KEY CARDINALITY FROM air WHERE time > now() - 1h",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW TAG KEY EXACT CARDINALITY doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag key exact cardinality`,
+			command: "SHOW TAG KEY EXACT CARDINALITY",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]},{"name":"wind","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag key exact cardinality on db0`,
+			command: "SHOW TAG KEY EXACT CARDINALITY ON db0",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]},{"name":"wind","columns":["count"],"values":[[2]]}]}]}`,
+		},
+		&Query{
+			name:    "show tag key exact cardinality from",
+			command: "SHOW TAG KEY EXACT CARDINALITY FROM air",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag key exact cardinality from regex",
+			command: "SHOW TAG KEY EXACT CARDINALITY FROM /air|sea/",
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag key exact cardinality measurement not found",
+			command: "SHOW TAG KEY EXACT CARDINALITY FROM doesntexist",
+			exp:     `{"results":[{"statement_id":0}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    "show tag key exact cardinality with time in WHERE clause errors",
+			command: "SHOW TAG KEY EXACT CARDINALITY FROM air WHERE time > now() - 1h",
+			exp:     `{"results":[{"statement_id":0,"error":"SHOW TAG KEY EXACT CARDINALITY doesn't support time in WHERE clause"}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key and where matches the regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY WITH KEY = location WHERE region =~ /ca.*/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key and where does not match the regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY WITH KEY = region WHERE location !~ /server0[12]/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key and where partially matches the regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY WITH KEY = location WHERE region =~ /us/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key and where partially does not match the regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY WITH KEY = location WHERE region !~ /us/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key in and where does not match the regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY FROM air WITH KEY IN (location, region) WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key regex and where does not match the regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY FROM air WITH KEY =~ /(location|region)/ WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values cardinality with key and measurement matches regular expression`,
+			command: `SHOW TAG VALUES CARDINALITY FROM /air|sea/ WITH KEY = location`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key and where matches the regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY WITH KEY = location WHERE region =~ /ca.*/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key and where does not match the regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY WITH KEY = region WHERE location !~ /server0[12]/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key and where partially matches the regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY WITH KEY = location WHERE region =~ /us/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key and where partially does not match the regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY WITH KEY = location WHERE region !~ /us/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["count"],"values":[[1]]},{"name":"wind","columns":["count"],"values":[[1]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key in and where does not match the regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY FROM air WITH KEY IN (location, region) WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key regex and where does not match the regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY FROM air WITH KEY =~ /(location|region)/ WHERE region = 'uswest'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show tag values exact cardinality with key and measurement matches regular expression`,
+			command: `SHOW TAG VALUES EXACT CARDINALITY FROM /air|sea/ WITH KEY = location`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[2]]},{"name":"sea","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowFieldKeys(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 field1=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server01,region=useast field4=200,field5=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast field6=200,field7=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast field8=200,field9=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show field keys`,
+			command: `SHOW FIELD KEYS`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["fieldKey","fieldType"],"values":[["field1","float"],["field2","float"],["field3","float"]]},{"name":"sea","columns":["fieldKey","fieldType"],"values":[["field4","float"],["field5","float"],["field6","float"],["field7","float"]]},{"name":"wind","columns":["fieldKey","fieldType"],"values":[["field8","float"],["field9","float"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field keys from measurement`,
+			command: `SHOW FIELD KEYS FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["fieldKey","fieldType"],"values":[["field1","float"],["field2","float"],["field3","float"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field keys measurement with regex`,
+			command: `SHOW FIELD KEYS FROM /air|sea/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["fieldKey","fieldType"],"values":[["field1","float"],["field2","float"],["field3","float"]]},{"name":"sea","columns":["fieldKey","fieldType"],"values":[["field4","float"],["field5","float"],["field6","float"],["field7","float"]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_ShowFieldKeyCardinality(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,location=server01 field1=100 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=uswest field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server01,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`air,location=server02,region=useast field1=200,field2=300,field3=400 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server01,region=useast field4=200,field5=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`sea,location=server03,region=caeast field6=200,field7=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+		fmt.Sprintf(`wind,location=server03,region=caeast field8=200,field9=300 %d`, mustParseTime(time.RFC3339Nano, "2009-11-10T23:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `show field key cardinality`,
+			command: `SHOW FIELD KEY CARDINALITY`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[3]]},{"name":"sea","columns":["count"],"values":[[4]]},{"name":"wind","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field key cardinality from measurement`,
+			command: `SHOW FIELD KEY CARDINALITY FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[3]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field key cardinality measurement with regex`,
+			command: `SHOW FIELD KEY CARDINALITY FROM /air|sea/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[3]]},{"name":"sea","columns":["count"],"values":[[4]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field key exact cardinality`,
+			command: `SHOW FIELD KEY EXACT CARDINALITY`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[3]]},{"name":"sea","columns":["count"],"values":[[4]]},{"name":"wind","columns":["count"],"values":[[2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field key exact cardinality from measurement`,
+			command: `SHOW FIELD KEY EXACT CARDINALITY FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[3]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+		&Query{
+			name:    `show field key exact cardinality measurement with regex`,
+			command: `SHOW FIELD KEY EXACT CARDINALITY FROM /air|sea/`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["count"],"values":[[3]]},{"name":"sea","columns":["count"],"values":[[4]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
