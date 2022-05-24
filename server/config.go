@@ -40,6 +40,8 @@ type Config struct {
 	BindAddress string `toml:"bind-address"`
 	Cluster     bool   `toml:"cluster"`
 	Hostname    string `toml:"hostname"`
+	// Server reporting
+	ReportingDisabled bool `toml:"reporting-disabled"`
 
 	Meta            *meta.Config
 	Data            tsdb.Config

@@ -22,6 +22,9 @@ bind-address = "127.0.0.1:8088"
 cluster = false
 hostname = ""
 
+# CnosDB uses voluntarily reported data from running CnosDB nodes primarily to track the adoption rates of different CnosDB versions. This data helps InfluxData support the continuing development of CnosDB.
+reporting-disabled = false
+
 [Meta]
 # Where the metadata/raft database is stored
 dir = "/var/lib/cnosdb/meta"

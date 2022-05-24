@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cnosdb/cnosdb/usage_client"
 	"io"
 	"math"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -39,6 +42,12 @@ import (
 )
 
 const NodeMuxHeader = "node"
+
+var startTime time.Time
+
+func init() {
+	startTime = time.Now().UTC()
+}
 
 type Server struct {
 	Config *Config
@@ -79,6 +88,9 @@ type Server struct {
 
 	monitor *monitor.Monitor
 
+	// Server reporting and registration
+	reportingDisabled bool
+
 	// Profiling
 	CPUProfile            string
 	CPUProfileWriteCloser io.WriteCloser
@@ -90,10 +102,11 @@ type Server struct {
 
 func NewServer(c *Config) *Server {
 	s := &Server{
-		Config:  c,
-		err:     make(chan error),
-		closing: make(chan struct{}),
-		Logger:  logger.L(),
+		Config:            c,
+		err:               make(chan error),
+		closing:           make(chan struct{}),
+		Logger:            logger.L(),
+		reportingDisabled: c.ReportingDisabled,
 	}
 
 	return s
@@ -134,6 +147,10 @@ func (s *Server) Open() error {
 		return err
 	}
 
+	// Start the reporting service, if not disabled.
+	if !s.reportingDisabled {
+		go s.startServerReporting()
+	}
 	go s.startHTTPServer()
 
 	return nil
@@ -547,6 +564,74 @@ func (s *Server) initContinueQuery() error {
 	s.continuousQuerierService.QueryExecutor = s.queryExecutor
 	s.continuousQuerierService.Monitor = s.monitor
 	return nil
+}
+
+func (s *Server) startServerReporting() {
+	s.reportServer()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.closing:
+			return
+		case <-ticker.C:
+			s.reportServer()
+		}
+	}
+}
+
+func (s *Server) reportServer() {
+	dbs := s.MetaClient.Databases()
+	numDatabases := len(dbs)
+
+	var (
+		numMeasurements int64
+		numSeries       int64
+	)
+
+	for _, db := range dbs {
+		name := db.Name
+		// Use the context.Background() to avoid timing out on this.
+		n, err := s.TSDBStore.SeriesCardinality(context.Background(), name)
+		if err != nil {
+			s.Logger.Error(fmt.Sprintf("Unable to get series cardinality for database %s: %v", name, err))
+		} else {
+			numSeries += n
+		}
+
+		// Use the context.Background() to avoid timing out on this.
+		n, err = s.TSDBStore.MeasurementsCardinality(context.Background(), name)
+		if err != nil {
+			s.Logger.Error(fmt.Sprintf("Unable to get measurement cardinality for database %s: %v", name, err))
+		} else {
+			numMeasurements += n
+		}
+	}
+
+	clusterID := s.MetaClient.ClusterID()
+	cl := usage_client.New("")
+	usage := usage_client.Usage{
+		Product: "cnosdb",
+		Data: []usage_client.UsageData{
+			{
+				Values: usage_client.Values{
+					"os":               runtime.GOOS,
+					"arch":             runtime.GOARCH,
+					"version":          s.monitor.Version,
+					"cluster_id":       fmt.Sprintf("%v", clusterID),
+					"num_series":       numSeries,
+					"num_measurements": numMeasurements,
+					"num_databases":    numDatabases,
+					"uptime":           time.Since(startTime).Seconds(),
+				},
+			},
+		},
+	}
+
+	s.Logger.Info("Sending usage statistics to cnosdb official website")
+
+	go cl.Save(usage)
 }
 
 func writeHeader(w http.ResponseWriter, code int) {
