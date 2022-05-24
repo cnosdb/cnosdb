@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/cnosdb/cnosdb/server/coordinator"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"math/rand"
 	"net/url"
@@ -8094,4 +8095,793 @@ func TestServer_Query_ShowFieldKeyCardinality(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Tests that a known CQ query with concurrent writes does not deadlock the server
+
+func TestServer_Query_EvilIdentifiers(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf("air select=1,in-bytes=2 %d", mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano())},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `query evil identifiers`,
+			command: `SELECT "select", "in-bytes" FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","select","in-bytes"],"values":[["2000-01-01T00:00:00Z",1,2]]}]}]}`,
+			params:  url.Values{"db": []string{"db0"}},
+		},
+	}...)
+
+	for i, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if i == 0 {
+				if err := test.init(s); err != nil {
+					t.Fatalf("test init failed: %s", err)
+				}
+			}
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_OrderByTime(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air,station=XiaoMaiDao1 temperature=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao1 temperature=2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:02Z").UnixNano()),
+		fmt.Sprintf(`air,station=XiaoMaiDao1 temperature=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+
+		fmt.Sprintf(`sea,presence=true temperature=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+		fmt.Sprintf(`sea,presence=true temperature=2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:02Z").UnixNano()),
+		fmt.Sprintf(`sea,presence=true temperature=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+		fmt.Sprintf(`sea,presence=false temperature=4 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:04Z").UnixNano()),
+
+		fmt.Sprintf(`wind,station=XiaoMaiDao1 free=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+		fmt.Sprintf(`wind,station=XiaoMaiDao1 free=2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:02Z").UnixNano()),
+		fmt.Sprintf(`wind,station=XiaoMaiDao2 used=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+		fmt.Sprintf(`wind,station=XiaoMaiDao2 used=4 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:02Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "order on points",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select temperature from "air" ORDER BY time DESC`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:03Z",3],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:01Z",1]]}]}]}`,
+		},
+
+		&Query{
+			name:    "order desc with tags",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select temperature from "sea" ORDER BY time DESC`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"sea","columns":["time","temperature"],"values":[["2000-01-01T00:00:04Z",4],["2000-01-01T00:00:03Z",3],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:01Z",1]]}]}]}`,
+		},
+
+		&Query{
+			name:    "order desc with sparse data",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select used, free from "wind" ORDER BY time DESC`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"wind","columns":["time","used","free"],"values":[["2000-01-01T00:00:02Z",4,null],["2000-01-01T00:00:02Z",null,2],["2000-01-01T00:00:01Z",3,null],["2000-01-01T00:00:01Z",null,1]]}]}]}`,
+		},
+
+		&Query{
+			name:    "order desc with an aggregate and sparse data",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select first("used") AS "used", first("free") AS "free" from "wind" WHERE time >= '2000-01-01T00:00:01Z' AND time <= '2000-01-01T00:00:02Z' GROUP BY station, time(1s) FILL(none) ORDER BY time DESC`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"wind","tags":{"station":"XiaoMaiDao2"},"columns":["time","used","free"],"values":[["2000-01-01T00:00:02Z",4,null],["2000-01-01T00:00:01Z",3,null]]},{"name":"wind","tags":{"station":"XiaoMaiDao1"},"columns":["time","used","free"],"values":[["2000-01-01T00:00:02Z",null,2],["2000-01-01T00:00:01Z",null,1]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		if i == 0 {
+			if err := test.init(s); err != nil {
+				t.Fatalf("test init failed: %s", err)
+			}
+		}
+		if query.skip {
+			t.Logf("SKIP:: %s", query.name)
+			continue
+		}
+		if err := query.Execute(s); err != nil {
+			t.Error(query.Error(err))
+		} else if !query.success() {
+			t.Error(query.failureMessage())
+		}
+	}
+}
+
+func TestServer_Query_FieldWithMultiplePeriods(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air foo.bar.baz=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "baseline",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select * from air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","foo.bar.baz"],"values":[["2000-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "select field with periods",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select "foo.bar.baz" from air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","foo.bar.baz"],"values":[["2000-01-01T00:00:00Z",1]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		if i == 0 {
+			if err := test.init(s); err != nil {
+				t.Fatalf("test init failed: %s", err)
+			}
+		}
+		if query.skip {
+			t.Logf("SKIP:: %s", query.name)
+			continue
+		}
+		if err := query.Execute(s); err != nil {
+			t.Error(query.Error(err))
+		} else if !query.success() {
+			t.Error(query.failureMessage())
+		}
+	}
+}
+
+func TestServer_Query_FieldWithMultiplePeriodsMeasurementPrefixMatch(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`foo foo.bar.baz=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "baseline",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select * from foo`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"foo","columns":["time","foo.bar.baz"],"values":[["2000-01-01T00:00:00Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "select field with periods",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `select "foo.bar.baz" from foo`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"foo","columns":["time","foo.bar.baz"],"values":[["2000-01-01T00:00:00Z",1]]}]}]}`,
+		},
+	}...)
+
+	for i, query := range test.queries {
+		if i == 0 {
+			if err := test.init(s); err != nil {
+				t.Fatalf("test init failed: %s", err)
+			}
+		}
+		if query.skip {
+			t.Logf("SKIP:: %s", query.name)
+			continue
+		}
+		if err := query.Execute(s); err != nil {
+			t.Error(query.Error(err))
+		} else if !query.success() {
+			t.Error(query.failureMessage())
+		}
+	}
+}
+
+func TestServer_Query_IntoTarget(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`foo value=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`foo value=2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+		fmt.Sprintf(`foo value=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+		fmt.Sprintf(`foo value=4 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:30Z").UnixNano()),
+		fmt.Sprintf(`foo value=4,foobar=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:40Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "into",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * INTO baz FROM foo`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"result","columns":["time","written"],"values":[["1970-01-01T00:00:00Z",5]]}]}]}`,
+		},
+		&Query{
+			name:    "confirm results",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * FROM baz`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"baz","columns":["time","foobar","value"],"values":[["2000-01-01T00:00:00Z",null,1],["2000-01-01T00:00:10Z",null,2],["2000-01-01T00:00:20Z",null,3],["2000-01-01T00:00:30Z",null,4],["2000-01-01T00:00:40Z",3,4]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_IntoTarget_Sparse(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`fun a=2,n=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+		fmt.Sprintf(`fun a=5,n=7 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:02Z").UnixNano()),
+		fmt.Sprintf(`fun a=11,b=13,n=17 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:11Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "into",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(a) * sum(n) as a_n, sum(b) * sum(n) as b_n INTO baz FROM fun WHERE time >= '2000-01-01T00:00:00Z' AND time < '2000-01-01T00:01:00Z' GROUP BY time(10s)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"result","columns":["time","written"],"values":[["1970-01-01T00:00:00Z",2]]}]}]}`,
+		},
+		&Query{
+			name:    "confirm results",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * FROM baz`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"baz","columns":["time","a_n","b_n"],"values":[["2000-01-01T00:00:00Z",70,null],["2000-01-01T00:00:10Z",187,221]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_DuplicateMeasurements(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	// Create a second database.
+	if err := s.CreateDatabaseAndRetentionPolicy("db1", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano())},
+	}
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	test = NewTest("db1", "rp0")
+	test.writes = Writes{
+		&Write{data: fmt.Sprintf(`air temperature=2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano())},
+	}
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "select from both databases",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT temperature FROM db0.rp0.air, db1.rp0.air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:00Z",1],["2000-01-01T00:00:10Z",2]]}]}]}`,
+		},
+	}...)
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_LargeTimestamp(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	if _, ok := s.(*RemoteServer); ok {
+		t.Skip("Skipping.  Cannot restart remote server")
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air temperature=100 %d`, models.MaxNanoTime),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    `select temperature at max nano time`,
+			params:  url.Values{"db": []string{"db0"}},
+			command: fmt.Sprintf(`SELECT temperature FROM air WHERE time <= %d`, models.MaxNanoTime),
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["` + time.Unix(0, models.MaxNanoTime).UTC().Format(time.RFC3339Nano) + `",100]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	// Open a new server with the same configuration file.
+	// This is to ensure the meta data was marshaled correctly.
+	s2 := OpenServer((s.(*LocalServer)).Config)
+	defer s2.(*LocalServer).Server.Close()
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_DotProduct(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	// Create a second database.
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air a=2,b=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`air a=-5,b=8 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:10Z").UnixNano()),
+		fmt.Sprintf(`air a=9,b=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:20Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "select dot product",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(a_b) FROM (SELECT a * b FROM air) WHERE time >= '2000-01-01T00:00:00Z' AND time < '2000-01-01T00:00:30Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sum"],"values":[["2000-01-01T00:00:00Z",-7]]}]}]}`,
+		},
+	}...)
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_ConcurrentPointsWriter_Subscriber(t *testing.T) {
+	t.Parallel()
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	if _, ok := s.(*RemoteServer); ok {
+		t.Skip("Skipping.  Cannot access PointsWriter remotely")
+	}
+	// goroutine to write points
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				wpr := &coordinator.WritePointsRequest{
+					Database:        "db0",
+					RetentionPolicy: "rp0",
+				}
+				s.WritePoints(wpr.Database, wpr.RetentionPolicy, models.ConsistencyLevelAny, nil, wpr.Points)
+			}
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	close(done)
+	wg.Wait()
+}
+
+func TestServer_WhereTimeInclusive(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air temperature=1 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:01Z").UnixNano()),
+		fmt.Sprintf(`air temperature=2 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:02Z").UnixNano()),
+		fmt.Sprintf(`air temperature=3 %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:03Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "all GTE/LTE",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time >= '2000-01-01T00:00:01Z' and time <= '2000-01-01T00:00:03Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "all GTE",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time >= '2000-01-01T00:00:01Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "all LTE",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time <= '2000-01-01T00:00:03Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "first GTE/LTE",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time >= '2000-01-01T00:00:01Z' and time <= '2000-01-01T00:00:01Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "last GTE/LTE",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time >= '2000-01-01T00:00:03Z' and time <= '2000-01-01T00:00:03Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "before GTE/LTE",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time <= '2000-01-01T00:00:00Z'`,
+			exp:     `{"results":[{"statement_id":0}]}`,
+		},
+		&Query{
+			name:    "all GT/LT",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time > '2000-01-01T00:00:00Z' and time < '2000-01-01T00:00:04Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "first GT/LT",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time > '2000-01-01T00:00:00Z' and time < '2000-01-01T00:00:02Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1]]}]}]}`,
+		},
+		&Query{
+			name:    "last GT/LT",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time > '2000-01-01T00:00:02Z' and time < '2000-01-01T00:00:04Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "all GT",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time > '2000-01-01T00:00:00Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+		&Query{
+			name:    "all LT",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT * from air where time < '2000-01-01T00:00:04Z'`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","temperature"],"values":[["2000-01-01T00:00:01Z",1],["2000-01-01T00:00:02Z",2],["2000-01-01T00:00:03Z",3]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Sample_Wildcard(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air float=1,int=1i,string="hello, cnosdb",bool=true %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "sample() with wildcard",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sample(*, 1) FROM air`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sample_bool","sample_float","sample_int","sample_string"],"values":[["2000-01-01T00:00:00Z",true,1,1,"hello, cnosdb"]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Query_Sample_LimitOffset(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		fmt.Sprintf(`air float=1,int=1i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:00:00Z").UnixNano()),
+		fmt.Sprintf(`air float=2,int=2i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:01:00Z").UnixNano()),
+		fmt.Sprintf(`air float=3,int=3i %d`, mustParseTime(time.RFC3339Nano, "2000-01-01T00:02:00Z").UnixNano()),
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "sample() with limit 1",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sample(float, 3), int FROM air LIMIT 1`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sample","int"],"values":[["2000-01-01T00:00:00Z",1,1]]}]}]}`,
+		},
+		&Query{
+			name:    "sample() with offset 1",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sample(float, 3), int FROM air OFFSET 1`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sample","int"],"values":[["2000-01-01T00:01:00Z",2,2],["2000-01-01T00:02:00Z",3,3]]}]}]}`,
+		},
+		&Query{
+			name:    "sample() with limit 1 offset 1",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sample(float, 3), int FROM air LIMIT 1 OFFSET 1`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sample","int"],"values":[["2000-01-01T00:01:00Z",2,2]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_NestedAggregateWithMathPanics(t *testing.T) {
+	t.Parallel()
+	s := OpenServer(NewConfig())
+	defer s.Close()
+
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
+		t.Fatal(err)
+	}
+
+	writes := []string{
+		`air temperature=2i 120000000000`,
+	}
+
+	test := NewTest("db0", "rp0")
+	test.writes = Writes{
+		&Write{data: strings.Join(writes, "\n")},
+	}
+
+	test.addQueries([]*Query{
+		&Query{
+			name:    "dividing by elapsed count should not panic",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(temperature) / elapsed(sum(temperature), 1m) FROM air WHERE time > 0 AND time < 10m GROUP BY time(1m)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sum_elapsed"],"values":[["1970-01-01T00:00:00Z",null],["1970-01-01T00:01:00Z",null],["1970-01-01T00:02:00Z",null],["1970-01-01T00:03:00Z",null],["1970-01-01T00:04:00Z",null],["1970-01-01T00:05:00Z",null],["1970-01-01T00:06:00Z",null],["1970-01-01T00:07:00Z",null],["1970-01-01T00:08:00Z",null],["1970-01-01T00:09:00Z",null]]}]}]}`,
+		},
+		&Query{
+			name:    "dividing by elapsed count with fill previous should not panic",
+			params:  url.Values{"db": []string{"db0"}},
+			command: `SELECT sum(temperature) / elapsed(sum(temperature), 1m) FROM air WHERE time > 0 AND time < 10m GROUP BY time(1m) FILL(previous)`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","columns":["time","sum_elapsed"],"values":[["1970-01-01T00:00:00Z",null],["1970-01-01T00:01:00Z",null],["1970-01-01T00:02:00Z",null],["1970-01-01T00:03:00Z",2],["1970-01-01T00:04:00Z",2],["1970-01-01T00:05:00Z",2],["1970-01-01T00:06:00Z",2],["1970-01-01T00:07:00Z",2],["1970-01-01T00:08:00Z",2],["1970-01-01T00:09:00Z",2]]}]}]}`,
+		},
+	}...)
+
+	if err := test.init(s); err != nil {
+		t.Fatalf("test init failed: %s", err)
+	}
+
+	for _, query := range test.queries {
+		t.Run(query.name, func(t *testing.T) {
+			if query.skip {
+				t.Skipf("SKIP:: %s", query.name)
+			}
+			if err := query.Execute(s); err != nil {
+				t.Error(query.Error(err))
+			} else if !query.success() {
+				t.Error(query.failureMessage())
+			}
+		})
+	}
+}
+
+func TestServer_Prometheus_Read(t *testing.T) {
+	//TODO: Prometheus is not yet
+}
+
+func TestServer_Prometheus_Write(t *testing.T) {
+	//TODO: Prometheus is not yet
+}
+// support for uint
+func init() {
+	models.EnableUintSupport()
 }
