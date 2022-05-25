@@ -760,7 +760,8 @@ func (e *StatementExecutor) executeShowMeasurementCardinalityStatement(ctx *quer
 		return nil, ErrDatabaseNameRequired
 	}
 
-	n, err := e.TSDBStore.MeasurementsCardinality(stmt.Database)
+	// Use the context.Background() to avoid timing out on this.
+	n, err := e.TSDBStore.MeasurementsCardinality(context.Background(), stmt.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -831,7 +832,8 @@ func (e *StatementExecutor) executeShowSeriesCardinalityStatement(ctx *query.Exe
 		return nil, ErrDatabaseNameRequired
 	}
 
-	n, err := e.TSDBStore.SeriesCardinality(stmt.Database)
+	// Use the context.Background() to avoid timing out on this.
+	n, err := e.TSDBStore.SeriesCardinality(context.Background(), stmt.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -1372,8 +1374,9 @@ type TSDBStore interface {
 	TagKeys(auth query.FineAuthorizer, shardIDs []uint64, cond cnosql.Expr) ([]tsdb.TagKeys, error)
 	TagValues(auth query.FineAuthorizer, shardIDs []uint64, cond cnosql.Expr) ([]tsdb.TagValues, error)
 
-	SeriesCardinality(database string) (int64, error)
-	MeasurementsCardinality(database string) (int64, error)
+	// Use the context.Background() to avoid timing out on this.
+	SeriesCardinality(ctx context.Context, database string) (int64, error)
+	MeasurementsCardinality(ctx context.Context, database string) (int64, error)
 
 	ShardGroup(ids []uint64) tsdb.ShardGroup
 }

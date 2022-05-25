@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -139,13 +140,13 @@ func (s *Store) Statistics(tags map[string]string) []models.Statistic {
 	statistics := make([]models.Statistic, 0, len(databases))
 	for _, database := range databases {
 		log := s.Logger.With(logger.Database(database))
-		sc, err := s.SeriesCardinality(database)
+		sc, err := s.SeriesCardinality(context.Background(), database)
 		if err != nil {
 			log.Info("Cannot retrieve series cardinality", zap.Error(err))
 			continue
 		}
 
-		mc, err := s.MeasurementsCardinality(database)
+		mc, err := s.MeasurementsCardinality(context.Background(), database)
 		if err != nil {
 			log.Info("Cannot retrieve measurement cardinality", zap.Error(err))
 			continue
@@ -1110,7 +1111,7 @@ func (s *Store) sketchesForDatabase(dbName string, getSketches func(*Shard) (est
 // Cardinality is calculated exactly by unioning all shards' bitsets of series
 // IDs. The result of this method cannot be combined with any other results.
 //
-func (s *Store) SeriesCardinality(database string) (int64, error) {
+func (s *Store) SeriesCardinality(ctx context.Context, database string) (int64, error) {
 	s.mu.RLock()
 	shards := s.filterShards(byDatabase(database))
 	s.mu.RUnlock()
@@ -1118,23 +1119,35 @@ func (s *Store) SeriesCardinality(database string) (int64, error) {
 	var setMu sync.Mutex
 	others := make([]*SeriesIDSet, 0, len(shards))
 
-	s.walkShards(shards, func(sh *Shard) error {
-		index, err := sh.Index()
-		if err != nil {
-			return err
+	err := s.walkShards(shards, func(sh *Shard) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			index, err := sh.Index()
+			if err != nil {
+				return err
+			}
+
+			seriesIDs := index.SeriesIDSet()
+			setMu.Lock()
+			others = append(others, seriesIDs)
+			setMu.Unlock()
+
+			return nil
 		}
-
-		seriesIDs := index.SeriesIDSet()
-		setMu.Lock()
-		others = append(others, seriesIDs)
-		setMu.Unlock()
-
-		return nil
 	})
-
+	if err != nil {
+		return 0, err
+	}
 	ss := NewSeriesIDSet()
 	ss.Merge(others...)
-	return int64(ss.Cardinality()), nil
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+		return int64(ss.Cardinality()), nil
+	}
 }
 
 // SeriesSketches returns the sketches associated with the series data in all
@@ -1156,18 +1169,17 @@ func (s *Store) SeriesSketches(database string) (estimator.Sketch, estimator.Ske
 //
 // Cardinality is calculated using a sketch-based estimation. The result of this
 // method cannot be combined with any other results.
-func (s *Store) MeasurementsCardinality(database string) (int64, error) {
-	ss, ts, err := s.sketchesForDatabase(database, func(sh *Shard) (estimator.Sketch, estimator.Sketch, error) {
-		if sh == nil {
-			return nil, nil, errors.New("shard nil, can't get cardinality")
-		}
-		return sh.MeasurementsSketches()
-	})
+func (s *Store) MeasurementsCardinality(ctx context.Context, database string) (int64, error) {
+	ss, ts, err := s.MeasurementsSketches(ctx, database)
 
 	if err != nil {
 		return 0, err
 	}
-	return int64(ss.Count() - ts.Count()), nil
+	mc := int64(ss.Count() - ts.Count())
+	if mc < 0 {
+		mc = 0
+	}
+	return mc, nil
 }
 
 // MeasurementsSketches returns the sketches associated with the measurement
@@ -1175,12 +1187,18 @@ func (s *Store) MeasurementsCardinality(database string) (int64, error) {
 //
 // The returned sketches can be combined with other sketches to provide an
 // estimation across distributed databases.
-func (s *Store) MeasurementsSketches(database string) (estimator.Sketch, estimator.Sketch, error) {
+func (s *Store) MeasurementsSketches(ctx context.Context, database string) (estimator.Sketch, estimator.Sketch, error) {
 	return s.sketchesForDatabase(database, func(sh *Shard) (estimator.Sketch, estimator.Sketch, error) {
-		if sh == nil {
-			return nil, nil, errors.New("shard nil, can't get cardinality")
+		// every iteration, check for timeout.
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		default:
+			if sh == nil {
+				return nil, nil, errors.New("shard nil, can't get cardinality")
+			}
+			return sh.MeasurementsSketches()
 		}
-		return sh.MeasurementsSketches()
 	})
 }
 
