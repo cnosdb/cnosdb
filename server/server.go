@@ -148,6 +148,7 @@ func (s *Server) Open() error {
 	}
 
 	// Start the reporting service, if not disabled.
+	s.reportingDisabled = true
 	if !s.reportingDisabled {
 		go s.startServerReporting()
 	}
