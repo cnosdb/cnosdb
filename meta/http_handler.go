@@ -82,6 +82,10 @@ func NewHandler(conf *ServerConfig) *Handler {
 			h.serveMetaJson,
 		},
 		{
+			"datanodes", http.MethodGet, "/datanodes", true, true,
+			h.serveDataNodes,
+		},
+		{
 			"ping", http.MethodGet, "/ping", true, true,
 			h.servePing,
 		},
@@ -190,6 +194,26 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, err := json.Marshal(ss)
+	if err != nil {
+		h.httpError(err, w, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Write(b)
+}
+
+func (h *Handler) serveDataNodes(w http.ResponseWriter, r *http.Request) {
+	if h.isClosed() {
+		h.httpError(fmt.Errorf("server closed"), w, http.StatusInternalServerError)
+		return
+	}
+
+	ss, err := h.store.snapshot()
+	if err != nil {
+		h.httpError(err, w, http.StatusInternalServerError)
+		return
+	}
+	b, err := json.Marshal(ss.DataNodes)
 	if err != nil {
 		h.httpError(err, w, http.StatusInternalServerError)
 		return

@@ -236,7 +236,6 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 	}
 
 	dbName, rp, shardInfo := data.ShardDBRetentionAndInfo(shardID)
-	fmt.Printf("====%s %s %+v\n", dbName, rp, shardInfo)
 
 	if !shardInfo.OwnedBy(s.Node.ID) {
 		io.WriteString(conn, "Can't found shard in: "+localAddr)
@@ -546,6 +545,9 @@ const (
 
 	// RequestRemoveShard represents a request for remove a shard copy
 	RequestRemoveShard
+
+	RequestCopyShardStatus
+	RequestKillCopyShard
 )
 
 // Request represents a request for a specific backup or for information
@@ -568,4 +570,14 @@ type Request struct {
 // that are in the requested database or retention policy.
 type Response struct {
 	Paths []string
+}
+
+type CopyShardInfo struct {
+	ShardID   uint64
+	SrcHost   string
+	DestHost  string
+	Database  string
+	Retention string
+	Status    string
+	StartTime time.Time
 }
