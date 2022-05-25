@@ -428,9 +428,12 @@ func (s *Server) startNodeServer() {
 				continue
 			}
 
-			if err := s.handleConn(conn); err != nil {
-				s.Logger.Error(err.Error())
-			}
+			go func() {
+				defer conn.Close()
+				if err := s.handleConn(conn); err != nil {
+					s.Logger.Error(err.Error())
+				}
+			}()
 		}
 	}()
 
@@ -440,8 +443,6 @@ func (s *Server) startNodeServer() {
 }
 
 func (s *Server) handleConn(conn net.Conn) error {
-	defer conn.Close()
-
 	var req Request
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return fmt.Errorf("Error reading request %s", err.Error())

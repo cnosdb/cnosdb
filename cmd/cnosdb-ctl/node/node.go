@@ -157,13 +157,6 @@ func dial(network, address, header string) (net.Conn, error) {
 	return conn, nil
 }
 
-const RequestClusterJoin = 0x01
-
-type Request struct {
-	Type  uint8
-	Peers []string
-}
-
 func addDataServer(metaAddr, newNodeAddr string) error {
 	peers, err := getMetaServers(metaAddr)
 	if err != nil {
@@ -174,8 +167,8 @@ func addDataServer(metaAddr, newNodeAddr string) error {
 		return ErrEmptyPeers
 	}
 
-	r := Request{}
-	r.Type = RequestClusterJoin
+	r := server.Request{}
+	r.Type = server.RequestClusterJoin
 	r.Peers = peers
 
 	conn, err := dial("tcp", newNodeAddr, server.NodeMuxHeader)
@@ -225,6 +218,33 @@ func remoteDataServer(metaAddr, remoteNodeAddr string) error {
 	}
 
 	fmt.Printf("Removed data node %d at %s\n", n.ID, n.TCPHost)
+
+	return nil
+}
+
+func updateDataNode(oldNode, newNode string) error {
+	request := &server.Request{
+		Type:     server.RequestUpdateDataNode,
+		OldAddr:  oldNode,
+		NodeAddr: newNode,
+	}
+
+	conn, err := dial("tcp", newNode, server.NodeMuxHeader)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
+		return fmt.Errorf("Encode snapshot request: %s", err.Error())
+	}
+
+	node := meta.NodeInfo{}
+	if err := json.NewDecoder(conn).Decode(&node); err != nil {
+		return err
+	}
+
+	fmt.Printf("Added data node %d at %s\n", node.ID, node.TCPHost)
 
 	return nil
 }
