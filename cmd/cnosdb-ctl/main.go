@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/node"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
@@ -109,13 +110,13 @@ func printMetaData() *cobra.Command {
 					continue
 				}
 
-				fmt.Printf("|--DataBase  Name: %s DefaultRP: %s\n", db.Name, db.DefaultRetentionPolicy)
+				fmt.Printf("|--DataBase  Name: %s DefaultRetentionPolicy: %s\n", db.Name, db.DefaultRetentionPolicy)
 				for _, rp := range db.RetentionPolicies {
-					fmt.Printf("|    |--RP  Name: %s Replica: %d Duration: %d ShardGroupDuration: %d\n",
-						rp.Name, rp.ReplicaN, rp.Duration, rp.ShardGroupDuration)
+					fmt.Printf("|    |--RetentionPolicy  Name: %s Replica: %d Duration: %d ShardGroupDuration: %d\n",
+						rp.Name, rp.ReplicaN, rp.Duration/time.Second, rp.ShardGroupDuration/time.Second)
 
 					for _, sg := range rp.ShardGroups {
-						fmt.Printf("|    |    |--Group  ID: %d Start: %s End: %s Delete: %s Truncate: %s\n", sg.ID,
+						fmt.Printf("|    |    |--ShardGroup  ID: %d Start: %s End: %s Delete: %s Truncate: %s\n", sg.ID,
 							sg.StartTime.Format("2006-01-02 15:04:05"),
 							sg.EndTime.Format("2006-01-02 15:04:05"),
 							sg.DeletedAt.Format("2006-01-02 15:04:05"),
