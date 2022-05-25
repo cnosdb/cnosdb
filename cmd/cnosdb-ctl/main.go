@@ -74,7 +74,7 @@ func GetCommand() *cobra.Command {
 
 func printMetaData() *cobra.Command {
 	return &cobra.Command{
-		Use:   "metadata",
+		Use:   "print-meta",
 		Short: "Displays the CnosDB meta data",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
@@ -95,14 +95,14 @@ func printMetaData() *cobra.Command {
 				return
 			}
 
-			fmt.Printf("Cluster  Term: %d Index: %d ClusterID: %d MaxNodeID: %d MaxGroupID: %d MaxhardID: %d\n",
+			fmt.Printf("|--Cluster  Term: %d Index: %d ClusterID: %d MaxNodeID: %d MaxGroupID: %d MaxhardID: %d\n",
 				data.Term, data.Index, data.ClusterID, data.MaxNodeID, data.MaxShardGroupID, data.MaxShardID)
 			for _, node := range data.MetaNodes {
-				fmt.Printf("Meta  ID: %d Host: %s\n", node.ID, node.Host)
+				fmt.Printf("|--Meta  ID: %d Host: %s TCPHost: %s\n", node.ID, node.Host, node.TCPHost)
 			}
 
 			for _, node := range data.DataNodes {
-				fmt.Printf("Data  ID: %d Host: %s TCPHost: %s\n", node.ID, node.Host, node.TCPHost)
+				fmt.Printf("|--Data  ID: %d Host: %s TCPHost: %s\n", node.ID, node.Host, node.TCPHost)
 			}
 
 			for _, db := range data.Databases {
