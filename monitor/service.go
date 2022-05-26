@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/build_info"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/vend/db/models"
@@ -74,6 +75,7 @@ type PointsWriter interface {
 // New returns a new instance of the monitor system.
 func New(r Reporter, c Config) *Monitor {
 	return &Monitor{
+		Version:              build_info.BuildInfoInstance.Version,
 		globalTags:           make(map[string]string),
 		diagRegistrations:    make(map[string]diagnostics.Client),
 		reporter:             r,

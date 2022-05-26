@@ -186,8 +186,7 @@ func NewHandler(conf *HTTPConfig) *Handler {
 		logger.Error(fmt.Sprintf("unable to create metaclient %s", err))
 	}
 
-	err := h.metaClient.Load()
-	if err != nil {
+	if err := h.metaClient.Load(); err != nil {
 		logger.Error(fmt.Sprintf("unable to load metadata %s", err))
 	}
 
