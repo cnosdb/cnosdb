@@ -10,6 +10,7 @@ import (
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/options"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/restore"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb/run"
+	"github.com/cnosdb/cnosdb/pkg/build_info"
 
 	"github.com/spf13/cobra"
 )
@@ -39,6 +40,9 @@ var cnosdb_examples = `  cnosdb
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
+	build_info.BuildInfoInstance.Version = version
+	build_info.BuildInfoInstance.Commit = commit
+	build_info.BuildInfoInstance.Branch = branch
 	mainCmd := GetCommand()
 	setFlags(mainCmd)
 	runCmd := run.GetCommand()
