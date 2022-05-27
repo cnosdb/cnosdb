@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/cnosdb/cnosdb/server/hh"
 	"github.com/cnosdb/cnosdb/server/snapshotter"
 	"github.com/cnosdb/cnosdb/server/subscriber"
+	"github.com/cnosdb/cnosdb/usage_client"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
@@ -39,6 +42,12 @@ import (
 )
 
 const NodeMuxHeader = "node"
+
+var startTime time.Time
+
+func init() {
+	startTime = time.Now().UTC()
+}
 
 type Server struct {
 	Config *Config
@@ -79,6 +88,9 @@ type Server struct {
 
 	monitor *monitor.Monitor
 
+	// Server reporting and registration
+	reportingDisabled bool
+
 	// Profiling
 	CPUProfile            string
 	CPUProfileWriteCloser io.WriteCloser
@@ -90,10 +102,11 @@ type Server struct {
 
 func NewServer(c *Config) *Server {
 	s := &Server{
-		Config:  c,
-		err:     make(chan error),
-		closing: make(chan struct{}),
-		Logger:  logger.L(),
+		Config:            c,
+		err:               make(chan error),
+		closing:           make(chan struct{}),
+		Logger:            logger.L(),
+		reportingDisabled: c.ReportingDisabled,
 	}
 
 	return s
@@ -134,6 +147,11 @@ func (s *Server) Open() error {
 		return err
 	}
 
+	// Start the reporting service, if not disabled.
+	s.reportingDisabled = true
+	if !s.reportingDisabled {
+		go s.startServerReporting()
+	}
 	go s.startHTTPServer()
 
 	return nil
@@ -406,11 +424,16 @@ func (s *Server) startHTTPServer() {
 	}
 }
 
-const RequestClusterJoin = 0x01
+const (
+	RequestClusterJoin uint8 = iota
+	RequestUpdateDataNode
+)
 
 type Request struct {
-	Type  uint8
-	Peers []string
+	Type     uint8
+	NodeAddr string
+	OldAddr  string
+	Peers    []string
 }
 
 func (s *Server) startNodeServer() {
@@ -418,43 +441,52 @@ func (s *Server) startNodeServer() {
 		for {
 			// Wait for next connection.
 			conn, err := s.tcpListener.Accept()
-			if err != nil && strings.Contains(err.Error(), "connection closed") {
-				s.Logger.Error("DATA node listener closed")
-			} else if err != nil {
+			if err != nil {
 				s.Logger.Error("Error accepting DATA node request", zap.Error(err))
 				continue
 			}
 
-			var r Request
-			if err := json.NewDecoder(conn).Decode(&r); err != nil {
-				s.Logger.Error("Error reading request", zap.Error(err))
-			}
-
-			switch r.Type {
-			case RequestClusterJoin:
-				if !s.NewNode {
-					conn.Close()
-					continue
+			go func() {
+				defer conn.Close()
+				if err := s.handleConn(conn); err != nil {
+					s.Logger.Error(err.Error())
 				}
-
-				if len(r.Peers) == 0 {
-					s.Logger.Error("Invalid MetaServerInfo: empty Peers")
-					conn.Close()
-					continue
-				}
-
-				s.joinCluster(conn, r.Peers)
-
-			default:
-				s.Logger.Error(fmt.Sprintf("node service request type unknown: %v", r.Type))
-			}
-			conn.Close()
+			}()
 		}
 	}()
 
 	if err := s.tcpMux.Serve(); err != nil {
 		s.Logger.Error("start node server error", zap.Error(err))
 	}
+}
+
+func (s *Server) handleConn(conn net.Conn) error {
+	var req Request
+	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+		return fmt.Errorf("Error reading request %s", err.Error())
+	}
+
+	switch req.Type {
+	case RequestClusterJoin:
+		return s.handleClusterJoin(conn, req.Peers)
+
+	default:
+		return fmt.Errorf("node service request type unknown: %v", req.Type)
+	}
+}
+
+func (s *Server) handleClusterJoin(conn net.Conn, peers []string) error {
+	if !s.NewNode {
+		return fmt.Errorf("Node is not a new node")
+	}
+
+	if len(peers) == 0 {
+		return fmt.Errorf("Invalid MetaServerInfo: empty Peers")
+	}
+
+	s.joinCluster(conn, peers)
+
+	return nil
 }
 
 func (s *Server) joinCluster(conn net.Conn, peers []string) {
@@ -547,6 +579,74 @@ func (s *Server) initContinueQuery() error {
 	s.continuousQuerierService.QueryExecutor = s.queryExecutor
 	s.continuousQuerierService.Monitor = s.monitor
 	return nil
+}
+
+func (s *Server) startServerReporting() {
+	s.reportServer()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.closing:
+			return
+		case <-ticker.C:
+			s.reportServer()
+		}
+	}
+}
+
+func (s *Server) reportServer() {
+	dbs := s.MetaClient.Databases()
+	numDatabases := len(dbs)
+
+	var (
+		numMeasurements int64
+		numSeries       int64
+	)
+
+	for _, db := range dbs {
+		name := db.Name
+		// Use the context.Background() to avoid timing out on this.
+		n, err := s.TSDBStore.SeriesCardinality(context.Background(), name)
+		if err != nil {
+			s.Logger.Error(fmt.Sprintf("Unable to get series cardinality for database %s: %v", name, err))
+		} else {
+			numSeries += n
+		}
+
+		// Use the context.Background() to avoid timing out on this.
+		n, err = s.TSDBStore.MeasurementsCardinality(context.Background(), name)
+		if err != nil {
+			s.Logger.Error(fmt.Sprintf("Unable to get measurement cardinality for database %s: %v", name, err))
+		} else {
+			numMeasurements += n
+		}
+	}
+
+	clusterID := s.MetaClient.ClusterID()
+	cl := usage_client.New("")
+	usage := usage_client.Usage{
+		Product: "cnosdb",
+		Data: []usage_client.UsageData{
+			{
+				Values: usage_client.Values{
+					"os":               runtime.GOOS,
+					"arch":             runtime.GOARCH,
+					"version":          s.monitor.Version,
+					"cluster_id":       fmt.Sprintf("%v", clusterID),
+					"num_series":       numSeries,
+					"num_measurements": numMeasurements,
+					"num_databases":    numDatabases,
+					"uptime":           time.Since(startTime).Seconds(),
+				},
+			},
+		},
+	}
+
+	s.Logger.Info("Sending usage statistics to cnosdb official website")
+
+	go cl.Save(usage)
 }
 
 func writeHeader(w http.ResponseWriter, code int) {
