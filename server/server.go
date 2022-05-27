@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/cnosdb/cnosdb/usage_client"
 	"io"
 	"math"
 	"net"
@@ -26,6 +25,7 @@ import (
 	"github.com/cnosdb/cnosdb/server/hh"
 	"github.com/cnosdb/cnosdb/server/snapshotter"
 	"github.com/cnosdb/cnosdb/server/subscriber"
+	"github.com/cnosdb/cnosdb/usage_client"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
@@ -424,11 +424,16 @@ func (s *Server) startHTTPServer() {
 	}
 }
 
-const RequestClusterJoin = 0x01
+const (
+	RequestClusterJoin uint8 = iota
+	RequestUpdateDataNode
+)
 
 type Request struct {
-	Type  uint8
-	Peers []string
+	Type     uint8
+	NodeAddr string
+	OldAddr  string
+	Peers    []string
 }
 
 func (s *Server) startNodeServer() {
@@ -436,43 +441,52 @@ func (s *Server) startNodeServer() {
 		for {
 			// Wait for next connection.
 			conn, err := s.tcpListener.Accept()
-			if err != nil && strings.Contains(err.Error(), "connection closed") {
-				s.Logger.Error("DATA node listener closed")
-			} else if err != nil {
+			if err != nil {
 				s.Logger.Error("Error accepting DATA node request", zap.Error(err))
 				continue
 			}
 
-			var r Request
-			if err := json.NewDecoder(conn).Decode(&r); err != nil {
-				s.Logger.Error("Error reading request", zap.Error(err))
-			}
-
-			switch r.Type {
-			case RequestClusterJoin:
-				if !s.NewNode {
-					conn.Close()
-					continue
+			go func() {
+				defer conn.Close()
+				if err := s.handleConn(conn); err != nil {
+					s.Logger.Error(err.Error())
 				}
-
-				if len(r.Peers) == 0 {
-					s.Logger.Error("Invalid MetaServerInfo: empty Peers")
-					conn.Close()
-					continue
-				}
-
-				s.joinCluster(conn, r.Peers)
-
-			default:
-				s.Logger.Error(fmt.Sprintf("node service request type unknown: %v", r.Type))
-			}
-			conn.Close()
+			}()
 		}
 	}()
 
 	if err := s.tcpMux.Serve(); err != nil {
 		s.Logger.Error("start node server error", zap.Error(err))
 	}
+}
+
+func (s *Server) handleConn(conn net.Conn) error {
+	var req Request
+	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+		return fmt.Errorf("Error reading request %s", err.Error())
+	}
+
+	switch req.Type {
+	case RequestClusterJoin:
+		return s.handleClusterJoin(conn, req.Peers)
+
+	default:
+		return fmt.Errorf("node service request type unknown: %v", req.Type)
+	}
+}
+
+func (s *Server) handleClusterJoin(conn net.Conn, peers []string) error {
+	if !s.NewNode {
+		return fmt.Errorf("Node is not a new node")
+	}
+
+	if len(peers) == 0 {
+		return fmt.Errorf("Invalid MetaServerInfo: empty Peers")
+	}
+
+	s.joinCluster(conn, peers)
+
+	return nil
 }
 
 func (s *Server) joinCluster(conn net.Conn, peers []string) {

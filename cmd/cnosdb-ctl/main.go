@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/node"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
@@ -30,6 +31,7 @@ func main() {
 	mainCmd.AddCommand(node.GetRemoveMetaCommand())
 	mainCmd.AddCommand(node.GetAddDataCommand())
 	mainCmd.AddCommand(node.GetRemoveDataCommand())
+	mainCmd.AddCommand(node.GetUpdateDataCommand())
 	mainCmd.AddCommand(shard.GetCopyShardCommand())
 	mainCmd.AddCommand(shard.GetRemoveShardCommand())
 	mainCmd.AddCommand(printVersion())
@@ -73,7 +75,7 @@ func GetCommand() *cobra.Command {
 
 func printMetaData() *cobra.Command {
 	return &cobra.Command{
-		Use:   "metadata",
+		Use:   "print-meta",
 		Short: "Displays the CnosDB meta data",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
@@ -94,14 +96,14 @@ func printMetaData() *cobra.Command {
 				return
 			}
 
-			fmt.Printf("Cluster  Term: %d Index: %d ClusterID: %d MaxNodeID: %d MaxGroupID: %d MaxhardID: %d\n",
+			fmt.Printf("|--Cluster  Term: %d Index: %d ClusterID: %d MaxNodeID: %d MaxGroupID: %d MaxhardID: %d\n",
 				data.Term, data.Index, data.ClusterID, data.MaxNodeID, data.MaxShardGroupID, data.MaxShardID)
 			for _, node := range data.MetaNodes {
-				fmt.Printf("Meta  ID: %d Host: %s\n", node.ID, node.Host)
+				fmt.Printf("|--Meta  ID: %d Host: %s TCPHost: %s\n", node.ID, node.Host, node.TCPHost)
 			}
 
 			for _, node := range data.DataNodes {
-				fmt.Printf("Data  ID: %d Host: %s TCPHost: %s\n", node.ID, node.Host, node.TCPHost)
+				fmt.Printf("|--Data  ID: %d Host: %s TCPHost: %s\n", node.ID, node.Host, node.TCPHost)
 			}
 
 			for _, db := range data.Databases {
@@ -109,13 +111,13 @@ func printMetaData() *cobra.Command {
 					continue
 				}
 
-				fmt.Printf("|--DataBase  Name: %s DefaultRP: %s\n", db.Name, db.DefaultRetentionPolicy)
+				fmt.Printf("|--DataBase  Name: %s DefaultRetentionPolicy: %s\n", db.Name, db.DefaultRetentionPolicy)
 				for _, rp := range db.RetentionPolicies {
-					fmt.Printf("|    |--RP  Name: %s Replica: %d Duration: %d ShardGroupDuration: %d\n",
-						rp.Name, rp.ReplicaN, rp.Duration, rp.ShardGroupDuration)
+					fmt.Printf("|    |--RetentionPolicy  Name: %s Replica: %d Duration: %d ShardGroupDuration: %d\n",
+						rp.Name, rp.ReplicaN, rp.Duration/time.Second, rp.ShardGroupDuration/time.Second)
 
 					for _, sg := range rp.ShardGroups {
-						fmt.Printf("|    |    |--Group  ID: %d Start: %s End: %s Delete: %s Truncate: %s\n", sg.ID,
+						fmt.Printf("|    |    |--ShardGroup  ID: %d Start: %s End: %s Delete: %s Truncate: %s\n", sg.ID,
 							sg.StartTime.Format("2006-01-02 15:04:05"),
 							sg.EndTime.Format("2006-01-02 15:04:05"),
 							sg.DeletedAt.Format("2006-01-02 15:04:05"),
