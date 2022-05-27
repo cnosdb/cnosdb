@@ -7,24 +7,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/network"
 	"io"
 	"io/ioutil"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/cnosdb/cnosdb/meta"
-	"github.com/cnosdb/cnosdb/pkg/network"
 )
 
 // Client provides an API for the snapshotter service.
 type Client struct {
-	host string
+	host   string
+	flag   bool
+	reader *tar.Reader
+	writer *tar.Writer
 }
 
 // NewClient returns a new *Client.
 func NewClient(host string) *Client {
-	return &Client{host: host}
+	return &Client{
+		host: host,
+		flag: true,
+	}
 }
 
 // takes a request object, writes a Base64 encoding to the tcp connection, and then sends the request to the snapshotter service.
@@ -117,7 +122,7 @@ func (c *Client) UploadShard(shardID, newShardID uint64, destinationDatabase, re
 	tw := tar.NewWriter(conn)
 	defer tw.Close()
 
-	for {
+	for c.flag {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
@@ -146,12 +151,20 @@ func (c *Client) UploadShard(shardID, newShardID uint64, destinationDatabase, re
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-
+		c.reader = tr
+		c.writer = tw
 		if _, err := io.Copy(tw, tr); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
+func (c *Client) StopUploadShard() error {
+	c.flag = false
+	if err := c.writer.Close(); err != nil && !strings.Contains(err.Error(), WriterCloseError) {
+		return err
+	}
 	return nil
 }
 
