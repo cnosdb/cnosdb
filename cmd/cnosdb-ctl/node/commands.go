@@ -19,7 +19,7 @@ func GetShowCommand() *cobra.Command {
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			peers, err := getMetaServers(options.Env.Bind)
+			peers, err := GetMetaServers(options.Env.Bind)
 			if err != nil {
 				return err
 			}

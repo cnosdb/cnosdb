@@ -46,6 +46,7 @@ type Service struct {
 		Database(name string) *meta.DatabaseInfo
 		Data() meta.Data
 		SetData(data *meta.Data) error
+		TruncateShardGroups(t time.Time) error
 		UpdateShardOwners(shardID uint64, addOwners []uint64, delOwners []uint64) error
 	}
 
@@ -165,6 +166,8 @@ func (s *Service) handleConn(conn net.Conn) error {
 		return s.copyShardToDest(conn, r.CopyShardDestHost, r.ShardID)
 	case RequestRemoveShard:
 		return s.removeShardCopy(conn, r.ShardID)
+	case RequestTruncateShards:
+		return s.truncateShardGroups(conn, r.DelaySecond)
 	case RequestKillCopyShard:
 		return s.killCopyShard(conn, r.CopyShardDestHost, r.ShardID)
 	default:
@@ -377,6 +380,22 @@ func (s *Service) removeShardCopy(conn net.Conn, shardID uint64) error {
 	}
 
 	if err := s.MetaClient.UpdateShardOwners(shardID, nil, []uint64{s.Node.ID}); err != nil {
+		io.WriteString(conn, err.Error())
+		return err
+	}
+	io.WriteString(conn, "Success ")
+	return nil
+}
+
+// remove a shard replication
+func (s *Service) truncateShardGroups(conn net.Conn, delaySecond int) error {
+	localAddr := s.Listener.Addr().String()
+	s.Logger.Info("truncate shards command ",
+		zap.String("Local", localAddr),
+		zap.Int("Delay second", delaySecond))
+
+	timestamp := time.Now().Add(time.Duration(delaySecond) * time.Second).UTC()
+	if err := s.MetaClient.TruncateShardGroups(timestamp); err != nil {
 		io.WriteString(conn, err.Error())
 		return err
 	}
@@ -627,6 +646,7 @@ const (
 
 	RequestCopyShardStatus
 	RequestKillCopyShard
+	RequestTruncateShards
 )
 
 // Request represents a request for a specific backup or for information
@@ -643,6 +663,7 @@ type Request struct {
 	ExportStart            time.Time
 	ExportEnd              time.Time
 	UploadSize             int64
+	DelaySecond            int
 }
 
 // Response contains the relative paths for all the shards on this server

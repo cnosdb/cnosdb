@@ -35,6 +35,7 @@ func main() {
 	mainCmd.AddCommand(shard.GetCopyShardCommand())
 	mainCmd.AddCommand(shard.GetRemoveShardCommand())
 	mainCmd.AddCommand(shard.GetKillCopyShardCommand())
+	mainCmd.AddCommand(shard.GetTruncateShardsCommand())
 	mainCmd.AddCommand(printVersion())
 	mainCmd.AddCommand(printMetaData())
 

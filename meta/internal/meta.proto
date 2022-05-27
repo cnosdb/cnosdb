@@ -140,6 +140,7 @@ message Command {
 		SetMetaNodeCommand               = 29;
 		DropShardCommand                 = 30;
 		UpdateShardOwnersCommand         = 31;
+		TruncatedShardsCommand           = 32;
 	}
 
 	required Type type = 1;
@@ -406,4 +407,11 @@ message UpdateShardOwnersCommand {
 	required uint64 ID = 1;
 	repeated uint64 AddOwners = 2;
 	repeated uint64 DelOwners = 3;
+}
+
+message TruncatedShardsCommand {
+	extend Command {
+		optional TruncatedShardsCommand command = 132;
+	}
+	required int64 Timestamp = 1;
 }
