@@ -93,6 +93,8 @@ func (fsm *storeFSM) Apply(l *raft.Log) interface{} {
 			return fsm.applyDeleteDataNodeCommand(&cmd)
 		case internal.Command_UpdateShardOwnersCommand:
 			return fsm.applyUpdateShardOwnersCommand(&cmd)
+		case internal.Command_TruncatedShardsCommand:
+			return fsm.applyTrancateShardsCommand(&cmd)
 		default:
 			panic(fmt.Errorf("cannot apply command: %x", l.Data))
 		}
@@ -598,6 +600,23 @@ func (fsm *storeFSM) applyUpdateShardOwnersCommand(cmd *internal.Command) interf
 	}
 
 	fsm.data = other
+	return nil
+}
+
+func (fsm *storeFSM) applyTrancateShardsCommand(cmd *internal.Command) interface{} {
+	ext, _ := proto.GetExtension(cmd, internal.E_TruncatedShardsCommand_Command)
+	v := ext.(*internal.TruncatedShardsCommand)
+	timestamp := v.GetTimestamp()
+
+	// Copy data and update.
+	other := fsm.data.Clone()
+
+	sec := timestamp / int64(time.Second)
+	nsec := timestamp % int64(time.Second)
+	other.TruncateShardGroups(time.Unix(sec, nsec).UTC())
+
+	fsm.data = other
+
 	return nil
 }
 

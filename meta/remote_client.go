@@ -809,11 +809,6 @@ func (c *RemoteClient) DropShard(id uint64) error {
 	return c.retryUntilExec(internal.Command_DropShardCommand, internal.E_DropShardCommand_Command, cmd)
 }
 
-func (c *RemoteClient) TruncateShardGroups(t time.Time) error {
-
-	return nil
-}
-
 func (c *RemoteClient) PruneShardGroups() error {
 
 	return nil
@@ -952,6 +947,14 @@ func (c *RemoteClient) DropSubscription(database, rp, name string) error {
 			Database:        proto.String(database),
 			RetentionPolicy: proto.String(rp),
 			Name:            proto.String(name),
+		},
+	)
+}
+
+func (c *RemoteClient) TruncateShardGroups(t time.Time) error {
+	return c.retryUntilExec(internal.Command_TruncatedShardsCommand, internal.E_TruncatedShardsCommand_Command,
+		&internal.TruncatedShardsCommand{
+			Timestamp: proto.Int64(t.UnixNano()),
 		},
 	)
 }

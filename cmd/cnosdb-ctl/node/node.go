@@ -43,7 +43,7 @@ func getNodeInfo(metaAddr string) (*meta.NodeInfo, error) {
 	return &node, err
 }
 
-func getMetaServers(metaAddr string) ([]string, error) {
+func GetMetaServers(metaAddr string) ([]string, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/meta-servers", metaAddr))
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func getMetaServers(metaAddr string) ([]string, error) {
 }
 
 func addMetaServer(metaAddr, newNodeAddr string) error {
-	peers, err := getMetaServers(metaAddr)
+	peers, err := GetMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func dial(network, address, header string) (net.Conn, error) {
 }
 
 func addDataServer(metaAddr, newNodeAddr string) error {
-	peers, err := getMetaServers(metaAddr)
+	peers, err := GetMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func addDataServer(metaAddr, newNodeAddr string) error {
 }
 
 func remoteDataServer(metaAddr, remoteNodeAddr string) error {
-	peers, err := getMetaServers(metaAddr)
+	peers, err := GetMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
