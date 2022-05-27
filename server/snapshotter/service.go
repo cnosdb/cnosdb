@@ -8,7 +8,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/cnosdb/cnosdb/pkg/network"
 	"io"
+	"io/ioutil"
 	"net"
 	"strings"
 	"sync"
@@ -312,16 +314,6 @@ func (s *Service) killCopyShard(conn net.Conn, destHost string, shardID uint64) 
 	dbName, rp, shardInfo := data.ShardDBRetentionAndInfo(shardID)
 	fmt.Printf("====%s %s %+v\n", dbName, rp, shardInfo)
 
-	if !shardInfo.OwnedBy(s.Node.ID) {
-		io.WriteString(conn, "Can't found shard in: "+localAddr)
-		return nil
-	}
-
-	if shardInfo.OwnedBy(info.ID) {
-		io.WriteString(conn, fmt.Sprintf("Shard %d already in %s", shardID, destHost))
-		return nil
-	}
-
 	key := fmt.Sprintf("%s_%s_%d", localAddr, destHost, shardID)
 	if _, ok := s.rs[key]; !ok {
 		io.WriteString(conn, fmt.Sprintf("The Copy Shard %d from %s to %s is not exist", shardID, localAddr, destHost))
@@ -333,10 +325,38 @@ func (s *Service) killCopyShard(conn net.Conn, destHost string, shardID uint64) 
 		io.WriteString(conn, fmt.Sprintf("The Copy Shard %d from %s to %s is not exist or it's finished", shardID, localAddr, destHost))
 		return nil
 	}
-	delete(s.rs, key)
+
 	if err := record.StopUploadShard(); err != nil {
 		io.WriteString(conn, "StopUploadShard failed: "+err.Error())
 		return err
+	}
+
+	delete(s.rs, key)
+
+	request := &Request{
+		Type:    RequestRemoveShard,
+		ShardID: shardID,
+	}
+
+	destconn, err := network.Dial("tcp", destHost, MuxHeader)
+	if err != nil {
+		return err
+	}
+	defer destconn.Close()
+
+	_, err = destconn.Write([]byte{byte(request.Type)})
+	if err != nil {
+		return err
+	}
+
+	if err := json.NewEncoder(destconn).Encode(request); err != nil {
+		return fmt.Errorf("encode snapshot request: %s", err)
+	}
+
+	bytes, err := ioutil.ReadAll(destconn)
+	if string(bytes) != "Success " || err != nil {
+		io.WriteString(conn, "The Copy Shard is killed, but delete shard in the destHost failed: "+err.Error())
+		return nil
 	}
 
 	io.WriteString(conn, "Kill Copy Shard Succeeded")
@@ -350,13 +370,6 @@ func (s *Service) removeShardCopy(conn net.Conn, shardID uint64) error {
 	s.Logger.Info("copy shard command ",
 		zap.String("Local", localAddr),
 		zap.Uint64("ShardID", shardID))
-
-	data := s.MetaClient.Data()
-	_, _, shardInfo := data.ShardDBRetentionAndInfo(shardID)
-	if !shardInfo.OwnedBy(s.Node.ID) {
-		io.WriteString(conn, "Can't found shard in: "+localAddr)
-		return nil
-	}
 
 	if err := s.TSDBStore.DeleteShard(shardID); err != nil {
 		io.WriteString(conn, err.Error())
