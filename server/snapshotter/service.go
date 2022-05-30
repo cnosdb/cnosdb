@@ -568,6 +568,7 @@ const (
 	RequestCopyShardStatus
 	RequestKillCopyShard
 	RequestTruncateShards
+	RequestUpdateData
 )
 
 // Request represents a request for a specific backup or for information

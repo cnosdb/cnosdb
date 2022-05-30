@@ -267,6 +267,57 @@ func GetTruncateShardsCommand() *cobra.Command {
 	}
 }
 
+func GetUpdateDataCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "update-data",
+		Short:   "update a data node address",
+		Long:    "update a data node address",
+		Example: "  cnosdb-ctl update-data 127.0.0.1:8088 127.0.0.2:8088",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return errors.New("Input parameters count not right, MUST be 2")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srcAddr := args[0]
+			destAddr := args[1]
+			shardID, err := strconv.ParseUint(args[2], 10, 64)
+			if err != nil {
+				return err
+			}
+
+			request := &snapshotter.Request{
+				Type:              snapshotter.RequestCopyShard,
+				CopyShardDestHost: destAddr,
+				ShardID:           shardID,
+			}
+
+			conn, err := network.Dial("tcp", srcAddr, snapshotter.MuxHeader)
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			_, err = conn.Write([]byte{byte(request.Type)})
+			if err != nil {
+				return err
+			}
+
+			// Write the request
+			if err := json.NewEncoder(conn).Encode(request); err != nil {
+				return fmt.Errorf("encode snapshot request: %s", err)
+			}
+
+			bytes, _ := ioutil.ReadAll(conn)
+
+			fmt.Printf("%s\n", string(bytes))
+			return nil
+		},
+	}
+}
+
 func getDataNodesInfo(metaAddr string) ([]meta.NodeInfo, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/datanodes", metaAddr))
 	if err != nil {
