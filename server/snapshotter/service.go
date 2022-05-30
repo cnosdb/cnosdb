@@ -60,10 +60,10 @@ type Service struct {
 
 	Listener      net.Listener
 	Logger        *zap.Logger
-	copyingShards map[string]*record
+	copyingShards map[string]*Record
 }
 
-type record struct {
+type Record struct {
 	quit chan int
 }
 
@@ -71,7 +71,7 @@ type record struct {
 func NewService() *Service {
 	return &Service{
 		Logger:        zap.NewNop(),
-		copyingShards: make(map[string]*record),
+		copyingShards: make(map[string]*Record),
 	}
 }
 
@@ -267,8 +267,7 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 	}
 
 	quit := make(chan int, 1)
-	s.copyingShards[key] = &record{quit: quit}
-
+	s.copyingShards[key] = &Record{quit: quit}
 	go func(quit chan int) {
 		reader, writer := io.Pipe()
 		defer reader.Close()
@@ -279,7 +278,6 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 				s.Logger.Error("Error backup shard", zap.Error(err))
 			}
 		}()
-		flag := true
 		go func() {
 			tr := tar.NewReader(reader)
 			client := NewClient(destHost)
@@ -293,18 +291,18 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 				return
 			}
 
-			delete(s.copyingShards, key)
 			s.Logger.Info("Success Copy Shard ", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
-			flag = false
+			delete(s.copyingShards, key)
+			quit <- 1
+			close(quit)
 		}()
 
-		for flag {
-			select {
-			case <-quit:
-				s.Logger.Info("receive a stop single", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
-				return
-			}
+		select {
+		case _, ok := <-quit:
+			s.Logger.Info("receive a quit single", zap.Bool("Exit normally", ok), zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
+			return
 		}
+
 	}(quit)
 
 	io.WriteString(conn, "Copying ......")
