@@ -283,15 +283,9 @@ func GetUpdateDataCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srcAddr := args[0]
 			destAddr := args[1]
-			shardID, err := strconv.ParseUint(args[2], 10, 64)
-			if err != nil {
-				return err
-			}
-
 			request := &snapshotter.Request{
-				Type:              snapshotter.RequestCopyShard,
+				Type:              snapshotter.RequestUpdateData,
 				CopyShardDestHost: destAddr,
-				ShardID:           shardID,
 			}
 
 			conn, err := network.Dial("tcp", srcAddr, snapshotter.MuxHeader)
