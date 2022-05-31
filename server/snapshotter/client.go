@@ -24,7 +24,9 @@ type Client struct {
 
 // NewClient returns a new *Client.
 func NewClient(host string) *Client {
-	return &Client{host: host}
+	return &Client{
+		host: host,
+	}
 }
 
 // takes a request object, writes a Base64 encoding to the tcp connection, and then sends the request to the snapshotter service.
@@ -142,16 +144,13 @@ func (c *Client) UploadShard(shardID, newShardID uint64, destinationDatabase, re
 		filepathArgs := []string{destinationDatabase, restoreRetentionPolicy, strconv.FormatUint(newShardID, 10)}
 		filepathArgs = append(filepathArgs, names[3:]...)
 		hdr.Name = filepath.ToSlash(filepath.Join(filepathArgs...))
-
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-
 		if _, err := io.Copy(tw, tr); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

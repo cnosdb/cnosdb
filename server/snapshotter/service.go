@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 
 	"go.uber.org/zap"
@@ -56,14 +58,20 @@ type Service struct {
 		DeleteShard(shardID uint64) error
 	}
 
-	Listener net.Listener
-	Logger   *zap.Logger
+	Listener      net.Listener
+	Logger        *zap.Logger
+	copyingShards map[string]*Record
+}
+
+type Record struct {
+	quit chan int
 }
 
 // NewService returns a new instance of Service.
 func NewService() *Service {
 	return &Service{
-		Logger: zap.NewNop(),
+		Logger:        zap.NewNop(),
+		copyingShards: make(map[string]*Record),
 	}
 }
 
@@ -161,6 +169,8 @@ func (s *Service) handleConn(conn net.Conn) error {
 		return s.removeShardCopy(conn, r.ShardID)
 	case RequestTruncateShards:
 		return s.truncateShardGroups(conn, r.DelaySecond)
+	case RequestKillCopyShard:
+		return s.killCopyShard(conn, r.CopyShardDestHost, r.ShardID)
 	default:
 		return fmt.Errorf("snapshotter request type unknown: %v", r.Type)
 	}
@@ -250,7 +260,15 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 		return nil
 	}
 
-	go func() {
+	key := fmt.Sprintf("%s_%s_%d", localAddr, destHost, shardID)
+	if _, ok := s.copyingShards[key]; ok {
+		io.WriteString(conn, fmt.Sprintf("The Shard %d from %s to %s is copying, please wait", shardID, localAddr, destHost))
+		return nil
+	}
+
+	quit := make(chan int, 1)
+	s.copyingShards[key] = &Record{quit: quit}
+	go func(quit chan int) {
 		reader, writer := io.Pipe()
 		defer reader.Close()
 
@@ -260,23 +278,96 @@ func (s *Service) copyShardToDest(conn net.Conn, destHost string, shardID uint64
 				s.Logger.Error("Error backup shard", zap.Error(err))
 			}
 		}()
+		go func() {
+			tr := tar.NewReader(reader)
+			client := NewClient(destHost)
+			if err := client.UploadShard(shardID, shardID, dbName, rp, tr); err != nil {
+				s.Logger.Error("Error upload shard", zap.Error(err))
+				return
+			}
 
-		tr := tar.NewReader(reader)
-		client := NewClient(destHost)
-		if err := client.UploadShard(shardID, shardID, dbName, rp, tr); err != nil {
-			s.Logger.Error("Error upload shard", zap.Error(err))
+			if err := s.MetaClient.UpdateShardOwners(shardID, []uint64{info.ID}, nil); err != nil {
+				s.Logger.Error("Error update owner", zap.Error(err))
+				return
+			}
+
+			s.Logger.Info("Success Copy Shard ", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
+			delete(s.copyingShards, key)
+			quit <- 1
+			close(quit)
+		}()
+
+		select {
+		case _, ok := <-quit:
+			s.Logger.Info("receive a quit single", zap.Bool("Exit normally", ok), zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
 			return
 		}
 
-		if err := s.MetaClient.UpdateShardOwners(shardID, []uint64{info.ID}, nil); err != nil {
-			s.Logger.Error("Error update owner", zap.Error(err))
-			return
-		}
-
-		s.Logger.Info("Success Copy Shard ", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
-	}()
+	}(quit)
 
 	io.WriteString(conn, "Copying ......")
+
+	return nil
+}
+
+// kill a copy-shard command
+func (s *Service) killCopyShard(conn net.Conn, destHost string, shardID uint64) error {
+	localAddr := s.Listener.Addr().String()
+	s.Logger.Info("kill copy shard command ",
+		zap.String("Local", localAddr),
+		zap.String("Dest", destHost),
+		zap.Uint64("ShardID", shardID))
+
+	data := s.MetaClient.Data()
+	info := data.DataNodeByAddr(destHost)
+	if info == nil {
+		io.WriteString(conn, "Can't found data node: "+destHost)
+		return nil
+	}
+
+	key := fmt.Sprintf("%s_%s_%d", localAddr, destHost, shardID)
+	if _, ok := s.copyingShards[key]; !ok {
+		io.WriteString(conn, fmt.Sprintf("The Copy Shard %d from %s to %s is not exist", shardID, localAddr, destHost))
+		return nil
+	}
+
+	record := s.copyingShards[key]
+	if record == nil {
+		io.WriteString(conn, fmt.Sprintf("The Copy Shard %d from %s to %s is not exist or it's finished", shardID, localAddr, destHost))
+		return nil
+	}
+
+	close(record.quit)
+
+	delete(s.copyingShards, key)
+
+	request := &Request{
+		Type:    RequestRemoveShard,
+		ShardID: shardID,
+	}
+
+	destconn, err := network.Dial("tcp", destHost, MuxHeader)
+	if err != nil {
+		return err
+	}
+	defer destconn.Close()
+
+	_, err = destconn.Write([]byte{byte(request.Type)})
+	if err != nil {
+		return err
+	}
+
+	if err := json.NewEncoder(destconn).Encode(request); err != nil {
+		return fmt.Errorf("encode snapshot request: %s", err)
+	}
+
+	bytes, err := ioutil.ReadAll(destconn)
+	if string(bytes) != "Success " || err != nil {
+		io.WriteString(conn, "The Copy Shard is killed, but delete shard in the destHost failed: "+err.Error())
+		return nil
+	}
+
+	io.WriteString(conn, "Kill Copy Shard Succeeded")
 
 	return nil
 }
@@ -287,13 +378,6 @@ func (s *Service) removeShardCopy(conn net.Conn, shardID uint64) error {
 	s.Logger.Info("copy shard command ",
 		zap.String("Local", localAddr),
 		zap.Uint64("ShardID", shardID))
-
-	data := s.MetaClient.Data()
-	_, _, shardInfo := data.ShardDBRetentionAndInfo(shardID)
-	if !shardInfo.OwnedBy(s.Node.ID) {
-		io.WriteString(conn, "Can't found shard in: "+localAddr)
-		return nil
-	}
 
 	if err := s.TSDBStore.DeleteShard(shardID); err != nil {
 		io.WriteString(conn, err.Error())
