@@ -306,6 +306,20 @@ func (c *RemoteClient) CreateDataNode(httpAddr, tcpAddr string) (*NodeInfo, erro
 	return n, nil
 }
 
+func (c *RemoteClient) UpdateDataNodeAddr(id uint64, httpAddr, tcpAddr string) error {
+	cmd := &internal.UpdateDataNodeCommand{
+		ID:      proto.Uint64(id),
+		Host:    proto.String(httpAddr),
+		TCPHost: proto.String(tcpAddr),
+	}
+
+	if err := c.retryUntilExec(internal.Command_CreateDataNodeCommand, internal.E_CreateDataNodeCommand_Command, cmd); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // DataNodeByHTTPHost returns the data node with the give http bind address
 func (c *RemoteClient) DataNodeByHTTPHost(httpAddr string) (*NodeInfo, error) {
 	nodes, _ := c.DataNodes()
