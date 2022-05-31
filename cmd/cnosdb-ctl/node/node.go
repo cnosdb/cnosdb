@@ -167,7 +167,7 @@ func addDataServer(metaAddr, newNodeAddr string) error {
 		return ErrEmptyPeers
 	}
 
-	r := server.Request{}
+	r := server.NodeRequest{}
 	r.Type = server.RequestClusterJoin
 	r.Peers = peers
 
@@ -223,7 +223,7 @@ func remoteDataServer(metaAddr, remoteNodeAddr string) error {
 }
 
 func replaceDataNode(oldNode, newNode string) error {
-	request := &server.Request{
+	request := &server.NodeRequest{
 		Type:     server.RequestUpdateDataNode,
 		OldAddr:  oldNode,
 		NodeAddr: newNode,

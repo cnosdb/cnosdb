@@ -1,11 +1,15 @@
 package node
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-ctl/options"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/network"
+	"github.com/cnosdb/cnosdb/server"
 
 	"github.com/spf13/cobra"
 )
@@ -133,12 +137,12 @@ func GetRemoveDataCommand() *cobra.Command {
 	}
 }
 
-func GetReplaceDataCommand() *cobra.Command {
+func GetUpdateDataCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "replace-data",
-		Short:   "replace old data node with o new node",
-		Long:    "replace-data",
-		Example: "  cnosdb-ctl replace-data 127.0.0.1:8088 127.0.0.2:8088",
+		Use:     "update-data",
+		Short:   "update old data node with o new node",
+		Long:    "update-data",
+		Example: "  cnosdb-ctl update-data 127.0.0.1:8088 127.0.0.2:8088",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return errors.New("Input parameters count not right, MUST be 2")
@@ -151,6 +155,51 @@ func GetReplaceDataCommand() *cobra.Command {
 			if err != nil {
 				fmt.Println(err)
 			}
+		},
+	}
+}
+
+func GetReplaceDataCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "replace-data",
+		Short:   "replace a data node address with o new node",
+		Long:    "replace a data node address with o new node",
+		Example: "  cnosdb-ctl replace-data 127.0.0.1:8088 127.0.0.2:8088",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return errors.New("Input parameters count not right, MUST be 2")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srcAddr := args[0]
+			destAddr := args[1]
+			request := &server.NodeRequest{
+				Type:     server.RequestReplaceDataNode,
+				NodeAddr: destAddr,
+			}
+
+			conn, err := network.Dial("tcp", srcAddr, server.NodeMuxHeader)
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			_, err = conn.Write([]byte{byte(request.Type)})
+			if err != nil {
+				return err
+			}
+
+			// Write the request
+			if err := json.NewEncoder(conn).Encode(request); err != nil {
+				return fmt.Errorf("encode snapshot request: %s", err)
+			}
+
+			bytes, _ := ioutil.ReadAll(conn)
+
+			fmt.Printf("%s\n", string(bytes))
+			return nil
 		},
 	}
 }

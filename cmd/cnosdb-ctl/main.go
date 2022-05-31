@@ -32,10 +32,11 @@ func main() {
 	mainCmd.AddCommand(node.GetAddDataCommand())
 	mainCmd.AddCommand(node.GetRemoveDataCommand())
 	mainCmd.AddCommand(node.GetReplaceDataCommand())
+	mainCmd.AddCommand(node.GetUpdateDataCommand())
 	mainCmd.AddCommand(shard.GetCopyShardCommand())
 	mainCmd.AddCommand(shard.GetRemoveShardCommand())
 	mainCmd.AddCommand(shard.GetTruncateShardsCommand())
-	mainCmd.AddCommand(shard.GetUpdateDataCommand())
+
 	mainCmd.AddCommand(printVersion())
 	mainCmd.AddCommand(printMetaData())
 
