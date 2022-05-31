@@ -141,7 +141,6 @@ message Command {
 		DropShardCommand                 = 30;
 		UpdateShardOwnersCommand         = 31;
 		TruncatedShardsCommand           = 32;
-		UpdateDataAddressCommand         = 33;
 	}
 
 	required Type type = 1;
@@ -415,14 +414,4 @@ message TruncatedShardsCommand {
 		optional TruncatedShardsCommand command = 132;
 	}
 	required int64 Timestamp = 1;
-}
-
-message UpdateDataAddressCommand {
-	extend Command {
-		optional UpdateDataAddressCommand command = 133;
-	}
-
-	required uint64 NodeID   = 1;
-	required string HTTPAddr = 2;
-	required string TCPAddr  = 3;
 }
