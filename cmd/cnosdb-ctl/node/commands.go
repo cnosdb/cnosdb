@@ -133,12 +133,12 @@ func GetRemoveDataCommand() *cobra.Command {
 	}
 }
 
-func GetUpdateDataCommand() *cobra.Command {
+func GetReplaceDataCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "update-data",
+		Use:     "replace-data",
 		Short:   "replace old data node with o new node",
-		Long:    "update-data",
-		Example: "  cnosdb-ctl update-data 127.0.0.1:8088 127.0.0.2:8088",
+		Long:    "replace-data",
+		Example: "  cnosdb-ctl replace-data 127.0.0.1:8088 127.0.0.2:8088",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return errors.New("Input parameters count not right, MUST be 2")
@@ -147,7 +147,7 @@ func GetUpdateDataCommand() *cobra.Command {
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			err := updateDataNode(args[0], args[1])
+			err := replaceDataNode(args[0], args[1])
 			if err != nil {
 				fmt.Println(err)
 			}

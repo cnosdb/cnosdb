@@ -161,6 +161,11 @@ func (s *Service) handleConn(conn net.Conn) error {
 		return s.removeShardCopy(conn, r.ShardID)
 	case RequestTruncateShards:
 		return s.truncateShardGroups(conn, r.DelaySecond)
+	case RequestUpdateData:
+		go s.updateDataToDest(r.CopyShardDestHost)
+		io.WriteString(conn, "Processing ......")
+		return nil
+
 	default:
 		return fmt.Errorf("snapshotter request type unknown: %v", r.Type)
 	}
@@ -322,6 +327,44 @@ func (s *Service) truncateShardGroups(conn net.Conn, delaySecond int) error {
 	}
 	io.WriteString(conn, "Success ")
 	return nil
+}
+
+func (s *Service) updateDataToDest(destHost string) {
+	s.Logger.Info("update data command ",
+		zap.String("Local", s.Listener.Addr().String()),
+		zap.String("Destination", destHost))
+
+	data := s.MetaClient.Data()
+	shardList := data.DataNodeContainShardsByID(s.Node.ID)
+	for _, shardID := range shardList {
+		data := s.MetaClient.Data()
+		dbName, rp, shardInfo := data.ShardDBRetentionAndInfo(shardID)
+		if !shardInfo.OwnedBy(s.Node.ID) {
+			continue
+		}
+
+		reader, writer := io.Pipe()
+		go func() {
+			if err := s.TSDBStore.BackupShard(shardID, time.Time{}, writer); err != nil {
+				writer.CloseWithError(err)
+				s.Logger.Error("Error backup Shard", zap.Uint64("shardID", shardID), zap.Error(err))
+			} else {
+				writer.Close()
+			}
+		}()
+
+		tr := tar.NewReader(reader)
+		client := NewClient(destHost)
+		if err := client.UploadShard(shardID, shardID, dbName, rp, tr); err != nil {
+			reader.CloseWithError(err)
+			s.Logger.Error("Error upload Shard", zap.Uint64("shardID", shardID), zap.Error(err))
+			break
+		} else {
+			reader.Close()
+		}
+
+		s.Logger.Info("Success Copy Shard ", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
+	}
 }
 
 // iterate over a list of newDB's that should have just been added to the metadata

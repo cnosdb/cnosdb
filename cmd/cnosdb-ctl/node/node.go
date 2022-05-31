@@ -222,7 +222,7 @@ func remoteDataServer(metaAddr, remoteNodeAddr string) error {
 	return nil
 }
 
-func updateDataNode(oldNode, newNode string) error {
+func replaceDataNode(oldNode, newNode string) error {
 	request := &server.Request{
 		Type:     server.RequestUpdateDataNode,
 		OldAddr:  oldNode,
