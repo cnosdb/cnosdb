@@ -25,19 +25,19 @@ import (
 var benchServer Server
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&verboseServerLogs, "vv", false, "Turn on very verbose server logging.")
-	flag.BoolVar(&cleanupData, "clean", true, "Clean up test data on disk.")
-	flag.Int64Var(&seed, "seed", 0, "Set specific seed controlling randomness.")
+	flag.BoolVar(&VerboseServerLogs, "vv", false, "Turn on very verbose server logging.")
+	flag.BoolVar(&CleanupData, "clean", true, "Clean up test data on disk.")
+	flag.Int64Var(&Seed, "seed", 0, "Set specific seed controlling randomness.")
 	flag.Parse()
 
 	// Set random seed if not explicitly set.
-	if seed == 0 {
-		seed = time.Now().UnixNano()
+	if Seed == 0 {
+		Seed = time.Now().UnixNano()
 	}
-	rand.Seed(seed)
+	rand.Seed(Seed)
 
 	var r int
-	for _, indexType = range tsdb.RegisteredIndexes() {
+	for _, IndexType = range tsdb.RegisteredIndexes() {
 		//setup server
 		c := NewConfig()
 		c.RetentionPolicy.Enabled = false
@@ -45,16 +45,17 @@ func TestMain(m *testing.M) {
 		c.Subscriber.Enabled = false
 		c.ContinuousQuery.Enabled = true
 		c.Data.MaxValuesPerTag = 1000000 // 1M
-		c.Data.Index = indexType
+		c.Data.Index = IndexType
 		c.Log = logger.NewDefaultLogConfig()
 		c.Log.Level = zapcore.ErrorLevel
+		c.HTTPD.MaxBodySize = 0
 		if err := logger.InitZapLogger(c.Log); err != nil {
 			fmt.Printf("parse log config: %s\n", err)
 		}
 		benchServer = OpenDefaultServer(c)
 
 		if testing.Verbose() {
-			fmt.Printf("================ Running all tests #{%v} index ================\n", indexType)
+			fmt.Printf("================ Running all tests #{%v} index ================\n", IndexType)
 		}
 
 		if curr := m.Run(); r == 0 {
@@ -7091,7 +7092,6 @@ func TestServer_Query_ShowSeriesExactCardinality(t *testing.T) {
 
 func TestServer_Query_ShowStats(t *testing.T) {
 
-
 	t.Parallel()
 	s := OpenServer(NewConfig())
 	defer s.Close()
@@ -7111,7 +7111,7 @@ func TestServer_Query_ShowStats(t *testing.T) {
 			command: "SHOW STATS",
 			exp:     "subscriber", // Should see a subscriber stat in the json
 			pattern: true,
-			skip: true,
+			skip:    true,
 		},
 	}...)
 
@@ -8881,6 +8881,7 @@ func TestServer_Prometheus_Read(t *testing.T) {
 func TestServer_Prometheus_Write(t *testing.T) {
 	//TODO: Prometheus is not yet
 }
+
 // support for uint
 func init() {
 	models.EnableUintSupport()
