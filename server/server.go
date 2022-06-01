@@ -66,7 +66,6 @@ type Server struct {
 	httpServer  *http.Server
 
 	Node       *cnosdb.Node
-	NewNode    bool
 	metaServer *meta.Server
 	meta.MetaClient
 
@@ -202,7 +201,6 @@ func (s *Server) initMetaStore() error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		s.NewNode = true
 		s.Node = cnosdb.NewNode(s.Config.Meta.Dir)
 	} else {
 		s.Node = node
@@ -369,7 +367,7 @@ func (s *Server) openServices() error {
 
 func (s *Server) initMetaClient() error {
 	var metaCli meta.MetaClient
-	if s.Config.Cluster == false {
+	if !s.Config.Cluster {
 		metaCli = meta.NewClient(s.Config.Meta)
 		metaCli.WithLogger(s.Logger)
 	} else {
@@ -429,6 +427,7 @@ const (
 	RequestClusterJoin uint8 = iota
 	RequestUpdateDataNode
 	RequestReplaceDataNode
+	RequestClusterPreJoin
 )
 
 type NodeRequest struct {
@@ -456,7 +455,7 @@ func (s *Server) startNodeServer() {
 			go func() {
 				defer conn.Close()
 				if err := s.handleConn(conn); err != nil {
-					s.Logger.Error(err.Error())
+					s.Logger.Info("node service handle conn error", zap.Error(err))
 				}
 			}()
 		}
@@ -482,14 +481,16 @@ func (s *Server) handleConn(conn net.Conn) error {
 		go s.handleReplaceDataNode(req.NodeAddr)
 		io.WriteString(conn, "Processing ......")
 		return nil
+	case RequestClusterPreJoin:
+		return s.handleClusterPreJoin(conn, req.Peers)
 	default:
 		return fmt.Errorf("node service request type unknown: %v", req.Type)
 	}
 }
 
 func (s *Server) handleClusterJoin(conn net.Conn, peers []string) error {
-	if !s.NewNode {
-		return fmt.Errorf("Node is not a new node")
+	if len(s.Node.Peers) > 0 {
+		return fmt.Errorf("Node is already in cluster %v", s.Node.Peers)
 	}
 
 	if len(peers) == 0 {
@@ -501,10 +502,38 @@ func (s *Server) handleClusterJoin(conn net.Conn, peers []string) error {
 	return nil
 }
 
+func (s *Server) handleClusterPreJoin(conn net.Conn, peers []string) error {
+	if len(peers) == 0 {
+		return fmt.Errorf("Invalid MetaServerInfo: empty Peers")
+	}
+
+	s.Node.ID = 0
+	s.Node.Peers = peers
+	rsp := NodeResponse{
+		StatusCode: 0,
+	}
+	if err := json.NewEncoder(conn).Encode(rsp); err != nil {
+		s.Logger.Error("error writing response", zap.Error(err))
+	}
+
+	return nil
+}
+
 func (s *Server) handleReplaceDataNode(destHost string) {
-	s.Logger.Info("update data command ",
+	s.Logger.Info("raplace data command ",
 		zap.String("Local", s.TCPAddr()),
 		zap.String("Destination", destHost))
+
+	req := &NodeRequest{
+		Type:  RequestClusterPreJoin,
+		Peers: s.Node.Peers,
+	}
+	_, err := s.doRequest(destHost, req)
+	if err != nil {
+		s.Logger.Error("pre join cluster request error", zap.Error(err))
+		return
+	}
+	time.Sleep(time.Second * 3)
 
 	data := s.MetaClient.Data()
 	shardList := data.DataNodeContainShardsByID(s.Node.ID)
@@ -512,6 +541,9 @@ func (s *Server) handleReplaceDataNode(destHost string) {
 		data := s.MetaClient.Data()
 		dbName, rp, shardInfo := data.ShardDBRetentionAndInfo(shardID)
 		if !shardInfo.OwnedBy(s.Node.ID) {
+			continue
+		}
+		if s := s.TSDBStore.Shard(shardID); s == nil {
 			continue
 		}
 
@@ -530,7 +562,7 @@ func (s *Server) handleReplaceDataNode(destHost string) {
 		if err := client.UploadShard(shardID, shardID, dbName, rp, tr); err != nil {
 			reader.CloseWithError(err)
 			s.Logger.Error("Error upload Shard", zap.Uint64("shardID", shardID), zap.Error(err))
-			break
+			return
 		} else {
 			reader.Close()
 		}
@@ -538,42 +570,25 @@ func (s *Server) handleReplaceDataNode(destHost string) {
 		s.Logger.Info("Success Copy Shard ", zap.Uint64("ShardID", shardID), zap.String("Host", destHost))
 	}
 
-	req := NodeRequest{}
-	req.Type = RequestUpdateDataNode
-	req.Peers = s.Node.Peers
-	req.OldAddr = s.TCPAddr()
-
-	conn, err := net.Dial("tcp", destHost)
+	req = &NodeRequest{
+		Type:    RequestUpdateDataNode,
+		Peers:   s.Node.Peers,
+		OldAddr: s.TCPAddr(),
+	}
+	rsp, err := s.doRequest(destHost, req)
 	if err != nil {
-		s.Logger.Error("dial error ", zap.String("host", destHost), zap.Error(err))
-		return
-	}
-	defer conn.Close()
-
-	if _, err := conn.Write([]byte(NodeMuxHeader)); err != nil {
-		s.Logger.Error("write mux header", zap.Error(err))
-		return
-	}
-
-	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		s.Logger.Error("Encode request error", zap.Error(err))
-		return
-	}
-
-	rsp := NodeResponse{}
-	if err := json.NewDecoder(conn).Decode(&rsp); err != nil {
 		s.Logger.Error("Decode response error", zap.Error(err))
 		return
 	}
+
+	s.Node.ID = 0
+	s.Node.Peers = nil
+	s.Node.Save("")
 
 	s.Logger.Info("update data node response ", zap.Int("status", int(rsp.StatusCode)), zap.String("message", rsp.Message))
 }
 
 func (s *Server) handleUpdateDataNode(conn net.Conn, peers []string, oldAddr string) error {
-	if !s.NewNode {
-		return fmt.Errorf("Node is not a new node")
-	}
-
 	if len(peers) == 0 {
 		return fmt.Errorf("Invalid MetaServerInfo: empty Peers")
 	}
@@ -592,28 +607,46 @@ func (s *Server) handleUpdateDataNode(conn net.Conn, peers []string, oldAddr str
 		return err
 	}
 
-	err = metaClient.UpdateDataNodeAddr(nodeInfo.ID, s.HTTPAddr(), s.TCPAddr())
-	for err != nil {
+	if err := metaClient.UpdateDataNodeAddr(nodeInfo.ID, s.HTTPAddr(), s.TCPAddr()); err != nil {
 		s.Logger.Error("unable to update data node. retry in 1s", zap.Error(err))
-		time.Sleep(time.Second)
-		err = metaClient.UpdateDataNodeAddr(nodeInfo.ID, s.HTTPAddr(), s.TCPAddr())
+		return err
 	}
 
 	s.Node.ID = nodeInfo.ID
 	s.Node.Peers = peers
-
 	if err := s.Node.Save(""); err != nil {
 		s.Logger.Error("error save node", zap.Error(err))
 		return err
 	}
-	s.NewNode = false
 
 	rsp := NodeResponse{StatusCode: 0}
 	if err := json.NewEncoder(conn).Encode(rsp); err != nil {
 		s.Logger.Error("error writing response", zap.Error(err))
+		return err
 	}
 
 	return nil
+}
+
+func (s *Server) doRequest(host string, req *NodeRequest) (*NodeResponse, error) {
+	// Connect to node service.
+	conn, err := network.Dial("tcp", host, NodeMuxHeader)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return nil, fmt.Errorf("Encode node request: %s", err)
+	}
+
+	rsp := &NodeResponse{}
+	if err := json.NewDecoder(conn).Decode(rsp); err != nil {
+		s.Logger.Error("Decode response error", zap.Error(err))
+		return nil, err
+	}
+
+	return rsp, nil
 }
 
 func (s *Server) joinCluster(conn net.Conn, peers []string) {
@@ -650,7 +683,6 @@ func (s *Server) joinCluster(conn net.Conn, peers []string) {
 		s.Logger.Error("error save node", zap.Error(err))
 		return
 	}
-	s.NewNode = false
 
 	if err := json.NewEncoder(conn).Encode(n); err != nil {
 		s.Logger.Error("error writing response", zap.Error(err))
