@@ -557,6 +557,16 @@ func TestMetaClient_CreateUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	users := c.Users()
+	if len(users) != 2 {
+		t.Fatalf("The length of users should be 2")
+	}
+
+	exists := c.AdminUserExists()
+	if !exists {
+		t.Fatalf("admin should exist")
+	}
+
 	u, err := c.User("Jerry")
 	if err != nil {
 		t.Fatal(err)
@@ -954,6 +964,22 @@ func TestMetaClient_PrecreateShardGroups(t *testing.T) {
 	} else if len(groups) != 2 {
 		t.Fatalf("wrong number of shard groups: %d", len(groups))
 	}
+
+	//TODO use ShardsByTimeRange return ShardGroupInfo
+	//how to construct cnosql.Sources
+	//sources := cnosql.Sources{}
+	//groups2, err := c.ShardsByTimeRange(sources,tmin,tmax)
+	//if err != nil {
+	//	t.Fatal(err)
+	//} else if len(groups2) != 2 {
+	//	t.Fatalf("wrong number of shard groups: %d", len(groups))
+	//}
+
+	sds := c.ShardIDs()
+	if len(sds) != 2 {
+		t.Fatalf("The length of the shard IDs should be 2")
+	}
+
 }
 
 func TestMetaClient_CreateShardGroupIdempotent(t *testing.T) {
@@ -1119,6 +1145,106 @@ func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
 	} else if idAfter != id {
 		t.Fatalf("cluster id not the same: %d, %d", idAfter, id)
 	}
+}
+
+func TestMetaClient_DataNode(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	_, err := c.DataNode(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.DataNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.CreateDataNode("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.DataNodeByHTTPHost("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.DataNodeByTCPHost("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.DeleteDataNode(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.MetaNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_ = c.MetaNodeByAddr("")
+
+	_, err = c.CreateMetaNode("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.DeleteMetaNode(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetaClient_SetDefaultRetentionPolicy(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	// Create a database.
+	db, err := c.CreateDatabase("db0")
+	if err != nil {
+		t.Fatal(err)
+	} else if db == nil {
+		t.Fatal("database not found")
+	} else if db.Name != "db0" {
+		t.Fatalf("db name wrong: %s", db.Name)
+	}
+
+	rp0 := RetentionPolicyInfo{
+		Name:               "rp0",
+		ReplicaN:           1,
+		Duration:           2 * time.Hour,
+		ShardGroupDuration: 2 * time.Hour,
+	}
+
+	if _, err := c.CreateRetentionPolicy("db0", &RetentionPolicySpec{
+		Name:               rp0.Name,
+		ReplicaN:           &rp0.ReplicaN,
+		Duration:           &rp0.Duration,
+		ShardGroupDuration: rp0.ShardGroupDuration,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.SetDefaultRetentionPolicy("db0", "rp0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db0 := c.Database("db0")
+	if db0.DefaultRetentionPolicy != "rp0" {
+		t.Fatalf("database default rp is wrong. exp: rp0 got: %s", db0.DefaultRetentionPolicy)
+	}
+
 }
 
 func newClient() (string, *Client) {
