@@ -31,9 +31,7 @@ type Server struct {
 	httpHandler http.Handler
 	httpServer  *http.Server
 
-	Node    *cnosdb.Node
-	NewNode bool
-
+	Node  *cnosdb.Node
 	store *store
 
 	services []interface {
@@ -91,7 +89,6 @@ func (s *Server) initFileSystem() error {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		s.NewNode = true
 		s.Node = cnosdb.NewNode(s.Config.Dir)
 	}
 
