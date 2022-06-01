@@ -95,6 +95,8 @@ func (fsm *storeFSM) Apply(l *raft.Log) interface{} {
 			return fsm.applyUpdateShardOwnersCommand(&cmd)
 		case internal.Command_TruncatedShardsCommand:
 			return fsm.applyTrancateShardsCommand(&cmd)
+		case internal.Command_UpdateDataNodeCommand:
+			return fsm.applyUpdateDataNodeCommand(&cmd)
 		default:
 			panic(fmt.Errorf("cannot apply command: %x", l.Data))
 		}
@@ -181,7 +183,7 @@ func (fsm *storeFSM) applyUpdateNodeCommand(cmd *internal.Command) interface{} {
 }
 
 func (fsm *storeFSM) applyUpdateDataNodeCommand(cmd *internal.Command) interface{} {
-	ext, _ := proto.GetExtension(cmd, internal.E_CreateNodeCommand_Command)
+	ext, _ := proto.GetExtension(cmd, internal.E_UpdateDataNodeCommand_Command)
 	v := ext.(*internal.UpdateDataNodeCommand)
 
 	// Copy data and update.

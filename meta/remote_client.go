@@ -313,7 +313,7 @@ func (c *RemoteClient) UpdateDataNodeAddr(id uint64, httpAddr, tcpAddr string) e
 		TCPHost: proto.String(tcpAddr),
 	}
 
-	if err := c.retryUntilExec(internal.Command_CreateDataNodeCommand, internal.E_CreateDataNodeCommand_Command, cmd); err != nil {
+	if err := c.retryUntilExec(internal.Command_UpdateDataNodeCommand, internal.E_UpdateDataNodeCommand_Command, cmd); err != nil {
 		return err
 	}
 
