@@ -22,7 +22,7 @@ jobs:
       run: go install ./...
 
     - name: Test
-      run: go test -v ./tests
+      run: go test -v ./tests && go test -v ./meta
     
     #- name: Vet
     #  run: go vet -v ./...
