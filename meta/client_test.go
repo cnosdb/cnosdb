@@ -1247,6 +1247,54 @@ func TestMetaClient_SetDefaultRetentionPolicy(t *testing.T) {
 
 }
 
+func TestMetaClient_TruncateShardGroups(t *testing.T) {
+
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	// creat a shard group.
+	t1 := time.Now()
+	sg1, err := c.CreateShardGroup("db0", "autogen", t1)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg1 == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	dur := time.Hour * 168
+	t2 := t1.Add(dur)
+	//create another shard group
+	sg2, err := c.CreateShardGroup("db0", "autogen", t2)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg2 == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	//Truncate now()
+	err = c.TruncateShardGroups(t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := c.ShardGroupsByTimeRange("db0", "autogen", sg1.StartTime, sg2.EndTime)
+	if err != nil {
+		t.Fatal(err)
+	} else if groups[0].TruncatedAt != t1 {
+		t.Fatalf("sg1's TruncatedAt should equal now()")
+	} else if groups[1].TruncatedAt != groups[1].StartTime {
+		t.Fatalf("sg1's TruncatedAt should equal shard start time")
+	}
+
+}
+
 func newClient() (string, *Client) {
 	config := newConfig()
 	c := NewClient(config)
