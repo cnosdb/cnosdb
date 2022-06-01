@@ -914,6 +914,20 @@ func TestMetaClient_Shards(t *testing.T) {
 		t.Fatalf("wrong owner: exp %d got %d", groups[0].ID, owner.ID)
 	}
 
+	addOwners := []uint64{33}
+	var delOwners []uint64
+
+	err = c.UpdateShardOwners(groups[0].Shards[0].ID, addOwners, delOwners)
+	if err != nil {
+		return
+	}
+	groups, err = c.ShardGroupsByTimeRange("db0", "autogen", tmin, tmax)
+	owners := groups[0].Shards[0].Owners
+
+	if owners[0].NodeID != 0 && owners[1].NodeID != 33 {
+		t.Fatalf("UpdateShardOwners failed")
+	}
+
 	// Test deleting a shard group.
 	if err := c.DeleteShardGroup("db0", "autogen", groups[0].ID); err != nil {
 		t.Fatal(err)
