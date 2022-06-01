@@ -151,7 +151,7 @@ func GetUpdateDataCommand() *cobra.Command {
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			err := replaceDataNode(args[0], args[1])
+			err := updateDataNode(options.Env.Bind, args[0], args[1])
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -185,11 +185,6 @@ func GetReplaceDataCommand() *cobra.Command {
 				return err
 			}
 			defer conn.Close()
-
-			_, err = conn.Write([]byte{byte(request.Type)})
-			if err != nil {
-				return err
-			}
 
 			// Write the request
 			if err := json.NewEncoder(conn).Encode(request); err != nil {

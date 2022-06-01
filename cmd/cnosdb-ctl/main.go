@@ -79,8 +79,9 @@ func GetCommand() *cobra.Command {
 
 func printMetaData() *cobra.Command {
 	return &cobra.Command{
-		Use:   "print-meta",
-		Short: "Displays the CnosDB meta data",
+		Use:     "print-meta",
+		Short:   "Displays the CnosDB meta data",
+		Example: "cnosdb-ctl print-meta --bind meta-addr",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableNoDescFlag:   true,
@@ -111,10 +112,6 @@ func printMetaData() *cobra.Command {
 			}
 
 			for _, db := range data.Databases {
-				if db.Name == "_internal" {
-					continue
-				}
-
 				fmt.Printf("|--DataBase  Name: %s DefaultRetentionPolicy: %s\n", db.Name, db.DefaultRetentionPolicy)
 				for _, rp := range db.RetentionPolicies {
 					fmt.Printf("|    |--RetentionPolicy  Name: %s Replica: %d Duration: %d ShardGroupDuration: %d\n",
