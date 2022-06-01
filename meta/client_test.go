@@ -416,6 +416,51 @@ func TestMetaClient_DefaultRetentionPolicy(t *testing.T) {
 	}
 }
 
+func TestMetaClient_SetDefaultRetentionPolicy(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	// Create a database.
+	db, err := c.CreateDatabase("db0")
+	if err != nil {
+		t.Fatal(err)
+	} else if db == nil {
+		t.Fatal("database not found")
+	} else if db.Name != "db0" {
+		t.Fatalf("db name wrong: %s", db.Name)
+	}
+
+	rp0 := RetentionPolicyInfo{
+		Name:               "rp0",
+		ReplicaN:           1,
+		Duration:           2 * time.Hour,
+		ShardGroupDuration: 2 * time.Hour,
+	}
+
+	if _, err := c.CreateRetentionPolicy("db0", &RetentionPolicySpec{
+		Name:               rp0.Name,
+		ReplicaN:           &rp0.ReplicaN,
+		Duration:           &rp0.Duration,
+		ShardGroupDuration: rp0.ShardGroupDuration,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.SetDefaultRetentionPolicy("db0", "rp0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db0 := c.Database("db0")
+	if db0.DefaultRetentionPolicy != "rp0" {
+		t.Fatalf("database default rp is wrong. exp: rp0 got: %s", db0.DefaultRetentionPolicy)
+	}
+
+}
+
 func TestMetaClient_UpdateRetentionPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -1143,33 +1188,52 @@ func TestMetaClient_PruneShardGroups(t *testing.T) {
 	}
 }
 
-func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
+func TestMetaClient_TruncateShardGroups(t *testing.T) {
+
 	t.Parallel()
 
-	cfg := newConfig()
-	defer os.RemoveAll(cfg.Dir)
-
-	c := NewClient(cfg)
-	if err := c.Open(); err != nil {
-		t.Fatal(err)
-	}
-	id := c.ClusterID()
-	if id == 0 {
-		t.Fatal("cluster ID can't be zero")
-	}
-
-	c = NewClient(cfg)
-	if err := c.Open(); err != nil {
-		t.Fatal(err)
-	}
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
 	defer c.Close()
 
-	idAfter := c.ClusterID()
-	if idAfter == 0 {
-		t.Fatal("cluster ID can't be zero")
-	} else if idAfter != id {
-		t.Fatalf("cluster id not the same: %d, %d", idAfter, id)
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
 	}
+
+	// creat a shard group.
+	t1 := time.Now()
+	sg1, err := c.CreateShardGroup("db0", "autogen", t1)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg1 == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	dur := time.Hour * 168
+	t2 := t1.Add(dur)
+	//create another shard group
+	sg2, err := c.CreateShardGroup("db0", "autogen", t2)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg2 == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	//Truncate now()
+	err = c.TruncateShardGroups(t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := c.ShardGroupsByTimeRange("db0", "autogen", sg1.StartTime, sg2.EndTime)
+	if err != nil {
+		t.Fatal(err)
+	} else if groups[0].TruncatedAt != t1 {
+		t.Fatalf("sg1's TruncatedAt should equal now()")
+	} else if groups[1].TruncatedAt != groups[1].StartTime {
+		t.Fatalf("sg1's TruncatedAt should equal shard start time")
+	}
+
 }
 
 func TestMetaClient_DataNode(t *testing.T) {
@@ -1227,98 +1291,38 @@ func TestMetaClient_DataNode(t *testing.T) {
 	}
 }
 
-func TestMetaClient_SetDefaultRetentionPolicy(t *testing.T) {
+func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
 	t.Parallel()
 
-	dir, c := newClient()
-	defer os.RemoveAll(dir)
+	cfg := newConfig()
+	defer os.RemoveAll(cfg.Dir)
+
+	c := NewClient(cfg)
+	if err := c.Open(); err != nil {
+		t.Fatal(err)
+	}
+	id := c.ClusterID()
+	if id == 0 {
+		t.Fatal("cluster ID can't be zero")
+	}
+
+	c = NewClient(cfg)
+	if err := c.Open(); err != nil {
+		t.Fatal(err)
+	}
 	defer c.Close()
 
-	// Create a database.
-	db, err := c.CreateDatabase("db0")
-	if err != nil {
-		t.Fatal(err)
-	} else if db == nil {
-		t.Fatal("database not found")
-	} else if db.Name != "db0" {
-		t.Fatalf("db name wrong: %s", db.Name)
+	idAfter := c.ClusterID()
+	if idAfter == 0 {
+		t.Fatal("cluster ID can't be zero")
+	} else if idAfter != id {
+		t.Fatalf("cluster id not the same: %d, %d", idAfter, id)
 	}
-
-	rp0 := RetentionPolicyInfo{
-		Name:               "rp0",
-		ReplicaN:           1,
-		Duration:           2 * time.Hour,
-		ShardGroupDuration: 2 * time.Hour,
-	}
-
-	if _, err := c.CreateRetentionPolicy("db0", &RetentionPolicySpec{
-		Name:               rp0.Name,
-		ReplicaN:           &rp0.ReplicaN,
-		Duration:           &rp0.Duration,
-		ShardGroupDuration: rp0.ShardGroupDuration,
-	}, true); err != nil {
-		t.Fatal(err)
-	}
-
-	err = c.SetDefaultRetentionPolicy("db0", "rp0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	db0 := c.Database("db0")
-	if db0.DefaultRetentionPolicy != "rp0" {
-		t.Fatalf("database default rp is wrong. exp: rp0 got: %s", db0.DefaultRetentionPolicy)
-	}
-
 }
 
-func TestMetaClient_TruncateShardGroups(t *testing.T) {
 
-	t.Parallel()
 
-	dir, c := newClient()
-	defer os.RemoveAll(dir)
-	defer c.Close()
 
-	if _, err := c.CreateDatabase("db0"); err != nil {
-		t.Fatal(err)
-	}
-
-	// creat a shard group.
-	t1 := time.Now()
-	sg1, err := c.CreateShardGroup("db0", "autogen", t1)
-	if err != nil {
-		t.Fatal(err)
-	} else if sg1 == nil {
-		t.Fatalf("expected ShardGroup")
-	}
-
-	dur := time.Hour * 168
-	t2 := t1.Add(dur)
-	//create another shard group
-	sg2, err := c.CreateShardGroup("db0", "autogen", t2)
-	if err != nil {
-		t.Fatal(err)
-	} else if sg2 == nil {
-		t.Fatalf("expected ShardGroup")
-	}
-
-	//Truncate now()
-	err = c.TruncateShardGroups(t1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	groups, err := c.ShardGroupsByTimeRange("db0", "autogen", sg1.StartTime, sg2.EndTime)
-	if err != nil {
-		t.Fatal(err)
-	} else if groups[0].TruncatedAt != t1 {
-		t.Fatalf("sg1's TruncatedAt should equal now()")
-	} else if groups[1].TruncatedAt != groups[1].StartTime {
-		t.Fatalf("sg1's TruncatedAt should equal shard start time")
-	}
-
-}
 
 func newClient() (string, *Client) {
 	config := newConfig()
