@@ -1,12 +1,14 @@
 package meta
 
 import (
+	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"io/ioutil"
 	"os"
 	"path"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -724,7 +726,400 @@ func TestMetaClient_UpdateUser_NonExists(t *testing.T) {
 	}
 }
 
+func TestMetaClient_ContinuousQueries(t *testing.T) {
+	t.Parallel()
 
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	// Create a database to use
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+	db := c.Database("db0")
+	if db == nil {
+		t.Fatalf("database not found")
+	} else if db.Name != "db0" {
+		t.Fatalf("db name wrong: %s", db.Name)
+	}
+
+	if err := c.CreateContinuousQuery("db0", "cq0", `SELECT count(value) INTO foo_count FROM foo GROUP BY time(10m)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateContinuousQuery("db0", "cq0", `SELECT count(value) INTO foo_count FROM foo GROUP BY time(10m)`); err != nil {
+		t.Fatalf("got error %q, but didn't expect one", err)
+	}
+
+	if err := c.CreateContinuousQuery("db0", "cq0", `SELECT min(value) INTO foo_max FROM foo GROUP BY time(20m)`); err == nil {
+		t.Fatal("didn't get and error, but expected one")
+	} else if got, exp := err, ErrContinuousQueryExists; got.Error() != exp.Error() {
+		t.Fatalf("got %v, expected %v", got, exp)
+	}
+	if err := c.CreateContinuousQuery("db0", "cq1", `SELECT max(value) INTO foo_max FROM foo GROUP BY time(10m)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateContinuousQuery("db0", "cq2", `SELECT min(value) INTO foo_min FROM foo GROUP BY time(10m)`); err != nil {
+		t.Fatal(err)
+	}
+	//This is meta, we don't need to execute the CQ query
+	if err := c.DropContinuousQuery("db0", "cq1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.DropContinuousQuery("db0", "not-a-cq"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetaClient_Subscriptions_Create(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	// Create a database to use
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+	db := c.Database("db0")
+	if db == nil {
+		t.Fatal("database not found")
+	} else if db.Name != "db0" {
+		t.Fatalf("db name wrong: %s", db.Name)
+	}
+
+	if err := c.CreateSubscription("db0", "autogen", "sub0", "ALL", []string{"udp://example.com:9090"}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := c.CreateSubscription("db0", "autogen", "sub0", "ALL", []string{"udp://example.com:9090"})
+	if err == nil || err.Error() != `subscription already exists` {
+		t.Fatalf("unexpected error: %s", err)
+	}
+
+	if err := c.CreateSubscription("db0", "autogen", "sub1", "ALL", []string{"udp://example.com:6060"}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.CreateSubscription("db0", "autogen", "sub2", "ALL", []string{"bad://example.com:9191"})
+	if err == nil || !strings.HasPrefix(err.Error(), "invalid subscription URL") {
+		t.Fatalf("unexpected error: %s", err)
+	}
+
+	err = c.CreateSubscription("db0", "autogen", "sub2", "ALL", []string{"udp://example.com"})
+	if err == nil || !strings.HasPrefix(err.Error(), "invalid subscription URL") {
+		t.Fatalf("unexpected error: %s", err)
+	}
+
+	if err := c.CreateSubscription("db0", "autogen", "sub3", "ALL", []string{"http://example.com:9092"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.CreateSubscription("db0", "autogen", "sub4", "ALL", []string{"https://example.com:9092"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetaClient_Subscriptions_Drop(t *testing.T) {
+	t.Parallel()
+
+	d, c := newClient()
+	defer os.RemoveAll(d)
+	defer c.Close()
+
+	// Create a database to use
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := c.DropSubscription("db0", "autogen", "foo")
+	if got, exp := err, ErrSubscriptionNotFound; got == nil || got.Error() != exp.Error() {
+		t.Fatalf("got: %s, exp: %s", got, exp)
+	}
+
+	if err := c.CreateSubscription("db0", "autogen", "sub0", "ALL", []string{"udp://example.com:9090"}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.DropSubscription("foo", "autogen", "sub0")
+	if got, exp := err, cnosdb.ErrDatabaseNotFound("foo"); got.Error() != exp.Error() {
+		t.Fatalf("got: %s, exp: %s", got, exp)
+	}
+
+	err = c.DropSubscription("db0", "foo_policy", "sub0")
+	if got, exp := err, cnosdb.ErrRetentionPolicyNotFound("foo_policy"); got.Error() != exp.Error() {
+		t.Fatalf("got: %s, exp: %s", got, exp)
+	}
+
+	err = c.DropSubscription("db0", "autogen", "sub0")
+	if got := err; got != nil {
+		t.Fatalf("got: %s, exp: %v", got, nil)
+	}
+}
+
+func TestMetaClient_Shards(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test creating a shard group.
+	tmin := time.Now()
+	sg, err := c.CreateShardGroup("db0", "autogen", tmin)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	// Test pre-creating shard groups.
+	dur := sg.EndTime.Sub(sg.StartTime) + time.Nanosecond
+	tmax := tmin.Add(dur)
+	if err := c.PrecreateShardGroups(tmin, tmax); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test finding shard groups by time range.
+	groups, err := c.ShardGroupsByTimeRange("db0", "autogen", tmin, tmax)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(groups) != 2 {
+		t.Fatalf("wrong number of shard groups: %d", len(groups))
+	}
+
+	// Test finding shard owner.
+	db, rp, owner := c.ShardOwner(groups[0].Shards[0].ID)
+	if db != "db0" {
+		t.Fatalf("wrong db name: %s", db)
+	} else if rp != "autogen" {
+		t.Fatalf("wrong rp name: %s", rp)
+	} else if owner.ID != groups[0].ID {
+		t.Fatalf("wrong owner: exp %d got %d", groups[0].ID, owner.ID)
+	}
+
+	// Test deleting a shard group.
+	if err := c.DeleteShardGroup("db0", "autogen", groups[0].ID); err != nil {
+		t.Fatal(err)
+	} else if groups, err = c.ShardGroupsByTimeRange("db0", "autogen", tmin, tmax); err != nil {
+		t.Fatal(err)
+	} else if len(groups) != 1 {
+		t.Fatalf("wrong number of shard groups after delete: %d", len(groups))
+	}
+}
+
+func TestMetaClient_PrecreateShardGroups(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	// creat a shard group.
+	tmin := time.Now()
+	sg, err := c.CreateShardGroup("db0", "autogen", tmin)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	// This will create a shard group
+	dur := sg.EndTime.Sub(sg.StartTime)
+	tmax := tmin.Add(dur)
+	if err := c.PrecreateShardGroups(tmin, tmax); err != nil {
+		t.Fatal(err)
+	}
+
+	// This won't create a shard group, tmax2 is before tmax at timeline.
+	dur = 24 * time.Hour
+	tmax2 := tmin.Add(dur)
+	if err := c.PrecreateShardGroups(tmin, tmax2); err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := c.ShardGroupsByTimeRange("db0", "autogen", tmin, tmax)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(groups) != 2 {
+		t.Fatalf("wrong number of shard groups: %d", len(groups))
+	}
+}
+
+func TestMetaClient_CreateShardGroupIdempotent(t *testing.T) {
+	t.Parallel()
+
+	d, c := newClient()
+	defer os.RemoveAll(d)
+	defer c.Close()
+
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	// create a shard group.
+	tmin := time.Now()
+	sg, err := c.CreateShardGroup("db0", "autogen", tmin)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	i := c.Data().Index
+	t.Log("index: ", i)
+
+	// create the same shard group.
+	sg, err = c.CreateShardGroup("db0", "autogen", tmin)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	t.Log("index: ", i)
+	if got, exp := c.Data().Index, i; got != exp {
+		t.Fatalf("PrecreateShardGroups failed: invalid index, got %d, exp %d", got, exp)
+	}
+
+	// make sure pre-creating is also idempotent
+	// Test pre-creating shard groups.
+	dur := sg.EndTime.Sub(sg.StartTime) + time.Nanosecond
+	tmax := tmin.Add(dur)
+	if err := c.PrecreateShardGroups(tmin, tmax); err != nil {
+		t.Fatal(err)
+	}
+	i = c.Data().Index
+	t.Log("index: ", i)
+	if err := c.PrecreateShardGroups(tmin, tmax); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("index: ", i)
+	if got, exp := c.Data().Index, i; got != exp {
+		t.Fatalf("PrecreateShardGroups failed: invalid index, got %d, exp %d", got, exp)
+	}
+}
+
+func TestMetaClient_PruneShardGroups(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	// This database is no use,just occupies the space.
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	//we use this database for testing.
+	if _, err := c.CreateDatabase("db1"); err != nil {
+		t.Fatal(err)
+	}
+
+	duration := 1 * time.Hour
+	replicaN := 1
+
+	if _, err := c.CreateRetentionPolicy("db1", &RetentionPolicySpec{
+		Name:     "rp0",
+		Duration: &duration,
+		ReplicaN: &replicaN,
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	sg, err := c.CreateShardGroup("db1", "autogen", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	sg, err = c.CreateShardGroup("db1", "autogen", time.Now().Add(15*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	sg, err = c.CreateShardGroup("db1", "rp0", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	expiration := time.Now().Add(-2 * 7 * 24 * time.Hour).Add(-1 * time.Hour)
+
+	//modify the deleteAt time so that we can prune them.
+	data := c.Data()
+	data.Databases[1].RetentionPolicies[0].ShardGroups[0].DeletedAt = expiration
+	data.Databases[1].RetentionPolicies[0].ShardGroups[1].DeletedAt = expiration
+
+	if err := c.SetData(&data); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.PruneShardGroups(); err != nil {
+		t.Fatal(err)
+	}
+
+	data = c.Data()
+	rp, err := data.RetentionPolicy("db1", "autogen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, exp := len(rp.ShardGroups), 0; got != exp {
+		t.Fatalf("failed to prune shard group. got: %d, exp: %d", got, exp)
+	}
+
+	rp, err = data.RetentionPolicy("db1", "rp0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, exp := len(rp.ShardGroups), 1; got != exp {
+		t.Fatalf("failed to prune shard group. got: %d, exp: %d", got, exp)
+	}
+}
+
+func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
+	t.Parallel()
+
+	cfg := newConfig()
+	defer os.RemoveAll(cfg.Dir)
+
+	c := NewClient(cfg)
+	if err := c.Open(); err != nil {
+		t.Fatal(err)
+	}
+	id := c.ClusterID()
+	if id == 0 {
+		t.Fatal("cluster ID can't be zero")
+	}
+
+	c = NewClient(cfg)
+	if err := c.Open(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	idAfter := c.ClusterID()
+	if idAfter == 0 {
+		t.Fatal("cluster ID can't be zero")
+	} else if idAfter != id {
+		t.Fatalf("cluster id not the same: %d, %d", idAfter, id)
+	}
+}
 
 func newClient() (string, *Client) {
 	config := newConfig()
