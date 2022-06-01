@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"io/ioutil"
 	"os"
 	"path"
@@ -373,7 +374,6 @@ func TestMetaClient_CreateRetentionPolicy(t *testing.T) {
 	}
 }
 
-
 func TestMetaClient_DefaultRetentionPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -540,7 +540,189 @@ func TestMetaClient_DropRetentionPolicy(t *testing.T) {
 	}
 }
 
+func TestMetaClient_CreateUser(t *testing.T) {
+	t.Parallel()
 
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateUser("Jerry", "supersecure", true); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.CreateUser("Tom", "password", false); err != nil {
+		t.Fatal(err)
+	}
+
+	u, err := c.User("Jerry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp, got := "Jerry", u.ID(); exp != got {
+		t.Fatalf("unexpected user name: exp: %s got: %s", exp, got)
+	}
+	if !isAdmin(u) {
+		t.Fatalf("expected user to be admin")
+	}
+
+	u, err = c.Authenticate("Jerry", "supersecure")
+	if u == nil || err != nil || u.ID() != "Jerry" {
+		t.Fatalf("failed to authenticate")
+	}
+
+	u, err = c.Authenticate("Jerry", "badpassword")
+	if u != nil || err != ErrAuthenticate {
+		t.Fatalf("authentication should fail with %s", ErrAuthenticate)
+	}
+
+	u, err = c.Authenticate("Jerry", "")
+	if u != nil || err != ErrAuthenticate {
+		t.Fatalf("authentication should fail with %s", ErrAuthenticate)
+	}
+
+	if err := c.UpdateUser("Jerry", "moresupersecure"); err != nil {
+		t.Fatal(err)
+	}
+
+	u, err = c.Authenticate("Jerry", "supersecure")
+	if u != nil || err != ErrAuthenticate {
+		t.Fatalf("authentication should fail with %s", ErrAuthenticate)
+	}
+
+	u, err = c.Authenticate("Jerry", "moresupersecure")
+	if u == nil || err != nil || u.ID() != "Jerry" {
+		t.Fatalf("failed to authenticate")
+	}
+
+	u, err = c.Authenticate("foo", "")
+	if u != nil || err != ErrUserNotFound {
+		t.Fatalf("authentication should fail with %s", ErrUserNotFound)
+	}
+
+	u, err = c.User("Tom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp, got := "Tom", u.ID(); exp != got {
+		t.Fatalf("unexpected user name: exp: %s got: %s", exp, got)
+	}
+	if isAdmin(u) {
+		t.Fatalf("expected user not to be an admin")
+	}
+
+	if exp, got := 2, c.UserCount(); exp != got {
+		t.Fatalf("unexpected user count.  got: %d exp: %d", got, exp)
+	}
+
+	if err := c.SetAdminPrivilege("Tom", true); err != nil {
+		t.Fatal(err)
+	}
+
+	u, err = c.User("Tom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp, got := "Tom", u.ID(); exp != got {
+		t.Fatalf("unexpected user name: exp: %s got: %s", exp, got)
+	}
+	if !isAdmin(u) {
+		t.Fatalf("expected user to be an admin")
+	}
+
+	if err := c.SetAdminPrivilege("Tom", false); err != nil {
+		t.Fatal(err)
+	}
+
+	u, err = c.User("Tom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exp, got := "Tom", u.ID(); exp != got {
+		t.Fatalf("unexpected user name: exp: %s got: %s", exp, got)
+	}
+	if isAdmin(u) {
+		t.Fatalf("expected user not to be an admin")
+	}
+
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	db := c.Database("db0")
+	if db.Name != "db0" {
+		t.Fatalf("db name wrong: %s", db.Name)
+	}
+
+	if err := c.SetPrivilege("Tom", "db0", cnosql.ReadPrivilege); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := c.UserPrivilege("Tom", "db0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == nil {
+		t.Fatal("expected privilege but was nil")
+	}
+	if exp, got := cnosql.ReadPrivilege, *p; exp != got {
+		t.Fatalf("unexpected privilege.  exp: %d, got: %d", exp, got)
+	}
+
+	if err := c.SetPrivilege("Tom", "db0", cnosql.NoPrivileges); err != nil {
+		t.Fatal(err)
+	}
+	p, err = c.UserPrivilege("Tom", "db0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == nil {
+		t.Fatal("expected privilege but was nil")
+	}
+	if exp, got := cnosql.NoPrivileges, *p; exp != got {
+		t.Fatalf("unexpected privilege.  exp: %d, got: %d", exp, got)
+	}
+
+	if err := c.DropUser("Tom"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = c.User("Tom"); err != ErrUserNotFound {
+		t.Fatalf("user lookup should fail with %s", ErrUserNotFound)
+	}
+
+	if exp, got := 1, c.UserCount(); exp != got {
+		t.Fatalf("unexpected user count.  got: %d exp: %d", got, exp)
+	}
+}
+
+func TestMetaClient_UpdateUser_Exists(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateUser("Jerry", "supersecure", true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.UpdateUser("Jerry", "password"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetaClient_UpdateUser_NonExists(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if err := c.UpdateUser("foo", "bar"); err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+}
 
 
 
