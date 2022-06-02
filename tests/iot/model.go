@@ -1,9 +1,11 @@
 package iot
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"time"
 )
 
@@ -16,15 +18,15 @@ type field struct {
 	Value float64
 }
 
-type truckPoint struct {
-	Timestamp time.Time
-	Tags      struct {
+type truck struct {
+	Tags struct {
 		Name          tag
 		Fleet         tag
 		Driver        tag
 		Model         tag
 		DeviceVersion tag
 	}
+	Timestamp    time.Time
 	Measurements struct {
 		Readings struct {
 			Name            string
@@ -46,15 +48,13 @@ type truckPoint struct {
 			Status          field
 		}
 	}
+	readings    bytes.Buffer
+	diagnostics bytes.Buffer
 }
 
 type truckNum int
 
-func randChoice[T any](s []T) T {
-	return s[rand.Intn(len(s))]
-}
-
-func newTruck(ts time.Time, i truckNum, currentLoad float64) truckPoint {
+func (t *truck) Init(i truckNum) {
 	type model struct {
 		Name            string
 		LoadCapacity    float64
@@ -63,17 +63,7 @@ func newTruck(ts time.Time, i truckNum, currentLoad float64) truckPoint {
 	}
 
 	const (
-		truckNameFmt       = "truck_%d"
-		maxLatitude        = 90.0
-		maxLongitude       = 180.0
-		maxElevation       = 5000.0
-		maxVelocity        = 100
-		maxHeading         = 360.0
-		maxGrade           = 100.0
-		maxFuelConsumption = 50
-		maxFuel            = 1.0
-		maxLoad            = 5000.0
-		loadChangeChance   = 0.05
+		truckNameFmt = "truck_%d"
 	)
 
 	fleetChoices := []string{
@@ -116,17 +106,35 @@ func newTruck(ts time.Time, i truckNum, currentLoad float64) truckPoint {
 		"v2.0",
 		"v2.3",
 	}
-
-	var t truckPoint
 	m := randChoice(modelChoices)
-	t.Timestamp = ts
 	t.Tags.Name = tag{"name", fmt.Sprintf(truckNameFmt, i)}
 	t.Tags.Fleet = tag{"fleet", randChoice(fleetChoices)}
 	t.Tags.Driver = tag{"driver", randChoice(driverChoices)}
 	t.Tags.Model = tag{"model", m.Name}
 	t.Tags.DeviceVersion = tag{"device_version", randChoice(deviceVersionChoices)}
-
 	t.Measurements.Readings.Name = "readings"
+	t.Measurements.Diagnostics.Name = "diagnostics"
+	t.Measurements.Diagnostics.LoadCapacity = field{"load_capacity", m.LoadCapacity}
+	t.Measurements.Diagnostics.FuelCapacity = field{"fuel_capacity", m.FuelCapacity}
+	t.Measurements.Diagnostics.FuelConsumption = field{"nominal_fuel_consumption", m.FuelConsumption}
+}
+
+func (t *truck) New(ts time.Time) {
+	const (
+		maxLatitude        = 90.0
+		maxLongitude       = 180.0
+		maxElevation       = 5000.0
+		maxVelocity        = 100
+		maxHeading         = 360.0
+		maxGrade           = 100.0
+		maxFuelConsumption = 50
+		maxFuel            = 1.0
+		maxLoad            = 5000.0
+		loadChangeChance   = 0.05
+	)
+
+	t.Timestamp = ts
+
 	t.Measurements.Readings.Latitude = field{"latitude",
 		readingsField(maxLatitude, -0.005, 0.005, -90.0, 90.0, 5)}
 	t.Measurements.Readings.Longitude = field{"longitude",
@@ -142,18 +150,104 @@ func newTruck(ts time.Time, i truckNum, currentLoad float64) truckPoint {
 	t.Measurements.Readings.FuelConsumption = field{"fuel_consumption",
 		readingsField(maxFuelConsumption/2, -5, 5, 0, maxFuelConsumption, 1)}
 
-	t.Measurements.Diagnostics.Name = "diagnostics"
-	t.Measurements.Diagnostics.LoadCapacity = field{"load_capacity", m.LoadCapacity}
-	t.Measurements.Diagnostics.FuelCapacity = field{"fuel_capacity", m.FuelCapacity}
-	t.Measurements.Diagnostics.FuelConsumption = field{"nominal_fuel_consumption", m.FuelConsumption}
 	t.Measurements.Diagnostics.CurrentLoad = field{"current_load",
-		newCurrentLoad(currentLoad, maxLoad, 1-loadChangeChance)}
+		newCurrentLoad(t.Measurements.Diagnostics.CurrentLoad.Value, maxLoad, 1-loadChangeChance)}
 	t.Measurements.Diagnostics.FuelState = field{"fuel_state",
 		fuelState(maxFuel, -0.001, 0, 0, maxFuel, 1)}
 	t.Measurements.Diagnostics.Status = field{"status",
 		readingsField(0, 0, 1, 0, 5, 0)}
+}
 
-	return t
+func (t *truck) Serialize() (readings, diagnostics []byte) {
+	t.readings.Reset()
+	t.diagnostics.Reset()
+	writeTags := func(buf *bytes.Buffer) {
+		buf.WriteString(",")
+		buf.WriteString(t.Tags.Name.Key)
+		buf.WriteString("=")
+		buf.WriteString(t.Tags.Name.Value)
+		buf.WriteString(",")
+		buf.WriteString(t.Tags.Fleet.Key)
+		buf.WriteString("=")
+		buf.WriteString(t.Tags.Fleet.Value)
+		buf.WriteString(",")
+		buf.WriteString(t.Tags.Model.Key)
+		buf.WriteString("=")
+		buf.WriteString(t.Tags.Model.Value)
+		buf.WriteString(",")
+		buf.WriteString(t.Tags.DeviceVersion.Key)
+		buf.WriteString("=")
+		buf.WriteString(t.Tags.DeviceVersion.Value)
+		buf.WriteString(" ")
+	}
+	ff64 := func(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+	r := &t.Measurements.Readings
+	t.readings.WriteString(r.Name)
+	writeTags(&t.readings)
+	t.readings.WriteString(r.Latitude.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.Latitude.Value))
+	t.readings.WriteString(",")
+	t.readings.WriteString(r.Longitude.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.Longitude.Value))
+	t.readings.WriteString(",")
+	t.readings.WriteString(r.Elevation.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.Elevation.Value))
+	t.readings.WriteString(",")
+	t.readings.WriteString(r.Velocity.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.Velocity.Value))
+	t.readings.WriteString(",")
+	t.readings.WriteString(r.Heading.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.Heading.Value))
+	t.readings.WriteString(",")
+	t.readings.WriteString(r.Grade.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.Grade.Value))
+	t.readings.WriteString(",")
+	t.readings.WriteString(r.FuelConsumption.Key)
+	t.readings.WriteString("=")
+	t.readings.WriteString(ff64(r.FuelConsumption.Value))
+	t.readings.WriteString(" ")
+	t.readings.WriteString(strconv.FormatInt(t.Timestamp.UTC().UnixNano(), 10))
+
+	d := &t.Measurements.Diagnostics
+	t.diagnostics.WriteString(d.Name)
+	writeTags(&t.diagnostics)
+	t.diagnostics.WriteString(d.LoadCapacity.Key)
+	t.diagnostics.WriteString("=")
+	t.diagnostics.WriteString(ff64(d.LoadCapacity.Value))
+	t.diagnostics.WriteString(",")
+	t.diagnostics.WriteString(d.FuelCapacity.Key)
+	t.diagnostics.WriteString("=")
+	t.diagnostics.WriteString(ff64(d.FuelCapacity.Value))
+	t.diagnostics.WriteString(",")
+	t.diagnostics.WriteString(d.FuelConsumption.Key)
+	t.diagnostics.WriteString("=")
+	t.diagnostics.WriteString(ff64(d.FuelConsumption.Value))
+	t.diagnostics.WriteString(",")
+	t.diagnostics.WriteString(d.CurrentLoad.Key)
+	t.diagnostics.WriteString("=")
+	t.diagnostics.WriteString(ff64(d.CurrentLoad.Value))
+	t.diagnostics.WriteString(",")
+	t.diagnostics.WriteString(d.FuelState.Key)
+	t.diagnostics.WriteString("=")
+	t.diagnostics.WriteString(ff64(d.FuelState.Value))
+	t.diagnostics.WriteString(",")
+	t.diagnostics.WriteString(d.Status.Key)
+	t.diagnostics.WriteString("=")
+	t.diagnostics.WriteString(ff64(d.Status.Value))
+	t.diagnostics.WriteString(" ")
+	t.diagnostics.WriteString(strconv.FormatInt(t.Timestamp.UTC().UnixNano(), 10))
+
+	return t.readings.Bytes(), t.diagnostics.Bytes()
+}
+
+func randChoice[T any](s []T) T {
+	return s[rand.Intn(len(s))]
 }
 
 // u is uniform
