@@ -23,10 +23,10 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/models"
 )
 
-var verboseServerLogs bool
-var indexType string
-var cleanupData bool
-var seed int64
+var VerboseServerLogs bool
+var IndexType string
+var CleanupData bool
+var Seed int64
 
 var LosAngeles = mustParseLocation("America/Los_Angeles")
 
@@ -140,13 +140,13 @@ func NewConfig() *Config {
 
 	c.Data.Dir = filepath.Join(c.rootPath, "data")
 	c.Data.WALDir = filepath.Join(c.rootPath, "wal")
-	c.Data.QueryLogEnabled = verboseServerLogs
-	c.Data.TraceLoggingEnabled = verboseServerLogs
-	c.Data.Index = indexType
+	c.Data.QueryLogEnabled = VerboseServerLogs
+	c.Data.TraceLoggingEnabled = VerboseServerLogs
+	c.Data.Index = IndexType
 
 	c.HTTPD.Enabled = true
 	c.HTTPD.BindAddress = "127.0.0.1:0"
-	c.HTTPD.LogEnabled = verboseServerLogs
+	c.HTTPD.LogEnabled = VerboseServerLogs
 
 	c.Monitor.StoreEnabled = false
 
@@ -179,7 +179,7 @@ func (s *LocalServer) Close() {
 	//todo fix usage
 	s.Server.Close()
 
-	if cleanupData {
+	if CleanupData {
 		if err := os.RemoveAll(s.Config.rootPath); err != nil {
 			panic(err.Error())
 		}
