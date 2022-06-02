@@ -753,6 +753,45 @@ func TestMetaClient_CreateUser(t *testing.T) {
 	}
 }
 
+func TestMetaClient_UserPrivileges(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateUser("Jerry", "supersecure", true); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.CreateUser("Tom", "password", false); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := c.CreateDatabase("db0")
+	if err != nil {
+		return
+	} else if db.Name != "db0" {
+		t.Fatalf("db name wrong: %s", db.Name)
+	}
+
+	if err := c.SetPrivilege("Tom", "db0", cnosql.ReadPrivilege); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.SetPrivilege("Jerry", "db0", cnosql.AllPrivileges); err != nil {
+		t.Fatal(err)
+	}
+
+	privileges, err := c.UserPrivileges("Jerry")
+	if err != nil {
+		t.Fatal(err)
+	} else if privileges == nil && privileges["db0"] != cnosql.AllPrivileges {
+		t.Fatalf("User privileges mismatch.")
+	}
+
+}
+
 func TestMetaClient_UpdateUser_Exists(t *testing.T) {
 	t.Parallel()
 
@@ -992,6 +1031,55 @@ func TestMetaClient_Shards(t *testing.T) {
 	} else if len(groups) != 1 {
 		t.Fatalf("wrong number of shard groups after delete: %d", len(groups))
 	}
+}
+
+func TestMetaClient_DropShard(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	if _, err := c.CreateDatabase("db0"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test creating a shard group.
+	tmin := time.Now()
+	sg, err := c.CreateShardGroup("db0", "autogen", tmin)
+	if err != nil {
+		t.Fatal(err)
+	} else if sg == nil {
+		t.Fatalf("expected ShardGroup")
+	}
+
+	//create a shard group with a shard
+	dur := sg.EndTime.Sub(sg.StartTime)
+	tmax := tmin.Add(dur)
+	sds, err := c.ShardGroupsByTimeRange("db0", "autogen", tmin, tmax)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(sds)
+
+	//delete all shards
+	for i := 0; i < len(sds); i++ {
+		for j := 0; j < len(sds[i].Shards); j++ {
+			err := c.DropShard(sds[i].Shards[j].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	sds, err = c.ShardGroupsByTimeRange("db0", "autogen", tmin, tmax)
+	if err != nil {
+		t.Fatal(err)
+	} else if len(sds) != 0 {
+		t.Fatalf("shard group should be empty")
+	}
+	t.Log(sds)
+
 }
 
 func TestMetaClient_PrecreateShardGroups(t *testing.T) {
@@ -1320,9 +1408,46 @@ func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
 	}
 }
 
+func TestMetaClient_Ping(t *testing.T) {
+	t.Parallel()
 
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
 
+	err := c.Ping(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
+func TestMetaClient_AcquireLease(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	lease, err := c.AcquireLease("lease")
+	if err != nil {
+		return
+	} else if lease.Name != "lease" {
+		t.Fatalf("lease name error")
+	}
+}
+
+func TestMetaClient_NodeID(t *testing.T) {
+	t.Parallel()
+
+	dir, c := newClient()
+	defer os.RemoveAll(dir)
+	defer c.Close()
+
+	id := c.NodeID()
+	if id != c.nodeID {
+		t.Fatalf("NodeID is wrong.")
+	}
+}
 
 func newClient() (string, *Client) {
 	config := newConfig()
