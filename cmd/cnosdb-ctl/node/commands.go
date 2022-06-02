@@ -19,7 +19,7 @@ func GetShowCommand() *cobra.Command {
 		Use:     "show",
 		Short:   "shows cluster nodes",
 		Long:    `Shows all meta nodes and data nodes that are part of the cluster.`,
-		Example: `examples`,
+		Example: `  cnosdb-ctl --bind 127.0.0.1:8091 show`,
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -70,7 +70,7 @@ func GetAddMetaCommand() *cobra.Command {
 		Use:     "add-meta",
 		Short:   "adds a meta node to a cluster",
 		Long:    "Adds a meta node to a cluster.",
-		Example: "  cnosdb-ctl add-meta localhost:8091",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 add-meta localhost:8091",
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -88,7 +88,7 @@ func GetRemoveMetaCommand() *cobra.Command {
 		Use:     "remove-meta",
 		Short:   "removes a data node from a cluster",
 		Long:    "Removes a meta node from a cluster.",
-		Example: "  cnosdb-ctl remove-meta localhost:8091",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 remove-meta localhost:8091",
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -106,7 +106,7 @@ func GetAddDataCommand() *cobra.Command {
 		Use:     "add-data",
 		Short:   "adds a data node to a cluster",
 		Long:    "Adds a data node to a cluster.",
-		Example: "  cnosdb-ctl add-data localhost:8088",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 add-data localhost:8088",
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -124,7 +124,7 @@ func GetRemoveDataCommand() *cobra.Command {
 		Use:     "remove-data",
 		Short:   "removes a data node from a cluster",
 		Long:    "Removes a data node from a cluster.",
-		Example: "  cnosdb-ctl remove-data localhost:8088",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 remove-data localhost:8088",
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -142,7 +142,7 @@ func GetUpdateDataCommand() *cobra.Command {
 		Use:     "update-data",
 		Short:   "update old data node with o new node",
 		Long:    "update-data",
-		Example: "  cnosdb-ctl update-data 127.0.0.1:8088 127.0.0.2:8088",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 update-data old-data-address new-data-address",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return errors.New("Input parameters count not right, MUST be 2")
@@ -162,9 +162,9 @@ func GetUpdateDataCommand() *cobra.Command {
 func GetReplaceDataCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "replace-data",
-		Short:   "replace a data node address with o new node",
-		Long:    "replace a data node address with o new node",
-		Example: "  cnosdb-ctl replace-data 127.0.0.1:8088 127.0.0.2:8088",
+		Short:   "replace a data node address with a new node",
+		Long:    "replace a data node address with a new node",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 replace-data old-data-address new-data-address",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return errors.New("Input parameters count not right, MUST be 2")

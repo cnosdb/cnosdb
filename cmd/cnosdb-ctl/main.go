@@ -63,8 +63,9 @@ func printVersion() *cobra.Command {
 
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
-		Use:  "cnosdb-ctl",
-		Long: "The 'cnosdb-ctl' command is used for managing CnosDB clusters.",
+		Use:     "cnosdb-ctl",
+		Long:    "The 'cnosdb-ctl' command is used for managing CnosDB clusters.",
+		Example: `cnosdb-ctl --bind meta-address Command args...`,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableDescriptions: true,
