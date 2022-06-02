@@ -129,7 +129,7 @@ func GetCopyShardStatusCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Source \t Dest \t Database \t Policy \t ShardID \t Status\t StartedAt\n")
+			fmt.Printf("Source            \t Dest            \t Database          \t Policy  \t ShardID \t Status  \t CopiedSize\t StartedAt\n")
 			for _, node := range nodes {
 				request := &snapshotter.Request{
 					Type: snapshotter.RequestCopyShardStatus,
@@ -145,19 +145,22 @@ func GetCopyShardStatusCommand() *cobra.Command {
 				if err != nil {
 					continue
 				}
-
 				if err := json.NewEncoder(conn).Encode(request); err != nil {
 					continue
 				}
 
-				rsp := snapshotter.CopyShardInfo{}
+				rsp := make([]snapshotter.CopyShardInfo, 0)
 				if err := json.NewDecoder(conn).Decode(&rsp); err != nil {
+					fmt.Println("error: " + err.Error())
 					continue
 				}
 
-				fmt.Printf("%s \t %s \t %s \t %s \t %d \t %s \t %s\n",
-					rsp.SrcHost, rsp.DestHost, rsp.Database, rsp.Retention,
-					rsp.ShardID, rsp.Status, rsp.StartTime.String())
+				for _, copyRecord := range rsp {
+					fmt.Printf("%-20s \t %-20s \t %-20s \t %-10s \t %-10d \t %-10s \t %-12s \t %s\n",
+						copyRecord.SrcHost, copyRecord.DestHost, copyRecord.Database, copyRecord.Retention,
+						copyRecord.ShardID, copyRecord.Status, fmt.Sprintf("%dKB", copyRecord.CopiedSize/1024), copyRecord.StartTime.String())
+				}
+
 			}
 
 			return nil
