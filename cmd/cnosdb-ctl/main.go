@@ -31,12 +31,14 @@ func main() {
 	mainCmd.AddCommand(node.GetRemoveMetaCommand())
 	mainCmd.AddCommand(node.GetAddDataCommand())
 	mainCmd.AddCommand(node.GetRemoveDataCommand())
+	mainCmd.AddCommand(node.GetReplaceDataCommand())
 	mainCmd.AddCommand(node.GetUpdateDataCommand())
 	mainCmd.AddCommand(shard.GetCopyShardCommand())
 	mainCmd.AddCommand(shard.GetRemoveShardCommand())
 	mainCmd.AddCommand(shard.GetCopyShardStatusCommand())
 	mainCmd.AddCommand(shard.GetKillCopyShardCommand())
 	mainCmd.AddCommand(shard.GetTruncateShardsCommand())
+
 	mainCmd.AddCommand(printVersion())
 	mainCmd.AddCommand(printMetaData())
 
@@ -62,8 +64,9 @@ func printVersion() *cobra.Command {
 
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
-		Use:  "cnosdb-ctl",
-		Long: "The 'cnosdb-ctl' command is used for managing CnosDB clusters.",
+		Use:     "cnosdb-ctl",
+		Long:    "The 'cnosdb-ctl' command is used for managing CnosDB clusters.",
+		Example: `cnosdb-ctl --bind meta-address Command args...`,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableDescriptions: true,
@@ -78,8 +81,9 @@ func GetCommand() *cobra.Command {
 
 func printMetaData() *cobra.Command {
 	return &cobra.Command{
-		Use:   "print-meta",
-		Short: "Displays the CnosDB meta data",
+		Use:     "print-meta",
+		Short:   "Displays the CnosDB meta data",
+		Example: "cnosdb-ctl print-meta --bind meta-addr",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableNoDescFlag:   true,
@@ -110,10 +114,6 @@ func printMetaData() *cobra.Command {
 			}
 
 			for _, db := range data.Databases {
-				if db.Name == "_internal" {
-					continue
-				}
-
 				fmt.Printf("|--DataBase  Name: %s DefaultRetentionPolicy: %s\n", db.Name, db.DefaultRetentionPolicy)
 				for _, rp := range db.RetentionPolicies {
 					fmt.Printf("|    |--RetentionPolicy  Name: %s Replica: %d Duration: %d ShardGroupDuration: %d\n",

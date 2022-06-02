@@ -116,6 +116,8 @@ func (s *Service) WithLogger(log *zap.Logger) {
 func (s *Service) serve() {
 	defer s.wg.Done()
 
+	s.Logger.Info("snapshotter service start")
+
 	for {
 		// Wait for next connection.
 		conn, err := s.Listener.Accept()
@@ -133,7 +135,7 @@ func (s *Service) serve() {
 			defer s.wg.Done()
 			defer conn.Close()
 			if err := s.handleConn(conn); err != nil {
-				s.Logger.Info(err.Error())
+				s.Logger.Info("snapshotter service handle conn error", zap.Error(err))
 			}
 		}(conn)
 	}

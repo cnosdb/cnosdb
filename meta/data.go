@@ -590,6 +590,23 @@ func (data *Data) DropShard(id uint64) {
 	}
 }
 
+func (data *Data) DataNodeContainShardsByID(id uint64) []uint64 {
+	ids := make([]uint64, 0)
+	for _, dbi := range data.Databases {
+		for _, rpi := range dbi.RetentionPolicies {
+			for _, rg := range rpi.ShardGroups {
+				for _, s := range rg.Shards {
+					if s.OwnedBy(id) {
+						ids = append(ids, s.ID)
+					}
+				}
+			}
+		}
+	}
+
+	return ids
+}
+
 // ShardDBRetentionAndOwners returns database name RP name and owners for the specified shard id.
 func (data *Data) ShardDBRetentionAndInfo(id uint64) (string, string, ShardInfo) {
 	for dbidx, dbi := range data.Databases {

@@ -20,7 +20,7 @@ func GetCopyShardCommand() *cobra.Command {
 		Use:     "copy-shard",
 		Short:   "copy a shard from Host1 to Host2",
 		Long:    "copy a shard from Host1 to Host2",
-		Example: "  cnosdb-ctl copy-shard 127.0.0.1:8088 127.0.0.2:8088 1234",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 copy-shard src-data-address dest-data-adress ShardID",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 3 {
 				return errors.New("Input parameters count not right, MUST be 3")
@@ -71,7 +71,7 @@ func GetRemoveShardCommand() *cobra.Command {
 		Use:     "remove-shard",
 		Short:   "remove a shard from host",
 		Long:    "remove a shard from host",
-		Example: "  cnosdb-ctl remove-shard 127.0.0.1:8888 1234",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 remove-shard data-address ShardID",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return errors.New("Input parameters count not right, MUST be 2")
@@ -118,7 +118,7 @@ func GetCopyShardStatusCommand() *cobra.Command {
 		Use:     "copy-shard-status",
 		Short:   "show copy shard status",
 		Long:    "show copy shard status",
-		Example: "  cnosdb-ctl copy-shard-status --bind 127.0.0.1:8888 ",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 copy-shard-status",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return nil
 		},
@@ -173,7 +173,7 @@ func GetKillCopyShardCommand() *cobra.Command {
 		Use:     "kill-copy-shard",
 		Short:   "kill copy shard",
 		Long:    "kill copy shard",
-		Example: "  cnosdb-ctl kill-copy-shard 127.0.0.1:8088 127.0.0.2:8088 1234",
+		Example: "  cnosdb-ctl --bind 127.0.0.1:8091 kill-copy-shard src-data-address dest-data-address ShardID",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 3 {
 				return errors.New("Input parameters count not right, MUST be 3")
@@ -221,18 +221,14 @@ func GetTruncateShardsCommand() *cobra.Command {
 		Use:     "truncate-shards",
 		Short:   "truncate shards",
 		Long:    `truncate-shards`,
-		Example: `cnosdb-ctl truncate-shards 127.0.0.1:8000 minute`,
+		Example: `cnosdb-ctl --bind 127.0.0.1:8091 truncate-shards minute`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) < 1 {
-				return errors.New("Input parameters count not right")
-			}
-
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			delay := 1
-			if len(args) == 2 {
-				tmp, err := strconv.Atoi(args[1])
+			if len(args) == 1 {
+				tmp, err := strconv.Atoi(args[0])
 				if err != nil {
 					return err
 				}
@@ -242,12 +238,19 @@ func GetTruncateShardsCommand() *cobra.Command {
 				}
 			}
 
+			infos, err := getDataNodesInfo(options.Env.Bind)
+			if err != nil {
+				return err
+			}
+			if len(infos) == 0 {
+				return fmt.Errorf("data nodes is empty")
+			}
+
 			request := &snapshotter.Request{
 				Type:        snapshotter.RequestTruncateShards,
 				DelaySecond: delay * 60,
 			}
-
-			conn, err := network.Dial("tcp", args[0], snapshotter.MuxHeader)
+			conn, err := network.Dial("tcp", infos[0].TCPHost, snapshotter.MuxHeader)
 			if err != nil {
 				return err
 			}

@@ -167,7 +167,7 @@ func addDataServer(metaAddr, newNodeAddr string) error {
 		return ErrEmptyPeers
 	}
 
-	r := server.Request{}
+	r := server.NodeRequest{}
 	r.Type = server.RequestClusterJoin
 	r.Peers = peers
 
@@ -222,9 +222,19 @@ func remoteDataServer(metaAddr, remoteNodeAddr string) error {
 	return nil
 }
 
-func updateDataNode(oldNode, newNode string) error {
-	request := &server.Request{
+func updateDataNode(metaAddr, oldNode, newNode string) error {
+	peers, err := GetMetaServers(metaAddr)
+	if err != nil {
+		return err
+	}
+
+	if len(peers) == 0 {
+		return ErrEmptyPeers
+	}
+
+	request := &server.NodeRequest{
 		Type:     server.RequestUpdateDataNode,
+		Peers:    peers,
 		OldAddr:  oldNode,
 		NodeAddr: newNode,
 	}
@@ -239,12 +249,12 @@ func updateDataNode(oldNode, newNode string) error {
 		return fmt.Errorf("Encode snapshot request: %s", err.Error())
 	}
 
-	node := meta.NodeInfo{}
-	if err := json.NewDecoder(conn).Decode(&node); err != nil {
+	rsp := server.NodeResponse{}
+	if err := json.NewDecoder(conn).Decode(&rsp); err != nil {
 		return err
 	}
 
-	fmt.Printf("Added data node %d at %s\n", node.ID, node.TCPHost)
+	fmt.Printf("update data node %s to %s\n", oldNode, newNode)
 
 	return nil
 }
