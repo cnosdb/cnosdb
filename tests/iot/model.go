@@ -3,8 +3,6 @@ package iot
 import (
 	"bytes"
 	"fmt"
-	"math"
-	"math/rand"
 	"strconv"
 	"time"
 )
@@ -19,6 +17,7 @@ type field struct {
 }
 
 type truck struct {
+	Num  int
 	Tags struct {
 		Name          tag
 		Fleet         tag
@@ -50,112 +49,6 @@ type truck struct {
 	}
 	readings    bytes.Buffer
 	diagnostics bytes.Buffer
-}
-
-type truckNum int
-
-func (t *truck) Init(i truckNum) {
-	type model struct {
-		Name            string
-		LoadCapacity    float64
-		FuelCapacity    float64
-		FuelConsumption float64
-	}
-
-	const (
-		truckNameFmt = "truck_%d"
-	)
-
-	fleetChoices := []string{
-		"East",
-		"West",
-		"North",
-		"South",
-	}
-	driverChoices := []string{
-		"Derek",
-		"Rodney",
-		"Albert",
-		"Andy",
-		"Seth",
-		"Trish",
-	}
-	modelChoices := []model{
-		{
-			Name:            "F-150",
-			LoadCapacity:    2000,
-			FuelCapacity:    200,
-			FuelConsumption: 15,
-		},
-		{
-			Name:            "G-2000",
-			LoadCapacity:    5000,
-			FuelCapacity:    300,
-			FuelConsumption: 19,
-		},
-		{
-			Name:            "H-2",
-			LoadCapacity:    1500,
-			FuelCapacity:    150,
-			FuelConsumption: 12,
-		},
-	}
-	deviceVersionChoices := []string{
-		"v1.0",
-		"v1.5",
-		"v2.0",
-		"v2.3",
-	}
-	m := randChoice(modelChoices)
-	t.Tags.Name = tag{"name", fmt.Sprintf(truckNameFmt, i)}
-	t.Tags.Fleet = tag{"fleet", randChoice(fleetChoices)}
-	t.Tags.Driver = tag{"driver", randChoice(driverChoices)}
-	t.Tags.Model = tag{"model", m.Name}
-	t.Tags.DeviceVersion = tag{"device_version", randChoice(deviceVersionChoices)}
-	t.Measurements.Readings.Name = "readings"
-	t.Measurements.Diagnostics.Name = "diagnostics"
-	t.Measurements.Diagnostics.LoadCapacity = field{"load_capacity", m.LoadCapacity}
-	t.Measurements.Diagnostics.FuelCapacity = field{"fuel_capacity", m.FuelCapacity}
-	t.Measurements.Diagnostics.FuelConsumption = field{"nominal_fuel_consumption", m.FuelConsumption}
-}
-
-func (t *truck) New(ts time.Time) {
-	const (
-		maxLatitude        = 90.0
-		maxLongitude       = 180.0
-		maxElevation       = 5000.0
-		maxVelocity        = 100
-		maxHeading         = 360.0
-		maxGrade           = 100.0
-		maxFuelConsumption = 50
-		maxFuel            = 1.0
-		maxLoad            = 5000.0
-		loadChangeChance   = 0.05
-	)
-
-	t.Timestamp = ts
-
-	t.Measurements.Readings.Latitude = field{"latitude",
-		readingsField(maxLatitude, -0.005, 0.005, -90.0, 90.0, 5)}
-	t.Measurements.Readings.Longitude = field{"longitude",
-		readingsField(maxLongitude, -0.005, 0.005, -180, 180, 5)}
-	t.Measurements.Readings.Elevation = field{"elevation",
-		readingsField(500, -10, 10, 0, maxElevation, 0)}
-	t.Measurements.Readings.Velocity = field{"velocity",
-		readingsField(0, -10, 10, 0, maxVelocity, 0)}
-	t.Measurements.Readings.Heading = field{"heading",
-		readingsField(maxHeading, -5, 5, 0, maxHeading, 0)}
-	t.Measurements.Readings.Grade = field{"grade",
-		readingsField(0, -5, 5, 0, maxGrade, 0)}
-	t.Measurements.Readings.FuelConsumption = field{"fuel_consumption",
-		readingsField(maxFuelConsumption/2, -5, 5, 0, maxFuelConsumption, 1)}
-
-	t.Measurements.Diagnostics.CurrentLoad = field{"current_load",
-		newCurrentLoad(t.Measurements.Diagnostics.CurrentLoad.Value, maxLoad, 1-loadChangeChance)}
-	t.Measurements.Diagnostics.FuelState = field{"fuel_state",
-		fuelState(maxFuel, -0.001, 0, 0, maxFuel, 1)}
-	t.Measurements.Diagnostics.Status = field{"status",
-		readingsField(0, 0, 1, 0, 5, 0)}
 }
 
 func (t *truck) Serialize() (readings, diagnostics []byte) {
@@ -246,51 +139,85 @@ func (t *truck) Serialize() (readings, diagnostics []byte) {
 	return t.readings.Bytes(), t.diagnostics.Bytes()
 }
 
-func randChoice[T any](s []T) T {
-	return s[rand.Intn(len(s))]
+type truckGen struct {
+	Num  int
+	Seed int64
+	r    random
+	t    truck
 }
 
-// u is uniform
-func u(low, high float64) float64 {
-	x := rand.Float64()
-	x *= high - low
-	x += low
-	return x
-}
+func (g *truckGen) Init() {
+	g.r = random{Seed: g.Seed}
+	g.r.Init()
 
-// crw is clamped random walk
-func crw(step, min, max, state float64) float64 {
-	state += step
-	if state > max {
-		return max
+	type model struct {
+		LoadCapacity    float64
+		FuelCapacity    float64
+		FuelConsumption float64
 	}
-	if state < min {
-		return min
+	const truckNameFmt = "truck_%d"
+
+	fleetChoices := []string{"East", "West", "North", "South"}
+	driverChoices := []string{"Derek", "Rodney", "Albert", "Andy", "Seth", "Trish"}
+	modelChoices := []string{"F-150", "G-2000", "H-2"}
+	modelMap := map[string]model{
+		"F-150":  {LoadCapacity: 2000, FuelCapacity: 200, FuelConsumption: 15},
+		"G-2000": {LoadCapacity: 5000, FuelCapacity: 300, FuelConsumption: 19},
+		"H-2":    {LoadCapacity: 1500, FuelCapacity: 150, FuelConsumption: 12},
 	}
-	return state
+	deviceVersionChoices := []string{"v1.0", "v1.5", "v2.0", "v2.3"}
+
+	m := g.r.Choice(modelChoices)
+	mo := modelMap[m]
+	g.t.Tags.Name = tag{"name", fmt.Sprintf(truckNameFmt, g.Num)}
+	g.t.Tags.Fleet = tag{"fleet", g.r.Choice(fleetChoices)}
+	g.t.Tags.Driver = tag{"driver", g.r.Choice(driverChoices)}
+	g.t.Tags.Model = tag{"model", m}
+	g.t.Tags.DeviceVersion = tag{"device_version", g.r.Choice(deviceVersionChoices)}
+	g.t.Measurements.Readings.Name = "readings"
+	g.t.Measurements.Diagnostics.Name = "diagnostics"
+	g.t.Measurements.Diagnostics.LoadCapacity = field{"load_capacity", mo.LoadCapacity}
+	g.t.Measurements.Diagnostics.FuelCapacity = field{"fuel_capacity", mo.FuelCapacity}
+	g.t.Measurements.Diagnostics.FuelConsumption = field{"nominal_fuel_consumption", mo.FuelConsumption}
 }
 
-// fp is float precision
-func fp(step, precision float64) float64 {
-	precision = math.Pow(10, precision)
-	return float64(int(step*precision)) / precision
-}
+func (g *truckGen) New(ts time.Time) (readings, diagnostics []byte) {
+	const (
+		maxLatitude        = 90.0
+		maxLongitude       = 180.0
+		maxElevation       = 5000.0
+		maxVelocity        = 100
+		maxHeading         = 360.0
+		maxGrade           = 100.0
+		maxFuelConsumption = 50
+		maxFuel            = 1.0
+		maxLoad            = 5000.0
+		loadChangeChance   = 0.05
+	)
 
-func newCurrentLoad(origin, max, threshold float64) float64 {
-	if u(0, 1) > threshold || origin == 0 {
-		return fp(u(0, max), 0)
-	}
-	return origin
-}
+	g.t.Timestamp = ts
 
-func readingsField(state, low, high, min, max, precision float64) float64 {
-	return fp(crw(u(low, high), min, max, rand.Float64()*state), precision)
-}
+	g.t.Measurements.Readings.Latitude = field{"latitude",
+		g.r.ReadingsField(maxLatitude, -0.005, 0.005, -90.0, 90.0, 5)}
+	g.t.Measurements.Readings.Longitude = field{"longitude",
+		g.r.ReadingsField(maxLongitude, -0.005, 0.005, -180, 180, 5)}
+	g.t.Measurements.Readings.Elevation = field{"elevation",
+		g.r.ReadingsField(500, -10, 10, 0, maxElevation, 0)}
+	g.t.Measurements.Readings.Velocity = field{"velocity",
+		g.r.ReadingsField(0, -10, 10, 0, maxVelocity, 0)}
+	g.t.Measurements.Readings.Heading = field{"heading",
+		g.r.ReadingsField(maxHeading, -5, 5, 0, maxHeading, 0)}
+	g.t.Measurements.Readings.Grade = field{"grade",
+		g.r.ReadingsField(0, -5, 5, 0, maxGrade, 0)}
+	g.t.Measurements.Readings.FuelConsumption = field{"fuel_consumption",
+		g.r.ReadingsField(maxFuelConsumption/2, -5, 5, 0, maxFuelConsumption, 1)}
 
-func fuelState(state, low, high, min, max, precision float64) float64 {
-	c := crw(u(low, high), min, max, state)
-	if c == min {
-		c = max
-	}
-	return fp(c, precision)
+	g.t.Measurements.Diagnostics.CurrentLoad = field{"current_load",
+		g.r.CurrentLoad(g.t.Measurements.Diagnostics.CurrentLoad.Value, maxLoad, 1-loadChangeChance)}
+	g.t.Measurements.Diagnostics.FuelState = field{"fuel_state",
+		g.r.FuelState(maxFuel, -0.001, 0, 0, maxFuel, 1)}
+	g.t.Measurements.Diagnostics.Status = field{"status",
+		g.r.ReadingsField(0, 0, 1, 0, 5, 0)}
+
+	return g.t.Serialize()
 }
