@@ -56,6 +56,30 @@ func TestShardGroupSort_Shard_EndTimeEqual(t *testing.T) {
 	}
 }
 
+func TestShardGroupInfo_Contains(t *testing.T) {
+	sgi := &ShardGroupInfo{StartTime: time.Unix(10, 0), EndTime: time.Unix(20, 0)}
+
+	tests := []struct {
+		ts  time.Time
+		exp bool
+	}{
+		{time.Unix(0, 0), false},
+		{time.Unix(9, 0), false},
+		{time.Unix(10, 0), true},
+		{time.Unix(11, 0), true},
+		{time.Unix(15, 0), true},
+		{time.Unix(19, 0), true},
+		{time.Unix(20, 0), false},
+		{time.Unix(21, 0), false},
+	}
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("ts=%d", test.ts.Unix()), func(t *testing.T) {
+			got := sgi.Contains(test.ts)
+			assert.Equal(t, got, test.exp)
+		})
+	}
+}
+
 func Test_Data_RetentionPolicy_MarshalBinary(t *testing.T) {
 	zeroTime := time.Time{}
 	epoch := time.Unix(0, 0).UTC()
@@ -417,26 +441,16 @@ func TestUserInfo_AuthorizeDatabase(t *testing.T) {
 	}
 }
 
-func TestShardGroupInfo_Contains(t *testing.T) {
-	sgi := &ShardGroupInfo{StartTime: time.Unix(10, 0), EndTime: time.Unix(20, 0)}
+func TestNodeInfo_serializes(t *testing.T) {
+	node1 := &NodeInfo{1, "localhost", "127.0.0.1"}
 
-	tests := []struct {
-		ts  time.Time
-		exp bool
-	}{
-		{time.Unix(0, 0), false},
-		{time.Unix(9, 0), false},
-		{time.Unix(10, 0), true},
-		{time.Unix(11, 0), true},
-		{time.Unix(15, 0), true},
-		{time.Unix(19, 0), true},
-		{time.Unix(20, 0), false},
-		{time.Unix(21, 0), false},
+	info := node1.marshal()
+	if info == nil {
+		t.Fatalf("marshal failed")
 	}
-	for _, test := range tests {
-		t.Run(fmt.Sprintf("ts=%d", test.ts.Unix()), func(t *testing.T) {
-			got := sgi.Contains(test.ts)
-			assert.Equal(t, got, test.exp)
-		})
+	node2 := &NodeInfo{}
+	node2.unmarshal(info)
+	if !reflect.DeepEqual(node1, node2) {
+		t.Fatalf("unmarshal failed")
 	}
 }
