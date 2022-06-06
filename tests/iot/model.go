@@ -3,6 +3,7 @@ package iot
 import (
 	"bytes"
 	"fmt"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"strconv"
 	"time"
 )
@@ -17,7 +18,6 @@ type field struct {
 }
 
 type truck struct {
-	Num  int
 	Tags struct {
 		Name          tag
 		Fleet         tag
@@ -51,7 +51,7 @@ type truck struct {
 	diagnostics bytes.Buffer
 }
 
-func (t *truck) Serialize() (readings, diagnostics []byte) {
+func (t *truck) LineProtocol() (readings, diagnostics []byte) {
 	t.readings.Reset()
 	t.diagnostics.Reset()
 	writeTags := func(buf *bytes.Buffer) {
@@ -139,6 +139,37 @@ func (t *truck) Serialize() (readings, diagnostics []byte) {
 	return t.readings.Bytes(), t.diagnostics.Bytes()
 }
 
+func (t *truck) Points() []models.Point {
+	points := make([]models.Point, 2)
+	tags := models.NewTags(map[string]string{
+		t.Tags.Name.Key:          t.Tags.Name.Value,
+		t.Tags.Fleet.Key:         t.Tags.Fleet.Value,
+		t.Tags.Driver.Key:        t.Tags.Driver.Value,
+		t.Tags.Model.Key:         t.Tags.Model.Value,
+		t.Tags.DeviceVersion.Key: t.Tags.DeviceVersion.Value,
+	})
+	rFields := models.Fields{
+		t.Measurements.Readings.Latitude.Key:        t.Measurements.Readings.Latitude.Value,
+		t.Measurements.Readings.Longitude.Key:       t.Measurements.Readings.Longitude.Value,
+		t.Measurements.Readings.Elevation.Key:       t.Measurements.Readings.Elevation.Value,
+		t.Measurements.Readings.Velocity.Key:        t.Measurements.Readings.Velocity.Value,
+		t.Measurements.Readings.Heading.Key:         t.Measurements.Readings.Heading.Value,
+		t.Measurements.Readings.Grade.Key:           t.Measurements.Readings.Grade.Value,
+		t.Measurements.Readings.FuelConsumption.Key: t.Measurements.Readings.FuelConsumption.Value,
+	}
+	dFields := models.Fields{
+		t.Measurements.Diagnostics.LoadCapacity.Key:    t.Measurements.Diagnostics.LoadCapacity.Value,
+		t.Measurements.Diagnostics.FuelCapacity.Key:    t.Measurements.Diagnostics.FuelCapacity.Value,
+		t.Measurements.Diagnostics.FuelConsumption.Key: t.Measurements.Diagnostics.FuelConsumption.Value,
+		t.Measurements.Diagnostics.CurrentLoad.Key:     t.Measurements.Diagnostics.CurrentLoad.Value,
+		t.Measurements.Diagnostics.FuelState.Key:       t.Measurements.Diagnostics.FuelState.Value,
+		t.Measurements.Diagnostics.Status.Key:          t.Measurements.Diagnostics.Status.Value,
+	}
+	points[0], _ = models.NewPoint(t.Measurements.Readings.Name, tags, rFields, t.Timestamp)
+	points[1], _ = models.NewPoint(t.Measurements.Diagnostics.Name, tags, dFields, t.Timestamp)
+	return points
+}
+
 type truckGen struct {
 	Num  int
 	Seed int64
@@ -181,7 +212,7 @@ func (g *truckGen) Init() {
 	g.t.Measurements.Diagnostics.FuelConsumption = field{"nominal_fuel_consumption", mo.FuelConsumption}
 }
 
-func (g *truckGen) New(ts time.Time) (readings, diagnostics []byte) {
+func (g *truckGen) New(ts time.Time) []models.Point {
 	const (
 		maxLatitude        = 90.0
 		maxLongitude       = 180.0
@@ -219,5 +250,5 @@ func (g *truckGen) New(ts time.Time) (readings, diagnostics []byte) {
 	g.t.Measurements.Diagnostics.Status = field{"status",
 		g.r.ReadingsField(0, 0, 1, 0, 5, 0)}
 
-	return g.t.Serialize()
+	return g.t.Points()
 }
