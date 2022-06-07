@@ -20,8 +20,9 @@ const MAX_BATCH_SIZE: usize = 64;
 #[derive(Serialize, Deserialize, PartialEq, Debug, Default, Clone)]
 pub struct CompactMeta {
     pub file_id: u64, // file id
-    pub ts_min: u64,
-    pub ts_max: u64,
+    pub file_size: u64,
+    pub ts_min: i64,
+    pub ts_max: i64,
     pub level: u32,
     pub high_seq: u64,
     pub low_seq: u64,
@@ -29,8 +30,9 @@ pub struct CompactMeta {
 impl CompactMeta {
     pub fn new(file_id: u64, level: u32) -> Self {
         Self { file_id,
-               ts_min: u64::MAX,
-               ts_max: u64::MIN,
+               file_size: 0,
+               ts_min: i64::MAX,
+               ts_max: i64::MIN,
                level,
                high_seq: u64::MIN,
                low_seq: u64::MIN }

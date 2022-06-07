@@ -90,21 +90,27 @@ pub struct QueryOption {
 
 #[derive(Clone, PartialEq)]
 pub struct TseriesFamOpt {
-    max_level: u32,
-    max_bytes_for_level_base: u64,
-    level_ratio: f64,
-    target_file_size_base: u64,
-    file_number_compact_trigger: u32,
-    max_compact_size: u64,
+    pub max_level: u32,
+    // pub base_file_size: u64,
+    pub level_ratio: f64,
+    pub base_file_size: u64,
+    pub compact_trigger: u32,
+    pub max_compact_size: u64,
+}
+
+impl TseriesFamOpt {
+    pub fn level_file_size(&self, lvl: u32) -> u64 {
+        self.base_file_size * lvl as u64 * self.compact_trigger as u64
+    }
 }
 
 impl Default for TseriesFamOpt {
     fn default() -> Self {
-        Self { max_level: 6,
-               max_bytes_for_level_base: 256 * 1024 * 1024,
+        Self { max_level: 4,
+               // base_file_size: 256 * 1024 * 1024,
                level_ratio: 16f64,
-               target_file_size_base: 64 * 1024 * 1024,
-               file_number_compact_trigger: 4,
+               base_file_size: 16 * 1024 * 1024,
+               compact_trigger: 4,
                max_compact_size: 2 * 1024 * 1024 * 1024 }
     }
 }

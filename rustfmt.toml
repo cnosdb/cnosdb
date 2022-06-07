@@ -1,6 +1,6 @@
 # https://rust-coding-guidelines.github.io/rust-coding-guidelines-zh/safe-guides/Appendix/templates/rustfmt.toml.html
 version = "Two"
-use_small_heuristics="MAX"
+use_small_heuristics="Max"
 indent_style="Visual" 
 enum_discrim_align_threshold = 10 
 match_block_trailing_comma=true

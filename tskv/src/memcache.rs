@@ -43,16 +43,16 @@ impl DataType {
 }
 
 pub struct MemEntry {
-    ts_min: i64,
-    ts_max: i64,
-    field_type: FieldType,
-    cells: Vec<DataType>,
+    pub ts_min: i64,
+    pub ts_max: i64,
+    pub field_type: ValueType,
+    pub cells: Vec<DataType>,
 }
 impl Default for MemEntry {
     fn default() -> Self {
         MemEntry { ts_min: i64::MAX,
                    ts_max: i64::MIN,
-                   field_type: FieldType::String,
+                   field_type: ValueType::Float,
                    cells: Vec::new() }
     }
 }
@@ -62,12 +62,12 @@ pub struct MemCache {
     // partiton id
     tf_id: u32,
     // wal seq number
-    seq_no: u64,
+    pub seq_no: u64,
     // max mem buffer size convert to immcache
     max_buf_size: u64,
     // block <filed_id, buffer>
     // filed_id contain the field type
-    data_cache: HashMap<u64, MemEntry>,
+    pub data_cache: HashMap<u64, MemEntry>,
     // current size
     cache_size: u64,
 }
@@ -126,6 +126,10 @@ impl MemCache {
         }
         item.cells.push(val);
     }
+
+    // pub fn data_cache(&self) -> HashMap<u64, MemEntry> {
+    //     self.data_cache
+    // }
 
     pub fn flush() -> Result<()> {
         Ok(())
