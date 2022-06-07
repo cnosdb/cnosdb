@@ -1,13 +1,14 @@
-package monitor
+package monitor_test
 
 import (
+	"github.com/cnosdb/cnosdb/monitor"
 	"reflect"
 	"runtime"
 	"testing"
 )
 
 func TestDiagnostics_GoRuntime(t *testing.T) {
-	s := New(nil, Config{})
+	s := monitor.New(nil, monitor.Config{})
 	if err := s.Open(); err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}

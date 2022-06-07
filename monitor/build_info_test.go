@@ -1,12 +1,13 @@
-package monitor
+package monitor_test
 
 import (
+	"github.com/cnosdb/cnosdb/monitor"
 	"reflect"
 	"testing"
 )
 
 func TestDiagnostics_BuildInfo(t *testing.T) {
-	s := New(nil, Config{})
+	s := monitor.New(nil, monitor.Config{})
 	s.Version = "1.1.0"
 	s.Commit = "0c983b993e465c6380f78cb25ccb184ca91e194b"
 	s.Branch = "1.1"

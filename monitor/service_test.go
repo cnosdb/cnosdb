@@ -1,4 +1,4 @@
-package monitor
+package monitor_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"expvar"
 	"fmt"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/vend/common/pkg/toml"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"os"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestMonitor_Open(t *testing.T) {
-	s := New(nil, Config{})
+	s := monitor.New(nil, monitor.Config{})
 	if err := s.Open(); err != nil {
 		t.Fatalf("unexpected open error: %s", err)
 	}
@@ -47,8 +48,8 @@ func TestMonitor_SetPointsWriter_StoreEnabled(t *testing.T) {
 		return &meta.DatabaseInfo{Name: name}, nil
 	}
 
-	config := NewConfig()
-	s := New(nil, config)
+	config := monitor.NewConfig()
+	s := monitor.New(nil, config)
 	s.MetaClient = &mc
 	core, logs := observer.New(zap.DebugLevel)
 	s.WithLogger(zap.New(core))
@@ -67,7 +68,7 @@ func TestMonitor_SetPointsWriter_StoreEnabled(t *testing.T) {
 }
 
 func TestMonitor_SetPointsWriter_StoreDisabled(t *testing.T) {
-	s := New(nil, Config{})
+	s := monitor.New(nil, monitor.Config{})
 	core, logs := observer.New(zap.DebugLevel)
 	s.WithLogger(zap.New(core))
 
@@ -91,21 +92,21 @@ func TestMonitor_StoreStatistics(t *testing.T) {
 
 	var mc MetaClient
 	mc.CreateDatabaseWithRetentionPolicyFn = func(name string, spec *meta.RetentionPolicySpec) (*meta.DatabaseInfo, error) {
-		if got, want := name, DefaultStoreDatabase; got != want {
+		if got, want := name, monitor.DefaultStoreDatabase; got != want {
 			t.Errorf("unexpected database: got=%q want=%q", got, want)
 		}
-		if got, want := spec.Name, MonitorRetentionPolicy; got != want {
+		if got, want := spec.Name, monitor.MonitorRetentionPolicy; got != want {
 			t.Errorf("unexpected retention policy: got=%q want=%q", got, want)
 		}
 		if spec.Duration != nil {
-			if got, want := *spec.Duration, MonitorRetentionPolicyDuration; got != want {
+			if got, want := *spec.Duration, monitor.MonitorRetentionPolicyDuration; got != want {
 				t.Errorf("unexpected duration: got=%q want=%q", got, want)
 			}
 		} else {
 			t.Error("expected duration in retention policy spec")
 		}
 		if spec.ReplicaN != nil {
-			if got, want := *spec.ReplicaN, MonitorRetentionPolicyReplicaN; got != want {
+			if got, want := *spec.ReplicaN, monitor.MonitorRetentionPolicyReplicaN; got != want {
 				t.Errorf("unexpected replica number: got=%q want=%q", got, want)
 			}
 		} else {
@@ -117,10 +118,10 @@ func TestMonitor_StoreStatistics(t *testing.T) {
 	var pw PWriter
 	pw.WritePointsFn = func(database, policy string, points models.Points) error {
 		// Verify that we are attempting to write to the correct database.
-		if got, want := database, DefaultStoreDatabase; got != want {
+		if got, want := database, monitor.DefaultStoreDatabase; got != want {
 			t.Errorf("unexpected database: got=%q want=%q", got, want)
 		}
-		if got, want := policy, MonitorRetentionPolicy; got != want {
+		if got, want := policy, monitor.MonitorRetentionPolicy; got != want {
 			t.Errorf("unexpected retention policy: got=%q want=%q", got, want)
 		}
 
@@ -132,9 +133,9 @@ func TestMonitor_StoreStatistics(t *testing.T) {
 		return nil
 	}
 
-	config := NewConfig()
+	config := monitor.NewConfig()
 	config.StoreInterval = toml.Duration(10 * time.Millisecond)
-	s := New(nil, config)
+	s := monitor.New(nil, config)
 	s.MetaClient = &mc
 	s.PointsWriter = &pw
 
@@ -208,9 +209,9 @@ func TestMonitor_Reporter(t *testing.T) {
 		return nil
 	}
 
-	config := NewConfig()
+	config := monitor.NewConfig()
 	config.StoreInterval = toml.Duration(10 * time.Millisecond)
-	s := New(reporter, config)
+	s := monitor.New(reporter, config)
 	s.MetaClient = &mc
 	s.PointsWriter = &pw
 
@@ -304,9 +305,9 @@ func TestMonitor_Expvar(t *testing.T) {
 		return nil
 	}
 
-	config := NewConfig()
+	config := monitor.NewConfig()
 	config.StoreInterval = toml.Duration(10 * time.Millisecond)
-	s := New(nil, config)
+	s := monitor.New(nil, config)
 	s.MetaClient = &mc
 	s.PointsWriter = &pw
 
@@ -398,9 +399,9 @@ func TestMonitor_QuickClose(t *testing.T) {
 	}
 
 	var pw PWriter
-	config := NewConfig()
+	config := monitor.NewConfig()
 	config.StoreInterval = toml.Duration(24 * time.Hour)
-	s := New(nil, config)
+	s := monitor.New(nil, config)
 	s.MetaClient = &mc
 	s.PointsWriter = &pw
 
@@ -414,7 +415,7 @@ func TestMonitor_QuickClose(t *testing.T) {
 }
 
 func TestStatistic_ValueNames(t *testing.T) {
-	statistic := Statistic{
+	statistic := monitor.Statistic{
 		Statistic: models.Statistic{
 			Name: "foo",
 			Values: map[string]interface{}{
@@ -431,13 +432,13 @@ func TestStatistic_ValueNames(t *testing.T) {
 }
 
 func TestStatistics_Sort(t *testing.T) {
-	statistics := []*Statistic{
+	statistics := []*monitor.Statistic{
 		{Statistic: models.Statistic{Name: "b"}},
 		{Statistic: models.Statistic{Name: "a"}},
 		{Statistic: models.Statistic{Name: "c"}},
 	}
 
-	sort.Sort(Statistics(statistics))
+	sort.Sort(monitor.Statistics(statistics))
 	names := make([]string, 0, len(statistics))
 	for _, stat := range statistics {
 		names = append(names, stat.Name)

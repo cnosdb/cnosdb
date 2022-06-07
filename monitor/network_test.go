@@ -1,6 +1,7 @@
-package monitor
+package monitor_test
 
 import (
+	"github.com/cnosdb/cnosdb/monitor"
 	"os"
 	"reflect"
 	"testing"
@@ -12,7 +13,7 @@ func TestDiagnostics_Network(t *testing.T) {
 		t.Fatalf("unexpected error retrieving hostname: %s", err)
 	}
 
-	s := New(nil, Config{})
+	s := monitor.New(nil, monitor.Config{})
 	if err := s.Open(); err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
