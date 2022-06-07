@@ -4,7 +4,7 @@ use std::{
     ops::DerefMut,
     rc::Rc,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
 };
@@ -18,24 +18,59 @@ use crate::{
     summary::CompactMeta,
 };
 
-// let const
-
 #[derive(Default)]
 pub struct TimeRange {
-    max_ts: u64,
-    min_ts: u64,
+    pub max_ts: i64,
+    pub min_ts: i64,
 }
-pub struct BlockFile {
+
+impl TimeRange {
+    pub fn new(max_ts: i64, min_ts: i64) -> Self {
+        Self { max_ts, min_ts }
+    }
+    pub fn overlaps(&self, range: TimeRange) -> bool {
+        if self.min_ts > range.max_ts || self.max_ts < range.min_ts { false } else { true }
+    }
+}
+
+pub struct ColumnFile {
     file_id: u64,
+    being_compact: AtomicBool,
+    deleted: AtomicBool,
+    range: TimeRange, // file time range
+    size: u64,        // file size
+}
+
+impl ColumnFile {
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+    pub fn range(&self) -> &TimeRange {
+        &self.range
+    }
+}
+
+impl ColumnFile {
+    pub fn mark_removed(&self) {
+        self.deleted.store(true, Ordering::Release);
+    }
+
+    pub fn mark_compaction(&self) {
+        self.being_compact.store(true, Ordering::Release);
+    }
+
+    pub fn is_pending_compaction(&self) -> bool {
+        self.being_compact.load(Ordering::Acquire)
+    }
 }
 
 #[derive(Default)]
 pub struct LevelInfo {
-    files: Vec<BlockFile>,
-    level: u32,
-    cur_size: u64,
-    max_size: u64,
-    ts_range: TimeRange,
+    pub files: Vec<Arc<ColumnFile>>,
+    pub level: u32,
+    pub cur_size: u64,
+    pub max_size: u64,
+    pub ts_range: TimeRange,
 }
 
 impl LevelInfo {
@@ -47,7 +82,12 @@ impl LevelInfo {
                ts_range: TimeRange { max_ts: 0, min_ts: 0 } }
     }
     pub fn apply(&mut self, delta: &CompactMeta) {
-        self.files.push(BlockFile { file_id: delta.file_id });
+        self.files.push(Arc::new(ColumnFile { file_id: delta.file_id,
+                                              being_compact: AtomicBool::new(false),
+                                              deleted: AtomicBool::new(false),
+                                              range: TimeRange::new(delta.ts_max,
+                                                                    delta.ts_min),
+                                              size: delta.file_size }));
         // todo: get file size
         // self.cur_size = ;
         if self.ts_range.max_ts < delta.ts_max {
@@ -78,6 +118,15 @@ impl Version {
 
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+
+    pub fn levels_info(&self) -> &Vec<LevelInfo> {
+        &self.levels_info
+    }
+
+    // todo:
+    pub fn get_ts_overlap(&self, level: u32, ts_min: i64, ts_max: i64) -> Vec<Arc<ColumnFile>> {
+        vec![]
     }
 }
 

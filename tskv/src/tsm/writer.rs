@@ -3,6 +3,8 @@ use std::{
     io::{Seek, SeekFrom, Write},
 };
 
+use utils::bkdr_hash::Hash;
+
 use super::{block, MAX_BLOCK_VALUES};
 use crate::{
     direct_io::FileCursor,
@@ -14,7 +16,7 @@ use crate::{
 //
 // ┌────────┬────────────────────────────────────┬─────────────┬──────────────┐
 // │ Header │               Blocks               │    Index    │    Footer    │
-// │5 bytes │              N bytes               │   N bytes   │   4 bytes    │
+// │5 bytes │              N bytes               │   N bytes   │   8 bytes    │
 // └────────┴────────────────────────────────────┴─────────────┴──────────────┘
 //
 // ┌───────────────────┐
@@ -106,7 +108,17 @@ impl<'a> TsmBlockWriter<'a> {
     pub fn new(writer: &'a mut FileCursor) -> Self {
         Self { writer }
     }
-    fn build(&mut self, mut block: DataBlock) -> Result<Vec<FileBlock>> {
+    pub(crate) fn build(&mut self,
+                        mut block_set: HashMap<u64, DataBlock>)
+                        -> Result<HashMap<u64, Vec<FileBlock>>> {
+        let mut res = HashMap::new();
+        for (fid, block) in block_set.iter_mut() {
+            let index = self.build_one(block)?;
+            res.insert(*fid, index);
+        }
+        Ok(res)
+    }
+    fn build_one(&mut self, block: &mut DataBlock) -> Result<Vec<FileBlock>> {
         let filed_type = block.filed_type();
         let len = block.len();
         let n = (len - 1) / MAX_BLOCK_VALUES + 1;
@@ -187,8 +199,8 @@ mod test {
         let file = fs.create_file("./writer_test.tsm").unwrap();
         let mut fs_cursor = file.into_cursor();
         let mut rd = TsmBlockWriter::new(&mut fs_cursor);
-        let data = DataBlock::U64Block { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
-        let res = rd.build(data);
+        let mut data = DataBlock::U64Block { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
+        let res = rd.build_one(&mut data);
         let mut id = TsmIndexBuilder::new(&mut fs_cursor);
         let mut p = HashMap::new();
         p.insert(1, res.unwrap());

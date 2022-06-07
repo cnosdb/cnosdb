@@ -19,23 +19,26 @@ pub enum DataBlock {
 }
 
 impl DataBlock {
-    pub fn new(size: usize, field_type: DataType) -> Self {
+    pub fn new(size: usize, field_type: ValueType) -> Self {
         match field_type {
-            DataType::U64(_) => Self::U64Block { index: 0,
-                                                 ts: Vec::with_capacity(size),
-                                                 val: Vec::with_capacity(size) },
-            DataType::I64(_) => Self::I64Block { index: 0,
-                                                 ts: Vec::with_capacity(size),
-                                                 val: Vec::with_capacity(size) },
-            DataType::F64(_) => Self::F64Block { index: 0,
-                                                 ts: Vec::with_capacity(size),
-                                                 val: Vec::with_capacity(size) },
-            DataType::Str(_) => Self::StrBlock { index: 0,
-                                                 ts: Vec::with_capacity(size),
-                                                 val: Vec::with_capacity(size) },
-            DataType::Bool(_) => Self::BoolBlock { index: 0,
+            ValueType::Unsigned => Self::U64Block { index: 0,
+                                                    ts: Vec::with_capacity(size),
+                                                    val: Vec::with_capacity(size) },
+            ValueType::Integer => Self::I64Block { index: 0,
                                                    ts: Vec::with_capacity(size),
                                                    val: Vec::with_capacity(size) },
+            ValueType::Float => Self::F64Block { index: 0,
+                                                 ts: Vec::with_capacity(size),
+                                                 val: Vec::with_capacity(size) },
+            ValueType::String => Self::StrBlock { index: 0,
+                                                  ts: Vec::with_capacity(size),
+                                                  val: Vec::with_capacity(size) },
+            ValueType::Boolean => Self::BoolBlock { index: 0,
+                                                    ts: Vec::with_capacity(size),
+                                                    val: Vec::with_capacity(size) },
+            ValueType::Unknown => {
+                todo!()
+            },
         }
     }
     pub fn insert(&mut self, data: DataType) {
@@ -194,7 +197,8 @@ impl DataBlock {
             return blocks.remove(0);
         }
 
-        let mut res = Self::new(blocks.first().unwrap().len(), blocks.first().unwrap().get_type());
+        let mut res =
+            Self::new(blocks.first().unwrap().len(), blocks.first().unwrap().filed_type());
         let mut buf = vec![None; blocks.len()];
         loop {
             match Self::rebuild_vec(&mut blocks, &mut buf) {
