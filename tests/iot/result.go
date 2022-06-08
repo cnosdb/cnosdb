@@ -1,6 +1,7 @@
 package iot
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"testing"
@@ -36,7 +37,7 @@ func (r Row) Equal(columns []string, a Row, num int) bool {
 			x := toFloat64(r[i])
 			y := toFloat64(a[i])
 			if math.Abs(x-y) > 0.000001 {
-				fmt.Printf("Values[%d] %s: %f!=%f \n", i, columns[i], x, y)
+				fmt.Printf("Values[%d] %s: %g!=%g \n", i, columns[i], x, y)
 			}
 		default:
 			panic(columns[i])
@@ -134,6 +135,84 @@ func (r *Results) AssertNotEqual(t *testing.T, a Results) {
 		fmt.Println(a)
 		t.Error("A should be not equal to B.")
 	}
+}
+
+func (r *Results) ToCode(name string) {
+	buf := bytes.Buffer{}
+	tmp := fmt.Sprintf(`
+%s := iot.Results{
+	Results: []iot.Result{`, name)
+	buf.WriteString(tmp)
+	for _, res := range r.Results {
+		tmp = `
+		{`
+		buf.WriteString(tmp)
+		tmp = fmt.Sprintf(`
+			StatementId: %d,`, res.StatementId)
+		buf.WriteString(tmp)
+		tmp = `
+			Series: []iot.Series{`
+		buf.WriteString(tmp)
+		for _, s := range res.Series {
+			tmp = `
+				{`
+			buf.WriteString(tmp)
+			tmp = fmt.Sprintf(`
+					Name: "%s",`, s.Name)
+			buf.WriteString(tmp)
+			tmp = `
+					Columns: []string{`
+			buf.WriteString(tmp)
+			for i, c := range s.Columns {
+				tmp = fmt.Sprintf(`"%s", `, c)
+				if i == len(s.Columns)-1 {
+					tmp = fmt.Sprintf(`"%s"},`, c)
+				}
+				buf.WriteString(tmp)
+			}
+			tmp = `
+					Values: []iot.Row{`
+			buf.WriteString(tmp)
+			for _, row := range s.Values {
+				for i, v := range row {
+					var tmp1 string
+					switch v.(type) {
+					case string:
+						tmp1 = fmt.Sprintf(`"%s"`, v)
+					default:
+						tmp1 = fmt.Sprintf(`%v`, v)
+					}
+					switch i {
+					case 0:
+						tmp = fmt.Sprintf(`
+						{%s, `, tmp1)
+					case len(row) - 1:
+						tmp = fmt.Sprintf(`%s},`, tmp1)
+					default:
+						tmp = fmt.Sprintf(`%s, `, tmp1)
+					}
+					buf.WriteString(tmp)
+				}
+			}
+			tmp = `
+					},`
+			buf.WriteString(tmp)
+			tmp = `
+				},`
+			buf.WriteString(tmp)
+		}
+		tmp = `
+			},`
+		buf.WriteString(tmp)
+		tmp = `
+		},`
+		buf.WriteString(tmp)
+	}
+	tmp = `
+	},
+}`
+	buf.WriteString(tmp)
+	fmt.Println(buf.String())
 }
 
 func toFloat64(a interface{}) float64 {

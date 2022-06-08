@@ -117,12 +117,15 @@ func TestBaseWrite(t *testing.T) {
 	}
 
 	res, _ := benchServer.Query(`select * from db0.."readings" where time='2020-01-01T00:20:00Z'`)
+	fmt.Println(res)
 	rr := iot.Results{}
 	if err := json.Unmarshal([]byte(res), &rr); err != nil {
 		t.Error(err)
 	}
 	rr.AssertEqual(t, r)
+
 	res, _ = benchServer.Query(`select * from db0.."diagnostics" where time='2020-01-01T00:20:00Z'`)
+	fmt.Println(res)
 	dd := iot.Results{}
 	if err := json.Unmarshal([]byte(res), &dd); err != nil {
 		t.Error(err)
