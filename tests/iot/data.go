@@ -13,7 +13,7 @@ const (
 	rp = "rp0"
 )
 
-type generator struct {
+type Generator struct {
 	Server   tests.Server
 	Parallel int
 	Scale    int // Total number of trucks
@@ -25,7 +25,7 @@ type generator struct {
 	wg       sync.WaitGroup
 }
 
-func (g *generator) Init() {
+func (g *Generator) Init() {
 	g.trucks = make([]truckGen, g.Scale)
 	for i := 0; i < g.Scale; i++ {
 		g.trucks[i] = truckGen{Num: i, Seed: g.Seed + int64(i)}
@@ -33,7 +33,7 @@ func (g *generator) Init() {
 	}
 }
 
-func (g *generator) Run() {
+func (g *Generator) Run() {
 	runners := make([]genRunner, g.Parallel)
 	g.wg.Add(g.Parallel)
 
