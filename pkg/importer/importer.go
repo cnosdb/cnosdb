@@ -66,7 +66,7 @@ func NewImporter(c Config) *Importer {
 }
 
 // Import processes the specified file in the Config and writes the data to the databases in chunks specified by batchSize
-func (i *Importer) Import() error {
+func (i *Importer) Import(f io.Reader) error {
 	// Create a client and try to connect.
 	cl, err := client.NewHTTPClient(*i.config.ClientConfig)
 	if err != nil {
@@ -77,11 +77,6 @@ func (i *Importer) Import() error {
 		return fmt.Errorf("failed to connect to %s\n", i.config.ClientConfig.Addr)
 	}
 
-	// Validate args
-	if i.config.Path == "" {
-		return fmt.Errorf("file argument required")
-	}
-
 	defer func() {
 		if i.totalInserts > 0 {
 			i.stdoutLogger.Printf("Processed %d commands\n", i.totalCommands)
@@ -89,13 +84,6 @@ func (i *Importer) Import() error {
 			i.stdoutLogger.Printf("Failed %d inserts\n", i.failedInserts)
 		}
 	}()
-
-	// Open the file
-	f, err := os.Open(i.config.Path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 
 	var r io.Reader
 

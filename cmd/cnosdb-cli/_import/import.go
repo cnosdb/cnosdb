@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 
 	"github.com/cnosdb/cnosdb/client"
@@ -56,8 +57,16 @@ func GetCommand() *cobra.Command {
 			config.URL = u
 			config.ClientConfig.Addr = u.String()
 
+			// Open the file
+			f, err := os.Open(config.Path)
+			if err != nil {
+				fmt.Printf("[ERR] Open file(%s) err: %v\n", config.Path, err)
+				return
+			}
+			defer f.Close()
+
 			i := importer.NewImporter(*config)
-			if err := i.Import(); err != nil {
+			if err := i.Import(f); err != nil {
 				fmt.Printf("[ERR] %s\n", err)
 			}
 		},
