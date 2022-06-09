@@ -2587,13 +2587,23 @@ func (p *Parser) ParseExpr() (Expr, error) {
 				return nil, newParseError(tokstr(tok, lit), []string{"regex"}, pos)
 			}
 		} else if op == IN {
-			temp, err := p.parseInExpr(root)
+			elems, err := p.parseInElems()
 			if err != nil {
 				return nil, err
 			}
-			op = OR
-			root.RHS = temp.LHS
-			rhs = temp.RHS
+
+			if len(elems) == 1 {
+				op = EQ
+				rhs = elems[0]
+			} else { // len(elems) > 1
+				temp, err := p.parseInExpr(root, elems)
+				if err != nil {
+					return nil, err
+				}
+				op = OR
+				root.RHS = temp.LHS
+				rhs = temp.RHS
+			}
 		} else {
 			if rhs, err = p.parseUnaryExpr(); err != nil {
 				return nil, err
@@ -2616,16 +2626,16 @@ func (p *Parser) ParseExpr() (Expr, error) {
 	}
 }
 
-// parseInExpr parses IN expression
-func (p *Parser) parseInExpr(e Expr) (*BinaryExpr, error) {
+// parseInElems parses IN elements
+func (p *Parser) parseInElems() ([]Expr, error) {
 	// Parse required ( token.
 	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != LPAREN {
-		return nil, newParseError(tokstr(tok, lit), []string{"("}, pos)
+		return []Expr{}, newParseError(tokstr(tok, lit), []string{"("}, pos)
 	}
 
 	first, err := p.parseUnaryExpr()
 	if err != nil {
-		return nil, err
+		return []Expr{}, err
 	}
 	exprs := []Expr{first}
 
@@ -2638,7 +2648,7 @@ func (p *Parser) parseInExpr(e Expr) (*BinaryExpr, error) {
 
 		e, err := p.parseUnaryExpr()
 		if err != nil {
-			return nil, err
+			return []Expr{}, err
 		}
 
 		exprs = append(exprs, e)
@@ -2646,9 +2656,14 @@ func (p *Parser) parseInExpr(e Expr) (*BinaryExpr, error) {
 
 	// Parse required ) token.
 	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != RPAREN {
-		return nil, newParseError(tokstr(tok, lit), []string{")"}, pos)
+		return []Expr{}, newParseError(tokstr(tok, lit), []string{")"}, pos)
 	}
 
+	return exprs, nil
+}
+
+// parseInExpr parses IN expression
+func (p *Parser) parseInExpr(e Expr, elems []Expr) (*BinaryExpr, error) {
 	be, ok := e.(*BinaryExpr)
 	if !ok {
 		// This expression is not a binary condition or is not a IN condition
@@ -2658,17 +2673,17 @@ func (p *Parser) parseInExpr(e Expr) (*BinaryExpr, error) {
 	root := &BinaryExpr{
 		Op:  EQ,
 		LHS: be.RHS,
-		RHS: exprs[0],
+		RHS: elems[0],
 	}
-	if len(exprs) > 1 {
-		for i := 1; i < len(exprs); i++ {
+	if len(elems) > 1 {
+		for i := 1; i < len(elems); i++ {
 			root = &BinaryExpr{
 				Op:  OR,
 				LHS: root,
 				RHS: &BinaryExpr{
 					Op:  EQ,
 					LHS: be.RHS,
-					RHS: exprs[i],
+					RHS: elems[i],
 				},
 			}
 		}
