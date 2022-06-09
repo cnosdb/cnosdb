@@ -2586,6 +2586,14 @@ func (p *Parser) ParseExpr() (Expr, error) {
 				tok, pos, lit := p.ScanIgnoreWhitespace()
 				return nil, newParseError(tokstr(tok, lit), []string{"regex"}, pos)
 			}
+		} else if op == IN {
+			temp, err := p.parseInExpr(root)
+			if err != nil {
+				return nil, err
+			}
+			op = OR
+			root.RHS = temp.LHS
+			rhs = temp.RHS
 		} else {
 			if rhs, err = p.parseUnaryExpr(); err != nil {
 				return nil, err
@@ -2606,6 +2614,66 @@ func (p *Parser) ParseExpr() (Expr, error) {
 			node = r
 		}
 	}
+}
+
+// parseInExpr parses IN expression
+func (p *Parser) parseInExpr(e Expr) (*BinaryExpr, error) {
+	// Parse required ( token.
+	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != LPAREN {
+		return nil, newParseError(tokstr(tok, lit), []string{"("}, pos)
+	}
+
+	first, err := p.parseUnaryExpr()
+	if err != nil {
+		return nil, err
+	}
+	exprs := []Expr{first}
+
+	// Parse remaining (optional) first.
+	for {
+		if tok, _, _ := p.ScanIgnoreWhitespace(); tok != COMMA {
+			p.Unscan()
+			break
+		}
+
+		e, err := p.parseUnaryExpr()
+		if err != nil {
+			return nil, err
+		}
+
+		exprs = append(exprs, e)
+	}
+
+	// Parse required ) token.
+	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != RPAREN {
+		return nil, newParseError(tokstr(tok, lit), []string{")"}, pos)
+	}
+
+	be, ok := e.(*BinaryExpr)
+	if !ok {
+		// This expression is not a binary condition or is not a IN condition
+		return be, nil
+	}
+
+	root := &BinaryExpr{
+		Op:  EQ,
+		LHS: be.RHS,
+		RHS: exprs[0],
+	}
+	if len(exprs) > 1 {
+		for i := 1; i < len(exprs); i++ {
+			root = &BinaryExpr{
+				Op:  OR,
+				LHS: root,
+				RHS: &BinaryExpr{
+					Op:  EQ,
+					LHS: be.RHS,
+					RHS: exprs[i],
+				},
+			}
+		}
+	}
+	return root, nil
 }
 
 // parseUnaryExpr parses an non-binary expression.
