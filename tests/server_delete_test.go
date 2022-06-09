@@ -33,7 +33,7 @@ func setupCommands(s *LocalServer, tracker *SeriesTracker) []Command {
 	var seriesN = 100
 	var commands []Command
 
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewSource(Seed))
 
 	// Command for inserting some series data.
 	commands = append(commands, func() (string, error) {
@@ -120,8 +120,8 @@ func TestServer_DELETE_DROP_SERIES_DROP_MEASUREMENT(t *testing.T) {
 
 	N := 5000
 	shardN := 10
-	r := rand.New(rand.NewSource(seed))
-	t.Logf("***** Seed set to %d *****\n", seed)
+	r := rand.New(rand.NewSource(Seed))
+	t.Logf("***** Seed set to %d *****\n", Seed)
 
 	if testing.Short() {
 		t.Skip("Skipping in short mode")
