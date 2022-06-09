@@ -5,6 +5,7 @@ import (
 
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/_import"
 	"github.com/cnosdb/cnosdb/cmd/cnosdb-cli/cli"
+	"github.com/cnosdb/cnosdb/cmd/cnosdb-tools/sql2cnosdb"
 
 	"github.com/spf13/cobra"
 )
@@ -25,6 +26,7 @@ func main() {
 	cliCmd.AddCommand(importCmd)
 	printVersionCmd := printVersionCmd()
 	cliCmd.AddCommand(printVersionCmd)
+	cliCmd.AddCommand(sql2cnosdb.GetCommand())
 
 	if err := cliCmd.Execute(); err != nil {
 		fmt.Printf("Error : %+v\n", err)
