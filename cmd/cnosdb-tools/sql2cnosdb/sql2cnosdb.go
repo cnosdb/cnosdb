@@ -143,6 +143,8 @@ func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Wr
 	dbName := ""
 	tableName := ""
 	scanner := bufio.NewReader(file)
+
+	io.WriteString(writer, "# DML\n")
 	for {
 		line, err := scanner.ReadString('\n')
 		if err == io.EOF {
@@ -154,9 +156,11 @@ func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Wr
 
 		if m := useExp.FindAllStringSubmatch(line, -1); len(m) == 1 {
 			dbName = m[0][1]
+			io.WriteString(writer, "# CONTEXT-DATABASE: "+dbName+"\n")
 		}
 		if m := connectExp.FindAllStringSubmatch(line, -1); len(m) == 1 {
 			dbName = m[0][1]
+			io.WriteString(writer, "# CONTEXT-DATABASE: "+dbName+"\n")
 		}
 
 		match := mysqlValuesExp.FindAllStringSubmatch(line, -1)
@@ -192,6 +196,7 @@ func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Wr
 			}
 
 			lineProto := "insert " + measName + "," + str
+			io.WriteString(writer, measName+","+str+"\n")
 			fmt.Printf("Line [%s], %s\n", dbName, lineProto)
 		}
 	}
