@@ -92,28 +92,6 @@ impl WalEntryBlock {
     }
 }
 
-pub fn get_max_sequence_file_name(dir: impl AsRef<Path>) -> Option<(PathBuf, u64)> {
-    let segments = file_manager::list_file_names(dir);
-    if segments.is_empty() {
-        return None;
-    }
-    let mut max_id = 1;
-    let mut max_index = 0;
-    for (i, file_name) in segments.iter().enumerate() {
-        match file_utils::get_wal_file_id(&file_name) {
-            Ok(id) => {
-                if max_id < id {
-                    max_id = id;
-                    max_index = i;
-                }
-            },
-            Err(_) => continue,
-        }
-    }
-    let max_file_name = segments.get(max_index).unwrap();
-    Some((PathBuf::from(max_file_name), max_id))
-}
-
 struct WalWriter {
     id: u64,
     file: File,
@@ -258,28 +236,28 @@ unsafe impl Send for WalManager {}
 unsafe impl Sync for WalManager {}
 
 impl WalManager {
-    pub fn new(config: kv_option::WalConfig) -> WalManager {
+    pub fn new(config: kv_option::WalConfig) -> Self {
         let config = Arc::new(config);
-
-        let (last, seq) = match get_max_sequence_file_name(PathBuf::from(config.dir.clone())) {
-            Some((file, seq)) => (file, seq),
-            None => {
-                let seq = 1;
-                (file_utils::make_wal_file(&config.dir.clone(), seq), seq)
-            },
-        };
-
         let current_dir_path = PathBuf::from(config.dir.clone());
+
+        let (last, seq) =
+            match file_utils::get_max_sequence_file_name(PathBuf::from(config.dir.clone()),
+                                                         file_utils::get_wal_file_id)
+            {
+                Some((file, seq)) => (current_dir_path.join(file), seq),
+                None => {
+                    let seq = 1;
+                    (file_utils::make_wal_file(&config.dir.clone(), seq), seq)
+                },
+            };
+
         if !file_manager::try_exists(&current_dir_path) {
             std::fs::create_dir_all(&current_dir_path).unwrap();
         }
-        let current_file_path = current_dir_path.join(last);
-
-        let file =
-            file_manager::get_file_manager().open_create_file(current_file_path.clone()).unwrap();
+        let file = file_manager::get_file_manager().open_create_file(last.clone()).unwrap();
         let size = file.len();
 
-        let current_file = WalWriter::open(seq, current_file_path.clone(), config.clone()).unwrap();
+        let current_file = WalWriter::open(seq, last.clone(), config.clone()).unwrap();
 
         WalManager { config, current_dir: current_dir_path, current_file }
     }

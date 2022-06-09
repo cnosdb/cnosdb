@@ -45,6 +45,7 @@ pub enum Error {
 
     #[snafu(display("read record file block: {}", source))]
     Decode { source: bincode::Error },
+
     #[snafu(display("Forward Index: : {}", source))]
     ForwardIndexErr { source: crate::forward_index::ForwardIndexError },
 
@@ -57,6 +58,9 @@ pub enum Error {
     #[snafu(display("write tsm block file error: {}", reason))]
     WriteTsmErr { reason: String },
 
-    #[snafu(display("unable to walk dir : {}", source))]
+    #[snafu(display("unable to walk dir: {}", source))]
     UnableToWalkDir { source: walkdir::Error },
+
+    #[snafu(display("database not found: {}", database))]
+    DatabaseNotFound { database: String },
 }
