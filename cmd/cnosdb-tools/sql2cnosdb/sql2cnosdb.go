@@ -56,9 +56,9 @@ type TableInfo struct {
 func GetCommand() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "sql2cnosdb [path] [Use]",
-		Short:   "Import a sql file to cnosdb",
-		Long:    "Import a sql file to cnosdb",
-		Example: ".......",
+		Short:   "Import a dump-sql file to cnosdb",
+		Long:    "Import a dump-sql file to cnosdb",
+		Example: "refer import command",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableDescriptions: true,
@@ -99,8 +99,19 @@ func GetCommand() *cobra.Command {
 				}
 			}
 
-			err = parseSqlDumpFile(config.Path, tables.Tables)
-			fmt.Printf("%v\n", err)
+			reader, writer := io.Pipe()
+			go func() {
+				defer writer.Close()
+				if err := parseSqlDumpFile(config.Path, tables.Tables, writer); err != nil {
+					fmt.Printf("[ERR] %s\n", err)
+				}
+			}()
+
+			defer reader.Close()
+			i := importer.NewImporter(*config)
+			if err := i.Import(reader); err != nil {
+				fmt.Printf("[ERR] %s\n", err)
+			}
 		},
 	}
 
@@ -122,7 +133,7 @@ func GetCommand() *cobra.Command {
 	return c
 }
 
-func parseSqlDumpFile(filename string, tables map[string]TableInfo) error {
+func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Writer) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
