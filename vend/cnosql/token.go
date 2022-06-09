@@ -44,6 +44,7 @@ const (
 
 	AND // AND
 	OR  // OR
+	IN  // IN
 
 	EQ       // =
 	NEQ      // !=
@@ -97,7 +98,6 @@ const (
 	GRANTS
 	GROUP
 	GROUPS
-	IN
 	INF
 	INSERT
 	INTO
@@ -170,6 +170,7 @@ var tokens = [...]string{
 
 	AND: "AND",
 	OR:  "OR",
+	IN:  "IN",
 
 	EQ:       "=",
 	NEQ:      "!=",
@@ -220,7 +221,6 @@ var tokens = [...]string{
 	GRANTS:        "GRANTS",
 	GROUP:         "GROUP",
 	GROUPS:        "GROUPS",
-	IN:            "IN",
 	INF:           "INF",
 	INSERT:        "INSERT",
 	INTO:          "INTO",
@@ -273,7 +273,7 @@ func init() {
 	for tok := keywordBeg + 1; tok < keywordEnd; tok++ {
 		keywords[strings.ToLower(tokens[tok])] = tok
 	}
-	for _, tok := range []Token{AND, OR} {
+	for _, tok := range []Token{AND, OR, IN} {
 		keywords[strings.ToLower(tokens[tok])] = tok
 	}
 	keywords["true"] = TRUE
@@ -295,7 +295,7 @@ func (tok Token) Precedence() int {
 		return 1
 	case AND:
 		return 2
-	case EQ, NEQ, EQREGEX, NEQREGEX, LT, LTE, GT, GTE:
+	case EQ, NEQ, EQREGEX, NEQREGEX, LT, LTE, GT, GTE, IN:
 		return 3
 	case ADD, SUB, BITWISE_OR, BITWISE_XOR:
 		return 4
