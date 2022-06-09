@@ -58,7 +58,7 @@ func GetCommand() *cobra.Command {
 		Use:     "sql2cnosdb [path] [Use]",
 		Short:   "Import a dump-sql file to cnosdb",
 		Long:    "Import a dump-sql file to cnosdb",
-		Example: "refer import command",
+		Example: "cnosdb-cli sql2cnosdb --path sql-dump-file --config config.toml",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd:   true,
 			DisableDescriptions: true,
@@ -74,44 +74,35 @@ func GetCommand() *cobra.Command {
 			config.URL = u
 			config.ClientConfig.Addr = u.String()
 
-			tables := &SqlConfig{}
-			if _, err := toml.DecodeFile(configFilename, tables); err != nil {
+			tables, err := parseConfigFile(configFilename)
+			if err != nil {
 				fmt.Printf("[ERR] %s\n", err)
 				return
 			}
 
-			for k, v := range tables.Tables {
-				if len(v.SqlFields) != 3 {
-					fmt.Printf("[ERR] %s config field array not right\n", k)
-					return
-				}
-
-				for i := 0; i < len(v.SqlFields); i++ {
-					if len(v.SqlFields[i]) <= 0 {
-						fmt.Printf("[ERR] %s config fields name not right\n", k)
-						return
-					}
-
-					if len(v.SqlFields[i]) != len(v.SqlFields[0]) {
-						fmt.Printf("[ERR] %s config fields not right\n", k)
-						return
-					}
-				}
-			}
-
 			reader, writer := io.Pipe()
+			defer reader.Close()
 			go func() {
 				defer writer.Close()
-				if err := parseSqlDumpFile(config.Path, tables.Tables, writer); err != nil {
+				if err := parseSqlDumpFile(config.Path, tables, writer); err != nil {
 					fmt.Printf("[ERR] %s\n", err)
 				}
 			}()
 
-			defer reader.Close()
-			i := importer.NewImporter(*config)
-			if err := i.Import(reader); err != nil {
-				fmt.Printf("[ERR] %s\n", err)
+			scanner := bufio.NewReader(reader)
+			for {
+				line, err := scanner.ReadString('\n')
+				line = strings.Trim(line, "\n")
+				fmt.Printf("%s\n", line)
+				if err != nil {
+					return
+				}
 			}
+
+			// i := importer.NewImporter(*config)
+			// if err := i.Import(reader); err != nil {
+			// 	fmt.Printf("[ERR] %s\n", err)
+			// }
 		},
 	}
 
@@ -131,6 +122,37 @@ func GetCommand() *cobra.Command {
 	flags.StringVar(&configFilename, "config", "", "import sql file to cnosdb config file.")
 
 	return c
+}
+
+func parseConfigFile(name string) (map[string]TableInfo, error) {
+	config := &SqlConfig{}
+	if _, err := toml.DecodeFile(name, config); err != nil {
+		return nil, err
+	}
+
+	for k, v := range config.Tables {
+		if len(v.SqlFields) != 3 {
+			return nil, fmt.Errorf("%s config field array not right", k)
+
+		}
+
+		if len(v.SqlFields[0]) != len(v.SqlFields[1]) || len(v.SqlFields[0]) != len(v.SqlFields[2]) {
+			return nil, fmt.Errorf("%s config fields not right", k)
+		}
+
+		for i := 0; i < len(v.SqlFields[2]); i++ {
+			val := v.SqlFields[2][i].(int64)
+			if val <= 0 || val > 3 {
+				continue
+			}
+
+			if v.SqlFields[1][i] == "" {
+				return nil, fmt.Errorf("%s cnosdb field name can't be empty", k)
+			}
+		}
+	}
+
+	return config.Tables, nil
 }
 
 func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Writer) error {
@@ -172,9 +194,7 @@ func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Wr
 		}
 
 		tableName = match[0][1]
-
-		fmt.Printf("\nSQL [%s.%s] %s\n", dbName, tableName, line)
-
+		//fmt.Printf("\nSQL [%s.%s] %s\n", dbName, tableName, line)
 		dbName, measName, fields := getDbnameMeasurement(dbName, tableName, tables)
 		if dbName == "" || measName == "" || fields == nil {
 			continue
@@ -195,9 +215,8 @@ func parseSqlDumpFile(filename string, tables map[string]TableInfo, writer io.Wr
 				return fmt.Errorf("can't convert to line protocal %v | %s", err, line)
 			}
 
-			lineProto := "insert " + measName + "," + str
 			io.WriteString(writer, measName+","+str+"\n")
-			fmt.Printf("Line [%s], %s\n", dbName, lineProto)
+			//fmt.Printf("Line [%s], %s\n", dbName, "insert " + measName + "," + str)
 		}
 	}
 }
