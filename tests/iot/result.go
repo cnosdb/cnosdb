@@ -2,6 +2,7 @@ package iot
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"testing"
@@ -59,6 +60,10 @@ type Result struct {
 
 type Results struct {
 	Results []Result `json:"results"`
+}
+
+func (r *Results) Unmarshal(str string) error {
+	return json.Unmarshal([]byte(str), r)
 }
 
 func (r *Results) Equal(a Results) bool {
