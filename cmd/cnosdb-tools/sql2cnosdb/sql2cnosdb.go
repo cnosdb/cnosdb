@@ -24,12 +24,17 @@ var (
 )
 
 var useExp *regexp.Regexp
-var valuesExp *regexp.Regexp
+var connectExp *regexp.Regexp
+var mysqlValuesExp *regexp.Regexp
+var pgsqlValuesExp *regexp.Regexp
+
 var configFilename string
 
 func init() {
 	useExp = regexp.MustCompile("^USE `(.+)`;")
-	valuesExp = regexp.MustCompile("^INSERT INTO `(.+?)` VALUES \\((.+)\\);")
+	connectExp = regexp.MustCompile("^\\\\connect (.+)")
+	mysqlValuesExp = regexp.MustCompile("^INSERT INTO `(.+?)` VALUES \\((.+)\\);")
+	pgsqlValuesExp = regexp.MustCompile("^INSERT INTO (.+?) VALUES \\((.+)\\);")
 }
 
 type options struct {
@@ -94,7 +99,7 @@ func GetCommand() *cobra.Command {
 				}
 			}
 
-			err = parseMysqldumpFile(config.Path, tables.Tables)
+			err = parseSqlDumpFile(config.Path, tables.Tables)
 			fmt.Printf("%v\n", err)
 		},
 	}
@@ -117,7 +122,7 @@ func GetCommand() *cobra.Command {
 	return c
 }
 
-func parseMysqldumpFile(filename string, tables map[string]TableInfo) error {
+func parseSqlDumpFile(filename string, tables map[string]TableInfo) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -139,15 +144,21 @@ func parseMysqldumpFile(filename string, tables map[string]TableInfo) error {
 		if m := useExp.FindAllStringSubmatch(line, -1); len(m) == 1 {
 			dbName = m[0][1]
 		}
+		if m := connectExp.FindAllStringSubmatch(line, -1); len(m) == 1 {
+			dbName = m[0][1]
+		}
 
-		match := valuesExp.FindAllStringSubmatch(line, -1)
+		match := mysqlValuesExp.FindAllStringSubmatch(line, -1)
 		if len(match) != 1 {
-			continue
+			match = pgsqlValuesExp.FindAllStringSubmatch(line, -1)
+			if len(match) != 1 {
+				continue
+			}
 		}
 
 		tableName = match[0][1]
 
-		fmt.Printf("[%s.%s] %s\n", dbName, tableName, line)
+		fmt.Printf("\nSQL [%s.%s] %s\n", dbName, tableName, line)
 
 		dbName, measName, fields := getDbnameMeasurement(dbName, tableName, tables)
 		if dbName == "" || measName == "" || fields == nil {
@@ -170,7 +181,7 @@ func parseMysqldumpFile(filename string, tables map[string]TableInfo) error {
 			}
 
 			lineProto := "insert " + measName + "," + str
-			fmt.Printf("DbName %s, %s\n", dbName, lineProto)
+			fmt.Printf("Line [%s], %s\n", dbName, lineProto)
 		}
 	}
 }
@@ -236,9 +247,9 @@ func matchValue(value, pattern, dest string) string {
 	if value == pattern ||
 		(strings.HasPrefix(pattern, "*") && strings.HasSuffix(value, pattern[1:])) ||
 		(strings.HasSuffix(pattern, "*") && strings.HasPrefix(value, pattern[0:len(pattern)-1])) ||
-		(strings.HasPrefix(pattern, "*") && strings.HasSuffix(pattern, "*") && strings.Index(value, pattern[1:len(pattern)-1]) > 0) {
+		(strings.HasPrefix(pattern, "*") && strings.HasSuffix(pattern, "*") && strings.Index(value, pattern[1:len(pattern)-1]) >= 0) {
 		if strHasPrefixOrSuffix(dest, "*") {
-			return value
+			return strings.ReplaceAll(value, ".", "_")
 		} else {
 			return dest
 		}
@@ -300,7 +311,7 @@ func parseValues(str string) ([]string, error) {
 			values = append(values, value)
 			// skip ' and (, or )  )
 			i = j + 2
-		} else if str[i] == '(' || str[i] == ',' || str[i] == ')' {
+		} else if str[i] == '(' || str[i] == ',' || str[i] == ')' || str[i] == ' ' {
 			i = i + 1
 		} else {
 			// no string, read until comma

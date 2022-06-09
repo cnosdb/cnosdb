@@ -1,9 +1,9 @@
 [Tables]
 [Tables.1]
-TableName = "db*/runoob_tbl*" # database table支持前缀后缀通配符，Ex: *abc, abc*, *abc*, *
-Measurement = "cndb/*" # database measurement含有星号时会使用mysql中数据库、表名值
+TableName = "db*/*runoob_tbl*" # 支持前缀后缀通配符，Ex: *abc, abc*, *abc*, *
+Measurement = "cndb/*" # 含有*时会使用sql中原生数据库、表名值
 SqlFields = [
-                ["runoob_id","runoob_title","runoob_author","submission_date","ts"], # mysql字段名字，顺序要与mysqldump后字段值一致
-                ["id","title","author","","ts"], # cnosdb字段名字,如果不需要存储空串替代
-                [3,3,2,0,1],      # 1: 时间戳, 2: tag; 3: field
+                ["runoob_id","runoob_title","runoob_author","submission_date","ts"], # sql字段名字，顺序要与dump后字段值一致
+                ["id","title","author","","ts"], # cnosdb字段名字,如果不需要存储用空字符串替代
+                [3,3,2,0,1],      # 1: 时间戳, 2: tag; 3: field; 其他都是无效值
             ]
