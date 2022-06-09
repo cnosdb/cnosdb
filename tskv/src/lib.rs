@@ -18,6 +18,7 @@ mod memcache;
 mod reader;
 mod record_file;
 mod runtime;
+pub mod schema;
 mod summary;
 mod tseries_family;
 mod tsm;

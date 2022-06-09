@@ -37,6 +37,7 @@ pub struct Options {
     // pub(crate) write_batch: WriteBatchConfig,
     pub compact_conf: CompactConfig,
     pub forward_index_conf: ForwardIndexConfig,
+    pub schema_store: SchemaStoreConfig,
 }
 
 impl Options {
@@ -52,7 +53,8 @@ impl Default for Options {
                lrucache: Default::default(),
                wal: Default::default(),
                compact_conf: Default::default(),
-               forward_index_conf: Default::default() }
+               forward_index_conf: Default::default(),
+               schema_store: Default::default() }
     }
 }
 
@@ -129,5 +131,16 @@ pub struct MemCacheOpt {
 impl Default for MemCacheOpt {
     fn default() -> Self {
         Self { tf_id: 0, max_size: MAX_MEMCACHE_SIZE, seq_no: 0 }
+    }
+}
+
+#[derive(Clone)]
+pub struct SchemaStoreConfig {
+    pub dir: String,
+}
+
+impl Default for SchemaStoreConfig {
+    fn default() -> Self {
+        Self { dir: "dev/schema".to_string() }
     }
 }
