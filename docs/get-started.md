@@ -1,10 +1,10 @@
-# Compile
+# Get Started
 
-requirements:
+## Requirements
 
 **rust**
 
-[Install Rust](https://www.rust-lang.org/tools/install)
+[https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 
 We use `rustfmt` nightly version to format code. To install it:
 
@@ -23,7 +23,7 @@ rustup component add rustfmt --toolchain nightly
 
 flatbuffers: `brew install flatbuffers`
 
-**Compile**
+## Compile
 
 ```sh
 cargo build

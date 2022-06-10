@@ -1,4 +1,6 @@
-# Code style
+# Coding Specifications
+
+# Coding Style
 
 use `make fmt` to format code.
 
@@ -43,3 +45,7 @@ fn main() {
     ];
 }
 ```
+
+# Errors
+
+# Tests
