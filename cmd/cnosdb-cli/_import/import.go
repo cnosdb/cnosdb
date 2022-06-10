@@ -57,6 +57,14 @@ func GetCommand() *cobra.Command {
 			config.URL = u
 			config.ClientConfig.Addr = u.String()
 
+			if config.SqlDump {
+				if err := importSqlDumpData(config); err != nil {
+					fmt.Printf("[ERR] %s\n", err)
+				}
+
+				return
+			}
+
 			// Open the file
 			f, err := os.Open(config.Path)
 			if err != nil {
@@ -84,6 +92,9 @@ func GetCommand() *cobra.Command {
 	flags.StringVar(&config.Path, "path", "", "Path to the file to import.")
 	flags.IntVar(&config.PPS, "pps", defaultPPS, "How many points per second the import will allow.  By default it is zero and will not throttle importing.")
 	flags.BoolVar(&config.Compressed, "compressed", false, "set to true if the import file is compressed")
+
+	flags.BoolVar(&config.SqlDump, "sqldump", false, "set to true if the import file is from mysqldump/pg_dumpall")
+	flags.StringVar(&config.ConfigFile, "config", "", "if sqldump set true,please set config file.")
 	return c
 }
 

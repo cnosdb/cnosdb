@@ -1,11 +1,9 @@
-package sql2cnosdb
+package _import
 
 import (
 	"bufio"
 	"fmt"
 	"io"
-	"net"
-	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -13,14 +11,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cnosdb/cnosdb/client"
 	"github.com/cnosdb/cnosdb/pkg/importer"
-	"github.com/spf13/cobra"
-)
-
-var (
-	config = importer.NewConfig()
-	env    = &options{}
 )
 
 var useExp *regexp.Regexp
@@ -28,19 +19,11 @@ var connectExp *regexp.Regexp
 var mysqlValuesExp *regexp.Regexp
 var pgsqlValuesExp *regexp.Regexp
 
-var configFilename string
-
 func init() {
 	useExp = regexp.MustCompile("^USE `(.+)`;")
 	connectExp = regexp.MustCompile("^\\\\connect (.+)")
 	mysqlValuesExp = regexp.MustCompile("^INSERT INTO `(.+?)` VALUES \\((.+)\\);")
 	pgsqlValuesExp = regexp.MustCompile("^INSERT INTO (.+?) VALUES \\((.+)\\);")
-}
-
-type options struct {
-	Host string
-	Port int
-	Ssl  bool
 }
 
 type SqlConfig struct {
@@ -53,75 +36,34 @@ type TableInfo struct {
 	SqlFields   [][]interface{}
 }
 
-func GetCommand() *cobra.Command {
-	c := &cobra.Command{
-		Use:     "sql2cnosdb [path] [Use]",
-		Short:   "Import a dump-sql file to cnosdb",
-		Long:    "Import a dump-sql file to cnosdb",
-		Example: "cnosdb-cli sql2cnosdb --path sql-dump-file --config config.toml",
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd:   true,
-			DisableDescriptions: true,
-			DisableNoDescFlag:   true,
-		},
-		Run: func(cmd *cobra.Command, args []string) {
-			addr := net.JoinHostPort(env.Host, strconv.Itoa(env.Port))
-			u, err := parseConnectionString(addr, env.Ssl)
-			if err != nil {
-				fmt.Printf("[ERR] %s\n", err)
-				return
-			}
-			config.URL = u
-			config.ClientConfig.Addr = u.String()
-
-			tables, err := parseConfigFile(configFilename)
-			if err != nil {
-				fmt.Printf("[ERR] %s\n", err)
-				return
-			}
-
-			reader, writer := io.Pipe()
-			defer reader.Close()
-			go func() {
-				defer writer.Close()
-				if err := parseSqlDumpFile(config.Path, tables, writer); err != nil {
-					fmt.Printf("[ERR] %s\n", err)
-				}
-			}()
-
-			scanner := bufio.NewReader(reader)
-			for {
-				line, err := scanner.ReadString('\n')
-				line = strings.Trim(line, "\n")
-				fmt.Printf("%s\n", line)
-				if err != nil {
-					return
-				}
-			}
-
-			// i := importer.NewImporter(*config)
-			// if err := i.Import(reader); err != nil {
-			// 	fmt.Printf("[ERR] %s\n", err)
-			// }
-		},
+func importSqlDumpData(config *importer.Config) error {
+	tables, err := parseConfigFile(config.ConfigFile)
+	if err != nil {
+		return err
 	}
 
-	flags := c.Flags()
-	flags.StringVar(&env.Host, "host", client.DEFAULT_HOST, "Host of the CnosDB instance to connect to.")
-	flags.IntVar(&env.Port, "port", client.DEFAULT_PORT, "Port of the CnosDB instance to connect to.")
-	flags.StringVarP(&config.ClientConfig.Username, "username", "u", "", "Username to login to the server.")
-	flags.StringVarP(&config.ClientConfig.Password, "password", "p", "", `Password to login to the server. If password is not given, it's the same as using (--password="").`)
-	flags.BoolVar(&env.Ssl, "ssl", false, "Use https for connecting to cluster.")
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	go func() {
+		if err := parseSqlDumpFile(config.Path, tables, writer); err != nil {
+			writer.CloseWithError(err)
+		} else {
+			writer.Close()
+		}
+	}()
 
-	flags.StringVar(&config.Precision, "precision", "ns", "Precision specifies the format of the timestamp:  rfc3339,h,m,s,ms,u or ns.")
-	flags.StringVar(&config.WriteConsistency, "consistency", "all", "Set write consistency level: any, one, quorum, or all.")
-	flags.StringVar(&config.Path, "path", "", "Path to the file to import.")
-	flags.IntVar(&config.PPS, "pps", 0, "How many points per second the import will allow.  By default it is zero and will not throttle importing.")
-	flags.BoolVar(&config.Compressed, "compressed", false, "set to true if the import file is compressed")
+	scanner := bufio.NewReader(reader)
+	for {
+		line, err := scanner.ReadString('\n')
+		line = strings.Trim(line, "\n")
+		fmt.Printf("%s\n", line)
+		if err != nil {
+			return err
+		}
+	}
 
-	flags.StringVar(&configFilename, "config", "", "import sql file to cnosdb config file.")
-
-	return c
+	// i := importer.NewImporter(*config)
+	// return i.Import(reader)
 }
 
 func parseConfigFile(name string) (map[string]TableInfo, error) {
@@ -404,40 +346,4 @@ func unescapeChar(ch byte) byte {
 		ch = '\t'
 	}
 	return ch
-}
-
-func parseConnectionString(path string, ssl bool) (url.URL, error) {
-	var host string
-	var port int
-
-	h, p, err := net.SplitHostPort(path)
-	if err != nil {
-		if path == "" {
-			host = client.DEFAULT_HOST
-		} else {
-			host = path
-		}
-		port = client.DEFAULT_PORT
-	} else {
-		host = h
-		port, err = strconv.Atoi(p)
-		if err != nil {
-			return url.URL{}, fmt.Errorf("invalid port number %s: %s\n", path, err)
-		}
-	}
-
-	u := url.URL{
-		Scheme: "http",
-		Host:   host,
-	}
-	if ssl {
-		u.Scheme = "https"
-		if port != 443 {
-			u.Host = net.JoinHostPort(host, strconv.Itoa(port))
-		}
-	} else if port != 80 {
-		u.Host = net.JoinHostPort(host, strconv.Itoa(port))
-	}
-
-	return u, nil
 }

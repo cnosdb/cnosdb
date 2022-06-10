@@ -29,6 +29,9 @@ type Config struct {
 	ClientConfig     *client.HTTPConfig
 	Precision        string
 	WriteConsistency string
+
+	SqlDump    bool
+	ConfigFile string
 }
 
 func NewConfig() *Config {
