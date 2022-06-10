@@ -148,7 +148,6 @@ func (s *Server) Open() error {
 	}
 
 	// Start the reporting service, if not disabled.
-	s.reportingDisabled = true
 	if !s.reportingDisabled {
 		go s.startServerReporting()
 	}
@@ -805,7 +804,12 @@ func (s *Server) reportServer() {
 
 	s.Logger.Info("Sending usage statistics to cnosdb official website")
 
-	go cl.Save(usage)
+	go func() {
+		_, err := cl.Save(usage)
+		if err != nil {
+			logger.Debug(fmt.Sprintf("Unable to send message to usage_server because %s", err))
+		}
+	}()
 }
 
 func writeHeader(w http.ResponseWriter, code int) {

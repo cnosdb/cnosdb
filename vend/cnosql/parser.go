@@ -2586,6 +2586,24 @@ func (p *Parser) ParseExpr() (Expr, error) {
 				tok, pos, lit := p.ScanIgnoreWhitespace()
 				return nil, newParseError(tokstr(tok, lit), []string{"regex"}, pos)
 			}
+		} else if op == IN {
+			elems, err := p.parseInElems()
+			if err != nil {
+				return nil, err
+			}
+
+			if len(elems) == 1 {
+				op = EQ
+				rhs = elems[0]
+			} else { // len(elems) > 1
+				temp, err := p.parseInExpr(root, elems)
+				if err != nil {
+					return nil, err
+				}
+				op = OR
+				root.RHS = temp.LHS
+				rhs = temp.RHS
+			}
 		} else {
 			if rhs, err = p.parseUnaryExpr(); err != nil {
 				return nil, err
@@ -2606,6 +2624,71 @@ func (p *Parser) ParseExpr() (Expr, error) {
 			node = r
 		}
 	}
+}
+
+// parseInElems parses IN elements
+func (p *Parser) parseInElems() ([]Expr, error) {
+	// Parse required ( token.
+	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != LPAREN {
+		return []Expr{}, newParseError(tokstr(tok, lit), []string{"("}, pos)
+	}
+
+	first, err := p.parseUnaryExpr()
+	if err != nil {
+		return []Expr{}, err
+	}
+	exprs := []Expr{first}
+
+	// Parse remaining (optional) first.
+	for {
+		if tok, _, _ := p.ScanIgnoreWhitespace(); tok != COMMA {
+			p.Unscan()
+			break
+		}
+
+		e, err := p.parseUnaryExpr()
+		if err != nil {
+			return []Expr{}, err
+		}
+
+		exprs = append(exprs, e)
+	}
+
+	// Parse required ) token.
+	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != RPAREN {
+		return []Expr{}, newParseError(tokstr(tok, lit), []string{")"}, pos)
+	}
+
+	return exprs, nil
+}
+
+// parseInExpr parses IN expression
+func (p *Parser) parseInExpr(e Expr, elems []Expr) (*BinaryExpr, error) {
+	be, ok := e.(*BinaryExpr)
+	if !ok {
+		// This expression is not a binary condition or is not a IN condition
+		return be, nil
+	}
+
+	root := &BinaryExpr{
+		Op:  EQ,
+		LHS: be.RHS,
+		RHS: elems[0],
+	}
+	if len(elems) > 1 {
+		for i := 1; i < len(elems); i++ {
+			root = &BinaryExpr{
+				Op:  OR,
+				LHS: root,
+				RHS: &BinaryExpr{
+					Op:  EQ,
+					LHS: be.RHS,
+					RHS: elems[i],
+				},
+			}
+		}
+	}
+	return root, nil
 }
 
 // parseUnaryExpr parses an non-binary expression.

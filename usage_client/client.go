@@ -12,8 +12,7 @@ import (
 // URL is the default URL for the host of the Usage API.
 // This variable can be set globally or on a per Client
 // instance.
-// TODO(shaoyongkang) : we need a server to recevice the usage data
-var URL = ""
+var URL = "https://usage.statistics.cnosdb.com"
 
 // usage_client handles all of the heavy lifting of talking
 // to the Usage API for you.
