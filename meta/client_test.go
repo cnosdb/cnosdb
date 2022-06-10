@@ -1,7 +1,8 @@
-package meta
+package meta_test
 
 import (
 	"github.com/cnosdb/cnosdb"
+	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"io/ioutil"
 	"os"
@@ -89,7 +90,7 @@ func TestMetaClient_CreateDatabaseWithRetentionPolicy(t *testing.T) {
 
 	duration := 1 * time.Hour
 	replicaN := 1
-	spec := RetentionPolicySpec{
+	spec := meta.RetentionPolicySpec{
 		Name:               "rp0",
 		Duration:           &duration,
 		ReplicaN:           &replicaN,
@@ -139,7 +140,7 @@ func TestMetaClient_CreateDatabaseWithRetentionPolicy_Conflict_Fields(t *testing
 
 	duration := 1 * time.Hour
 	replicaN := 1
-	spec := RetentionPolicySpec{
+	spec := meta.RetentionPolicySpec{
 		Name:               "rp0",
 		Duration:           &duration,
 		ReplicaN:           &replicaN,
@@ -151,28 +152,28 @@ func TestMetaClient_CreateDatabaseWithRetentionPolicy_Conflict_Fields(t *testing
 
 	spec2 := spec
 	spec2.Name = spec.Name + "1"
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != ErrRetentionPolicyConflict {
-		t.Fatalf("got %v, but expected %v", err, ErrRetentionPolicyConflict)
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != meta.ErrRetentionPolicyConflict {
+		t.Fatalf("got %v, but expected %v", err, meta.ErrRetentionPolicyConflict)
 	}
 
 	spec2 = spec
 	duration2 := *spec.Duration + time.Minute
 	spec2.Duration = &duration2
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != ErrRetentionPolicyConflict {
-		t.Fatalf("got %v, but expected %v", err, ErrRetentionPolicyConflict)
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != meta.ErrRetentionPolicyConflict {
+		t.Fatalf("got %v, but expected %v", err, meta.ErrRetentionPolicyConflict)
 	}
 
 	spec2 = spec
 	replica2 := *spec.ReplicaN + 1
 	spec2.ReplicaN = &replica2
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != ErrRetentionPolicyConflict {
-		t.Fatalf("got %v, but expected %v", err, ErrRetentionPolicyConflict)
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != meta.ErrRetentionPolicyConflict {
+		t.Fatalf("got %v, but expected %v", err, meta.ErrRetentionPolicyConflict)
 	}
 
 	spec2 = spec
 	spec2.ShardGroupDuration = spec.ShardGroupDuration + time.Minute
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != ErrRetentionPolicyConflict {
-		t.Fatalf("got %v, but expected %v", err, ErrRetentionPolicyConflict)
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != meta.ErrRetentionPolicyConflict {
+		t.Fatalf("got %v, but expected %v", err, meta.ErrRetentionPolicyConflict)
 	}
 }
 
@@ -185,7 +186,7 @@ func TestMetaClient_CreateDatabaseWithRetentionPolicy_Conflict_NonDefault(t *tes
 
 	duration := 1 * time.Hour
 	replicaN := 1
-	spec := RetentionPolicySpec{
+	spec := meta.RetentionPolicySpec{
 		Name:               "rp0",
 		Duration:           &duration,
 		ReplicaN:           &replicaN,
@@ -203,8 +204,8 @@ func TestMetaClient_CreateDatabaseWithRetentionPolicy_Conflict_NonDefault(t *tes
 	}
 
 	//notice that makeDefault field is not set,that's error.
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != ErrRetentionPolicyConflict {
-		t.Fatalf("got %v, but expected %v", err, ErrRetentionPolicyConflict)
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &spec2); err != meta.ErrRetentionPolicyConflict {
+		t.Fatalf("got %v, but expected %v", err, meta.ErrRetentionPolicyConflict)
 	}
 }
 
@@ -303,14 +304,14 @@ func TestMetaClient_CreateRetentionPolicy(t *testing.T) {
 		t.Fatalf("db name wrong: %s", db.Name)
 	}
 
-	rp0 := RetentionPolicyInfo{
+	rp0 := meta.RetentionPolicyInfo{
 		Name:               "rp0",
 		ReplicaN:           1,
 		Duration:           2 * time.Hour,
 		ShardGroupDuration: 2 * time.Hour,
 	}
 
-	rp0Spec := &RetentionPolicySpec{
+	rp0Spec := &meta.RetentionPolicySpec{
 		Name:               rp0.Name,
 		ReplicaN:           &rp0.ReplicaN,
 		Duration:           &rp0.Duration,
@@ -339,14 +340,14 @@ func TestMetaClient_CreateRetentionPolicy(t *testing.T) {
 	rp1 := rp0
 	rp1.Duration = 2 * rp0.Duration
 
-	rp1Spec := &RetentionPolicySpec{
+	rp1Spec := &meta.RetentionPolicySpec{
 		Name:               rp1.Name,
 		ReplicaN:           &rp1.ReplicaN,
 		Duration:           &rp1.Duration,
 		ShardGroupDuration: rp1.ShardGroupDuration,
 	}
 	_, got := c.CreateRetentionPolicy("db0", rp1Spec, true)
-	if exp := ErrRetentionPolicyExists; got != exp {
+	if exp := meta.ErrRetentionPolicyExists; got != exp {
 		t.Fatalf("got error %v, expected error %v", got, exp)
 	}
 
@@ -354,7 +355,7 @@ func TestMetaClient_CreateRetentionPolicy(t *testing.T) {
 	*rp1Spec.ReplicaN = *rp0Spec.ReplicaN + 1
 
 	_, got = c.CreateRetentionPolicy("db0", rp1Spec, true)
-	if exp := ErrRetentionPolicyExists; got != exp {
+	if exp := meta.ErrRetentionPolicyExists; got != exp {
 		t.Fatalf("got error %v, expected error %v", got, exp)
 	}
 
@@ -362,7 +363,7 @@ func TestMetaClient_CreateRetentionPolicy(t *testing.T) {
 	rp1Spec.ShardGroupDuration = rp0Spec.ShardGroupDuration / 2
 
 	_, got = c.CreateRetentionPolicy("db0", rp1Spec, true)
-	if exp := ErrRetentionPolicyExists; got != exp {
+	if exp := meta.ErrRetentionPolicyExists; got != exp {
 		t.Fatalf("got error %v, expected error %v", got, exp)
 	}
 
@@ -371,7 +372,7 @@ func TestMetaClient_CreateRetentionPolicy(t *testing.T) {
 	rp1Spec.ShardGroupDuration = 2 * time.Hour
 
 	_, got = c.CreateRetentionPolicy("db0", rp1Spec, true)
-	if exp := ErrIncompatibleDurations; got != exp {
+	if exp := meta.ErrIncompatibleDurations; got != exp {
 		t.Fatalf("got error %v, expected error %v", got, exp)
 	}
 }
@@ -385,7 +386,7 @@ func TestMetaClient_DefaultRetentionPolicy(t *testing.T) {
 
 	duration := 1 * time.Hour
 	replicaN := 1
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &RetentionPolicySpec{
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &meta.RetentionPolicySpec{
 		Name:     "rp0",
 		Duration: &duration,
 		ReplicaN: &replicaN,
@@ -433,14 +434,14 @@ func TestMetaClient_SetDefaultRetentionPolicy(t *testing.T) {
 		t.Fatalf("db name wrong: %s", db.Name)
 	}
 
-	rp0 := RetentionPolicyInfo{
+	rp0 := meta.RetentionPolicyInfo{
 		Name:               "rp0",
 		ReplicaN:           1,
 		Duration:           2 * time.Hour,
 		ShardGroupDuration: 2 * time.Hour,
 	}
 
-	if _, err := c.CreateRetentionPolicy("db0", &RetentionPolicySpec{
+	if _, err := c.CreateRetentionPolicy("db0", &meta.RetentionPolicySpec{
 		Name:               rp0.Name,
 		ReplicaN:           &rp0.ReplicaN,
 		Duration:           &rp0.Duration,
@@ -468,7 +469,7 @@ func TestMetaClient_UpdateRetentionPolicy(t *testing.T) {
 	defer os.RemoveAll(d)
 	defer c.Close()
 
-	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &RetentionPolicySpec{
+	if _, err := c.CreateDatabaseWithRetentionPolicy("db0", &meta.RetentionPolicySpec{
 		Name:               "rp0",
 		ShardGroupDuration: 4 * time.Hour,
 	}); err != nil {
@@ -482,7 +483,7 @@ func TestMetaClient_UpdateRetentionPolicy(t *testing.T) {
 
 	duration := 2 * rpi.ShardGroupDuration
 	replicaN := 1
-	if err := c.UpdateRetentionPolicy("db0", "rp0", &RetentionPolicyUpdate{
+	if err := c.UpdateRetentionPolicy("db0", "rp0", &meta.RetentionPolicyUpdate{
 		Duration: &duration,
 		ReplicaN: &replicaN,
 	}, true); err != nil {
@@ -498,37 +499,37 @@ func TestMetaClient_UpdateRetentionPolicy(t *testing.T) {
 	}
 
 	duration = rpi.ShardGroupDuration / 2
-	if err := c.UpdateRetentionPolicy("db0", "rp0", &RetentionPolicyUpdate{
+	if err := c.UpdateRetentionPolicy("db0", "rp0", &meta.RetentionPolicyUpdate{
 		Duration: &duration,
 	}, true); err == nil {
 		t.Fatal("expected error")
-	} else if err != ErrIncompatibleDurations {
-		t.Fatalf("expected error '%s', got '%s'", ErrIncompatibleDurations, err)
+	} else if err != meta.ErrIncompatibleDurations {
+		t.Fatalf("expected error '%s', got '%s'", meta.ErrIncompatibleDurations, err)
 	}
 
 	sgDuration := rpi.Duration * 2
-	if err := c.UpdateRetentionPolicy("db0", "rp0", &RetentionPolicyUpdate{
+	if err := c.UpdateRetentionPolicy("db0", "rp0", &meta.RetentionPolicyUpdate{
 		ShardGroupDuration: &sgDuration,
 	}, true); err == nil {
 		t.Fatal("expected error")
-	} else if err != ErrIncompatibleDurations {
-		t.Fatalf("expected error '%s', got '%s'", ErrIncompatibleDurations, err)
+	} else if err != meta.ErrIncompatibleDurations {
+		t.Fatalf("expected error '%s', got '%s'", meta.ErrIncompatibleDurations, err)
 	}
 
 	duration = rpi.ShardGroupDuration
 	sgDuration = rpi.Duration
-	if err := c.UpdateRetentionPolicy("db0", "rp0", &RetentionPolicyUpdate{
+	if err := c.UpdateRetentionPolicy("db0", "rp0", &meta.RetentionPolicyUpdate{
 		Duration:           &duration,
 		ShardGroupDuration: &sgDuration,
 	}, true); err == nil {
 		t.Fatal("expected error")
-	} else if err != ErrIncompatibleDurations {
-		t.Fatalf("expected error '%s', got '%s'", ErrIncompatibleDurations, err)
+	} else if err != meta.ErrIncompatibleDurations {
+		t.Fatalf("expected error '%s', got '%s'", meta.ErrIncompatibleDurations, err)
 	}
 
 	duration = time.Duration(0)
 	sgDuration = 168 * time.Hour
-	if err := c.UpdateRetentionPolicy("db0", "rp0", &RetentionPolicyUpdate{
+	if err := c.UpdateRetentionPolicy("db0", "rp0", &meta.RetentionPolicyUpdate{
 		Duration:           &duration,
 		ShardGroupDuration: &sgDuration,
 	}, true); err != nil {
@@ -556,7 +557,7 @@ func TestMetaClient_DropRetentionPolicy(t *testing.T) {
 
 	duration := 1 * time.Hour
 	replicaN := 1
-	if _, err := c.CreateRetentionPolicy("db0", &RetentionPolicySpec{
+	if _, err := c.CreateRetentionPolicy("db0", &meta.RetentionPolicySpec{
 		Name:     "rp0",
 		Duration: &duration,
 		ReplicaN: &replicaN,
@@ -629,13 +630,13 @@ func TestMetaClient_CreateUser(t *testing.T) {
 	}
 
 	u, err = c.Authenticate("Jerry", "badpassword")
-	if u != nil || err != ErrAuthenticate {
-		t.Fatalf("authentication should fail with %s", ErrAuthenticate)
+	if u != nil || err != meta.ErrAuthenticate {
+		t.Fatalf("authentication should fail with %s", meta.ErrAuthenticate)
 	}
 
 	u, err = c.Authenticate("Jerry", "")
-	if u != nil || err != ErrAuthenticate {
-		t.Fatalf("authentication should fail with %s", ErrAuthenticate)
+	if u != nil || err != meta.ErrAuthenticate {
+		t.Fatalf("authentication should fail with %s", meta.ErrAuthenticate)
 	}
 
 	if err := c.UpdateUser("Jerry", "moresupersecure"); err != nil {
@@ -643,8 +644,8 @@ func TestMetaClient_CreateUser(t *testing.T) {
 	}
 
 	u, err = c.Authenticate("Jerry", "supersecure")
-	if u != nil || err != ErrAuthenticate {
-		t.Fatalf("authentication should fail with %s", ErrAuthenticate)
+	if u != nil || err != meta.ErrAuthenticate {
+		t.Fatalf("authentication should fail with %s", meta.ErrAuthenticate)
 	}
 
 	u, err = c.Authenticate("Jerry", "moresupersecure")
@@ -653,8 +654,8 @@ func TestMetaClient_CreateUser(t *testing.T) {
 	}
 
 	u, err = c.Authenticate("foo", "")
-	if u != nil || err != ErrUserNotFound {
-		t.Fatalf("authentication should fail with %s", ErrUserNotFound)
+	if u != nil || err != meta.ErrUserNotFound {
+		t.Fatalf("authentication should fail with %s", meta.ErrUserNotFound)
 	}
 
 	u, err = c.User("Tom")
@@ -744,8 +745,8 @@ func TestMetaClient_CreateUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = c.User("Tom"); err != ErrUserNotFound {
-		t.Fatalf("user lookup should fail with %s", ErrUserNotFound)
+	if _, err = c.User("Tom"); err != meta.ErrUserNotFound {
+		t.Fatalf("user lookup should fail with %s", meta.ErrUserNotFound)
 	}
 
 	if exp, got := 1, c.UserCount(); exp != got {
@@ -847,7 +848,7 @@ func TestMetaClient_ContinuousQueries(t *testing.T) {
 
 	if err := c.CreateContinuousQuery("db0", "cq0", `SELECT min(value) INTO foo_max FROM foo GROUP BY time(20m)`); err == nil {
 		t.Fatal("didn't get and error, but expected one")
-	} else if got, exp := err, ErrContinuousQueryExists; got.Error() != exp.Error() {
+	} else if got, exp := err, meta.ErrContinuousQueryExists; got.Error() != exp.Error() {
 		t.Fatalf("got %v, expected %v", got, exp)
 	}
 	if err := c.CreateContinuousQuery("db0", "cq1", `SELECT max(value) INTO foo_max FROM foo GROUP BY time(10m)`); err != nil {
@@ -929,7 +930,7 @@ func TestMetaClient_Subscriptions_Drop(t *testing.T) {
 	}
 
 	err := c.DropSubscription("db0", "autogen", "foo")
-	if got, exp := err, ErrSubscriptionNotFound; got == nil || got.Error() != exp.Error() {
+	if got, exp := err, meta.ErrSubscriptionNotFound; got == nil || got.Error() != exp.Error() {
 		t.Fatalf("got: %s, exp: %s", got, exp)
 	}
 
@@ -1214,7 +1215,7 @@ func TestMetaClient_PruneShardGroups(t *testing.T) {
 	duration := 1 * time.Hour
 	replicaN := 1
 
-	if _, err := c.CreateRetentionPolicy("db1", &RetentionPolicySpec{
+	if _, err := c.CreateRetentionPolicy("db1", &meta.RetentionPolicySpec{
 		Name:     "rp0",
 		Duration: &duration,
 		ReplicaN: &replicaN,
@@ -1385,7 +1386,7 @@ func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
 	cfg := newConfig()
 	defer os.RemoveAll(cfg.Dir)
 
-	c := NewClient(cfg)
+	c := meta.NewClient(cfg)
 	if err := c.Open(); err != nil {
 		t.Fatal(err)
 	}
@@ -1394,7 +1395,7 @@ func TestMetaClient_PersistClusterIDAfterRestart(t *testing.T) {
 		t.Fatal("cluster ID can't be zero")
 	}
 
-	c = NewClient(cfg)
+	c = meta.NewClient(cfg)
 	if err := c.Open(); err != nil {
 		t.Fatal(err)
 	}
@@ -1444,22 +1445,23 @@ func TestMetaClient_NodeID(t *testing.T) {
 	defer c.Close()
 
 	id := c.NodeID()
-	if id != c.nodeID {
-		t.Fatalf("NodeID is wrong.")
+
+	if id != 0 {
+		t.Fatalf("node ID is wrong")
 	}
 }
 
-func newClient() (string, *Client) {
+func newClient() (string, *meta.Client) {
 	config := newConfig()
-	c := NewClient(config)
+	c := meta.NewClient(config)
 	if err := c.Open(); err != nil {
 		panic(err)
 	}
 	return config.Dir, c
 }
 
-func newConfig() *Config {
-	cfg := NewConfig()
+func newConfig() *meta.Config {
+	cfg := meta.NewConfig()
 	cfg.Dir = makeTempDir(2)
 	return cfg
 }
@@ -1478,6 +1480,6 @@ func makeTempDir(skip int) string {
 	return dir
 }
 
-func isAdmin(u User) bool {
-	return u.(*UserInfo).Admin
+func isAdmin(u meta.User) bool {
+	return u.(*meta.UserInfo).Admin
 }
