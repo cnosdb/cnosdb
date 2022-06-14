@@ -11,11 +11,27 @@ Click to view [roadmap](./ROADMAP.md)
 
 ## Features
 
-- High batch writing throughput.
-
-- High compression ratio.
-
-- Rich calculation algorithms.
+- Ultra-large data size
+   - Distributed support for more than 1 billion time series
+   - Support more than 100 billion data points storage
+   - Support distributed aggregation query under massive time series
+- Fast batch writing
+   - Define new memory and disk data structure
+   - Hardware resource abstraction and write optimization
+   - Dynamic adjustment of node load to optimize performance under data skew
+   - Multi-level storage strategy to optimize back-end IO
+- Ultra-high data compression ratio
+   - Column based storage
+   - Multi-level compression
+   - Type and distribution adaptive compression algorithms
+   - Comprehensive compression ratio over 60 times
+-Rich calculation functions
+   - More than 50 calculation functions
+   - Interface modular design
+- Excellent ecosystem
+   - Native support for k8s and docker
+   - Support for Java, Go, C/C++, Python development interfaces
+   - Support for third-party tools such as Telegraf, Grafana, Prometheus, etc.
 
 ## Join the community
 All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR code below and add CC to join the group.
