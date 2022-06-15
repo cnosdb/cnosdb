@@ -68,7 +68,7 @@ impl FileScope {
         Self::sync_len0(&file, len)
     }
 
-    pub(in crate) fn id(&self) -> FileId {
+    pub(crate) fn id(&self) -> FileId {
         self.id
     }
 
