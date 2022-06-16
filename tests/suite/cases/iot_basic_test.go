@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestBaseWrite(t *testing.T) {
+func TestIotBasicWrite(t *testing.T) {
 	g := iot2.Generator{
 		Server:   server,
 		Parallel: 10,
