@@ -30,6 +30,17 @@ func (s *Step) Run(caseName string, server tests.Server, t *testing.T) {
 	}
 }
 
+func (s *Step) ResCode(server tests.Server) {
+	resStr, err := server.Query(s.Query)
+	if err != nil {
+		panic(err)
+	}
+	if err = s.Result.Unmarshal(resStr); err != nil {
+		panic(err)
+	}
+	s.Result.ToCode("a")
+}
+
 type Case struct {
 	Name  string
 	Steps []Step

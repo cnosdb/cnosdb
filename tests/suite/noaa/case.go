@@ -7,6 +7,206 @@ import (
 
 var cases = []suite.Step{
 	{
+		Name:  "water_level_2_4",
+		Query: fmt.Sprintf(`SELECT ("water_level" * 2) + 4 FROM "%s"."%s".h2o_feet LIMIT 10 OFFSET 2000`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-21T04:00:00Z", 15.464},
+								{"2019-08-21T04:00:00Z", 8.666},
+								{"2019-08-21T04:06:00Z", 15.246},
+								{"2019-08-21T04:06:00Z", 8.646},
+								{"2019-08-21T04:12:00Z", 15.004},
+								{"2019-08-21T04:12:00Z", 8.64},
+								{"2019-08-21T04:18:00Z", 14.754},
+								{"2019-08-21T04:18:00Z", 8.527999999999999},
+								{"2019-08-21T04:24:00Z", 14.518},
+								{"2019-08-21T04:24:00Z", 8.402000000000001},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "water_level_count",
+		Query: fmt.Sprintf(`SELECT COUNT("water_level") FROM "%s"."%s".h2o_feet`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "count"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 15258},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_measurements",
+		Query: fmt.Sprintf(`SHOW measurements ON "%s"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "measurements",
+							Columns: []string{"name"},
+							Values: []suite.Row{
+								{"average_temperature"},
+								{"h2o_feet"},
+								{"h2o_pH"},
+								{"h2o_quality"},
+								{"h2o_temperature"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "h2o_feet_all_fields",
+		Query: fmt.Sprintf(`SELECT *::field FROM "%s"."%s".h2o_feet LIMIT 10 OFFSET 3000`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "level description", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-23T06:00:00Z", "below 3 feet", 1.594},
+								{"2019-08-23T06:00:00Z", "between 3 and 6 feet", 5.564},
+								{"2019-08-23T06:06:00Z", "below 3 feet", 1.545},
+								{"2019-08-23T06:06:00Z", "between 3 and 6 feet", 5.43},
+								{"2019-08-23T06:12:00Z", "below 3 feet", 1.526},
+								{"2019-08-23T06:12:00Z", "between 3 and 6 feet", 5.308},
+								{"2019-08-23T06:18:00Z", "below 3 feet", 1.457},
+								{"2019-08-23T06:18:00Z", "between 3 and 6 feet", 5.18},
+								{"2019-08-23T06:24:00Z", "below 3 feet", 1.414},
+								{"2019-08-23T06:24:00Z", "between 3 and 6 feet", 5.052},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "h2o_feet_specific_tags_fields",
+		Query: fmt.Sprintf(`SELECT "level description"::field,"location"::tag,"water_level"::field FROM "%s"."%s".h2o_feet LIMIT 10 OFFSET 5000`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "level description", "location", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-27T10:00:00Z", "below 3 feet", "santa_monica", -0.062},
+								{"2019-08-27T10:00:00Z", "between 3 and 6 feet", "coyote_creek", 5.525},
+								{"2019-08-27T10:06:00Z", "below 3 feet", "santa_monica", -0.092},
+								{"2019-08-27T10:06:00Z", "between 3 and 6 feet", "coyote_creek", 5.354},
+								{"2019-08-27T10:12:00Z", "below 3 feet", "santa_monica", -0.105},
+								{"2019-08-27T10:12:00Z", "between 3 and 6 feet", "coyote_creek", 5.187},
+								{"2019-08-27T10:18:00Z", "below 3 feet", "santa_monica", -0.089},
+								{"2019-08-27T10:18:00Z", "between 3 and 6 feet", "coyote_creek", 5.02},
+								{"2019-08-27T10:24:00Z", "below 3 feet", "santa_monica", -0.112},
+								{"2019-08-27T10:24:00Z", "between 3 and 6 feet", "coyote_creek", 4.849},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "h2o_feet_50",
+		Query: fmt.Sprintf(`SELECT "level description","location","water_level" FROM "%s"."%s".h2o_feet limit 50`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "level description", "location", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", "below 3 feet", "santa_monica", 2.064},
+								{"2019-08-17T00:00:00Z", "between 6 and 9 feet", "coyote_creek", 8.12},
+								{"2019-08-17T00:06:00Z", "below 3 feet", "santa_monica", 2.116},
+								{"2019-08-17T00:06:00Z", "between 6 and 9 feet", "coyote_creek", 8.005},
+								{"2019-08-17T00:12:00Z", "below 3 feet", "santa_monica", 2.028},
+								{"2019-08-17T00:12:00Z", "between 6 and 9 feet", "coyote_creek", 7.887},
+								{"2019-08-17T00:18:00Z", "below 3 feet", "santa_monica", 2.126},
+								{"2019-08-17T00:18:00Z", "between 6 and 9 feet", "coyote_creek", 7.762},
+								{"2019-08-17T00:24:00Z", "below 3 feet", "santa_monica", 2.041},
+								{"2019-08-17T00:24:00Z", "between 6 and 9 feet", "coyote_creek", 7.635},
+								{"2019-08-17T00:30:00Z", "below 3 feet", "santa_monica", 2.051},
+								{"2019-08-17T00:30:00Z", "between 6 and 9 feet", "coyote_creek", 7.5},
+								{"2019-08-17T00:36:00Z", "below 3 feet", "santa_monica", 2.067},
+								{"2019-08-17T00:36:00Z", "between 6 and 9 feet", "coyote_creek", 7.372},
+								{"2019-08-17T00:42:00Z", "below 3 feet", "santa_monica", 2.057},
+								{"2019-08-17T00:42:00Z", "between 6 and 9 feet", "coyote_creek", 7.234},
+								{"2019-08-17T00:48:00Z", "below 3 feet", "santa_monica", 1.991},
+								{"2019-08-17T00:48:00Z", "between 6 and 9 feet", "coyote_creek", 7.11},
+								{"2019-08-17T00:54:00Z", "below 3 feet", "santa_monica", 2.054},
+								{"2019-08-17T00:54:00Z", "between 6 and 9 feet", "coyote_creek", 6.982},
+								{"2019-08-17T01:00:00Z", "below 3 feet", "santa_monica", 2.018},
+								{"2019-08-17T01:00:00Z", "between 6 and 9 feet", "coyote_creek", 6.837},
+								{"2019-08-17T01:06:00Z", "below 3 feet", "santa_monica", 2.096},
+								{"2019-08-17T01:06:00Z", "between 6 and 9 feet", "coyote_creek", 6.713},
+								{"2019-08-17T01:12:00Z", "below 3 feet", "santa_monica", 2.1},
+								{"2019-08-17T01:12:00Z", "between 6 and 9 feet", "coyote_creek", 6.578},
+								{"2019-08-17T01:18:00Z", "below 3 feet", "santa_monica", 2.106},
+								{"2019-08-17T01:18:00Z", "between 6 and 9 feet", "coyote_creek", 6.44},
+								{"2019-08-17T01:24:00Z", "below 3 feet", "santa_monica", 2.126144146},
+								{"2019-08-17T01:24:00Z", "between 6 and 9 feet", "coyote_creek", 6.299},
+								{"2019-08-17T01:30:00Z", "below 3 feet", "santa_monica", 2.1},
+								{"2019-08-17T01:30:00Z", "between 6 and 9 feet", "coyote_creek", 6.168},
+								{"2019-08-17T01:36:00Z", "below 3 feet", "santa_monica", 2.136},
+								{"2019-08-17T01:36:00Z", "between 6 and 9 feet", "coyote_creek", 6.024},
+								{"2019-08-17T01:42:00Z", "below 3 feet", "santa_monica", 2.182},
+								{"2019-08-17T01:42:00Z", "between 3 and 6 feet", "coyote_creek", 5.879},
+								{"2019-08-17T01:48:00Z", "below 3 feet", "santa_monica", 2.306},
+								{"2019-08-17T01:48:00Z", "between 3 and 6 feet", "coyote_creek", 5.745},
+								{"2019-08-17T01:54:00Z", "below 3 feet", "santa_monica", 2.448},
+								{"2019-08-17T01:54:00Z", "between 3 and 6 feet", "coyote_creek", 5.617},
+								{"2019-08-17T02:00:00Z", "below 3 feet", "santa_monica", 2.464},
+								{"2019-08-17T02:00:00Z", "between 3 and 6 feet", "coyote_creek", 5.472},
+								{"2019-08-17T02:06:00Z", "below 3 feet", "santa_monica", 2.467},
+								{"2019-08-17T02:06:00Z", "between 3 and 6 feet", "coyote_creek", 5.348},
+								{"2019-08-17T02:12:00Z", "below 3 feet", "santa_monica", 2.516},
+								{"2019-08-17T02:12:00Z", "between 3 and 6 feet", "coyote_creek", 5.2},
+								{"2019-08-17T02:18:00Z", "below 3 feet", "santa_monica", 2.674},
+								{"2019-08-17T02:18:00Z", "between 3 and 6 feet", "coyote_creek", 5.072},
+								{"2019-08-17T02:24:00Z", "below 3 feet", "santa_monica", 2.684},
+								{"2019-08-17T02:24:00Z", "between 3 and 6 feet", "coyote_creek", 4.934},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
 		Name:  "h2o_feet_200",
 		Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."h2o_feet" limit 200`, db, rp),
 		Result: suite.Results{

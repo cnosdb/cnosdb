@@ -42,7 +42,7 @@ func (n *NOAA) Load() {
 	tNow := time.Now()
 	for scan.Scan() {
 		i++
-		if i%1000 == 0 {
+		if i%5000 == 0 {
 			fmt.Printf("Rows: %d, Time Cost: %s\n", i, time.Now().Sub(tNow).String())
 		}
 		params := url.Values{"precision": []string{"s"}}
@@ -56,7 +56,7 @@ func (n *NOAA) Load() {
 
 func (n *NOAA) Test() {
 	for i, c := range cases {
-		n.T.Run(fmt.Sprintf("T%d", i), func(t *testing.T) {
+		n.T.Run(fmt.Sprintf("T%d-%s", i, c.Name), func(t *testing.T) {
 			c.Run("NOAA", n.S, n.T)
 		})
 	}

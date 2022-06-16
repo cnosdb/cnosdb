@@ -20,19 +20,20 @@ func (r Row) Equal(columns []string, a Row, num int) bool {
 	}
 	for i := 0; i < len(r); i++ {
 		switch columns[i] {
-		case
+		case // string
+			"name",
 			/* iot */
-			"time", "device_version", "driver", "fleet", "model", "name",
+			"time", "device_version", "driver", "fleet", "model",
 			/* NOAA */
 			"level description", "location":
-			// string
 			x := r[i].(string)
 			y := a[i].(string)
 			if x != y {
 				fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], x, y)
 				return false
 			}
-		case
+		case // float
+			"count",
 			/* Readings */
 			"latitude", "longitude", "elevation", "velocity",
 			"heading", "grade", "fuel_consumption",
@@ -195,8 +196,13 @@ func (r *Results) ToCode(name string) {
 					}
 					switch i {
 					case 0:
-						tmp = fmt.Sprintf(`
+						if len(row) != 1 {
+							tmp = fmt.Sprintf(`
 						{%s, `, tmp1)
+						} else {
+							tmp = fmt.Sprintf(`
+						{%s}, `, tmp1)
+						}
 					case len(row) - 1:
 						tmp = fmt.Sprintf(`%s},`, tmp1)
 					default:
