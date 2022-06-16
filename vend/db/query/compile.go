@@ -103,7 +103,7 @@ func newCompiler(opt CompileOptions) *compiledStatement {
 	}
 }
 
-func Compile(stmt *cnosql.SelectStatement, opt CompileOptions) (Statement, error) {
+func Compile(stmt *cnosql.SelectStatement, opt CompileOptions) (_ Statement, err error) {
 	c := newCompiler(opt)
 	c.stmt = stmt.Clone()
 	if err := c.preprocess(c.stmt); err != nil {
@@ -114,6 +114,17 @@ func Compile(stmt *cnosql.SelectStatement, opt CompileOptions) (Statement, error
 	}
 	c.stmt.TimeAlias = c.TimeFieldName
 	c.stmt.Condition = c.Condition
+
+	defer func() {
+		if e := recover(); e != nil && err == nil {
+			var ok bool
+			err, ok = e.(error)
+			if !ok {
+				err = fmt.Errorf("panic: %v", e)
+			}
+			err = fmt.Errorf("likely malformed statement, unable to rewrite: %w", err)
+		}
+	}()
 
 	// Convert DISTINCT into a call.
 	c.stmt.RewriteDistinct()

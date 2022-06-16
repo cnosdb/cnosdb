@@ -280,7 +280,7 @@ func (fsm *storeFSM) applyCreateRetentionPolicyCommand(cmd *internal.Command) in
 			ReplicaN:           int(pb.GetReplicaN()),
 			Duration:           time.Duration(pb.GetDuration()),
 			ShardGroupDuration: time.Duration(pb.GetShardGroupDuration()),
-		}, false); err != nil {
+		}, v.GetDefault()); err != nil {
 		return err
 	}
 	fsm.data = other
