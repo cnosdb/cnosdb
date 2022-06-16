@@ -19,36 +19,44 @@ func (r Row) Equal(columns []string, a Row, num int) bool {
 		return false
 	}
 	for i := 0; i < len(r); i++ {
-		switch columns[i] {
-		case // string
-			"name",
-			/* iot */
-			"time", "device_version", "driver", "fleet", "model",
-			/* NOAA */
-			"level description", "location":
-			x := r[i].(string)
-			y := a[i].(string)
-			if x != y {
-				fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], x, y)
-				return false
+		if r[i] == nil && a[i] == nil {
+			// do nothing
+		} else if (r[i] == nil && a[i] != nil) || (r[i] != nil && a[i] == nil) {
+			fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], r[i], a[i])
+			return false
+		} else {
+
+			switch columns[i] {
+			case // string
+				"name",
+				/* iot */
+				"time", "device_version", "driver", "fleet", "model",
+				/* NOAA */
+				"level description", "location":
+				x := r[i].(string)
+				y := a[i].(string)
+				if x != y {
+					fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], x, y)
+					return false
+				}
+			case // float
+				"count",
+				/* Readings */
+				"latitude", "longitude", "elevation", "velocity",
+				"heading", "grade", "fuel_consumption",
+				/* Diagnostics */
+				"load_capacity", "fuel_capacity", "nominal_fuel_consumption",
+				"current_load", "fuel_state", "status",
+				/* NOAA */
+				"water_level", "pH":
+				x := toFloat64(r[i])
+				y := toFloat64(a[i])
+				if math.Abs(x-y) > 0.000001 {
+					fmt.Printf("Values[%d] %s: %g!=%g \n", i, columns[i], x, y)
+				}
+			default:
+				panic(columns[i])
 			}
-		case // float
-			"count",
-			/* Readings */
-			"latitude", "longitude", "elevation", "velocity",
-			"heading", "grade", "fuel_consumption",
-			/* Diagnostics */
-			"load_capacity", "fuel_capacity", "nominal_fuel_consumption",
-			"current_load", "fuel_state", "status",
-			/* NOAA */
-			"water_level":
-			x := toFloat64(r[i])
-			y := toFloat64(a[i])
-			if math.Abs(x-y) > 0.000001 {
-				fmt.Printf("Values[%d] %s: %g!=%g \n", i, columns[i], x, y)
-			}
-		default:
-			panic(columns[i])
 		}
 	}
 	return true
@@ -192,7 +200,11 @@ func (r *Results) ToCode(name string) {
 					case string:
 						tmp1 = fmt.Sprintf(`"%s"`, v)
 					default:
-						tmp1 = fmt.Sprintf(`%v`, v)
+						if v != nil {
+							tmp1 = fmt.Sprintf(`%v`, v)
+						} else {
+							tmp1 = "nil"
+						}
 					}
 					switch i {
 					case 0:

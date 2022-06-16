@@ -80,6 +80,51 @@ var cases = []suite.Step{
 		},
 	},
 	{
+		Name:  "h2o_feet_h2o_pH",
+		Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."h2o_feet","%s"."%s"."h2o_pH" LIMIT 10 OFFSET 1000`, db, rp, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "level description", "location", "pH", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-19T02:00:00Z", "below 3 feet", "santa_monica", nil, 2.211},
+								{"2019-08-19T02:00:00Z", "between 6 and 9 feet", "coyote_creek", nil, 6.768},
+								{"2019-08-19T02:06:00Z", "below 3 feet", "santa_monica", nil, 2.188},
+								{"2019-08-19T02:06:00Z", "between 6 and 9 feet", "coyote_creek", nil, 6.631},
+								{"2019-08-19T02:12:00Z", "below 3 feet", "santa_monica", nil, 2.306},
+								{"2019-08-19T02:12:00Z", "between 6 and 9 feet", "coyote_creek", nil, 6.49},
+								{"2019-08-19T02:18:00Z", "below 3 feet", "santa_monica", nil, 2.323},
+								{"2019-08-19T02:18:00Z", "between 6 and 9 feet", "coyote_creek", nil, 6.358},
+								{"2019-08-19T02:24:00Z", "below 3 feet", "santa_monica", nil, 2.297},
+								{"2019-08-19T02:24:00Z", "between 6 and 9 feet", "coyote_creek", nil, 6.207},
+							},
+						},
+						{
+							Name:    "h2o_pH",
+							Columns: []string{"time", "level description", "location", "pH", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-19T02:00:00Z", nil, "coyote_creek", 7, nil},
+								{"2019-08-19T02:00:00Z", nil, "santa_monica", 8, nil},
+								{"2019-08-19T02:06:00Z", nil, "coyote_creek", 7, nil},
+								{"2019-08-19T02:06:00Z", nil, "santa_monica", 8, nil},
+								{"2019-08-19T02:12:00Z", nil, "coyote_creek", 8, nil},
+								{"2019-08-19T02:12:00Z", nil, "santa_monica", 8, nil},
+								{"2019-08-19T02:18:00Z", nil, "coyote_creek", 7, nil},
+								{"2019-08-19T02:18:00Z", nil, "santa_monica", 7, nil},
+								{"2019-08-19T02:24:00Z", nil, "coyote_creek", 8, nil},
+								{"2019-08-19T02:24:00Z", nil, "santa_monica", 8, nil},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
 		Name:  "h2o_feet_all_fields",
 		Query: fmt.Sprintf(`SELECT *::field FROM "%s"."%s".h2o_feet LIMIT 10 OFFSET 3000`, db, rp),
 		Result: suite.Results{
