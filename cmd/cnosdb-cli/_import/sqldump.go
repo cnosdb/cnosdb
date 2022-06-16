@@ -52,18 +52,8 @@ func importSqlDumpData(config *importer.Config) error {
 		}
 	}()
 
-	scanner := bufio.NewReader(reader)
-	for {
-		line, err := scanner.ReadString('\n')
-		line = strings.Trim(line, "\n")
-		fmt.Printf("%s\n", line)
-		if err != nil {
-			return err
-		}
-	}
-
-	// i := importer.NewImporter(*config)
-	// return i.Import(reader)
+	i := importer.NewImporter(*config)
+	return i.Import(reader)
 }
 
 func parseConfigFile(name string) (map[string]TableInfo, error) {
