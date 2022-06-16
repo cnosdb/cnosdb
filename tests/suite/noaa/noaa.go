@@ -2,9 +2,12 @@ package noaa
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/cnosdb/cnosdb/tests"
+	"net/url"
 	"os"
 	"testing"
+	"time"
 )
 
 const (
@@ -35,10 +38,26 @@ func (n *NOAA) Load() {
 	}
 
 	scan := bufio.NewScanner(f)
+	i := 0
+	tNow := time.Now()
 	for scan.Scan() {
-		n.S.MustWrite(db, rp, scan.Text(), nil)
+		i++
+		if i%1000 == 0 {
+			fmt.Printf("Rows: %d, Time Cost: %s\n", i, time.Now().Sub(tNow).String())
+		}
+		params := url.Values{"precision": []string{"s"}}
+		n.S.MustWrite(db, rp, scan.Text(), params)
 	}
+	fmt.Printf("Rows: %d, Time Cost: %s\n", i, time.Now().Sub(tNow).String())
 	if err = scan.Err(); err != nil {
 		n.T.Error(err)
+	}
+}
+
+func (n *NOAA) Test() {
+	for i, c := range cases {
+		n.T.Run(fmt.Sprintf("T%d", i), func(t *testing.T) {
+			c.Run("NOAA", n.S, n.T)
+		})
 	}
 }

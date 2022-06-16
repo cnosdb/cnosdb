@@ -8,4 +8,5 @@ import (
 func TestNoaa(t *testing.T) {
 	n := noaa.NOAA{S: server, T: t}
 	n.Load()
+	n.Test()
 }

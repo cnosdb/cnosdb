@@ -20,7 +20,11 @@ func (r Row) Equal(columns []string, a Row, num int) bool {
 	}
 	for i := 0; i < len(r); i++ {
 		switch columns[i] {
-		case "time", "device_version", "driver", "fleet", "model", "name":
+		case
+			/* iot */
+			"time", "device_version", "driver", "fleet", "model", "name",
+			/* NOAA */
+			"level description", "location":
 			// string
 			x := r[i].(string)
 			y := a[i].(string)
@@ -34,7 +38,9 @@ func (r Row) Equal(columns []string, a Row, num int) bool {
 			"heading", "grade", "fuel_consumption",
 			/* Diagnostics */
 			"load_capacity", "fuel_capacity", "nominal_fuel_consumption",
-			"current_load", "fuel_state", "status":
+			"current_load", "fuel_state", "status",
+			/* NOAA */
+			"water_level":
 			x := toFloat64(r[i])
 			y := toFloat64(a[i])
 			if math.Abs(x-y) > 0.000001 {
@@ -145,8 +151,8 @@ func (r *Results) AssertNotEqual(t *testing.T, a Results) {
 func (r *Results) ToCode(name string) {
 	buf := bytes.Buffer{}
 	tmp := fmt.Sprintf(`
-%s := iot.Results{
-	Results: []iot.Result{`, name)
+%s := suite.Results{
+	Results: []suite.Result{`, name)
 	buf.WriteString(tmp)
 	for _, res := range r.Results {
 		tmp = `
@@ -156,7 +162,7 @@ func (r *Results) ToCode(name string) {
 			StatementId: %d,`, res.StatementId)
 		buf.WriteString(tmp)
 		tmp = `
-			Series: []iot.Series{`
+			Series: []suite.Series{`
 		buf.WriteString(tmp)
 		for _, s := range res.Series {
 			tmp = `
@@ -176,7 +182,7 @@ func (r *Results) ToCode(name string) {
 				buf.WriteString(tmp)
 			}
 			tmp = `
-					Values: []iot.Row{`
+					Values: []suite.Row{`
 			buf.WriteString(tmp)
 			for _, row := range s.Values {
 				for i, v := range row {
