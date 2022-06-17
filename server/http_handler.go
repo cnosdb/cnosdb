@@ -284,6 +284,8 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 		return true, nil
 	}
 
+	var e *coordinator.StatementExecutor
+
 	for i := 0; i < stmtLen; i++ {
 		stmt := query.Statements[i]
 
@@ -324,9 +326,12 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 		}
 
 		// 推迟类型转换时机, 避免对非拦截的命令的影响. 但是执行到此处，则必须能够拿到
-		e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
-		if !ok {
-			return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
+		if nil == e {
+			var ok bool
+			e, ok = h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
+			if !ok {
+				return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
+			}
 		}
 
 		// 注意时机, 此时才可拿数据库的信息, 如果提前拿，会对其他命令造成影响
