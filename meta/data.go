@@ -465,6 +465,10 @@ func (data *Data) DropRetentionPolicy(database, name string) error {
 		}
 	}
 
+	if di.DefaultRetentionPolicy == name {
+		di.DefaultRetentionPolicy = ""
+	}
+
 	return nil
 }
 
