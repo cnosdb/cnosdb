@@ -324,6 +324,7 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 			continue
 		}
 
+		// 注意时机, 此时才可拿数据库的信息, 如果提前拿，会对其他命令造成影响
 		dbi := e.MetaClient.Database(defaultDB)
 		if nil == dbi {
 			return false, fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
