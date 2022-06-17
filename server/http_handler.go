@@ -29,7 +29,6 @@ import (
 	"github.com/cnosdb/cnosdb/vend/db/query"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"github.com/cnosdb/cnosdb/vend/storage"
-
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -402,6 +401,12 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 		ReadOnly:        r.Method == "GET",
 		NodeID:          nodeID,
 		Authorizer:      fineAuthorizer,
+	}
+
+	if strings.EqualFold("autogen", opts.RetentionPolicy) {
+		h.logger.Error(fmt.Sprintf("Error can't delete when rp is autogen, opts = %v", opts))
+		writeError(rw, "Error can't delete when rp is autogen")
+		return
 	}
 
 	if h.config.AuthEnabled {
