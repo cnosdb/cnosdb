@@ -346,8 +346,9 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 		}
 
 		// 如果有一个执行体出现被拦截的情况, 则所有的语句都不能执行，直接返回拦截
-		h.logger.Warn(fmt.Sprintf("Warn can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy))
-		return false, nil
+		errMsg := fmt.Sprintf("can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy)
+		h.logger.Error(errMsg)
+		return false, fmt.Errorf(errMsg) // 视为一个error
 	}
 
 	return true, nil

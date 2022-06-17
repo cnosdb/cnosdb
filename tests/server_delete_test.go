@@ -3,8 +3,6 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/google/go-cmp/cmp"
 	"math/rand"
 	"net/url"
 	"os"
@@ -14,6 +12,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/google/go-cmp/cmp"
 )
 
 var db = "db0"
@@ -130,6 +131,7 @@ func TestServer_DELETE_DROP_SERIES_DROP_MEASUREMENT(t *testing.T) {
 	s := OpenDefaultServer(NewConfig())
 	defer s.Close()
 
+	mustDropRetentionPolicy(s, "autogen")
 	if _, ok := s.(*RemoteServer); ok {
 		t.Skip("Skipping. Not implemented on remote server")
 	}
@@ -186,6 +188,7 @@ func TestServer_Insert_Delete_1515688266259660938_same_shard(t *testing.T) {
 	s := OpenDefaultServer(NewConfig())
 	defer s.Close()
 
+	mustDropRetentionPolicy(s, "autogen")
 	for i := 0; i < 100; i++ {
 		mustWrite(s, "m4,s67=a v=1 4",
 			"m4,s67=a v=1 12",
@@ -215,6 +218,7 @@ func TestServer_Insert_Delete_1515688266259660938(t *testing.T) {
 	s := OpenDefaultServer(NewConfig())
 	defer s.Close()
 
+	mustDropRetentionPolicy(s, "autogen")
 	for i := 0; i < 100; i++ {
 		mustWrite(s, "m4,s67=a v=1 2127318532111304", // should be deleted
 			"m4,s67=a v=1 4840422259072956",
@@ -245,6 +249,7 @@ func TestServer_Insert_Delete_1515771752164780713(t *testing.T) {
 	s := OpenDefaultServer(NewConfig())
 	defer s.Close()
 
+	mustDropRetentionPolicy(s, "autogen")
 	mustWrite(s, "m6,s72=a v=1 641480139110750")            // series id 257 in shard 1
 	mustWrite(s, "m6,s32=a v=1 1320128148356150")           // series id 259 in shard 2
 	mustDelete(s, "m6", 1316178840387070, 3095172845699329) // deletes m6,s32=a (259) - shard 2 now empty
@@ -269,6 +274,7 @@ func TestServer_Insert_Delete_1515777603585914810(t *testing.T) {
 	s := OpenDefaultServer(NewConfig())
 	defer s.Close()
 
+	mustDropRetentionPolicy(s, "autogen")
 	mustWrite(s, "m5,s99=a v=1 1")
 	mustDelete(s, "m5", 0, 1)
 	mustWrite(s, "m5,s99=a v=1 1")
@@ -364,6 +370,23 @@ func mustDelete(s Server, name string, min, max int64) {
 	if _, err := s.QueryWithParams(query, url.Values{"db": []string{db}}); err != nil {
 		panic(err)
 	}
+}
+
+func mustDropRetentionPolicy(s Server, retentionPolicy string) {
+	query := fmt.Sprintf("DROP RETENTION POLICY %s on %s ", retentionPolicy, db)
+	if _, err := s.QueryWithParams(query, url.Values{"db": []string{db}}); err != nil {
+		panic(err)
+	}
+}
+
+func queryRetentionPolicy(s Server) {
+	query := fmt.Sprintf("SHOW RETENTION POLICIES ON %s ", db)
+	results, err := s.QueryWithParams(query, url.Values{"db": []string{db}})
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("queryRetentionPolicy: %s\n", results)
 }
 
 func mustDropMeasurement(s Server, name string) {
