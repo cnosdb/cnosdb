@@ -279,7 +279,7 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionOptions) (bool, error) {
-	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
+	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor) // 此处如果无法转换,则是发生了错误, 否则无法执行语句
 	if !ok {
 		return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
 	}
@@ -288,19 +288,19 @@ func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionO
 		stmt := query.Statements[i]
 
 		defaultDB := opt.Database
-		if defaultDB == "" {
+		if strings.EqualFold("", defaultDB) {
 			if s, ok := stmt.(cnosql.HasDefaultDatabase); ok {
 				defaultDB = s.DefaultDatabase()
 			}
 		}
 
 		dbi := e.MetaClient.Database(defaultDB)
-		if dbi == nil {
-			return false, fmt.Errorf("Error can't get database info by database name: ", defaultDB)
+		if nil == dbi {
+			return false, fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
 		}
 
 		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
-		if strings.EqualFold("", defaultRetentionPolicy) { // 如果保留rp策略为空,则直接放行
+		if strings.EqualFold("", defaultRetentionPolicy) { // 如果default的保留rp策略为空,则直接放行
 			return true, nil
 		}
 
@@ -327,7 +327,7 @@ func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionO
 		}
 
 		if isDrop {
-			h.logger.Error(fmt.Sprintf("Error can't delete or drop when rp has defaultRetentionPolicy: %s", defaultRetentionPolicy))
+			h.logger.Warn(fmt.Sprintf("Warn can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy))
 			return false, nil
 		}
 	}
@@ -461,18 +461,19 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 		Authorizer:      fineAuthorizer,
 	}
 
+	// 校验删除数据时是否存在default的retention policy， 如果有则必须先删除defalust的rp才能删除数据
 	{
 		could_del, err := h.serveCheckDelWichRP(q, &opts)
-		if nil != err {
+		if nil != err { // 出现错误则以error级别记录
 			err_msg := fmt.Sprintf("Error serveCheckDelWichRP err: %v", err)
 			h.logger.Error(err_msg)
 			writeError(rw, err_msg)
 			return
 		}
 
-		if !could_del {
-			err_msg := "Error can't execute del when has a retain retentionPolicy"
-			h.logger.Error(err_msg)
+		if !could_del { // 如果因为default的rp导致拒绝删除则以Warn级别记录
+			err_msg := "Warn can't execute del when has default retention policy"
+			h.logger.Warn(err_msg)
 			writeError(rw, err_msg)
 			return
 		}
