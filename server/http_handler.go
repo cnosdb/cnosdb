@@ -305,8 +305,8 @@ func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionO
 		}
 
 		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
-		if strings.EqualFold("", defaultRetentionPolicy) { // 如果default的保留rp策略为空,则直接放行
-			return true, nil
+		if strings.EqualFold("", defaultRetentionPolicy) { // 如果default的保留rp策略为空,则本次放行,继续校验下一个执行体
+			continue
 		}
 
 		isDrop := false
