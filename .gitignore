@@ -27,4 +27,4 @@
 .dist/
 *.imldist/
 vendor/
-push-master.bat
+push-main.bat
