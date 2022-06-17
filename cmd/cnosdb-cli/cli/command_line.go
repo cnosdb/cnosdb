@@ -665,9 +665,11 @@ func (c *CommandLine) parseInsert(stmt string) (client.BatchPoints, error) {
 		return nil, fmt.Errorf("found %s, expected INSERT", ident)
 	}
 
+	var pointstr = ""
 	var bpCfg *client.BatchPointsConfig
 	if ident, r := parseNextIdentifier(point); strings.EqualFold(ident, "into") {
-		bpCfg = c.parseInto(r)
+		bpCfg, pointstr = c.parseInto(r)
+		point = pointstr
 	} else {
 		bpCfg = c.pointConfig
 	}
@@ -686,8 +688,10 @@ func (c *CommandLine) parseInsert(stmt string) (client.BatchPoints, error) {
 	return bp, nil
 }
 
-func (c *CommandLine) parseInto(stmt string) *client.BatchPointsConfig {
+func (c *CommandLine) parseInto(stmt string) (*client.BatchPointsConfig, string) {
 	ident, stmt := parseNextIdentifier(stmt)
+	point := stmt
+
 	db, rp := c.pointConfig.Database, c.pointConfig.RetentionPolicy
 	if strings.HasPrefix(stmt, ".") {
 		db = ident
@@ -703,7 +707,7 @@ func (c *CommandLine) parseInto(stmt string) *client.BatchPointsConfig {
 		RetentionPolicy:  rp,
 		Precision:        c.pointConfig.Precision,
 		WriteConsistency: c.pointConfig.WriteConsistency,
-	}
+	}, point
 }
 
 func (c *CommandLine) parsePoints(point string) ([]*client.Point, error) {
