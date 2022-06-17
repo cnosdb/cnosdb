@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/testing/assert"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -323,6 +324,33 @@ func TestServer_Insert_Delete_10052(t *testing.T) {
 	}
 }
 
+// TestServer_Insert_Delete_WithDefaultRP
+func TestServer_Insert_Delete_WithDefaultRP(t *testing.T) {
+
+	t.Parallel()
+
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	mustWrite(s,
+		"ping,server=ping a=1,b=2,c=3,d=4,e=5 1",
+		"ping,server=ping a=1,b=2,c=3,d=4,e=5 2",
+		"ping,server=ping a=1,b=2,c=3,d=4,e=5 3",
+		"ping,server=ping a=1,b=2,c=3,d=4,e=5 4",
+		"ping,server=ping a=1,b=2,c=3,d=4,e=5 5",
+		"ping,server=ping a=1,b=2,c=3,d=4,e=5 6",
+	)
+
+	err := deleteColume(s, "ping", 1, 6)
+	t.Logf("delete err: %v", err)
+
+	errMsg := "unexpected status code: code=400, body={\"error\":\"Error serveCheckDropWithDefaultRP err: can't delete or drop when database: db0 has defaultRetentionPolicy: autogen\"}"
+	assert.Equal(t, errMsg, err.Error())
+
+	mustDropRetentionPolicy(s, "autogen")
+	mustDelete(s, "ping", 1, 6)
+}
+
 func mustGetSeries(s Server) []string {
 	result, err := s.QueryWithParams("SHOW SERIES", url.Values{"db": []string{"db0"}})
 	if err != nil {
@@ -363,6 +391,12 @@ func mustWrite(s Server, points ...string) {
 	if _, err := s.Write(db, rp, strings.Join(points, "\n"), nil); err != nil {
 		panic(err)
 	}
+}
+
+func deleteColume(s Server, name string, min, max int64) error {
+	query := fmt.Sprintf("DELETE FROM %q WHERE time >= %d AND time <= %d ", name, min, max)
+	_, err := s.QueryWithParams(query, url.Values{"db": []string{db}})
+	return err
 }
 
 func mustDelete(s Server, name string, min, max int64) {
