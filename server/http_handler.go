@@ -284,7 +284,7 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 		return true, nil
 	}
 
-	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor) // 此处如果无法转换,则是发生了错误, 否则无法执行语句
+	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor) // 此处如果无法转换,则视为错误, 因为随后依赖其执行
 	if !ok {
 		return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
 	}
