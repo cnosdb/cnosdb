@@ -319,7 +319,7 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 			}
 		}
 
-		if strings.EqualFold("", defaultDB) { // 没有用use使用指定的database
+		if strings.EqualFold("", defaultDB) { // 此时就是因为没有用use使用指定的database
 			return false, fmt.Errorf("Error no use database")
 		}
 
