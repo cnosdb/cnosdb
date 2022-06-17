@@ -1168,6 +1168,12 @@ func (c *compiledStatement) Prepare(shardMapper ShardMapper, sopt SelectOptions)
 		return nil, err
 	}
 
+	err = c.stmt.ValidateDimensions(mapper)
+	if err != nil {
+		shards.Close()
+		return nil, err
+	}
+
 	// Validate if the types are correct now that they have been assigned.
 	if err := validateTypes(stmt); err != nil {
 		shards.Close()
