@@ -326,7 +326,6 @@ func TestServer_Insert_Delete_10052(t *testing.T) {
 
 // TestServer_Insert_Delete_WithDefaultRP
 func TestServer_Insert_Delete_WithDefaultRP(t *testing.T) {
-
 	t.Parallel()
 
 	s := OpenDefaultServer(NewConfig())
