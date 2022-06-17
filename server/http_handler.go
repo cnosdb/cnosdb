@@ -278,10 +278,10 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
-func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.ExecutionOptions) (bool, error) {
+func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.ExecutionOptions) error {
 	stmtLen := len(query.Statements)
 	if (int)(0) == stmtLen { // 没有任何执行体,则直接返回
-		return true, nil
+		return nil
 	}
 
 	var e *coordinator.StatementExecutor = nil
@@ -322,7 +322,7 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 		}
 
 		if strings.EqualFold("", defaultDB) { // 此时就是因为没有用use使用指定的database
-			return false, fmt.Errorf("Error no use database")
+			return fmt.Errorf("Error no use database")
 		}
 
 		// 推迟类型转换时机, 避免对非拦截的命令的影响. 但是执行到此处，则必须能够拿到
@@ -330,14 +330,14 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 			var ok bool
 			e, ok = h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
 			if !ok {
-				return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
+				return fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
 			}
 		}
 
 		// 注意时机, 此时才可拿数据库的信息, 如果提前拿，会对其他命令造成影响
 		dbi := e.MetaClient.Database(defaultDB)
 		if nil == dbi {
-			return false, fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
+			return fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
 		}
 
 		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
@@ -346,12 +346,12 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 		}
 
 		// 如果有一个执行体出现被拦截的情况, 则所有的语句都不能执行，直接返回拦截
-		errMsg := fmt.Sprintf("can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy)
+		errMsg := fmt.Sprintf("Error can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy)
 		h.logger.Error(errMsg)
-		return false, fmt.Errorf(errMsg) // 视为一个error
+		return fmt.Errorf(errMsg) // 视为一个error
 	}
 
-	return true, nil
+	return nil
 }
 
 // serveQuery parses an incoming query and, if valid, executes the query.
@@ -481,21 +481,11 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 	}
 
 	// 校验删除数据时是否存在default的retention policy，如果有则必须先删除defalust的rp才能删除数据
-	{
-		couldDel, err := h.serveCheckDropWithDefaultRP(q, &opts)
-		if nil != err {
-			errMsg := fmt.Sprintf("Error check drop with default retention policy err: %v", err)
-			h.logger.Error(errMsg)
-			writeError(rw, errMsg)
-			return
-		}
-
-		if !couldDel {
-			errMsg := "Warn can't execute delete or drop when has default retention policy"
-			h.logger.Warn(errMsg)
-			writeError(rw, errMsg)
-			return
-		}
+	if err := h.serveCheckDropWithDefaultRP(q, &opts); nil != err {
+		errMsg := fmt.Sprintf("Error check drop with default retention policy err: %v", err)
+		h.logger.Error(errMsg)
+		writeError(rw, errMsg)
+		return
 	}
 
 	if h.config.AuthEnabled {
