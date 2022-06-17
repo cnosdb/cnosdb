@@ -7,8 +7,6 @@
 *.dll
 *.so
 *.dylib
-*.bat
-*.sh
 
 # Build destination directories
 /bin/
@@ -28,4 +26,3 @@
 .idea/
 .dist/
 *.imldist/
-vendor/
