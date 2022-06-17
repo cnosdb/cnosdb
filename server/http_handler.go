@@ -323,8 +323,8 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 	retentionPolicy := r.FormValue("rp")
 
 	{
-		values := r.URL.Query()
-		for _, q := range values["q"] {
+		query_values := r.URL.Query()
+		for _, q := range query_values["q"] {
 			if strings.EqualFold("", q) {
 				continue
 			}
