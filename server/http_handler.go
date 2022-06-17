@@ -284,7 +284,7 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 		return true, nil
 	}
 
-	var e *coordinator.StatementExecutor
+	var e *coordinator.StatementExecutor = nil
 
 	for i := 0; i < stmtLen; i++ {
 		stmt := query.Statements[i]
