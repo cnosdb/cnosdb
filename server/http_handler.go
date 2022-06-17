@@ -299,16 +299,6 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 			}
 		}
 
-		dbi := e.MetaClient.Database(defaultDB)
-		if nil == dbi {
-			return false, fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
-		}
-
-		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
-		if strings.EqualFold("", defaultRetentionPolicy) { // 如果default的保留rp策略为空,则本次放行,继续校验下一个执行体
-			continue
-		}
-
 		isDrop := false
 		switch stmt.(type) {
 		case *cnosql.DeleteSeriesStatement:
@@ -331,6 +321,16 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 		}
 
 		if !isDrop { // 不是要拦截的删除命令
+			continue
+		}
+
+		dbi := e.MetaClient.Database(defaultDB)
+		if nil == dbi {
+			return false, fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
+		}
+
+		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
+		if strings.EqualFold("", defaultRetentionPolicy) { // 如果default的保留rp策略为空,则本次放行,继续校验下一个执行体
 			continue
 		}
 
