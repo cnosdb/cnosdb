@@ -2780,8 +2780,8 @@ func TestSelect(t *testing.T) {
 				}},
 			},
 			rows: []query.Row{
-				{Time: 20 * Second, Series: query.Series{Name: "air"}, Values: []interface{}{11.96062341991843}},
-				{Time: 22 * Second, Series: query.Series{Name: "air"}, Values: []interface{}{7.953140268154608}},
+				{Time: 20 * Second, Series: query.Series{Name: "air"}, Values: []interface{}{11.960623419918432}},
+				{Time: 22 * Second, Series: query.Series{Name: "air"}, Values: []interface{}{7.953140268154609}},
 			},
 		},
 		{
