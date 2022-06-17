@@ -480,17 +480,17 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 		Authorizer:      fineAuthorizer,
 	}
 
-	// 校验删除数据时是否存在default的retention policy， 如果有则必须先删除defalust的rp才能删除数据
+	// 校验删除数据时是否存在default的retention policy，如果有则必须先删除defalust的rp才能删除数据
 	{
 		couldDel, err := h.serveCheckDropWithDefaultRP(q, &opts)
-		if nil != err { // 出现错误则以error级别记录
+		if nil != err {
 			errMsg := fmt.Sprintf("Error check drop with default retention policy err: %v", err)
 			h.logger.Error(errMsg)
 			writeError(rw, errMsg)
 			return
 		}
 
-		if !couldDel { // 如果因为default的rp导致拒绝删除则以Warn级别记录
+		if !couldDel {
 			errMsg := "Warn can't execute delete or drop when has default retention policy"
 			h.logger.Warn(errMsg)
 			writeError(rw, errMsg)
