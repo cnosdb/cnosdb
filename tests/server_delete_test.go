@@ -343,7 +343,7 @@ func TestServer_Insert_Delete_WithDefaultRP(t *testing.T) {
 	err := deleteColume(s, "ping", 1, 6)
 	t.Logf("delete err: %v", err)
 
-	errMsg := "unexpected status code: code=400, body={\"error\":\"Error check drop with default retention policy err: can't delete or drop when database: db0 has defaultRetentionPolicy: autogen\"}"
+	errMsg := "unexpected status code: code=400, body={\"error\":\"Error check drop with default retention policy err: Error can't delete or drop when database: db0 has defaultRetentionPolicy: autogen\"}"
 	assert.Equal(t, errMsg, err.Error())
 
 	mustDropRetentionPolicy(s, "autogen")
