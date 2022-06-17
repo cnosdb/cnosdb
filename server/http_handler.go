@@ -278,7 +278,7 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
-func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionOptions) (bool, error) {
+func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.ExecutionOptions) (bool, error) {
 	stmtLen := len(query.Statements)
 	if (int)(0) == stmtLen { // 没有任何执行体,则直接返回
 		return true, nil
@@ -330,10 +330,13 @@ func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionO
 		default:
 		}
 
-		if isDrop {
-			h.logger.Warn(fmt.Sprintf("Warn can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy))
-			return false, nil
+		if !isDrop { // 不是要拦截的删除命令
+			continue
 		}
+
+		// 如果有一个执行体出现被拦截的情况, 则所有的语句都不能执行，直接返回拦截
+		h.logger.Warn(fmt.Sprintf("Warn can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy))
+		return false, nil
 	}
 
 	return true, nil
@@ -467,9 +470,9 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 
 	// 校验删除数据时是否存在default的retention policy， 如果有则必须先删除defalust的rp才能删除数据
 	{
-		could_del, err := h.serveCheckDelWichRP(q, &opts)
+		could_del, err := h.serveCheckDelWithDefaultRP(q, &opts)
 		if nil != err { // 出现错误则以error级别记录
-			err_msg := fmt.Sprintf("Error serveCheckDelWichRP err: %v", err)
+			err_msg := fmt.Sprintf("Error serveCheckDelWithDefaultRP err: %v", err)
 			h.logger.Error(err_msg)
 			writeError(rw, err_msg)
 			return
