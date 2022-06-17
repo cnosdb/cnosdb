@@ -292,13 +292,6 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 	for i := 0; i < stmtLen; i++ {
 		stmt := query.Statements[i]
 
-		defaultDB := opt.Database
-		if strings.EqualFold("", defaultDB) {
-			if s, ok := stmt.(cnosql.HasDefaultDatabase); ok {
-				defaultDB = s.DefaultDatabase()
-			}
-		}
-
 		isDrop := false
 		switch stmt.(type) {
 		case *cnosql.DeleteSeriesStatement:
@@ -322,6 +315,13 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 
 		if !isDrop { // 不是要拦截的删除命令
 			continue
+		}
+
+		defaultDB := opt.Database
+		if strings.EqualFold("", defaultDB) {
+			if s, ok := stmt.(cnosql.HasDefaultDatabase); ok {
+				defaultDB = s.DefaultDatabase()
+			}
 		}
 
 		// 注意时机, 此时才可拿数据库的信息, 如果提前拿，会对其他命令造成影响
