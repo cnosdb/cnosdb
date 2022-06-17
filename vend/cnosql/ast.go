@@ -1178,6 +1178,21 @@ type FieldMapper interface {
 	TypeMapper
 }
 
+func (s *SelectStatement) ValidateDimensions(mapper FieldMapper) error {
+	for _, v := range s.Dimensions {
+		switch v.Expr.(type) {
+		case *Call:
+			continue
+		case *VarRef:
+			t := EvalType(v.Expr, s.Sources, mapper)
+			if t != Tag {
+				return errors.New("expect time() or tag after GROUP BY")
+			}
+		}
+	}
+	return nil
+}
+
 // RewriteFields returns the re-written form of the select statement. Any wildcard query
 // fields are replaced with the supplied fields, and any wildcard GROUP BY fields are replaced
 // with the supplied dimensions. Any fields with no type specifier are rewritten with the
