@@ -484,7 +484,7 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 	{
 		couldDel, err := h.serveCheckDropWithDefaultRP(q, &opts)
 		if nil != err { // 出现错误则以error级别记录
-			errMsg := fmt.Sprintf("Error serveCheckDropWithDefaultRP err: %v", err)
+			errMsg := fmt.Sprintf("Error check drop with default retention policy err: %v", err)
 			h.logger.Error(errMsg)
 			writeError(rw, errMsg)
 			return
