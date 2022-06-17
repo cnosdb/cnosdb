@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/query"
+	"strings"
 	"testing"
 	"time"
 )
@@ -487,6 +488,15 @@ func (*ShardGroup) Close() error {
 	return nil
 }
 
+// MustParseExpr parses an expression. Panic on error.
+func MustParseExpr(s string) cnosql.Expr {
+	expr, err := cnosql.NewParser(strings.NewReader(s)).ParseExpr()
+	if err != nil {
+		panic(err)
+	}
+	return expr
+}
+
 // mustParseTime parses an IS0-8601 string. Panic on error.
 func mustParseTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339, s)
@@ -495,3 +505,13 @@ func mustParseTime(s string) time.Time {
 	}
 	return t
 }
+
+func mustLoadLocation(s string) *time.Location {
+	l, err := time.LoadLocation(s)
+	if err != nil {
+		panic(err)
+	}
+	return l
+}
+
+var LosAngeles = mustLoadLocation("America/Los_Angeles")
