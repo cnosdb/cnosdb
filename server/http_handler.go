@@ -470,18 +470,18 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 
 	// 校验删除数据时是否存在default的retention policy， 如果有则必须先删除defalust的rp才能删除数据
 	{
-		could_del, err := h.serveCheckDelWithDefaultRP(q, &opts)
+		couldDel, err := h.serveCheckDelWithDefaultRP(q, &opts)
 		if nil != err { // 出现错误则以error级别记录
-			err_msg := fmt.Sprintf("Error serveCheckDelWithDefaultRP err: %v", err)
-			h.logger.Error(err_msg)
-			writeError(rw, err_msg)
+			errMsg := fmt.Sprintf("Error serveCheckDelWithDefaultRP err: %v", err)
+			h.logger.Error(errMsg)
+			writeError(rw, errMsg)
 			return
 		}
 
-		if !could_del { // 如果因为default的rp导致拒绝删除则以Warn级别记录
-			err_msg := "Warn can't execute del when has default retention policy"
-			h.logger.Warn(err_msg)
-			writeError(rw, err_msg)
+		if !couldDel { // 如果因为default的rp导致拒绝删除则以Warn级别记录
+			errMsg := "Warn can't execute del when has default retention policy"
+			h.logger.Warn(errMsg)
+			writeError(rw, errMsg)
 			return
 		}
 	}
