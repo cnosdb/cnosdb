@@ -279,12 +279,17 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionOptions) (bool, error) {
+	stmtLen := len(query.Statements)
+	if (int)(0) == stmtLen { // 没有任何执行体,则直接返回
+		return true, nil
+	}
+
 	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor) // 此处如果无法转换,则是发生了错误, 否则无法执行语句
 	if !ok {
 		return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
 	}
 
-	for i := 0; i < len(query.Statements); i++ {
+	for i := 0; i < stmtLen; i++ {
 		stmt := query.Statements[i]
 
 		defaultDB := opt.Database
@@ -304,7 +309,6 @@ func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionO
 			return true, nil
 		}
 
-		// 此时必有rp策略, 则直接拦截删除数据的操作, 但必须放行删除rp, 否则数据将永远无法删除
 		isDrop := false
 		switch stmt.(type) {
 		case *cnosql.DeleteSeriesStatement:
