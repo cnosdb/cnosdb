@@ -23,6 +23,7 @@ import (
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/prometheus"
 	"github.com/cnosdb/cnosdb/pkg/uuid"
+	"github.com/cnosdb/cnosdb/server/coordinator"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/vend/db/models"
@@ -277,6 +278,63 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+func (h *Handler) serveCheckDelWichRP(query *cnosql.Query, opt *query.ExecutionOptions) (bool, error) {
+	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
+	if !ok {
+		return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
+	}
+
+	for i := 0; i < len(query.Statements); i++ {
+		stmt := query.Statements[i]
+
+		defaultDB := opt.Database
+		if defaultDB == "" {
+			if s, ok := stmt.(cnosql.HasDefaultDatabase); ok {
+				defaultDB = s.DefaultDatabase()
+			}
+		}
+
+		dbi := e.MetaClient.Database(defaultDB)
+		if dbi == nil {
+			return false, fmt.Errorf("Error can't get database info by database name: ", defaultDB)
+		}
+
+		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
+		if strings.EqualFold("", defaultRetentionPolicy) { // 如果保留rp策略为空,则直接放行
+			return true, nil
+		}
+
+		// 此时必有rp策略, 则直接拦截删除数据的操作, 但必须放行删除rp, 否则数据将永远无法删除
+		isDrop := false
+		switch stmt.(type) {
+		case *cnosql.DeleteSeriesStatement:
+			isDrop = true
+		case *cnosql.DropContinuousQueryStatement:
+			isDrop = true
+		case *cnosql.DropDatabaseStatement:
+			isDrop = true
+		case *cnosql.DropMeasurementStatement:
+			isDrop = true
+		case *cnosql.DropSeriesStatement:
+			isDrop = true
+		case *cnosql.DropShardStatement:
+			isDrop = true
+		case *cnosql.DropSubscriptionStatement:
+			isDrop = true
+		case *cnosql.DropUserStatement:
+			isDrop = true
+		default:
+		}
+
+		if isDrop {
+			h.logger.Error(fmt.Sprintf("Error can't delete or drop when rp has defaultRetentionPolicy: %s", defaultRetentionPolicy))
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
 // serveQuery parses an incoming query and, if valid, executes the query.
 func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.User) {
 	atomic.AddInt64(&h.stats.QueryRequests, 1)
@@ -320,34 +378,6 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 
 	p := cnosql.NewParser(qr)
 	db := r.FormValue("db")
-	retentionPolicy := r.FormValue("rp")
-
-	{
-		query_values := r.URL.Query()
-		for _, q := range query_values["q"] {
-			if strings.EqualFold("", q) {
-				continue
-			}
-
-			qry_arr := strings.Fields(q)
-			if 0 >= len(qry_arr) {
-				continue
-			}
-
-			qry_type := qry_arr[0]
-			is_delete := false
-			if strings.EqualFold("delete", qry_type) || strings.EqualFold("drop", qry_type) {
-				is_delete = true
-			}
-
-			// 有任何一个删除语句，则校验autogen的保留策略
-			if is_delete && strings.EqualFold("autogen", retentionPolicy) {
-				h.logger.Error("Error can't delete or drop when rp is autogen")
-				writeError(rw, "Error can't delete or drop when rp is autogen")
-				return
-			}
-		}
-	}
 
 	// Sanitize the request query params so it doesn't show up in the response logger.
 	// Do this before anything else so a parsing error doesn't leak passwords.
@@ -429,6 +459,23 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 		ReadOnly:        r.Method == "GET",
 		NodeID:          nodeID,
 		Authorizer:      fineAuthorizer,
+	}
+
+	{
+		could_del, err := h.serveCheckDelWichRP(q, &opts)
+		if nil != err {
+			err_msg := fmt.Sprintf("Error serveCheckDelWichRP err: %v", err)
+			h.logger.Error(err_msg)
+			writeError(rw, err_msg)
+			return
+		}
+
+		if !could_del {
+			err_msg := "Error can't execute del when has a retain retentionPolicy"
+			h.logger.Error(err_msg)
+			writeError(rw, err_msg)
+			return
+		}
 	}
 
 	if h.config.AuthEnabled {
