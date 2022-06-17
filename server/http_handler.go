@@ -320,6 +320,34 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 
 	p := cnosql.NewParser(qr)
 	db := r.FormValue("db")
+	retentionPolicy := r.FormValue("rp")
+
+	{
+		values := r.URL.Query()
+		for _, q := range values["q"] {
+			if strings.EqualFold("", q) {
+				continue
+			}
+
+			qry_arr := strings.Fields(q)
+			if 0 >= len(qry_arr) {
+				continue
+			}
+
+			qry_type := qry_arr[0]
+			is_delete := false
+			if strings.EqualFold("delete", qry_type) || strings.EqualFold("drop", qry_type) {
+				is_delete = true
+			}
+
+			// 有任何一个删除语句，则校验autogen的保留策略
+			if is_delete && strings.EqualFold("autogen", retentionPolicy) {
+				h.logger.Error("Error can't delete or drop when rp is autogen")
+				writeError(rw, "Error can't delete or drop when rp is autogen")
+				return
+			}
+		}
+	}
 
 	// Sanitize the request query params so it doesn't show up in the response logger.
 	// Do this before anything else so a parsing error doesn't leak passwords.
@@ -401,12 +429,6 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 		ReadOnly:        r.Method == "GET",
 		NodeID:          nodeID,
 		Authorizer:      fineAuthorizer,
-	}
-
-	if strings.EqualFold("autogen", opts.RetentionPolicy) {
-		h.logger.Error(fmt.Sprintf("Error can't delete when rp is autogen, opts = %v", opts))
-		writeError(rw, "Error can't delete when rp is autogen")
-		return
 	}
 
 	if h.config.AuthEnabled {
