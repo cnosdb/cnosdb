@@ -284,11 +284,6 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 		return true, nil
 	}
 
-	e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor) // 此处如果无法转换,则视为错误, 因为随后依赖其执行
-	if !ok {
-		return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
-	}
-
 	for i := 0; i < stmtLen; i++ {
 		stmt := query.Statements[i]
 
@@ -322,6 +317,12 @@ func (h *Handler) serveCheckDelWithDefaultRP(query *cnosql.Query, opt *query.Exe
 			if s, ok := stmt.(cnosql.HasDefaultDatabase); ok {
 				defaultDB = s.DefaultDatabase()
 			}
+		}
+
+		// 推迟类型转换时机, 避免对非拦截的命令的影响. 但是执行到此处，则必须能够拿到
+		e, ok := h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
+		if !ok {
+			return false, fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
 		}
 
 		// 注意时机, 此时才可拿数据库的信息, 如果提前拿，会对其他命令造成影响
