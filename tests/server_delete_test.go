@@ -319,7 +319,7 @@ func TestServer_Insert_Delete_10052(t *testing.T) {
 	}
 }
 
-// This test reproduces the issue identified in https://github.com/influxdata/influxdb/issues/10052
+// This test drop default retention policy, default rp can't be drop
 func TestServer_Drop_Default_RetentionPolicy(t *testing.T) {
 	t.Parallel()
 
