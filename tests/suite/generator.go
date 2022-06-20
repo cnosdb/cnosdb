@@ -1,7 +1,7 @@
 package suite
 
+import "github.com/cnosdb/cnosdb/tests"
+
 type Generator interface {
-	Init()
-	Run()
-	Parallel() int
+	Run(server tests.Server)
 }

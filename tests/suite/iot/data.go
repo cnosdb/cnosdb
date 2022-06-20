@@ -3,6 +3,7 @@ package iot
 import (
 	"fmt"
 	"github.com/cnosdb/cnosdb/tests"
+	"github.com/cnosdb/cnosdb/tests/suite"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"sync"
 	"time"
@@ -14,55 +15,50 @@ const (
 )
 
 type Generator struct {
-	Server   tests.Server
-	Threads  int
+	Parallel int
 	Scale    int // Total number of trucks
 	Seed     int64
 	Interval time.Duration
 	Start    time.Time
 	End      time.Time
-	trucks   []truckGen
-	wg       sync.WaitGroup
 }
 
-func (g *Generator) Init() {
-	g.trucks = make([]truckGen, g.Scale)
+func (g *Generator) Run(server tests.Server) {
+
+	trucks := make([]truckGen, g.Scale)
 	for i := 0; i < g.Scale; i++ {
-		g.trucks[i] = truckGen{Num: i, Seed: g.Seed + int64(i)}
-		g.trucks[i].Init()
+		trucks[i] = truckGen{Num: i, Seed: g.Seed + int64(i)}
+		trucks[i].Init()
 	}
-}
 
-func (g *Generator) Run() {
-	runners := make([]genRunner, g.Parallel())
-	g.wg.Add(g.Parallel())
+	runners := make([]genRunner, g.Parallel)
+	var wg sync.WaitGroup
+	wg.Add(g.Parallel)
 
-	size := g.Scale / g.Parallel()
-	for i := 0; i < g.Parallel(); i++ {
+	size := g.Scale / g.Parallel
+	for i := 0; i < g.Parallel; i++ {
 		begin := i * size
 		end := (i + 1) * size
-		if i+1 == g.Parallel() {
+		if i+1 == g.Parallel {
 			end = g.Scale - 1
 		}
 		runners[i] = genRunner{
-			Server:   g.Server,
-			Wg:       &g.wg,
+			Wg:       &wg,
 			Interval: g.Interval,
 			Start:    g.Start,
 			End:      g.End,
-			Trucks:   g.trucks[begin:end],
+			Trucks:   trucks[begin:end],
 		}
-		go runners[i].Run()
+		go runners[i].Run(server)
 	}
-	g.wg.Wait()
+	wg.Wait()
 }
 
-func (g *Generator) Parallel() int {
-	return g.Threads
+func (g *Generator) run(trucks []truckGen) {
+
 }
 
 type genRunner struct {
-	Server   tests.Server
 	Wg       *sync.WaitGroup
 	Interval time.Duration
 	Start    time.Time
@@ -70,7 +66,7 @@ type genRunner struct {
 	Trucks   []truckGen
 }
 
-func (r *genRunner) Run() {
+func (r *genRunner) Run(server tests.Server) {
 	i := 0
 	for now := r.Start; now.Before(r.End); now = now.Add(r.Interval) {
 		for _, t := range r.Trucks {
@@ -78,7 +74,7 @@ func (r *genRunner) Run() {
 			if i%100 == 0 {
 				fmt.Printf("Count: %d, Time: %s, Truck: %d\n", i, now.String(), t.Num)
 			}
-			_ = r.Server.WritePoints(db, rp, models.ConsistencyLevelAll, nil, t.New(now))
+			suite.PanicErr(server.WritePoints(db, rp, models.ConsistencyLevelAll, nil, t.New(now)))
 		}
 	}
 	r.Wg.Done()
