@@ -289,28 +289,8 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 	for i := 0; i < stmtLen; i++ {
 		stmt := query.Statements[i]
 
-		isDrop := false
-		switch stmt.(type) {
-		case *cnosql.DeleteSeriesStatement:
-			isDrop = true
-		case *cnosql.DropContinuousQueryStatement:
-			isDrop = true
-		case *cnosql.DropDatabaseStatement:
-			isDrop = true
-		case *cnosql.DropMeasurementStatement:
-			isDrop = true
-		case *cnosql.DropSeriesStatement:
-			isDrop = true
-		case *cnosql.DropShardStatement:
-			isDrop = true
-		case *cnosql.DropSubscriptionStatement:
-			isDrop = true
-		case *cnosql.DropUserStatement:
-			isDrop = true
-		default:
-		}
-
-		if !isDrop { // 不是要拦截的删除命令
+		stmtRP, ok := stmt.(*cnosql.DropRetentionPolicyStatement)
+		if !ok { // 只校验删除RP
 			continue
 		}
 
@@ -341,12 +321,12 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 		}
 
 		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
-		if strings.EqualFold("", defaultRetentionPolicy) { // 如果default的保留rp策略为空,则本次放行,继续校验下一个执行体
+		if !strings.EqualFold(stmtRP.Name, defaultRetentionPolicy) { // 不是要删除default的rp,继续校验下一个执行体
 			continue
 		}
 
-		// 如果有一个执行体出现被拦截的情况, 则所有的语句都不能执行，直接返回拦截
-		errMsg := fmt.Sprintf("Error can't delete or drop when database: %s has defaultRetentionPolicy: %s", defaultDB, defaultRetentionPolicy)
+		// defalut的rp不能被删除, 必须有一个default的rp
+		errMsg := fmt.Sprintf("Error can't drop default retentionPolicy %s on database: %s, must have default rp!", defaultRetentionPolicy, defaultDB)
 		h.logger.Error(errMsg)
 		return fmt.Errorf(errMsg) // 视为一个error
 	}

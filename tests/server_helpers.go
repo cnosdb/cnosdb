@@ -114,7 +114,7 @@ func OpenServerWithVersion(c *Config, version string) Server {
 // OpenDefaultServer opens a test server with a default database & retention policy
 func OpenDefaultServer(c *Config) Server {
 	s := OpenServer(c)
-	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), false); err != nil {
+	if err := s.CreateDatabaseAndRetentionPolicy("db0", NewRetentionPolicySpec("rp0", 1, 0), true); err != nil {
 		panic(err)
 	}
 	return s
