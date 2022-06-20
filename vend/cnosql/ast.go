@@ -1400,6 +1400,21 @@ func (s *SelectStatement) RewriteFields(m FieldMapper) (*SelectStatement, error)
 	return other, nil
 }
 
+func (s *SelectStatement) ValidateDimensions(mapper FieldMapper) error {
+	for _, v := range s.Dimensions {
+		switch v.Expr.(type) {
+		case *Call:
+			continue
+		case *VarRef:
+			t := EvalType(v.Expr, s.Sources, mapper)
+			if t != Tag {
+				return errors.New("expect time() or tag after GROUP BY")
+			}
+		}
+	}
+	return nil
+}
+
 // RewriteRegexConditions rewrites regex conditions to make better use of the
 // database index.
 //
