@@ -48,6 +48,7 @@ require (
 require (
 	github.com/armon/go-metrics v0.3.3 // indirect
 	github.com/boltdb/bolt v1.3.1 // indirect
+	github.com/cnosdb/cnosdb-roaring v0.0.0-20220620085515-131c78da54d3 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 // indirect
