@@ -332,6 +332,7 @@ func TestServer_Drop_Default_RetentionPolicy(t *testing.T) {
 	assert.Equal(t, err_msg, err.Error())
 }
 
+// This test drop not default retention policy, not default rp could be drop
 func TestServer_Drop_NotDefault_RetentionPolicy(t *testing.T) {
 	t.Parallel()
 
