@@ -283,14 +283,21 @@ mod test {
     use std::sync::Arc;
 
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use protos::kv_service;
+    use tokio::sync::mpsc;
+    use tokio::sync::oneshot::channel;
+    use protos::{kv_service, models_helper};
+    use protos::kv_service::WritePointsRpcResponse;
 
-    use crate::{kv_option::WalConfig, wal::WalTask, TsKv};
+    use crate::{kv_option::WalConfig, wal::WalTask, TsKv, Task};
 
     async fn get_tskv() -> TsKv {
-        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/"),
-                                                               ..Default::default() },
-                                              ..Default::default() };
+        let opt = crate::kv_option::Options {
+            wal: WalConfig {
+                dir: String::from("/tmp/test/wal"),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         TsKv::open(opt).await.unwrap()
     }
@@ -307,7 +314,10 @@ mod test {
         let tskv = get_tskv().await;
 
         let database = "db".to_string();
-        let points = b"Hello world".to_vec();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points(&mut fbb, 1);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
 
         tskv.write(request).await.unwrap();
@@ -319,9 +329,65 @@ mod test {
 
         for i in 0..2 {
             let database = "db".to_string();
-            let points = b"Hello world".to_vec();
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+            let points = models_helper::create_random_points(&mut fbb, 1);
+            fbb.finish(points, None);
+            let points = fbb.finished_data().to_vec();
             let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
             tskv.write(request).await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn test_insert_cache() {
+        let tskv = get_tskv().await;
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points(&mut fbb, 1);
+        fbb.finish(points, None);
+        let points = fbb.finished_data();
+
+        tskv.insert_cache(1, points).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_insert_cache() {
+        let tskv = get_tskv().await;
+
+        for i in 0..2 {
+            let database = "db".to_string();
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+            let points = models_helper::create_random_points(&mut fbb, 1);
+            fbb.finish(points, None);
+            let points = fbb.finished_data();
+
+            tskv.insert_cache(1, points).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_start() {
+        let tskv = get_tskv().await;
+
+        let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
+        let (tx, rx) = channel();
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points(&mut fbb, 1);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let req = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        wal_sender.send(Task::WritePoints { req, tx }).unwrap();
+
+        TsKv::start(tskv, wal_receiver);
+
+        match rx.await {
+            Ok(Ok(resp)) => println!("successful"),
+            _ => println!("wrong")
+        };
     }
 }
