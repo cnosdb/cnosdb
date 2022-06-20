@@ -3,7 +3,6 @@ package suite
 import (
 	"errors"
 	"github.com/cnosdb/cnosdb/tests"
-	"github.com/cnosdb/cnosdb/tests/suite/iot"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -53,19 +52,19 @@ func (c *Case) Run(server tests.Server, t *testing.T) {
 }
 
 type Suite struct {
-	Gen      iot.Generator
+	Gen      Generator
 	Cases    []Case
 	Parallel bool
 	flag     ParallelFlag
 }
 
-func (s *Suite) Run(t *testing.T) {
+func (s *Suite) Run(server tests.Server, t *testing.T) {
 	s.Gen.Init()
 	s.Gen.Run()
 	if s.Parallel {
 		var wg sync.WaitGroup
-		wg.Add(s.Gen.Parallel)
-		for i := 0; i < s.Gen.Parallel; i++ {
+		wg.Add(s.Gen.Parallel())
+		for i := 0; i < s.Gen.Parallel(); i++ {
 			go func() {
 				f := int32(0)
 				for {
@@ -73,7 +72,7 @@ func (s *Suite) Run(t *testing.T) {
 					if f >= int32(len(s.Cases)) {
 						break
 					}
-					s.Cases[f].Run(s.Gen.Server, t)
+					s.Cases[f].Run(server, t)
 				}
 				wg.Done()
 			}()
@@ -81,7 +80,7 @@ func (s *Suite) Run(t *testing.T) {
 		wg.Wait()
 	} else {
 		for _, c := range s.Cases {
-			c.Run(s.Gen.Server, t)
+			c.Run(server, t)
 		}
 	}
 }

@@ -4,15 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/cnosdb/cnosdb/tests/suite"
-	iot2 "github.com/cnosdb/cnosdb/tests/suite/iot"
+	"github.com/cnosdb/cnosdb/tests/suite/iot"
 	"testing"
 	"time"
 )
 
 func TestIotBasicWrite(t *testing.T) {
-	g := iot2.Generator{
+	g := iot.Generator{
 		Server:   server,
-		Parallel: 10,
+		Threads:  10,
 		Scale:    10,
 		Seed:     123,
 		Interval: 20 * time.Minute,
@@ -77,16 +77,12 @@ func TestIotBasicWrite(t *testing.T) {
 	res, _ := server.Query(`select * from db0.."readings" where time='2020-01-01T00:20:00Z'`)
 	fmt.Println(res)
 	rr := suite.Results{}
-	if err := json.Unmarshal([]byte(res), &rr); err != nil {
-		t.Error(err)
-	}
+	suite.TestErr(t, json.Unmarshal([]byte(res), &rr))
 	rr.AssertEqual(t, r)
 
 	res, _ = server.Query(`select * from db0.."diagnostics" where time='2020-01-01T00:20:00Z'`)
 	fmt.Println(res)
 	dd := suite.Results{}
-	if err := json.Unmarshal([]byte(res), &dd); err != nil {
-		t.Error(err)
-	}
+	suite.TestErr(t, json.Unmarshal([]byte(res), &dd))
 	dd.AssertEqual(t, d)
 }

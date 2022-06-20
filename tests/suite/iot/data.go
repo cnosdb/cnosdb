@@ -15,7 +15,7 @@ const (
 
 type Generator struct {
 	Server   tests.Server
-	Parallel int
+	Threads  int
 	Scale    int // Total number of trucks
 	Seed     int64
 	Interval time.Duration
@@ -34,14 +34,14 @@ func (g *Generator) Init() {
 }
 
 func (g *Generator) Run() {
-	runners := make([]genRunner, g.Parallel)
-	g.wg.Add(g.Parallel)
+	runners := make([]genRunner, g.Parallel())
+	g.wg.Add(g.Parallel())
 
-	size := g.Scale / g.Parallel
-	for i := 0; i < g.Parallel; i++ {
+	size := g.Scale / g.Parallel()
+	for i := 0; i < g.Parallel(); i++ {
 		begin := i * size
 		end := (i + 1) * size
-		if i+1 == g.Parallel {
+		if i+1 == g.Parallel() {
 			end = g.Scale - 1
 		}
 		runners[i] = genRunner{
@@ -55,6 +55,10 @@ func (g *Generator) Run() {
 		go runners[i].Run()
 	}
 	g.wg.Wait()
+}
+
+func (g *Generator) Parallel() int {
+	return g.Threads
 }
 
 type genRunner struct {
