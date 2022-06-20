@@ -5,7 +5,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/cnosdb/cnosdb/vend/db/pkg/roaring"
+	roaring "github.com/cnosdb/cnosdb-roaring"
 )
 
 // SeriesIDSet represents a lockable bitmap of series ids.
