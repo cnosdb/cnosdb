@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/cnosdb/cnosdb/server/coordinator"
-	"github.com/cnosdb/cnosdb/vend/db/models"
 	"math/rand"
 	"net/url"
 	"os"
@@ -16,8 +14,9 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/server/coordinator"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-
 	"go.uber.org/zap/zapcore"
 )
 
@@ -2887,7 +2886,7 @@ func TestServer_Query_MergeMany(t *testing.T) {
 		&Query{
 			name:    "GROUP by field",
 			command: `SELECT count(temperature) FROM db0.rp0.air group by temperature`,
-			exp:     `{"results":[{"statement_id":0,"error":"expect time() or tag after GROUP BY"}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"temperature":""},"columns":["time","count"],"values":[["1970-01-01T00:00:00Z",50]]}]}]}`,
 		},
 	}...)
 
@@ -6062,7 +6061,7 @@ func TestServer_Query_With_EmptyTags(t *testing.T) {
 			name:    "group by missing tag",
 			params:  url.Values{"db": []string{"db0"}},
 			command: `select temperature from air group by region`,
-			exp:     `{"results":[{"statement_id":0,"error":"expect time() or tag after GROUP BY"}]}`,
+			exp:     `{"results":[{"statement_id":0,"series":[{"name":"air","tags":{"region":""},"columns":["time","temperature"],"values":[["2009-11-10T23:00:02Z",1],["2009-11-10T23:00:03Z",2]]}]}]}`,
 		},
 	}...)
 
