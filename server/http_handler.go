@@ -326,7 +326,7 @@ func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.Ex
 		}
 
 		// defalut的rp不能被删除, 必须有一个default的rp
-		errMsg := fmt.Sprintf("Error can't drop default retentionPolicy %s on database: %s, must have default rp!", defaultRetentionPolicy, defaultDB)
+		errMsg := fmt.Sprintf("Error can't drop default retention policy [%s] on database [%s], must have default retention policy!", defaultRetentionPolicy, defaultDB)
 		h.logger.Error(errMsg)
 		return fmt.Errorf(errMsg) // 视为一个error
 	}
