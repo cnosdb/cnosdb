@@ -326,11 +326,12 @@ func TestServer_Drop_Default_RetentionPolicy(t *testing.T) {
 	s := OpenDefaultServer(NewConfig())
 	defer s.Close()
 
-	err := dropRetentionPolicy(s, "autogen")
+	err := dropRetentionPolicy(s, "autogen") // autogen rp not default, could be drop
 	assert.Equal(t, nil, err)
 
+	err = dropRetentionPolicy(s, rp) // rp0 rp is defualt, can't be drop
+
 	err_msg := "unexpected status code: code=400, body={\"error\":\"Error check drop with default retention policy err: Error can't drop default retention policy [rp0] on database [db0], must have default retention policy!\"}"
-	err = dropRetentionPolicy(s, rp)
 	assert.Equal(t, err_msg, err.Error())
 }
 
