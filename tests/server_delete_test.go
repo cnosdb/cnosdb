@@ -3,8 +3,6 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/google/go-cmp/cmp"
 	"math/rand"
 	"net/url"
 	"os"
@@ -14,6 +12,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/cnosdb/cnosdb/vend/db/pkg/testing/assert"
+	"github.com/google/go-cmp/cmp"
 )
 
 var db = "db0"
@@ -317,6 +319,21 @@ func TestServer_Insert_Delete_10052(t *testing.T) {
 	}
 }
 
+// This test reproduces the issue identified in https://github.com/influxdata/influxdb/issues/10052
+func TestServer_Drop_Default_RetentionPolicy(t *testing.T) {
+	t.Parallel()
+
+	s := OpenDefaultServer(NewConfig())
+	defer s.Close()
+
+	err := dropRetentionPolicy(s, "autogen")
+	assert.Equal(t, nil, err)
+
+	err_msg := "unexpected status code: code=400, body={\"error\":\"Error check drop with default retention policy err: Error can't drop default retention policy [rp0] on database [db0], must have default retention policy!\"}"
+	err = dropRetentionPolicy(s, rp)
+	assert.Equal(t, err_msg, err.Error())
+}
+
 func mustGetSeries(s Server) []string {
 	result, err := s.QueryWithParams("SHOW SERIES", url.Values{"db": []string{"db0"}})
 	if err != nil {
@@ -371,6 +388,12 @@ func mustDropMeasurement(s Server, name string) {
 	if _, err := s.QueryWithParams(query, url.Values{"db": []string{db}}); err != nil {
 		panic(err)
 	}
+}
+
+func dropRetentionPolicy(s Server, retentionPolicy string) error {
+	query := fmt.Sprintf("DROP RETENTION POLICY %q on %q", retentionPolicy, db)
+	_, err := s.QueryWithParams(query, url.Values{"db": []string{db}})
+	return err
 }
 
 // SeriesTracker is a lockable tracker of which shards should own which series.
