@@ -1,0 +1,21 @@
+cnosdb-meta-help(1)
+====================
+
+NAME
+----
+cnosdb-meta-help - Simply type cnosdb-meta help [path to command] for full details
+
+SYNOPSIS
+--------
+'cnosdb-meta help' [command] [options]
+
+DESCRIPTION
+-----------
+Simply type cnosdb-meta help [path to command] for full details
+
+OPTIONS
+-------
+-h, --help::
+   help for help
+
+include::footer.txt[]

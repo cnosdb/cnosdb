@@ -1,0 +1,75 @@
+cnosdb-ctl(1)
+==============
+
+NAME
+----
+cnosdb-ctl - CnosDB cluster management tools
+
+SYNOPSIS
+--------
+[verse]
+'cnosdb_ctl' [ [ command ] [ options ] ]
+'cnosdb_ctl' add-data <data-node>
+'cnosdb_ctl' add-meta <meta-node>
+'cnosdb_ctl' copy-shard <source-data-node> <dest-data-node> <shard-id>
+'cnosdb-ctl' kill-copy-shard <source-data-node> <dest-data-node> <shard-id>
+'cnosdb_ctl' print-meta
+'cnosdb_ctl' remove-data <data-node>
+'cnosdb_ctl' remove-meta <meta-node>
+'cnosdb_ctl' remove-shard <data-node> <shard-id>
+'cnosdb_ctl' show
+'cnosdb_ctl' truncate-shards <data-node> [<delay-minutes>]
+'cnosdb_ctl' update-data <old-data-node> <new-data-node>
+'cnosdb_ctl' replace-data <old-data-node> <new-data-node>
+'cnosdb_ctl' version
+
+DESCRIPTION
+-----------
+ Manage cluster through one of the following commands.
+
+*add-data*::
+   Add a data node to the cluster.
+
+*add-meta*::
+   Add a meta node to the cluster.
+
+*copy-shard*::
+   Copy the specified shard from the source data node to the target data node.
+
+*kill-copy-shard*::
+   Abort an in-progress copy-shard command.
+
+*print-meta*::
+   Use the print-meta command to view the metadata information of the cnosdb cluster.
+
+*remove-data*::
+   Remove a data node from the cluster.
+
+*remove-meta*::
+   Remove a meta node from the cluster.
+
+*remove-shard*::
+   Delete the specified shard from a data node.
+
+*show*::
+   View all data nodes and meta nodes in the cluster.
+
+*truncate-shards*::
+   Truncate the hot shard and create a new shard to which all new data will be written.
+
+*update-data*::
+   Used for node address update in case of node failure, the command will add the new node to the cluster and update the address of the node ID.
+
+*replace-data*::
+   Used for replacement between surviving nodes, replacing the old data node with a new data node, will automatically copy the original node data to the new node, add the new node to the cluster and update the address corresponding to the node ID.
+
+*version*::
+   View the current version of cnosdb-meta.
+
+
+OPTIONS
+-------
+--delay-minutes <delay-minutes>::
+   Specifies how long to truncate the shard after now(), the default is 1, and the unit is minutes.
+
+include::footer.txt[]
