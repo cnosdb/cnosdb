@@ -288,7 +288,7 @@ mod test {
     use protos::{kv_service, models_helper};
     use protos::kv_service::WritePointsRpcResponse;
 
-    use crate::{kv_option::WalConfig, wal::WalTask, TsKv, Task};
+    use crate::{kv_option::WalConfig, TsKv, Task};
 
     async fn get_tskv() -> TsKv {
         let opt = crate::kv_option::Options {
@@ -324,22 +324,6 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_concurrent_write() {
-        let tskv = get_tskv().await;
-
-        for i in 0..2 {
-            let database = "db".to_string();
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-            let points = models_helper::create_random_points(&mut fbb, 1);
-            fbb.finish(points, None);
-            let points = fbb.finished_data().to_vec();
-            let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
-
-            tskv.write(request).await.unwrap();
-        }
-    }
-
-    #[tokio::test]
     async fn test_insert_cache() {
         let tskv = get_tskv().await;
 
@@ -350,21 +334,6 @@ mod test {
         let points = fbb.finished_data();
 
         tskv.insert_cache(1, points).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_concurrent_insert_cache() {
-        let tskv = get_tskv().await;
-
-        for i in 0..2 {
-            let database = "db".to_string();
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-            let points = models_helper::create_random_points(&mut fbb, 1);
-            fbb.finish(points, None);
-            let points = fbb.finished_data();
-
-            tskv.insert_cache(1, points).await.unwrap();
-        }
     }
 
     #[tokio::test]
