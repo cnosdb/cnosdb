@@ -1,4 +1,4 @@
-package cnosdb
+package errors
 
 import (
 	"errors"

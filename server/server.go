@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
@@ -65,7 +64,7 @@ type Server struct {
 	httpHandler http.Handler
 	httpServer  *http.Server
 
-	Node       *cnosdb.Node
+	Node       *meta.Node
 	metaServer *meta.Server
 	meta.MetaClient
 
@@ -196,11 +195,11 @@ func (s *Server) initMetaStore() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if node, err := cnosdb.LoadNode(s.Config.Meta.Dir, ""); err != nil {
+	if node, err := meta.LoadNode(s.Config.Meta.Dir, ""); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		s.Node = cnosdb.NewNode(s.Config.Meta.Dir)
+		s.Node = meta.NewNode(s.Config.Meta.Dir)
 	} else {
 		s.Node = node
 	}

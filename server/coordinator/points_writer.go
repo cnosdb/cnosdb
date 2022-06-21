@@ -3,12 +3,12 @@ package coordinator
 import (
 	"errors"
 	"fmt"
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
@@ -55,7 +55,7 @@ type PointsWriter struct {
 	WriteTimeout time.Duration
 	Logger       *zap.Logger
 
-	Node *cnosdb.Node
+	Node *meta.Node
 
 	MetaClient interface {
 		Database(name string) (di *meta.DatabaseInfo)
@@ -199,7 +199,7 @@ func (w *PointsWriter) MapShards(wp *WritePointsRequest) (*ShardMapping, error) 
 	if err != nil {
 		return nil, err
 	} else if rp == nil {
-		return nil, cnosdb.ErrRetentionPolicyNotFound(wp.RetentionPolicy)
+		return nil, errors2.ErrRetentionPolicyNotFound(wp.RetentionPolicy)
 	}
 
 	// Holds all the shard groups and shards that are required for writes.
@@ -355,7 +355,7 @@ func (w *PointsWriter) WritePointsPrivileged(database, retentionPolicy string, c
 	if retentionPolicy == "" {
 		db := w.MetaClient.Database(database)
 		if db == nil {
-			return cnosdb.ErrDatabaseNotFound(database)
+			return errors2.ErrDatabaseNotFound(database)
 		}
 		retentionPolicy = db.DefaultRetentionPolicy
 	}

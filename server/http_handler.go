@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cnosdb/cnosdb/pkg/errors"
 	"io"
 	"io/ioutil"
 	"log"
@@ -17,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
@@ -724,11 +724,11 @@ func (h *Handler) serveWrite(w http.ResponseWriter, r *http.Request, user meta.U
 	}
 
 	// Write points.
-	if err := h.PointsWriter.WritePoints(database, retentionPolicy, consistency, user, points); cnosdb.IsClientError(err) {
+	if err := h.PointsWriter.WritePoints(database, retentionPolicy, consistency, user, points); errors.IsClientError(err) {
 		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
 		writeError(w, err.Error())
 		return
-	} else if cnosdb.IsAuthorizationError(err) {
+	} else if errors.IsAuthorizationError(err) {
 		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
 		writeErrorWithCode(w, err.Error(), http.StatusForbidden)
 		return
@@ -1279,11 +1279,11 @@ func (h *Handler) servePromWrite(w http.ResponseWriter, r *http.Request, user me
 	}
 
 	// Write points.
-	if err := h.PointsWriter.WritePoints(database, r.URL.Query().Get("rp"), consistency, user, points); cnosdb.IsClientError(err) {
+	if err := h.PointsWriter.WritePoints(database, r.URL.Query().Get("rp"), consistency, user, points); errors.IsClientError(err) {
 		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
 		h.httpError(w, err.Error(), http.StatusBadRequest)
 		return
-	} else if cnosdb.IsAuthorizationError(err) {
+	} else if errors.IsAuthorizationError(err) {
 		atomic.AddInt64(&h.stats.PointsWrittenFail, int64(len(points)))
 		h.httpError(w, err.Error(), http.StatusForbidden)
 		return

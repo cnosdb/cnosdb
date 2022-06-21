@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	internal "github.com/cnosdb/cnosdb/meta/internal"
 
 	"github.com/gogo/protobuf/proto"
@@ -47,7 +46,7 @@ type store struct {
 	raftAddr string
 	httpAddr string
 
-	node *cnosdb.Node
+	node *Node
 }
 
 // newStore will create a new metastore with the passed in config

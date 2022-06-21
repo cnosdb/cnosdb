@@ -7,7 +7,6 @@ import (
 	"net/http/pprof"
 	"os"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/pkg/utils"
@@ -31,7 +30,7 @@ type Server struct {
 	httpHandler http.Handler
 	httpServer  *http.Server
 
-	Node  *cnosdb.Node
+	Node  *Node
 	store *store
 
 	services []interface {
@@ -85,11 +84,11 @@ func (s *Server) initFileSystem() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if _, err := cnosdb.LoadNode(s.Config.Dir, "meta.json"); err != nil {
+	if _, err := LoadNode(s.Config.Dir, "meta.json"); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		s.Node = cnosdb.NewNode(s.Config.Dir)
+		s.Node = NewNode(s.Config.Dir)
 	}
 
 	return nil

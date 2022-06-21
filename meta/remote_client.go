@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"io"
 	"io/ioutil"
 	"math"
@@ -16,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
@@ -521,7 +521,7 @@ func (c *RemoteClient) CreateRetentionPolicy(database string, spec *RetentionPol
 func (c *RemoteClient) RetentionPolicy(database, name string) (rpi *RetentionPolicyInfo, err error) {
 	db := c.Database(database)
 	if db == nil {
-		return nil, cnosdb.ErrDatabaseNotFound(database)
+		return nil, errors2.ErrDatabaseNotFound(database)
 	}
 
 	return db.RetentionPolicy(name), nil
@@ -774,7 +774,7 @@ func (c *RemoteClient) ShardGroupsByTimeRange(database, rp string, min, max time
 	if err != nil {
 		return nil, err
 	} else if rpi == nil {
-		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
+		return nil, errors2.ErrRetentionPolicyNotFound(rp)
 	}
 	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
 	for _, g := range rpi.ShardGroups {

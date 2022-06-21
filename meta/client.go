@@ -7,6 +7,7 @@ import (
 	cRand "crypto/rand"
 	"crypto/sha256"
 	"errors"
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -17,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/pkg/file"
@@ -413,7 +413,7 @@ func (c *Client) RetentionPolicy(database, name string) (rpi *RetentionPolicyInf
 
 	db := c.cacheData.Database(database)
 	if db == nil {
-		return nil, cnosdb.ErrDatabaseNotFound(database)
+		return nil, errors2.ErrDatabaseNotFound(database)
 	}
 
 	return db.RetentionPolicy(name), nil
@@ -740,7 +740,7 @@ func (c *Client) ShardGroupsByTimeRange(database, rp string, min, max time.Time)
 	if err != nil {
 		return nil, err
 	} else if rpi == nil {
-		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
+		return nil, errors2.ErrRetentionPolicyNotFound(rp)
 	}
 	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
 	for _, g := range rpi.ShardGroups {
