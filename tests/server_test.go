@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/cnosdb/cnosdb/server/coordinator"
-	"github.com/cnosdb/cnosdb/vend/db/models"
 	"math/rand"
 	"net/url"
 	"os"
@@ -16,8 +14,9 @@ import (
 	"time"
 
 	"github.com/cnosdb/cnosdb/pkg/logger"
+	"github.com/cnosdb/cnosdb/server/coordinator"
+	"github.com/cnosdb/cnosdb/vend/db/models"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
-
 	"go.uber.org/zap/zapcore"
 )
 
