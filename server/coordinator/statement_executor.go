@@ -392,6 +392,10 @@ func (e *StatementExecutor) executeDropRetentionPolicyStatement(stmt *cnosql.Dro
 		return nil
 	}
 
+	if strings.EqualFold(dbi.DefaultRetentionPolicy, stmt.Name) {
+		return fmt.Errorf(fmt.Sprintf("can‘t drop default retention policy [%s] on [%s]", stmt.Name, dbi.Name))
+	}
+
 	// Locally drop the retention policy.
 	if err := e.TSDBStore.DeleteRetentionPolicy(stmt.Database, stmt.Name); err != nil {
 		return err

@@ -23,7 +23,6 @@ import (
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/pkg/prometheus"
 	"github.com/cnosdb/cnosdb/pkg/uuid"
-	"github.com/cnosdb/cnosdb/server/coordinator"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/common/monitor/diagnostics"
 	"github.com/cnosdb/cnosdb/vend/db/models"
@@ -278,62 +277,6 @@ func (h *Handler) serveMetaJson(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
-func (h *Handler) serveCheckDropWithDefaultRP(query *cnosql.Query, opt *query.ExecutionOptions) error {
-	stmtLen := len(query.Statements)
-	if (int)(0) == stmtLen { // 没有任何执行体,则直接返回
-		return nil
-	}
-
-	var e *coordinator.StatementExecutor = nil
-
-	for i := 0; i < stmtLen; i++ {
-		stmt := query.Statements[i]
-
-		stmtRP, ok := stmt.(*cnosql.DropRetentionPolicyStatement)
-		if !ok { // 只校验删除RP
-			continue
-		}
-
-		defaultDB := opt.Database
-		if strings.EqualFold("", defaultDB) {
-			if s, ok := stmt.(cnosql.HasDefaultDatabase); ok {
-				defaultDB = s.DefaultDatabase()
-			}
-		}
-
-		if strings.EqualFold("", defaultDB) { // 此时就是因为没有用use使用指定的database
-			return fmt.Errorf("Error no use database")
-		}
-
-		// 推迟类型转换时机, 避免对非拦截的命令的影响. 但是执行到此处，则必须能够拿到
-		if nil == e {
-			var ok bool
-			e, ok = h.QueryExecutor.StatementExecutor.(*coordinator.StatementExecutor)
-			if !ok {
-				return fmt.Errorf("Error can't covert QueryExecutor.StatementExecutor to coordinator.StatementExecutor")
-			}
-		}
-
-		// 注意时机, 此时才可拿数据库的信息, 如果提前拿，会对其他命令造成影响
-		dbi := e.MetaClient.Database(defaultDB)
-		if nil == dbi {
-			return fmt.Errorf(fmt.Sprintf("Error can't get database info by database name: %s", defaultDB))
-		}
-
-		defaultRetentionPolicy := dbi.DefaultRetentionPolicy
-		if !strings.EqualFold(stmtRP.Name, defaultRetentionPolicy) { // 不是要删除default的rp,继续校验下一个执行体
-			continue
-		}
-
-		// defalut的rp不能被删除, 必须有一个default的rp
-		errMsg := fmt.Sprintf("Error can't drop default retention policy [%s] on database [%s], must have default retention policy!", defaultRetentionPolicy, defaultDB)
-		h.logger.Error(errMsg)
-		return fmt.Errorf(errMsg) // 视为一个error
-	}
-
-	return nil
-}
-
 // serveQuery parses an incoming query and, if valid, executes the query.
 func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.User) {
 	atomic.AddInt64(&h.stats.QueryRequests, 1)
@@ -458,14 +401,6 @@ func (h *Handler) serveQuery(w http.ResponseWriter, r *http.Request, user meta.U
 		ReadOnly:        r.Method == "GET",
 		NodeID:          nodeID,
 		Authorizer:      fineAuthorizer,
-	}
-
-	// 校验删除数据时是否存在default的retention policy，如果有则必须先删除defalust的rp才能删除数据
-	if err := h.serveCheckDropWithDefaultRP(q, &opts); nil != err {
-		errMsg := fmt.Sprintf("Error check drop with default retention policy err: %v", err)
-		h.logger.Error(errMsg)
-		writeError(rw, errMsg)
-		return
 	}
 
 	if h.config.AuthEnabled {
