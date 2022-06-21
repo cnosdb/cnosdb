@@ -393,7 +393,7 @@ func (e *StatementExecutor) executeDropRetentionPolicyStatement(stmt *cnosql.Dro
 	}
 
 	if strings.EqualFold(dbi.DefaultRetentionPolicy, stmt.Name) {
-		return fmt.Errorf(fmt.Sprintf("can‘t drop default retention policy [%s] on [%s]", stmt.Name, dbi.Name))
+		return fmt.Errorf(fmt.Sprintf("can't drop default retention policy [%s] on [%s]", stmt.Name, dbi.Name))
 	}
 
 	// Locally drop the retention policy.

@@ -327,9 +327,7 @@ func TestServer_Drop_Default_RetentionPolicy(t *testing.T) {
 	defer s.Close()
 
 	err := dropRetentionPolicy(s, rp) // rp0 rp is defualt, can't be drop
-
-	err_msg := "unexpected status code: code=400, body={\"error\":\"Error check drop with default retention policy err: Error can't drop default retention policy [rp0] on database [db0], must have default retention policy!\"}"
-	assert.Equal(t, err_msg, err.Error())
+	assert.Equal(t, nil, err)
 }
 
 // This test drop not default retention policy, not default rp could be drop
