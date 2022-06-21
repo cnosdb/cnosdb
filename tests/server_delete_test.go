@@ -3,6 +3,8 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/google/go-cmp/cmp"
 	"math/rand"
 	"net/url"
 	"os"
@@ -12,10 +14,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/cnosdb/cnosdb/vend/db/pkg/testing/assert"
-	"github.com/google/go-cmp/cmp"
 )
 
 var db = "db0"
@@ -319,28 +317,6 @@ func TestServer_Insert_Delete_10052(t *testing.T) {
 	}
 }
 
-// This test drop default retention policy, default rp can't be drop
-func TestServer_Drop_Default_RetentionPolicy(t *testing.T) {
-	t.Parallel()
-
-	s := OpenDefaultServer(NewConfig())
-	defer s.Close()
-
-	err := dropRetentionPolicy(s, rp) // rp0 rp is defualt, can't be drop
-	assert.Equal(t, nil, err)
-}
-
-// This test drop not default retention policy, not default rp could be drop
-func TestServer_Drop_NotDefault_RetentionPolicy(t *testing.T) {
-	t.Parallel()
-
-	s := OpenDefaultServer(NewConfig())
-	defer s.Close()
-
-	err := dropRetentionPolicy(s, "autogen") // autogen rp not default, could be drop
-	assert.Equal(t, nil, err)
-}
-
 func mustGetSeries(s Server) []string {
 	result, err := s.QueryWithParams("SHOW SERIES", url.Values{"db": []string{"db0"}})
 	if err != nil {
@@ -395,12 +371,6 @@ func mustDropMeasurement(s Server, name string) {
 	if _, err := s.QueryWithParams(query, url.Values{"db": []string{db}}); err != nil {
 		panic(err)
 	}
-}
-
-func dropRetentionPolicy(s Server, retentionPolicy string) error {
-	query := fmt.Sprintf("DROP RETENTION POLICY %q on %q", retentionPolicy, db)
-	_, err := s.QueryWithParams(query, url.Values{"db": []string{db}})
-	return err
 }
 
 // SeriesTracker is a lockable tracker of which shards should own which series.
