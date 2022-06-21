@@ -13,3 +13,9 @@ func TestErr(t *testing.T, err error) {
 		t.Error(err)
 	}
 }
+
+func BenchErr(b *testing.B, err error) {
+	if err != nil {
+		b.Error(err)
+	}
+}
