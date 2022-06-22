@@ -35,7 +35,7 @@ impl Writer {
 
         // build buf
         buf.append(&mut MAGIC_NUMBER.to_le_bytes().to_vec()); // magic_number
-        buf.append(&mut data.len().to_u16().unwrap().to_le_bytes().to_vec()); //data_size
+        buf.append(&mut data.len().to_u32().unwrap().to_le_bytes().to_vec()); //data_size
         buf.append(&mut data_version.to_le_bytes().to_vec()); //data_version
         buf.append(&mut data_type.to_le_bytes().to_vec()); //data_type
         buf.append(&mut data.to_vec()); //data
