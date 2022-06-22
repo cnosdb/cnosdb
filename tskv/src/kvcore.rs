@@ -324,6 +324,21 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_big_write() {
+        let tskv = get_tskv().await;
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_big_random_points(&mut fbb, 1);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        tskv.write(request).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn test_insert_cache() {
         let tskv = get_tskv().await;
 
