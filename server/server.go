@@ -320,7 +320,7 @@ func (s *Server) initTSDBStore() error {
 	}
 
 	for _, service := range s.services {
-		fmt.Println("shit service")
+
 		if err := service.Open(); err != nil {
 			return fmt.Errorf("open service: %s", err)
 		}
