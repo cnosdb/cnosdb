@@ -1,8 +1,8 @@
 package meta_test
 
 import (
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/errors"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"io/ioutil"
 	"os"
@@ -939,12 +939,12 @@ func TestMetaClient_Subscriptions_Drop(t *testing.T) {
 	}
 
 	err = c.DropSubscription("foo", "autogen", "sub0")
-	if got, exp := err, cnosdb.ErrDatabaseNotFound("foo"); got.Error() != exp.Error() {
+	if got, exp := err, errors.ErrDatabaseNotFound("foo"); got.Error() != exp.Error() {
 		t.Fatalf("got: %s, exp: %s", got, exp)
 	}
 
 	err = c.DropSubscription("db0", "foo_policy", "sub0")
-	if got, exp := err, cnosdb.ErrRetentionPolicyNotFound("foo_policy"); got.Error() != exp.Error() {
+	if got, exp := err, errors.ErrRetentionPolicyNotFound("foo_policy"); got.Error() != exp.Error() {
 		t.Fatalf("got: %s, exp: %s", got, exp)
 	}
 

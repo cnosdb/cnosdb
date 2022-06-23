@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/cnosdb/cnosdb/pkg/errors"
 	"io"
 	"io/ioutil"
 	"net"
@@ -15,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/pkg/network"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
@@ -36,7 +36,7 @@ const (
 type Service struct {
 	wg sync.WaitGroup
 
-	Node *cnosdb.Node
+	Node *meta.Node
 
 	MetaClient interface {
 		encoding.BinaryMarshaler
@@ -544,7 +544,7 @@ func (s *Service) writeDatabaseInfo(conn net.Conn, database string) error {
 	if database != "" {
 		db := s.MetaClient.Database(database)
 		if db == nil {
-			return cnosdb.ErrDatabaseNotFound(database)
+			return errors.ErrDatabaseNotFound(database)
 		}
 		dbs = append(dbs, *db)
 	} else {
@@ -584,7 +584,7 @@ func (s *Service) writeRetentionPolicyInfo(conn net.Conn, database, retentionPol
 	res := Response{}
 	db := s.MetaClient.Database(database)
 	if db == nil {
-		return cnosdb.ErrDatabaseNotFound(database)
+		return errors.ErrDatabaseNotFound(database)
 	}
 
 	var ret *meta.RetentionPolicyInfo
@@ -597,7 +597,7 @@ func (s *Service) writeRetentionPolicyInfo(conn net.Conn, database, retentionPol
 	}
 
 	if ret == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(retentionPolicy)
+		return errors.ErrRetentionPolicyNotFound(retentionPolicy)
 	}
 
 	for _, sg := range ret.ShardGroups {

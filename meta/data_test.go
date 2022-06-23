@@ -1,8 +1,8 @@
 package meta_test
 
 import (
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
+	"github.com/cnosdb/cnosdb/pkg/errors"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"reflect"
 	"testing"
@@ -209,7 +209,7 @@ func TestData_SetPrivilege(t *testing.T) {
 	}
 
 	// When the database does not exist, SetPrivilege returns an error.
-	if got, exp := data.SetPrivilege("user1", "db1", cnosql.AllPrivileges), cnosdb.ErrDatabaseNotFound("db1"); got == nil || got.Error() != exp.Error() {
+	if got, exp := data.SetPrivilege("user1", "db1", cnosql.AllPrivileges), errors.ErrDatabaseNotFound("db1"); got == nil || got.Error() != exp.Error() {
 		t.Fatalf("got %v, expected %v", got, exp)
 	}
 

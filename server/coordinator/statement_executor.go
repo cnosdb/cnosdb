@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
@@ -779,7 +779,7 @@ func (e *StatementExecutor) executeShowRetentionPoliciesStatement(q *cnosql.Show
 
 	di := e.MetaClient.Database(q.Database)
 	if di == nil {
-		return nil, cnosdb.ErrDatabaseNotFound(q.Database)
+		return nil, errors2.ErrDatabaseNotFound(q.Database)
 	}
 
 	row := &models.Row{Columns: []string{"name", "duration", "groupDuration", "replicaN", "default"}}
@@ -1333,7 +1333,7 @@ func (e *StatementExecutor) normalizeMeasurement(m *cnosql.Measurement, defaultD
 	// Find database.
 	di := e.MetaClient.Database(m.Database)
 	if di == nil {
-		return cnosdb.ErrDatabaseNotFound(m.Database)
+		return errors2.ErrDatabaseNotFound(m.Database)
 	}
 
 	// If no retention policy was specified, use the default.
