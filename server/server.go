@@ -163,7 +163,7 @@ func (s *Server) Close() {
 		_ = s.listener.Close()
 	}
 
-	//service is no use,It's nil.
+	//services is no use,It's nil.
 	for _, service := range s.services {
 		_ = service.Close()
 	}
@@ -318,7 +318,7 @@ func (s *Server) initTSDBStore() error {
 	if err := s.subscriber.Open(); err != nil {
 		return fmt.Errorf("open subscriber: %s", err)
 	}
-	fmt.Println("3612783628163215")
+
 	for _, service := range s.services {
 		fmt.Println("shit service")
 		if err := service.Open(); err != nil {
