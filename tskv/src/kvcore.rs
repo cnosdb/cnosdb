@@ -15,6 +15,7 @@ use tokio::{
         oneshot, RwLock,
     },
 };
+use models::{FieldID, SeriesID};
 
 use crate::{
     context::GlobalContext,
@@ -33,6 +34,7 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task,
 };
+use crate::tseries_family::TimeRange;
 
 pub struct Entry {
     pub series_id: u64,
@@ -123,7 +125,7 @@ impl TsKv {
 
         // write memcache
         if let Some(points) = fb_points.points() {
-            let version_set = self.version_set.read().await;
+            let mut version_set = self.version_set.write().await;
             for point in points.iter() {
                 let p = AbstractPoints::from(point);
                 let sid = p.series_id();
@@ -146,11 +148,30 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
+    pub async fn read(&self, sids: Vec<SeriesID>, time_range: TimeRange, fields: Vec<FieldID>) {
+        let mut version_set = self.version_set.write().await;
+        for sid in sids {
+            if let Some(tsf) = version_set.get_tsfamily(sid) {
+                for field_id in fields.iter() {
+                    if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(field_id) {
+                        if mem_entry.ts_max < time_range.min_ts || mem_entry.ts_min > time_range.max_ts {
+                            break;
+                        } else {
+                            for i in mem_entry.cells.iter() {
+                                //todo()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {
         let ps =
             flatbuffers::root::<fb_models::Points>(buf).context(error::InvalidFlatbufferSnafu)?;
         if let Some(points) = ps.points() {
-            let version_set = self.version_set.read().await;
+            let mut version_set = self.version_set.write().await;
             for point in points.iter() {
                 let p = AbstractPoints::from(point);
                 // use sid to dispatch to tsfamily
