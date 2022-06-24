@@ -304,7 +304,7 @@ impl WalManager {
                                               self.current_dir.join(file_name),
                                               Arc::new(kv_option::WalConfig::default()))?;
             let mut reader = WalReader::new(tmp_walfile.file.into())?;
-            let version_set = version_set.read().await;
+            let mut version_set = version_set.write().await;
             while let Some(e) = reader.next_wal_entry() {
                 match e.typ {
                     WalEntryType::Write => {
@@ -477,7 +477,7 @@ mod test {
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
 
-    const DIR: &'static str = "/tmp/test/";
+    const DIR: &'static str = "/tmp/test/wal";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
