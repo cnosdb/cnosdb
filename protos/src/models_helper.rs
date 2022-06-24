@@ -56,12 +56,13 @@ mod test {
     pub fn create_random_points<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
                                     num: usize)
                                     -> WIPOffset<Points<'a>> {
+        let area = ["a".to_string(),"b".to_string(),"c".to_string()];
         let mut points = vec![];
         for _ in 0..num {
             let timestamp = Local::now().timestamp_millis();
 
-            let tav = rand::random::<u8>().to_string();
-            let tbv = rand::random::<u8>().to_string();
+            let tav = area[rand::random::<usize>()%3].clone();
+            let tbv = area[rand::random::<usize>()%3].clone();
             let tags = create_tags(fbb,
                                    vec![("ta", &("a".to_string() + &tav)),
                                         ("tb", &("b".to_string() + &tbv))]);

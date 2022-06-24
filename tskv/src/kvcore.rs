@@ -1,4 +1,5 @@
 use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, sync::Arc, thread::JoinHandle};
+use std::collections::HashMap;
 
 use ::models::{InMemPoint, FieldInfo, SeriesInfo, Tag, ValueType};
 use once_cell::sync::OnceCell;
@@ -24,7 +25,7 @@ use crate::{
     file_utils,
     forward_index::ForwardIndex,
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
-    memcache::MemCache,
+    memcache::{MemCache, DataType},
     record_file::Reader,
     runtime::WorkerQueue,
     summary::{Summary, VersionEdit},
@@ -142,20 +143,39 @@ impl TsKv {
 
     pub async fn read(&self, sids: Vec<SeriesID>, time_range: TimeRange, fields: Vec<FieldID>) {
         let mut version_set = self.version_set.write().await;
+        let mut output = HashMap::<&FieldID,Vec<DataType>>::new();
         for sid in sids {
             if let Some(tsf) = version_set.get_tsfamily(sid) {
                 for field_id in fields.iter() {
+                    //get data from memcache
                     if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(field_id) {
-                        if mem_entry.ts_max < time_range.min_ts || mem_entry.ts_min > time_range.max_ts {
-                            break;
-                        } else {
-                            for i in mem_entry.cells.iter() {
-                                //todo()
+                        let mut out_put_raw = vec![];
+                        for i in mem_entry.cells.iter() {
+                            if i.timestamp() > time_range.min_ts && i.timestamp() < time_range.max_ts {
+                                out_put_raw.push(i.clone());
                             }
                         }
+                                output.insert(field_id, out_put_raw);
                     }
+                    //get data from im_memcache
+                    for mem_cache in tsf.im_cache().iter() {
+                        if let Some(mem_entry) = mem_cache.read().await.data_cache.get(field_id) {
+                            let mut out_put_raw = vec![];
+                            for i in mem_entry.cells.iter() {
+                                if i.timestamp() > time_range.min_ts && i.timestamp() < time_range.max_ts {
+                                    out_put_raw.push(i.clone());
+                                }
+                            }
+                            output.get_mut(field_id).unwrap().append(&mut out_put_raw);
+                        }
+                    }
+                    //get data from levelinfo
+
                 }
             }
+        }
+        for data in output.iter() {
+            println!("{}::{:?}",data.0,data.1);
         }
     }
 
@@ -294,12 +314,18 @@ impl KvContext {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use chrono::Local;
 
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use protos::{kv_service, kv_service::WritePointsRpcResponse, models_helper};
-    use tokio::sync::{mpsc, oneshot::channel};
+    use snafu::ResultExt;
+    use tokio::sync::mpsc;
+    use tokio::sync::oneshot::channel;
+    use models::{FieldInfo, SeriesInfo, Tag, ValueType};
+    use protos::{kv_service, models_helper,models as fb_models,};
+    use protos::kv_service::WritePointsRpcResponse;
 
-    use crate::{kv_option::WalConfig, Task, TsKv};
+    use crate::{kv_option::WalConfig, TsKv, Task, error, Error};
+    use crate::tseries_family::TimeRange;
 
     async fn get_tskv() -> TsKv {
         let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
@@ -328,6 +354,34 @@ mod test {
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
 
         tskv.write(request).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_read() -> Result<(),Error>{
+        let tskv = get_tskv().await;
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points(&mut fbb, 20);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        tskv.write(request.clone()).await.unwrap();
+
+        let shared_write_batch = Arc::new(request.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+        let mut sids = vec![];
+        let mut fields_id = vec![];
+        for point in fb_points.points().unwrap() {
+            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            info.finish();
+            sids.push(info.series_id().clone());
+            for field in info.field_infos().iter() {
+                fields_id.push(field.filed_id().clone());
+            }
+        }
+        Ok(tskv.read(sids, TimeRange::new( Local::now().timestamp_millis()+100,0), fields_id).await)
     }
 
     #[tokio::test]
