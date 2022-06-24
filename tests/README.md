@@ -1,6 +1,6 @@
 # CnosDB CI tests
 
-In this directory are some of the integration tests that will be run in CI.
+In this directory are some integration tests that will be run in CI.
 
 ## How to run these test cases
 
@@ -25,7 +25,7 @@ go test -parallel 1 ./tests
 TODO
 ## What is the architecture of the test suite
 
-* server_helpes.go: The Server interface is defined and encapsulates the database related operations.
+* server_helpers.go: The Server interface is defined and encapsulates the database related operations.
 
 * server_suite.go: A large number of statement-based test cases are stored and will be tested in server_test.go.
 
