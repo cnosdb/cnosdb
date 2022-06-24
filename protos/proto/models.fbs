@@ -47,7 +47,7 @@ table Field {
 table Point {
     tags: [Tag];
     fields: [Field];
-    timestamp: uint64;
+    timestamp: int64;
 }
 
 table Points {
@@ -65,6 +65,6 @@ table ColumnKeys {
 
 table ColumnKeysWithRange {
     column_keys: [ColumnKey];
-    min: uint64;
-    max: uint64;
+    min: int64;
+    max: int64;
 }

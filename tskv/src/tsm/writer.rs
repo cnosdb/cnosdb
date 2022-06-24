@@ -3,7 +3,7 @@ use std::{
     io::{Seek, SeekFrom, Write},
 };
 
-use utils::bkdr_hash::Hash;
+use utils::bkdr_hash::BkdrHasher;
 
 use super::{block, MAX_BLOCK_VALUES};
 use crate::{

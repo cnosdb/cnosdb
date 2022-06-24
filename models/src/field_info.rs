@@ -1,24 +1,13 @@
-use utils::bkdr_hash::{Hash, HashWith};
+use protos::models as fb_models;
+use serde::{Deserialize, Serialize};
+use utils::bkdr_hash::BkdrHasher;
 
-use super::*;
+use crate::{
+    errors::{Error, Result},
+    FieldID, FieldName, SeriesID,
+};
 
 const FIELD_NAME_MAX_LEN: usize = 512;
-
-pub type FieldID = u64;
-pub type FieldName = Vec<u8>;
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct FieldInfo {
-    pub id: FieldID,
-    pub name: FieldName,
-    pub value_type: ValueType,
-}
-
-#[derive(Copy, Clone)]
-pub struct AbstractFieldInfo {
-    pub id: FieldID,
-    pub value_type: ValueType,
-}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone)]
 pub enum ValueType {
@@ -69,57 +58,71 @@ impl From<protos::models::FieldType> for ValueType {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct FieldInfo {
+    id: FieldID,
+    name: FieldName,
+    value_type: ValueType,
+
+    /// True if method `finish(series_id)` has been called.
+    finished: bool,
+}
+
 impl FieldInfo {
-    pub fn new(id: u64, name: Vec<u8>, value_type: ValueType) -> Self {
-        FieldInfo { id, name, value_type }
+    pub fn new(series_id: SeriesID, name: FieldName, value_type: ValueType) -> Self {
+        let mut fi = FieldInfo { id: 0, name, value_type, finished: true };
+        fi.finish(series_id);
+        fi
     }
 
-    pub fn to_abstract(&self) -> AbstractFieldInfo {
-        AbstractFieldInfo { id: self.id, value_type: self.value_type }
+    pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
+        Ok(Self { id: 0,
+                  name: field.name()
+                             .ok_or(Error::InvalidFlatbufferMessage { err: "".to_string() })?
+                             .to_vec(),
+                  value_type: field.type_().into(),
+                  finished: false })
     }
 
-    pub fn cal_fid(name: &FieldName, sid: SeriesID) -> FieldID {
-        let mut hash = Hash::from(sid);
-        hash.hash_with(name).number()
-    }
-    pub fn update_id(&mut self, series_id: SeriesID) {
-        self.id = Self::cal_fid(&self.name, series_id);
-    }
-
-    pub fn format_check(&self) -> Result<(), String> {
+    pub fn check(&self) -> Result<()> {
         if self.name.len() > FIELD_NAME_MAX_LEN {
-            return Err(String::from("TagKey exceeds the FIELD_NAME_MAX_LEN"));
+            return Err(Error::InvalidField { err: format!("TagKey exceeds the FIELD_NAME_MAX_LEN({})",
+                                                          FIELD_NAME_MAX_LEN) });
         }
         Ok(())
     }
+
+    pub fn finish(&mut self, series_id: SeriesID) {
+        self.finished = true;
+        self.id = generate_field_id(&self.name, series_id);
+    }
+
     pub fn filed_id(&self) -> FieldID {
         self.id
     }
-}
 
-pub trait FieldInfoFromParts<T1, T2> {
-    fn from_parts(name: T1, value_type: T2) -> Self;
-}
+    pub fn name(&self) -> &FieldName {
+        &self.name
+    }
 
-impl FieldInfoFromParts<FieldName, ValueType> for FieldInfo {
-    fn from_parts(name: FieldName, value_type: ValueType) -> Self {
-        FieldInfo { id: 0, name, value_type }
+    pub fn value_type(&self) -> ValueType {
+        self.value_type
     }
 }
 
-impl FieldInfoFromParts<&str, ValueType> for FieldInfo {
-    fn from_parts(name: &str, value_type: ValueType) -> Self {
-        FieldInfo { id: 0, name: name.as_bytes().to_vec(), value_type }
-    }
+pub fn generate_field_id(name: &FieldName, sid: SeriesID) -> FieldID {
+    let mut hash = BkdrHasher::with_number(sid);
+    hash.hash_with(name.as_slice());
+    hash.number()
 }
 
 #[cfg(test)]
-mod tests_field_info {
-    use crate::{FieldInfo, FieldInfoFromParts, ValueType};
+mod test {
+    use crate::{FieldInfo, ValueType};
 
     #[test]
     fn test_field_info_format_check() {
-        let field_info = FieldInfo::from_parts(Vec::from("hello"), ValueType::Integer);
-        field_info.format_check().unwrap();
+        let field_info = FieldInfo::new(1, Vec::from("hello"), ValueType::Integer);
+        field_info.check().unwrap();
     }
 }

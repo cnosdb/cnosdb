@@ -1,6 +1,6 @@
 use snafu::Snafu;
 
-use super::record_file;
+use crate::record_file;
 
 #[derive(Snafu, Debug)]
 pub enum ForwardIndexError {

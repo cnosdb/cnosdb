@@ -1,111 +1,75 @@
-use std::cmp::Ordering;
+use protos::models as fb_models;
+use serde::{Deserialize, Serialize};
+use utils::bkdr_hash::BkdrHasher;
 
-use protos::models::Point;
-use utils::bkdr_hash::{Hash, HashWith};
-
-use super::*;
-
-pub type SeriesID = u64;
+use crate::{
+    errors::{Error, Result},
+    tag, FieldID, FieldInfo, FieldName, SeriesID, Tag,
+};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SeriesInfo {
-    pub id: SeriesID,
-    pub tags: Vec<Tag>,
-    pub field_infos: Vec<FieldInfo>,
-}
+    id: SeriesID,
+    tags: Vec<Tag>,
+    field_infos: Vec<FieldInfo>,
 
-pub struct AbstractSeriesInfo {
-    pub id: SeriesID,
-    pub pos: u64,
-    pub abstract_field_infos: Vec<AbstractFieldInfo>,
+    /// True if method `finish()` has been called.
+    finished: bool,
 }
 
 impl SeriesInfo {
-    pub fn new() -> Self {
-        SeriesInfo { id: 0, tags: Vec::new(), field_infos: Vec::new() }
+    pub fn new(tags: Vec<Tag>, field_infos: Vec<FieldInfo>) -> Self {
+        let mut si = Self { id: 0, tags, field_infos, finished: true };
+        si.finish();
+        si
     }
 
-    pub fn to_abstract(&self, pos: u64) -> AbstractSeriesInfo {
-        AbstractSeriesInfo { id: self.id,
-                             pos,
-                             abstract_field_infos: {
-                                 let mut abs_infos = Vec::<AbstractFieldInfo>::new();
-                                 for field_info in &self.field_infos {
-                                     abs_infos.push(field_info.to_abstract())
-                                 }
-                                 abs_infos
-                             } }
-    }
-
-    pub fn add_tag(&mut self, tag: Tag) -> Result<(), String> {
-        tag.format_check()?;
-        self.tags.push(tag);
-        self.update_id();
-        Ok(())
-    }
-
-    pub fn del_tag(&mut self, key: TagKey) {
-        for i in 0..self.tags.len() {
-            if self.tags[i].key == key {
-                self.tags.remove(i);
-                break;
-            }
-        }
-    }
-
-    pub fn add_field_info(&mut self, mut field_info: FieldInfo) -> Result<(), String> {
-        field_info.format_check()?;
-        field_info.update_id(self.id);
-        self.field_infos.push(field_info);
-        Ok(())
-    }
-
-    pub fn del_field_info_by_name(&mut self, name: FieldName) {
-        for i in 0..self.field_infos.len() {
-            if self.field_infos[i].name == name {
-                self.field_infos.remove(i);
-                break;
-            }
-        }
-    }
-
-    pub fn del_field_info_by_id(&mut self, id: FieldID) {
-        for i in 0..self.field_infos.len() {
-            if self.field_infos[i].id == id {
-                self.field_infos.remove(i);
-                break;
-            }
-        }
-    }
-
-    pub fn sort_tags(tags: &mut Vec<Tag>) {
-        tags.sort_by(|a, b| -> Ordering {
-                if a.key < b.key {
-                    Ordering::Less
-                } else if a.key > b.key {
-                    Ordering::Greater
-                } else {
-                    Ordering::Equal
+    pub fn from_flatbuffers(point: &fb_models::Point) -> Result<Self> {
+        let tags = match point.tags() {
+            Some(tags_inner) => {
+                let mut tags = Vec::with_capacity(tags_inner.len());
+                for t in tags_inner.into_iter() {
+                    tags.push(Tag::from_flatbuffers(&t)?);
                 }
-            })
+                tags
+            },
+            None => return Err(Error::InvalidFlatbufferMessage { err: "Point tags cannot be empty".to_string() }),
+        };
+        let field_infos = match point.fields() {
+            Some(fields_inner) => {
+                let mut fields = Vec::with_capacity(fields_inner.len());
+                for f in fields_inner.into_iter() {
+                    fields.push(FieldInfo::from_flatbuffers(&f)?);
+                }
+                fields
+            },
+            None => return Err(Error::InvalidFlatbufferMessage { err: "Point fields cannot be empty".to_string() }),
+        };
+
+        let mut info = Self { id: 0, tags, field_infos, finished: true };
+        info.finish();
+        Ok(info)
     }
 
-    pub fn cal_sid(tags: &mut Vec<Tag>) -> SeriesID {
-        let mut data = Vec::<u8>::new();
-        SeriesInfo::sort_tags(tags);
-        for tag in tags.iter_mut() {
-            data.append(&mut tag.bytes())
-        }
-        let sid = Hash::new().hash_with(&data).number();
-        sid
+    pub fn sort_tags(&mut self) {
+        tag::sort_tags(&mut self.tags);
     }
 
-    pub fn update_id(&mut self) {
-        self.id = Self::cal_sid(&mut self.tags);
+    pub fn finish(&mut self) {
+        self.sort_tags();
+        self.id = generate_series_id(&self.tags);
 
-        // field id
+        // Reset field id
         for field_info in &mut self.field_infos {
-            field_info.update_id(self.id);
+            field_info.finish(self.id);
+        }
+    }
+
+    pub fn merge(&mut self, series_info: &SeriesInfo) {
+        let mut final_field_infos: Vec<FieldInfo> = Vec::new();
+        for field_info in series_info.field_infos.iter() {
+            let dup_field_infos = self.field_info_with_id(&field_info.filed_id());
+            final_field_infos.push(field_info.clone());
         }
     }
 
@@ -113,57 +77,57 @@ impl SeriesInfo {
         self.id
     }
 
+    pub fn tags(&self) -> &Vec<Tag> {
+        &self.tags
+    }
+
+    pub fn field_infos(&self) -> &Vec<FieldInfo> {
+        &self.field_infos
+    }
+
+    pub fn push_field_info(&mut self, field_info: FieldInfo) {
+        self.field_infos.push(field_info)
+    }
+
+    pub fn field_info_with_id(&self, field_id: &FieldID) -> Vec<&FieldInfo> {
+        self.field_infos.iter().filter(|f| f.filed_id().cmp(field_id).is_eq()).collect()
+    }
+
+    pub fn field_info_with_name(&self, field_name: &FieldName) -> Vec<&FieldInfo> {
+        self.field_infos.iter().filter(|f| f.name().cmp(field_name).is_eq()).collect()
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         bincode::serialize(self).unwrap()
     }
 
-    pub fn decoded(data: &Vec<u8>) -> SeriesInfo {
+    pub fn decode(data: &Vec<u8>) -> SeriesInfo {
         bincode::deserialize(&data[..]).unwrap()
     }
 }
 
-impl From<Point<'_>> for SeriesInfo {
-    fn from(p: Point<'_>) -> Self {
-        let mut fileds = Vec::new();
-        let mut tags = Vec::new();
-
-        for fit in p.fields().into_iter() {
-            for f in fit.into_iter() {
-                let field_name = f.name().unwrap().to_vec();
-                let t = f.type_().into();
-                // let val = f.value().unwrap().to_vec();
-                let filed = FieldInfo::new(0, field_name, t);
-                fileds.push(filed);
-            }
-        }
-        for tit in p.tags().into_iter() {
-            for t in tit.into_iter() {
-                let k = t.key().unwrap().to_vec();
-                let v = t.value().unwrap().to_vec();
-                let tag = Tag::new(k, v);
-                tags.push(tag);
-            }
-        }
-
-        let mut info = SeriesInfo { id: 0, tags, field_infos: fileds };
-        info.update_id();
-        info
+pub fn generate_series_id(tags: &[Tag]) -> SeriesID {
+    let mut hasher = BkdrHasher::new();
+    for tag in tags {
+        hasher.hash_with(&tag.key);
+        hasher.hash_with(&tag.value);
     }
+    hasher.number()
 }
 
 #[cfg(test)]
 mod tests_series_info {
     use protos::models;
 
-    use crate::{FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, TagFromParts, ValueType};
+    use crate::{FieldInfo, SeriesInfo, Tag, ValueType};
 
     #[test]
     fn test_series_info_encode_and_decode() {
-        let mut info = SeriesInfo::new();
-        info.add_tag(Tag::from_parts("hello", "123")).unwrap();
-        info.add_field_info(FieldInfo::from_parts(Vec::from("cpu"), ValueType::Integer)).unwrap();
+        let mut info =
+            SeriesInfo::new(vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
+                            vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)]);
         let data = info.encode();
-        let new_info = SeriesInfo::decoded(&data);
+        let new_info = SeriesInfo::decode(&data);
         assert_eq!(info, new_info);
     }
 
@@ -199,7 +163,7 @@ mod tests_series_info {
         let p = flatbuffers::root::<models::Point>(buf).unwrap();
         println!("Point info {:?}", p);
 
-        let s = SeriesInfo::from(p);
+        let s = SeriesInfo::from_flatbuffers(&p).unwrap();
         println!("Series info {:?}", s);
     }
 }

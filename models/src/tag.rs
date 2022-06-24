@@ -1,12 +1,30 @@
-use super::*;
+use std::{cmp::Ordering, hash::Hash};
+
+use protos::models as fb_models;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    errors::{Error, Result},
+    TagKey, TagValue,
+};
 
 const TAG_KEY_MAX_LEN: usize = 512;
 const TAG_VALUE_MAX_LEN: usize = 4096;
 
-pub type TagKey = Vec<u8>;
-pub type TagValue = Vec<u8>;
+pub fn sort_tags(tags: &mut [Tag]) {
+    tags.sort_by(|a, b| -> Ordering {
+            if a.key < b.key {
+                Ordering::Less
+            } else if a.key > b.key {
+                Ordering::Greater
+            } else {
+                Ordering::Equal
+            }
+        })
+}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Tag {
     pub key: TagKey,
     pub value: TagValue,
@@ -16,27 +34,36 @@ impl Tag {
     pub fn new(key: TagKey, value: TagValue) -> Self {
         Self { key, value }
     }
-    pub fn format_check(&self) -> Result<(), String> {
+
+    pub fn from_flatbuffers(tag: &fb_models::Tag) -> Result<Self> {
+        let key = tag.key().ok_or(Error::InvalidFlatbufferMessage { err: "Tag key cannot be empty".to_string() })?.to_vec();
+        let value = tag.value().ok_or(Error::InvalidFlatbufferMessage { err: "Tag value cannot be emptyt".to_string() })?.to_vec();
+        Ok(Self { key, value })
+    }
+
+    pub fn check(&self) -> Result<()> {
         if self.key.is_empty() {
-            return Err(String::from("Key cannot be empty"));
+            return Err(Error::InvalidTag { err: "Tag key cannot be empty".to_string() });
         }
         if self.value.is_empty() {
-            return Err(String::from("Value cannot be empty"));
+            return Err(Error::InvalidTag { err: "Tag value cannot be empty".to_string() });
         }
         if self.key.len() > TAG_KEY_MAX_LEN {
-            return Err(String::from("TagKey exceeds the TAG_KEY_MAX_LEN"));
+            return Err(Error::InvalidTag { err: format!("Tag key exceeds the TAG_KEY_MAX_LEN({})",
+                                                        TAG_KEY_MAX_LEN) });
         }
         if self.value.len() > TAG_VALUE_MAX_LEN {
-            return Err(String::from("TagValue exceeds the TAG_VALUE_MAX_LEN"));
+            return Err(Error::InvalidTag { err: format!("Tag value exceeds the TAG_VALUE_MAX_LEN({})",
+                                                        TAG_VALUE_MAX_LEN) });
         }
         Ok(())
     }
 
-    pub fn bytes(&mut self) -> Vec<u8> {
-        let mut data = Vec::<u8>::new();
-        data.append(&mut self.key.clone());
-        data.append(&mut self.value.clone());
-        data
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.key.len() + self.value.len());
+        buf.extend_from_slice(&self.key);
+        buf.extend_from_slice(&self.value);
+        buf
     }
 }
 
@@ -58,17 +85,17 @@ impl TagFromParts<TagKey, TagValue> for Tag {
 
 #[cfg(test)]
 mod tests_tag {
-    use crate::{Tag, TagFromParts};
+    use crate::Tag;
 
     #[test]
     fn test_tag_bytes() {
-        let mut tag = Tag::from_parts("hello", "123");
-        assert_eq!(tag.bytes(), Vec::from("hello123"));
+        let tag = Tag::new(b"hello".to_vec(), b"123".to_vec());
+        assert_eq!(tag.to_bytes(), Vec::from("hello123"));
     }
 
     #[test]
     fn test_tag_format_check() {
-        let tag = Tag::from_parts("hello", "123");
-        tag.format_check().unwrap();
+        let tag = Tag::new(b"hello".to_vec(), b"123".to_vec());
+        tag.check().unwrap();
     }
 }

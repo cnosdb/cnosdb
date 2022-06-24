@@ -42,7 +42,7 @@ mod test {
     }
 
     pub fn create_point<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-                            timestamp: u64,
+                            timestamp: i64,
                             tags: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Tag>>>,
                             fields: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Field>>>)
                             -> WIPOffset<models::Point<'a>> {
@@ -58,7 +58,7 @@ mod test {
                                     -> WIPOffset<Points<'a>> {
         let mut points = vec![];
         for _ in 0..num {
-            let timestamp = Local::now().timestamp_millis() as u64;
+            let timestamp = Local::now().timestamp_millis();
 
             let tav = rand::random::<u8>().to_string();
             let tbv = rand::random::<u8>().to_string();
