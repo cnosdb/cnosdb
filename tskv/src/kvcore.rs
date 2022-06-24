@@ -1,6 +1,6 @@
 use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, sync::Arc, thread::JoinHandle};
 
-use ::models::{AbstractPoints, FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, ValueType};
+use ::models::{InMemPoint, FieldInfo, SeriesInfo, Tag, ValueType};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
@@ -99,15 +99,7 @@ impl TsKv {
 
         // get or create forward index
         for point in fb_points.points().unwrap() {
-            let mut info = SeriesInfo::new();
-            for tag in point.tags().unwrap() {
-                info.tags
-                    .push(Tag::new(tag.key().unwrap().to_vec(), tag.value().unwrap().to_vec()));
-            }
-            for field in point.fields().unwrap() {
-                info.field_infos.push(FieldInfo::from_parts(field.name().unwrap().to_vec(),
-                                                            ValueType::from(field.type_())))
-            }
+            let info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             self.forward_index
                 .write()
                 .await
@@ -127,13 +119,13 @@ impl TsKv {
         if let Some(points) = fb_points.points() {
             let mut version_set = self.version_set.write().await;
             for point in points.iter() {
-                let p = AbstractPoints::from(point);
+                let p = InMemPoint::from(point);
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
                     for f in p.fileds().iter() {
                         tsf.put_mutcache(f.filed_id(),
                                          &f.value,
-                                         f.val_type,
+                                         f.value_type,
                                          seq,
                                          point.timestamp() as i64)
                            .await
@@ -173,7 +165,7 @@ impl TsKv {
         if let Some(points) = ps.points() {
             let mut version_set = self.version_set.write().await;
             for point in points.iter() {
-                let p = AbstractPoints::from(point);
+                let p = InMemPoint::from(point);
                 // use sid to dispatch to tsfamily
                 // so if you change the colume name
                 // please keep the series id
@@ -182,7 +174,7 @@ impl TsKv {
                     for f in p.fileds().iter() {
                         tsf.put_mutcache(f.filed_id(),
                                          &f.value,
-                                         f.val_type,
+                                         f.value_type,
                                          seq,
                                          point.timestamp() as i64)
                            .await
@@ -304,21 +296,15 @@ mod test {
     use std::sync::Arc;
 
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use tokio::sync::mpsc;
-    use tokio::sync::oneshot::channel;
-    use protos::{kv_service, models_helper};
-    use protos::kv_service::WritePointsRpcResponse;
+    use protos::{kv_service, kv_service::WritePointsRpcResponse, models_helper};
+    use tokio::sync::{mpsc, oneshot::channel};
 
-    use crate::{kv_option::WalConfig, TsKv, Task};
+    use crate::{kv_option::WalConfig, Task, TsKv};
 
     async fn get_tskv() -> TsKv {
-        let opt = crate::kv_option::Options {
-            wal: WalConfig {
-                dir: String::from("/tmp/test/wal"),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
+                                                               ..Default::default() },
+                                              ..Default::default() };
 
         TsKv::open(opt).await.unwrap()
     }
@@ -392,7 +378,7 @@ mod test {
 
         match rx.await {
             Ok(Ok(resp)) => println!("successful"),
-            _ => println!("wrong")
+            _ => println!("wrong"),
         };
     }
 }

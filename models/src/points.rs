@@ -1,38 +1,67 @@
-use protos::models::Point;
+use protos::models as fb_models;
 
-use crate::{FieldID, FieldInfo, SeriesID, SeriesInfo, Tag, ValueType};
+use crate::{Result, field_info, generate_series_id, FieldID, SeriesID, Tag, Timestamp, ValueType, Error};
 
 #[derive(Debug)]
-pub struct AbstractPoint {
-    pub filed_id: FieldID,
-    pub val_type: ValueType,
+pub struct FieldValue {
+    pub field_id: FieldID,
+    pub value_type: ValueType,
     pub value: Vec<u8>,
 }
 
-impl AbstractPoint {
+impl FieldValue {
+    pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
+        Ok(Self { field_id: 0,
+            value_type: field.type_().into(),
+            value: match field.value() {
+                Some(v) => v.to_vec(),
+                None => Vec::new(),
+            },
+            })
+    }
+
     pub fn filed_id(&self) -> FieldID {
-        self.filed_id
+        self.field_id
     }
 }
 
 #[derive(Debug)]
-pub struct AbstractPoints {
+pub struct InMemPoint {
     pub series_id: SeriesID,
-    pub timestamp: u64,
-    pub fileds: Vec<AbstractPoint>,
+    pub timestamp: Timestamp,
+    pub fields: Vec<FieldValue>,
 }
 
-impl AbstractPoints {
+impl InMemPoint {
+    pub fn from_flatbuffers(point: &fb_models::Point) -> Result<Self> {
+        let fields = match point.fields() {
+            Some(fields_inner) => {
+                let mut fields = Vec::with_capacity(fields_inner.len());
+                for f in fields_inner.into_iter() {
+                    fields.push(FieldValue::from_flatbuffers(&f)?);
+                }
+                fields
+            },
+            None => return Err(Error::InvalidFlatbufferMessage { err: "Point fields cannot be empty".to_string() }),
+        };
+        Ok(Self {
+            series_id: 0,
+            timestamp: point.timestamp(),
+            fields,
+        })
+    }
+
     pub fn series_id(&self) -> SeriesID {
         self.series_id
     }
-    pub fn fileds(&self) -> &Vec<AbstractPoint> {
-        &self.fileds
+
+    pub fn fileds(&self) -> &Vec<FieldValue> {
+        &self.fields
     }
 }
 
-impl From<Point<'_>> for AbstractPoints {
-    fn from(p: Point<'_>) -> Self {
+impl From<fb_models::Point<'_>> for InMemPoint {
+    fn from(p: fb_models::Point<'_>) -> Self {
         let mut fileds = Vec::new();
         let mut tags = Vec::new();
 
@@ -45,20 +74,20 @@ impl From<Point<'_>> for AbstractPoints {
             }
         }
 
-        let sid = SeriesInfo::cal_sid(&mut tags);
+        let sid = generate_series_id(&mut tags);
 
         for fit in p.fields().into_iter() {
             for f in fit.into_iter() {
                 let field_name = f.name().unwrap().to_vec();
                 let val_type = f.type_().into();
                 let val = f.value().unwrap().to_vec();
-                let fid = FieldInfo::cal_fid(&field_name, sid);
-                fileds.push(AbstractPoint { filed_id: fid, val_type, value: val });
+                let fid = field_info::generate_field_id(&field_name, sid);
+                fileds.push(FieldValue { field_id: fid, value_type: val_type, value: val });
             }
         }
         let ts = p.timestamp();
 
-        Self { series_id: sid, timestamp: ts, fileds }
+        Self { series_id: sid, timestamp: ts, fields: fileds }
     }
 }
 
@@ -66,7 +95,7 @@ impl From<Point<'_>> for AbstractPoints {
 mod test_points {
     use protos::models;
 
-    use crate::AbstractPoints;
+    use crate::InMemPoint;
 
     #[test]
     fn test_from() {
@@ -100,7 +129,7 @@ mod test_points {
         let p = flatbuffers::root::<models::Point>(buf).unwrap();
         println!("Point info {:?}", p);
 
-        let s = AbstractPoints::from(p);
+        let s = InMemPoint::from(p);
         println!("Series info {:?}", s);
     }
 }

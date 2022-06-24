@@ -63,4 +63,7 @@ pub enum Error {
 
     #[snafu(display("database not found: {}", database))]
     DatabaseNotFound { database: String },
+
+    #[snafu(display("invalid model: {}", source))]
+    InvalidModel { source: models::Error },
 }
