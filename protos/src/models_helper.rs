@@ -82,7 +82,7 @@ mod test {
                                         -> WIPOffset<Points<'a>> {
         let mut points = vec![];
         for _ in 0..num {
-            let timestamp = Local::now().timestamp_millis() as u64;
+            let timestamp = Local::now().timestamp_millis();
             let mut tags = vec![];
             let tav = rand::random::<u8>().to_string();
             for _ in 0..199999 {

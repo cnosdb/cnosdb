@@ -17,8 +17,8 @@ pub struct FileBlock {
     pub offset: u64,
     pub size: u64,
     pub val_off: u64,
-    pub filed_type: ValueType,
-    // pub filed_id: u64,
+    pub field_type: ValueType,
+    // pub field_id: u64,
     pub reader_idx: usize,
 }
 
@@ -29,7 +29,7 @@ impl FileBlock {
                max_ts: 0,
                offset: 0,
                size: 0,
-               filed_type: ValueType::Unknown,
+               field_type: ValueType::Unknown,
                val_off: 0,
                reader_idx: 0 }
     }
@@ -68,7 +68,7 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
         idx += len as usize;
         //// TODO: skip 32-bit data CRC checksum at beginning of block for now
         idx += 4;
-        match block.filed_type {
+        match block.field_type {
             ValueType::Float => {
                 // values will be same length as time-stamps.
                 let mut val = Vec::with_capacity(ts.len());
@@ -110,7 +110,7 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
             _ => Err(Error::ReadTsmErr {
                 reason: format!(
                     "cannot decode block {:?} with no unknown value type",
-                    block.filed_type
+                    block.field_type
                 )
                 .to_string(),
             }),
@@ -147,12 +147,12 @@ impl<'a> TsmIndexReader<'a> {
 
     fn next_index_entry(&mut self) -> Result<IndexEntry> {
         let mut buf = [0u8; 2];
-        let filed_len = 8;
-        let mut filed_id = vec![0; 8];
+        let field_len = 8;
+        let mut field_id = vec![0; 8];
         self.r
-            .read(filed_id.as_mut_slice())
+            .read(field_id.as_mut_slice())
             .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        self.curr_offset += filed_len as u64;
+        self.curr_offset += field_len as u64;
 
         // read the block type
         self.r.read(&mut buf[..1]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
@@ -165,14 +165,14 @@ impl<'a> TsmIndexReader<'a> {
         let count = u16::from_be_bytes(buf);
 
         let typ = ValueType::try_from(b_type).unwrap();
-        Ok(IndexEntry { key: filed_id,
+        Ok(IndexEntry { key: field_id,
                         block_type: typ,
                         count,
                         curr_block: 1,
                         block: self.next_block_entry(typ)? })
     }
 
-    fn next_block_entry(&mut self, filed_type: ValueType) -> Result<FileBlock> {
+    fn next_block_entry(&mut self, field_type: ValueType) -> Result<FileBlock> {
         // read min time on block entry
         let mut buf = [0u8; 8];
         self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
@@ -202,7 +202,7 @@ impl<'a> TsmIndexReader<'a> {
         Ok(FileBlock { min_ts,
                        max_ts,
                        offset,
-                       filed_type,
+                       field_type,
                        size: size as u64,
                        val_off,
                        reader_idx: 0 })
@@ -264,7 +264,7 @@ mod test {
         let mut blocks = Vec::new();
         for res in &mut index.unwrap() {
             let entry = res.unwrap();
-            let key = entry.filed_id();
+            let key = entry.field_id();
 
             blocks.push(entry.block);
         }

@@ -15,7 +15,7 @@ pub struct Footer {
     pub index_offset: u64,
 }
 impl IndexEntry {
-    pub fn filed_id(&self) -> u64 {
+    pub fn field_id(&self) -> u64 {
         decode_be_u64(&self.key[..8])
     }
 }

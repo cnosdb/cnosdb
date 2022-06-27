@@ -38,7 +38,7 @@ use crate::{
 //  ──────────────────────────────────────────────────────────────────────┐
 // │                               Index                                  │
 // ┬─────────┬──────┬───────┬─────────┬─────────┬────────┬────────┬───────┤
-// │ filedId │ Type │ Count │Min Time │Max Time │ Offset │  Size  │Valoff │
+// │ fieldId │ Type │ Count │Min Time │Max Time │ Offset │  Size  │Valoff │
 // │ 8 bytes │1 byte│2 bytes│ 8 bytes │ 8 bytes │8 bytes │8 bytes │8 bytes│
 // ┴─────────┴──────┴───────┴─────────┴─────────┴────────┴────────┴───────┘
 //
@@ -81,7 +81,7 @@ impl<'a> TsmIndexBuilder<'a> {
         for (fid, blks) in indexs {
             let mut buf = Vec::new();
             let block = blks.first().unwrap();
-            let typ: u8 = block.filed_type.into();
+            let typ: u8 = block.field_type.into();
             let cnt: u16 = blks.len() as u16;
             buf.append(&mut fid.to_be_bytes().to_vec());
             buf.append(&mut typ.to_be_bytes().to_vec());
@@ -119,7 +119,7 @@ impl<'a> TsmBlockWriter<'a> {
         Ok(res)
     }
     fn build_one(&mut self, block: &mut DataBlock) -> Result<Vec<FileBlock>> {
-        let filed_type = block.filed_type();
+        let field_type = block.field_type();
         let len = block.len();
         let n = (len - 1) / MAX_BLOCK_VALUES + 1;
         let mut res = Vec::with_capacity(n);
@@ -164,7 +164,7 @@ impl<'a> TsmBlockWriter<'a> {
                                  offset,
                                  size: size as u64,
                                  val_off,
-                                 filed_type,
+                                 field_type,
                                  reader_idx: 0 });
             i += 1;
         }

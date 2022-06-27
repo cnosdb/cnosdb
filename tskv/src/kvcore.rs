@@ -122,8 +122,8 @@ impl TsKv {
                 let p = InMemPoint::from(point);
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fileds().iter() {
-                        tsf.put_mutcache(f.filed_id(),
+                    for f in p.fields().iter() {
+                        tsf.put_mutcache(f.field_id(),
                                          &f.value,
                                          f.value_type,
                                          seq,
@@ -171,8 +171,8 @@ impl TsKv {
                 // please keep the series id
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fileds().iter() {
-                        tsf.put_mutcache(f.filed_id(),
+                    for f in p.fields().iter() {
+                        tsf.put_mutcache(f.field_id(),
                                          &f.value,
                                          f.value_type,
                                          seq,

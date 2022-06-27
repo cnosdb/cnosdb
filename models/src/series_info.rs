@@ -68,7 +68,7 @@ impl SeriesInfo {
     pub fn merge(&mut self, series_info: &SeriesInfo) {
         let mut final_field_infos: Vec<FieldInfo> = Vec::new();
         for field_info in series_info.field_infos.iter() {
-            let dup_field_infos = self.field_info_with_id(&field_info.filed_id());
+            let dup_field_infos = self.field_info_with_id(&field_info.field_id());
             final_field_infos.push(field_info.clone());
         }
     }
@@ -90,7 +90,7 @@ impl SeriesInfo {
     }
 
     pub fn field_info_with_id(&self, field_id: &FieldID) -> Vec<&FieldInfo> {
-        self.field_infos.iter().filter(|f| f.filed_id().cmp(field_id).is_eq()).collect()
+        self.field_infos.iter().filter(|f| f.field_id().cmp(field_id).is_eq()).collect()
     }
 
     pub fn field_info_with_name(&self, field_name: &FieldName) -> Vec<&FieldInfo> {
@@ -140,18 +140,18 @@ mod tests_series_info {
         let tag_v = fb.create_vector("tag_v".as_bytes());
         let tag =
             models::Tag::create(&mut fb, &models::TagArgs { key: Some(tag_k), value: Some(tag_v) });
-        // build filed
-        let f_n = fb.create_vector("filed_name".as_bytes());
-        let f_v = fb.create_vector("filed_value".as_bytes());
+        // build field
+        let f_n = fb.create_vector("field_name".as_bytes());
+        let f_v = fb.create_vector("field_value".as_bytes());
 
-        let filed =
+        let field =
             models::Field::create(&mut fb,
                                   &models::FieldArgs { name: Some(f_n),
                                                        type_:
                                                            protos::models::FieldType::Integer,
                                                        value: Some(f_v) });
         // build series_info
-        let fields = Some(fb.create_vector(&[filed]));
+        let fields = Some(fb.create_vector(&[field]));
         let tags = Some(fb.create_vector(&[tag]));
         // build point
         let point =

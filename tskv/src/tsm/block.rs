@@ -132,7 +132,7 @@ impl DataBlock {
             Self::BoolBlock { ts, .. } => ts.len(),
         }
     }
-    pub fn filed_type(&self) -> ValueType {
+    pub fn field_type(&self) -> ValueType {
         match &self {
             DataBlock::U64Block { .. } => ValueType::Unsigned,
             DataBlock::I64Block { .. } => ValueType::Integer,
@@ -198,7 +198,7 @@ impl DataBlock {
         }
 
         let mut res =
-            Self::new(blocks.first().unwrap().len(), blocks.first().unwrap().filed_type());
+            Self::new(blocks.first().unwrap().len(), blocks.first().unwrap().field_type());
         let mut buf = vec![None; blocks.len()];
         loop {
             match Self::rebuild_vec(&mut blocks, &mut buf) {

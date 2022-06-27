@@ -28,7 +28,7 @@ struct InMemFieldInfo {
 
 impl From<&FieldInfo> for InMemFieldInfo {
     fn from(field_info: &FieldInfo) -> Self {
-        Self { id: field_info.filed_id(), value_type: field_info.value_type() }
+        Self { id: field_info.field_id(), value_type: field_info.value_type() }
     }
 }
 
@@ -87,7 +87,7 @@ impl ForwardIndex {
                     // 1. Check if specified field_id exists.
                     // 2. Check if all field with same field_id has the same value_type.
                     for old_field_info in &mem_series_info.field_infos {
-                        if field_info.filed_id() == old_field_info.id {
+                        if field_info.field_id() == old_field_info.id {
                             if field_info.value_type() == old_field_info.value_type {
                                 flag = true;
                                 break;

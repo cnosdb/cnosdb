@@ -97,7 +97,7 @@ impl FieldInfo {
         self.id = generate_field_id(&self.name, series_id);
     }
 
-    pub fn filed_id(&self) -> FieldID {
+    pub fn field_id(&self) -> FieldID {
         self.id
     }
 

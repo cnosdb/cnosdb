@@ -67,8 +67,8 @@ pub struct MemCache {
     pub seq_no: u64,
     // max mem buffer size convert to immcache
     max_buf_size: u64,
-    // block <filed_id, buffer>
-    // filed_id contain the field type
+    // block <field_id, buffer>
+    // field_id contain the field type
     pub data_cache: HashMap<u64, MemEntry>,
     // current size
     cache_size: u64,
@@ -81,7 +81,7 @@ impl MemCache {
     }
     pub fn insert_raw(&mut self,
                       seq: u64,
-                      filed_id: u64,
+                      field_id: u64,
                       ts: i64,
                       field_type: ValueType,
                       buf: &[u8])
@@ -91,35 +91,35 @@ impl MemCache {
             ValueType::Unsigned => {
                 let val = compute::decode_be_u64(buf);
                 let data = DataType::U64(U64Cell { ts, val });
-                self.insert(filed_id, data);
+                self.insert(field_id, data);
             },
             ValueType::Integer => {
                 let val = compute::decode_be_i64(buf);
                 let data = DataType::I64(I64Cell { ts, val });
-                self.insert(filed_id, data);
+                self.insert(field_id, data);
             },
             ValueType::Float => {
                 let val = compute::decode_be_f64(buf);
                 let data = DataType::F64(F64Cell { ts, val });
-                self.insert(filed_id, data);
+                self.insert(field_id, data);
             },
             ValueType::String => {
                 let val = Vec::from(buf);
                 let data = DataType::Str(StrCell { ts, val });
-                self.insert(filed_id, data);
+                self.insert(field_id, data);
             },
             ValueType::Boolean => {
                 let val = compute::decode_be_bool(buf);
                 let data = DataType::Bool(BoolCell { ts, val });
-                self.insert(filed_id, data)
+                self.insert(field_id, data)
             },
             _ => todo!(),
         };
         Ok(())
     }
-    pub fn insert(&mut self, filed_id: u64, val: DataType) {
+    pub fn insert(&mut self, field_id: u64, val: DataType) {
         let ts = val.timestamp();
-        let item = self.data_cache.entry(filed_id).or_insert(MemEntry::default());
+        let item = self.data_cache.entry(field_id).or_insert(MemEntry::default());
         if item.ts_max < ts {
             item.ts_max = ts;
         }

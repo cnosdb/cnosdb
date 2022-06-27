@@ -37,8 +37,8 @@ impl FlushTask {
     pub async fn run(&mut self) -> Result<CompactMeta> {
         let (mut ts_min, mut ts_max) = (i64::MAX, i64::MIN);
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
-        let mut filed_map = HashMap::new();
-        let mut filed_size = HashMap::new();
+        let mut field_map = HashMap::new();
+        let mut field_size = HashMap::new();
         for mem in &self.mems {
             let data = &mem.data_cache;
             // get req seq_no range
@@ -48,16 +48,16 @@ impl FlushTask {
             if mem.seq_no < low_seq {
                 low_seq = mem.seq_no;
             }
-            for (filed_id, entry) in data {
-                let sum = filed_size.entry(filed_id).or_insert(0_usize);
+            for (field_id, entry) in data {
+                let sum = field_size.entry(field_id).or_insert(0_usize);
                 *sum = *sum + entry.cells.len();
-                let item = filed_map.entry(filed_id).or_insert(vec![entry]);
+                let item = field_map.entry(field_id).or_insert(vec![entry]);
                 item.push(entry);
             }
         }
         let mut block_set = HashMap::new();
-        for (fid, entrys) in filed_map {
-            let size = filed_size.get(&fid).unwrap();
+        for (fid, entrys) in field_map {
+            let size = field_size.get(&fid).unwrap();
             let entry = entrys.first().unwrap();
             let mut block = DataBlock::new(*size, entry.field_type);
             for entry in entrys.iter() {
