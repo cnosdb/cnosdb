@@ -1401,10 +1401,17 @@ func (s *SelectStatement) RewriteFields(m FieldMapper) (*SelectStatement, error)
 }
 
 func (s *SelectStatement) ValidateDimensions(mapper FieldMapper) error {
+
+	fieldSet, dimensionSet, err := FieldDimensions(s.Sources, mapper)
+	if err != nil {
+		return err
+	}
+	if len(fieldSet) == 0 && len(dimensionSet) == 0 {
+		return nil
+	}
+
 	for _, v := range s.Dimensions {
 		switch v.Expr.(type) {
-		case *Call:
-			continue
 		case *VarRef:
 			t := EvalType(v.Expr, s.Sources, mapper)
 			if t != Tag {
