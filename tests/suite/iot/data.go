@@ -49,7 +49,7 @@ func (g *Generator) run(trucks []truckGen, server tests.Server) {
 	for now := g.Start; now.Before(g.End); now = now.Add(g.Interval) {
 		for _, t := range trucks {
 			i++
-			if i%100 == 0 {
+			if i%1000 == 0 {
 				fmt.Printf("Count: %d, Time: %s, Truck: %d\n", i, now.String(), t.Num)
 			}
 			suite.PanicErr(server.WritePoints(db, rp, models.ConsistencyLevelAll, nil, t.New(now)))
