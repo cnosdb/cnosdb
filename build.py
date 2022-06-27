@@ -777,7 +777,7 @@ def package(build_output, pkg_name, version, nightly=False, iteration=1, static=
 
 
 def main(args):
-    packageInfos = get_package_variables(args.meta)
+    packageInfos = get_package_variables(args.single)
 
     if args.release and args.nightly:
         logging.error("Cannot be both a nightly and a release.")
@@ -1005,8 +1005,8 @@ if __name__ == '__main__':
                         metavar='<timeout>',
                         type=str,
                         help='Timeout for tests before failing')
-    parser.add_argument('--meta',
-                        action='store_false',
+    parser.add_argument('--single',
+                        action='store_true',
                         help='Execute the meta packaging process')
     args = parser.parse_args()
     print_banner()
