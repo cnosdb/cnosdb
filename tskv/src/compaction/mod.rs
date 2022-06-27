@@ -24,6 +24,7 @@ pub struct CompactReq {
 }
 
 pub struct FlushReq {
+    //(tsf id,memcache)
     pub mems: Vec<(u32, std::sync::Arc<MemCache>)>,
     pub wait_req: u64,
 }

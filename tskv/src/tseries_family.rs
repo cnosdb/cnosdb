@@ -20,6 +20,7 @@ use crate::{
     memcache::{DataType, MemCache},
     summary::CompactMeta,
 };
+use crate::kv_option::MAX_MEMCACHE_SIZE;
 
 #[derive(Default)]
 pub struct TimeRange {
@@ -45,6 +46,9 @@ pub struct ColumnFile {
 }
 
 impl ColumnFile {
+    pub fn file_id(&self) -> u64 {
+        self.file_id
+    }
     pub fn size(&self) -> u64 {
         self.size
     }
@@ -215,13 +219,24 @@ impl TseriesFamily {
 
             self.immut_cache.push(self.mut_cache.clone());
             self.mut_cache = Arc::from(RwLock::new(MemCache::new(
-                self.super_version.mut_cache.read().await.tf_id(),
-                self.super_version.mut_cache.read().await.max_buf_size(),
-                self.super_version.mut_cache.read().await.seq_no)));
+                self.tf_id, MAX_MEMCACHE_SIZE, self.seq_no
+            )));
         }
+    }
+
+    pub fn tf_id(&self) -> u32 {
+        self.tf_id
     }
 
     pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
         &self.mut_cache
+    }
+
+    pub fn im_cache(&self) -> &Vec<Arc<RwLock<MemCache>>> {
+        &self.immut_cache
+    }
+
+    pub fn version(&self) -> &Arc<Version> {
+        &self.version
     }
 }
