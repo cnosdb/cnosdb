@@ -121,7 +121,7 @@ pub async fn run_flush_memtable_job(reqs: Vec<FlushReq>,
             let cf_opt =
                 tsf_config.get(&idx).cloned().unwrap_or_else(|| Arc::new(TseriesFamOpt::default()));
 
-            let path = cf_opt.wsm_dir.clone() + &i.to_string();
+            let path = cf_opt.tsm_dir.clone() + &i.to_string();
             let log_seq = kernel.log_seq_next();
             let mut job = FlushTask::new(memtables.clone(), i as u32, log_seq, path);
             let meta = job.run().await?;

@@ -1,4 +1,5 @@
 use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
+use std::mem::size_of_val;
 
 use flatbuffers::Push;
 use futures::future::ok;
@@ -126,6 +127,7 @@ impl MemCache {
         if item.ts_min > ts {
             item.ts_min = ts
         }
+        self.cache_size += size_of_val(&val) as u64;
         item.cells.push(val);
     }
 
@@ -134,10 +136,13 @@ impl MemCache {
     // }
 
     pub fn switch_to_immutable(&mut self) {
-        for mut data in self.data_cache.iter() {
-            // data.1.cells.sort();
+        for mut data in self.data_cache.iter_mut() {
+            data.1.cells.sort_by(|a,b| {
+                a.timestamp().partial_cmp(&b.timestamp()).unwrap()
+            })
         }
         self.immutable = true;
+        self.cache_size = 0;
     }
 
     pub fn flush() -> Result<()> {

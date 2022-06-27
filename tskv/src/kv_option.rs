@@ -98,7 +98,7 @@ pub struct TseriesFamOpt {
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
-    pub wsm_dir: String,
+    pub tsm_dir: String,
 }
 
 impl TseriesFamOpt {
@@ -115,7 +115,7 @@ impl Default for TseriesFamOpt {
                base_file_size: 16 * 1024 * 1024,
                compact_trigger: 4,
                max_compact_size: 2 * 1024 * 1024 * 1024,
-               wsm_dir: "db/tsm/".to_string()}
+               tsm_dir: "db/tsm/".to_string()}
     }
 }
 

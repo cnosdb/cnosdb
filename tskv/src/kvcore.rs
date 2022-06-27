@@ -142,65 +142,65 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
-    pub async fn read(&self, sids: Vec<SeriesID>, time_range: TimeRange, fields: Vec<FieldID>) {
+    pub async fn read_point(&self,sid: SeriesID, time_range: &TimeRange, field_id: FieldID) {
         let mut version_set = self.version_set.write().await;
-        let mut output = HashMap::<&FieldID,Vec<DataType>>::new();
-        for sid in sids {
-            if let Some(tsf) = version_set.get_tsfamily(sid) {
-                for field_id in fields.iter() {
-                    //get data from memcache
-                    if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(field_id) {
-                        let mut out_put_raw = vec![];
-                        for i in mem_entry.cells.iter() {
-                            if i.timestamp() > time_range.min_ts && i.timestamp() < time_range.max_ts {
-                                out_put_raw.push(i.clone());
-                            }
-                        }
-                                output.insert(field_id, out_put_raw);
-                    }
-                    //get data from im_memcache
-                    for mem_cache in tsf.im_cache().iter() {
-                        if let Some(mem_entry) = mem_cache.read().await.data_cache.get(field_id) {
-                            let mut out_put_raw = vec![];
-                            for i in mem_entry.cells.iter() {
-                                if i.timestamp() > time_range.min_ts && i.timestamp() < time_range.max_ts {
-                                    out_put_raw.push(i.clone());
-                                }
-                            }
-                            output.get_mut(field_id).unwrap().append(&mut out_put_raw);
-                        }
-                    }
-                    //get data from levelinfo
-                   for level_info in tsf.version().levels_info.iter() {
-                       for file in level_info.files.iter() {
-                           let fs = FileManager::new();
-                           let ts_cf = TseriesFamOpt::default();
-                           let p = format!("/_{:06}.tsm",file.file_id());
-                           // println!("{}",ts_cf.wsm_dir+ &*tsf.tf_id().to_string()+ &*p);
-                           let fs = fs.open_file(ts_cf.wsm_dir.clone()+ &*tsf.tf_id().to_string()+ &*p).unwrap();
-                           let len = fs.len();
-                           let mut fs_cursor = fs.into_cursor();
-                           let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
-                           let mut blocks = Vec::new();
-                           for res in &mut index.unwrap() {
-                               let entry = res.unwrap();
-                               let key = entry.filed_id();
-
-                               blocks.push(entry.block);
-                           }
-
-                           let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
-                           for block in blocks {
-                               let data = block_reader.decode(&block).expect("error decoding block data");
-                               println!("{:?}",data);
-                           }
-                       }
-                   }
+        let tsf= version_set.get_tsfamily(sid).unwrap();
+        //get data from memcache
+        if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
+            for data in mem_entry.cells.iter() {
+                if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
+                    println!("{}::{}::{:?}", sid.clone(), &field_id, data.clone())
                 }
             }
         }
-        for data in output.iter() {
-            println!("{}::{:?}",data.0,data.1);
+        //get data from im_memcache
+        for mem_cache in tsf.im_cache().iter() {
+            if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+                for data in mem_entry.cells.iter() {
+                    if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
+                        println!("{}::{}::{:?}",sid.clone(),&field_id,data.clone())
+                    }
+                }
+            }
+        }
+        //get data from levelinfo
+        for level_info in tsf.version().levels_info.iter() {
+            for file in level_info.files.iter() {
+                let fs = FileManager::new();
+                let ts_cf = TseriesFamOpt::default();
+                let p = format!("/_{:06}.tsm",file.file_id());
+                // println!("{}",ts_cf.wsm_dir+ &*tsf.tf_id().to_string()+ &*p);
+                let fs = fs.open_file(ts_cf.tsm_dir.clone()+ &*tsf.tf_id().to_string()+ &*p).unwrap();
+                let len = fs.len();
+                let mut fs_cursor = fs.into_cursor();
+                let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
+                let mut blocks = Vec::new();
+                for res in &mut index.unwrap() {
+                    let entry = res.unwrap();
+                    let key = entry.field_id();
+                    if key == field_id {
+                        blocks.push(entry.block);
+                    }
+                }
+                let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
+                for block in blocks {
+                    let mut data = block_reader.decode(&block).expect("error decoding block data");
+                    while let datum = data.next() {
+                        let datum= datum.unwrap();
+                        if datum.timestamp() > time_range.min_ts && datum.timestamp() < time_range.max_ts {
+                            println!("{}::{}::{:?}",sid.clone(),&field_id,datum.clone())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn read(&self, sids: Vec<SeriesID>, time_range: &TimeRange, fields: Vec<FieldID>) {
+        for sid in sids {
+                for field_id in fields.iter() {
+                   self.read_point(sid,&time_range,*field_id).await;
+                }
         }
     }
 
@@ -403,10 +403,10 @@ mod test {
             info.finish();
             sids.push(info.series_id().clone());
             for field in info.field_infos().iter() {
-                fields_id.push(field.filed_id().clone());
+                fields_id.push(field.field_id().clone());
             }
         }
-        Ok(tskv.read(sids, TimeRange::new( Local::now().timestamp_millis()+100,0), fields_id).await)
+        Ok(tskv.read(sids, &TimeRange::new( Local::now().timestamp_millis()+100,0), fields_id).await)
     }
 
     #[tokio::test]
