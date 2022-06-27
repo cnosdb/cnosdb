@@ -36,6 +36,7 @@ use crate::{
     Error, Task,
 };
 use crate::tseries_family::TimeRange;
+use crate::tsm::{BlockReader, TsmBlockReader, TsmIndexReader};
 
 pub struct Entry {
     pub series_id: u64,
@@ -170,7 +171,31 @@ impl TsKv {
                         }
                     }
                     //get data from levelinfo
+                   for level_info in tsf.version().levels_info.iter() {
+                       for file in level_info.files.iter() {
+                           let fs = FileManager::new();
+                           let ts_cf = TseriesFamOpt::default();
+                           let p = format!("/_{:06}.tsm",file.file_id());
+                           // println!("{}",ts_cf.wsm_dir+ &*tsf.tf_id().to_string()+ &*p);
+                           let fs = fs.open_file(ts_cf.wsm_dir.clone()+ &*tsf.tf_id().to_string()+ &*p).unwrap();
+                           let len = fs.len();
+                           let mut fs_cursor = fs.into_cursor();
+                           let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
+                           let mut blocks = Vec::new();
+                           for res in &mut index.unwrap() {
+                               let entry = res.unwrap();
+                               let key = entry.filed_id();
 
+                               blocks.push(entry.block);
+                           }
+
+                           let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
+                           for block in blocks {
+                               let data = block_reader.decode(&block).expect("error decoding block data");
+                               println!("{:?}",data);
+                           }
+                       }
+                   }
                 }
             }
         }

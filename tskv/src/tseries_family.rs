@@ -46,6 +46,9 @@ pub struct ColumnFile {
 }
 
 impl ColumnFile {
+    pub fn file_id(&self) -> u64 {
+        self.file_id
+    }
     pub fn size(&self) -> u64 {
         self.size
     }
@@ -221,11 +224,19 @@ impl TseriesFamily {
         }
     }
 
+    pub fn tf_id(&self) -> u32 {
+        self.tf_id
+    }
+
     pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
         &self.mut_cache
     }
 
     pub fn im_cache(&self) -> &Vec<Arc<RwLock<MemCache>>> {
         &self.immut_cache
+    }
+
+    pub fn version(&self) -> &Arc<Version> {
+        &self.version
     }
 }

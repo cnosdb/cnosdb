@@ -117,11 +117,12 @@ pub async fn run_flush_memtable_job(reqs: Vec<FlushReq>,
     for (i, memtables) in mems.iter().enumerate() {
         if !memtables.is_empty() {
             // todo: build path by vnode data
-            let path = "db/tsf/".to_string() + &i.to_string();
-            let log_seq = kernel.log_seq_next();
             let idx = i as u32;
             let cf_opt =
                 tsf_config.get(&idx).cloned().unwrap_or_else(|| Arc::new(TseriesFamOpt::default()));
+
+            let path = cf_opt.wsm_dir.clone() + &i.to_string();
+            let log_seq = kernel.log_seq_next();
             let mut job = FlushTask::new(memtables.clone(), i as u32, log_seq, path);
             let meta = job.run().await?;
             let mut edit = VersionEdit::new();
