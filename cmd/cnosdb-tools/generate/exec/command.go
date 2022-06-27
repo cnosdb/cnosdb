@@ -238,7 +238,7 @@ name = "cpu"
 # sample: float; where 0 < sample ≤ 1.0 (default: 0.5)
 #   sample a subset of the tag set
 #
-# sample 25% of the tags
+# sample 25%% of the tags
 #
 sample = 0.25
 
@@ -260,7 +260,7 @@ sample = 0.25
 #   generate a sequence of tag values
 #
 #       format: string
-#           a format string for the values (default: "value%s")
+#           a format string for the values (default: "value%%s")
 #       start: int (default: 0)
 #           beginning value 
 #       count: int, required
@@ -276,7 +276,7 @@ tags = [
     # example sequence tag source. The range of values are automatically 
     # prefixed with 0s
     # to ensure correct sort behavior.
-    { name = "host", source = { type = "sequence", format = "host-%s", start = 0, count = 5 } },
+    { name = "host", source = { type = "sequence", format = "host-%%s", start = 0, count = 5 } },
 
     # tags can also be sourced from a file. The path is relative to the 
     # schema.toml.
@@ -378,7 +378,7 @@ fields = [
 [[measurements]]
 name = "mem"
 tags = [
-    { name = "host",   source = { type = "sequence", format = "host-%s", start = 0, count = 5 } },
+    { name = "host",   source = { type = "sequence", format = "host-%%s", start = 0, count = 5 } },
     { name = "region", source = ["us-west-01","us-west-02","us-east"] },
 ]
 fields = [
@@ -389,6 +389,6 @@ fields = [
 `
 
 func printExample() error {
-	fmt.Fprint(opt.Stdout, exampleSchema)
-	return nil
+	_, err := fmt.Fprintf(opt.Stdout, exampleSchema)
+	return err
 }
