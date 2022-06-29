@@ -1726,4 +1726,51 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//Data types
+	{
+		Name:  "data_water_level_float_4",
+		Query: fmt.Sprintf(`SELECT "water_level"::float FROM "%s"."%s"."h2o_feet" LIMIT 4`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 8.12},
+								{"2019-08-17T00:00:00Z", 2.064},
+								{"2019-08-17T00:06:00Z", 8.005},
+								{"2019-08-17T00:06:00Z", 2.116},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "data_water_level_integer_4",
+		Query: fmt.Sprintf(`SELECT "water_level"::integer FROM "%s"."%s"."h2o_feet" LIMIT 4`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 8},
+								{"2019-08-17T00:00:00Z", 2},
+								{"2019-08-17T00:06:00Z", 8},
+								{"2019-08-17T00:06:00Z", 2},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 }
