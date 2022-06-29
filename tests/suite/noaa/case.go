@@ -1326,4 +1326,272 @@ var cases = []suite.Step{
 			Results: []suite.Result{},
 		},
 	},
+	//Time syntax
+	{
+		Name:  "time_water_level_location_rfc3339",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'santa_monica' AND time >= '2015-08-18T00:00:00.000000000Z' AND time <= '2015-08-18T00:12:00Z' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_water_level_location_rfc3339_like",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'santa_monica' AND time >= '2015-08-18' AND time <= '2015-08-18 00:12:00' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_water_level_location_timestamps",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'santa_monica' AND time >= 1439856000000000000 AND time <= 1439856720000000000 limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_water_level_location_second_timestamps",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'santa_monica' AND time >= 1439856000s AND time <= 1439856720s limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_water_level_rfc3999_6m",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE time > '2015-09-18T21:24:00Z' + 6m limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 8.12},
+								{"2019-08-17T00:00:00Z", 2.064},
+								{"2019-08-17T00:06:00Z", 8.005},
+								{"2019-08-17T00:06:00Z", 2.116},
+								{"2019-08-17T00:12:00Z", 7.887},
+								{"2019-08-17T00:12:00Z", 2.028},
+								{"2019-08-17T00:18:00Z", 7.762},
+								{"2019-08-17T00:18:00Z", 2.126},
+								{"2019-08-17T00:24:00Z", 7.635},
+								{"2019-08-17T00:24:00Z", 2.041},
+								{"2019-08-17T00:30:00Z", 7.5},
+								{"2019-08-17T00:30:00Z", 2.051},
+								{"2019-08-17T00:36:00Z", 7.372},
+								{"2019-08-17T00:36:00Z", 2.067},
+								{"2019-08-17T00:42:00Z", 7.234},
+								{"2019-08-17T00:42:00Z", 2.057},
+								{"2019-08-17T00:48:00Z", 7.11},
+								{"2019-08-17T00:48:00Z", 1.991},
+								{"2019-08-17T00:54:00Z", 6.982},
+								{"2019-08-17T00:54:00Z", 2.054},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_water_level_timestamp_6m",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE time > 24043524m - 6m limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 8.12},
+								{"2019-08-17T00:00:00Z", 2.064},
+								{"2019-08-17T00:06:00Z", 8.005},
+								{"2019-08-17T00:06:00Z", 2.116},
+								{"2019-08-17T00:12:00Z", 7.887},
+								{"2019-08-17T00:12:00Z", 2.028},
+								{"2019-08-17T00:18:00Z", 7.762},
+								{"2019-08-17T00:18:00Z", 2.126},
+								{"2019-08-17T00:24:00Z", 7.635},
+								{"2019-08-17T00:24:00Z", 2.041},
+								{"2019-08-17T00:30:00Z", 7.5},
+								{"2019-08-17T00:30:00Z", 2.051},
+								{"2019-08-17T00:36:00Z", 7.372},
+								{"2019-08-17T00:36:00Z", 2.067},
+								{"2019-08-17T00:42:00Z", 7.234},
+								{"2019-08-17T00:42:00Z", 2.057},
+								{"2019-08-17T00:48:00Z", 7.11},
+								{"2019-08-17T00:48:00Z", 1.991},
+								{"2019-08-17T00:54:00Z", 6.982},
+								{"2019-08-17T00:54:00Z", 2.054},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_now_water_level_1h",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE time > now() - 1h limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_now_level_description_1000d",
+		Query: fmt.Sprintf(`SELECT "level description" FROM "%s"."%s"."h2o_feet" WHERE time > '2015-09-18T21:18:00Z' AND time < now() + 1000d limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "level description"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", "below 3 feet"},
+								{"2019-08-17T00:00:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:06:00Z", "below 3 feet"},
+								{"2019-08-17T00:06:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:12:00Z", "below 3 feet"},
+								{"2019-08-17T00:12:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:18:00Z", "below 3 feet"},
+								{"2019-08-17T00:18:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:24:00Z", "below 3 feet"},
+								{"2019-08-17T00:24:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:30:00Z", "below 3 feet"},
+								{"2019-08-17T00:30:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:36:00Z", "below 3 feet"},
+								{"2019-08-17T00:36:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:42:00Z", "below 3 feet"},
+								{"2019-08-17T00:42:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:48:00Z", "below 3 feet"},
+								{"2019-08-17T00:48:00Z", "between 6 and 9 feet"},
+								{"2019-08-17T00:54:00Z", "below 3 feet"},
+								{"2019-08-17T00:54:00Z", "between 6 and 9 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_fill_water_level_santa_monica_12m",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location"='santa_monica' AND time >= '2015-09-18T21:30:00Z' GROUP BY time(12m) fill(none) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 2.09},
+								{"2019-08-17T00:12:00Z", 2.077},
+								{"2019-08-17T00:24:00Z", 2.0460000000000003},
+								{"2019-08-17T00:36:00Z", 2.0620000000000003},
+								{"2019-08-17T00:48:00Z", 2.0225},
+								{"2019-08-17T01:00:00Z", 2.057},
+								{"2019-08-17T01:12:00Z", 2.1029999999999998},
+								{"2019-08-17T01:24:00Z", 2.113072073},
+								{"2019-08-17T01:36:00Z", 2.159},
+								{"2019-08-17T01:48:00Z", 2.377},
+								{"2019-08-17T02:00:00Z", 2.4655},
+								{"2019-08-17T02:12:00Z", 2.5949999999999998},
+								{"2019-08-17T02:24:00Z", 2.7415000000000003},
+								{"2019-08-17T02:36:00Z", 2.9415},
+								{"2019-08-17T02:48:00Z", 2.9745},
+								{"2019-08-17T03:00:00Z", 3.151},
+								{"2019-08-17T03:12:00Z", 3.325},
+								{"2019-08-17T03:24:00Z", 3.483},
+								{"2019-08-17T03:36:00Z", 3.6565},
+								{"2019-08-17T03:48:00Z", 3.7895},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_fill_water_level_180w_12m",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location"='santa_monica' AND time >= '2015-09-18T21:30:00Z' AND time <= now() + 180w GROUP BY time(12m) fill(none) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 2.09},
+								{"2019-08-17T00:12:00Z", 2.077},
+								{"2019-08-17T00:24:00Z", 2.0460000000000003},
+								{"2019-08-17T00:36:00Z", 2.0620000000000003},
+								{"2019-08-17T00:48:00Z", 2.0225},
+								{"2019-08-17T01:00:00Z", 2.057},
+								{"2019-08-17T01:12:00Z", 2.1029999999999998},
+								{"2019-08-17T01:24:00Z", 2.113072073},
+								{"2019-08-17T01:36:00Z", 2.159},
+								{"2019-08-17T01:48:00Z", 2.377},
+								{"2019-08-17T02:00:00Z", 2.4655},
+								{"2019-08-17T02:12:00Z", 2.5949999999999998},
+								{"2019-08-17T02:24:00Z", 2.7415000000000003},
+								{"2019-08-17T02:36:00Z", 2.9415},
+								{"2019-08-17T02:48:00Z", 2.9745},
+								{"2019-08-17T03:00:00Z", 3.151},
+								{"2019-08-17T03:12:00Z", 3.325},
+								{"2019-08-17T03:24:00Z", 3.483},
+								{"2019-08-17T03:36:00Z", 3.6565},
+								{"2019-08-17T03:48:00Z", 3.7895},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "time_now_fill_water_level_12m",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location"='santa_monica' AND time >= now() GROUP BY time(12m) fill(none) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
 }
