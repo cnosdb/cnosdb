@@ -1264,4 +1264,58 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//OFFSET and SOFFSET
+	{
+		Name:  "limit_3_offset_3_water_level_location",
+		Query: fmt.Sprintf(`SELECT "water_level","location" FROM "%s"."%s"."h2o_feet" LIMIT 3 OFFSET 3`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level", "location"},
+							Values: []suite.Row{
+								{"2019-08-17T00:06:00Z", 2.116, "santa_monica"},
+								{"2019-08-17T00:12:00Z", 7.887, "coyote_creek"},
+								{"2019-08-17T00:12:00Z", 2.028, "santa_monica"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "limit_2_offset_2_slimit_1_water_level_time",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:42:00Z' GROUP BY *,time(12m) ORDER BY time DESC LIMIT 2 OFFSET 2 SLIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "slimit_1_soffset_1_water_level",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * SLIMIT 1 SOFFSET 1 limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{},
+		},
+	},
+	{
+		Name:  "offset_2_slimit_1_soffset_1_waterlevel_time_12m",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:42:00Z' GROUP BY *,time(12m) ORDER BY time DESC LIMIT 2 OFFSET 2 SLIMIT 1 SOFFSET 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
 }

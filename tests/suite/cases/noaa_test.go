@@ -55,7 +55,7 @@ func TestGenCode2(t *testing.T) {
 		//LIMIT and SLIMIT
 		{
 			Name:  "slimit_water_level_1",
-			Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * SLIMIT 1 limit 20 offset 100`, db, rp),
+			Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * SLIMIT 1 limit 20`, db, rp),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
