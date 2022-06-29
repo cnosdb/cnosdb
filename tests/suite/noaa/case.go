@@ -1875,4 +1875,112 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//Subqueries
+	{
+		Name:  "sub_sum_max_water_level_group_by_location",
+		Query: fmt.Sprintf(`SELECT SUM("max") FROM (SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" GROUP BY "location") limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "sum"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 17.169},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sub_max_water_level_group_by_location",
+		Query: fmt.Sprintf(`SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" GROUP BY "location" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max"},
+							Values: []suite.Row{
+								{"2019-08-28T03:54:00Z", 7.205},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sub_mean_difference_pet_daycare",
+		Query: fmt.Sprintf(`SELECT MEAN("difference") FROM (SELECT "cats" - "dogs" AS "difference" FROM "%s"."%s"."pet_daycare") limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sub_all_the_means_12m_5",
+		Query: fmt.Sprintf(`SELECT "all_the_means" FROM (SELECT MEAN("water_level") AS "all_the_means" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m) ) WHERE "all_the_means" > 5 limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sub_all_the_means_12m",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") AS "all_the_means" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sub_sum_derivative",
+		Query: fmt.Sprintf(`SELECT SUM("water_level_derivative") AS "sum_derivative" FROM (SELECT DERIVATIVE(MEAN("water_level")) AS "water_level_derivative" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m),"location") GROUP BY "location" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sub_water_level_derivative",
+		Query: fmt.Sprintf(`SELECT DERIVATIVE(MEAN("water_level")) AS "water_level_derivative" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m),"location" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
 }
