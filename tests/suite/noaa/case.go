@@ -1773,4 +1773,72 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//Merge behavior
+	{
+		Name:  "merge_mean_water_level",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.441931402107023},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "merge_mean_water_level_location",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 5.3591424203039155},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "merge_mean_water_level_group_by_location",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" GROUP BY "location" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 5.3591424203039155},
+							},
+						},
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 3.5307120942458803},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 }
