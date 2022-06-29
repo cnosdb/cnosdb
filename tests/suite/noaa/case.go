@@ -1318,4 +1318,12 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//Time Zone
+	{
+		Name:  "tz_america_chicago_location_santa_monica",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'santa_monica' AND time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:18:00Z' tz('America/Chicago') limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{},
+		},
+	},
 }
