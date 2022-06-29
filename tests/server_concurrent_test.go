@@ -1,6 +1,5 @@
 package tests
 
-
 import (
 	"fmt"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
@@ -9,7 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	
 )
 
 func TestConcurrentServer_WriteValues(t *testing.T) {
@@ -169,4 +167,3 @@ func runTest(d time.Duration, fns ...func()) {
 
 	wg.Wait()
 }
-

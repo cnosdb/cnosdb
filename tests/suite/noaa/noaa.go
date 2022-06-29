@@ -42,8 +42,10 @@ func (n *NOAA) Load() {
 	tNow := time.Now()
 	for scan.Scan() {
 		i++
+		//if i%5000 == 0 {
 		if i%5000 == 0 {
 			fmt.Printf("Rows: %d, Time Cost: %s\n", i, time.Now().Sub(tNow).String())
+			//break
 		}
 		params := url.Values{"precision": []string{"s"}}
 		n.S.MustWrite(db, rp, scan.Text(), params)
