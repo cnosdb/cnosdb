@@ -79,6 +79,7 @@ type Server struct {
 	coordinatorService *coordinator.Service
 	snapshotterService *snapshotter.Service
 
+	//this field is nil.We don't append services to it.
 	services []interface {
 		WithLogger(log *zap.Logger)
 		Open() error
@@ -156,6 +157,12 @@ func (s *Server) Open() error {
 }
 
 func (s *Server) Close() {
+
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
+
+	//services is no use,It's nil.
 	for _, service := range s.services {
 		_ = service.Close()
 	}
@@ -183,6 +190,26 @@ func (s *Server) Close() {
 	if s.continuousQuerierService != nil {
 		_ = s.continuousQuerierService.Close()
 	}
+
+	if s.hintedHandoff != nil {
+		_ = s.hintedHandoff.Close()
+	}
+
+	if s.monitor != nil {
+		_ = s.monitor.Close()
+	}
+
+	//if s.snapshotterService != nil {
+	//	_ = s.snapshotterService.Close()
+	//}
+
+	//_ = s.tcpListener.Close()
+	//s.tcpMux.Close()
+	//
+	//_ = s.httpListener.Close()
+	//s.httpMux.Close()
+	//
+	//_ = s.httpServer.Close()
 
 	close(s.closing)
 }
@@ -292,6 +319,7 @@ func (s *Server) initTSDBStore() error {
 	}
 
 	for _, service := range s.services {
+
 		if err := service.Open(); err != nil {
 			return fmt.Errorf("open service: %s", err)
 		}
@@ -417,7 +445,7 @@ func (s *Server) startHTTPServer() {
 	}, nil)
 
 	if err := s.httpMux.Serve(); err != nil {
-		s.Logger.Info("start http/tcp server stop", zap.Error(err))
+		s.Logger.Info("start to stop http/tcp server", zap.Error(err))
 	}
 }
 
