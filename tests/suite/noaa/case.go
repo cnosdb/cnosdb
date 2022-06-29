@@ -1594,4 +1594,136 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//Regular expressions
+	{
+		Name:  "re_l_limit_1",
+		Query: fmt.Sprintf(`SELECT /l/ FROM "%s"."%s"."h2o_feet" LIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "level description", "location", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", "below 3 feet", "santa_monica", 2.064},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "re_mean_degrees",
+		Query: fmt.Sprintf(`SELECT MEAN("degrees") FROM /temperature/`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "re_water_level_3",
+		Query: fmt.Sprintf(`SELECT MEAN(water_level) FROM "%s"."%s"."h2o_feet" WHERE "location" =~ /[m]/ AND "water_level" > 3 limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.471366691627881},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "re_all_location",
+		Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."h2o_feet" WHERE "location" !~ /./ limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "re_mean_water_level_location",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location" =~ /./ limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.441931402107023},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "re_mean_water_level_location_asnta_monica",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location" = 'santa_monica' AND "level description" =~ /between/ limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.471366691627881},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "re_first_index_l",
+		Query: fmt.Sprintf(`SELECT FIRST("index") FROM "%s"."%s"."h2o_quality" GROUP BY /l/ limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"time", "first"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 41},
+							},
+						},
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"time", "first"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 99},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 }
