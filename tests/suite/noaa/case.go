@@ -1841,4 +1841,38 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//Multiple statements
+	{
+		Name:  "mul_mean_water_level_water_level_limit_2",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet"; SELECT "water_level" FROM "%s"."%s"."h2o_feet" LIMIT 2`, db, rp, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.441931402107023},
+							},
+						},
+					},
+				},
+				{
+					StatementId: 1,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 8.12},
+								{"2019-08-17T00:00:00Z", 2.064},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 }
