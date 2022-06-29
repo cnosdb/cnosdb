@@ -1215,8 +1215,42 @@ var cases = []suite.Step{
 	},
 	{
 		Name:  "slimit_water_level_1",
-		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * SLIMIT 1`, db, rp),
-		//Result:
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * limit 20 SLIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", 8.12},
+								{"2019-08-17T00:06:00Z", 8.005},
+								{"2019-08-17T00:12:00Z", 7.887},
+								{"2019-08-17T00:18:00Z", 7.762},
+								{"2019-08-17T00:24:00Z", 7.635},
+								{"2019-08-17T00:30:00Z", 7.5},
+								{"2019-08-17T00:36:00Z", 7.372},
+								{"2019-08-17T00:42:00Z", 7.234},
+								{"2019-08-17T00:48:00Z", 7.11},
+								{"2019-08-17T00:54:00Z", 6.982},
+								{"2019-08-17T01:00:00Z", 6.837},
+								{"2019-08-17T01:06:00Z", 6.713},
+								{"2019-08-17T01:12:00Z", 6.578},
+								{"2019-08-17T01:18:00Z", 6.44},
+								{"2019-08-17T01:24:00Z", 6.299},
+								{"2019-08-17T01:30:00Z", 6.168},
+								{"2019-08-17T01:36:00Z", 6.024},
+								{"2019-08-17T01:42:00Z", 5.879},
+								{"2019-08-17T01:48:00Z", 5.745},
+								{"2019-08-17T01:54:00Z", 5.617},
+							},
+						},
+					},
+				},
+			},
+		},
 	},
 	{
 		Name:  "slimit_water_level_12m_1",
@@ -1974,6 +2008,110 @@ var cases = []suite.Step{
 	{
 		Name:  "sub_water_level_derivative",
 		Query: fmt.Sprintf(`SELECT DERIVATIVE(MEAN("water_level")) AS "water_level_derivative" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m),"location" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//INTO
+	{
+		Name:  "into_measurement_noaa_autogen",
+		Query: fmt.Sprintf(`SELECT * INTO "copy_NOAA_water_database"."autogen".:MEASUREMENT FROM "NOAA_water_database"."autogen"./.* limit 20`),
+		Result: suite.Results{
+			Results: []suite.Result{},
+		},
+	},
+	{
+		Name:  "into_copy1_location_coyote_creek",
+		Query: fmt.Sprintf(`SELECT "water_level" INTO "h2o_feet_copy_1" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' limit 50`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_h2o_feet_copy_1",
+		Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."h2o_feet_copy_1" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_copy2_location_coyote_creek",
+		Query: fmt.Sprintf(`SELECT "water_level" INTO "where_else"."autogen"."h2o_feet_copy_2" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' limit 50`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_h2o_feet_copy_2",
+		Query: fmt.Sprintf(`SELECT * FROM "where_else"."autogen"."h2o_feet_copy_2"`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_all_my_averages",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") INTO "all_my_averages" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' AND time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m) limit 50`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_select_all_my_averages",
+		Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."all_my_averages"`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_where_else_12m",
+		Query: fmt.Sprintf(`SELECT MEAN(*) INTO "where_else"."autogen".:MEASUREMENT FROM /.*/ WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:06:00Z' GROUP BY time(12m) limit 50`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "into_where_else_autogen",
+		Query: fmt.Sprintf(`SELECT * FROM "where_else"."autogen"./.*/`),
 		Result: suite.Results{
 			Results: []suite.Result{
 				{
