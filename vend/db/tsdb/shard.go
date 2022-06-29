@@ -296,6 +296,10 @@ func (s *Shard) Statistics(tags map[string]string) []models.Statistic {
 // Path returns the path set on the shard when it was created.
 func (s *Shard) Path() string { return s.path }
 
+func (s *Shard) WalPath() string {
+	return s.walPath
+}
+
 // Open initializes and opens the shard's store.
 func (s *Shard) Open() error {
 	if err := func() error {
