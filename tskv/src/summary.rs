@@ -192,10 +192,10 @@ impl Summary {
             }
             let lvls = levels.into_values().collect();
             let ver = Version::new(id, max_log, tsf_name, lvls);
-            versions.insert(id, Arc::new(ver));
+            versions.insert(id, Arc::new(RwLock::new(ver)));
         }
         let vs = VersionSet::new(tf_cfg, versions);
-        Ok(vs)
+        Ok(vs.await)
     }
     // apply version edit to summary file
     // and write to memory struct

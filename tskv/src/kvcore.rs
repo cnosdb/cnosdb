@@ -1,7 +1,10 @@
-use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, sync::Arc, thread::JoinHandle};
-use std::collections::HashMap;
+use std::{
+    borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::DerefMut, sync, sync::Arc,
+    thread::JoinHandle,
+};
 
-use ::models::{InMemPoint, FieldInfo, SeriesInfo, Tag, ValueType};
+use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use models::{FieldID, SeriesID};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
@@ -16,27 +19,26 @@ use tokio::{
         oneshot, RwLock,
     },
 };
-use models::{FieldID, SeriesID};
 
 use crate::{
+    compaction::{run_flush_memtable_job, FlushReq},
     context::GlobalContext,
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
     forward_index::ForwardIndex,
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
-    memcache::{MemCache, DataType},
+    memcache::{DataType, MemCache},
     record_file::Reader,
     runtime::WorkerQueue,
     summary::{Summary, VersionEdit},
-    tseries_family::Version,
+    tseries_family::{TimeRange, Version},
+    tsm::{BlockReader, TsmBlockReader, TsmIndexReader},
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task,
 };
-use crate::tseries_family::TimeRange;
-use crate::tsm::{BlockReader, TsmBlockReader, TsmIndexReader};
 
 pub struct Entry {
     pub series_id: u64,
@@ -49,27 +51,38 @@ pub struct TsKv {
 
     wal_sender: UnboundedSender<WalTask>,
     forward_index: Arc<RwLock<ForwardIndex>>,
+
+    flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
 }
 
 impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
+        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let shared_options = Arc::new(opt);
         let kvctx = Arc::new(KvContext::new(shared_options.clone()));
-        let version_set = Self::recover(shared_options.clone()).await;
+        let version_set = Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
         let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
         fidx.load_cache_file().await.map_err(|err| Error::LogRecordErr { source: err })?;
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
+        let summary = Summary::recover(&[TseriesFamDesc { name: "default".to_string(),
+                                                          opt: TseriesFamOpt::default() }],
+                                       &shared_options.db).await
+                                                          .unwrap();
         let core = Self { options: shared_options,
                           kvctx,
                           forward_index: Arc::new(RwLock::new(fidx)),
                           version_set,
-                          wal_sender };
+                          wal_sender,
+                          flush_task_sender };
         core.run_wal_job(wal_receiver);
+        core.run_flush_job(flush_task_receiver, summary.global_context(), core.version_set.clone());
 
         Ok(core)
     }
 
-    async fn recover(opt: Arc<Options>) -> Arc<RwLock<VersionSet>> {
+    async fn recover(opt: Arc<Options>,
+                     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
+                     -> Arc<RwLock<VersionSet>> {
         if !file_manager::try_exists(&opt.db.db_path) {
             std::fs::create_dir_all(&opt.db.db_path).context(error::IOSnafu).unwrap();
         }
@@ -87,7 +100,9 @@ impl TsKv {
         };
         let version_set = summary.version_set();
         let wal_manager = WalManager::new(opt.wal.clone());
-        wal_manager.recover(version_set.clone(), summary.global_context()).await.unwrap();
+        wal_manager.recover(version_set.clone(), summary.global_context(), flush_task_sender)
+                   .await
+                   .unwrap();
 
         version_set.clone()
     }
@@ -129,7 +144,8 @@ impl TsKv {
                                          &f.value,
                                          f.value_type,
                                          seq,
-                                         point.timestamp() as i64)
+                                         point.timestamp() as i64,
+                                         self.flush_task_sender.clone())
                            .await
                     }
                 } else {
@@ -142,65 +158,85 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
-    pub async fn read_point(&self,sid: SeriesID, time_range: &TimeRange, field_id: FieldID) {
+    pub async fn read_point(&self, sid: SeriesID, time_range: &TimeRange, field_id: FieldID) {
         let mut version_set = self.version_set.write().await;
-        let tsf= version_set.get_tsfamily(sid).unwrap();
-        //get data from memcache
-        if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
-            for data in mem_entry.cells.iter() {
-                if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
-                    println!("{}::{}::{:?}", sid.clone(), &field_id, data.clone())
-                }
-            }
-        }
-        //get data from im_memcache
-        for mem_cache in tsf.im_cache().iter() {
-            if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+        if let Some(tsf) = version_set.get_tsfamily(sid) {
+            // get data from memcache
+            if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
                 for data in mem_entry.cells.iter() {
-                    if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
-                        println!("{}::{}::{:?}",sid.clone(),&field_id,data.clone())
+                    if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts
+                    {
+                        println!("{}::{}::{:?}", sid.clone(), &field_id, data.clone())
                     }
                 }
             }
-        }
-        //get data from levelinfo
-        for level_info in tsf.version().levels_info.iter() {
-            for file in level_info.files.iter() {
-                let fs = FileManager::new();
-                let ts_cf = TseriesFamOpt::default();
-                let p = format!("/_{:06}.tsm",file.file_id());
-                // println!("{}",ts_cf.wsm_dir+ &*tsf.tf_id().to_string()+ &*p);
-                let fs = fs.open_file(ts_cf.tsm_dir.clone()+ &*tsf.tf_id().to_string()+ &*p).unwrap();
-                let len = fs.len();
-                let mut fs_cursor = fs.into_cursor();
-                let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
-                let mut blocks = Vec::new();
-                for res in &mut index.unwrap() {
-                    let entry = res.unwrap();
-                    let key = entry.field_id();
-                    if key == field_id {
-                        blocks.push(entry.block);
-                    }
-                }
-                let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
-                for block in blocks {
-                    let mut data = block_reader.decode(&block).expect("error decoding block data");
-                    while let datum = data.next() {
-                        let datum= datum.unwrap();
-                        if datum.timestamp() > time_range.min_ts && datum.timestamp() < time_range.max_ts {
-                            println!("{}::{}::{:?}",sid.clone(),&field_id,datum.clone())
+            // get data from im_memcache
+            for mem_cache in tsf.im_cache().iter() {
+                if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+                    for data in mem_entry.cells.iter() {
+                        if data.timestamp() > time_range.min_ts
+                           && data.timestamp() < time_range.max_ts
+                        {
+                            println!("{}::{}::{:?}", sid.clone(), &field_id, data.clone())
                         }
                     }
                 }
             }
+            // get data from levelinfo
+            for level_info in tsf.version().read().await.levels_info.iter() {
+                for file in level_info.files.iter() {
+                    let fs = FileManager::new();
+                    let ts_cf = TseriesFamOpt::default();
+                    let p = format!("/_{:06}.tsm", file.file_id());
+                    let fs = fs.open_file(ts_cf.tsm_dir.clone()
+                                          + tsf.tf_id().to_string().as_str()
+                                          + p.as_str())
+                               .unwrap();
+                    let len = fs.len();
+                    let mut fs_cursor = fs.into_cursor();
+                    let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
+                    let mut blocks = Vec::new();
+                    for res in &mut index.unwrap() {
+                        let entry = res.unwrap();
+                        let key = entry.field_id();
+                        if key == field_id {
+                            blocks.push(entry.block);
+                        }
+                    }
+                    let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
+                    for block in blocks {
+                        let mut data =
+                            block_reader.decode(&block).expect("error decoding block data");
+                        let mut loopp = true;
+                        while loopp {
+                            let datum = data.next();
+                            match datum {
+                                Some(datum) => {
+                                    if datum.timestamp() > time_range.min_ts
+                                       && datum.timestamp() < time_range.max_ts
+                                    {
+                                        println!("{}::{}::{:?}",
+                                                 sid.clone(),
+                                                 &field_id,
+                                                 datum.clone());
+                                    }
+                                },
+                                None => loopp = false,
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            println!("ts_family with sid {} not found.", sid);
         }
     }
 
     pub async fn read(&self, sids: Vec<SeriesID>, time_range: &TimeRange, fields: Vec<FieldID>) {
         for sid in sids {
-                for field_id in fields.iter() {
-                   self.read_point(sid,&time_range,*field_id).await;
-                }
+            for field_id in fields.iter() {
+                self.read_point(sid, &time_range, *field_id).await;
+            }
         }
     }
 
@@ -221,7 +257,8 @@ impl TsKv {
                                          &f.value,
                                          f.value_type,
                                          seq,
-                                         point.timestamp() as i64)
+                                         point.timestamp() as i64,
+                                         self.flush_task_sender.clone())
                            .await
                     }
                 }
@@ -254,6 +291,19 @@ impl TsKv {
         };
         tokio::spawn(f);
         println!("[WARN] [tskv] job 'WAL' started.");
+    }
+
+    fn run_flush_job(&self,
+                     mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
+                     ctx: Arc<GlobalContext>,
+                     version_set: Arc<RwLock<VersionSet>>) {
+        let f = async move {
+            while let Some(x) = receiver.recv().await {
+                run_flush_memtable_job(x.clone(), ctx.clone(), HashMap::new(), version_set.clone()).await.unwrap();
+            }
+        };
+        tokio::spawn(f);
+        println!("[tskv] Flush task handler started");
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
@@ -339,18 +389,17 @@ impl KvContext {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+
     use chrono::Local;
-
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use snafu::ResultExt;
-    use tokio::sync::mpsc;
-    use tokio::sync::oneshot::channel;
     use models::{FieldInfo, SeriesInfo, Tag, ValueType};
-    use protos::{kv_service, models_helper,models as fb_models,};
-    use protos::kv_service::WritePointsRpcResponse;
+    use protos::{
+        kv_service, kv_service::WritePointsRpcResponse, models as fb_models, models_helper,
+    };
+    use snafu::ResultExt;
+    use tokio::sync::{mpsc, oneshot::channel};
 
-    use crate::{kv_option::WalConfig, TsKv, Task, error, Error};
-    use crate::tseries_family::TimeRange;
+    use crate::{error, kv_option::WalConfig, tseries_family::TimeRange, Error, Task, TsKv};
 
     async fn get_tskv() -> TsKv {
         let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
@@ -381,8 +430,9 @@ mod test {
         tskv.write(request).await.unwrap();
     }
 
+    // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
     #[tokio::test]
-    async fn test_read() -> Result<(),Error>{
+    async fn test_read() -> Result<(), Error> {
         let tskv = get_tskv().await;
 
         let database = "db".to_string();
@@ -406,7 +456,29 @@ mod test {
                 fields_id.push(field.field_id().clone());
             }
         }
-        Ok(tskv.read(sids, &TimeRange::new( Local::now().timestamp_millis()+100,0), fields_id).await)
+        // remove repeat sid and fields_id
+        const MAX_APPEAR_TIMES: usize = 1;
+        pub fn remove_duplicates(nums: &mut Vec<u64>) -> usize {
+            if nums.len() <= MAX_APPEAR_TIMES {
+                return nums.len() as usize;
+            }
+            let mut l = MAX_APPEAR_TIMES;
+            for r in l..nums.len() {
+                if nums[r] != nums[l - MAX_APPEAR_TIMES] {
+                    nums[l] = nums[r];
+                    l += 1;
+                }
+            }
+            l as usize
+        }
+        sids.sort();
+        fields_id.sort();
+        let l = remove_duplicates(&mut sids);
+        sids = sids[0..l].to_owned();
+        let l = remove_duplicates(&mut fields_id);
+        fields_id = fields_id[0..l].to_owned();
+        Ok(tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id)
+               .await)
     }
 
     #[tokio::test]

@@ -1,6 +1,8 @@
 use protos::models as fb_models;
 
-use crate::{Result, field_info, generate_series_id, FieldID, SeriesID, Tag, Timestamp, ValueType, Error};
+use crate::{
+    field_info, generate_series_id, Error, FieldID, Result, SeriesID, Tag, Timestamp, ValueType,
+};
 
 #[derive(Debug)]
 pub struct FieldValue {
@@ -12,12 +14,11 @@ pub struct FieldValue {
 impl FieldValue {
     pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
         Ok(Self { field_id: 0,
-            value_type: field.type_().into(),
-            value: match field.value() {
-                Some(v) => v.to_vec(),
-                None => Vec::new(),
-            },
-            })
+                  value_type: field.type_().into(),
+                  value: match field.value() {
+                      Some(v) => v.to_vec(),
+                      None => Vec::new(),
+                  } })
     }
 
     pub fn field_id(&self) -> FieldID {
@@ -44,11 +45,7 @@ impl InMemPoint {
             },
             None => return Err(Error::InvalidFlatbufferMessage { err: "Point fields cannot be empty".to_string() }),
         };
-        Ok(Self {
-            series_id: 0,
-            timestamp: point.timestamp(),
-            fields,
-        })
+        Ok(Self { series_id: 0, timestamp: point.timestamp(), fields })
     }
 
     pub fn series_id(&self) -> SeriesID {

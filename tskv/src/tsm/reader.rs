@@ -72,7 +72,7 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
             ValueType::Float => {
                 // values will be same length as time-stamps.
                 let mut val = Vec::with_capacity(ts.len());
-                coders::float::decode_influxdb(&data[idx..], &mut val)
+                coders::float::decode(&data[idx..], &mut val)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
 
                 Ok(DataBlock::F64Block { index: 0, ts, val })

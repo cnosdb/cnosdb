@@ -11,11 +11,12 @@ use parking_lot::Mutex;
 use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 use utils::bkdr_hash;
 use walkdir::IntoIter;
 
 use crate::{
+    compaction::FlushReq,
     compute,
     context::GlobalContext,
     direct_io::{File, FileCursor, FileSync},
@@ -286,7 +287,8 @@ impl WalManager {
 
     pub async fn recover(&self,
                          version_set: Arc<RwLock<VersionSet>>,
-                         global_context: Arc<GlobalContext>)
+                         global_context: Arc<GlobalContext>,
+                         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
                          -> Result<()> {
         let min_log_seq = global_context.log_seq();
         println!("[WARN] [wal] recovering version set from seq '{}'", &min_log_seq);
@@ -324,8 +326,7 @@ impl WalManager {
                                         } else {
                                             vec![]
                                         };
-                                        point_tags.push(models::Tag::new(tag_key,
-                                                                                tag_value));
+                                        point_tags.push(models::Tag::new(tag_key, tag_value));
                                     }
                                     models::generate_series_id(&mut point_tags)
                                 } else {
@@ -369,7 +370,8 @@ impl WalManager {
                                                              val,
                                                              dtype,
                                                              e.seq,
-                                                             p.timestamp() as i64)
+                                                             p.timestamp() as i64,
+                                                             flush_task_sender.clone())
                                                .await
                                         }
                                     }
