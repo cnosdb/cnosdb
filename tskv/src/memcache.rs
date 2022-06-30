@@ -1,5 +1,4 @@
-use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
-use std::mem::size_of_val;
+use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 
 use flatbuffers::Push;
 use futures::future::ok;
@@ -43,6 +42,7 @@ impl DataType {
     }
 }
 
+#[derive(Debug)]
 pub struct MemEntry {
     pub ts_min: i64,
     pub ts_max: i64,
@@ -53,12 +53,13 @@ impl Default for MemEntry {
     fn default() -> Self {
         MemEntry { ts_min: i64::MAX,
                    ts_max: i64::MIN,
-                   field_type: ValueType::Float,
+                   field_type: ValueType::Unknown,
                    cells: Vec::new() }
     }
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct MemCache {
     // if true,ready be pushed into immemcache
     immutable: bool,
@@ -78,7 +79,12 @@ pub struct MemCache {
 impl MemCache {
     pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
         let cache = HashMap::new();
-        Self { immutable: false, tf_id, max_buf_size: max_size, data_cache: cache, seq_no: seq, cache_size: 0 }
+        Self { immutable: false,
+               tf_id,
+               max_buf_size: max_size,
+               data_cache: cache,
+               seq_no: seq,
+               cache_size: 0 }
     }
     pub fn insert_raw(&mut self,
                       seq: u64,
@@ -92,33 +98,33 @@ impl MemCache {
             ValueType::Unsigned => {
                 let val = compute::decode_be_u64(buf);
                 let data = DataType::U64(U64Cell { ts, val });
-                self.insert(field_id, data);
+                self.insert(field_id, data, ValueType::Unsigned);
             },
             ValueType::Integer => {
                 let val = compute::decode_be_i64(buf);
                 let data = DataType::I64(I64Cell { ts, val });
-                self.insert(field_id, data);
+                self.insert(field_id, data, ValueType::Integer);
             },
             ValueType::Float => {
                 let val = compute::decode_be_f64(buf);
                 let data = DataType::F64(F64Cell { ts, val });
-                self.insert(field_id, data);
+                self.insert(field_id, data, ValueType::Float);
             },
             ValueType::String => {
                 let val = Vec::from(buf);
                 let data = DataType::Str(StrCell { ts, val });
-                self.insert(field_id, data);
+                self.insert(field_id, data, ValueType::String);
             },
             ValueType::Boolean => {
                 let val = compute::decode_be_bool(buf);
                 let data = DataType::Bool(BoolCell { ts, val });
-                self.insert(field_id, data)
+                self.insert(field_id, data, ValueType::Boolean)
             },
             _ => todo!(),
         };
         Ok(())
     }
-    pub fn insert(&mut self, field_id: u64, val: DataType) {
+    pub fn insert(&mut self, field_id: u64, val: DataType, value_type: ValueType) {
         let ts = val.timestamp();
         let item = self.data_cache.entry(field_id).or_insert(MemEntry::default());
         if item.ts_max < ts {
@@ -127,6 +133,7 @@ impl MemCache {
         if item.ts_min > ts {
             item.ts_min = ts
         }
+        item.field_type = value_type;
         self.cache_size += size_of_val(&val) as u64;
         item.cells.push(val);
     }
@@ -137,12 +144,9 @@ impl MemCache {
 
     pub fn switch_to_immutable(&mut self) {
         for mut data in self.data_cache.iter_mut() {
-            data.1.cells.sort_by(|a,b| {
-                a.timestamp().partial_cmp(&b.timestamp()).unwrap()
-            })
+            data.1.cells.sort_by(|a, b| a.timestamp().partial_cmp(&b.timestamp()).unwrap())
         }
         self.immutable = true;
-        self.cache_size = 0;
     }
 
     pub fn flush() -> Result<()> {

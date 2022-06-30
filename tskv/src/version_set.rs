@@ -18,19 +18,21 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
-    pub fn new(desc: &[TseriesFamDesc], vers_set: HashMap<u32, Arc<Version>>) -> Self {
+    pub async fn new(desc: &[TseriesFamDesc],
+                     vers_set: HashMap<u32, Arc<RwLock<Version>>>)
+                     -> Self {
         let mut ts_families = HashMap::new();
         let mut ts_families_names = HashMap::new();
         for (id, ver) in vers_set {
-            let name = ver.get_name().to_string();
-            let seq = ver.log_no;
+            let name = ver.read().await.get_name().to_string();
+            let seq = ver.read().await.log_no;
             for item in desc.iter() {
                 if item.name == name {
                     let tf = TseriesFamily::new(id,
                                                 name.clone(),
                                                 MemCache::new(id, MAX_MEMCACHE_SIZE, seq),
                                                 ver.clone(),
-                                                item.opt.clone());
+                                                item.opt.clone()).await;
                     ts_families.insert(id, tf);
                     ts_families_names.insert(name.clone(), id);
                 }

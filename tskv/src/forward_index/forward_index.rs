@@ -16,8 +16,9 @@ struct InMemSeriesInfo {
 
 impl InMemSeriesInfo {
     fn with_series_info(series_info: &SeriesInfo, pos: usize) -> Self {
-        Self { id: series_info.series_id(), pos, field_infos: series_info.field_infos().iter().map(|f| f.into()).collect()
-        }
+        Self { id: series_info.series_id(),
+               pos,
+               field_infos: series_info.field_infos().iter().map(|f| f.into()).collect() }
     }
 }
 

@@ -1,6 +1,8 @@
 use std::{cmp::max, collections::HashMap, path::PathBuf, sync::Arc};
 
+use parking_lot::Mutex;
 use regex::internal::Input;
+use tokio::sync::RwLock;
 
 use crate::{
     compaction::FlushReq,
@@ -12,20 +14,22 @@ use crate::{
     kv_option::TseriesFamOpt,
     memcache::MemCache,
     summary::{CompactMeta, VersionEdit},
+    tseries_family::LevelInfo,
     tsm::{DataBlock, FooterBuilder, TsmBlockWriter, TsmIndexBuilder},
+    version_set::VersionSet,
 };
 
 // 构建flush task 将memcache中的数据 flush到 tsm文件中
 pub struct FlushTask {
     edit: VersionEdit,
-    mems: Vec<Arc<MemCache>>,
+    mems: Vec<Arc<RwLock<MemCache>>>,
     meta: CompactMeta,
     tsf_id: u32,
     path: String,
 }
 
 impl FlushTask {
-    pub fn new(mems: Vec<Arc<MemCache>>, tsf_id: u32, log_seq: u64, path: String) -> Self {
+    pub fn new(mems: Vec<Arc<RwLock<MemCache>>>, tsf_id: u32, log_seq: u64, path: String) -> Self {
         let mut edit = VersionEdit::new();
         edit.set_log_seq(log_seq);
         edit.set_tsf_id(tsf_id);
@@ -34,12 +38,16 @@ impl FlushTask {
         Self { edit, mems, meta, tsf_id, path }
     }
     // todo: build tsm file
-    pub async fn run(&mut self) -> Result<CompactMeta> {
+    pub async fn run(&mut self, version_set: Arc<RwLock<VersionSet>>) -> Result<CompactMeta> {
         let (mut ts_min, mut ts_max) = (i64::MAX, i64::MIN);
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
         let mut field_map = HashMap::new();
         let mut field_size = HashMap::new();
-        for mem in &self.mems {
+        let mut mem_guard = vec![];
+        for i in self.mems.iter() {
+            mem_guard.push(i.read().await);
+        }
+        for mem in mem_guard.iter() {
             let data = &mem.data_cache;
             // get req seq_no range
             if mem.seq_no > high_seq {
@@ -51,7 +59,7 @@ impl FlushTask {
             for (field_id, entry) in data {
                 let sum = field_size.entry(field_id).or_insert(0_usize);
                 *sum = *sum + entry.cells.len();
-                let item = field_map.entry(field_id).or_insert(vec![entry]);
+                let item = field_map.entry(field_id).or_insert(vec![]);
                 item.push(entry);
             }
         }
@@ -80,6 +88,13 @@ impl FlushTask {
         self.meta.high_seq = high_seq;
         self.meta.ts_min = ts_min;
         self.meta.file_size = file_size;
+        let mut version_s = version_set.write().await;
+        let mut version =
+            version_s.get_tsfamily(self.tsf_id as u64).unwrap().version().write().await;
+        if version.levels_info.len() == 0 {
+            version.levels_info.push(LevelInfo::init(0));
+        }
+        version.levels_info[0].apply(&self.meta);
         Ok(self.meta.clone())
     }
 }
@@ -100,18 +115,25 @@ fn build_tsm_file(fname: PathBuf, block_set: HashMap<u64, DataBlock>) -> Result<
     Ok(len)
 }
 
-pub async fn run_flush_memtable_job(reqs: Vec<FlushReq>,
+pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,
                                     kernel: Arc<GlobalContext>,
-                                    tsf_config: HashMap<u32, Arc<TseriesFamOpt>>)
+                                    tsf_config: HashMap<u32, Arc<TseriesFamOpt>>,
+                                    version_set: Arc<RwLock<VersionSet>>)
                                     -> Result<()> {
     let mut mems = vec![];
-    for req in &reqs {
-        for (tf, mem) in &req.mems {
-            while *tf >= mems.len() as u32 {
-                mems.push(vec![]);
+    {
+        let mut reqs = reqs.lock();
+        println!("get flush request len {}", reqs.len());
+        for req in reqs.iter() {
+            for (tf, mem) in &req.mems {
+                while *tf >= mems.len() as u32 {
+                    mems.push(vec![]);
+                }
+                mems[(*tf) as usize].push(mem.clone());
             }
-            mems[(*tf) as usize].push(mem.clone());
         }
+        reqs.clear();
+        println!("finish flush request");
     }
     let mut edits = vec![];
     for (i, memtables) in mems.iter().enumerate() {
@@ -124,7 +146,7 @@ pub async fn run_flush_memtable_job(reqs: Vec<FlushReq>,
             let path = cf_opt.tsm_dir.clone() + &i.to_string();
             let log_seq = kernel.log_seq_next();
             let mut job = FlushTask::new(memtables.clone(), i as u32, log_seq, path);
-            let meta = job.run().await?;
+            let meta = job.run(version_set.clone()).await?;
             let mut edit = VersionEdit::new();
             edit.add_file(i as u32, log_seq, kernel.last_seq(), meta);
             edits.push(edit);

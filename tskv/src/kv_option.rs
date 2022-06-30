@@ -8,6 +8,8 @@ pub const MAX_MEMCACHE_SIZE: u64 = 128 * 1024 * 1024;
 // 128M
 pub const MAX_SUMMARY_SIZE: u64 = 128 * 1024 * 1024; //128M
 
+pub const MAX_IMMEMCACHE_NUM: usize = 4;
+
 #[derive(Clone)]
 pub struct DBOptions {
     pub front_cpu: usize,
@@ -115,7 +117,7 @@ impl Default for TseriesFamOpt {
                base_file_size: 16 * 1024 * 1024,
                compact_trigger: 4,
                max_compact_size: 2 * 1024 * 1024 * 1024,
-               tsm_dir: "db/tsm/".to_string()}
+               tsm_dir: "db/tsm/".to_string() }
     }
 }
 
