@@ -44,81 +44,164 @@ func TestGenCode2(t *testing.T) {
 	n := noaa.NOAA{S: server, T: t}
 	n.Load()
 	var steps = [...]suite.Step{
-		//LIMIT and SLIMIT
+		//SHOW DATABASES
 		{
-			Name:  "slimit_water_level_1_",
-			Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * SLIMIT 1`, db, rp),
+			Name:  "show_databasaes",
+			Query: fmt.Sprintf(`SHOW DATABASES`),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW MEASUREMENTS
+		{
+			Name:  "show_measurements_on",
+			Query: fmt.Sprintf(`SHOW MEASUREMENTS ON "%s"`, db),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "slimit_water_level_1",
-			Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" GROUP BY * limit 20 SLIMIT 1`, db, rp),
-			Result: suite.Results{
-				Results: []suite.Result{},
-			},
-		},
-		//INTO
-		{
-			Name:  "into_measurement_noaa_autogen",
-			Query: fmt.Sprintf(`SELECT * INTO "copy_NOAA_water_database"."autogen".:MEASUREMENT FROM "NOAA_water_database"."autogen"./.* limit 20`),
+			Name:  "show_measurements",
+			Query: fmt.Sprintf(`SHOW MEASUREMENTS`),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_copy1_location_coyote_creek",
-			Query: fmt.Sprintf(`SELECT "water_level" INTO "h2o_feet_copy_1" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' limit 50`, db, rp),
+			Name:  "show_measurements_on_with_limit_2_offset_1",
+			Query: fmt.Sprintf(`SHOW MEASUREMENTS ON "%s" WITH MEASUREMENT =~ /h2o.*/ LIMIT 2 `, db),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_h2o_feet_copy_1",
-			Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."h2o_feet_copy_1" limit 20`, db, rp),
+			Name:  "show_measurements_on_with",
+			Query: fmt.Sprintf(`SHOW MEASUREMENTS ON "%s" WITH MEASUREMENT =~ /h2o.*/ WHERE "randtag"  =~ /\d/`, db),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW FIELD KEYS
+		{
+			Name:  "show_field_keys_on",
+			Query: fmt.Sprintf(`SHOW FIELD KEYS ON "%s"`, db),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_copy2_location_coyote_creek",
-			Query: fmt.Sprintf(`SELECT "water_level" INTO "where_else"."autogen"."h2o_feet_copy_2" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' limit 50`, db, rp),
+			Name:  "show_field_keys",
+			Query: fmt.Sprintf(`SHOW FIELD KEYS`),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_h2o_feet_copy_2",
-			Query: fmt.Sprintf(`SELECT * FROM "where_else"."autogen"."h2o_feet_copy_2"`),
+			Name:  "show_field_keys_on_from",
+			Query: fmt.Sprintf(`SHOW FIELD KEYS ON "%s" FROM "%s"."%s"."h2o_feet"`, db, db, rp),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW RETENTION POLICIES
+		{
+			Name:  "show_rp_on_noaa",
+			Query: fmt.Sprintf(`SHOW RETENTION POLICIES ON "%s"`, db),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_all_my_averages",
-			Query: fmt.Sprintf(`SELECT MEAN("water_level") INTO "all_my_averages" FROM "%s"."%s"."h2o_feet" WHERE "location" = 'coyote_creek' AND time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' GROUP BY time(12m) limit 50`, db, rp),
+			Name:  "show_rp",
+			Query: fmt.Sprintf(`SHOW RETENTION POLICIES`),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW TAG KEYS
+		{
+			Name:  "show_tag_keys_on",
+			Query: fmt.Sprintf(`SHOW TAG KEYS ON "%s"`, db),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_select_all_my_averages",
-			Query: fmt.Sprintf(`SELECT * FROM "%s"."%s"."all_my_averages"`, db, rp),
+			Name:  "show_tag_keys",
+			Query: fmt.Sprintf(`SHOW TAG KEYS`),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_where_else_12m",
-			Query: fmt.Sprintf(`SELECT MEAN(*) INTO "where_else"."autogen".:MEASUREMENT FROM /.*/ WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:06:00Z' GROUP BY time(12m) limit 50`),
+			Name:  "show_tag_keys_1_1",
+			Query: fmt.Sprintf(`SHOW TAG KEYS ON "%s" FROM "h2o_quality" LIMIT 1 OFFSET 1`, db),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW SERIES
+		{
+			Name:  "show_series_on_noaa",
+			Query: fmt.Sprintf(`SHOW SERIES ON "%s"`, db),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},
 		},
 		{
-			Name:  "into_where_else_autogen",
-			Query: fmt.Sprintf(`SELECT * FROM "where_else"."autogen"./.*/`),
+			Name:  "show_series",
+			Query: fmt.Sprintf(`SHOW SERIES`),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		{
+			Name:  "show_series_on_noaa_from",
+			Query: fmt.Sprintf(`SHOW SERIES ON "%s" FROM "%s"."%s"."h2o_quality" WHERE "location" = 'coyote_creek' LIMIT 2`, db, db, rp),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		{
+			Name:  "show_series_on_noaa_now_1m",
+			Query: fmt.Sprintf(`SHOW SERIES ON "%s" WHERE time < now() - 1m`, db),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		{
+			Name:  "show_series_now_28d",
+			Query: fmt.Sprintf(`SHOW SERIES ON "%s" WHERE time < now() - 28d`, db),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW TAG VALUES
+		{
+			Name:  "show_tag_values_on_randtag",
+			Query: fmt.Sprintf(`SHOW TAG VALUES ON "%s" WITH KEY = "randtag"`, db),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		{
+			Name:  "show_tag_values_randtag",
+			Query: fmt.Sprintf(`SHOW TAG VALUES WITH KEY = "randtag"`),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		{
+			Name:  "show_tag_values_on_location_randtag",
+			Query: fmt.Sprintf(`SHOW TAG VALUES ON "%s" WITH KEY IN ("location","randtag") WHERE "randtag" =~ /./ LIMIT 3`, db),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
+		//SHOW SHARDS
+		{
+			Name:  "show_shards",
+			Query: fmt.Sprintf(`SHOW SHARDS`),
 			Result: suite.Results{
 				Results: []suite.Result{},
 			},

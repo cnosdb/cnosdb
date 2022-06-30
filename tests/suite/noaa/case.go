@@ -2121,4 +2121,524 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//SHOW DATABASES
+	{
+		Name:  "show_databasaes",
+		Query: fmt.Sprintf(`SHOW DATABASES`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "databases",
+							Columns: []string{"name"},
+							Values: []suite.Row{
+								{"db0"},
+								{"NOAA_water_database"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	//SHOW MEASUREMENTS
+	{
+		Name:  "show_measurements_on",
+		Query: fmt.Sprintf(`SHOW MEASUREMENTS ON "%s"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "measurements",
+							Columns: []string{"name"},
+							Values: []suite.Row{
+								{"average_temperature"},
+								{"h2o_feet"},
+								{"h2o_pH"},
+								{"h2o_quality"},
+								{"h2o_temperature"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_measurements",
+		Query: fmt.Sprintf(`SHOW MEASUREMENTS`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_measurements_on_with_limit_2_offset_1",
+		Query: fmt.Sprintf(`SHOW MEASUREMENTS ON "%s" WITH MEASUREMENT =~ /h2o.*/ LIMIT 2 `, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "measurements",
+							Columns: []string{"name"},
+							Values: []suite.Row{
+								{"h2o_feet"},
+								{"h2o_pH"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_measurements_on_with",
+		Query: fmt.Sprintf(`SHOW MEASUREMENTS ON "%s" WITH MEASUREMENT =~ /h2o.*/ WHERE "randtag"  =~ /\d/`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "measurements",
+							Columns: []string{"name"},
+							Values: []suite.Row{
+								{"h2o_quality"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	//SHOW FIELD KEYS
+	{
+		Name:  "show_field_keys_on",
+		Query: fmt.Sprintf(`SHOW FIELD KEYS ON "%s"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "average_temperature",
+							Columns: []string{"fieldKey", "fieldType"},
+							Values: []suite.Row{
+								{"degrees", "float"},
+							},
+						},
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"fieldKey", "fieldType"},
+							Values: []suite.Row{
+								{"level description", "string"},
+								{"water_level", "float"},
+							},
+						},
+						{
+							Name:    "h2o_pH",
+							Columns: []string{"fieldKey", "fieldType"},
+							Values: []suite.Row{
+								{"pH", "float"},
+							},
+						},
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"fieldKey", "fieldType"},
+							Values: []suite.Row{
+								{"index", "float"},
+							},
+						},
+						{
+							Name:    "h2o_temperature",
+							Columns: []string{"fieldKey", "fieldType"},
+							Values: []suite.Row{
+								{"degrees", "float"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_field_keys",
+		Query: fmt.Sprintf(`SHOW FIELD KEYS`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_field_keys_on_from",
+		Query: fmt.Sprintf(`SHOW FIELD KEYS ON "%s" FROM "%s"."%s"."h2o_feet"`, db, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"fieldKey", "fieldType"},
+							Values: []suite.Row{
+								{"level description", "string"},
+								{"water_level", "float"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	//SHOW RETENTION POLICIES
+	{
+		Name:  "show_rp_on_noaa",
+		Query: fmt.Sprintf(`SHOW RETENTION POLICIES ON "%s"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "",
+							Columns: []string{"name", "duration", "groupDuration", "replicaN", "default"},
+							Values: []suite.Row{
+								{"autogen", "0s", "168h0m0s", 1, false},
+								{"rp0", "0s", "168h0m0s", 1, true},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_rp",
+		Query: fmt.Sprintf(`SHOW RETENTION POLICIES`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//SHOW TAG KEYS
+	{
+		Name:  "show_tag_keys_on",
+		Query: fmt.Sprintf(`SHOW TAG KEYS ON "%s"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "average_temperature",
+							Columns: []string{"tagKey"},
+							Values: []suite.Row{
+								{"location"},
+							},
+						},
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"tagKey"},
+							Values: []suite.Row{
+								{"location"},
+							},
+						},
+						{
+							Name:    "h2o_pH",
+							Columns: []string{"tagKey"},
+							Values: []suite.Row{
+								{"location"},
+							},
+						},
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"tagKey"},
+							Values: []suite.Row{
+								{"location"},
+								{"randtag"},
+							},
+						},
+						{
+							Name:    "h2o_temperature",
+							Columns: []string{"tagKey"},
+							Values: []suite.Row{
+								{"location"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_tag_keys",
+		Query: fmt.Sprintf(`SHOW TAG KEYS`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_tag_keys_1_1",
+		Query: fmt.Sprintf(`SHOW TAG KEYS ON "%s" FROM "h2o_quality" LIMIT 1 OFFSET 1`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"tagKey"},
+							Values: []suite.Row{
+								{"randtag"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	//SHOW SERIES
+	{
+		Name:  "show_series_on_noaa",
+		Query: fmt.Sprintf(`SHOW SERIES ON "%s"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "",
+							Columns: []string{"key"},
+							Values: []suite.Row{
+								{"average_temperature,location=coyote_creek"},
+								{"average_temperature,location=santa_monica"},
+								{"h2o_feet,location=coyote_creek"},
+								{"h2o_feet,location=santa_monica"},
+								{"h2o_pH,location=coyote_creek"},
+								{"h2o_pH,location=santa_monica"},
+								{"h2o_quality,location=coyote_creek,randtag=1"},
+								{"h2o_quality,location=coyote_creek,randtag=2"},
+								{"h2o_quality,location=coyote_creek,randtag=3"},
+								{"h2o_quality,location=santa_monica,randtag=1"},
+								{"h2o_quality,location=santa_monica,randtag=2"},
+								{"h2o_quality,location=santa_monica,randtag=3"},
+								{"h2o_temperature,location=coyote_creek"},
+								{"h2o_temperature,location=santa_monica"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_series",
+		Query: fmt.Sprintf(`SHOW SERIES`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_series_on_noaa_from",
+		Query: fmt.Sprintf(`SHOW SERIES ON "%s" FROM "%s"."%s"."h2o_quality" WHERE "location" = 'coyote_creek' LIMIT 2`, db, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "",
+							Columns: []string{"key"},
+							Values: []suite.Row{
+								{"h2o_quality,location=coyote_creek,randtag=1"},
+								{"h2o_quality,location=coyote_creek,randtag=2"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_series_on_noaa_now_1m",
+		Query: fmt.Sprintf(`SHOW SERIES ON "%s" WHERE time < now() - 1m`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "",
+							Columns: []string{"key"},
+							Values: []suite.Row{
+								{"average_temperature,location=coyote_creek"},
+								{"average_temperature,location=santa_monica"},
+								{"h2o_feet,location=coyote_creek"},
+								{"h2o_feet,location=santa_monica"},
+								{"h2o_pH,location=coyote_creek"},
+								{"h2o_pH,location=santa_monica"},
+								{"h2o_quality,location=coyote_creek,randtag=1"},
+								{"h2o_quality,location=coyote_creek,randtag=2"},
+								{"h2o_quality,location=coyote_creek,randtag=3"},
+								{"h2o_quality,location=santa_monica,randtag=1"},
+								{"h2o_quality,location=santa_monica,randtag=2"},
+								{"h2o_quality,location=santa_monica,randtag=3"},
+								{"h2o_temperature,location=coyote_creek"},
+								{"h2o_temperature,location=santa_monica"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_series_now_28d",
+		Query: fmt.Sprintf(`SHOW SERIES ON "%s" WHERE time < now() - 28d`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "",
+							Columns: []string{"key"},
+							Values: []suite.Row{
+								{"average_temperature,location=coyote_creek"},
+								{"average_temperature,location=santa_monica"},
+								{"h2o_feet,location=coyote_creek"},
+								{"h2o_feet,location=santa_monica"},
+								{"h2o_pH,location=coyote_creek"},
+								{"h2o_pH,location=santa_monica"},
+								{"h2o_quality,location=coyote_creek,randtag=1"},
+								{"h2o_quality,location=coyote_creek,randtag=2"},
+								{"h2o_quality,location=coyote_creek,randtag=3"},
+								{"h2o_quality,location=santa_monica,randtag=1"},
+								{"h2o_quality,location=santa_monica,randtag=2"},
+								{"h2o_quality,location=santa_monica,randtag=3"},
+								{"h2o_temperature,location=coyote_creek"},
+								{"h2o_temperature,location=santa_monica"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	//SHOW TAG VALUES
+	{
+		Name:  "show_tag_values_on_randtag",
+		Query: fmt.Sprintf(`SHOW TAG VALUES ON "%s" WITH KEY = "randtag"`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"key", "value"},
+							Values: []suite.Row{
+								{"randtag", "1"},
+								{"randtag", "2"},
+								{"randtag", "3"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_tag_values_randtag",
+		Query: fmt.Sprintf(`SHOW TAG VALUES WITH KEY = "randtag"`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "show_tag_values_on_location_randtag",
+		Query: fmt.Sprintf(`SHOW TAG VALUES ON "%s" WITH KEY IN ("location","randtag") WHERE "randtag" =~ /./ LIMIT 3`, db),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_quality",
+							Columns: []string{"key", "value"},
+							Values: []suite.Row{
+								{"location", "coyote_creek"},
+								{"location", "santa_monica"},
+								{"randtag", "1"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	//SHOW SHARDS
+	{
+		Name:  "show_shards",
+		Query: fmt.Sprintf(`SHOW SHARDS`),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "db0",
+							Columns: []string{"id", "database", "rp", "shard_group", "start_time", "end_time", "expiry_time", "owners"},
+							Values:  []suite.Row{},
+						},
+						{
+							Name:    "NOAA_water_database",
+							Columns: []string{"id", "database", "rp", "shard_group", "start_time", "end_time", "expiry_time", "owners"},
+							Values: []suite.Row{
+								{2, "NOAA_water_database", "rp0", 1, "2019-08-12T00:00:00Z", "2019-08-19T00:00:00Z", "2019-08-19T00:00:00Z", "0"},
+								{4, "NOAA_water_database", "rp0", 2, "2019-08-19T00:00:00Z", "2019-08-26T00:00:00Z", "2019-08-26T00:00:00Z", "0"},
+								{6, "NOAA_water_database", "rp0", 3, "2019-08-26T00:00:00Z", "2019-09-02T00:00:00Z", "2019-09-02T00:00:00Z", "0"},
+								{8, "NOAA_water_database", "rp0", 4, "2019-09-02T00:00:00Z", "2019-09-09T00:00:00Z", "2019-09-09T00:00:00Z", "0"},
+								{10, "NOAA_water_database", "rp0", 5, "2019-09-09T00:00:00Z", "2019-09-16T00:00:00Z", "2019-09-16T00:00:00Z", "0"},
+								{12, "NOAA_water_database", "rp0", 6, "2019-09-16T00:00:00Z", "2019-09-23T00:00:00Z", "2019-09-23T00:00:00Z", "0"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
 }
