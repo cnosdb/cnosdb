@@ -5,7 +5,7 @@ use futures::future::ok;
 use models::ValueType;
 use protos::models::FieldType;
 
-use crate::{compute, error::Result};
+use crate::{compute, error::Result, tseries_family::TimeRange};
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, Copy)]
@@ -55,6 +55,16 @@ impl Default for MemEntry {
                    ts_max: i64::MIN,
                    field_type: ValueType::Unknown,
                    cells: Vec::new() }
+    }
+}
+
+impl MemEntry {
+    pub fn read_cell(&self, time_range: &TimeRange) {
+        for data in self.cells.iter() {
+            if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
+                println!("{:?}", data.clone())
+            }
+        }
     }
 }
 
@@ -143,7 +153,7 @@ impl MemCache {
     // }
 
     pub fn switch_to_immutable(&mut self) {
-        for mut data in self.data_cache.iter_mut() {
+        for data in self.data_cache.iter_mut() {
             data.1.cells.sort_by(|a, b| a.timestamp().partial_cmp(&b.timestamp()).unwrap())
         }
         self.immutable = true;

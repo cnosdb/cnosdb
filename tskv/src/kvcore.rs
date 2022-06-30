@@ -163,69 +163,22 @@ impl TsKv {
         if let Some(tsf) = version_set.get_tsfamily(sid) {
             // get data from memcache
             if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
-                for data in mem_entry.cells.iter() {
-                    if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts
-                    {
-                        println!("{}::{}::{:?}", sid.clone(), &field_id, data.clone())
-                    }
-                }
+                println!("memcache::{}::{}", sid.clone(), field_id);
+                mem_entry.read_cell(time_range)
             }
+
             // get data from im_memcache
             for mem_cache in tsf.im_cache().iter() {
                 if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
-                    for data in mem_entry.cells.iter() {
-                        if data.timestamp() > time_range.min_ts
-                           && data.timestamp() < time_range.max_ts
-                        {
-                            println!("{}::{}::{:?}", sid.clone(), &field_id, data.clone())
-                        }
-                    }
+                    println!("im_memcache::{}::{}", sid.clone(), field_id);
+                    mem_entry.read_cell(time_range)
                 }
             }
+
             // get data from levelinfo
             for level_info in tsf.version().read().await.levels_info.iter() {
-                for file in level_info.files.iter() {
-                    let fs = FileManager::new();
-                    let ts_cf = TseriesFamOpt::default();
-                    let p = format!("/_{:06}.tsm", file.file_id());
-                    let fs = fs.open_file(ts_cf.tsm_dir.clone()
-                                          + tsf.tf_id().to_string().as_str()
-                                          + p.as_str())
-                               .unwrap();
-                    let len = fs.len();
-                    let mut fs_cursor = fs.into_cursor();
-                    let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
-                    let mut blocks = Vec::new();
-                    for res in &mut index.unwrap() {
-                        let entry = res.unwrap();
-                        let key = entry.field_id();
-                        if key == field_id {
-                            blocks.push(entry.block);
-                        }
-                    }
-                    let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
-                    for block in blocks {
-                        let mut data =
-                            block_reader.decode(&block).expect("error decoding block data");
-                        let mut loopp = true;
-                        while loopp {
-                            let datum = data.next();
-                            match datum {
-                                Some(datum) => {
-                                    if datum.timestamp() > time_range.min_ts
-                                       && datum.timestamp() < time_range.max_ts
-                                    {
-                                        println!("{}::{}::{:?}",
-                                                 sid.clone(),
-                                                 &field_id,
-                                                 datum.clone());
-                                    }
-                                },
-                                None => loopp = false,
-                            }
-                        }
-                    }
-                }
+                println!("levelinfo::{}::{}", sid.clone(), field_id);
+                level_info.read_columnfile(tsf.tf_id(), field_id, time_range);
             }
         } else {
             println!("ts_family with sid {} not found.", sid);
@@ -437,7 +390,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 20);
+        let points = models_helper::create_random_points(&mut fbb, 25);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };

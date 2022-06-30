@@ -13,19 +13,22 @@ use std::{
 use crossbeam::channel::internal::SelectHandle;
 use datafusion::logical_expr::BuiltinScalarFunction::Random;
 use lazy_static::lazy_static;
-use models::ValueType;
+use models::{FieldID, ValueType};
 use parking_lot::Mutex;
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 
 use crate::{
     compaction::FlushReq,
+    direct_io::FileCursor,
+    file_manager::FileManager,
     kv_option::{TseriesFamOpt, MAX_IMMEMCACHE_NUM, MAX_MEMCACHE_SIZE},
     memcache::{DataType, MemCache},
     summary::CompactMeta,
+    tsm::{BlockReader, TsmBlockReader, TsmIndexReader},
 };
 
 lazy_static! {
-    pub static ref flush_req: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
+    pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
 }
 
 #[derive(Default)]
@@ -60,6 +63,16 @@ impl ColumnFile {
     }
     pub fn range(&self) -> &TimeRange {
         &self.range
+    }
+
+    pub fn file_reader(&self, tf_id: u32) -> (FileCursor, u64) {
+        let fs = FileManager::new();
+        let ts_cf = TseriesFamOpt::default();
+        let p = format!("/_{:06}.tsm", self.file_id());
+        let fs =
+            fs.open_file(ts_cf.tsm_dir.clone() + tf_id.to_string().as_str() + p.as_str()).unwrap();
+        let len = fs.len();
+        (fs.into_cursor(), len)
     }
 }
 
@@ -107,6 +120,23 @@ impl LevelInfo {
         }
         if self.ts_range.min_ts > delta.ts_max {
             self.ts_range.min_ts = delta.ts_min;
+        }
+    }
+    pub fn read_columnfile(&self, tf_id: u32, field_id: FieldID, time_range: &TimeRange) {
+        for file in self.files.iter() {
+            let (mut fs_cursor, len) = file.file_reader(tf_id);
+            let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
+            let mut blocks = Vec::new();
+            for res in &mut index.unwrap() {
+                let entry = res.unwrap();
+                let key = entry.field_id();
+                if key == field_id {
+                    blocks.push(entry.block);
+                }
+            }
+
+            let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
+            block_reader.read_blocks(&blocks, time_range);
         }
     }
 
@@ -216,6 +246,42 @@ impl TseriesFamily {
         self.mut_cache = cache;
     }
 
+    pub async fn switch_to_immutable(&mut self) {
+        self.super_version.mut_cache.write().await.switch_to_immutable();
+
+        self.immut_cache.push(self.mut_cache.clone());
+        self.mut_cache =
+            Arc::from(RwLock::new(MemCache::new(self.tf_id, MAX_MEMCACHE_SIZE, self.seq_no)));
+        self.super_version_id.fetch_add(1, Ordering::SeqCst);
+        let vers = SuperVersion::new(self.tf_id,
+                                     self.mut_cache.clone(),
+                                     self.immut_cache.clone(),
+                                     self.version.clone(),
+                                     self.opts.clone(),
+                                     self.super_version_id.load(Ordering::SeqCst));
+        self.super_version = Arc::new(vers);
+    }
+
+    fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+        println!("immut_cache num full,ready to send flush request");
+        let mut req_mem = vec![];
+        for i in self.immut_cache.iter() {
+            req_mem.push((self.tf_id, i.clone()));
+        }
+        self.immut_cache = vec![];
+        self.super_version_id.fetch_add(1, Ordering::SeqCst);
+        let vers = SuperVersion::new(self.tf_id,
+                                     self.mut_cache.clone(),
+                                     self.immut_cache.clone(),
+                                     self.version.clone(),
+                                     self.opts.clone(),
+                                     self.super_version_id.load(Ordering::SeqCst));
+        self.super_version = Arc::new(vers);
+        FLUSH_REQ.lock().push(FlushReq { mems: req_mem, wait_req: 0 });
+        println!("flush_req len {},send", FLUSH_REQ.lock().len());
+        sender.send(FLUSH_REQ.clone()).expect("error send flush req to kvcore");
+    }
+
     // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
     // version_set when we insert each point
     pub async fn put_mutcache(&mut self,
@@ -231,38 +297,10 @@ impl TseriesFamily {
         }
         if self.super_version.mut_cache.read().await.is_full() {
             println!("mut_cache full,switch to immutable");
-            self.super_version.mut_cache.write().await.switch_to_immutable();
-
-            self.immut_cache.push(self.mut_cache.clone());
-            self.mut_cache =
-                Arc::from(RwLock::new(MemCache::new(self.tf_id, MAX_MEMCACHE_SIZE, self.seq_no)));
-            self.super_version_id.fetch_add(1, Ordering::SeqCst);
-            let vers = SuperVersion::new(self.tf_id,
-                                         self.mut_cache.clone(),
-                                         self.immut_cache.clone(),
-                                         self.version.clone(),
-                                         self.opts.clone(),
-                                         self.super_version_id.load(Ordering::SeqCst));
-            self.super_version = Arc::new(vers);
+            self.switch_to_immutable().await;
 
             if self.immut_cache.len() >= MAX_IMMEMCACHE_NUM {
-                println!("immut_cache num full,ready to send flush request");
-                let mut req_mem = vec![];
-                for i in self.immut_cache.iter() {
-                    req_mem.push((self.tf_id, i.clone()));
-                }
-                self.immut_cache = vec![];
-                self.super_version_id.fetch_add(1, Ordering::SeqCst);
-                let vers = SuperVersion::new(self.tf_id,
-                                             self.mut_cache.clone(),
-                                             self.immut_cache.clone(),
-                                             self.version.clone(),
-                                             self.opts.clone(),
-                                             self.super_version_id.load(Ordering::SeqCst));
-                self.super_version = Arc::new(vers);
-                flush_req.lock().push(FlushReq { mems: req_mem, wait_req: 0 });
-                println!("flush_req len {},send", flush_req.lock().len());
-                sender.send(flush_req.clone()).expect("error send flush req to kvcore");
+                self.wrap_flush_req(sender);
             }
         }
     }
