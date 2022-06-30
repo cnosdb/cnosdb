@@ -29,5 +29,5 @@ func TestGenCode(t *testing.T) {
 			Results: []suite.Result{},
 		},
 	}
-	s.ResCode(server)
+	s.ResCode("", server)
 }

@@ -7,8 +7,10 @@ import (
 	"github.com/cnosdb/cnosdb/tests"
 	"github.com/cnosdb/cnosdb/vend/db/tsdb"
 	"go.uber.org/zap/zapcore"
+	"math/rand"
 	"os"
 	"testing"
+	"time"
 )
 
 var server tests.Server
@@ -16,7 +18,14 @@ var server tests.Server
 func TestMain(m *testing.M) {
 	flag.BoolVar(&tests.VerboseServerLogs, "vv", false, "Turn on very verbose server logging.")
 	flag.BoolVar(&tests.CleanupData, "clean", true, "Clean up test data on disk.")
+	flag.Int64Var(&tests.Seed, "seed", 0, "Set specific seed controlling randomness.")
 	flag.Parse()
+
+	// Set random seed if not explicitly set.
+	if tests.Seed == 0 {
+		tests.Seed = time.Now().UnixNano()
+	}
+	rand.Seed(tests.Seed)
 
 	var r int
 	for _, tests.IndexType = range tsdb.RegisteredIndexes() {
@@ -27,8 +36,10 @@ func TestMain(m *testing.M) {
 		c.Subscriber.Enabled = false
 		c.ContinuousQuery.Enabled = true
 		c.Data.MaxValuesPerTag = 1000000 // 1M
+		c.Data.MaxSeriesPerDatabase = 10000000
 		c.Log = logger.NewDefaultLogConfig()
 		c.Log.Level = zapcore.ErrorLevel
+		c.HTTPD.MaxBodySize = 0
 		if err := logger.InitZapLogger(c.Log); err != nil {
 			fmt.Printf("parse log config: %s\n", err)
 		}

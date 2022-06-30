@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 )
@@ -25,7 +24,7 @@ type MetaExecutor struct {
 	pool           *clientPool
 	maxConnections int
 	Logger         *log.Logger
-	Node           *cnosdb.Node
+	Node           *meta.Node
 
 	nodeExecutor interface {
 		executeOnNode(stmt cnosql.Statement, database string, node *meta.NodeInfo) error

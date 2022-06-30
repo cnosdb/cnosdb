@@ -1,4 +1,4 @@
-package cnosdb
+package meta
 
 import (
 	"encoding/json"

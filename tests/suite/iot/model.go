@@ -3,6 +3,7 @@ package iot
 import (
 	"bytes"
 	"fmt"
+	"github.com/cnosdb/cnosdb/tests/suite"
 	"github.com/cnosdb/cnosdb/vend/db/models"
 	"strconv"
 	"time"
@@ -165,8 +166,11 @@ func (t *truck) Points() []models.Point {
 		t.Measurements.Diagnostics.FuelState.Key:       t.Measurements.Diagnostics.FuelState.Value,
 		t.Measurements.Diagnostics.Status.Key:          t.Measurements.Diagnostics.Status.Value,
 	}
-	points[0], _ = models.NewPoint(t.Measurements.Readings.Name, tags, rFields, t.Timestamp)
-	points[1], _ = models.NewPoint(t.Measurements.Diagnostics.Name, tags, dFields, t.Timestamp)
+	var err error
+	points[0], err = models.NewPoint(t.Measurements.Readings.Name, tags, rFields, t.Timestamp)
+	suite.PanicErr(err)
+	points[1], err = models.NewPoint(t.Measurements.Diagnostics.Name, tags, dFields, t.Timestamp)
+	suite.PanicErr(err)
 	return points
 }
 

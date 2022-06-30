@@ -3,6 +3,7 @@ package meta
 import (
 	"errors"
 	"fmt"
+	errors2 "github.com/cnosdb/cnosdb/pkg/errors"
 	"net"
 	"net/url"
 	"sort"
@@ -11,7 +12,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/cnosdb/cnosdb"
 	internal "github.com/cnosdb/cnosdb/meta/internal"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/models"
@@ -387,7 +387,7 @@ func (data *Data) DropDatabase(name string) error {
 func (data *Data) RetentionPolicy(database, name string) (*RetentionPolicyInfo, error) {
 	di := data.Database(database)
 	if di == nil {
-		return nil, cnosdb.ErrDatabaseNotFound(database)
+		return nil, errors2.ErrDatabaseNotFound(database)
 	}
 
 	for i := range di.RetentionPolicies {
@@ -424,7 +424,7 @@ func (data *Data) CreateRetentionPolicy(database string, rpi *RetentionPolicyInf
 	// Find database.
 	di := data.Database(database)
 	if di == nil {
-		return cnosdb.ErrDatabaseNotFound(database)
+		return errors2.ErrDatabaseNotFound(database)
 	} else if rp := di.RetentionPolicy(rpi.Name); rp != nil {
 		// Retention policy with that name already exists. Make sure they're the same.
 		if rp.ReplicaN != rpi.ReplicaN || rp.Duration != rpi.Duration || rp.ShardGroupDuration != rpi.ShardGroupDuration {
@@ -497,13 +497,13 @@ func (data *Data) UpdateRetentionPolicy(database, name string, rpu *RetentionPol
 	// Find database.
 	di := data.Database(database)
 	if di == nil {
-		return cnosdb.ErrDatabaseNotFound(database)
+		return errors2.ErrDatabaseNotFound(database)
 	}
 
 	// Find retention policy.
 	rpi := di.RetentionPolicy(name)
 	if rpi == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(name)
+		return errors2.ErrRetentionPolicyNotFound(name)
 	}
 
 	// Ensure new retention policy doesn't match an existing retention policy.
@@ -551,9 +551,9 @@ func (data *Data) SetDefaultRetentionPolicy(database, name string) error {
 	// Find database and verify retention policy exists.
 	di := data.Database(database)
 	if di == nil {
-		return cnosdb.ErrDatabaseNotFound(database)
+		return errors2.ErrDatabaseNotFound(database)
 	} else if di.RetentionPolicy(name) == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(name)
+		return errors2.ErrRetentionPolicyNotFound(name)
 	}
 
 	// Set default retention policy.
@@ -683,7 +683,7 @@ func (data *Data) ShardGroups(database, rp string) ([]ShardGroupInfo, error) {
 	if err != nil {
 		return nil, err
 	} else if rpi == nil {
-		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
+		return nil, errors2.ErrRetentionPolicyNotFound(rp)
 	}
 	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
 	for _, g := range rpi.ShardGroups {
@@ -703,7 +703,7 @@ func (data *Data) ShardGroupsByTimeRange(database, rp string, tmin, tmax time.Ti
 	if err != nil {
 		return nil, err
 	} else if rpi == nil {
-		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
+		return nil, errors2.ErrRetentionPolicyNotFound(rp)
 	}
 	groups := make([]ShardGroupInfo, 0, len(rpi.ShardGroups))
 	for _, g := range rpi.ShardGroups {
@@ -722,7 +722,7 @@ func (data *Data) ShardGroupByTimestamp(database, rp string, timestamp time.Time
 	if err != nil {
 		return nil, err
 	} else if rpi == nil {
-		return nil, cnosdb.ErrRetentionPolicyNotFound(rp)
+		return nil, errors2.ErrRetentionPolicyNotFound(rp)
 	}
 
 	return rpi.ShardGroupByTimestamp(timestamp), nil
@@ -735,7 +735,7 @@ func (data *Data) CreateShardGroupDeprecated(database, rp string, timestamp time
 	if err != nil {
 		return err
 	} else if rpi == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(rp)
+		return errors2.ErrRetentionPolicyNotFound(rp)
 	}
 
 	// Verify that shard group doesn't already exist for this timestamp.
@@ -782,7 +782,7 @@ func (data *Data) CreateShardGroup(database, rp string, timestamp time.Time) err
 	if err != nil {
 		return err
 	} else if rpi == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(rp)
+		return errors2.ErrRetentionPolicyNotFound(rp)
 	}
 
 	// Verify that shard group doesn't already exist for this timestamp.
@@ -863,7 +863,7 @@ func (data *Data) DeleteShardGroup(database, rp string, id uint64) error {
 	if err != nil {
 		return err
 	} else if rpi == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(rp)
+		return errors2.ErrRetentionPolicyNotFound(rp)
 	}
 
 	// Find shard group by ID and set its deletion timestamp.
@@ -881,7 +881,7 @@ func (data *Data) DeleteShardGroup(database, rp string, id uint64) error {
 func (data *Data) CreateContinuousQuery(database, name, query string) error {
 	di := data.Database(database)
 	if di == nil {
-		return cnosdb.ErrDatabaseNotFound(database)
+		return errors2.ErrDatabaseNotFound(database)
 	}
 
 	// Ensure the name doesn't already exist.
@@ -953,7 +953,7 @@ func (data *Data) CreateSubscription(database, rp, name, mode string, destinatio
 	if err != nil {
 		return err
 	} else if rpi == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(rp)
+		return errors2.ErrRetentionPolicyNotFound(rp)
 	}
 
 	// Ensure the name doesn't already exist.
@@ -979,7 +979,7 @@ func (data *Data) DropSubscription(database, rp, name string) error {
 	if err != nil {
 		return err
 	} else if rpi == nil {
-		return cnosdb.ErrRetentionPolicyNotFound(rp)
+		return errors2.ErrRetentionPolicyNotFound(rp)
 	}
 
 	for i := range rpi.Subscriptions {
@@ -1071,7 +1071,7 @@ func (data *Data) SetPrivilege(name, database string, p cnosql.Privilege) error 
 	}
 
 	if data.Database(database) == nil {
-		return cnosdb.ErrDatabaseNotFound(database)
+		return errors2.ErrDatabaseNotFound(database)
 	}
 
 	if ui.Privileges == nil {

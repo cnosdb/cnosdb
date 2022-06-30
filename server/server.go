@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cnosdb/cnosdb"
 	"github.com/cnosdb/cnosdb/meta"
 	"github.com/cnosdb/cnosdb/monitor"
 	"github.com/cnosdb/cnosdb/pkg/logger"
@@ -65,7 +64,7 @@ type Server struct {
 	httpHandler http.Handler
 	httpServer  *http.Server
 
-	Node       *cnosdb.Node
+	Node       *meta.Node
 	metaServer *meta.Server
 	meta.MetaClient
 
@@ -80,6 +79,7 @@ type Server struct {
 	coordinatorService *coordinator.Service
 	snapshotterService *snapshotter.Service
 
+	//this field is nil.We don't append services to it.
 	services []interface {
 		WithLogger(log *zap.Logger)
 		Open() error
@@ -157,6 +157,12 @@ func (s *Server) Open() error {
 }
 
 func (s *Server) Close() {
+
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
+
+	//services is no use,It's nil.
 	for _, service := range s.services {
 		_ = service.Close()
 	}
@@ -185,6 +191,26 @@ func (s *Server) Close() {
 		_ = s.continuousQuerierService.Close()
 	}
 
+	if s.hintedHandoff != nil {
+		_ = s.hintedHandoff.Close()
+	}
+
+	if s.monitor != nil {
+		_ = s.monitor.Close()
+	}
+
+	//if s.snapshotterService != nil {
+	//	_ = s.snapshotterService.Close()
+	//}
+
+	//_ = s.tcpListener.Close()
+	//s.tcpMux.Close()
+	//
+	//_ = s.httpListener.Close()
+	//s.httpMux.Close()
+	//
+	//_ = s.httpServer.Close()
+
 	close(s.closing)
 }
 
@@ -196,11 +222,11 @@ func (s *Server) initMetaStore() error {
 		return fmt.Errorf("mkdir all: %s", err)
 	}
 
-	if node, err := cnosdb.LoadNode(s.Config.Meta.Dir, ""); err != nil {
+	if node, err := meta.LoadNode(s.Config.Meta.Dir, ""); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		s.Node = cnosdb.NewNode(s.Config.Meta.Dir)
+		s.Node = meta.NewNode(s.Config.Meta.Dir)
 	} else {
 		s.Node = node
 	}
@@ -293,6 +319,7 @@ func (s *Server) initTSDBStore() error {
 	}
 
 	for _, service := range s.services {
+
 		if err := service.Open(); err != nil {
 			return fmt.Errorf("open service: %s", err)
 		}
@@ -418,7 +445,7 @@ func (s *Server) startHTTPServer() {
 	}, nil)
 
 	if err := s.httpMux.Serve(); err != nil {
-		s.Logger.Info("start http/tcp server stop", zap.Error(err))
+		s.Logger.Info("start to stop http/tcp server", zap.Error(err))
 	}
 }
 
