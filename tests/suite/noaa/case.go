@@ -4177,4 +4177,378 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//HOLT_WINTERS()
+	{
+		Name:  "pred_hw_clauses_first",
+		Query: fmt.Sprintf(`SELECT HOLT_WINTERS_WITH_FIT(FIRST("water_level"),10,4) FROM "%s"."%s"."h2o_feet" WHERE "location"='santa_monica' AND time >= '2015-08-22 22:12:00' AND time <= '2015-08-28 03:00:00' GROUP BY time(379m,348m)`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "pred_hw_first",
+		Query: fmt.Sprintf(`SELECT FIRST("water_level") FROM "%s"."%s"."h2o_feet" WHERE "location"='santa_monica' and time >= '2015-08-22 22:12:00' and time <= '2015-08-28 03:00:00' GROUP BY time(379m,348m)`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "pred_hw_select_location_time",
+		Query: fmt.Sprintf(`SELECT "water_level" FROM "%s"."%s"."h2o_feet" WHERE "location"='santa_monica' AND time >= '2015-08-22 22:12:00' AND time <= '2015-08-28 03:00:00' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//other
+	{
+		Name:  "other_mean_median",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level"),MEDIAN("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean", "median"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.441931402107023, 4.124},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_mode_mode",
+		Query: fmt.Sprintf(`SELECT MODE("water_level"),MODE("level description") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mode", "mode_1"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 2.69, "between 3 and 6 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_min",
+		Query: fmt.Sprintf(`SELECT MIN("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "min"},
+							Values: []suite.Row{
+								{"2019-08-28T14:30:00Z", -0.61},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_max",
+		Query: fmt.Sprintf(`SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_mean_as",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") AS "dream_name" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "dream_name"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.441931402107023},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_mean",
+		Query: fmt.Sprintf(`SELECT MEAN("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "mean"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.441931402107023},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_median_as_mode_as",
+		Query: fmt.Sprintf(`SELECT MEDIAN("water_level") AS "med_wat",MODE("water_level") AS "mode_wat" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "med_wat", "mode_wat"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.124, 2.69},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_median_mode",
+		Query: fmt.Sprintf(`SELECT MEDIAN("water_level"),MODE("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "median", "mode"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 4.124, 2.69},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_sum",
+		Query: fmt.Sprintf(`SELECT SUM("water_level") FROM "%s"."%s"."h2o_feet"`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "sum"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 67774.98933334895},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_sum_time",
+		Query: fmt.Sprintf(`SELECT SUM("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "sum"},
+							Values: []suite.Row{
+								{"2015-08-18T00:00:00Z", 67774.98933334895},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_sum_time_12m",
+		Query: fmt.Sprintf(`SELECT SUM("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:18:00Z' GROUP BY time(12m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_sum_location",
+		Query: fmt.Sprintf(`SELECT SUM("water_level"),"location" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_max_time",
+		Query: fmt.Sprintf(`SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_first_all",
+		Query: fmt.Sprintf(`SELECT FIRST(*) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "first_level description", "first_water_level"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", "between 6 and 9 feet", 8.12},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_max_all",
+		Query: fmt.Sprintf(`SELECT MAX(*) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max_water_level"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_max_min",
+		Query: fmt.Sprintf(`SELECT MAX("water_level"),MIN("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max", "min"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", 9.964, -0.61},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_max_min_time",
+		Query: fmt.Sprintf(`SELECT MAX("water_level"),MIN("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max", "min"},
+							Values: []suite.Row{
+								{"2015-08-18T00:00:00Z", 9.964, -0.61},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "other_max_time_12m",
+		Query: fmt.Sprintf(`SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:18:00Z' GROUP BY time(12m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
 }
