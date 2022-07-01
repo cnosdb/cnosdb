@@ -3097,6 +3097,7 @@ func (e *Engine) DumpShard2ProtocolLine(w io.Writer, start, end int64) error {
 	if err := e.walkWALFiles(&walFiles); err != nil {
 		return err
 	}
+	e.logger.Info("DumpShard2ProtocolLine", zap.Any("tsmFiles", tsmFiles), zap.Any("walFiles", walFiles))
 	return e.write(w, start, end, tsmFiles, walFiles)
 }
 
@@ -3136,10 +3137,8 @@ func (e *Engine) walkWALFiles(walFiles *[]string) error {
 func (e *Engine) write(w io.Writer, start, end int64, tsmFiles, walFiles []string) error {
 	s, en := time.Unix(0, start).Format(time.RFC3339), time.Unix(0, end).Format(time.RFC3339)
 	fmt.Fprintf(w, "# CNOSDB EXPORT: %s - %s\n", s, en)
-	e.logger.Info("path", zap.Any("tsmFiles", tsmFiles), zap.Any("walFiles", walFiles))
 	fmt.Fprintln(w, "# DML")
-	files := tsmFiles
-	if err := e.writeTsmFiles(w, start, end, files); err != nil {
+	if err := e.writeTsmFiles(w, start, end, tsmFiles); err != nil {
 		return err
 	}
 
@@ -3184,6 +3183,7 @@ func (e *Engine) exportTSMFile(tsmFilePath string, w io.Writer, start, end int64
 	if sgStart, sgEnd := r.TimeRange(); sgStart > end || sgEnd < start {
 		return nil
 	}
+	records := make(map[string][][]interface{})
 	for i := 0; i < r.KeyCount(); i++ {
 		key, _ := r.KeyAt(i)
 		values, err := r.ReadAll(key)
@@ -3192,9 +3192,21 @@ func (e *Engine) exportTSMFile(tsmFilePath string, w io.Writer, start, end int64
 		}
 		measurement, field := SeriesAndFieldFromCompositeKey(key)
 		field = escape.Bytes(field)
+		for _, value := range values {
+			ts := value.UnixNano()
+			if (ts < start) || (ts > end) {
+				continue
+			}
+			recordKey := string(measurement) + "_" + strconv.Itoa(int(ts))
+			if _, ok := records[recordKey]; !ok {
+				records[recordKey] = make([][]interface{}, 0)
+			}
+			records[recordKey] = append(records[recordKey], []interface{}{key, value})
+		}
 
-		if err := e.writeValues(w, start, end, measurement, string(field), values); err != nil {
-			// An error from writeValues indicates an IO error, which should be returned.
+	}
+	for _, record := range records {
+		if err := e.writeRecords(w, record); err != nil {
 			return err
 		}
 	}
@@ -3241,37 +3253,47 @@ func (e *Engine) exportWALFile(walFilePath string, w io.Writer, start, end int64
 		case *DeleteWALEntry, *DeleteRangeWALEntry:
 			continue
 		case *WriteWALEntry:
+			records := make(map[string][][]interface{})
 			for key, values := range t.Values {
-				measurement, field := SeriesAndFieldFromCompositeKey([]byte(key))
+				measurement, _ := SeriesAndFieldFromCompositeKey([]byte(key))
 				// measurements are stored escaped, field names are not
-				field = escape.Bytes(field)
+				//field = escape.Bytes(field)
 
-				if err := e.writeValues(w, start, end, measurement, string(field), values); err != nil {
-					// An error from writeValues indicates an IO error, which should be returned.
+				for _, value := range values {
+					ts := value.UnixNano()
+					if (ts < start) || (ts > end) {
+						continue
+					}
+					recordKey := string(measurement) + "_" + strconv.Itoa(int(ts))
+					if _, ok := records[recordKey]; !ok {
+						records[recordKey] = make([][]interface{}, 0)
+					}
+					records[recordKey] = append(records[recordKey], []interface{}{[]byte(key), value})
+				}
+			}
+			for _, record := range records {
+				if err := e.writeRecords(w, record); err != nil {
 					return err
 				}
 			}
+
 		}
 	}
 	return nil
 }
 
-// writeValues writes every value in values to w, using the given series key and field name.
+// writeRecords writes every record in records to w.
 // If any call to w.Write fails, that error is returned.
-func (e *Engine) writeValues(w io.Writer, start, end int64, seriesKey []byte, field string, values []Value) error {
-	buf := []byte(string(seriesKey) + " " + field + "=")
-	prefixLen := len(buf)
+func (e *Engine) writeRecords(w io.Writer, records [][]interface{}) error {
 
-	for _, value := range values {
-		ts := value.UnixNano()
-		if (ts < start) || (ts > end) {
-			continue
-		}
+	seriesKey, _ := SeriesAndFieldFromCompositeKey(records[0][0].([]byte))
+	buf := []byte(string(seriesKey) + " ")
 
-		// Re-slice buf to be "<series_key> <field>=".
-		buf = buf[:prefixLen]
-
-		// Append the correct representation of the value.
+	for i, record := range records {
+		_, field := SeriesAndFieldFromCompositeKey(record[0].([]byte))
+		value := record[1].(Value)
+		buf = append(buf, field...)
+		buf = append(buf, '=')
 		switch v := value.Value().(type) {
 		case float64:
 			buf = strconv.AppendFloat(buf, v, 'g', -1, 64)
@@ -3291,17 +3313,18 @@ func (e *Engine) writeValues(w io.Writer, start, end int64, seriesKey []byte, fi
 			// This shouldn't be possible, but we'll format it anyway.
 			buf = append(buf, fmt.Sprintf("%v", v)...)
 		}
-
-		// Now buf has "<series_key> <field>=<value>".
-		// Append the timestamp and a newline, then write it.
-		buf = append(buf, ' ')
-		buf = strconv.AppendInt(buf, ts, 10)
-		buf = append(buf, '\n')
-		if _, err := w.Write(buf); err != nil {
-			// Underlying IO error needs to be returned.
-			return err
+		if i < len(records)-1 {
+			buf = append(buf, ',')
 		}
 	}
-
+	buf = buf[:len(buf)-1]
+	ts := records[0][1].(Value).UnixNano()
+	buf = append(buf, ' ')
+	buf = strconv.AppendInt(buf, ts, 10)
+	buf = append(buf, '\n')
+	if _, err := w.Write(buf); err != nil {
+		// Underlying IO error needs to be returned.
+		return err
+	}
 	return nil
 }

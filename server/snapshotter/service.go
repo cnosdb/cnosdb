@@ -3,7 +3,6 @@ package snapshotter
 
 import (
 	"archive/tar"
-	"bufio"
 	"bytes"
 	"encoding"
 	"encoding/binary"
@@ -12,7 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
