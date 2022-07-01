@@ -29,7 +29,7 @@ pub enum RecordFileError {
         source: std::io::Error,
     },
 
-    EOF,
+    Eof,
 
     InvalidPos,
 }

@@ -411,12 +411,12 @@ mod test {
         }
         // remove repeat sid and fields_id
         const MAX_APPEAR_TIMES: usize = 1;
-        pub fn remove_duplicates(nums: &mut Vec<u64>) -> usize {
+        pub fn remove_duplicates(nums: &mut [u64]) -> usize {
             if nums.len() <= MAX_APPEAR_TIMES {
                 return nums.len() as usize;
             }
             let mut l = MAX_APPEAR_TIMES;
-            for r in l..nums.len() {
+            for r in MAX_APPEAR_TIMES..nums.len() {
                 if nums[r] != nums[l - MAX_APPEAR_TIMES] {
                     nums[l] = nums[r];
                     l += 1;

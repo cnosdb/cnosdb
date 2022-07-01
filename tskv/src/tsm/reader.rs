@@ -96,7 +96,7 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
                 coders::float::decode(&data[idx..], &mut val)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
 
-                Ok(DataBlock::F64Block { index: 0, ts, val })
+                Ok(DataBlock::F64 { index: 0, ts, val })
             },
             ValueType::Integer => {
                 // values will be same length as time-stamps.
@@ -104,7 +104,7 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
                 coders::integer::decode(&data[idx..], &mut val)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
 
-                Ok(DataBlock::I64Block { index: 0, ts, val })
+                Ok(DataBlock::I64 { index: 0, ts, val })
             },
             ValueType::Boolean => {
                 // values will be same length as time-stamps.
@@ -112,21 +112,21 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
                 coders::boolean::decode(&data[idx..], &mut val)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
 
-                Ok(DataBlock::BoolBlock { index: 0, ts, val })
+                Ok(DataBlock::Bool { index: 0, ts, val })
             },
             ValueType::String => {
                 // values will be same length as time-stamps.
                 let mut val = Vec::with_capacity(ts.len());
                 coders::string::decode(&data[idx..], &mut val)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-                Ok(DataBlock::StrBlock { index: 0, ts, val })
+                Ok(DataBlock::Str { index: 0, ts, val })
             },
             ValueType::Unsigned => {
                 // values will be same length as time-stamps.
                 let mut val = Vec::with_capacity(ts.len());
                 coders::unsigned::decode(&data[idx..], &mut val)
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-                Ok(DataBlock::U64Block { index: 0, ts, val })
+                Ok(DataBlock::U64 { index: 0, ts, val })
             },
             _ => {
                 Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
@@ -288,7 +288,7 @@ mod test {
         }
 
         let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
-        let ori = DataBlock::U64Block { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
+        let ori = DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
         for block in blocks {
             let data = block_reader.decode(&block).expect("error decoding block data");
             assert_eq!(ori, data);

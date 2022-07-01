@@ -77,7 +77,7 @@ impl VersionEdit {
     pub fn encode(&self) -> Result<Vec<u8>> {
         bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
     }
-    pub fn decode(buf: &Vec<u8>) -> Result<Self> {
+    pub fn decode(buf: &[u8]) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
     }
     pub fn add_file(&mut self, tsf_id: u32, log_seq: u64, seq_no: u64, meta: CompactMeta) {
@@ -187,7 +187,7 @@ impl Summary {
             let test: CompactMeta = CompactMeta::default();
             // according files map to recover levels_info;
             for (fd, meta) in files {
-                let info = levels.entry(meta.level).or_insert(LevelInfo::init(meta.level));
+                let info = levels.entry(meta.level).or_insert_with(|| LevelInfo::init(meta.level));
                 info.apply(&meta);
             }
             let lvls = levels.into_values().collect();
@@ -267,11 +267,9 @@ impl SummaryScheduler {
 
 #[test]
 fn test_version_edit() {
-    let mut compact = CompactMeta::default();
-    compact.file_id = 100;
+    let compact = CompactMeta { file_id: 100, ..Default::default() };
     let add_list = vec![compact];
-    let mut compact2 = CompactMeta::default();
-    compact2.file_id = 101;
+    let compact2 = CompactMeta { file_id: 101, ..Default::default() };
     let del_list = vec![compact2];
     let ve = VersionEdit::new();
     let buf = ve.encode().unwrap();

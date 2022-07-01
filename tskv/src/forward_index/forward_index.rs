@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use models::{FieldID, FieldInfo, SeriesID, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
@@ -66,11 +70,11 @@ impl From<u8> for ForwardIndexAction {
 }
 
 impl ForwardIndex {
-    pub fn new(path: &PathBuf) -> ForwardIndex {
+    pub fn new(path: &Path) -> ForwardIndex {
         ForwardIndex { series_info_set: HashMap::new(),
                        record_writer: record_file::Writer::new(path),
                        record_reader: record_file::Reader::new(path),
-                       file_path: path.clone() }
+                       file_path: path.to_path_buf() }
     }
 
     pub async fn add_series_info_if_not_exists(&mut self,
@@ -160,7 +164,7 @@ impl ForwardIndex {
                 self.record_writer
                     .write_record(VERSION,
                                   ForwardIndexAction::DelSeriesInfo.u8_number(),
-                                  &series_id.to_le_bytes().to_vec())
+                                  series_id.to_le_bytes().as_ref())
                     .await
                     .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
                 entry.remove();

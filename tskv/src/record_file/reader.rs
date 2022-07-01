@@ -1,7 +1,15 @@
-use std::{borrow::Borrow, fs, hash::Hasher, io::Read, path::PathBuf};
+use std::{
+    borrow::Borrow,
+    cmp::Ordering,
+    fs,
+    hash::Hasher,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use async_recursion::async_recursion;
 use direct_io::File;
+use futures::future::ok;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 
@@ -17,39 +25,47 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(path: &PathBuf) -> Self {
+    pub fn new(path: &Path) -> Self {
         let file = open_file(path).unwrap();
         let mut buf = Vec::<u8>::new();
         buf.resize(READER_BUF_SIZE, 0);
-        Reader { path: path.clone(), file: Mutex::new(file), buf, pos: 0, buf_len: 0, buf_use: 0 }
+        Reader { path: path.to_path_buf(),
+                 file: Mutex::new(file),
+                 buf,
+                 pos: 0,
+                 buf_len: 0,
+                 buf_use: 0 }
     }
 
     async fn set_pos(&mut self, pos: usize) -> RecordFileResult<()> {
         if pos > self.file.lock().len().to_usize().unwrap() {
             return Err(RecordFileError::InvalidPos);
         }
-
-        return if self.pos > pos {
-            let size = self.pos - pos;
-            self.pos = pos;
-            if self.buf_use > size {
-                self.buf_use -= size;
-                Ok(())
-            } else {
-                self.load_buf().await
-            }
-        } else if self.pos < pos {
-            let size = pos - self.pos;
-            self.pos = pos;
-            if self.buf_len - self.buf_use > size {
-                self.buf_use += size;
-                Ok(())
-            } else {
-                self.load_buf().await
-            }
-        } else {
-            Ok(())
-        };
+        match self.pos.cmp(&pos) {
+            Ordering::Greater => {
+                let size = self.pos - pos;
+                self.pos = pos;
+                match self.buf_use.cmp(&size) {
+                    Ordering::Greater => {
+                        self.buf_use -= size;
+                        Ok(())
+                    },
+                    _ => self.load_buf().await,
+                }
+            },
+            Ordering::Less => {
+                let size = pos - self.pos;
+                self.pos = pos;
+                match (self.buf_len - self.buf_use).cmp(&size) {
+                    Ordering::Greater => {
+                        self.buf_use += size;
+                        Ok(())
+                    },
+                    _ => self.load_buf().await,
+                }
+            },
+            Ordering::Equal => Ok(()),
+        }
     }
 
     async fn find_magic(&mut self) -> RecordFileResult<()> {
@@ -140,7 +156,7 @@ impl Reader {
 
             Ok((origin_pos, data))
         } else {
-            Err(RecordFileError::EOF)
+            Err(RecordFileError::Eof)
         }
     }
 
@@ -207,15 +223,8 @@ async fn test_reader_read_one() {
 async fn test_reader() {
     let mut r = Reader::from("/tmp/test.log_file");
 
-    loop {
-        match r.read_record().await {
-            Ok(record) => {
-                println!("{}, {}, {}, {:?}",
-                         record.pos, record.data_type, record.data_version, record.data);
-            },
-            Err(_) => {
-                break;
-            },
-        }
+    while let Ok(record) = r.read_record().await {
+        println!("{}, {}, {}, {:?}",
+                 record.pos, record.data_type, record.data_version, record.data);
     }
 }

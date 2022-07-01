@@ -323,7 +323,7 @@ impl WalManager {
                                         };
                                         point_tags.push(models::Tag::new(tag_key, tag_value));
                                     }
-                                    models::generate_series_id(&mut point_tags)
+                                    models::generate_series_id(&point_tags)
                                 } else {
                                     // TODO error: no tags
                                     0
@@ -439,7 +439,7 @@ impl<'a> WalReader<'_> {
         let seq = compute::decode_be_u64(self.block_header_buf[1..9].into());
         let crc = compute::decode_be_u32(self.block_header_buf[9..13].into());
         let data_len = compute::decode_be_u32(self.block_header_buf[13..17].try_into().unwrap());
-        if data_len <= 0 {
+        if data_len == 0 {
             return None;
         }
         println!("[DEBUG] [wal] WalReader: data_len={}", data_len);
@@ -569,7 +569,7 @@ mod test {
         )
     }
 
-    fn random_wal_entry_block<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WalEntryBlock {
+    fn random_wal_entry_block(_fbb: &mut flatbuffers::FlatBufferBuilder) -> WalEntryBlock {
         let fbb = _fbb.borrow_mut();
 
         let entry_type = random_wal_entry_type();

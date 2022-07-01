@@ -358,8 +358,8 @@ mod tests {
                            lru.insert(7),
                            lru.insert(8),];
 
-        for i in 0..9 {
-            lru.reinsert_front(handles[i]);
+        for (i, handle) in handles.into_iter().enumerate() {
+            lru.reinsert_front(handle);
             assert_eq!(lru._testing_head_ref().copied(), Some(i));
         }
     }

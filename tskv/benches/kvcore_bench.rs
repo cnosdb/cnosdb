@@ -59,7 +59,7 @@ fn run(c: &mut Criterion) {
     c.bench_function("write", |b| b.iter(|| test_write(tskv.clone(), request.clone())));
     // maybe 200 us
     c.bench_function("insert_cache", |b| {
-         b.iter(|| test_insert_cache(tskv.clone(), points_str.clone()))
+         b.iter(|| test_insert_cache(tskv.clone(), &(*points_str)))
      });
 }
 
