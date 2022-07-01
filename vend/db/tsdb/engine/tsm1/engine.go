@@ -3197,7 +3197,7 @@ func (e *Engine) exportTSMFile(tsmFilePath string, w io.Writer, start, end int64
 			if (ts < start) || (ts > end) {
 				continue
 			}
-			recordKey := string(measurement) + "_" + strconv.Itoa(int(ts))
+			recordKey := strconv.Itoa(int(ts)) + "_" + string(measurement)
 			if _, ok := records[recordKey]; !ok {
 				records[recordKey] = make([][]interface{}, 0)
 			}
@@ -3205,8 +3205,13 @@ func (e *Engine) exportTSMFile(tsmFilePath string, w io.Writer, start, end int64
 		}
 
 	}
-	for _, record := range records {
-		if err := e.writeRecords(w, record); err != nil {
+	keySet := make([]string, 0, len(records))
+	for key, _ := range records {
+		keySet = append(keySet, key)
+	}
+	sort.Strings(keySet)
+	for _, key := range keySet {
+		if err := e.writeRecords(w, records[key]); err != nil {
 			return err
 		}
 	}
@@ -3264,15 +3269,20 @@ func (e *Engine) exportWALFile(walFilePath string, w io.Writer, start, end int64
 					if (ts < start) || (ts > end) {
 						continue
 					}
-					recordKey := string(measurement) + "_" + strconv.Itoa(int(ts))
+					recordKey := strconv.Itoa(int(ts)) + "_" + string(measurement)
 					if _, ok := records[recordKey]; !ok {
 						records[recordKey] = make([][]interface{}, 0)
 					}
 					records[recordKey] = append(records[recordKey], []interface{}{[]byte(key), value})
 				}
 			}
-			for _, record := range records {
-				if err := e.writeRecords(w, record); err != nil {
+			keySet := make([]string, 0, len(records))
+			for key, _ := range records {
+				keySet = append(keySet, key)
+			}
+			sort.Strings(keySet)
+			for _, key := range keySet {
+				if err := e.writeRecords(w, records[key]); err != nil {
 					return err
 				}
 			}
@@ -3317,7 +3327,6 @@ func (e *Engine) writeRecords(w io.Writer, records [][]interface{}) error {
 			buf = append(buf, ',')
 		}
 	}
-	buf = buf[:len(buf)-1]
 	ts := records[0][1].(Value).UnixNano()
 	buf = append(buf, ' ')
 	buf = strconv.AppendInt(buf, ts, 10)
