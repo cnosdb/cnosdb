@@ -7,6 +7,7 @@ use super::{coders, MAX_BLOCK_VALUES};
 use crate::{
     direct_io::FileCursor,
     error::{Error, Result},
+    tseries_family::TimeRange,
     tsm::{BlockReader, DataBlock, IndexEntry},
 };
 
@@ -43,6 +44,26 @@ pub struct TsmBlockReader<'a> {
 impl<'a> TsmBlockReader<'a> {
     pub fn new(reader: &'a mut FileCursor) -> Self {
         Self { reader }
+    }
+
+    pub fn read_blocks(&mut self, blocks: &Vec<FileBlock>, time_range: &TimeRange) {
+        for block in blocks {
+            let mut data = self.decode(&block).expect("error decoding block data");
+            let mut loopp = true;
+            while loopp {
+                let datum = data.next();
+                match datum {
+                    Some(datum) => {
+                        if datum.timestamp() > time_range.min_ts
+                           && datum.timestamp() < time_range.max_ts
+                        {
+                            println!("{:?}", datum.clone());
+                        }
+                    },
+                    None => loopp = false,
+                }
+            }
+        }
     }
 }
 
