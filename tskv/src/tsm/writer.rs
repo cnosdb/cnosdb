@@ -3,12 +3,16 @@ use std::{
     io::{Seek, SeekFrom, Write},
 };
 
-use utils::bkdr_hash::BkdrHasher;
+use datafusion::arrow::csv::writer;
+use models::FieldID;
+use snafu::ResultExt;
+use utils::{BkdrHasher, BloomFilter};
 
-use super::{block, MAX_BLOCK_VALUES};
+use super::{block, IndexEntry, MAX_BLOCK_VALUES};
 use crate::{
-    direct_io::FileCursor,
-    error::{Error, Result},
+    direct_io::{FileCursor, FileSync},
+    error::{self, Error, Result},
+    new_bloom_filter,
     tsm::{DataBlock, FileBlock},
 };
 
@@ -35,90 +39,125 @@ use crate::{
 // │ 4 bytes │ N bytes │ 4 bytes │ N bytes │
 // └─────────┴─────────┴─────────┴─────────┴
 //
-//  ──────────────────────────────────────────────────────────────────────┐
+// ┌──────────────────────────────────────────────────────────────────────┐
 // │                               Index                                  │
-// ┬─────────┬──────┬───────┬─────────┬─────────┬────────┬────────┬───────┤
+// ├─────────┬──────┬───────┬─────────┬─────────┬────────┬────────┬───────┤
 // │ fieldId │ Type │ Count │Min Time │Max Time │ Offset │  Size  │Valoff │
 // │ 8 bytes │1 byte│2 bytes│ 8 bytes │ 8 bytes │8 bytes │8 bytes │8 bytes│
-// ┴─────────┴──────┴───────┴─────────┴─────────┴────────┴────────┴───────┘
+// └─────────┴──────┴───────┴─────────┴─────────┴────────┴────────┴───────┘
 //
-// ┌─────────┐
-// │ Footer  │
-// ├─────────┤
-// │Index Ofs│
-// │ 8 bytes │
-// └─────────┘
+// ┌─────────────────────────┐
+// │ Footer                  │
+// ├───────────────┬─────────┤
+// │ Bloom Filter  │Index Ofs│
+// │ 8 bytes       │ 8 bytes │
+// └───────────────┴─────────┘
 
 const HEADER_LEN: u64 = 5;
 const TSM_MAGIC: u32 = 0x1346613;
 const VERSION: u8 = 1;
 
-pub struct FooterBuilder<'a> {
-    writer: &'a mut FileCursor,
-}
-impl<'a> FooterBuilder<'a> {
-    pub fn new(writer: &'a mut FileCursor) -> Self {
-        Self { writer }
-    }
-    pub fn build(&mut self, offset: u64) -> Result<()> {
-        self.writer
-            .write(offset.to_be_bytes().as_ref())
+pub trait TsmWriter {
+    fn write_header(&mut self) -> Result<usize>;
+    fn write_blocks(&mut self) -> Result<usize>;
+    fn write_index(&mut self) -> Result<usize>;
+    fn write_footer(&mut self) -> Result<usize>;
+    fn commit(&mut self) -> Result<()>;
+
+    fn write(&mut self) -> Result<usize> {
+        let mut size = 0_usize;
+        self.write_header()
+            .and_then(|i| {
+                size += i;
+                self.write_blocks()
+            })
+            .and_then(|i| {
+                size += i;
+                self.write_index()
+            })
+            .and_then(|i| {
+                size += i;
+                self.write_footer()
+            })
+            .and_then(|size| self.commit())
             .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+
+        Ok(size)
+    }
+}
+
+pub struct TsmHeaderWriter {}
+
+impl TsmHeaderWriter {
+    pub fn write_to(writer: &mut FileCursor) -> Result<()> {
+        writer.write(&TSM_MAGIC.to_be_bytes().as_ref())
+              .and_then(|_| writer.write(&VERSION.to_be_bytes()[..]))
+              .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+
         Ok(())
     }
 }
-pub struct TsmIndexBuilder<'a> {
-    writer: &'a mut FileCursor,
-}
 
-impl<'a> TsmIndexBuilder<'a> {
-    pub fn new(writer: &'a mut FileCursor) -> Self {
-        Self { writer }
+pub struct TsmFooterWriter {}
+
+impl TsmFooterWriter {
+    pub fn write_to(writer: &mut FileCursor,
+                    bloom_filter: &BloomFilter,
+                    index_offset: u64)
+                    -> Result<()> {
+        writer.write(&bloom_filter.bytes())
+              .and_then(|_| writer.write(&index_offset.to_be_bytes()[..]))
+              .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+
+        Ok(())
     }
+}
+pub struct TsmIndexWriter {}
 
-    pub fn build(&mut self, indexs: HashMap<u64, Vec<FileBlock>>) -> Result<u64> {
-        let res = self.writer.pos();
+impl TsmIndexWriter {
+    pub fn write_to(writer: &mut FileCursor,
+                    indexs: HashMap<FieldID, Vec<FileBlock>>)
+                    -> Result<BloomFilter> {
+        let mut bloom_filter = new_bloom_filter();
         for (fid, blks) in indexs {
             let mut buf = Vec::new();
             let block = blks.first().unwrap();
             let typ: u8 = block.field_type.into();
             let cnt: u16 = blks.len() as u16;
-            buf.append(&mut fid.to_be_bytes().to_vec());
-            buf.append(&mut typ.to_be_bytes().to_vec());
-            buf.append(&mut cnt.to_be_bytes().to_vec());
+            buf.extend_from_slice(&fid.to_be_bytes()[..]);
+            buf.extend_from_slice(&typ.to_be_bytes()[..]);
+            buf.extend_from_slice(&cnt.to_be_bytes()[..]);
             // build index block
             for blk in blks {
-                buf.append(&mut blk.min_ts.to_be_bytes().to_vec());
-                buf.append(&mut blk.max_ts.to_be_bytes().to_vec());
-                buf.append(&mut blk.offset.to_be_bytes().to_vec());
-                buf.append(&mut blk.size.to_be_bytes().to_vec());
-                buf.append(&mut blk.val_off.to_be_bytes().to_vec());
+                buf.extend_from_slice(&blk.min_ts.to_be_bytes()[..]);
+                buf.extend_from_slice(&blk.max_ts.to_be_bytes()[..]);
+                buf.extend_from_slice(&blk.offset.to_be_bytes()[..]);
+                buf.extend_from_slice(&blk.size.to_be_bytes()[..]);
+                buf.extend_from_slice(&blk.val_off.to_be_bytes()[..]);
+                bloom_filter.insert(&fid.to_be_bytes()[..]);
             }
-            self.writer.write(&buf).map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            writer.write(&buf[..buf.len()])
+                  .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
         }
-        Ok(res)
+        Ok(bloom_filter)
     }
 }
 
-pub struct TsmBlockWriter<'a> {
-    writer: &'a mut FileCursor,
-}
+pub struct TsmBlockWriter {}
 
-impl<'a> TsmBlockWriter<'a> {
-    pub fn new(writer: &'a mut FileCursor) -> Self {
-        Self { writer }
-    }
-    pub(crate) fn build(&mut self,
-                        mut block_set: HashMap<u64, DataBlock>)
-                        -> Result<HashMap<u64, Vec<FileBlock>>> {
+impl TsmBlockWriter {
+    pub(crate) fn write_to(writer: &mut FileCursor,
+                           mut block_set: HashMap<FieldID, DataBlock>)
+                           -> Result<HashMap<FieldID, Vec<FileBlock>>> {
         let mut res = HashMap::new();
         for (fid, block) in block_set.iter_mut() {
-            let index = self.build_one(block)?;
+            let index = Self::write_one_to(writer, block)?;
             res.insert(*fid, index);
         }
         Ok(res)
     }
-    fn build_one(&mut self, block: &mut DataBlock) -> Result<Vec<FileBlock>> {
+
+    fn write_one_to(writer: &mut FileCursor, block: &DataBlock) -> Result<Vec<FileBlock>> {
         let field_type = block.field_type();
         let len = block.len();
         let n = (len - 1) / MAX_BLOCK_VALUES + 1;
@@ -131,33 +170,16 @@ impl<'a> TsmBlockWriter<'a> {
             last_index = end;
             let (min_ts, max_ts) = block.time_range(start, end);
             let (ts_buf, data_buf) = block.encode(start, end)?;
-            if self.writer.pos() <= HEADER_LEN {
-                let mut buf = Vec::with_capacity(HEADER_LEN as usize);
-                buf.append(&mut TSM_MAGIC.to_be_bytes().to_vec());
-                buf.append(&mut VERSION.to_be_bytes().to_vec());
-                self.writer
-                    .seek(SeekFrom::Start(0))
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                self.writer
-                    .write(&buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-            }
             // fill data if err occur reset the pos
-            let offset = self.writer.pos();
-            self.writer
-                .write(crc32fast::hash(&ts_buf).to_be_bytes().as_ref())
-                .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-            self.writer
-                .write(&ts_buf)
-                .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            let offset = writer.pos();
+            writer.write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
+                  .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            writer.write(&ts_buf).map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
 
-            let val_off = self.writer.pos();
-            self.writer
-                .write(crc32fast::hash(&data_buf).to_be_bytes().as_ref())
-                .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-            self.writer
-                .write(&data_buf)
-                .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            let val_off = writer.pos();
+            writer.write(&crc32fast::hash(&data_buf).to_be_bytes()[..])
+                  .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            writer.write(&data_buf).map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             let size = ts_buf.len() + data_buf.len() + 8;
             res.push(FileBlock { min_ts,
                                  max_ts,
@@ -176,11 +198,16 @@ impl<'a> TsmBlockWriter<'a> {
 mod test {
     use std::collections::HashMap;
 
+    use models::FieldID;
+
     use crate::{
         direct_io::FileSync,
         file_manager::{self, FileManager},
         memcache::StrCell,
-        tsm::{coders, DataBlock, FooterBuilder, TsmBlockWriter, TsmIndexBuilder},
+        tsm::{
+            coders, DataBlock, FileBlock, TsmBlockWriter, TsmFooterWriter, TsmHeaderWriter,
+            TsmIndexWriter,
+        },
     };
     #[test]
     fn test_str_encode() {
@@ -198,15 +225,21 @@ mod test {
         let fs = FileManager::new();
         let file = fs.create_file("./writer_test.tsm").unwrap();
         let mut fs_cursor = file.into_cursor();
-        let mut rd = TsmBlockWriter::new(&mut fs_cursor);
-        let mut data = DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
-        let res = rd.build_one(&mut data);
-        let mut id = TsmIndexBuilder::new(&mut fs_cursor);
-        let mut p = HashMap::new();
-        p.insert(1, res.unwrap());
-        let pos = id.build(p);
-        let mut foot = FooterBuilder::new(&mut fs_cursor);
-        let _ = foot.build(pos.unwrap());
+
+        TsmHeaderWriter::write_to(&mut fs_cursor).unwrap();
+
+        let data = vec![DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] },
+                        DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![101, 102, 103] }];
+
+        let mut file_block_map: HashMap<FieldID, Vec<FileBlock>> = HashMap::new();
+        for (k, v) in data.iter().enumerate() {
+            let file_blocks = TsmBlockWriter::write_one_to(&mut fs_cursor, v).unwrap();
+            file_block_map.insert(k as FieldID, file_blocks);
+        }
+
+        let index_pos = fs_cursor.pos();
+        let bloom_filter = TsmIndexWriter::write_to(&mut fs_cursor, file_block_map).unwrap();
+        let _ = TsmFooterWriter::write_to(&mut fs_cursor, &bloom_filter, index_pos);
         let _ = fs_cursor.sync_all(FileSync::Hard);
         println!("column write finsh");
     }

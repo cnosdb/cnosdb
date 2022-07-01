@@ -1,6 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
-use utils::bkdr_hash::BkdrHasher;
+use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
@@ -115,6 +115,11 @@ pub fn generate_field_id(name: &FieldName, sid: SeriesID) -> FieldID {
     hash.hash_with(name.as_slice());
     hash.number()
 }
+
+/// Split a 16 byte FieldID to 8 byte SeriesID and 8 byte FieldHash
+// pub fn split_field_id(fid: &FieldID) -> (SeriesID, FieldHash) {
+//     ((*fid >> 64 & u64::MAX as u128) as u64, (*fid & u64::MAX as u128) as u64)
+// }
 
 #[cfg(test)]
 mod test {

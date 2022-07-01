@@ -1,5 +1,6 @@
 use std::{cmp::max, collections::HashMap, path::PathBuf, sync::Arc};
 
+use models::FieldID;
 use parking_lot::Mutex;
 use regex::internal::Input;
 use tokio::sync::RwLock;
@@ -15,7 +16,7 @@ use crate::{
     memcache::MemCache,
     summary::{CompactMeta, VersionEdit},
     tseries_family::LevelInfo,
-    tsm::{DataBlock, FooterBuilder, TsmBlockWriter, TsmIndexBuilder},
+    tsm::{DataBlock, TsmBlockWriter, TsmFooterWriter, TsmHeaderWriter, TsmIndexWriter},
     version_set::VersionSet,
 };
 
@@ -99,16 +100,15 @@ impl FlushTask {
     }
 }
 
-fn build_tsm_file(fname: PathBuf, block_set: HashMap<u64, DataBlock>) -> Result<u64> {
+fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldID, DataBlock>) -> Result<u64> {
     let file = file_manager::get_file_manager().create_file(fname).unwrap();
     let mut fs_cursor = file.into_cursor();
-    let mut rd = TsmBlockWriter::new(&mut fs_cursor);
 
-    let index = rd.build(block_set)?;
-    let mut id = TsmIndexBuilder::new(&mut fs_cursor);
-    let pos = id.build(index)?;
-    let mut foot = FooterBuilder::new(&mut fs_cursor);
-    foot.build(pos)?;
+    TsmHeaderWriter::write_to(&mut fs_cursor)?;
+    let index = TsmBlockWriter::write_to(&mut fs_cursor, block_set)?;
+    let index_pos = fs_cursor.pos();
+    let bloom_filter = TsmIndexWriter::write_to(&mut fs_cursor, index)?;
+    TsmFooterWriter::write_to(&mut fs_cursor, &bloom_filter, index_pos)?;
     fs_cursor.sync_all(FileSync::Hard)
              .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
     let len = fs_cursor.len();

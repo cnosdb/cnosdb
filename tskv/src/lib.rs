@@ -3,8 +3,8 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
+mod byte_utils;
 mod compaction;
-mod compute;
 mod context;
 mod direct_io;
 mod error;
@@ -30,6 +30,13 @@ pub use kv_option::Options;
 pub use kvcore::TsKv;
 use protos::kv_service::WritePointsRpcResponse;
 use tokio::sync::oneshot;
+use utils::BloomFilter;
+
+/// Returns a 64 bytes bloom filter
+#[inline(always)]
+pub fn new_bloom_filter() -> BloomFilter {
+    BloomFilter::new(512)
+}
 
 #[derive(Debug)]
 pub enum Task {

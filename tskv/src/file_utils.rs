@@ -72,6 +72,13 @@ pub fn make_tsm_file_name(path: &str, sequence: u64) -> PathBuf {
     PathBuf::from(p)
 }
 
+// TSM tombstone file
+
+pub fn make_tsm_tombstone_file_name(path: &str, sequence: u64) -> PathBuf {
+    let p = format!("{}/_{:06}.tombstone", path, sequence);
+    PathBuf::from(p)
+}
+
 // Schema file
 
 pub fn make_schema_file(path: &str, sequence: u64) -> PathBuf {

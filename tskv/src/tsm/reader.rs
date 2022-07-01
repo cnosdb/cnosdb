@@ -1,11 +1,15 @@
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    sync::Arc,
+};
 
 use integer_encoding::VarInt;
-use models::ValueType;
+use models::{FieldID, ValueType};
 
-use super::{coders, MAX_BLOCK_VALUES};
+use super::{coders, BLOOM_FILTER_SIZE, FOOTER_SIZE, MAX_BLOCK_VALUES};
 use crate::{
-    direct_io::FileCursor,
+    byte_utils::decode_be_u16,
+    direct_io::{File, FileCursor},
     error::{Error, Result},
     tseries_family::TimeRange,
     tsm::{BlockReader, DataBlock, IndexEntry},
@@ -138,6 +142,7 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
 
 pub struct TsmIndexReader<'a> {
     r: &'a mut FileCursor,
+    buf: [u8; 8],
 
     curr_offset: u64,
     end_offset: u64,
@@ -151,71 +156,64 @@ impl<'a> TsmIndexReader<'a> {
         r.seek(SeekFrom::End(-8)).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         let mut buf = [0u8; 8];
         r.read(&mut buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-
         let index_offset = u64::from_be_bytes(buf);
         r.seek(SeekFrom::Start(index_offset))
          .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
 
         Ok(Self { r,
+                  buf,
                   curr_offset: index_offset,
-                  end_offset: len as u64 - 8,
+                  end_offset: (len - FOOTER_SIZE) as u64,
                   curr: None,
                   next: None })
     }
 
     fn next_index_entry(&mut self) -> Result<IndexEntry> {
-        let mut buf = [0u8; 2];
-        let field_len = 8;
-        let mut field_id = vec![0; 8];
+        // read 8-bytes field id
+        self.r.read(&mut self.buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.curr_offset += 8;
+        let field_id = self.buf[0..8].to_vec();
+
+        // read 1-byte block type and 2-bytes block_count
         self.r
-            .read(field_id.as_mut_slice())
+            .read(&mut self.buf[..3])
             .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        self.curr_offset += field_len as u64;
+        self.curr_offset += 3;
+        let block_type = ValueType::from(self.buf[0]);
+        let count = decode_be_u16(&self.buf[1..3]);
 
-        // read the block type
-        self.r.read(&mut buf[..1]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        self.curr_offset += 1;
-        let b_type = buf[0];
-
-        // read how many blocks there are for this entry.
-        self.r.read(&mut buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        self.curr_offset += 2;
-        let count = u16::from_be_bytes(buf);
-
-        let typ = ValueType::try_from(b_type).unwrap();
         Ok(IndexEntry { key: field_id,
-                        block_type: typ,
+                        block_type,
                         count,
                         curr_block: 1,
-                        block: self.next_block_entry(typ)? })
+                        block: self.next_block_entry(block_type)? })
     }
 
     fn next_block_entry(&mut self, field_type: ValueType) -> Result<FileBlock> {
         // read min time on block entry
-        let mut buf = [0u8; 8];
-        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.r.read(&mut self.buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         self.curr_offset += 8;
-        let min_ts = i64::from_be_bytes(buf);
+        let min_ts = i64::from_be_bytes(self.buf);
 
         // read max time on block entry
-        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.r.read(&mut self.buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         self.curr_offset += 8;
-        let max_ts = i64::from_be_bytes(buf);
+        let max_ts = i64::from_be_bytes(self.buf);
 
         // read block data offset
-        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.r.read(&mut self.buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         self.curr_offset += 8;
-        let offset = u64::from_be_bytes(buf);
+        let offset = u64::from_be_bytes(self.buf);
 
         // read block size
-        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.r.read(&mut self.buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         self.curr_offset += 8;
-        let size = u64::from_be_bytes(buf);
+        let size = u64::from_be_bytes(self.buf);
 
         // read value offset
-        self.r.read(&mut buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.r.read(&mut self.buf[..]).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
         self.curr_offset += 8;
-        let val_off = u64::from_be_bytes(buf);
+        let val_off = u64::from_be_bytes(self.buf);
 
         Ok(FileBlock { min_ts,
                        max_ts,
@@ -267,6 +265,10 @@ impl<'a> Iterator for TsmIndexReader<'a> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
+    use models::FieldID;
+
     use crate::{
         file_manager::FileManager,
         tsm::{BlockReader, DataBlock, TsmBlockReader, TsmIndexReader},
@@ -275,23 +277,35 @@ mod test {
     #[test]
     fn tsm_reader_test() {
         let fs = FileManager::new();
-        let fs = fs.open_file("./writer_test.tsm").unwrap();
+        let fs = fs.open_file("/tmp/writer_test.tsm").unwrap();
         let len = fs.len();
         let mut fs_cursor = fs.into_cursor();
-        let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
+        let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize).unwrap();
         let mut blocks = Vec::new();
-        for res in &mut index.unwrap() {
+        let mut block_field_id: Vec<FieldID> = Vec::new();
+        for res in index {
             let entry = res.unwrap();
             let key = entry.field_id();
 
             blocks.push(entry.block);
+            block_field_id.push(key);
         }
 
         let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
-        let ori = DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
-        for block in blocks {
+        let ori_data: HashMap<FieldID, DataBlock> =
+            HashMap::from([(0,
+                            DataBlock::U64 { index: 0,
+                                             ts: vec![2, 3, 4],
+                                             val: vec![12, 13, 15] }),
+                           (1,
+                            DataBlock::U64 { index: 0,
+                                             ts: vec![2, 3, 4],
+                                             val: vec![101, 102, 103] })]);
+
+        for (i, block) in blocks.iter().enumerate() {
             let data = block_reader.decode(&block).expect("error decoding block data");
-            assert_eq!(ori, data);
+            let field_id = block_field_id.get(i).unwrap();
+            assert_eq!(*ori_data.get(field_id).unwrap(), data);
         }
     }
 }
