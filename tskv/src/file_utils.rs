@@ -112,7 +112,7 @@ pub fn get_max_sequence_file_name<F>(dir: impl AsRef<Path>,
     let mut max_id = 1;
     let mut max_index = 0;
     for (i, file_name) in segments.iter().enumerate() {
-        match get_sequence(&file_name) {
+        match get_sequence(file_name) {
             Ok(id) => {
                 if max_id < id {
                     max_id = id;

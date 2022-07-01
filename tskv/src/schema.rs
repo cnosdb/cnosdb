@@ -53,7 +53,7 @@ pub struct TableSchema {
 
 impl TableSchema {
     pub fn new(id: u64, name: String) -> Self {
-        Self { id: id, name, columns: BTreeMap::new() }
+        Self { id, name, columns: BTreeMap::new() }
     }
 
     pub fn add_column(&mut self, col: &Column) {
@@ -218,9 +218,8 @@ impl Data {
         self.schema
             .get_mut(&database)
             .ok_or_else(|| Error::DatabaseNotFound { database: database.clone() })
-            .and_then(|db| {
+            .map(|db| {
                 db.tables.insert(table.name.clone(), table);
-                Ok(())
             })
     }
 
@@ -228,9 +227,8 @@ impl Data {
         self.schema
             .get_mut(&database)
             .ok_or_else(|| Error::DatabaseNotFound { database: database.clone() })
-            .and_then(|db| {
+            .map(|db| {
                 db.tables.remove(&table);
-                Ok(())
             })
     }
 }
@@ -290,7 +288,7 @@ mod test {
     use super::SchemaStore;
     use crate::kv_option::SchemaStoreConfig;
 
-    const DIR: &'static str = "/tmp/test/";
+    const DIR: &str = "/tmp/test/";
 
     #[tokio::test]
     async fn test() {

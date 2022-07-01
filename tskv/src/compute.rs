@@ -27,10 +27,10 @@ pub fn decode_be_bool(key: &[u8]) -> bool {
 #[test]
 fn test_decode_bool() {
     let buf = [1];
-    assert_eq!(true, decode_be_bool(&buf));
+    assert!(decode_be_bool(&buf));
 
     let buf1 = [0];
-    assert_eq!(false, decode_be_bool(&buf1));
+    assert!(!decode_be_bool(&buf1));
 
     println!("decode bool {}", decode_be_bool(&buf));
 }

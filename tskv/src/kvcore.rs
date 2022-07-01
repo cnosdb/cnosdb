@@ -188,7 +188,7 @@ impl TsKv {
     pub async fn read(&self, sids: Vec<SeriesID>, time_range: &TimeRange, fields: Vec<FieldID>) {
         for sid in sids {
             for field_id in fields.iter() {
-                self.read_point(sid, &time_range, *field_id).await;
+                self.read_point(sid, time_range, *field_id).await;
             }
         }
     }
@@ -404,9 +404,9 @@ mod test {
         for point in fb_points.points().unwrap() {
             let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             info.finish();
-            sids.push(info.series_id().clone());
+            sids.push(info.series_id());
             for field in info.field_infos().iter() {
-                fields_id.push(field.field_id().clone());
+                fields_id.push(field.field_id());
             }
         }
         // remove repeat sid and fields_id
@@ -424,14 +424,14 @@ mod test {
             }
             l as usize
         }
-        sids.sort();
-        fields_id.sort();
+        sids.sort_unstable();
+        fields_id.sort_unstable();
         let l = remove_duplicates(&mut sids);
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
-        Ok(tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id)
-               .await)
+        tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id).await;
+        Ok(())
     }
 
     #[tokio::test]

@@ -28,7 +28,7 @@ impl LevelCompactionPicker {
                     file.mark_compaction();
                 }
                 let request = CompactReq { files: (lvl, files),
-                                           version: version,
+                                           version,
                                            cf,
                                            out_lvl /* target_file_size_base:
                                                     * opts.target_file_size_base,

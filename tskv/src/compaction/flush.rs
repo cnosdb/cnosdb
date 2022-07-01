@@ -58,7 +58,7 @@ impl FlushTask {
             }
             for (field_id, entry) in data {
                 let sum = field_size.entry(field_id).or_insert(0_usize);
-                *sum = *sum + entry.cells.len();
+                *sum += entry.cells.len();
                 let item = field_map.entry(field_id).or_insert(vec![]);
                 item.push(entry);
             }
@@ -91,7 +91,7 @@ impl FlushTask {
         let mut version_s = version_set.write().await;
         let mut version =
             version_s.get_tsfamily(self.tsf_id as u64).unwrap().version().write().await;
-        if version.levels_info.len() == 0 {
+        if version.levels_info.is_empty() {
             version.levels_info.push(LevelInfo::init(0));
         }
         version.levels_info[0].apply(&self.meta);

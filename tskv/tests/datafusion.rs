@@ -13,9 +13,9 @@ use datafusion::{
     execution::context::{SessionState, TaskContext},
     logical_expr::TableType,
     logical_plan::{
-        DFSchemaRef, LogicalPlan, LogicalPlanBuilder, Operator, ToDFSchema, UserDefinedLogicalNode,
+        DFSchemaRef, LogicalPlan, LogicalPlanBuilder, ToDFSchema, UserDefinedLogicalNode,
     },
-    physical_expr::{expressions, planner, PhysicalSortExpr},
+    physical_expr::{planner, PhysicalSortExpr},
     physical_plan::{
         filter::FilterExec, planner::ExtensionPlanner, ExecutionPlan, Partitioning,
         PhysicalPlanner, RecordBatchStream, SendableRecordBatchStream, Statistics,
@@ -92,7 +92,7 @@ impl TableProvider for Table {
         let schema = Table::test_schema();
         let df_schema = schema.clone().to_dfschema_ref()?;
 
-        if filters.len() > 0 {
+        if !filters.is_empty() {
             let predicate = planner::create_physical_expr(&filters[0],
                                                           df_schema.as_ref(),
                                                           schema.as_ref(),

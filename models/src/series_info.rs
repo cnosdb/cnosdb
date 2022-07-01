@@ -65,14 +65,6 @@ impl SeriesInfo {
         }
     }
 
-    pub fn merge(&mut self, series_info: &SeriesInfo) {
-        let mut final_field_infos: Vec<FieldInfo> = Vec::new();
-        for field_info in series_info.field_infos.iter() {
-            let dup_field_infos = self.field_info_with_id(&field_info.field_id());
-            final_field_infos.push(field_info.clone());
-        }
-    }
-
     pub fn series_id(&self) -> SeriesID {
         self.id
     }
@@ -101,8 +93,8 @@ impl SeriesInfo {
         bincode::serialize(self).unwrap()
     }
 
-    pub fn decode(data: &Vec<u8>) -> SeriesInfo {
-        bincode::deserialize(&data[..]).unwrap()
+    pub fn decode(data: &[u8]) -> SeriesInfo {
+        bincode::deserialize(data).unwrap()
     }
 }
 
@@ -123,9 +115,8 @@ mod tests_series_info {
 
     #[test]
     fn test_series_info_encode_and_decode() {
-        let mut info =
-            SeriesInfo::new(vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
-                            vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)]);
+        let info = SeriesInfo::new(vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
+                                   vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)]);
         let data = info.encode();
         let new_info = SeriesInfo::decode(&data);
         assert_eq!(info, new_info);

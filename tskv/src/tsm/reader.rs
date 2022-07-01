@@ -48,7 +48,7 @@ impl<'a> TsmBlockReader<'a> {
 
     pub fn read_blocks(&mut self, blocks: &Vec<FileBlock>, time_range: &TimeRange) {
         for block in blocks {
-            let mut data = self.decode(&block).expect("error decoding block data");
+            let mut data = self.decode(block).expect("error decoding block data");
             let mut loopp = true;
             while loopp {
                 let datum = data.next();
@@ -128,13 +128,10 @@ impl<'a> BlockReader for TsmBlockReader<'a> {
                     .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
                 Ok(DataBlock::U64Block { index: 0, ts, val })
             },
-            _ => Err(Error::ReadTsmErr {
-                reason: format!(
-                    "cannot decode block {:?} with no unknown value type",
-                    block.field_type
-                )
-                .to_string(),
-            }),
+            _ => {
+                Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
+                                                        block.field_type) })
+            },
         }
     }
 }

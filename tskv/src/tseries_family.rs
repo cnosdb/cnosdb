@@ -42,7 +42,7 @@ impl TimeRange {
         Self { max_ts, min_ts }
     }
     pub fn overlaps(&self, range: TimeRange) -> bool {
-        if self.min_ts > range.max_ts || self.max_ts < range.min_ts { false } else { true }
+        !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
     }
 }
 
@@ -69,8 +69,7 @@ impl ColumnFile {
         let fs = FileManager::new();
         let ts_cf = TseriesFamOpt::default();
         let p = format!("/_{:06}.tsm", self.file_id());
-        let fs =
-            fs.open_file(ts_cf.tsm_dir.clone() + tf_id.to_string().as_str() + p.as_str()).unwrap();
+        let fs = fs.open_file(ts_cf.tsm_dir + tf_id.to_string().as_str() + p.as_str()).unwrap();
         let len = fs.len();
         (fs.into_cursor(), len)
     }
@@ -228,7 +227,7 @@ impl TseriesFamily {
                                                          cf.clone(),
                                                          0)),
                super_version_id: AtomicU64::new(0),
-               version: version,
+               version,
                opts: cf }
     }
 

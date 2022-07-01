@@ -71,7 +71,7 @@ impl From<fb_models::Point<'_>> for InMemPoint {
             }
         }
 
-        let sid = generate_series_id(&mut tags);
+        let sid = generate_series_id(&tags);
 
         for fit in p.fields().into_iter() {
             for f in fit.into_iter() {

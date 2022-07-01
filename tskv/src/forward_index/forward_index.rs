@@ -175,15 +175,8 @@ impl ForwardIndex {
 
     pub async fn load_cache_file(&mut self) -> RecordFileResult<()> {
         let mut record_reader = record_file::Reader::new(&self.file_path);
-        loop {
-            match record_reader.read_record().await {
-                Ok(record) => {
-                    self.handle_record(record).await;
-                },
-                Err(_) => {
-                    break;
-                },
-            }
+        while let Ok(record) = record_reader.read_record().await {
+            self.handle_record(record).await;
         }
         Ok(())
     }

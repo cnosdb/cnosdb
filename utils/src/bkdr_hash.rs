@@ -35,6 +35,12 @@ impl Hasher for BkdrHasher {
     }
 }
 
+impl Default for BkdrHasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::hash::Hasher;

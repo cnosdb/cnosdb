@@ -18,7 +18,7 @@ mod test {
 
         let finished_data = fbb.finished_data();
 
-        let decoded_payload = flatbuffers::root::<PingBody>(&finished_data);
+        let decoded_payload = flatbuffers::root::<PingBody>(finished_data);
         assert!(decoded_payload.is_ok());
 
         let mut client = TskvServiceClient::connect("http://127.0.0.1:31006").await.unwrap();

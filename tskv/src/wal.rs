@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use crc32fast;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use protos::models as fb_models;
@@ -71,11 +70,7 @@ pub struct WalEntryBlock {
 
 impl WalEntryBlock {
     pub fn new(typ: WalEntryType, buf: &[u8]) -> Self {
-        Self { typ: typ.into(),
-               seq: 0,
-               crc: crc32fast::hash(buf),
-               len: buf.len() as u32,
-               buf: buf.into() }
+        Self { typ, seq: 0, crc: crc32fast::hash(buf), len: buf.len() as u32, buf: buf.into() }
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
@@ -257,7 +252,7 @@ impl WalManager {
         let file = file_manager::get_file_manager().open_create_file(last.clone()).unwrap();
         let size = file.len();
 
-        let current_file = WalWriter::open(seq, last.clone(), config.clone()).unwrap();
+        let current_file = WalWriter::open(seq, last, config.clone()).unwrap();
 
         WalManager { config, current_dir: current_dir_path, current_file }
     }
@@ -468,7 +463,6 @@ mod test {
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use protos::{models as fb_models, models_helper};
-    use rand;
 
     use crate::{
         direct_io::{File, FileCursor, FileSync},
@@ -477,7 +471,7 @@ mod test {
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
 
-    const DIR: &'static str = "/tmp/test/wal";
+    const DIR: &str = "/tmp/test/wal";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {

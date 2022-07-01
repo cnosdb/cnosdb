@@ -105,8 +105,8 @@ impl Reader {
 
         // check crc32 number
         let mut hasher = crc32fast::Hasher::new();
-        hasher.write(&mut buf[RECORD_MAGIC_NUMBER_LEN..].borrow());
-        hasher.write(&mut data.borrow());
+        hasher.write(buf[RECORD_MAGIC_NUMBER_LEN..].borrow());
+        hasher.write(data.borrow());
         if hasher.finalize() != crc32_number {
             self.set_pos(origin_pos + 1).await?;
             self.find_magic().await?;
@@ -131,7 +131,7 @@ impl Reader {
             self.load_buf().await?;
         }
 
-        return if self.buf_len - self.buf_use >= size {
+        if self.buf_len - self.buf_use >= size {
             let origin_pos = self.pos;
             let data = self.buf[self.buf_use..self.buf_use + size].to_vec();
 
@@ -141,7 +141,7 @@ impl Reader {
             Ok((origin_pos, data))
         } else {
             Err(RecordFileError::EOF)
-        };
+        }
     }
 
     pub async fn read_one(&self, pos: usize) -> RecordFileResult<Record> {

@@ -37,7 +37,7 @@ mod tests {
                                 let mut i = 1000000;
                                 while i > 0 {
                                     sum += i;
-                                    i = i - 1;
+                                    i -= 1;
                                 }
                                 tx.send(sum).unwrap();
                             });

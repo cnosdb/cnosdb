@@ -12,15 +12,7 @@ const TAG_KEY_MAX_LEN: usize = 512;
 const TAG_VALUE_MAX_LEN: usize = 4096;
 
 pub fn sort_tags(tags: &mut [Tag]) {
-    tags.sort_by(|a, b| -> Ordering {
-            if a.key < b.key {
-                Ordering::Less
-            } else if a.key > b.key {
-                Ordering::Greater
-            } else {
-                Ordering::Equal
-            }
-        })
+    tags.sort_by(|a, b| -> Ordering { a.key.partial_cmp(&b.key).unwrap() })
 }
 
 #[derive(Serialize, Deserialize)]

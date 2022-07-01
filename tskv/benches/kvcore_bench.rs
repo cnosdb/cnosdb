@@ -1,13 +1,10 @@
-use std::{borrow::Borrow, ops::Deref, sync::Arc};
+use std::sync::Arc;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use parking_lot::Mutex;
 use protos::{kv_service::WritePointsRpcRequest, models_helper};
-use tokio::{
-    runtime::Runtime,
-    sync::{mpsc::unbounded_channel, oneshot::channel},
-};
-use tskv::{kv_option::WalConfig, Task, TsKv};
+use tokio::runtime::Runtime;
+use tskv::{kv_option::WalConfig, TsKv};
 
 async fn get_tskv() -> TsKv {
     let opt = tskv::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
