@@ -53,6 +53,15 @@ impl VersionSet {
     }
 
     // todo: deal with add tsf and del tsf
+    pub fn get_tsfamily_immut(&self, sid: u64) -> Option<&TseriesFamily> {
+        if self.ts_families.is_empty() {
+            return None;
+        }
+        let partid = sid as u32 % self.ts_families.len() as u32;
+        self.ts_families.get(&partid)
+    }
+
+    // todo: deal with add tsf and del tsf
     pub fn get_tsfamily(&mut self, sid: u64) -> Option<&mut TseriesFamily> {
         if self.ts_families.is_empty() {
             return None;

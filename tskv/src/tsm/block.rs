@@ -240,7 +240,7 @@ impl DataBlock {
         min_ts
     }
     // todo:
-    pub fn encode(&mut self, start: usize, end: usize) -> Result<(Vec<u8>, Vec<u8>)> {
+    pub fn encode(&self, start: usize, end: usize) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
         match self {

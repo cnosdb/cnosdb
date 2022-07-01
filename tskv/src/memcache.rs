@@ -2,10 +2,10 @@ use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 
 use flatbuffers::Push;
 use futures::future::ok;
-use models::ValueType;
+use models::{FieldID, Timestamp, ValueType};
 use protos::models::FieldType;
 
-use crate::{compute, error::Result, tseries_family::TimeRange};
+use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, Copy)]
@@ -81,7 +81,7 @@ pub struct MemCache {
     max_buf_size: u64,
     // block <field_id, buffer>
     // field_id contain the field type
-    pub data_cache: HashMap<u64, MemEntry>,
+    pub data_cache: HashMap<FieldID, MemEntry>,
     // current size
     cache_size: u64,
 }
@@ -96,27 +96,28 @@ impl MemCache {
                seq_no: seq,
                cache_size: 0 }
     }
+
     pub fn insert_raw(&mut self,
                       seq: u64,
-                      field_id: u64,
-                      ts: i64,
+                      field_id: FieldID,
+                      ts: Timestamp,
                       field_type: ValueType,
                       buf: &[u8])
                       -> Result<()> {
         self.seq_no = seq;
         match field_type {
             ValueType::Unsigned => {
-                let val = compute::decode_be_u64(buf);
+                let val = byte_utils::decode_be_u64(buf);
                 let data = DataType::U64(U64Cell { ts, val });
                 self.insert(field_id, data, ValueType::Unsigned);
             },
             ValueType::Integer => {
-                let val = compute::decode_be_i64(buf);
+                let val = byte_utils::decode_be_i64(buf);
                 let data = DataType::I64(I64Cell { ts, val });
                 self.insert(field_id, data, ValueType::Integer);
             },
             ValueType::Float => {
-                let val = compute::decode_be_f64(buf);
+                let val = byte_utils::decode_be_f64(buf);
                 let data = DataType::F64(F64Cell { ts, val });
                 self.insert(field_id, data, ValueType::Float);
             },
@@ -126,7 +127,7 @@ impl MemCache {
                 self.insert(field_id, data, ValueType::String);
             },
             ValueType::Boolean => {
-                let val = compute::decode_be_bool(buf);
+                let val = byte_utils::decode_be_bool(buf);
                 let data = DataType::Bool(BoolCell { ts, val });
                 self.insert(field_id, data, ValueType::Boolean)
             },
@@ -134,7 +135,8 @@ impl MemCache {
         };
         Ok(())
     }
-    pub fn insert(&mut self, field_id: u64, val: DataType, value_type: ValueType) {
+
+    pub fn insert(&mut self, field_id: FieldID, val: DataType, value_type: ValueType) {
         let ts = val.timestamp();
         let item = self.data_cache.entry(field_id).or_insert_with(MemEntry::default);
         if item.ts_max < ts {

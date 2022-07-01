@@ -16,6 +16,7 @@ use lazy_static::lazy_static;
 use models::{FieldID, ValueType};
 use parking_lot::Mutex;
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use utils::BloomFilter;
 
 use crate::{
     compaction::FlushReq,
@@ -23,6 +24,7 @@ use crate::{
     file_manager::FileManager,
     kv_option::{TseriesFamOpt, MAX_IMMEMCACHE_NUM, MAX_MEMCACHE_SIZE},
     memcache::{DataType, MemCache},
+    new_bloom_filter,
     summary::CompactMeta,
     tsm::{BlockReader, TsmBlockReader, TsmIndexReader},
 };
@@ -41,7 +43,8 @@ impl TimeRange {
     pub fn new(max_ts: i64, min_ts: i64) -> Self {
         Self { max_ts, min_ts }
     }
-    pub fn overlaps(&self, range: TimeRange) -> bool {
+
+    pub fn overlaps(&self, range: &TimeRange) -> bool {
         !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
     }
 }
@@ -52,6 +55,7 @@ pub struct ColumnFile {
     deleted: AtomicBool,
     range: TimeRange, // file time range
     size: u64,        // file size
+    field_id_bloom_filter: BloomFilter,
 }
 
 impl ColumnFile {
@@ -87,6 +91,10 @@ impl ColumnFile {
     pub fn is_pending_compaction(&self) -> bool {
         self.being_compact.load(Ordering::Acquire)
     }
+
+    pub fn contains_field_id(&self, field_id: FieldID) -> bool {
+        self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+    }
 }
 
 #[derive(Default)]
@@ -112,7 +120,8 @@ impl LevelInfo {
                                               deleted: AtomicBool::new(false),
                                               range: TimeRange::new(delta.ts_max,
                                                                     delta.ts_min),
-                                              size: delta.file_size }));
+                                              size: delta.file_size,
+                                              field_id_bloom_filter: new_bloom_filter() }));
         self.cur_size += delta.file_size;
         if self.ts_range.max_ts < delta.ts_max {
             self.ts_range.max_ts = delta.ts_max;

@@ -1,6 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
-use utils::bkdr_hash::BkdrHasher;
+use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
@@ -81,8 +81,8 @@ impl SeriesInfo {
         self.field_infos.push(field_info)
     }
 
-    pub fn field_info_with_id(&self, field_id: &FieldID) -> Vec<&FieldInfo> {
-        self.field_infos.iter().filter(|f| f.field_id().cmp(field_id).is_eq()).collect()
+    pub fn field_info_with_id(&self, field_id: FieldID) -> Vec<&FieldInfo> {
+        self.field_infos.iter().filter(|f| f.field_id().cmp(&field_id).is_eq()).collect()
     }
 
     pub fn field_info_with_name(&self, field_name: &FieldName) -> Vec<&FieldInfo> {

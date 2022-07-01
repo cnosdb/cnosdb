@@ -4,7 +4,7 @@ use std::{
 };
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
-use models::{FieldID, SeriesID};
+use models::{FieldID, SeriesID, Timestamp};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
@@ -33,7 +33,7 @@ use crate::{
     runtime::WorkerQueue,
     summary::{Summary, VersionEdit},
     tseries_family::{TimeRange, Version},
-    tsm::{BlockReader, TsmBlockReader, TsmIndexReader},
+    tsm::{BlockReader, TsmBlockReader, TsmIndexReader, TsmTombstone},
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
@@ -191,6 +191,40 @@ impl TsKv {
                 self.read_point(sid, time_range, *field_id).await;
             }
         }
+    }
+
+    pub async fn delete_series(&self,
+                               sids: Vec<SeriesID>,
+                               min: Timestamp,
+                               max: Timestamp)
+                               -> Result<()> {
+        let series_infos = self.forward_index.read().await.get_series_info_list(&sids);
+        let timerange = TimeRange { max_ts: max, min_ts: min };
+        let path = self.options.db.db_path.clone();
+        for series_info in series_infos {
+            let vs = self.version_set.read().await;
+            if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
+                let version = tsf.version().read().await;
+                for level in version.levels_info() {
+                    if level.ts_range.overlaps(&timerange) {
+                        for column_file in level.files.iter() {
+                            if column_file.range().overlaps(&timerange) {
+                                let field_ids: Vec<FieldID> = series_info.field_infos()
+                                                                         .iter()
+                                                                         .map(|f| f.field_id())
+                                                                         .collect();
+                                let tombstone_manager =
+                                    TsmTombstone::with_tsm_file_id(&path, column_file.file_id())?;
+                                tombstone_manager.add_range(&field_ids, min, max)?;
+                                tombstone_manager.sync()?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {

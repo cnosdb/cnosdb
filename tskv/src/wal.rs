@@ -11,12 +11,11 @@ use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
-use utils::bkdr_hash;
 use walkdir::IntoIter;
 
 use crate::{
+    byte_utils,
     compaction::FlushReq,
-    compute,
     context::GlobalContext,
     direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
@@ -75,9 +74,9 @@ impl WalEntryBlock {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let typ = WalEntryType::from(bytes[0]);
-        let seq = compute::decode_be_u64(&bytes[1..9]);
-        let crc = compute::decode_be_u32(&bytes[9..13]);
-        let len = compute::decode_be_u32(&bytes[13..17]);
+        let seq = byte_utils::decode_be_u64(&bytes[1..9]);
+        let crc = byte_utils::decode_be_u32(&bytes[9..13]);
+        let len = byte_utils::decode_be_u32(&bytes[13..17]);
         let buf = bytes[17..].to_vec();
         Self { typ, seq, crc, len, buf }
     }
@@ -144,8 +143,8 @@ impl WalWriter {
                 .context(error::IOSnafu)?;
         } else {
             file.read_at(0, &mut header_buf[..]).context(error::IOSnafu)?;
-            min_sequence = compute::decode_be_u64(&header_buf[4..12]);
-            max_sequence = compute::decode_be_u64(&header_buf[12..20]);
+            min_sequence = byte_utils::decode_be_u64(&header_buf[4..12]);
+            max_sequence = byte_utils::decode_be_u64(&header_buf[12..20]);
         }
         let size = file.len();
 
@@ -406,27 +405,25 @@ impl WalManager {
 ///     // ...
 /// }
 /// ```
-pub fn reader<'a>(f: File) -> Result<WalReader<'a>> {
+pub fn reader(f: File) -> Result<WalReader> {
     WalReader::new(f.into_cursor())
 }
 
-pub struct WalReader<'a> {
+pub struct WalReader {
     cursor: FileCursor,
     header_buf: [u8; SEGMENT_HEADER_SIZE],
     block_header_buf: [u8; BLOCK_HEADER_SIZE],
     body_buf: Vec<u8>,
-    phantom: PhantomData<&'a Self>,
 }
 
-impl<'a> WalReader<'_> {
+impl WalReader {
     pub fn new(mut cursor: FileCursor) -> Result<Self> {
         let header_buf = WalWriter::reade_header(&mut cursor)?;
 
         Ok(Self { cursor,
                   header_buf,
                   block_header_buf: [0_u8; BLOCK_HEADER_SIZE],
-                  body_buf: vec![],
-                  phantom: PhantomData })
+                  body_buf: vec![] })
     }
 
     pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
@@ -436,9 +433,9 @@ impl<'a> WalReader<'_> {
             return None;
         }
         let typ = self.block_header_buf[0];
-        let seq = compute::decode_be_u64(self.block_header_buf[1..9].into());
-        let crc = compute::decode_be_u32(self.block_header_buf[9..13].into());
-        let data_len = compute::decode_be_u32(self.block_header_buf[13..17].try_into().unwrap());
+        let seq = byte_utils::decode_be_u64(self.block_header_buf[1..9].into());
+        let crc = byte_utils::decode_be_u32(self.block_header_buf[9..13].into());
+        let data_len = byte_utils::decode_be_u32(self.block_header_buf[13..17].try_into().unwrap());
         if data_len == 0 {
             return None;
         }
