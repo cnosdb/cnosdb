@@ -3341,4 +3341,840 @@ var cases = []suite.Step{
 			},
 		},
 	},
+	//BOTTOM()
+	{
+		Name:  "sel_bottom_key",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level",3) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "bottom"},
+							Values: []suite.Row{
+								{"2019-09-02T00:42:00Z", 1.778},
+								{"2019-09-02T00:48:00Z", 1.798},
+								{"2019-09-02T00:54:00Z", 1.752},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_key_2_tag",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level","location",2) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "bottom", "location"},
+							Values: []suite.Row{
+								{"2019-08-28T10:36:00Z", -0.243, "santa_monica"},
+								{"2019-08-28T14:30:00Z", -0.61, "coyote_creek"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_water_level_4",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level",4),"location","level description" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "bottom", "location", "level description"},
+							Values: []suite.Row{
+								{"2019-09-02T00:42:00Z", 1.778, "santa_monica", "below 3 feet"},
+								{"2019-09-02T00:48:00Z", 1.798, "santa_monica", "below 3 feet"},
+								{"2019-09-02T00:54:00Z", 1.752, "santa_monica", "below 3 feet"},
+								{"2019-09-02T01:00:00Z", 1.755, "santa_monica", "below 3 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_clauses",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level",3),"location" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(24m) ORDER BY time DESC limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_water_level_2_18m",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level",2) FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' AND "location" = 'santa_monica' GROUP BY time(18m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_water_level_location_3",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level","location",3) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "bottom", "location"},
+							Values: []suite.Row{
+								{"2019-08-28T10:36:00Z", -0.243, "santa_monica"},
+								{"2019-08-28T14:30:00Z", -0.61, "coyote_creek"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_into_bottom_water_levels",
+		Query: fmt.Sprintf(`SELECT BOTTOM("water_level","location",2) INTO "bottom_water_levels" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_bottom_select_bottom_water_levels",
+		Query: fmt.Sprintf(`SHOW TAG KEYS FROM "%s"."%s"."bottom_water_levels"`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//FIRST()
+	{
+		Name:  "sel_first_key",
+		Query: fmt.Sprintf(`SELECT FIRST("level description") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "first"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", "between 6 and 9 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_first_all",
+		Query: fmt.Sprintf(`SELECT FIRST(*) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "first_level description", "first_water_level"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", "between 6 and 9 feet", 8.12},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_first_re",
+		Query: fmt.Sprintf(`SELECT FIRST(/level/) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "first_level description", "first_water_level"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", "between 6 and 9 feet", 8.12},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_first_keys_tags",
+		Query: fmt.Sprintf(`SELECT FIRST("level description"),"location","water_level" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "first", "location", "water_level"},
+							Values: []suite.Row{
+								{"2019-08-17T00:00:00Z", "between 6 and 9 feet", "coyote_creek", 8.12},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_first_clauses",
+		Query: fmt.Sprintf(`SELECT FIRST("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-17T23:48:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(12m),* fill(9.01) LIMIT 4 SLIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//LAST()
+	{
+		Name:  "sel_last_key",
+		Query: fmt.Sprintf(`SELECT LAST("level description") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "last"},
+							Values: []suite.Row{
+								{"2019-09-17T21:42:00Z", "between 3 and 6 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_last_all",
+		Query: fmt.Sprintf(`SELECT LAST(*) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "last_level description", "last_water_level"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", "between 3 and 6 feet", 4.938},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_last_re",
+		Query: fmt.Sprintf(`SELECT LAST(/level/) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "last_level description", "last_water_level"},
+							Values: []suite.Row{
+								{"1970-01-01T00:00:00Z", "between 3 and 6 feet", 4.938},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_last_keys_tags",
+		Query: fmt.Sprintf(`SELECT LAST("level description"),"location","water_level" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "last", "location", "water_level"},
+							Values: []suite.Row{
+								{"2019-09-17T21:42:00Z", "between 3 and 6 feet", "santa_monica", 4.938},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_last_clauses",
+		Query: fmt.Sprintf(`SELECT LAST("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-17T23:48:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(12m),* fill(9.01) LIMIT 4 SLIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//MAX()
+	{
+		Name:  "sel_max_key",
+		Query: fmt.Sprintf(`SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_max_all",
+		Query: fmt.Sprintf(`SELECT MAX(*) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max_water_level"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_max_re",
+		Query: fmt.Sprintf(`SELECT MAX(/level/) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max_water_level"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_max_keys_tags",
+		Query: fmt.Sprintf(`SELECT MAX("water_level"),"location","level description" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "max", "location", "level description"},
+							Values: []suite.Row{
+								{"2019-08-28T07:24:00Z", 9.964, "coyote_creek", "at or greater than 9 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_max_clauses",
+		Query: fmt.Sprintf(`SELECT MAX("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-17T23:48:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(12m),* fill(9.01) LIMIT 4 SLIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//MIN()
+	{
+		Name:  "sel_min_key",
+		Query: fmt.Sprintf(`SELECT MIN("water_level") FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "min"},
+							Values: []suite.Row{
+								{"2019-08-28T14:30:00Z", -0.61},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_min_all",
+		Query: fmt.Sprintf(`SELECT MIN(*) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "min_water_level"},
+							Values: []suite.Row{
+								{"2019-08-28T14:30:00Z", -0.61},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_min_re",
+		Query: fmt.Sprintf(`SELECT MIN(/level/) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "min_water_level"},
+							Values: []suite.Row{
+								{"2019-08-28T14:30:00Z", -0.61},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_min_keys_tags",
+		Query: fmt.Sprintf(`SELECT MIN("water_level"),"location","level description" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "min", "location", "level description"},
+							Values: []suite.Row{
+								{"2019-08-28T14:30:00Z", -0.61, "coyote_creek", "below 3 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_min_clauses",
+		Query: fmt.Sprintf(`SELECT MIN("water_level") FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-17T23:48:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(12m),* fill(9.01) LIMIT 4 SLIMIT 1`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//PERCENTILE()
+	{
+		Name:  "sel_percentile_key",
+		Query: fmt.Sprintf(`SELECT PERCENTILE("water_level",5) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "percentile"},
+							Values: []suite.Row{
+								{"2019-09-01T17:54:00Z", 1.122},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_percentile_all",
+		Query: fmt.Sprintf(`SELECT PERCENTILE(*,5) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "percentile_water_level"},
+							Values: []suite.Row{
+								{"2019-09-01T17:54:00Z", 1.122},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_percentile_re",
+		Query: fmt.Sprintf(`SELECT PERCENTILE(/level/,5) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "percentile_water_level"},
+							Values: []suite.Row{
+								{"2019-09-01T17:54:00Z", 1.122},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_percentile_keys_tags",
+		Query: fmt.Sprintf(`SELECT PERCENTILE("water_level",5),"location","level description" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "percentile", "location", "level description"},
+							Values: []suite.Row{
+								{"2019-08-30T03:42:00Z", 1.122, "coyote_creek", "below 3 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_percentile_clauses",
+		Query: fmt.Sprintf(`SELECT PERCENTILE("water_level",20) FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-17T23:48:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(24m) fill(15) LIMIT 2`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//SAMPLE()
+	{
+		Name:  "sel_sample_key",
+		Query: fmt.Sprintf(`ELECT SAMPLE("water_level",2) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{},
+		},
+	},
+	{
+		Name:  "sel_sample_all",
+		Query: fmt.Sprintf(`SELECT SAMPLE(*,2) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "sample_level description", "sample_water_level"},
+							Values: []suite.Row{
+								{"2019-08-19T20:24:00Z", nil, 4.977},
+								{"2019-08-23T06:24:00Z", nil, 1.414},
+								{"2019-09-01T17:00:00Z", "between 3 and 6 feet", nil},
+								{"2019-09-03T23:54:00Z", "between 3 and 6 feet", nil},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_sample_re",
+		Query: fmt.Sprintf(`SELECT SAMPLE(/level/,2) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "sample_level description", "sample_water_level"},
+							Values: []suite.Row{
+								{"2019-08-18T07:12:00Z", "between 3 and 6 feet", nil},
+								{"2019-09-07T22:00:00Z", nil, 3.471},
+								{"2019-09-12T06:18:00Z", nil, 5.512},
+								{"2019-09-13T14:12:00Z", "between 3 and 6 feet", nil},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_sample_keys_tags",
+		Query: fmt.Sprintf(`SELECT SAMPLE("water_level",2),"location","level description" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "sample", "location", "level description"},
+							Values: []suite.Row{
+								{"2019-08-23T17:54:00Z", 6.335, "coyote_creek", "between 6 and 9 feet"},
+								{"2019-08-25T18:48:00Z", 2.894, "santa_monica", "below 3 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_sample_clauses",
+		Query: fmt.Sprintf(`SELECT SAMPLE("water_level",1) FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' AND "location" = 'santa_monica' GROUP BY time(18m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_sample_clauses_2",
+		Query: fmt.Sprintf(`SELECT SAMPLE("water_level",2) FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' AND "location" = 'santa_monica' GROUP BY time(18m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	//TOP()
+	{
+		Name:  "sel_top_key",
+		Query: fmt.Sprintf(`SELECT TOP("water_level",3) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "top"},
+							Values: []suite.Row{
+								{"2019-09-02T00:00:00Z", 9.777},
+								{"2019-09-02T00:06:00Z", 9.728},
+								{"2019-09-02T00:12:00Z", 9.649},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_keys_tags",
+		Query: fmt.Sprintf(`SELECT TOP("water_level","location",2) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "top", "location"},
+							Values: []suite.Row{
+								{"2019-08-28T03:54:00Z", 7.205, "santa_monica"},
+								{"2019-08-28T07:24:00Z", 9.964, "coyote_creek"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_keys_tags_fields",
+		Query: fmt.Sprintf(`SELECT TOP("water_level",4),"location","level description" FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "top", "location", "level description"},
+							Values: []suite.Row{
+								{"2019-09-02T00:00:00Z", 9.777, "coyote_creek", "at or greater than 9 feet"},
+								{"2019-09-02T00:06:00Z", 9.728, "coyote_creek", "at or greater than 9 feet"},
+								{"2019-09-02T00:12:00Z", 9.649, "coyote_creek", "at or greater than 9 feet"},
+								{"2019-09-02T00:18:00Z", 9.57, "coyote_creek", "at or greater than 9 feet"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_clauses",
+		Query: fmt.Sprintf(`SELECT TOP("water_level",3),"location" FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:54:00Z' GROUP BY time(24m) ORDER BY time DESC limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_clauses_18m",
+		Query: fmt.Sprintf(`SELECT TOP("water_level",2) FROM "%s"."%s"."h2o_feet" WHERE time >= '2015-08-18T00:00:00Z' AND time <= '2015-08-18T00:30:00Z' AND "location" = 'santa_monica' GROUP BY time(18m) limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_water_level_location_3",
+		Query: fmt.Sprintf(`SELECT TOP("water_level","location",3) FROM "%s"."%s"."h2o_feet" limit 20`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series: []suite.Series{
+						{
+							Name:    "h2o_feet",
+							Columns: []string{"time", "top", "location"},
+							Values: []suite.Row{
+								{"2019-08-28T03:54:00Z", 7.205, "santa_monica"},
+								{"2019-08-28T07:24:00Z", 9.964, "coyote_creek"},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_into",
+		Query: fmt.Sprintf(`SELECT TOP("water_level","location",2) INTO "top_water_levels" FROM "%s"."%s"."h2o_feet"`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
+	{
+		Name:  "sel_top_show_top_water_levels",
+		Query: fmt.Sprintf(`SHOW TAG KEYS FROM "%s"."%s"."top_water_levels"`, db, rp),
+		Result: suite.Results{
+			Results: []suite.Result{
+				{
+					StatementId: 0,
+					Series:      []suite.Series{},
+				},
+			},
+		},
+	},
 }
