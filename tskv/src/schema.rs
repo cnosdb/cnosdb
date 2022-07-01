@@ -70,8 +70,8 @@ pub struct ColumnSchema {
 }
 
 impl ColumnSchema {
-    pub fn new(id: u64, name: String, column_type: ColumnType) {
-        Self { id, name, column_type };
+    pub fn new(id: u64, name: String, column_type: ColumnType) -> Self {
+        Self { id, name, column_type }
     }
 }
 

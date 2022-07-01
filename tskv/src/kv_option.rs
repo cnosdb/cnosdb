@@ -31,7 +31,7 @@ impl Default for DBOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Options {
     pub db: DBOptions,
     pub lrucache: CacheConfig,
@@ -46,17 +46,6 @@ impl Options {
     // todo:
     pub fn from_env() -> Self {
         Self { ..Default::default() }
-    }
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self { db: Default::default(),
-               lrucache: Default::default(),
-               wal: Default::default(),
-               compact_conf: Default::default(),
-               forward_index_conf: Default::default(),
-               schema_store: Default::default() }
     }
 }
 

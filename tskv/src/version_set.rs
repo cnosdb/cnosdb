@@ -46,10 +46,10 @@ impl VersionSet {
         Self { ts_families: Default::default(), ts_families_names: Default::default() }
     }
 
-    pub fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
+    pub async fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         let tf = self.ts_families.get_mut(&tf_id).unwrap();
         let mem = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq)));
-        tf.switch_memcache(mem);
+        tf.switch_memcache(mem).await;
     }
 
     // todo: deal with add tsf and del tsf

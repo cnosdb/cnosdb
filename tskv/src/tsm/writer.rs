@@ -62,7 +62,7 @@ impl<'a> FooterBuilder<'a> {
     }
     pub fn build(&mut self, offset: u64) -> Result<()> {
         self.writer
-            .write(&mut offset.to_be_bytes().to_vec())
+            .write(offset.to_be_bytes().as_ref())
             .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
         Ok(())
     }
@@ -145,7 +145,7 @@ impl<'a> TsmBlockWriter<'a> {
             // fill data if err occur reset the pos
             let offset = self.writer.pos();
             self.writer
-                .write(&mut crc32fast::hash(&ts_buf).to_be_bytes().to_vec())
+                .write(crc32fast::hash(&ts_buf).to_be_bytes().as_ref())
                 .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             self.writer
                 .write(&ts_buf)
@@ -153,7 +153,7 @@ impl<'a> TsmBlockWriter<'a> {
 
             let val_off = self.writer.pos();
             self.writer
-                .write(&mut crc32fast::hash(&data_buf).to_be_bytes().to_vec())
+                .write(crc32fast::hash(&data_buf).to_be_bytes().as_ref())
                 .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             self.writer
                 .write(&data_buf)
@@ -199,7 +199,7 @@ mod test {
         let file = fs.create_file("./writer_test.tsm").unwrap();
         let mut fs_cursor = file.into_cursor();
         let mut rd = TsmBlockWriter::new(&mut fs_cursor);
-        let mut data = DataBlock::U64Block { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
+        let mut data = DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] };
         let res = rd.build_one(&mut data);
         let mut id = TsmIndexBuilder::new(&mut fs_cursor);
         let mut p = HashMap::new();

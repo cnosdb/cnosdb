@@ -136,7 +136,7 @@ impl MemCache {
     }
     pub fn insert(&mut self, field_id: u64, val: DataType, value_type: ValueType) {
         let ts = val.timestamp();
-        let item = self.data_cache.entry(field_id).or_insert(MemEntry::default());
+        let item = self.data_cache.entry(field_id).or_insert_with(MemEntry::default);
         if item.ts_max < ts {
             item.ts_max = ts;
         }
