@@ -1,0 +1,18 @@
+refresh_rate: 30 seconds
+appenders:
+  stdout:
+    kind: console
+    encoder:
+      kind: pattern
+      pattern: "{d} [{l}] {M}:{L} {m}\n"
+  file:
+    kind: file
+    path: "tskv_log/tskv.log"
+    encoder:
+      kind: pattern
+      pattern: "{d} [{l}] {M}:{L} {m}\n"
+root:
+  level: debug
+  appenders:
+    - file
+    - stdout

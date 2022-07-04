@@ -1,24 +1,18 @@
 use std::fs::File;
 
 pub use log::{debug, error, info, trace, warn, LevelFilter};
-use simplelog::{
-    ColorChoice, CombinedLogger, Config, SharedLogger, TermLogger, TerminalMode, WriteLogger,
-};
+use log4rs;
 
-pub fn init(level: LevelFilter, file_path: &str) {
-    let mut logger = Vec::<Box<dyn SharedLogger>>::new();
-    let config = Config::default();
+pub fn init() {
+    log4rs::init_file("../logger/tskv_log.yaml", Default::default()).unwrap();
+}
 
-    logger.push(TermLogger::new(level, config.clone(), TerminalMode::Mixed, ColorChoice::Auto));
-
-    // file
-    logger.push(WriteLogger::new(level, config, File::create(file_path).unwrap()));
-    CombinedLogger::init(logger).unwrap();
+pub fn init_with_config_path(path: &str) {
+    log4rs::init_file(path, Default::default()).unwrap();
 }
 
 #[test]
 fn test() {
-    use log::LevelFilter::Trace;
-    init(Trace, "./test.log");
+    init();
     info!("hello log");
 }

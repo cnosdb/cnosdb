@@ -2,6 +2,7 @@ use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 
 use flatbuffers::Push;
 use futures::future::ok;
+use logger::{info, warn};
 use models::{FieldID, Timestamp, ValueType};
 use protos::models::FieldType;
 
@@ -62,7 +63,7 @@ impl MemEntry {
     pub fn read_cell(&self, time_range: &TimeRange) {
         for data in self.cells.iter() {
             if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
-                println!("{:?}", data.clone())
+                info!("{:?}", data.clone())
             }
         }
     }

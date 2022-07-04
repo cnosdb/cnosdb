@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-simplelog = "^0.10.0"
 log = "0.4"
+log4rs = "1.1.1"

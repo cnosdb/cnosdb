@@ -6,6 +6,7 @@ use std::{
 };
 
 use lazy_static::lazy_static;
+use logger::{debug, info, warn};
 use parking_lot::Mutex;
 use protos::models as fb_models;
 use regex::Regex;
@@ -285,7 +286,7 @@ impl WalManager {
                          flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
                          -> Result<()> {
         let min_log_seq = global_context.log_seq();
-        println!("[WARN] [wal] recovering version set from seq '{}'", &min_log_seq);
+        warn!("recovering version set from seq '{}'", &min_log_seq);
         let mut max_log_seq = min_log_seq;
 
         let wal_files = file_manager::list_file_names(&self.current_dir);
@@ -387,7 +388,7 @@ impl WalManager {
         }
 
         global_context.set_log_seq(max_log_seq);
-        println!("[WARN] [wal] version set recovered, log_seq is '{}'", &max_log_seq);
+        warn!("version set recovered, log_seq is '{}'", &max_log_seq);
 
         Ok(())
     }
@@ -427,7 +428,7 @@ impl WalReader {
     }
 
     pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
-        println!("[DEBUG] [wal] WalReader: cursor.pos={}", self.cursor.pos());
+        debug!("WalReader: cursor.pos={}", self.cursor.pos());
         let read_bytes = self.cursor.read(&mut self.block_header_buf[..]).unwrap();
         if read_bytes < 8 {
             return None;
@@ -439,7 +440,7 @@ impl WalReader {
         if data_len == 0 {
             return None;
         }
-        println!("[DEBUG] [wal] WalReader: data_len={}", data_len);
+        debug!("WalReader: data_len={}", data_len);
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);

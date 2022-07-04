@@ -4,6 +4,7 @@ use std::{
 };
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use logger::{debug, info, init, trace, warn};
 use models::{FieldID, SeriesID, Timestamp};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -149,7 +150,7 @@ impl TsKv {
                            .await
                     }
                 } else {
-                    println!("[WARN] [tskv] ts_family for sid {} not found.", sid);
+                    warn!("ts_family for sid {} not found.", sid);
                 }
             }
         }
@@ -163,25 +164,25 @@ impl TsKv {
         if let Some(tsf) = version_set.get_tsfamily(sid) {
             // get data from memcache
             if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
-                println!("memcache::{}::{}", sid.clone(), field_id);
+                info!("memcache::{}::{}", sid.clone(), field_id);
                 mem_entry.read_cell(time_range)
             }
 
             // get data from im_memcache
             for mem_cache in tsf.im_cache().iter() {
                 if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
-                    println!("im_memcache::{}::{}", sid.clone(), field_id);
+                    info!("im_memcache::{}::{}", sid.clone(), field_id);
                     mem_entry.read_cell(time_range)
                 }
             }
 
             // get data from levelinfo
             for level_info in tsf.version().read().await.levels_info.iter() {
-                println!("levelinfo::{}::{}", sid.clone(), field_id);
+                info!("levelinfo::{}::{}", sid.clone(), field_id);
                 level_info.read_columnfile(tsf.tf_id(), field_id, time_range);
             }
         } else {
-            println!("ts_family with sid {} not found.", sid);
+            warn!("ts_family with sid {} not found.", sid);
         }
     }
 
@@ -256,7 +257,7 @@ impl TsKv {
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
-        println!("[WARN] [tskv] job 'WAL' starting.");
+        warn!("job 'WAL' starting.");
         let wal_opt = self.options.wal.clone();
         let mut wal_manager = WalManager::new(wal_opt);
         let f = async move {
@@ -269,7 +270,7 @@ impl TsKv {
                         match send_ret {
                             Ok(wal_result) => {},
                             Err(err) => {
-                                println!("[WARN] send WAL write result failed.")
+                                warn!("send WAL write result failed.")
                             },
                         }
                     },
@@ -277,7 +278,7 @@ impl TsKv {
             }
         };
         tokio::spawn(f);
-        println!("[WARN] [tskv] job 'WAL' started.");
+        warn!("job 'WAL' started.");
     }
 
     fn run_flush_job(&self,
@@ -290,16 +291,17 @@ impl TsKv {
             }
         };
         tokio::spawn(f);
-        println!("[tskv] Flush task handler started");
+        warn!("Flush task handler started");
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
-        println!("[WARN] [tskv] job 'main' starting.");
+        init();
+        warn!("job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
-                        println!("[WARN] [tskv] writing points.");
+                        warn!("writing points.");
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
@@ -308,7 +310,7 @@ impl TsKv {
                                 let _ret = tx.send(Err(err));
                             },
                         }
-                        println!("[WARN] [tskv] write points completed.");
+                        warn!("write points completed.");
                     },
                     _ => panic!("unimplented."),
                 }
@@ -316,7 +318,7 @@ impl TsKv {
         };
 
         tokio::spawn(f);
-        println!("[WARN] [tskv] job 'main' started.");
+        warn!("job 'main' started.");
     }
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
@@ -379,6 +381,7 @@ mod test {
 
     use chrono::Local;
     use futures::{channel::oneshot, future::join_all, SinkExt};
+    use logger::{debug, error, info, warn};
     use models::{FieldInfo, SeriesInfo, Tag, ValueType};
     use protos::{
         kv_service, kv_service::WritePointsRpcResponse, models as fb_models, models_helper,
@@ -389,6 +392,7 @@ mod test {
     use crate::{error, kv_option::WalConfig, tseries_family::TimeRange, Error, Task, TsKv};
 
     async fn get_tskv() -> TsKv {
+        logger::init_with_config_path("tests/test_kvcore_log.yaml");
         let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
                                                                ..Default::default() },
                                               ..Default::default() };
@@ -518,5 +522,14 @@ mod test {
             Ok(Ok(resp)) => println!("successful"),
             _ => println!("wrong"),
         };
+    }
+
+    #[tokio::test]
+    async fn test_log() {
+        // log4rs::init_file("tests/test_kvcore_log.yaml", Default::default()).unwrap();
+        info!("hello");
+        warn!("hello");
+        debug!("hello");
+        error!("hello"); //maybe we can use panic directly
     }
 }
