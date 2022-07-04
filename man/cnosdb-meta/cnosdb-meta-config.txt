@@ -1,0 +1,35 @@
+cnosdb-meta-config(1)
+======================
+
+NAME
+----
+cnosdb-meta-config - Display the default configuration.
+
+SYNOPSIS
+--------
+[verse]
+'cnosdb-meta' config (--config <path>)
+'cnosdb-meta config' --config /dev/null
+
+DESCRIPTION
+-----------
+'cnosdb-meta config' will displays the default configuration.
+
+===
+# DO NOT USE!
+$ cnosdb-meta config --config cnosdb-meta.conf > cnosdb-meta.conf
+
+# PROPER METHOD!
+$ cnosdb-meta config --config cnosdb-meta.conf > cnosdb-meta.conf.tmp && \
+      mv cnosdb-meta.conf.tmp cnosdb-meta.conf
+===
+
+OPTIONS
+-------
+--config <path>::
+  Set the path to the configuration file. This defaults to the environment variable CNOSDB_CONFIG_PATH, ~/.cnosdb/cnosdb.conf, or /etc/cnosdb/cnosdb.conf if a file is present at any of these locations. Disable the automatic loading of a configuration file using the null device (such as /dev/null)
+
+-h, --help::
+  help for config
+
+include::footer.txt[]

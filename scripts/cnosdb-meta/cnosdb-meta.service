@@ -1,0 +1,17 @@
+[Unit]
+Description=Store database metadata
+Documentation=https://www.cnosdb.com
+After=network-online.target
+
+[Service]
+User=cnosdb-meta
+Group=cnosdb-meta
+LimitNOFILE=65536
+EnvironmentFile=-/etc/default/cnosdb-meta
+ExecStart=/usr/bin/cnosdb-meta --config /etc/cnosdb-meta/cnosdb-meta.conf $CNOSDB_OPTS
+KillMode=control-group
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=cnosdb-meta.service
