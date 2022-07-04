@@ -1,0 +1,39 @@
+cnosdb-meta(1)
+===============
+
+NAME 
+----
+cnosdb-meta - Store database metadata
+
+SYNOPSIS
+--------
+
+[verse]
+cnosdb-meta [command] [flags]
+cnosdb-meta [command]
+
+DESCRIPTION
+-----------
+'cnosdb-meta' stores database metadata.
+
+COMMANDS
+--------
+The 'cnosdb-meta' command starts the CnosDB meta node.
+
+config::
+  display the default configuration.
+
+help::
+  Help about any command.
+
+run::
+  Runs the CnosDB Meta Server.
+
+version::
+  Displays the CnosDB meta version.
+
+SEE ALSO
+--------
+*cnosdb-meta-config*(1),*cnosdb-meta-help*(1),*cnosdb-meta-run*(1),*cnosdb-meta-version*(1)
+
+include::footer.txt[]

@@ -1,4 +1,5 @@
 #!/usr/bin/python3 -u
+# -*- coding: UTF-8 -*-
 
 import sys
 import os
@@ -17,26 +18,26 @@ import argparse
 
 # Packaging variables
 PACKAGE_NAME = "cnosdb"
-INSTALL_ROOT_DIR = "/usr/bin"
-LOG_DIR = "/var/log/cnosdb"
-DATA_DIR = "/var/lib/cnosdb"
-SCRIPT_DIR = "/usr/lib/cnosdb/scripts"
-CONFIG_DIR = "/etc/cnosdb"
-LOGROTATE_DIR = "/etc/logrotate.d"
-MAN_DIR = "/usr/share/man"
-
-INIT_SCRIPT = "scripts/cnosdb/init.sh"
-SYSTEMD_SCRIPT = "scripts/cnosdb/cnosdb.service"
-PREINST_SCRIPT = "scripts/cnosdb/pre-install.sh"
-POSTINST_SCRIPT = "scripts/cnosdb/post-install.sh"
-POSTUNINST_SCRIPT = "scripts/cnosdb/post-uninstall.sh"
-LOGROTATE_SCRIPT = "scripts/cnosdb/logrotate"
-DEFAULT_CONFIG = "etc/cnosdb.sample.toml"
-
-CONFIGURATION_FILES = [
-    CONFIG_DIR + '/cnosdb.conf',
-    LOGROTATE_DIR + '/cnosdb',
-]
+# INSTALL_ROOT_DIR = "/usr/bin"
+# LOG_DIR = "/var/log/cnosdb"
+# DATA_DIR = "/var/lib/cnosdb"
+# SCRIPT_DIR = "/usr/lib/cnosdb/scripts"
+# CONFIG_DIR = "/etc/cnosdb"
+# LOGROTATE_DIR = "/etc/logrotate.d"
+# MAN_DIR = "/usr/share/man"
+#
+# INIT_SCRIPT = "scripts/cnosdb/init.sh"
+# SYSTEMD_SCRIPT = "scripts/cnosdb/cnosdb.service"
+# PREINST_SCRIPT = "scripts/cnosdb/pre-install.sh"
+# POSTINST_SCRIPT = "scripts/cnosdb/post-install.sh"
+# POSTUNINST_SCRIPT = "scripts/cnosdb/post-uninstall.sh"
+# LOGROTATE_SCRIPT = "scripts/cnosdb/logrotate"
+# DEFAULT_CONFIG = "etc/cnosdb.sample.toml"
+#
+# CONFIGURATION_FILES = [
+#     CONFIG_DIR + '/cnosdb.conf',
+#     LOGROTATE_DIR + '/cnosdb',
+# ]
 
 PACKAGE_LICENSE = "MIT"
 PACKAGE_URL = "https://github.com/cnosdb/cnosdb"
@@ -47,39 +48,6 @@ DESCRIPTION = "Distributed time-series database."
 prereqs = ['git', 'go']
 go_vet_command = "go vet ./..."
 optional_prereqs = ['fpm', 'rpmbuild', 'gpg']
-
-fpm_common_args = "-f -s dir --log error \
---vendor {} \
---url {} \
---after-install {} \
---before-install {} \
---after-remove {} \
---license {} \
---maintainer {} \
---directories {} \
---directories {} \
---directories {} \
---description \"{}\"".format(
-    VENDOR,
-    PACKAGE_URL,
-    POSTINST_SCRIPT,
-    PREINST_SCRIPT,
-    POSTUNINST_SCRIPT,
-    PACKAGE_LICENSE,
-    MAINTAINER,
-    LOG_DIR,
-    DATA_DIR,
-    MAN_DIR,
-    DESCRIPTION)
-
-for f in CONFIGURATION_FILES:
-    fpm_common_args += " --config-files {}".format(f)
-
-targets = {
-    'cnosdb': './cmd/cnosdb',
-    'cnosdb-cli': './cmd/cnosdb-cli',
-    'cnosdb-inspect': './cmd/cnosdb-inspect'
-}
 
 supported_builds = {
     'darwin': ["amd64"],
@@ -110,50 +78,120 @@ def print_banner():
 """)
 
 
-def create_package_fs(build_root):
+def get_package_variables(pkgKind):
+    package_variables = {}
+    packages = {'cnosdb'}
+    if pkgKind:
+        packages.add('cnosdb-meta')
+    for pkg in packages:
+        pkginfo = {}
+        variables = {}
+        variables['PACKAGE_NAME'] = "{}".format(pkg)
+        variables['INSTALL_ROOT_DIR'] = "/usr/bin"
+        variables['LOG_DIR'] = "/var/log/{}".format(pkg)
+        variables['DATA_DIR'] = "/var/lib/{}".format(pkg)
+        variables['SCRIPT_DIR'] = "/usr/lib/{}/scripts".format(pkg)
+        variables['CONFIG_DIR'] = "/etc/{}".format(pkg)
+        variables['LOGROTATE_DIR'] = "/etc/logrotate.d"
+        variables['MAN_DIR'] = "/usr/share/man"
+        variables['INIT_SCRIPT'] = "scripts/{}/init.sh".format(pkg)
+        variables['SYSTEMD_SCRIPT'] = "scripts/{0}/{1}.service".format(pkg, pkg)
+        variables['PREINST_SCRIPT'] = "scripts/{}/pre-install.sh".format(pkg)
+        variables['POSTINST_SCRIPT'] = "scripts/{}/post-install.sh".format(pkg)
+        variables['POSTUNINST_SCRIPT'] = "scripts/{}/post-uninstall.sh".format(pkg)
+        variables['LOGROTATE_SCRIPT'] = "scripts/{}/logrotate".format(pkg)
+        variables['DEFAULT_CONFIG'] = "etc/{}.sample.toml".format(pkg)
+        variables['CONFIGURATION_FILES'] = [
+            variables['CONFIG_DIR'] + '/{}.conf'.format(pkg),
+            variables['LOGROTATE_DIR'] + '/{}'.format(pkg)]
+        pkginfo['variables'] = variables
+        targets = {}
+        if pkg == 'cnosdb':
+            targets['cnosdb'] ='./cmd/cnosdb'
+            targets['cnosdb-cli'] ='./cmd/cnosdb-cli'
+            targets['cnosdb-inspect'] = './cmd/cnosdb-inspect'
+        else:
+            targets['cnosdb-meta'] = './cmd/cnosdb-meta'
+            targets['cnosdb-ctl'] = './cmd/cnosdb-ctl'
+        pkginfo['variables'] = variables
+        pkginfo['targets'] = targets
+        package_variables[pkg] = pkginfo
+    return package_variables
+
+
+def get_fpm_common_args(info):
+    fpm_common_args = "-f -s dir --log error \
+    --vendor {} \
+    --url {} \
+    --after-install {} \
+    --before-install {} \
+    --after-remove {} \
+    --license {} \
+    --maintainer {} \
+    --directories {} \
+    --directories {} \
+    --directories {} \
+    --description \"{}\"".format(
+        VENDOR,
+        PACKAGE_URL,
+        info['POSTINST_SCRIPT'],
+        info['PREINST_SCRIPT'],
+        info['POSTUNINST_SCRIPT'],
+        PACKAGE_LICENSE,
+        MAINTAINER,
+        info['LOG_DIR'],
+        info['DATA_DIR'],
+        info['MAN_DIR'],
+        DESCRIPTION)
+    for f in info['CONFIGURATION_FILES']:
+        fpm_common_args += " --config-files {}".format(f)
+    return fpm_common_args
+
+
+def create_package_fs(pkginfo, build_root):
     """Create a filesystem structure to mimic the package filesystem.
     """
     logging.debug("Creating package filesystem at location: {}".format(build_root))
     # Using [1:] for the path names due to them being absolute
     # (will overwrite previous paths, per 'os.path.join' documentation)
-    dirs = [INSTALL_ROOT_DIR[1:],
-            LOG_DIR[1:],
-            DATA_DIR[1:],
-            SCRIPT_DIR[1:],
-            CONFIG_DIR[1:],
-            LOGROTATE_DIR[1:],
-            MAN_DIR[1:]]
+    dirs = [pkginfo['INSTALL_ROOT_DIR'][1:],
+            pkginfo['LOG_DIR'][1:],
+            pkginfo['DATA_DIR'][1:],
+            pkginfo['SCRIPT_DIR'][1:],
+            pkginfo['CONFIG_DIR'][1:],
+            pkginfo['LOGROTATE_DIR'][1:],
+            pkginfo['MAN_DIR'][1:]]
     for d in dirs:
         os.makedirs(os.path.join(build_root, d))
         os.chmod(os.path.join(build_root, d), 0o755)
 
 
-def package_scripts(build_root, config_only=False, windows=False):
+def package_scripts(pkgname, pkginfo, build_root, config_only=False, windows=False):
     """Copy the necessary scripts and configuration files to the package
     filesystem.
     """
     if config_only:
         logging.debug("Copying configuration to build directory.")
-        shutil.copyfile(DEFAULT_CONFIG, os.path.join(build_root, "cnosdb.conf"))
-        os.chmod(os.path.join(build_root, "cnosdb.conf"), 0o644)
+        shutil.copyfile(pkginfo['DEFAULT_CONFIG'], os.path.join(build_root, "{}.conf".format(pkgname)))
+        os.chmod(os.path.join(build_root, "{}.conf".format(pkgname)), 0o644)
     else:
         logging.debug("Copying scripts and sample configuration to build directory.")
-        shutil.copyfile(INIT_SCRIPT, os.path.join(build_root, SCRIPT_DIR[1:], INIT_SCRIPT.split('/')[2])) # init.sh
-        os.chmod(os.path.join(build_root, SCRIPT_DIR[1:], INIT_SCRIPT.split('/')[2]), 0o644)
-        shutil.copyfile(SYSTEMD_SCRIPT, os.path.join(build_root, SCRIPT_DIR[1:], SYSTEMD_SCRIPT.split('/')[2])) # cnosdb.service
-        os.chmod(os.path.join(build_root, SCRIPT_DIR[1:], SYSTEMD_SCRIPT.split('/')[2]), 0o644)
-        shutil.copyfile(LOGROTATE_SCRIPT, os.path.join(build_root, LOGROTATE_DIR[1:], "cnosdb")) # etc/logrotate.d/cnosdb
-        os.chmod(os.path.join(build_root, LOGROTATE_DIR[1:], "cnosdb"), 0o644)
-        shutil.copyfile(DEFAULT_CONFIG, os.path.join(build_root, CONFIG_DIR[1:], "cnosdb.conf")) # cnosdb.conf
-        os.chmod(os.path.join(build_root, CONFIG_DIR[1:], "cnosdb.conf"), 0o644)
+        shutil.copyfile(pkginfo['INIT_SCRIPT'], os.path.join(build_root, pkginfo['SCRIPT_DIR'][1:], pkginfo['INIT_SCRIPT'].split('/')[2]))  # init.sh
+        os.chmod(os.path.join(build_root, pkginfo['SCRIPT_DIR'][1:], pkginfo['INIT_SCRIPT'].split('/')[2]), 0o644)
+        shutil.copyfile(pkginfo['SYSTEMD_SCRIPT'], os.path.join(build_root, pkginfo['SCRIPT_DIR'][1:], pkginfo['SYSTEMD_SCRIPT'].split('/')[2]))  # cnosdb.service
+        os.chmod(os.path.join(build_root, pkginfo['SCRIPT_DIR'][1:], pkginfo['SYSTEMD_SCRIPT'].split('/')[2]), 0o644)
+        shutil.copyfile(pkginfo['LOGROTATE_SCRIPT'], os.path.join(build_root, pkginfo['LOGROTATE_DIR'][1:], "{}".format(pkgname))) # etc/logrotate.d/cnosdb
+        os.chmod(os.path.join(build_root, pkginfo['LOGROTATE_DIR'][1:], "".format(pkgname)), 0o644)
+        shutil.copyfile(pkginfo['DEFAULT_CONFIG'], os.path.join(build_root, pkginfo['CONFIG_DIR'][1:], "{}.conf".format(pkgname))) # cnosdb.conf
+        os.chmod(os.path.join(build_root, pkginfo['CONFIG_DIR'][1:], "{}.conf".format(pkgname)), 0o644)
 
 
-def package_man_files(build_root):
+def package_man_files(pkgname, pkginfo, build_root):
     """Copy and gzip man pages to the package filesystem."""
     logging.debug("Installing man pages.")
-    run("make -C man/cnosdb clean install DESTDIR={}/usr".format(build_root))
+    run("make -C man/{0} clean install DESTDIR={1}/usr".format(pkgname, build_root))
     # usr/share/man
-    for path, dir, files in os.walk(os.path.join(build_root, MAN_DIR[1:])):
+    for path, dir, files in os.walk(os.path.join(build_root, pkginfo['MAN_DIR'][1:])):
         for f in files:
             run("gzip -9n {}".format(os.path.join(path, f)))
 
@@ -267,11 +305,11 @@ def run(command, allow_failure=False, shell=False):
         return out
 
 
-def create_temp_dir(prefix=None):
+def create_temp_dir(packageName="", prefix=None):
     """ Create temporary directory with optional prefix.
     """
     if prefix is None:
-        return tempfile.mkdtemp(prefix="{}-build.".format(PACKAGE_NAME))
+        return tempfile.mkdtemp(prefix="{}-build.".format(packageName))
     else:
         return tempfile.mkdtemp(prefix=prefix)
 
@@ -452,7 +490,8 @@ def build(version=None,
           clean=False,
           outdir=".",
           tags=[],
-          static=False):
+          static=False,
+          pkginfos={}):
     """Build each target for the specified architecture and platform.
     """
     logging.info("Starting build for {}/{}...".format(platform, arch))
@@ -476,72 +515,73 @@ def build(version=None,
 
     logging.info("Using version '{}' for build.".format(version))
 
-    for target, path in targets.items():
-        logging.info("Building target: {}".format(target))
-        build_command = ""
+    for pkg, pkginfo in pkginfos.items():
+        for target, path in pkginfo['targets'].items():
+            logging.info("Building target: {}".format(target))
+            build_command = ""
 
-        # Handle static binary output
-        if static is True or "static_" in arch:
-            if "static_" in arch:
-                static = True
-                arch = arch.replace("static_", "")
-            build_command += "CGO_ENABLED=0 "
+            # Handle static binary output
+            if static is True or "static_" in arch:
+                if "static_" in arch:
+                    static = True
+                    arch = arch.replace("static_", "")
+                build_command += "CGO_ENABLED=0 "
 
-        # Handle variations in architecture output
-        if arch == "i386" or arch == "i686":
-            arch = "386"
-        elif "arm" in arch:
-            arch = "arm"
-        build_command += "GOOS={} GOARCH={} ".format(platform, arch)
+            # Handle variations in architecture output
+            if arch == "i386" or arch == "i686":
+                arch = "386"
+            elif "arm" in arch:
+                arch = "arm"
+            build_command += "GOOS={} GOARCH={} ".format(platform, arch)
 
-        if "arm" in arch:
-            if arch == "armel":
-                build_command += "GOARM=5 "
-            elif arch == "armhf" or arch == "arm":
-                build_command += "GOARM=6 "
-            elif arch == "arm64":
-                # TODO - Verify this is the correct setting for arm64
-                build_command += "GOARM=7 "
+            if "arm" in arch:
+                if arch == "armel":
+                    build_command += "GOARM=5 "
+                elif arch == "armhf" or arch == "arm":
+                    build_command += "GOARM=6 "
+                elif arch == "arm64":
+                    # TODO - Verify this is the correct setting for arm64
+                    build_command += "GOARM=7 "
+                else:
+                    logging.error("Invalid ARM architecture specified: {}".format(arch))
+                    logging.error("Please specify either 'armel', 'armhf', or 'arm64'.")
+                    return False
+            if platform == 'windows':
+                target = target + '.exe'
+            build_command += "go build -o {} ".format(os.path.join(outdir, target))
+            if race:
+                build_command += "-race "
+            if len(tags) > 0:
+                build_command += "-tags {} ".format(','.join(tags))
+            if "1.4" in get_go_version():
+                if static:
+                    build_command += "-ldflags=\"-s -X main.version {} -X main.branch {} -X main.commit {}\" ".format(
+                        version,
+                        get_current_branch(),
+                        get_current_commit())
+                else:
+                    build_command += "-ldflags=\"-X main.version {} -X main.branch {} -X main.commit {}\" ".format(version,
+                                                                                                                   get_current_branch(),
+                                                                                                                   get_current_commit())
+
             else:
-                logging.error("Invalid ARM architecture specified: {}".format(arch))
-                logging.error("Please specify either 'armel', 'armhf', or 'arm64'.")
-                return False
-        if platform == 'windows':
-            target = target + '.exe'
-        build_command += "go build -o {} ".format(os.path.join(outdir, target))
-        if race:
-            build_command += "-race "
-        if len(tags) > 0:
-            build_command += "-tags {} ".format(','.join(tags))
-        if "1.4" in get_go_version():
+                # Starting with Go 1.5, the linker flag arguments changed to 'name=value' from 'name value'
+                if static:
+                    build_command += "-ldflags=\"-s -X main.version={} -X main.branch={} -X main.commit={}\" ".format(
+                        version,
+                        get_current_branch(),
+                        get_current_commit())
+                else:
+                    build_command += "-ldflags=\"-X main.version={} -X main.branch={} -X main.commit={}\" ".format(version,
+                                                                                                                   get_current_branch(),
+                                                                                                                   get_current_commit())
             if static:
-                build_command += "-ldflags=\"-s -X main.version {} -X main.branch {} -X main.commit {}\" ".format(
-                    version,
-                    get_current_branch(),
-                    get_current_commit())
-            else:
-                build_command += "-ldflags=\"-X main.version {} -X main.branch {} -X main.commit {}\" ".format(version,
-                                                                                                               get_current_branch(),
-                                                                                                               get_current_commit())
-
-        else:
-            # Starting with Go 1.5, the linker flag arguments changed to 'name=value' from 'name value'
-            if static:
-                build_command += "-ldflags=\"-s -X main.version={} -X main.branch={} -X main.commit={}\" ".format(
-                    version,
-                    get_current_branch(),
-                    get_current_commit())
-            else:
-                build_command += "-ldflags=\"-X main.version={} -X main.branch={} -X main.commit={}\" ".format(version,
-                                                                                                               get_current_branch(),
-                                                                                                               get_current_commit())
-        if static:
-            build_command += "-a -installsuffix cgo "
-        build_command += path
-        start_time = datetime.utcnow()
-        run(build_command, shell=True)
-        end_time = datetime.utcnow()
-        logging.info("Time taken: {}s".format((end_time - start_time).total_seconds()))
+                build_command += "-a -installsuffix cgo "
+            build_command += path
+            start_time = datetime.utcnow()
+            run(build_command, shell=True)
+            end_time = datetime.utcnow()
+            logging.info("Time taken: {}s".format((end_time - start_time).total_seconds()))
     return True
 
 
@@ -570,163 +610,166 @@ def generate_sig_from_file(path):
     return True
 
 
-def package(build_output, pkg_name, version, nightly=False, iteration=1, static=False, release=False):
+def package(build_output, pkg_name, version, nightly=False, iteration=1, static=False, release=False, pkginfos={}):
     """Package the output of the build process.
     """
-    logging.info("This pkg_name is {}".format(pkg_name))
-    logging.info("Start build package...")
-    outfiles = []
-    tmp_build_dir = create_temp_dir()
-    logging.debug("Packaging for build output: {}".format(build_output)) # {'linux': {'amd64': '/opt/cnosdb/build'}}
-    logging.info("Using temporary directory: {}".format(tmp_build_dir)) # /tmp/cnosdb-build.hzlw1ekk
     try:
-        for platform in build_output: # platform: linux
-            # Create top-level folder displaying which platform (linux, etc)
-            os.makedirs(os.path.join(tmp_build_dir, platform))
-            for arch in build_output[platform]:
-                logging.info("Creating packages for {}/{}".format(platform, arch)) # linux, amd
-                # Create second-level directory displaying the architecture (amd64, etc)
-                current_location = build_output[platform][arch]
-
-                # Create directory tree to mimic file system of package
-                build_root = os.path.join(tmp_build_dir,
-                                          platform,
-                                          arch,
-                                          '{}-{}-{}'.format(PACKAGE_NAME, version, iteration))
-                os.makedirs(build_root)
-
-                # Copy packaging scripts to build directory
-                if platform == "windows":  # 如果是Windows系统
-                    # For windows and static builds, just copy
-                    # binaries to root of package (no other scripts or
-                    # directories)
-                    package_scripts(build_root, config_only=True, windows=True)
-
-                elif static or "static_" in arch:
-                    package_scripts(build_root, config_only=True)
-                else:
-                    create_package_fs(build_root)
-                    package_scripts(build_root)
-
-                if platform != "windows":
-                    package_man_files(build_root)
-
-                for binary in targets:
-                    # Copy newly-built binaries to packaging directory
-                    if platform == 'windows':
-                        binary = binary + '.exe'
-                    if platform == 'windows' or static or "static_" in arch:
-                        # Where the binary should go in the package filesystem
-                        to = os.path.join(build_root, binary)
-                        # Where the binary currently is located
-                        fr = os.path.join(current_location, binary)
-                    else:
-                        # Where the binary currently is located
-                        fr = os.path.join(current_location, binary)
-                        # Where the binary should go in the package filesystem
-                        to = os.path.join(build_root, INSTALL_ROOT_DIR[1:], binary)
-                    shutil.copy(fr, to)
-
-                for package_type in supported_packages[platform]:
-                    # Package the directory structure for each package type for the platform
-                    logging.debug("Packaging directory '{}' as '{}'.".format(build_root, package_type))
-                    name = pkg_name
-                    # Reset version, iteration, and current location on each run
-                    # since they may be modified below.
-                    package_version = version
-                    package_iteration = iteration
-                    if "static_" in arch:
-                        # Remove the "static_" from the displayed arch on the package
-                        package_arch = arch.replace("static_", "")
-                    else:
-                        package_arch = arch
-                    if not release and not nightly:
-                        # For non-release builds, just use the commit hash as the version
-                        package_version = "{}~{}".format(version,
-                                                         get_current_commit(short=True))
-                        package_iteration = "0"
-                    package_build_root = build_root
+        outfiles = []
+        for pkgname, info in pkginfos.items():
+            pkg_name = pkgname
+            logging.info("This pkg_name is {}".format(pkg_name))
+            logging.info("Start build package...")
+            tmp_build_dir = create_temp_dir(pkg_name)
+            logging.debug("Packaging for build output: {}".format(build_output))  # {'linux': {'amd64': '/opt/cnosdb/build'}}
+            logging.info("Using temporary directory: {}".format(tmp_build_dir))  # /tmp/cnosdb-build.hzlw1ekk
+            for platform in build_output:  # platform: linux
+                # Create top-level folder displaying which platform (linux, etc)
+                os.makedirs(os.path.join(tmp_build_dir, platform))
+                for arch in build_output[platform]:
+                    logging.info("Creating packages for {}/{}".format(platform, arch))  # linux, amd
+                    # Create second-level directory displaying the architecture (amd64, etc)
                     current_location = build_output[platform][arch]
 
-                    if package_type in ['zip', 'tar']:
-                        # For tars and zips, start the packaging one folder above
-                        # the build root (to include the package name)
-                        package_build_root = os.path.join('/', '/'.join(build_root.split('/')[:-1]))
-                        if nightly:
-                            if static or "static_" in arch:
-                                name = '{}-static-nightly_{}_{}'.format(name,
-                                                                        platform,
-                                                                        package_arch)
-                            else:
-                                name = '{}-nightly_{}_{}'.format(name,
-                                                                 platform,
-                                                                 package_arch)
-                        else:
-                            if static or "static_" in arch:
-                                name = '{}-{}-static_{}_{}'.format(name,
-                                                                   package_version,
-                                                                   platform,
-                                                                   package_arch)
-                            else:
-                                name = '{}-{}_{}_{}'.format(name,
-                                                            package_version,
-                                                            platform,
-                                                            package_arch)
-                        current_location = os.path.join(os.getcwd(), current_location)
-                        if package_type == 'tar':
-                            tar_command = "cd {} && tar -cvzf {}.tar.gz --owner=root ./*".format(package_build_root,
-                                                                                                 name)
-                            run(tar_command, shell=True)
-                            run("mv {}.tar.gz {}".format(os.path.join(package_build_root, name), current_location),
-                                shell=True)
-                            outfile = os.path.join(current_location, name + ".tar.gz")
-                            outfiles.append(outfile)
-                        elif package_type == 'zip':
-                            zip_command = "cd {} && zip -r {}.zip ./*".format(package_build_root, name)
-                            run(zip_command, shell=True)
-                            run("mv {}.zip {}".format(os.path.join(package_build_root, name), current_location),
-                                shell=True)
-                            outfile = os.path.join(current_location, name + ".zip")
-                            outfiles.append(outfile)
-                    elif package_type not in ['zip', 'tar'] and static or "static_" in arch:
-                        logging.info("Skipping package type '{}' for static builds.".format(package_type))
+                    # Create directory tree to mimic file system of package
+                    build_root = os.path.join(tmp_build_dir,
+                                              platform,
+                                              arch,
+                                              '{}-{}-{}'.format(pkg_name, version, iteration))
+                    os.makedirs(build_root)
+
+                    # Copy packaging scripts to build directory
+                    if platform == "windows":  # 如果是Windows系统
+                        # For windows and static builds, just copy
+                        # binaries to root of package (no other scripts or
+                        # directories)
+                        package_scripts(pkgname, info['variables'], build_root, config_only=True, windows=True)
+
+                    elif static or "static_" in arch:
+                        package_scripts(pkgname, info['variables'], build_root, config_only=True)
                     else:
-                        fpm_command = "fpm {} --name {} -a {} -t {} --version {} --iteration {} -C {} -p {} ".format(
-                            fpm_common_args,
-                            name,
-                            package_arch,
-                            package_type,
-                            package_version,
-                            package_iteration,
-                            package_build_root,
-                            current_location)
-                        if package_type == "rpm":
-                            fpm_command += "--depends coreutils --depends shadow-utils --rpm-posttrans {}".format(
-                                POSTINST_SCRIPT)
-                        out = run(fpm_command, shell=True)
-                        matches = re.search(':path=>"(.*)"', out)
-                        outfile = None
-                        if matches is not None:
-                            outfile = matches.groups()[0]
-                        if outfile is None:
-                            logging.warn("Could not determine output from packaging output!")
+                        create_package_fs(info['variables'], build_root)
+                        package_scripts(pkgname, info['variables'], build_root)
+
+                    if platform != "windows":
+                        package_man_files(pkgname, info['variables'], build_root)
+
+                    for binary in info['targets']:
+                        # Copy newly-built binaries to packaging directory
+                        if platform == 'windows':
+                            binary = binary + '.exe'
+                        if platform == 'windows' or static or "static_" in arch:
+                            # Where the binary should go in the package filesystem
+                            to = os.path.join(build_root, binary)
+                            # Where the binary currently is located
+                            fr = os.path.join(current_location, binary)
                         else:
+                            # Where the binary currently is located
+                            fr = os.path.join(current_location, binary)
+                            # Where the binary should go in the package filesystem
+                            to = os.path.join(build_root, info['variables']['INSTALL_ROOT_DIR'][1:], binary)
+                        shutil.copy(fr, to)
+
+                    for package_type in supported_packages[platform]:
+                        # Package the directory structure for each package type for the platform
+                        logging.debug("Packaging directory '{}' as '{}'.".format(build_root, package_type))
+                        name = pkg_name
+                        # Reset version, iteration, and current location on each run
+                        # since they may be modified below.
+                        package_version = version
+                        package_iteration = iteration
+                        if "static_" in arch:
+                            # Remove the "static_" from the displayed arch on the package
+                            package_arch = arch.replace("static_", "")
+                        else:
+                            package_arch = arch
+                        if not release and not nightly:
+                            # For non-release builds, just use the commit hash as the version
+                            package_version = "{}~{}".format(version,
+                                                             get_current_commit(short=True))
+                            package_iteration = "0"
+                        package_build_root = build_root
+                        current_location = build_output[platform][arch]
+
+                        if package_type in ['zip', 'tar']:
+                            # For tars and zips, start the packaging one folder above
+                            # the build root (to include the package name)
+                            package_build_root = os.path.join('/', '/'.join(build_root.split('/')[:-1]))
                             if nightly:
-                                # Strip nightly version from package name
-                                new_outfile = outfile.replace("{}-{}".format(package_version, package_iteration),
-                                                              "nightly")
-                                os.rename(outfile, new_outfile)
-                                outfile = new_outfile
+                                if static or "static_" in arch:
+                                    name = '{}-static-nightly_{}_{}'.format(name,
+                                                                            platform,
+                                                                            package_arch)
+                                else:
+                                    name = '{}-nightly_{}_{}'.format(name,
+                                                                     platform,
+                                                                     package_arch)
                             else:
-                                if package_type == 'rpm':
-                                    # rpm's convert any dashes to underscores
-                                    package_version = package_version.replace("-", "_")
-                                new_outfile = outfile.replace("{}-{}".format(package_version, package_iteration),
-                                                              package_version)
-                                os.rename(outfile, new_outfile)
-                                outfile = new_outfile
-                            outfiles.append(os.path.join(os.getcwd(), outfile))
-        logging.debug("Produced package files: {}".format(outfiles))
+                                if static or "static_" in arch:
+                                    name = '{}-{}-static_{}_{}'.format(name,
+                                                                       package_version,
+                                                                       platform,
+                                                                       package_arch)
+                                else:
+                                    name = '{}-{}_{}_{}'.format(name,
+                                                                package_version,
+                                                                platform,
+                                                                package_arch)
+                            current_location = os.path.join(os.getcwd(), current_location)
+                            if package_type == 'tar':
+                                tar_command = "cd {} && tar -cvzf {}.tar.gz --owner=root ./*".format(package_build_root,
+                                                                                                     name)
+                                run(tar_command, shell=True)
+                                run("mv {}.tar.gz {}".format(os.path.join(package_build_root, name), current_location),
+                                    shell=True)
+                                outfile = os.path.join(current_location, name + ".tar.gz")
+                                outfiles.append(outfile)
+                            elif package_type == 'zip':
+                                zip_command = "cd {} && zip -r {}.zip ./*".format(package_build_root, name)
+                                run(zip_command, shell=True)
+                                run("mv {}.zip {}".format(os.path.join(package_build_root, name), current_location),
+                                    shell=True)
+                                outfile = os.path.join(current_location, name + ".zip")
+                                outfiles.append(outfile)
+                        elif package_type not in ['zip', 'tar'] and static or "static_" in arch:
+                            logging.info("Skipping package type '{}' for static builds.".format(package_type))
+                        else:
+                            fpm_common_args = get_fpm_common_args(info['variables'])
+                            fpm_command = "fpm {} --name {} -a {} -t {} --version {} --iteration {} -C {} -p {} ".format(
+                                fpm_common_args,
+                                name,
+                                package_arch,
+                                package_type,
+                                package_version,
+                                package_iteration,
+                                package_build_root,
+                                current_location)
+                            if package_type == "rpm":
+                                fpm_command += "--depends coreutils --depends shadow-utils --rpm-posttrans {}".format(
+                                    info['variables']['POSTINST_SCRIPT'])
+                            out = run(fpm_command, shell=True)
+                            matches = re.search(':path=>"(.*)"', out)
+                            outfile = None
+                            if matches is not None:
+                                outfile = matches.groups()[0]
+                            if outfile is None:
+                                logging.warn("Could not determine output from packaging output!")
+                            else:
+                                if nightly:
+                                    # Strip nightly version from package name
+                                    new_outfile = outfile.replace("{}-{}".format(package_version, package_iteration),
+                                                                  "nightly")
+                                    os.rename(outfile, new_outfile)
+                                    outfile = new_outfile
+                                else:
+                                    if package_type == 'rpm':
+                                        # rpm's convert any dashes to underscores
+                                        package_version = package_version.replace("-", "_")
+                                    new_outfile = outfile.replace("{}-{}".format(package_version, package_iteration),
+                                                                  package_version)
+                                    os.rename(outfile, new_outfile)
+                                    outfile = new_outfile
+                                outfiles.append(os.path.join(os.getcwd(), outfile))
+            logging.debug("Produced package files: {}".format(outfiles))
         return outfiles
     finally:
         # Cleanup
@@ -734,7 +777,7 @@ def package(build_output, pkg_name, version, nightly=False, iteration=1, static=
 
 
 def main(args):
-    global PACKAGE_NAME
+    packageInfos = get_package_variables(args.single)
 
     if args.release and args.nightly:
         logging.error("Cannot be both a nightly and a release.")
@@ -798,7 +841,6 @@ def main(args):
             archs = supported_builds.get(platform)
         else:
             archs = [args.arch]
-
         for arch in archs:
             od = args.outdir
             if not single_build:
@@ -811,7 +853,8 @@ def main(args):
                          clean=args.clean,
                          outdir=od,
                          tags=args.build_tags,
-                         static=args.static):
+                         static=args.static,
+                         pkginfos=packageInfos):
                 return 1
             build_output.get(platform).update({arch: od})
 
@@ -826,7 +869,8 @@ def main(args):
                            nightly=args.nightly,
                            iteration=args.iteration,
                            static=args.static,
-                           release=args.release)
+                           release=args.release,
+                           pkginfos=packageInfos)
         if args.sign:
             logging.debug("Generating GPG signatures for packages: {}".format(packages))
             sigs = []  # retain signatures so they can be uploaded with packages
@@ -918,7 +962,7 @@ if __name__ == '__main__':
                         action='store_true',
                         help='Update build dependencies prior to building')
     parser.add_argument('--package',
-                        action='store_true',
+                        action='store_false',
                         help='Package binary output')
     parser.add_argument('--release',
                         action='store_true',
@@ -961,6 +1005,9 @@ if __name__ == '__main__':
                         metavar='<timeout>',
                         type=str,
                         help='Timeout for tests before failing')
+    parser.add_argument('--single',
+                        action='store_false',
+                        help='Execute the meta packaging process')
     args = parser.parse_args()
     print_banner()
     sys.exit(main(args))
