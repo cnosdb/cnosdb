@@ -1,0 +1,35 @@
+cnosdb-meta-run(1)
+===================
+
+NAME
+----
+cnosdb-meta-run - Configure and start an CnosDB-meta server
+
+SYNOPSIS
+--------
+[verse]
+'cnosdb-meta' [--config <path>] [--pidfile <path>] [--cpuprofile <path>] [--memprofile <path>]
+'cnosdb-meta run' [--config <path>] [--pidfile <path>] [--cpuprofile <path>] [--memprofile <path>]
+
+DESCRIPTION
+-----------
+Runs the CnosDB Meta Server.
+
+OPTIONS
+--------
+-h, --help::
+   help for run
+
+-c, --config <path>::
+    Set the path to the configuration file.This defaults to the environment variable CNOSDB_CONFIG_PATH,~/.cnosdb/cnosdb.conf, or /etc/cnosdb/cnosdb.conf if a file is present at any of these locations. Disable the automatic loading of a configuration file using the null device (such as /dev/null)
+
+--cpuprofile <path>::
+   Write CPU profiling information to a file.
+
+--memprofile <path>::
+   Write memory usage information to a file.
+
+--pidfile <path>::
+   Write process ID to a file.
+
+include::footer.txt[]

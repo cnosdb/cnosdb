@@ -1,0 +1,22 @@
+cnosdb-meta-version(1)
+=======================
+
+NAME
+----
+cnosdb-meta-version - Display the version of cnosdb-meta
+
+SYNOPSIS
+--------
+[verse]
+'cnosdb-meta version' [options]
+
+DESCRIPTION
+-----------
+'cnosdb version' will output the version of the CnosDB-meta server.
+
+OPTIONS
+-------
+-h, --help::
+  help for version
+
+include::footer.txt[]

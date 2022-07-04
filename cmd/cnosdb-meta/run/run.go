@@ -52,7 +52,9 @@ func GetCommand() *cobra.Command {
 
 			d := &CnosMetaServer{
 				Server: meta.NewServer(config),
+				Closed: make(chan struct{}),
 			}
+			s := d.Server
 
 			if err := d.Server.Open(nil); err != nil {
 				return fmt.Errorf("open server: %s", err)
@@ -64,11 +66,18 @@ func GetCommand() *cobra.Command {
 			// 直到接收到指定信号为止，保持阻塞
 			<-signalCh
 
+			go func() {
+				defer close(d.Closed)
+				s.Close()
+			}()
+
 			select {
 			case <-signalCh:
 				fmt.Println("Second signal received, initializing hard shutdown")
 			case <-time.After(time.Second * 30):
 				fmt.Println("Time limit reached, initializing hard shutdown")
+			case <-d.Closed:
+				fmt.Println("Server close completed")
 			}
 
 			return nil
@@ -80,6 +89,7 @@ func GetCommand() *cobra.Command {
 
 type CnosMetaServer struct {
 	Server *meta.Server
+	Closed chan struct{}
 }
 
 // ParseConfig parses the config at path.

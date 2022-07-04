@@ -3,8 +3,6 @@ package tests
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cnosdb/cnosdb/vend/db/models"
-	"github.com/google/go-cmp/cmp"
 	"math/rand"
 	"net/url"
 	"os"
@@ -14,6 +12,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cnosdb/cnosdb/vend/db/models"
+	"github.com/google/go-cmp/cmp"
 )
 
 var db = "db0"
@@ -280,7 +281,6 @@ func TestServer_Insert_Delete_1515777603585914810(t *testing.T) {
 	}
 }
 
-// This test reproduces the issue identified in https://github.com/influxdata/influxdb/issues/10052
 func TestServer_Insert_Delete_10052(t *testing.T) {
 	t.Parallel()
 
