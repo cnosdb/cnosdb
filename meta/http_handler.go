@@ -127,7 +127,6 @@ func NewHandler(conf *ServerConfig) *Handler {
 }
 
 func (h *Handler) Open() {
-
 }
 
 // 响应 HTTP 请求
@@ -363,6 +362,13 @@ func (h *Handler) serveMetaServers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//Copyright [2022] [FreeTSDB]
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
 func (h *Handler) serveExecute(w http.ResponseWriter, r *http.Request) {
 	if h.isClosed() {
 		h.httpError(fmt.Errorf("server closed"), w, http.StatusServiceUnavailable)
@@ -428,6 +434,13 @@ func (h *Handler) serveExecute(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+//Copyright [2022] [FreeTSDB]
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
 func (h *Handler) serveJoinCluster(w http.ResponseWriter, r *http.Request) {
 	if h.isClosed() {
 		h.httpError(fmt.Errorf("server closed"), w, http.StatusServiceUnavailable)
@@ -454,6 +467,13 @@ func (h *Handler) serveJoinCluster(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//Copyright [2022] [FreeTSDB]
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
 func (h *Handler) serveAddMeta(w http.ResponseWriter, r *http.Request) {
 	if h.isClosed() {
 		h.httpError(fmt.Errorf("server closed"), w, http.StatusServiceUnavailable)
@@ -503,6 +523,13 @@ func (h *Handler) serveAddMeta(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//Copyright [2022] [FreeTSDB]
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
 func (h *Handler) serveRemoveMeta(w http.ResponseWriter, r *http.Request) {
 	if h.isClosed() {
 		h.httpError(fmt.Errorf("server closed"), w, http.StatusServiceUnavailable)
