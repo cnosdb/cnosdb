@@ -11,7 +11,7 @@
 6. 支持标准SQL，Flux，支持丰富的聚合查询及算子。
 ### 生态
 7. 面向多租设计，提供更多的配置参数，能够提供资源更加灵活的配置；
-8. cdc、wal 可以提供订阅和分发到其他节点，更加灵活的部署和支持；
+8. cdc、WAL可以提供订阅和分发到其他节点，更加灵活的部署和支持；
 9. 生态型兼容K8s生态，减少共享内存；
 10. 与其他数据生态系统相结合，支持导入/导出parquet文件；
 11. 兼容国际与国内主要公有云生态。
@@ -27,7 +27,7 @@ Tsfamily： series的列簇，一个LSM的基本单元。
 tsm的压缩：支持多种field类型的压缩。
 tsm的有损压缩：支持降低数据精度的数据压缩。
 支持操作：
-1. 写操作：grpc -> wal -> memcache 。
+1. 写操作：grpc -> WAL -> memcache 。
 2. 读操作： 支持point查询和range查询，能从memtable 和 tsm中读数据。
 3. 标记式delete，通过compact删除文件， memtable中的数据实时清除。
 4. flush:  immutcache 刷到 L0 层 较小的tsm文件。
@@ -76,7 +76,7 @@ tsm的有损压缩：支持降低数据精度的数据压缩。
 3. 数据管理工具涉及引擎层工具
     a. 数据文件备份（可以指定DB、shard、时间段等）与还原
     b. 导出为行协议（可以按照多个不同维度：DB、Shard、时间段）与批量导入
-    c. 磁盘文件分析工具（分析tsm、wal、index文件等，索引重建，文件合法性校验等）
+    c. 磁盘文件分析工具（分析tsm、WAL、index文件等，索引重建，文件合法性校验等）
     d. 按照多个维度删除数据：DB、table、shard、时间段
 ### 测试支持
 1. 基础测试
@@ -95,7 +95,7 @@ kv:
 7. 优化 不必要的lock  （长期工作）
 query: 
 1. impl catalog provider 
-2. schema存储 对接arrow shema 
+2. schema存储 对接arrow schema 
 3. 将tsm file中的数据组装成arrow中的recordbatch。 
 ### 202208
 ### 202209
