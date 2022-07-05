@@ -1,6 +1,6 @@
 use std::{cmp::max, collections::HashMap, path::PathBuf, sync::Arc};
 
-use models::FieldID;
+use models::FieldId;
 use parking_lot::Mutex;
 use regex::internal::Input;
 use tokio::sync::RwLock;
@@ -100,7 +100,7 @@ impl FlushTask {
     }
 }
 
-fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldID, DataBlock>) -> Result<u64> {
+fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldId, DataBlock>) -> Result<u64> {
     let file = file_manager::get_file_manager().create_file(fname).unwrap();
     let mut fs_cursor = file.into_cursor();
 

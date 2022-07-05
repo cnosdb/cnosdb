@@ -5,7 +5,7 @@ use std::{
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use logger::{debug, info, init, trace, warn};
-use models::{FieldID, SeriesID, Timestamp};
+use models::{FieldId, SeriesId, Timestamp};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
@@ -159,7 +159,7 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
-    pub async fn read_point(&self, sid: SeriesID, time_range: &TimeRange, field_id: FieldID) {
+    pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
         let mut version_set = self.version_set.write().await;
         if let Some(tsf) = version_set.get_tsfamily(sid) {
             // get data from memcache
@@ -186,7 +186,7 @@ impl TsKv {
         }
     }
 
-    pub async fn read(&self, sids: Vec<SeriesID>, time_range: &TimeRange, fields: Vec<FieldID>) {
+    pub async fn read(&self, sids: Vec<SeriesId>, time_range: &TimeRange, fields: Vec<FieldId>) {
         for sid in sids {
             for field_id in fields.iter() {
                 self.read_point(sid, time_range, *field_id).await;
@@ -195,7 +195,7 @@ impl TsKv {
     }
 
     pub async fn delete_series(&self,
-                               sids: Vec<SeriesID>,
+                               sids: Vec<SeriesId>,
                                min: Timestamp,
                                max: Timestamp)
                                -> Result<()> {
@@ -210,7 +210,7 @@ impl TsKv {
                     if level.ts_range.overlaps(&timerange) {
                         for column_file in level.files.iter() {
                             if column_file.range().overlaps(&timerange) {
-                                let field_ids: Vec<FieldID> = series_info.field_infos()
+                                let field_ids: Vec<FieldId> = series_info.field_infos()
                                                                          .iter()
                                                                          .map(|f| f.field_id())
                                                                          .collect();

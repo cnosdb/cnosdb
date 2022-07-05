@@ -1,4 +1,4 @@
-use models::{FieldID, SeriesID, ValueType};
+use models::{FieldId, SeriesId, ValueType};
 
 use crate::{byte_utils::decode_be_u64, error::Result, tsm::FileBlock, Error};
 
@@ -29,7 +29,7 @@ pub struct Footer {
 }
 
 impl IndexEntry {
-    pub fn field_id(&self) -> FieldID {
+    pub fn field_id(&self) -> FieldId {
         decode_be_u64(&self.key[..8])
     }
 }

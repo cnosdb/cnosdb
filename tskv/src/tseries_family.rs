@@ -13,7 +13,7 @@ use std::{
 use crossbeam::channel::internal::SelectHandle;
 use datafusion::logical_expr::BuiltinScalarFunction::Random;
 use lazy_static::lazy_static;
-use models::{FieldID, ValueType};
+use models::{FieldId, ValueType};
 use parking_lot::Mutex;
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use utils::BloomFilter;
@@ -92,7 +92,7 @@ impl ColumnFile {
         self.being_compact.load(Ordering::Acquire)
     }
 
-    pub fn contains_field_id(&self, field_id: FieldID) -> bool {
+    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
         self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
     }
 }
@@ -130,7 +130,7 @@ impl LevelInfo {
             self.ts_range.min_ts = delta.ts_min;
         }
     }
-    pub fn read_columnfile(&self, tf_id: u32, field_id: FieldID, time_range: &TimeRange) {
+    pub fn read_columnfile(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) {
         for file in self.files.iter() {
             let (mut fs_cursor, len) = file.file_reader(tf_id);
             let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize);
