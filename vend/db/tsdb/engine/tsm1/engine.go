@@ -14,12 +14,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/cnosdb/cnosdb/pkg/escape"
 	"github.com/cnosdb/cnosdb/pkg/logger"
 	"github.com/cnosdb/cnosdb/vend/cnosql"
 	"github.com/cnosdb/cnosdb/vend/db/models"
@@ -3083,4 +3085,223 @@ func varRefSliceRemove(a []cnosql.VarRef, v string) []cnosql.VarRef {
 		}
 	}
 	return other
+}
+
+func (e *Engine) DumpShard2ProtocolLine(w io.Writer, start, end int64) error {
+	tsmFiles := make([]string, 0)
+	walFiles := make([]string, 0)
+	if err := e.walkTSMFiles(&tsmFiles); err != nil {
+		return err
+	}
+	e.logger.Info("e.Path", zap.Any("path", tsmFiles))
+	if err := e.walkWALFiles(&walFiles); err != nil {
+		return err
+	}
+	return e.write(w, start, end, tsmFiles, walFiles)
+}
+
+func (e *Engine) walkTSMFiles(tsmFiles *[]string) error {
+	return filepath.Walk(e.path, func(path string, f os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// check to see if this is a tsm file
+		if filepath.Ext(path) != "."+TSMFileExtension {
+			return nil
+		}
+
+		*tsmFiles = append(*tsmFiles, path)
+		return nil
+	})
+}
+
+func (e *Engine) walkWALFiles(walFiles *[]string) error {
+	return filepath.Walk(e.WAL.path, func(path string, f os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// check to see if this is a wal file
+		fileName := filepath.Base(path)
+		if filepath.Ext(path) != "."+WALFileExtension || !strings.HasPrefix(fileName, WALFilePrefix) {
+			return nil
+		}
+
+		*walFiles = append(*walFiles, path)
+		return nil
+	})
+}
+
+func (e *Engine) write(w io.Writer, start, end int64, tsmFiles, walFiles []string) error {
+	s, en := time.Unix(0, start).Format(time.RFC3339), time.Unix(0, end).Format(time.RFC3339)
+	fmt.Fprintf(w, "# CNOSDB EXPORT: %s - %s\n", s, en)
+	e.logger.Info("path", zap.Any("tsmFiles", tsmFiles), zap.Any("walFiles", walFiles))
+	fmt.Fprintln(w, "# DML")
+	files := tsmFiles
+	if err := e.writeTsmFiles(w, start, end, files); err != nil {
+		return err
+	}
+
+	if err := e.writeWALFiles(w, start, end, walFiles); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *Engine) writeTsmFiles(w io.Writer, start, end int64, files []string) error {
+	fmt.Fprintln(w, "# writing tsm data")
+
+	// we need to make sure we write the same order that the files were written
+	sort.Strings(files)
+
+	for _, f := range files {
+		if err := e.exportTSMFile(f, w, start, end); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) exportTSMFile(tsmFilePath string, w io.Writer, start, end int64) error {
+	f, err := os.Open(tsmFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(w, "skipped missing file: %s", tsmFilePath)
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	r, err := NewTSMReader(f)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	if sgStart, sgEnd := r.TimeRange(); sgStart > end || sgEnd < start {
+		return nil
+	}
+	for i := 0; i < r.KeyCount(); i++ {
+		key, _ := r.KeyAt(i)
+		values, err := r.ReadAll(key)
+		if err != nil {
+			continue
+		}
+		measurement, field := SeriesAndFieldFromCompositeKey(key)
+		field = escape.Bytes(field)
+
+		if err := e.writeValues(w, start, end, measurement, string(field), values); err != nil {
+			// An error from writeValues indicates an IO error, which should be returned.
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) writeWALFiles(w io.Writer, start, end int64, files []string) error {
+	fmt.Fprintln(w, "# writing wal data")
+
+	// we need to make sure we write the same order that the wal received the data
+	sort.Strings(files)
+
+	for _, f := range files {
+		if err := e.exportWALFile(f, w, start, end); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// exportWAL reads every WAL entry from r and exports it to w.
+func (e *Engine) exportWALFile(walFilePath string, w io.Writer, start, end int64) error {
+	f, err := os.Open(walFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(w, "skipped missing file: %s", walFilePath)
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	r := NewWALSegmentReader(f)
+	defer r.Close()
+
+	for r.Next() {
+		entry, err := r.Read()
+		if err != nil {
+			break
+		}
+
+		switch t := entry.(type) {
+		case *DeleteWALEntry, *DeleteRangeWALEntry:
+			continue
+		case *WriteWALEntry:
+			for key, values := range t.Values {
+				measurement, field := SeriesAndFieldFromCompositeKey([]byte(key))
+				// measurements are stored escaped, field names are not
+				field = escape.Bytes(field)
+
+				if err := e.writeValues(w, start, end, measurement, string(field), values); err != nil {
+					// An error from writeValues indicates an IO error, which should be returned.
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// writeValues writes every value in values to w, using the given series key and field name.
+// If any call to w.Write fails, that error is returned.
+func (e *Engine) writeValues(w io.Writer, start, end int64, seriesKey []byte, field string, values []Value) error {
+	buf := []byte(string(seriesKey) + " " + field + "=")
+	prefixLen := len(buf)
+
+	for _, value := range values {
+		ts := value.UnixNano()
+		if (ts < start) || (ts > end) {
+			continue
+		}
+
+		// Re-slice buf to be "<series_key> <field>=".
+		buf = buf[:prefixLen]
+
+		// Append the correct representation of the value.
+		switch v := value.Value().(type) {
+		case float64:
+			buf = strconv.AppendFloat(buf, v, 'g', -1, 64)
+		case int64:
+			buf = strconv.AppendInt(buf, v, 10)
+			buf = append(buf, 'i')
+		case uint64:
+			buf = strconv.AppendUint(buf, v, 10)
+			buf = append(buf, 'u')
+		case bool:
+			buf = strconv.AppendBool(buf, v)
+		case string:
+			buf = append(buf, '"')
+			buf = append(buf, models.EscapeStringField(v)...)
+			buf = append(buf, '"')
+		default:
+			// This shouldn't be possible, but we'll format it anyway.
+			buf = append(buf, fmt.Sprintf("%v", v)...)
+		}
+
+		// Now buf has "<series_key> <field>=<value>".
+		// Append the timestamp and a newline, then write it.
+		buf = append(buf, ' ')
+		buf = strconv.AppendInt(buf, ts, 10)
+		buf = append(buf, '\n')
+		if _, err := w.Write(buf); err != nil {
+			// Underlying IO error needs to be returned.
+			return err
+		}
+	}
+
+	return nil
 }
