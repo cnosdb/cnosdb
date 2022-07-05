@@ -14,8 +14,8 @@ func TestNoaa(t *testing.T) {
 }
 
 const (
-	db = "NOAA_water_database"
-	rp = "rp0"
+	db_ = "NOAA_water_database"
+	rp_ = "rp0"
 )
 
 func TestGenCode(t *testing.T) {
