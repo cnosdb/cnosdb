@@ -285,23 +285,24 @@ impl WalManager {
                          global_context: Arc<GlobalContext>,
                          flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
                          -> Result<()> {
-        let min_log_seq = global_context.log_seq();
+        let min_log_seq = global_context.last_seq();
         warn!("recovering version set from seq '{}'", &min_log_seq);
-        let mut max_log_seq = min_log_seq;
 
         let wal_files = file_manager::list_file_names(&self.current_dir);
         for file_name in wal_files {
             let id = file_utils::get_wal_file_id(&file_name)?;
-            if id < min_log_seq {
-                continue;
-            }
-            max_log_seq = id;
             let tmp_walfile = WalWriter::open(id,
                                               self.current_dir.join(file_name),
                                               Arc::new(kv_option::WalConfig::default()))?;
             let mut reader = WalReader::new(tmp_walfile.file.into())?;
+            if reader.max_sequence < min_log_seq {
+                continue;
+            }
             let mut version_set = version_set.write().await;
             while let Some(e) = reader.next_wal_entry() {
+                if e.seq < min_log_seq {
+                    continue;
+                }
                 match e.typ {
                     WalEntryType::Write => {
                         let entry = flatbuffers::root::<fb_models::Points>(&e.buf)
@@ -386,10 +387,6 @@ impl WalManager {
                 };
             }
         }
-
-        global_context.set_log_seq(max_log_seq);
-        warn!("version set recovered, log_seq is '{}'", &max_log_seq);
-
         Ok(())
     }
 }
@@ -414,15 +411,18 @@ pub struct WalReader {
     cursor: FileCursor,
     header_buf: [u8; SEGMENT_HEADER_SIZE],
     block_header_buf: [u8; BLOCK_HEADER_SIZE],
+    max_sequence: u64,
     body_buf: Vec<u8>,
 }
 
 impl WalReader {
     pub fn new(mut cursor: FileCursor) -> Result<Self> {
         let header_buf = WalWriter::reade_header(&mut cursor)?;
+        let max_sequence = byte_utils::decode_be_u64(&header_buf[12..20]);
 
         Ok(Self { cursor,
                   header_buf,
+                  max_sequence,
                   block_header_buf: [0_u8; BLOCK_HEADER_SIZE],
                   body_buf: vec![] })
     }

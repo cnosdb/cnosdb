@@ -38,7 +38,7 @@ impl BloomFilter {
     pub fn contains(&self, data: &[u8]) -> bool {
         let hash = Self::hash(data);
         let loc = self.location(hash);
-        if self.b[loc >> 3] & (1 << (loc & 7)) == 0 { false } else { true }
+        self.b[loc >> 3] & (1 << (loc & 7)) != 0
     }
 
     pub fn len(&self) -> usize {

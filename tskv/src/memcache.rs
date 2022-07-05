@@ -85,17 +85,20 @@ pub struct MemCache {
     pub data_cache: HashMap<FieldId, MemEntry>,
     // current size
     cache_size: u64,
+
+    pub is_delta: bool,
 }
 
 impl MemCache {
-    pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
+    pub fn new(tf_id: u32, max_size: u64, seq: u64, is_delta: bool) -> Self {
         let cache = HashMap::new();
         Self { immutable: false,
                tf_id,
                max_buf_size: max_size,
                data_cache: cache,
                seq_no: seq,
-               cache_size: 0 }
+               cache_size: 0,
+               is_delta }
     }
 
     pub fn insert_raw(&mut self,

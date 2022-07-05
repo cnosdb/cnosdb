@@ -90,7 +90,7 @@ pub struct TsmHeaderWriter {}
 
 impl TsmHeaderWriter {
     pub fn write_to(writer: &mut FileCursor) -> Result<()> {
-        writer.write(&TSM_MAGIC.to_be_bytes().as_ref())
+        writer.write(TSM_MAGIC.to_be_bytes().as_ref())
               .and_then(|_| writer.write(&VERSION.to_be_bytes()[..]))
               .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
 
@@ -105,7 +105,7 @@ impl TsmFooterWriter {
                     bloom_filter: &BloomFilter,
                     index_offset: u64)
                     -> Result<()> {
-        writer.write(&bloom_filter.bytes())
+        writer.write(bloom_filter.bytes())
               .and_then(|_| writer.write(&index_offset.to_be_bytes()[..]))
               .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
 

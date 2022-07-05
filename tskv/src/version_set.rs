@@ -30,7 +30,7 @@ impl VersionSet {
                 if item.name == name {
                     let tf = TseriesFamily::new(id,
                                                 name.clone(),
-                                                MemCache::new(id, MAX_MEMCACHE_SIZE, seq),
+                                                MemCache::new(id, MAX_MEMCACHE_SIZE, seq, false),
                                                 ver.clone(),
                                                 item.opt.clone()).await;
                     ts_families.insert(id, tf);
@@ -48,7 +48,7 @@ impl VersionSet {
 
     pub async fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         let tf = self.ts_families.get_mut(&tf_id).unwrap();
-        let mem = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq)));
+        let mem = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq, false)));
         tf.switch_memcache(mem).await;
     }
 

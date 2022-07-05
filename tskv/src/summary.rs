@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use futures::TryFutureExt;
+use libc::write;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender, RwLock};
@@ -26,6 +27,7 @@ pub struct CompactMeta {
     pub level: u32,
     pub high_seq: u64,
     pub low_seq: u64,
+    pub is_delta: bool,
 }
 impl CompactMeta {
     pub fn new(file_id: u64, level: u32) -> Self {
@@ -35,7 +37,8 @@ impl CompactMeta {
                ts_max: i64::MIN,
                level,
                high_seq: u64::MIN,
-               low_seq: u64::MIN }
+               low_seq: u64::MIN,
+               is_delta: false }
     }
     pub fn file_id(&self) -> u64 {
         self.file_id
@@ -48,8 +51,8 @@ pub struct VersionEdit {
 
     pub has_seq_no: bool,
     pub seq_no: u64,
-    pub has_log_seq: bool,
-    pub log_seq: u64,
+    pub has_file_id: bool,
+    pub file_id: u64,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
 
@@ -57,13 +60,15 @@ pub struct VersionEdit {
     pub add_tsf: bool,
     pub tsf_id: u32,
     pub tsf_name: String,
+
+    pub max_level_ts: i64,
 }
 
 impl VersionEdit {
     pub fn new() -> Self {
         Self { level: 0,
                seq_no: 0,
-               log_seq: 0,
+               file_id: 0,
                add_files: vec![],
                del_files: vec![],
                del_tsf: false,
@@ -71,7 +76,8 @@ impl VersionEdit {
                tsf_id: 0,
                tsf_name: String::from(""),
                has_seq_no: false,
-               has_log_seq: false }
+               has_file_id: false,
+               max_level_ts: i64::MIN }
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
@@ -80,24 +86,33 @@ impl VersionEdit {
     pub fn decode(buf: &[u8]) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
     }
-    pub fn add_file(&mut self, tsf_id: u32, log_seq: u64, seq_no: u64, meta: CompactMeta) {
-        self.has_log_seq = true;
-        self.log_seq = log_seq;
+    pub fn add_file(&mut self,
+                    level: u32,
+                    tsf_id: u32,
+                    log_seq: u64,
+                    seq_no: u64,
+                    max_level_ts: i64,
+                    meta: CompactMeta) {
+        self.has_file_id = true;
+        self.file_id = log_seq;
         self.has_seq_no = true;
         self.seq_no = seq_no;
+        self.level = level;
+        self.max_level_ts = max_level_ts;
         self.add_files.push(meta);
     }
     // todo:
     pub fn del_file(&mut self) {}
 
-    pub fn set_log_seq(&mut self, log_seq: u64) {
-        self.log_seq = log_seq;
+    pub fn set_log_seq(&mut self, file_id: u64) {
+        self.file_id = file_id;
     }
     pub fn set_tsf_id(&mut self, tsf_id: u32) {
         self.tsf_id = tsf_id;
     }
 }
 
+use logger::{debug, info};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
@@ -110,6 +125,7 @@ pub struct Summary {
     file_no: u64,
     version_set: Arc<RwLock<VersionSet>>,
     ctx: Arc<GlobalContext>,
+    writer: Writer,
 }
 
 impl Summary {
@@ -126,11 +142,12 @@ impl Summary {
     }
 
     pub async fn recover(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
+        let writer = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
         let vs = Self::recover_version(tf_desc, rd, &ctx).await?;
 
-        Ok(Self { file_no: 0, version_set: Arc::new(RwLock::new(vs)), ctx })
+        Ok(Self { file_no: 0, version_set: Arc::new(RwLock::new(vs)), ctx, writer })
     }
 
     // recover from summary file
@@ -168,14 +185,16 @@ impl Summary {
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_log = 0;
+            let mut max_level_ts = i64::MIN;
             for e in eds {
                 if e.has_seq_no {
                     ctx.set_last_seq(e.seq_no);
                 }
-                if e.has_log_seq {
-                    ctx.set_log_seq(e.log_seq);
+                if e.has_file_id {
+                    ctx.set_file_id(e.file_id);
                 }
-                max_log = std::cmp::max(max_log, e.log_seq);
+                max_log = std::cmp::max(max_log, e.file_id);
+                max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
                 for m in e.del_files {
                     files.remove(&m.file_id);
                 }
@@ -190,8 +209,9 @@ impl Summary {
                 let info = levels.entry(meta.level).or_insert_with(|| LevelInfo::init(meta.level));
                 info.apply(&meta);
             }
-            let lvls = levels.into_values().collect();
-            let ver = Version::new(id, max_log, tsf_name, lvls);
+            let mut lvls: Vec<LevelInfo> = levels.into_values().collect();
+            lvls.reverse();
+            let ver = Version::new(id, max_log, tsf_name, lvls, max_level_ts);
             versions.insert(id, Arc::new(RwLock::new(ver)));
         }
         let vs = VersionSet::new(tf_cfg, versions);
@@ -199,7 +219,15 @@ impl Summary {
     }
     // apply version edit to summary file
     // and write to memory struct
-    pub async fn apply_version_edit(&self, eds: &[VersionEdit]) -> Result<()> {
+    pub async fn apply_version_edit(&mut self, eds: &[VersionEdit]) -> Result<()> {
+        for edit in eds {
+            let buf = edit.encode()?;
+            let _ = self.writer
+                        .write_record(1, EditType::SummaryEdit.into(), &buf)
+                        .map_err(|e| Error::LogRecordErr { source: (e) })
+                        .await?;
+            self.writer.hard_sync().map_err(|e| Error::LogRecordErr { source: e }).await?;
+        }
         Ok(())
     }
 
@@ -248,7 +276,13 @@ impl SummaryProcesser {
             },
         }
     }
+
+    pub fn summary(&self) -> &Box<Summary> {
+        &self.summary
+    }
 }
+
+#[derive(Debug)]
 pub struct SummaryTask {
     pub edits: Vec<VersionEdit>,
     pub cb: Sender<Result<()>>,
