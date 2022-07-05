@@ -81,6 +81,8 @@ type Engine interface {
 	IsIdle() bool
 	Free() error
 
+	DumpShard2ProtocolLine(w io.Writer, start, end int64) error
+
 	io.WriterTo
 }
 

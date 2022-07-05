@@ -2121,3 +2121,11 @@ type LimitError struct {
 }
 
 func (e *LimitError) Error() string { return e.Reason }
+
+func (s *Shard) DumpShard2ProtocolLine(w io.Writer, start, end int64) error {
+	engine, err := s.Engine()
+	if err != nil {
+		return err
+	}
+	return engine.DumpShard2ProtocolLine(w, start, end)
+}
