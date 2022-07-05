@@ -3089,7 +3089,7 @@ func varRefSliceRemove(a []cnosql.VarRef, v string) []cnosql.VarRef {
 
 type ScanFiledFunc func(key string, ts int64, val interface{}) error
 
-func (e *Engine) ScanFiledValue(key string, start, end int64, fn ScanFiledFunc) error {
+func (e *Engine) ScanFiledValue(key string, start, end int64, fn tsdb.ScanFiledFunc) error {
 	if fn == nil {
 		return fmt.Errorf("callback function can't be nil")
 	}
@@ -3162,7 +3162,7 @@ func (e *Engine) ScanFiledValue(key string, start, end int64, fn ScanFiledFunc) 
 	}
 }
 
-func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType, options query.IteratorOptions, fn ScanFiledFunc) error {
+func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType, options query.IteratorOptions, fn tsdb.ScanFiledFunc) error {
 	key := SeriesFieldKey(seriesKey, field)
 
 	switch dataType {
