@@ -4,7 +4,7 @@ use std::{
 };
 
 use datafusion::arrow::csv::writer;
-use models::FieldID;
+use models::FieldId;
 use snafu::ResultExt;
 use utils::{BkdrHasher, BloomFilter};
 
@@ -116,7 +116,7 @@ pub struct TsmIndexWriter {}
 
 impl TsmIndexWriter {
     pub fn write_to(writer: &mut FileCursor,
-                    indexs: HashMap<FieldID, Vec<FileBlock>>)
+                    indexs: HashMap<FieldId, Vec<FileBlock>>)
                     -> Result<BloomFilter> {
         let mut bloom_filter = new_bloom_filter();
         for (fid, blks) in indexs {
@@ -147,8 +147,8 @@ pub struct TsmBlockWriter {}
 
 impl TsmBlockWriter {
     pub(crate) fn write_to(writer: &mut FileCursor,
-                           mut block_set: HashMap<FieldID, DataBlock>)
-                           -> Result<HashMap<FieldID, Vec<FileBlock>>> {
+                           mut block_set: HashMap<FieldId, DataBlock>)
+                           -> Result<HashMap<FieldId, Vec<FileBlock>>> {
         let mut res = HashMap::new();
         for (fid, block) in block_set.iter_mut() {
             let index = Self::write_one_to(writer, block)?;
@@ -198,7 +198,7 @@ impl TsmBlockWriter {
 mod test {
     use std::collections::HashMap;
 
-    use models::FieldID;
+    use models::FieldId;
 
     use crate::{
         direct_io::FileSync,
@@ -231,10 +231,10 @@ mod test {
         let data = vec![DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![12, 13, 15] },
                         DataBlock::U64 { index: 0, ts: vec![2, 3, 4], val: vec![101, 102, 103] }];
 
-        let mut file_block_map: HashMap<FieldID, Vec<FileBlock>> = HashMap::new();
+        let mut file_block_map: HashMap<FieldId, Vec<FileBlock>> = HashMap::new();
         for (k, v) in data.iter().enumerate() {
             let file_blocks = TsmBlockWriter::write_one_to(&mut fs_cursor, v).unwrap();
-            file_block_map.insert(k as FieldID, file_blocks);
+            file_block_map.insert(k as FieldId, file_blocks);
         }
 
         let index_pos = fs_cursor.pos();

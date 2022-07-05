@@ -4,7 +4,7 @@ use std::{
 };
 
 use integer_encoding::VarInt;
-use models::{FieldID, ValueType};
+use models::{FieldId, ValueType};
 
 use super::{coders, BLOOM_FILTER_SIZE, FOOTER_SIZE, MAX_BLOCK_VALUES};
 use crate::{
@@ -267,7 +267,7 @@ impl<'a> Iterator for TsmIndexReader<'a> {
 mod test {
     use std::collections::HashMap;
 
-    use models::FieldID;
+    use models::FieldId;
 
     use crate::{
         file_manager::FileManager,
@@ -282,7 +282,7 @@ mod test {
         let mut fs_cursor = fs.into_cursor();
         let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize).unwrap();
         let mut blocks = Vec::new();
-        let mut block_field_id: Vec<FieldID> = Vec::new();
+        let mut block_field_id: Vec<FieldId> = Vec::new();
         for res in index {
             let entry = res.unwrap();
             let key = entry.field_id();
@@ -292,7 +292,7 @@ mod test {
         }
 
         let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
-        let ori_data: HashMap<FieldID, DataBlock> =
+        let ori_data: HashMap<FieldId, DataBlock> =
             HashMap::from([(0,
                             DataBlock::U64 { index: 0,
                                              ts: vec![2, 3, 4],

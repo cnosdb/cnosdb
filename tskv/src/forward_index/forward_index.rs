@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use models::{FieldID, FieldInfo, SeriesID, SeriesInfo, ValueType};
+use models::{FieldId, FieldInfo, SeriesId, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
 
 use super::*;
@@ -13,7 +13,7 @@ use crate::record_file::{self, Record, RecordFileError, RecordFileResult};
 const VERSION: u8 = 1;
 
 struct InMemSeriesInfo {
-    id: SeriesID,
+    id: SeriesId,
     pos: usize,
     field_infos: Vec<InMemFieldInfo>,
 }
@@ -27,7 +27,7 @@ impl InMemSeriesInfo {
 }
 
 struct InMemFieldInfo {
-    id: FieldID,
+    id: FieldId,
     value_type: ValueType,
 }
 
@@ -38,7 +38,7 @@ impl From<&FieldInfo> for InMemFieldInfo {
 }
 
 pub struct ForwardIndex {
-    series_info_set: HashMap<models::SeriesID, InMemSeriesInfo>,
+    series_info_set: HashMap<models::SeriesId, InMemSeriesInfo>,
     record_writer: record_file::Writer,
     record_reader: record_file::Reader,
     file_path: PathBuf,
@@ -158,11 +158,11 @@ impl ForwardIndex {
             .map_err(|err| ForwardIndexError::CloseFile { source: err })
     }
 
-    pub fn get_series_info_list(&self, sids: &[SeriesID]) -> Vec<SeriesInfo> {
+    pub fn get_series_info_list(&self, sids: &[SeriesId]) -> Vec<SeriesInfo> {
         todo!()
     }
 
-    pub async fn del_series_info(&mut self, series_id: SeriesID) -> ForwardIndexResult<()> {
+    pub async fn del_series_info(&mut self, series_id: SeriesId) -> ForwardIndexResult<()> {
         match self.series_info_set.entry(series_id) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 self.record_writer

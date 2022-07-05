@@ -7,7 +7,7 @@ use std::{
 };
 
 use bytes::buf;
-use models::{FieldID, SeriesID, Timestamp, ValueType};
+use models::{FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
@@ -25,7 +25,7 @@ const TOMBSTONE_MAGIC: u32 = 0x544F4D42;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tombstone {
-    pub field_id: FieldID,
+    pub field_id: FieldId,
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
 }
@@ -118,7 +118,7 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub fn add_range(&self, field_ids: &[FieldID], min: Timestamp, max: Timestamp) -> Result<()> {
+    pub fn add_range(&self, field_ids: &[FieldId], min: Timestamp, max: Timestamp) -> Result<()> {
         let mut file_cursor = self.file_cursor.lock();
         for field_id in field_ids.iter() {
             Self::write_to(&mut file_cursor,

@@ -4,12 +4,12 @@ use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
-    tag, FieldID, FieldInfo, FieldName, SeriesID, Tag,
+    tag, FieldId, FieldInfo, FieldName, SeriesId, Tag,
 };
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SeriesInfo {
-    id: SeriesID,
+    id: SeriesId,
     tags: Vec<Tag>,
     field_infos: Vec<FieldInfo>,
 
@@ -65,7 +65,7 @@ impl SeriesInfo {
         }
     }
 
-    pub fn series_id(&self) -> SeriesID {
+    pub fn series_id(&self) -> SeriesId {
         self.id
     }
 
@@ -81,7 +81,7 @@ impl SeriesInfo {
         self.field_infos.push(field_info)
     }
 
-    pub fn field_info_with_id(&self, field_id: FieldID) -> Vec<&FieldInfo> {
+    pub fn field_info_with_id(&self, field_id: FieldId) -> Vec<&FieldInfo> {
         self.field_infos.iter().filter(|f| f.field_id().cmp(&field_id).is_eq()).collect()
     }
 
@@ -98,7 +98,7 @@ impl SeriesInfo {
     }
 }
 
-pub fn generate_series_id(tags: &[Tag]) -> SeriesID {
+pub fn generate_series_id(tags: &[Tag]) -> SeriesId {
     let mut hasher = BkdrHasher::new();
     for tag in tags {
         hasher.hash_with(&tag.key);

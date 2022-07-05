@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 use flatbuffers::Push;
 use futures::future::ok;
 use logger::{info, warn};
-use models::{FieldID, Timestamp, ValueType};
+use models::{FieldId, Timestamp, ValueType};
 use protos::models::FieldType;
 
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
@@ -82,7 +82,7 @@ pub struct MemCache {
     max_buf_size: u64,
     // block <field_id, buffer>
     // field_id contain the field type
-    pub data_cache: HashMap<FieldID, MemEntry>,
+    pub data_cache: HashMap<FieldId, MemEntry>,
     // current size
     cache_size: u64,
 }
@@ -100,7 +100,7 @@ impl MemCache {
 
     pub fn insert_raw(&mut self,
                       seq: u64,
-                      field_id: FieldID,
+                      field_id: FieldId,
                       ts: Timestamp,
                       field_type: ValueType,
                       buf: &[u8])
@@ -137,7 +137,7 @@ impl MemCache {
         Ok(())
     }
 
-    pub fn insert(&mut self, field_id: FieldID, val: DataType, value_type: ValueType) {
+    pub fn insert(&mut self, field_id: FieldId, val: DataType, value_type: ValueType) {
         let ts = val.timestamp();
         let item = self.data_cache.entry(field_id).or_insert_with(MemEntry::default);
         if item.ts_max < ts {

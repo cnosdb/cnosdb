@@ -1,12 +1,12 @@
 use protos::models as fb_models;
 
 use crate::{
-    field_info, generate_series_id, Error, FieldID, Result, SeriesID, Tag, Timestamp, ValueType,
+    field_info, generate_series_id, Error, FieldId, Result, SeriesId, Tag, Timestamp, ValueType,
 };
 
 #[derive(Debug)]
 pub struct FieldValue {
-    pub field_id: FieldID,
+    pub field_id: FieldId,
     pub value_type: ValueType,
     pub value: Vec<u8>,
 }
@@ -21,14 +21,14 @@ impl FieldValue {
                   } })
     }
 
-    pub fn field_id(&self) -> FieldID {
+    pub fn field_id(&self) -> FieldId {
         self.field_id
     }
 }
 
 #[derive(Debug)]
 pub struct InMemPoint {
-    pub series_id: SeriesID,
+    pub series_id: SeriesId,
     pub timestamp: Timestamp,
     pub fields: Vec<FieldValue>,
 }
@@ -48,7 +48,7 @@ impl InMemPoint {
         Ok(Self { series_id: 0, timestamp: point.timestamp(), fields })
     }
 
-    pub fn series_id(&self) -> SeriesID {
+    pub fn series_id(&self) -> SeriesId {
         self.series_id
     }
 
