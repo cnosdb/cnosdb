@@ -3177,11 +3177,32 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 			if err := fn(key, ts, val); err != nil {
 				return err
 			}
-			//fmt.Printf("======ScanFiled field float  value %s#%s %d %v\n", seriesKey, field, ts, val)
 		}
 	case cnosql.Integer:
+		cur := e.buildIntegerCursor(context.Background(), "", seriesKey, field, options)
+		for {
+			ts, val := cur.nextInteger()
+			if ts == tsdb.EOF {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
 
 	case cnosql.Unsigned:
+		cur := e.buildUnsignedCursor(context.Background(), "", seriesKey, field, options)
+		for {
+			ts, val := cur.nextUnsigned()
+			if ts == tsdb.EOF {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
 
 	case cnosql.String:
 		cur := e.buildStringCursor(context.Background(), "", seriesKey, field, options)
@@ -3194,10 +3215,19 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 			if err := fn(key, ts, val); err != nil {
 				return err
 			}
-			//fmt.Printf("======ScanFiled field string value  %s#%s %d %v\n", seriesKey, field, ts, val)
 		}
 	case cnosql.Boolean:
+		cur := e.buildBooleanCursor(context.Background(), "", seriesKey, field, options)
+		for {
+			ts, val := cur.nextBoolean()
+			if ts == tsdb.EOF {
+				break
+			}
 
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
 	default:
 		//do nothing
 	}
