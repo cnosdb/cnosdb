@@ -29,6 +29,8 @@ var (
 	ErrUnknownEngineFormat = errors.New("unknown engine format")
 )
 
+type ScanFiledFunc func(key string, ts int64, val interface{}) error
+
 // Engine represents a swappable storage engine for the shard.
 type Engine interface {
 	Open() error
@@ -82,6 +84,7 @@ type Engine interface {
 	Free() error
 
 	DumpShard2ProtocolLine(w io.Writer, start, end int64) error
+	ScanFiledValue(key string, start, end int64, fn ScanFiledFunc) error
 
 	io.WriterTo
 }

@@ -2129,3 +2129,11 @@ func (s *Shard) DumpShard2ProtocolLine(w io.Writer, start, end int64) error {
 	}
 	return engine.DumpShard2ProtocolLine(w, start, end)
 }
+
+func (s *Shard) ScanFiledValue(key string, start, end int64, fn ScanFiledFunc) error {
+	engine, err := s.Engine()
+	if err != nil {
+		return err
+	}
+	return engine.ScanFiledValue(key, start, end, fn)
+}

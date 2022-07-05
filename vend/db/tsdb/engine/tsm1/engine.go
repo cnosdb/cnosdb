@@ -3170,7 +3170,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		cur := e.buildFloatCursor(context.Background(), "", seriesKey, field, options)
 		for {
 			ts, val := cur.nextFloat()
-			if ts == tsdb.EOF {
+			if ts == tsdb.EOF || ts >= options.StopTime() {
 				break
 			}
 
@@ -3182,7 +3182,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		cur := e.buildIntegerCursor(context.Background(), "", seriesKey, field, options)
 		for {
 			ts, val := cur.nextInteger()
-			if ts == tsdb.EOF {
+			if ts == tsdb.EOF || ts >= options.StopTime() {
 				break
 			}
 
@@ -3195,7 +3195,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		cur := e.buildUnsignedCursor(context.Background(), "", seriesKey, field, options)
 		for {
 			ts, val := cur.nextUnsigned()
-			if ts == tsdb.EOF {
+			if ts == tsdb.EOF || ts >= options.StopTime() {
 				break
 			}
 
@@ -3208,7 +3208,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		cur := e.buildStringCursor(context.Background(), "", seriesKey, field, options)
 		for {
 			ts, val := cur.nextString()
-			if ts == tsdb.EOF {
+			if ts == tsdb.EOF || ts >= options.StopTime() {
 				break
 			}
 
@@ -3220,7 +3220,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		cur := e.buildBooleanCursor(context.Background(), "", seriesKey, field, options)
 		for {
 			ts, val := cur.nextBoolean()
-			if ts == tsdb.EOF {
+			if ts == tsdb.EOF || ts >= options.StopTime() {
 				break
 			}
 

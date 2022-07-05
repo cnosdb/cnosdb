@@ -1461,6 +1461,15 @@ func (s *Store) MeasurementSeriesCounts(database string) (measurements int, seri
 	return 0, 0
 }
 
+func (s *Store) ScanFiledValue(shardID uint64, key string, start, end int64, fn ScanFiledFunc) error {
+	shard := s.Shard(shardID)
+	if shard == nil {
+		return fmt.Errorf("shard %d doesn't exist on this server", shardID)
+	}
+	shard.ScanFiledValue(key, start, end, fn)
+	return nil
+}
+
 type TagKeys struct {
 	Measurement string
 	Keys        []string
