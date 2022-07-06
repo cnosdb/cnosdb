@@ -294,26 +294,26 @@ func (s *Service) writeShardResponse(w io.Writer, e error) {
 	}
 }
 
+func (s *Service) parseCreateIteratorRequest(conn net.Conn) (query.Iterator, error) {
+	var req CreateIteratorRequest
+	if err := DecodeLV(conn, &req); err != nil {
+		return nil, err
+	}
+	sg := s.TSDBStore.ShardGroup(req.ShardIDs)
+	ic, err := sg.CreateIterator(context.Background(), &req.Measurement, req.Opt)
+	if err != nil {
+		return nil, err
+	}
+	return ic, nil
+}
+
 func (s *Service) processCreateIteratorRequest(conn net.Conn) {
 	defer conn.Close()
 
 	var itr query.Iterator
-	if err := func() error {
-		// Parse request.
-		var req CreateIteratorRequest
-		if err := DecodeLV(conn, &req); err != nil {
-			return err
-		}
-		sg := s.TSDBStore.ShardGroup(req.ShardIDs)
-		ic, err := sg.CreateIterator(context.Background(), &req.Measurement, req.Opt)
-		if err != nil {
-			return err
-		}
-		itr = ic
-		return nil
-	}(); err != nil {
+
+	if itr, err := s.parseCreateIteratorRequest(conn); err != nil {
 		itr.Close()
-		//s.Logger.Printf("error reading CreateIterator request: %s", err)
 		EncodeTLV(conn, createIteratorResponseMessage, &CreateIteratorResponse{Err: err})
 		return
 	}

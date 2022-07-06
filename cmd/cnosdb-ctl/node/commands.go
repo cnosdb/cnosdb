@@ -23,7 +23,7 @@ func GetShowCommand() *cobra.Command {
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			peers, err := GetMetaServers(options.Env.Bind)
+			peers, err := getMetaServers(options.Env.Bind)
 			if err != nil {
 				return err
 			}
@@ -129,7 +129,7 @@ func GetRemoveDataCommand() *cobra.Command {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			remoteNodeAddr := args[0]
-			err := remoteDataServer(options.Env.Bind, remoteNodeAddr)
+			err := removeDataServer(options.Env.Bind, remoteNodeAddr)
 			if err != nil {
 				fmt.Println(err)
 			}

@@ -388,10 +388,6 @@ func (s *store) addMetaNode(n *NodeInfo) (*NodeInfo, error) {
 	if err := s.callCreateMetaNode(n.Host, n.TCPHost); err != nil {
 		return nil, err
 	}
-	// TODO magz: this is a waste
-	if err := s.callSetData(); err != nil {
-		return nil, err
-	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()

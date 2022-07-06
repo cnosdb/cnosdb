@@ -1,3 +1,11 @@
+//Copyright [2022] [FreeTSDB]
+//
+//Licensed under the Apache License, Version 2.0 (the "License");
+//you may not use this file except in compliance with the License.
+//You may obtain a copy of the License at
+//
+//http://www.apache.org/licenses/LICENSE-2.0
+
 package node
 
 import (
@@ -43,7 +51,7 @@ func getNodeInfo(metaAddr string) (*meta.NodeInfo, error) {
 	return &node, err
 }
 
-func GetMetaServers(metaAddr string) ([]string, error) {
+func getMetaServers(metaAddr string) ([]string, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/meta-servers", metaAddr))
 	if err != nil {
 		return nil, err
@@ -71,7 +79,7 @@ func GetMetaServers(metaAddr string) ([]string, error) {
 }
 
 func addMetaServer(metaAddr, newNodeAddr string) error {
-	peers, err := GetMetaServers(metaAddr)
+	peers, err := getMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
@@ -158,7 +166,7 @@ func dial(network, address, header string) (net.Conn, error) {
 }
 
 func addDataServer(metaAddr, newNodeAddr string) error {
-	peers, err := GetMetaServers(metaAddr)
+	peers, err := getMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
@@ -191,8 +199,8 @@ func addDataServer(metaAddr, newNodeAddr string) error {
 	return nil
 }
 
-func remoteDataServer(metaAddr, remoteNodeAddr string) error {
-	peers, err := GetMetaServers(metaAddr)
+func removeDataServer(metaAddr, remoteNodeAddr string) error {
+	peers, err := getMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
@@ -223,7 +231,7 @@ func remoteDataServer(metaAddr, remoteNodeAddr string) error {
 }
 
 func updateDataNode(metaAddr, oldNode, newNode string) error {
-	peers, err := GetMetaServers(metaAddr)
+	peers, err := getMetaServers(metaAddr)
 	if err != nil {
 		return err
 	}
