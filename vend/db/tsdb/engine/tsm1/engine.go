@@ -3087,8 +3087,6 @@ func varRefSliceRemove(a []cnosql.VarRef, v string) []cnosql.VarRef {
 	return other
 }
 
-type ScanFiledFunc func(key string, ts int64, val interface{}) error
-
 func (e *Engine) ScanFiledValue(key string, start, end int64, fn tsdb.ScanFiledFunc) error {
 	if fn == nil {
 		return fmt.Errorf("callback function can't be nil")
