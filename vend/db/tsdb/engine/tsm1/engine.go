@@ -3105,12 +3105,12 @@ func (e *Engine) ScanFiledValue(key string, start, end int64, fn tsdb.ScanFiledF
 	if key != "" {
 		seriesKey, field := SeriesAndFieldFromCompositeKey([]byte(key))
 		if field == nil {
-			return fmt.Errorf("field is empty %s", string(key))
+			return fmt.Errorf("field is empty %s", key)
 		}
 
 		sep := bytes.Index(seriesKey, []byte(","))
 		if sep == -1 {
-			return fmt.Errorf("can't find measurement name %s", string(key))
+			return fmt.Errorf("can't find measurement name %s", key)
 		}
 
 		measurementFields := e.fieldset.Fields(seriesKey[:sep])
@@ -3166,6 +3166,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 	switch dataType {
 	case cnosql.Float:
 		cur := e.buildFloatCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
 		for {
 			ts, val := cur.nextFloat()
 			if ts == tsdb.EOF || ts >= options.StopTime() {
@@ -3178,6 +3179,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		}
 	case cnosql.Integer:
 		cur := e.buildIntegerCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
 		for {
 			ts, val := cur.nextInteger()
 			if ts == tsdb.EOF || ts >= options.StopTime() {
@@ -3191,6 +3193,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 
 	case cnosql.Unsigned:
 		cur := e.buildUnsignedCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
 		for {
 			ts, val := cur.nextUnsigned()
 			if ts == tsdb.EOF || ts >= options.StopTime() {
@@ -3204,6 +3207,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 
 	case cnosql.String:
 		cur := e.buildStringCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
 		for {
 			ts, val := cur.nextString()
 			if ts == tsdb.EOF || ts >= options.StopTime() {
@@ -3216,6 +3220,7 @@ func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType
 		}
 	case cnosql.Boolean:
 		cur := e.buildBooleanCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
 		for {
 			ts, val := cur.nextBoolean()
 			if ts == tsdb.EOF || ts >= options.StopTime() {
