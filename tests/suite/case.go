@@ -21,10 +21,13 @@ func (s *Step) Run(caseName string, server tests.Server, t *testing.T) {
 			t.Errorf("Case: %s, Step: %s, Error: %v", caseName, s.Name, e)
 		}
 	}
+	//fmt.Printf(`[case Run] error func generating"%s"`, "\n")
 	resStr, err := server.Query(s.Query)
+	//fmt.Printf(`[case Run]"%s", "%s" "%s""%s"`, resStr, "\n", err, "\n")
 	te(err)
 	var res Results
 	te(res.Unmarshal(resStr))
+	//fmt.Printf("[case Run] equal pending...\n")
 	if !s.Result.Equal(res) {
 		te(errors.New("Mismatch. "))
 	}

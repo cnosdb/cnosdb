@@ -10,6 +10,10 @@ import (
 
 type Row []interface{}
 
+func typeof(v interface{}) string {
+	return fmt.Sprintf("%T", v)
+}
+
 func (r Row) Equal(columns []string, a Row, num int) bool {
 	if len(columns) != len(a) {
 		panic("Should be equal")
@@ -25,37 +29,35 @@ func (r Row) Equal(columns []string, a Row, num int) bool {
 			fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], r[i], a[i])
 			return false
 		} else {
-
-			switch columns[i] {
-			case // string
-				"name",
-				/* iot */
-				"time", "device_version", "driver", "fleet", "model",
-				/* NOAA */
-				"level description", "location":
-				x := r[i].(string)
-				y := a[i].(string)
-				if x != y {
-					fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], x, y)
-					return false
+			//typeX := typeof(r[i])
+			//typeY := typeof(a[i])
+			//if typeX != typeY{
+			//	fmt.Printf("Type error [%d] %s: %s!=%s \n", i, columns[i], typeX, typeY)
+			//}
+			if x, okx := r[i].(string); okx == true { //string
+				if y, oky := a[i].(string); oky == true {
+					if x != y {
+						fmt.Printf("Values[%d] %s: %s!=%s \n", i, columns[i], x, y)
+						return false
+					}
+				} else {
+					panic(columns[i])
 				}
-			case // float
-				"count",
-				/* Readings */
-				"latitude", "longitude", "elevation", "velocity",
-				"heading", "grade", "fuel_consumption",
-				/* Diagnostics */
-				"load_capacity", "fuel_capacity", "nominal_fuel_consumption",
-				"current_load", "fuel_state", "status",
-				/* NOAA */
-				"water_level", "pH":
+			} else if x, okx := r[i].(bool); okx == true { //bool
+				if y, oky := a[i].(bool); oky == true {
+					if x != y {
+						fmt.Printf("Values[%d] %s: %t!=%t \n", i, columns[i], x, y)
+						return false
+					}
+				} else {
+					panic(columns[i])
+				}
+			} else { //float & int
 				x := toFloat64(r[i])
 				y := toFloat64(a[i])
 				if math.Abs(x-y) > 0.000001 {
 					fmt.Printf("Values[%d] %s: %g!=%g \n", i, columns[i], x, y)
 				}
-			default:
-				panic(columns[i])
 			}
 		}
 	}

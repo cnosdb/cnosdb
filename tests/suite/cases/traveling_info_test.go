@@ -44,6 +44,13 @@ func TestGenCode_n(t *testing.T) {
 				Results: []suite.Result{},
 			},
 		},
+		{
+			Name:  "information_location_shanghai_human_traffic",
+			Query: fmt.Sprintf(`SELECT "human_traffic" FROM "%s"."%s"."information" WHERE "location" <> 'shanghai' AND (human_traffic < -0.59 OR human_traffic > 9.95) limit 20`, db, rp),
+			Result: suite.Results{
+				Results: []suite.Result{},
+			},
+		},
 	}
 	var i int
 	for i = 0; i < len(steps); i++ {

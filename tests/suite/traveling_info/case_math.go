@@ -2,6 +2,7 @@ package traveling_info
 
 import (
 	"fmt"
+
 	"github.com/cnosdb/cnosdb/tests/suite"
 )
 
@@ -153,28 +154,28 @@ var cases_math_gen = []suite.Step{
 	//Modulo
 	{
 		Name:  "math_mod_b_2",
-		Query: fmt.Sprintf(`SELECT "B" % 2 FROM "modulo"`),
+		Query: fmt.Sprintf(`SELECT "B" "%s" 2 FROM "modulo"`, "%"),
 		Result: suite.Results{
 			Results: []suite.Result{},
 		},
 	},
 	{
 		Name:  "math_mod_b_2_0",
-		Query: fmt.Sprintf(`SELECT "B" FROM "modulo" WHERE "B" % 2 = 0`),
+		Query: fmt.Sprintf(`SELECT "B" FROM "modulo" WHERE "B" "%s" 2 = 0`, "%"),
 		Result: suite.Results{
 			Results: []suite.Result{},
 		},
 	},
 	{
 		Name:  "math_mod_a_b",
-		Query: fmt.Sprintf(`SELECT "A" % "B" FROM "modulo"`),
+		Query: fmt.Sprintf(`SELECT "A" "%s" "B" FROM "modulo"`, "%"),
 		Result: suite.Results{
 			Results: []suite.Result{},
 		},
 	},
 	{
 		Name:  "math_mod_a_b_0",
-		Query: fmt.Sprintf(`SELECT "A" FROM "modulo" WHERE "A" % "B" = 0`),
+		Query: fmt.Sprintf(`SELECT "A" FROM "modulo" WHERE "A" "%s" "B" = 0`, "%"),
 		Result: suite.Results{
 			Results: []suite.Result{},
 		},

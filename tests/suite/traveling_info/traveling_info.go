@@ -42,8 +42,8 @@ func (n *TravelingInfo) Load() {
 	tNow := time.Now()
 	for scan.Scan() {
 		i++
-		//if i%5000 == 0 {
 		if i%5000 == 0 {
+			//if i%1000 == 0 {
 			fmt.Printf("Rows: %d, Time Cost: %s\n", i, time.Now().Sub(tNow).String())
 			//break
 		}
