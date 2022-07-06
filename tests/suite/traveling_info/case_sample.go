@@ -5,7 +5,7 @@ import (
 	"github.com/cnosdb/cnosdb/tests/suite"
 )
 
-var cases_err = []suite.Step{
+var cases_sample = []suite.Step{
 	{
 		//Values[0] time: 2019-08-20T15:24:00Z!=2019-08-17T23:06:00Z
 		Name:  "sel_sample_all",
