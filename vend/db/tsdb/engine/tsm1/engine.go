@@ -3087,6 +3087,157 @@ func varRefSliceRemove(a []cnosql.VarRef, v string) []cnosql.VarRef {
 	return other
 }
 
+func (e *Engine) ScanFiledValue(key string, start, end int64, fn tsdb.ScanFiledFunc) error {
+	if fn == nil {
+		return fmt.Errorf("callback function can't be nil")
+	}
+
+	if start == tsdb.EOF {
+		start += 1
+	}
+
+	options := query.IteratorOptions{
+		Ascending: true,
+		StartTime: start,
+		EndTime:   end,
+	}
+
+	if key != "" {
+		seriesKey, field := SeriesAndFieldFromCompositeKey([]byte(key))
+		if field == nil {
+			return fmt.Errorf("field is empty %s", key)
+		}
+
+		sep := bytes.Index(seriesKey, []byte(","))
+		if sep == -1 {
+			return fmt.Errorf("can't find measurement name %s", key)
+		}
+
+		measurementFields := e.fieldset.Fields(seriesKey[:sep])
+		if measurementFields == nil {
+			return nil
+		}
+
+		dataType := measurementFields.FieldSet()
+		if err := e.iteratorField(string(seriesKey), string(field), dataType[string(field)], options, fn); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	seriesIDItr := e.sfile.SeriesIDIterator()
+	defer seriesIDItr.Close()
+	for {
+		seriesElem, err := seriesIDItr.Next()
+		if seriesElem.SeriesID == 0 {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		seriesKey := e.sfile.SeriesKey(seriesElem.SeriesID)
+		if seriesKey == nil {
+			continue
+		}
+
+		measurementName, tags := tsdb.ParseSeriesKey(seriesKey)
+		seriesKey = models.MakeKey(measurementName, tags)
+		measurementFields := e.fieldset.Fields([]byte(measurementName))
+		if measurementFields == nil {
+			return nil
+		}
+
+		dataType := measurementFields.FieldSet()
+		fieldNames := measurementFields.FieldKeys()
+		for _, field := range fieldNames {
+			if err := e.iteratorField(string(seriesKey), field, dataType[field], options, fn); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (e *Engine) iteratorField(seriesKey, field string, dataType cnosql.DataType, options query.IteratorOptions, fn tsdb.ScanFiledFunc) error {
+	key := SeriesFieldKey(seriesKey, field)
+
+	switch dataType {
+	case cnosql.Float:
+		cur := e.buildFloatCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
+		for {
+			ts, val := cur.nextFloat()
+			if ts == tsdb.EOF || ts >= options.StopTime() {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
+	case cnosql.Integer:
+		cur := e.buildIntegerCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
+		for {
+			ts, val := cur.nextInteger()
+			if ts == tsdb.EOF || ts >= options.StopTime() {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
+
+	case cnosql.Unsigned:
+		cur := e.buildUnsignedCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
+		for {
+			ts, val := cur.nextUnsigned()
+			if ts == tsdb.EOF || ts >= options.StopTime() {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
+
+	case cnosql.String:
+		cur := e.buildStringCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
+		for {
+			ts, val := cur.nextString()
+			if ts == tsdb.EOF || ts >= options.StopTime() {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
+	case cnosql.Boolean:
+		cur := e.buildBooleanCursor(context.Background(), "", seriesKey, field, options)
+		defer cur.close()
+		for {
+			ts, val := cur.nextBoolean()
+			if ts == tsdb.EOF || ts >= options.StopTime() {
+				break
+			}
+
+			if err := fn(key, ts, val); err != nil {
+				return err
+			}
+		}
+	default:
+		//do nothing
+	}
+
+	return nil
+}
+
 func (e *Engine) DumpShard2ProtocolLine(w io.Writer, start, end int64) error {
 	tsmFiles := make([]string, 0)
 	walFiles := make([]string, 0)
