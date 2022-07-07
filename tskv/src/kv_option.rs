@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use crate::forward_index::ForwardIndexConfig;
 
-pub const MAX_MEMCACHE_SIZE: u64 = 128;
+pub const MAX_MEMCACHE_SIZE: u64 = 128 * 1024 * 1024;
 // 128M
 pub const MAX_SUMMARY_SIZE: u64 = 128 * 1024 * 1024; //128M
 
-pub const MAX_IMMEMCACHE_NUM: usize = 1;
+pub const MAX_IMMEMCACHE_NUM: usize = 4;
 
 #[derive(Clone)]
 pub struct DBOptions {
