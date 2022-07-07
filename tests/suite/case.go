@@ -2,8 +2,8 @@ package suite
 
 import (
 	"errors"
-	"fmt"
 	"github.com/cnosdb/cnosdb/tests"
+	"github.com/cnosdb/cnosdb/tests/suite/iot"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,16 +21,19 @@ func (s *Step) Run(caseName string, server tests.Server, t *testing.T) {
 			t.Errorf("Case: %s, Step: %s, Error: %v", caseName, s.Name, e)
 		}
 	}
+	//fmt.Printf(`[case Run] error func generating"%s"`, "\n")
 	resStr, err := server.Query(s.Query)
+	//fmt.Printf(`[case Run]"%s", "%s" "%s""%s"`, resStr, "\n", err, "\n")
 	te(err)
 	var res Results
 	te(res.Unmarshal(resStr))
+	//fmt.Printf("[case Run] equal pending...\n")
 	if !s.Result.Equal(res) {
 		te(errors.New("Mismatch. "))
 	}
 }
 
-func (s *Step) ResCode(caseName string, server tests.Server) {
+func (s *Step) ResCode(server tests.Server) {
 	resStr, err := server.Query(s.Query)
 	if err != nil {
 		panic(err)
@@ -38,7 +41,7 @@ func (s *Step) ResCode(caseName string, server tests.Server) {
 	if err = s.Result.Unmarshal(resStr); err != nil {
 		panic(err)
 	}
-	s.Result.ToCode(fmt.Sprintf("%s|%s", caseName, s.Name))
+	s.Result.ToCode("a")
 }
 
 type Case struct {
@@ -52,43 +55,37 @@ func (c *Case) Run(server tests.Server, t *testing.T) {
 	}
 }
 
-func (c *Case) ResCode(server tests.Server) {
-	for _, s := range c.Steps {
-		s.ResCode(c.Name, server)
-	}
-}
-
 type Suite struct {
-	Gen      Generator
+	Gen      iot.Generator
 	Cases    []Case
-	Parallel int
+	Parallel bool
 	flag     ParallelFlag
 }
 
-func (s *Suite) Run(server tests.Server, t *testing.T) {
-	s.Gen.Run(server)
-	var wg sync.WaitGroup
-	wg.Add(s.Parallel)
-	for i := 0; i < s.Parallel; i++ {
-		go func() {
-			f := int32(0)
-			for {
-				f = s.flag.Add()
-				if f >= int32(len(s.Cases)) {
-					break
+func (s *Suite) Run(t *testing.T) {
+	s.Gen.Init()
+	s.Gen.Run()
+	if s.Parallel {
+		var wg sync.WaitGroup
+		wg.Add(s.Gen.Parallel)
+		for i := 0; i < s.Gen.Parallel; i++ {
+			go func() {
+				f := int32(0)
+				for {
+					f = s.flag.Add()
+					if f >= int32(len(s.Cases)) {
+						break
+					}
+					s.Cases[f].Run(s.Gen.Server, t)
 				}
-				s.Cases[f].Run(server, t)
-			}
-			wg.Done()
-		}()
-	}
-	wg.Wait()
-}
-
-func (s *Suite) ResCode(server tests.Server) {
-	s.Gen.Run(server)
-	for _, c := range s.Cases {
-		c.ResCode(server)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+	} else {
+		for _, c := range s.Cases {
+			c.Run(s.Gen.Server, t)
+		}
 	}
 }
 
