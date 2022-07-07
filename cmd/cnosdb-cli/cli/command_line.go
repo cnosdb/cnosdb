@@ -676,7 +676,7 @@ func (c *CommandLine) parseInsert(stmt string) (client.BatchPoints, error) {
 
 	ps, err := c.parsePoints(point)
 	if err != nil {
-		return nil, errors.Unwrap(err)
+		return nil, err
 	}
 
 	bp, err := client.NewBatchPoints(*bpCfg)
@@ -713,7 +713,7 @@ func (c *CommandLine) parseInto(stmt string) (*client.BatchPointsConfig, string)
 func (c *CommandLine) parsePoints(point string) ([]*client.Point, error) {
 	mps, err := models.ParsePoints([]byte(point))
 	if err != nil || len(mps) == 0 {
-		return nil, errors.Unwrap(err)
+		return nil, err
 	}
 
 	var points = make([]*client.Point, len(mps))
