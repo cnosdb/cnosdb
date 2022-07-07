@@ -4,7 +4,10 @@ use std::{
 };
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
-use logger::{debug, info, init, trace, warn};
+use datafusion::arrow::compute::lexsort_to_indices;
+use futures::stream::SelectNextSome;
+use lazy_static::lazy_static;
+use logger::{debug, error, info, init, trace, warn};
 use models::{FieldId, SeriesId, Timestamp};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -32,7 +35,7 @@ use crate::{
     memcache::{DataType, MemCache},
     record_file::Reader,
     runtime::WorkerQueue,
-    summary::{Summary, VersionEdit},
+    summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
     tseries_family::{TimeRange, Version},
     tsm::{BlockReader, TsmBlockReader, TsmIndexReader, TsmTombstone},
     version_set,
@@ -58,17 +61,14 @@ pub struct TsKv {
 
 impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
-        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let shared_options = Arc::new(opt);
         let kvctx = Arc::new(KvContext::new(shared_options.clone()));
-        let version_set = Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
+        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
+        let (version_set, summary) =
+            Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
         let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
         fidx.load_cache_file().await.map_err(|err| Error::LogRecordErr { source: err })?;
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
-        let summary = Summary::recover(&[TseriesFamDesc { name: "default".to_string(),
-                                                          opt: TseriesFamOpt::default() }],
-                                       &shared_options.db).await
-                                                          .unwrap();
         let core = Self { options: shared_options,
                           kvctx,
                           forward_index: Arc::new(RwLock::new(fidx)),
@@ -76,14 +76,14 @@ impl TsKv {
                           wal_sender,
                           flush_task_sender };
         core.run_wal_job(wal_receiver);
-        core.run_flush_job(flush_task_receiver, summary.global_context(), core.version_set.clone());
+        core.run_flush_job(flush_task_receiver, summary.global_context(), summary);
 
         Ok(core)
     }
 
     async fn recover(opt: Arc<Options>,
                      flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
-                     -> Arc<RwLock<VersionSet>> {
+                     -> (Arc<RwLock<VersionSet>>, Summary) {
         if !file_manager::try_exists(&opt.db.db_path) {
             std::fs::create_dir_all(&opt.db.db_path).context(error::IOSnafu).unwrap();
         }
@@ -99,13 +99,15 @@ impl TsKv {
                          &opt.db).await
                                  .unwrap()
         };
-        let version_set = summary.version_set();
+        let version_set = summary.version_set().clone();
         let wal_manager = WalManager::new(opt.wal.clone());
-        wal_manager.recover(version_set.clone(), summary.global_context(), flush_task_sender)
+        wal_manager.recover(version_set.clone(),
+                            summary.global_context().clone(),
+                            flush_task_sender)
                    .await
                    .unwrap();
 
-        version_set.clone()
+        (version_set.clone(), summary)
     }
 
     pub async fn write(&self,
@@ -165,21 +167,37 @@ impl TsKv {
             // get data from memcache
             if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
                 info!("memcache::{}::{}", sid.clone(), field_id);
-                mem_entry.read_cell(time_range)
+                mem_entry.read_cell(time_range);
+            }
+
+            // get data from delta_memcache
+            if let Some(mem_entry) = tsf.delta_cache().read().await.data_cache.get(&field_id) {
+                info!("delta memcache::{}::{}", sid.clone(), field_id);
+                mem_entry.read_cell(time_range);
             }
 
             // get data from im_memcache
             for mem_cache in tsf.im_cache().iter() {
                 if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
                     info!("im_memcache::{}::{}", sid.clone(), field_id);
-                    mem_entry.read_cell(time_range)
+                    mem_entry.read_cell(time_range);
                 }
             }
 
             // get data from levelinfo
             for level_info in tsf.version().read().await.levels_info.iter() {
+                if level_info.level == 0 {
+                    continue;
+                }
                 info!("levelinfo::{}::{}", sid.clone(), field_id);
                 level_info.read_columnfile(tsf.tf_id(), field_id, time_range);
+            }
+
+            // get data from delta
+            let level_info = &tsf.version().read().await.levels_info;
+            if !level_info.is_empty() {
+                info!("delta::{}::{}", sid.clone(), field_id);
+                level_info[0].read_columnfile(tsf.tf_id(), field_id, time_range);
             }
         } else {
             warn!("ts_family with sid {} not found.", sid);
@@ -284,10 +302,27 @@ impl TsKv {
     fn run_flush_job(&self,
                      mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
                      ctx: Arc<GlobalContext>,
-                     version_set: Arc<RwLock<VersionSet>>) {
+                     summary: Summary) {
         let f = async move {
+            let mut summary_processer = SummaryProcesser::new(Box::new(summary));
             while let Some(x) = receiver.recv().await {
-                run_flush_memtable_job(x.clone(), ctx.clone(), HashMap::new(), version_set.clone()).await.unwrap();
+                let (summary_task_sender, summary_task_receiver) = oneshot::channel();
+                run_flush_memtable_job(x.clone(),
+                                       ctx.clone(),
+                                       HashMap::new(),
+                                       summary_processer.summary().version_set().clone(),
+                                       summary_task_sender).await
+                                                           .unwrap();
+                match summary_task_receiver.await {
+                    Ok(x) => {
+                        summary_processer.batch(x);
+                        summary_processer.apply().await;
+                        info!("summary edits has been apply to file");
+                    },
+                    Err(_) => {
+                        error!("failed to get Summary task");
+                    },
+                }
             }
         };
         tokio::spawn(f);
@@ -428,7 +463,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 25);
+        let points = models_helper::create_random_points(&mut fbb, 10);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
@@ -526,7 +561,7 @@ mod test {
 
     #[tokio::test]
     async fn test_log() {
-        // log4rs::init_file("tests/test_kvcore_log.yaml", Default::default()).unwrap();
+        let tskv = get_tskv().await;
         info!("hello");
         warn!("hello");
         debug!("hello");

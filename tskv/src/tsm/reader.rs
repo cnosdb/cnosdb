@@ -4,6 +4,7 @@ use std::{
 };
 
 use integer_encoding::VarInt;
+use logger::info;
 use models::{FieldId, ValueType};
 
 use super::{coders, BLOOM_FILTER_SIZE, FOOTER_SIZE, MAX_BLOCK_VALUES};
@@ -61,7 +62,7 @@ impl<'a> TsmBlockReader<'a> {
                         if datum.timestamp() > time_range.min_ts
                            && datum.timestamp() < time_range.max_ts
                         {
-                            println!("{:?}", datum.clone());
+                            info!("{:?}", datum.clone());
                         }
                     },
                     None => loopp = false,
@@ -303,7 +304,7 @@ mod test {
                                              val: vec![101, 102, 103] })]);
 
         for (i, block) in blocks.iter().enumerate() {
-            let data = block_reader.decode(&block).expect("error decoding block data");
+            let data = block_reader.decode(block).expect("error decoding block data");
             let field_id = block_field_id.get(i).unwrap();
             assert_eq!(*ori_data.get(field_id).unwrap(), data);
         }

@@ -13,7 +13,7 @@ pub use writer::*;
 use crate::{direct_io, file_manager};
 
 // record
-// |      4       |     2     |       1      |     1     | len  |      4       |
+// |      4       |     4     |       1      |     1     | len  |      4       |
 // +--------------+-----------+--------------+-----------+------+--------------+
 // | magic_number | data_size | data_version | data_type | data | crc32_number |
 // +--------------+-----------+--------------+-----------+------+--------------+
@@ -27,7 +27,7 @@ use crate::{direct_io, file_manager};
 // +--------+--------+--------+--------+-------
 const MAGIC_NUMBER: u32 = u32::from_le_bytes([b'F', b'l', b'O', b'g']);
 const RECORD_MAGIC_NUMBER_LEN: usize = 4;
-const RECORD_DATA_SIZE_LEN: usize = 2;
+const RECORD_DATA_SIZE_LEN: usize = 4;
 const RECORD_DATA_VERSION_LEN: usize = 1;
 const RECORD_DATA_TYPE_LEN: usize = 1;
 const RECORD_CRC32_NUMBER_LEN: usize = 4;

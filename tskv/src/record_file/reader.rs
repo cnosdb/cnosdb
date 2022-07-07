@@ -8,8 +8,10 @@ use std::{
 };
 
 use async_recursion::async_recursion;
+use bytes::{Buf, BufMut};
 use direct_io::File;
 use futures::future::ok;
+use logger::info;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 
@@ -100,7 +102,7 @@ impl Reader {
         }
 
         p += RECORD_MAGIC_NUMBER_LEN;
-        let data_size = u16::from_le_bytes(buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
+        let data_size = u32::from_le_bytes(buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
         p += RECORD_DATA_SIZE_LEN;
         let data_version =
             u8::from_le_bytes(buf[p..p + RECORD_DATA_VERSION_LEN].try_into().unwrap());
@@ -115,7 +117,6 @@ impl Reader {
                 return self.read_record().await;
             },
         };
-
         let (_, crc32_number_buf) = self.read_buf(RECORD_CRC32_NUMBER_LEN).await?;
         let crc32_number = u32::from_le_bytes(crc32_number_buf.try_into().unwrap());
 

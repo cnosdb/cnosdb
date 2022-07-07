@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use crate::forward_index::ForwardIndexConfig;
 
-pub const MAX_MEMCACHE_SIZE: u64 = 128 * 1024 * 1024;
+pub const MAX_MEMCACHE_SIZE: u64 = 128;
 // 128M
 pub const MAX_SUMMARY_SIZE: u64 = 128 * 1024 * 1024; //128M
 
-pub const MAX_IMMEMCACHE_NUM: usize = 4;
+pub const MAX_IMMEMCACHE_NUM: usize = 1;
 
 #[derive(Clone)]
 pub struct DBOptions {
@@ -90,6 +90,7 @@ pub struct TseriesFamOpt {
     pub compact_trigger: u32,
     pub max_compact_size: u64,
     pub tsm_dir: String,
+    pub delta_dir: String,
 }
 
 impl TseriesFamOpt {
@@ -106,7 +107,8 @@ impl Default for TseriesFamOpt {
                base_file_size: 16 * 1024 * 1024,
                compact_trigger: 4,
                max_compact_size: 2 * 1024 * 1024 * 1024,
-               tsm_dir: "db/tsm/".to_string() }
+               tsm_dir: "db/tsm/".to_string(),
+               delta_dir: "db/delta/".to_string() }
     }
 }
 
