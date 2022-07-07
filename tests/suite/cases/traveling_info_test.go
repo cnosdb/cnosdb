@@ -29,7 +29,7 @@ func TestGenCode_1(t *testing.T) {
 			Results: []suite.Result{},
 		},
 	}
-	s.ResCode(server)
+	s.ResCode("", server)
 }
 
 func TestGenCode_n(t *testing.T) {
@@ -56,6 +56,6 @@ func TestGenCode_n(t *testing.T) {
 	for i = 0; i < len(steps); i++ {
 		fmt.Printf(steps[i].Name)
 		fmt.Printf("\n")
-		steps[i].ResCode(server)
+		steps[i].ResCode("", server)
 	}
 }
