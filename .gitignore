@@ -26,3 +26,6 @@
 .idea/
 .dist/
 *.imldist/
+
+.DS_Store
+*/.DS_Store
