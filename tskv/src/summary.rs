@@ -30,18 +30,15 @@ pub struct CompactMeta {
     pub is_delta: bool,
 }
 impl CompactMeta {
-    pub fn new(file_id: u64, level: u32) -> Self {
-        Self { file_id,
+    pub fn new() -> Self {
+        Self { file_id: 0,
                file_size: 0,
                ts_min: i64::MAX,
                ts_max: i64::MIN,
-               level,
+               level: 0,
                high_seq: u64::MIN,
                low_seq: u64::MIN,
                is_delta: false }
-    }
-    pub fn file_id(&self) -> u64 {
-        self.file_id
     }
 }
 
