@@ -4,10 +4,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use config::GLOBAL_CONFIG;
 use tokio::sync::RwLock;
 
 use crate::{
-    kv_option::{TseriesFamDesc, MAX_MEMCACHE_SIZE},
+    kv_option::TseriesFamDesc,
     memcache::MemCache,
     tseries_family::{TseriesFamily, Version},
 };
@@ -30,7 +31,10 @@ impl VersionSet {
                 if item.name == name {
                     let tf = TseriesFamily::new(id,
                                                 name.clone(),
-                                                MemCache::new(id, MAX_MEMCACHE_SIZE, seq, false),
+                                                MemCache::new(id,
+                                                              GLOBAL_CONFIG.max_memcache_size,
+                                                              seq,
+                                                              false),
                                                 ver.clone(),
                                                 item.opt.clone()).await;
                     ts_families.insert(id, tf);
@@ -48,7 +52,10 @@ impl VersionSet {
 
     pub async fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         let tf = self.ts_families.get_mut(&tf_id).unwrap();
-        let mem = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq, false)));
+        let mem = Arc::new(RwLock::new(MemCache::new(tf_id,
+                                                     GLOBAL_CONFIG.max_memcache_size,
+                                                     seq,
+                                                     false)));
         tf.switch_memcache(mem).await;
     }
 

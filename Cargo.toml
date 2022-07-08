@@ -1,10 +1,11 @@
 [workspace]
 
 members = [
+    "config",
+    "logger",
     "main",
     "protos",
     "tskv",
-    "logger",
     "rpctests",
     "utils",
     "models",
