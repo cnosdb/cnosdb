@@ -271,13 +271,13 @@ mod test {
     use models::FieldId;
 
     use crate::{
-        file_manager::FileManager,
+        file_manager::get_file_manager,
         tsm::{BlockReader, DataBlock, TsmBlockReader, TsmIndexReader},
     };
 
     #[test]
     fn tsm_reader_test() {
-        let fs = FileManager::new();
+        let fs = get_file_manager();
         let fs = fs.open_file("/tmp/writer_test.tsm").unwrap();
         let len = fs.len();
         let mut fs_cursor = fs.into_cursor();

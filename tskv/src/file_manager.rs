@@ -44,7 +44,7 @@ pub fn get_file_manager() -> &'static FileManager {
 }
 
 impl FileManager {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let fs_options = direct_io::Options::default();
         let thread_num = fs_options.get_thread_num();
         let rt = Arc::new(AsyncContext::new(fs_options.get_thread_num()));

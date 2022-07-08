@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     io::{Seek, SeekFrom, Write},
 };
+
 use models::FieldId;
 use snafu::ResultExt;
 use utils::{BkdrHasher, BloomFilter};
@@ -200,13 +201,14 @@ mod test {
 
     use crate::{
         direct_io::FileSync,
-        file_manager::{self, FileManager},
+        file_manager::{self, get_file_manager, FileManager},
         memcache::StrCell,
         tsm::{
             coders, DataBlock, FileBlock, TsmBlockWriter, TsmFooterWriter, TsmHeaderWriter,
             TsmIndexWriter,
         },
     };
+
     #[test]
     fn test_str_encode() {
         // let block = DataBlock::new(10, crate::DataType::Str(StrCell{ts:1, val: vec![]}));
@@ -220,7 +222,7 @@ mod test {
     }
     #[test]
     fn test_tsm_write() {
-        let fs = FileManager::new();
+        let fs = get_file_manager();
         let file = fs.create_file("./writer_test.tsm").unwrap();
         let mut fs_cursor = file.into_cursor();
 
