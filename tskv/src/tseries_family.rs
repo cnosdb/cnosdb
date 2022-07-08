@@ -23,7 +23,7 @@ use utils::BloomFilter;
 use crate::{
     compaction::FlushReq,
     direct_io::FileCursor,
-    file_manager::FileManager,
+    file_manager::get_file_manager,
     kv_option::TseriesFamOpt,
     memcache::{DataType, MemCache},
     new_bloom_filter,
@@ -75,7 +75,7 @@ impl ColumnFile {
     }
 
     pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
-        let fs = FileManager::new();
+        let fs = get_file_manager();
         let ts_cf = TseriesFamOpt::default();
         let fs = if self.is_delta {
             let p = format!("/_{:06}.delta", self.file_id());
