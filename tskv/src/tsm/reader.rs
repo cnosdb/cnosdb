@@ -4,8 +4,9 @@ use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 
 use super::{
-    boolean, float, index::Index, integer, string, timestamp, unsigned, DataBlock, BLOCK_META_SIZE,
-    FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+    boolean, float, get_data_block_meta_unchecked, get_index_meta_unchecked, index::Index, integer,
+    string, timestamp, unsigned, BlockMeta, DataBlock, IndexMeta, BLOCK_META_SIZE, FOOTER_SIZE,
+    INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
 use crate::{
     byte_utils,
@@ -15,136 +16,101 @@ use crate::{
     Error,
 };
 
-pub struct TsmReader {
+/// Disk-based index reader
+pub struct IndexFile {
     reader: Arc<File>,
-    index: Arc<Index>,
+    buf: [u8; 8],
+
+    index_offset: u64,
+    pos: u64,
+    end_pos: u64,
+    index_block_idx: usize,
+    index_block_count: usize,
 }
 
-pub struct IndexMeta {
-    index_ref: Arc<Index>,
-    /// Array index in `Index::offsets`
-    index_idx: usize,
-
-    field_id: FieldId,
-    field_type: ValueType,
-    block_count: u16,
-}
-
-impl IndexMeta {
-    pub fn iter(&self) -> BlockMetaIterator {
-        let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
-        BlockMetaIterator { index_ref: self.index_ref.clone(),
-                            index_offset,
-                            field_type: self.field_type,
-                            block_offset: index_offset + INDEX_META_SIZE,
-                            block_count: self.block_count,
-                            block_idx: 0 }
+impl IndexFile {
+    pub fn open(reader: Arc<File>) -> Result<Self> {
+        let file_len = reader.len();
+        let mut buf = [0_u8; 8];
+        reader.read_at(file_len - 8, &mut buf)
+              .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        let index_offset = u64::from_be_bytes(buf);
+        Ok(Self { reader,
+                  buf,
+                  index_offset,
+                  pos: index_offset,
+                  end_pos: file_len - FOOTER_SIZE as u64,
+                  index_block_idx: 0,
+                  index_block_count: 0 })
     }
 
-    pub fn iter_opt(&self, min_ts: Timestamp, max_ts: Timestamp) -> BlockMetaIterator {
-        let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
-        let mut iter = BlockMetaIterator { index_ref: self.index_ref.clone(),
-                                           index_offset,
-                                           field_type: self.field_type,
-                                           block_offset: index_offset + INDEX_META_SIZE,
-                                           block_count: self.block_count,
-                                           block_idx: 0 };
-        iter.filter_timerange(min_ts, max_ts);
-        iter
+    // TODO: not implemented
+    pub fn next_index_entry(&mut self) -> Result<Option<()>> {
+        if self.pos >= self.end_pos {
+            return Ok(None);
+        }
+        self.reader
+            .read_at(self.pos, &mut self.buf[..])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        let field_id = u64::from_be_bytes(self.buf);
+        self.pos += 8;
+        self.reader
+            .read_at(self.pos, &mut self.buf[..3])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.pos += 3;
+        let field_type = ValueType::from(self.buf[0]);
+        let block_count = decode_be_u16(&self.buf[1..3]);
+        self.index_block_idx = 0;
+        self.index_block_count = block_count as usize;
+
+        Ok(Some(()))
     }
 
-    #[inline(always)]
-    pub fn field_id(&self) -> FieldId {
-        self.field_id
-    }
+    // TODO: not implemented
+    pub fn next_block_entry(&mut self) -> Result<Option<()>> {
+        if self.index_block_idx >= self.index_block_count {
+            return Ok(None);
+        }
+        // read min time on block entry
+        self.reader
+            .read_at(self.pos, &mut self.buf[..])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.pos += 8;
+        let min_ts = i64::from_be_bytes(self.buf);
 
-    #[inline(always)]
-    pub fn field_type(&self) -> ValueType {
-        self.field_type
-    }
+        // read max time on block entry
+        self.reader
+            .read_at(self.pos, &mut self.buf[..])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.pos += 8;
+        let max_ts = i64::from_be_bytes(self.buf);
 
-    #[inline(always)]
-    pub fn block_count(&self) -> u16 {
-        self.block_count
-    }
-}
+        // read block data offset
+        self.reader
+            .read_at(self.pos, &mut self.buf[..])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.pos += 8;
+        let offset = u64::from_be_bytes(self.buf);
 
-#[derive(Debug, Clone)]
-pub struct BlockMeta {
-    index_ref: Arc<Index>,
-    /// Array index in `Index::data` which current `BlockMeta` starts.
-    block_offset: usize,
-    field_type: ValueType,
+        // read block size
+        self.reader
+            .read_at(self.pos, &mut self.buf[..])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.pos += 8;
+        let size = u64::from_be_bytes(self.buf);
 
-    min_ts: Timestamp,
-    max_ts: Timestamp,
-}
+        // read value offset
+        self.reader
+            .read_at(self.pos, &mut self.buf[..])
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.pos += 8;
+        let val_off = u64::from_be_bytes(self.buf);
 
-impl BlockMeta {
-    fn new(index: Arc<Index>, field_type: ValueType, block_offset: usize) -> Self {
-        let min_ts = decode_be_i64(&index.data()[block_offset..block_offset + 8]);
-        let max_ts = decode_be_i64(&&index.data()[block_offset + 8..block_offset + 16]);
-        Self { index_ref: index, block_offset, field_type, min_ts, max_ts }
-    }
-
-    #[inline(always)]
-    pub fn as_slice(&self) -> &[u8] {
-        &self.index_ref.data()[self.block_offset..]
-    }
-
-    #[inline(always)]
-    pub fn min_ts(&self) -> Timestamp {
-        self.min_ts
-    }
-
-    #[inline(always)]
-    pub fn max_ts(&self) -> Timestamp {
-        self.max_ts
-    }
-
-    #[inline(always)]
-    pub fn offset(&self) -> u64 {
-        decode_be_u64(&self.index_ref.data()[self.block_offset + 16..self.block_offset + 24])
-    }
-
-    #[inline(always)]
-    pub fn size(&self) -> u64 {
-        decode_be_u64(&self.index_ref.data()[self.block_offset + 24..self.block_offset + 32])
-    }
-
-    #[inline(always)]
-    pub fn val_off(&self) -> u64 {
-        decode_be_u64(&self.index_ref.data()[self.block_offset + 32..self.block_offset + 40])
+        Ok(Some(()))
     }
 }
 
-fn get_index_meta_unchecked(index: Arc<Index>, idx: usize) -> IndexMeta {
-    let idx = 0_usize;
-    let off = index.offsets()[idx] as usize;
-
-    let field_id = byte_utils::decode_be_u64(&index.data()[off..off + 8]);
-    let block_type = ValueType::from(index.data()[off + 8]);
-    let block_count = byte_utils::decode_be_u16(&index.data()[off + 9..off + 11]);
-
-    IndexMeta { index_ref: index, index_idx: idx, field_id, field_type: block_type, block_count }
-}
-
-fn get_data_block_meta_unchecked(index: Arc<Index>,
-                                 index_offset: usize,
-                                 block_idx: usize,
-                                 field_type: ValueType)
-                                 -> BlockMeta {
-    let base = index_offset + INDEX_META_SIZE + block_idx * BLOCK_META_SIZE;
-    // let sli = &self.data[off + INDEX_META_SIZE..];
-    // let min_ts = byte_utils::decode_be_i64(&sli[base + 0..base + 8]);
-    // let max_ts = byte_utils::decode_be_i64(&sli[base + 8..base + 16]);
-    // let offset = byte_utils::decode_be_u64(&sli[base + 16..base + 24]);
-    // let size = byte_utils::decode_be_u64(&sli[base + 24..base + 32]);
-    // let val_off = byte_utils::decode_be_u64(&sli[base + 32..base + 40]);
-
-    BlockMeta::new(index, field_type, base)
-}
-
+/// Memory-based index reader
 pub struct IndexReader {
     index_ref: Arc<Index>,
 }
@@ -252,6 +218,19 @@ pub struct BlockMetaIterator {
 }
 
 impl BlockMetaIterator {
+    pub fn new(index: Arc<Index>,
+               index_offset: usize,
+               field_type: ValueType,
+               block_count: u16)
+               -> Self {
+        Self { index_ref: index,
+               index_offset,
+               field_type,
+               block_offset: index_offset + INDEX_META_SIZE,
+               block_count,
+               block_idx: 0 }
+    }
+
     /// Set iterator start & end position by time range
     pub fn filter_timerange(&mut self, min_ts: Timestamp, max_ts: Timestamp) {
         let sli = &self.index_ref.data()
@@ -323,12 +302,13 @@ impl ColumnReader {
         self.reader
             .read_at(offset, &mut self.buf)
             .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        let crc = &self.buf[..4];
+        // let crc_ts = &self.buf[..4];
         let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES);
         timestamp::decode(&self.buf[4..(val_offset - offset) as usize], &mut ts)
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        // let crc_data = &self.buf[(val_offset - offset) as usize..4];
         let data = &self.buf[(val_offset - offset + 4) as usize..];
-        match block_meta.field_type {
+        match block_meta.field_type() {
             ValueType::Float => {
                 // values will be same length as time-stamps.
                 let mut val = Vec::with_capacity(ts.len());
@@ -367,7 +347,7 @@ impl ColumnReader {
             },
             _ => {
                 Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
-                                                        block_meta.field_type) })
+                                                        block_meta.field_type()) })
             },
         }
     }

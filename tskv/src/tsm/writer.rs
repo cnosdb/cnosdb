@@ -137,22 +137,22 @@ impl IndexBuf {
     }
 
     pub fn write_to(&self, writer: &mut FileCursor) -> Result<usize> {
-        let mut index_pos = 0_usize;
-        let block_pos = 0_usize;
-        let i = 0_usize;
         let mut size = 0_usize;
+        let mut index_pos = 0_usize;
+        let mut index_idx = 0_usize;
         while index_pos < self.index_meta.len() {
             writer.write(&self.index_meta[index_pos..index_pos + INDEX_META_SIZE])
                   .map(|s| size += s)
                   .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             index_pos += INDEX_META_SIZE;
-            let blocks_sli = match self.block_meta_offsets.get(i + 1) {
-                Some(nbp) => &self.block_meta[self.block_meta_offsets[i]..*nbp],
-                None => &self.block_meta[self.block_meta_offsets[i]..],
+            let blocks_sli = match self.block_meta_offsets.get(index_idx + 1) {
+                Some(nbp) => &self.block_meta[self.block_meta_offsets[index_idx]..*nbp],
+                None => &self.block_meta[self.block_meta_offsets[index_idx]..],
             };
             writer.write(&blocks_sli)
                   .map(|s| size += s)
                   .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+            index_idx += 1;
         }
 
         Ok(size)
@@ -299,7 +299,7 @@ pub fn write_footer_to(writer: &mut FileCursor,
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use logger::info;
     use models::FieldId;
@@ -308,7 +308,7 @@ mod test {
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
         memcache::StrCell,
-        tsm::{coders, DataBlock, TsmCacheWriter, TsmWriter},
+        tsm::{coders, ColumnReader, DataBlock, IndexReader, TsmCacheWriter, TsmWriter},
     };
 
     #[test]
@@ -340,5 +340,41 @@ mod test {
         writer.write().unwrap();
 
         println!("column write finsh");
+        tsm_reader_test();
+    }
+
+    fn tsm_reader_test() {
+        let fs = get_file_manager().open_file("/tmp/test/writer_test.tsm").unwrap();
+        let fs = Arc::new(fs);
+        let len = fs.len();
+
+        let index = IndexReader::load(fs.clone()).unwrap();
+        let mut column_readers: HashMap<FieldId, ColumnReader> = HashMap::new();
+        for index_meta in index.iter() {
+            column_readers.insert(index_meta.field_id(),
+                                  ColumnReader::new(fs.clone(), index_meta.iter()));
+        }
+
+        let ori_data: HashMap<FieldId, Vec<DataBlock>> =
+            HashMap::from([(1,
+                            vec![DataBlock::U64 { index: 0,
+                                                  ts: vec![2, 3, 4],
+                                                  val: vec![12, 13, 15] }]),
+                           (2,
+                            vec![DataBlock::U64 { index: 0,
+                                                  ts: vec![2, 3, 4],
+                                                  val: vec![101, 102, 103] }])]);
+
+        for (fid, col_reader) in column_readers.iter_mut() {
+            dbg!(fid);
+            let mut data = Vec::new();
+            for block in col_reader.next().unwrap() {
+                data.push(block);
+            }
+            dbg!(&data);
+
+            assert_eq!(*ori_data.get(fid).unwrap(), data);
+        }
+        info!("read test finish");
     }
 }
