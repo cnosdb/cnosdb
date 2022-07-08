@@ -59,6 +59,8 @@ impl Default for MemEntry {
 
 #[allow(dead_code)]
 pub struct MemCache {
+    // if true,ready be pushed into immemcache
+    immutable: bool,
     // partiton id
     tf_id: u32,
     // wal seq number
@@ -75,7 +77,7 @@ pub struct MemCache {
 impl MemCache {
     pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
         let cache = HashMap::new();
-        Self { tf_id, max_buf_size: max_size, data_cache: cache, seq_no: seq, cache_size: 0 }
+        Self { immutable: false, tf_id, max_buf_size: max_size, data_cache: cache, seq_no: seq, cache_size: 0 }
     }
     pub fn insert_raw(&mut self,
                       seq: u64,
@@ -131,11 +133,26 @@ impl MemCache {
     //     self.data_cache
     // }
 
+    pub fn switch_to_immutable(&mut self) {
+        for mut data in self.data_cache.iter() {
+            // data.1.cells.sort();
+        }
+        self.immutable = true;
+    }
+
     pub fn flush() -> Result<()> {
         Ok(())
     }
 
     pub fn is_full(&self) -> bool {
         self.cache_size >= self.max_buf_size
+    }
+
+    pub fn tf_id(&self) -> u32 {
+        self.tf_id
+    }
+
+    pub fn max_buf_size(&self) -> u64 {
+        self.max_buf_size
     }
 }

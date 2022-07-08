@@ -28,24 +28,27 @@ fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
     rt.block_on(tskv.lock().write(request)).unwrap();
 }
 
-fn test_concurrent_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
-    let rt = Runtime::new().unwrap();
-    for _ in 0..2 {
-        let req = request.clone();
-        rt.block_on(tskv.lock().write(req)).unwrap();
-    }
-}
-
 fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, points: &[u8]) {
     let rt = Runtime::new().unwrap();
     rt.block_on(tskv.lock().insert_cache(1, points)).unwrap();
 }
 
-fn test_concurrent_insert_cache(tskv: Arc<Mutex<TsKv>>, points: &[u8]) {
+fn big_write(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    for _ in 0..2 {
-        rt.block_on(tskv.lock().insert_cache(1, points)).unwrap();
-    }
+    let tskv = rt.block_on(get_tskv());
+
+    let database = "db".to_string();
+    let mut fbb = flatbuffers::FlatBufferBuilder::new();
+    let points = models_helper::create_big_random_points(&mut fbb, 1);
+    fbb.finish(points, None);
+    let points = fbb.finished_data().to_vec();
+    let request = WritePointsRpcRequest { version: 1, database, points };
+
+    //maybe 250 ms
+    c.bench_function("big_write", |b| b.iter(|| {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(tskv.write(request.clone())).unwrap()
+    }));
 }
 
 fn run(c: &mut Criterion) {
@@ -59,13 +62,15 @@ fn run(c: &mut Criterion) {
     let points = points_str.to_vec();
     let request = WritePointsRpcRequest { version: 1, database, points };
 
+    //maybe 500 us
     c.bench_function("write", |b| b.iter(||
         test_write(tskv.clone(), request.clone(),
         )));
+    //maybe 200 us
     c.bench_function("insert_cache", |b| b.iter(||
         test_insert_cache(tskv.clone(), points_str.clone())
     ));
 }
 
-criterion_group!(benches,run);
+criterion_group!(benches, run, big_write);
 criterion_main!(benches);

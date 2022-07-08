@@ -1,10 +1,21 @@
+use std::hash::Hasher;
+
 const SEED: u64 = 1313;
 
-pub struct Hash(u64);
+pub struct BkdrHasher(u64);
 
-impl Hash {
+impl BkdrHasher {
     pub fn new() -> Self {
-        Hash(0)
+        BkdrHasher(0)
+    }
+
+    pub fn with_number(number: u64) -> Self {
+        BkdrHasher(number)
+    }
+
+    pub fn hash_with(&mut self, bytes: &[u8]) -> &mut Self {
+        self.write(bytes);
+        self
     }
 
     pub fn number(&self) -> u64 {
@@ -12,56 +23,45 @@ impl Hash {
     }
 }
 
-impl From<u64> for Hash {
-    fn from(hash: u64) -> Self {
-        Hash(hash)
+impl Hasher for BkdrHasher {
+    fn finish(&self) -> u64 {
+        self.0
     }
-}
 
-impl From<&Hash> for Hash {
-    fn from(hash: &Hash) -> Self {
-        Hash(hash.0)
-    }
-}
-
-pub trait HashWith<T> {
-    fn hash_with(&mut self, data: T) -> &Hash;
-}
-
-impl HashWith<&Vec<u8>> for Hash {
-    fn hash_with(&mut self, data: &Vec<u8>) -> &Hash {
-        for c in data {
+    fn write(&mut self, bytes: &[u8]) {
+        for c in bytes {
             self.0 = self.0.wrapping_mul(SEED).wrapping_add(*c as u64);
         }
-        self
-    }
-}
-
-impl HashWith<&[u8]> for Hash {
-    fn hash_with(&mut self, data: &[u8]) -> &Hash {
-        for c in data {
-            self.0 = self.0.wrapping_mul(SEED).wrapping_add(*c as u64);
-        }
-        self
-    }
-}
-
-impl HashWith<&str> for Hash {
-    fn hash_with(&mut self, data: &str) -> &Hash {
-        for c in data.as_bytes() {
-            self.0 = self.0.wrapping_mul(SEED).wrapping_add(*c as u64);
-        }
-        self
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::bkdr_hash::{Hash, HashWith};
+    use std::hash::Hasher;
+
+    use crate::bkdr_hash::BkdrHasher;
 
     #[test]
     fn test_hash() {
-        let mut ha = Hash::new();
-        let _ = ha.hash_with(&Vec::from("123")).number();
+        let a = {
+            let mut h = BkdrHasher::new();
+            h.write(b"Hello".as_slice());
+            h.write(b"World".as_slice());
+            h.finish()
+        };
+        let b = {
+            let mut h = BkdrHasher::new();
+            h.write(b"HelloWorld".as_slice());
+            h.finish()
+        };
+        let c = {
+            let mut h = BkdrHasher::new();
+            h.write(b"World".as_slice());
+            h.write(b"Hello".as_slice());
+            h.number()
+        };
+        println!("{} == {} != {}", a, b, c);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 }

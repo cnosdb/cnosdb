@@ -7,13 +7,12 @@ use std::{
 
 use crc32fast;
 use lazy_static::lazy_static;
-use models::TagFromParts;
 use parking_lot::Mutex;
 use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::{oneshot, RwLock};
-use utils::bkdr_hash::{self, HashWith};
+use utils::bkdr_hash;
 use walkdir::IntoIter;
 
 use crate::{
@@ -304,7 +303,7 @@ impl WalManager {
                                               self.current_dir.join(file_name),
                                               Arc::new(kv_option::WalConfig::default()))?;
             let mut reader = WalReader::new(tmp_walfile.file.into())?;
-            let version_set = version_set.read().await;
+            let mut version_set = version_set.write().await;
             while let Some(e) = reader.next_wal_entry() {
                 match e.typ {
                     WalEntryType::Write => {
@@ -325,10 +324,10 @@ impl WalManager {
                                         } else {
                                             vec![]
                                         };
-                                        point_tags.push(models::Tag::from_parts(tag_key,
+                                        point_tags.push(models::Tag::new(tag_key,
                                                                                 tag_value));
                                     }
-                                    models::SeriesInfo::cal_sid(&mut point_tags)
+                                    models::generate_series_id(&mut point_tags)
                                 } else {
                                     // TODO error: no tags
                                     0
@@ -337,8 +336,7 @@ impl WalManager {
                                     if let Some(fields) = p.fields() {
                                         for f in fields.iter() {
                                             let fid = if let Some(field_name) = f.name() {
-                                                models::FieldInfo::cal_fid(&field_name.to_vec(),
-                                                                           sid)
+                                                models::generate_field_id(&field_name.to_vec(), sid)
                                             } else {
                                                 // TODO error: no field name
                                                 0
@@ -477,7 +475,7 @@ mod test {
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
 
-    const DIR: &'static str = "/tmp/test/";
+    const DIR: &'static str = "/tmp/test/wal";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
@@ -708,32 +706,32 @@ mod test {
             let cursor: FileCursor = file.into();
 
             let mut reader = WalReader::new(cursor).unwrap();
-            let mut writed_crcs = Vec::<u32>::new();
-            let mut readed_crcs = Vec::<u32>::new();
+            let mut wrote_crcs = Vec::<u32>::new();
+            let mut read_crcs = Vec::<u32>::new();
             while let Some(entry) = reader.next_wal_entry() {
                 match entry.typ {
                     WalEntryType::Write => {
                         let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                        writed_crcs.push(entry.crc);
-                        readed_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
+                        wrote_crcs.push(entry.crc);
+                        read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
                     },
                     WalEntryType::Delete => {
                         let de_block =
                             flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                        writed_crcs.push(entry.crc);
-                        readed_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
+                        wrote_crcs.push(entry.crc);
+                        read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
                     },
                     WalEntryType::DeleteRange => {
                         let de_block =
                             flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf)
                                 .unwrap();
-                        writed_crcs.push(entry.crc);
-                        readed_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
+                        wrote_crcs.push(entry.crc);
+                        read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
                     },
                     _ => {},
                 };
             }
-            assert_eq!(writed_crcs, readed_crcs);
+            assert_eq!(wrote_crcs, read_crcs);
         }
     }
 }

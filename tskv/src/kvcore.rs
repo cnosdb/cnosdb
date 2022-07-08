@@ -1,6 +1,6 @@
 use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, sync::Arc, thread::JoinHandle};
 
-use ::models::{AbstractPoints, FieldInfo, FieldInfoFromParts, SeriesInfo, Tag, ValueType};
+use ::models::{InMemPoint, FieldInfo, SeriesInfo, Tag, ValueType};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
@@ -15,6 +15,7 @@ use tokio::{
         oneshot, RwLock,
     },
 };
+use models::{FieldID, SeriesID};
 
 use crate::{
     context::GlobalContext,
@@ -33,6 +34,7 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task,
 };
+use crate::tseries_family::TimeRange;
 
 pub struct Entry {
     pub series_id: u64,
@@ -97,15 +99,7 @@ impl TsKv {
 
         // get or create forward index
         for point in fb_points.points().unwrap() {
-            let mut info = SeriesInfo::new();
-            for tag in point.tags().unwrap() {
-                info.tags
-                    .push(Tag::new(tag.key().unwrap().to_vec(), tag.value().unwrap().to_vec()));
-            }
-            for field in point.fields().unwrap() {
-                info.field_infos.push(FieldInfo::from_parts(field.name().unwrap().to_vec(),
-                                                            ValueType::from(field.type_())))
-            }
+            let info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             self.forward_index
                 .write()
                 .await
@@ -123,15 +117,15 @@ impl TsKv {
 
         // write memcache
         if let Some(points) = fb_points.points() {
-            let version_set = self.version_set.read().await;
+            let mut version_set = self.version_set.write().await;
             for point in points.iter() {
-                let p = AbstractPoints::from(point);
+                let p = InMemPoint::from(point);
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
                     for f in p.fileds().iter() {
                         tsf.put_mutcache(f.filed_id(),
                                          &f.value,
-                                         f.val_type,
+                                         f.value_type,
                                          seq,
                                          point.timestamp() as i64)
                            .await
@@ -146,13 +140,32 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
+    pub async fn read(&self, sids: Vec<SeriesID>, time_range: TimeRange, fields: Vec<FieldID>) {
+        let mut version_set = self.version_set.write().await;
+        for sid in sids {
+            if let Some(tsf) = version_set.get_tsfamily(sid) {
+                for field_id in fields.iter() {
+                    if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(field_id) {
+                        if mem_entry.ts_max < time_range.min_ts || mem_entry.ts_min > time_range.max_ts {
+                            break;
+                        } else {
+                            for i in mem_entry.cells.iter() {
+                                //todo()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {
         let ps =
             flatbuffers::root::<fb_models::Points>(buf).context(error::InvalidFlatbufferSnafu)?;
         if let Some(points) = ps.points() {
-            let version_set = self.version_set.read().await;
+            let mut version_set = self.version_set.write().await;
             for point in points.iter() {
-                let p = AbstractPoints::from(point);
+                let p = InMemPoint::from(point);
                 // use sid to dispatch to tsfamily
                 // so if you change the colume name
                 // please keep the series id
@@ -161,7 +174,7 @@ impl TsKv {
                     for f in p.fileds().iter() {
                         tsf.put_mutcache(f.filed_id(),
                                          &f.value,
-                                         f.val_type,
+                                         f.value_type,
                                          seq,
                                          point.timestamp() as i64)
                            .await
@@ -283,21 +296,15 @@ mod test {
     use std::sync::Arc;
 
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use tokio::sync::mpsc;
-    use tokio::sync::oneshot::channel;
-    use protos::{kv_service, models_helper};
-    use protos::kv_service::WritePointsRpcResponse;
+    use protos::{kv_service, kv_service::WritePointsRpcResponse, models_helper};
+    use tokio::sync::{mpsc, oneshot::channel};
 
-    use crate::{kv_option::WalConfig, TsKv, Task};
+    use crate::{kv_option::WalConfig, Task, TsKv};
 
     async fn get_tskv() -> TsKv {
-        let opt = crate::kv_option::Options {
-            wal: WalConfig {
-                dir: String::from("/tmp/test/wal"),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
+                                                               ..Default::default() },
+                                              ..Default::default() };
 
         TsKv::open(opt).await.unwrap()
     }
@@ -318,6 +325,21 @@ mod test {
         let points = models_helper::create_random_points(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        tskv.write(request).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_big_write() {
+        let tskv = get_tskv().await;
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_big_random_points(&mut fbb, 1);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
 
         tskv.write(request).await.unwrap();
@@ -356,7 +378,7 @@ mod test {
 
         match rx.await {
             Ok(Ok(resp)) => println!("successful"),
-            _ => println!("wrong")
+            _ => println!("wrong"),
         };
     }
 }

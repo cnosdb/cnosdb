@@ -1,14 +1,39 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use models::{FieldID, FieldInfo, SeriesID, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
 
 use super::*;
-use crate::record_file::{Record, RecordFileError, RecordFileResult};
+use crate::record_file::{self, Record, RecordFileError, RecordFileResult};
 
 const VERSION: u8 = 1;
 
+struct InMemSeriesInfo {
+    id: SeriesID,
+    pos: usize,
+    field_infos: Vec<InMemFieldInfo>,
+}
+
+impl InMemSeriesInfo {
+    fn with_series_info(series_info: &SeriesInfo, pos: usize) -> Self {
+        Self { id: series_info.series_id(), pos, field_infos: series_info.field_infos().iter().map(|f| f.into()).collect()
+        }
+    }
+}
+
+struct InMemFieldInfo {
+    id: FieldID,
+    value_type: ValueType,
+}
+
+impl From<&FieldInfo> for InMemFieldInfo {
+    fn from(field_info: &FieldInfo) -> Self {
+        Self { id: field_info.filed_id(), value_type: field_info.value_type() }
+    }
+}
+
 pub struct ForwardIndex {
-    series_info_set: HashMap<models::SeriesID, AbstractSeriesInfo>,
+    series_info_set: HashMap<models::SeriesID, InMemSeriesInfo>,
     record_writer: record_file::Writer,
     record_reader: record_file::Reader,
     file_path: PathBuf,
@@ -50,15 +75,20 @@ impl ForwardIndex {
     pub async fn add_series_info_if_not_exists(&mut self,
                                                mut series_info: SeriesInfo)
                                                -> ForwardIndexResult<()> {
-        series_info.update_id();
+        // Generate series id
+        series_info.finish();
         match self.series_info_set.entry(series_info.series_id()) {
+            // an series_info in memory.
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                let mut abs_series_info = entry.get_mut();
-                for field_info in series_info.field_infos {
+                // Already a series_info here.
+                let mut mem_series_info = entry.get_mut();
+                for field_info in series_info.field_infos().iter() {
                     let mut flag = false;
-                    for abs_field_info in &abs_series_info.abstract_field_infos {
-                        if field_info.id == abs_field_info.id {
-                            if field_info.value_type == abs_field_info.value_type {
+                    // 1. Check if specified field_id exists.
+                    // 2. Check if all field with same field_id has the same value_type.
+                    for old_field_info in &mem_series_info.field_infos {
+                        if field_info.filed_id() == old_field_info.id {
+                            if field_info.value_type() == old_field_info.value_type {
                                 flag = true;
                                 break;
                             } else {
@@ -67,10 +97,13 @@ impl ForwardIndex {
                         }
                     }
 
+                    // If specified field_id does not exist, then insert the field_info into
+                    // series_info
                     if !flag {
+                        // Read a series_info from the ForwardIndex file.
                         let record =
                             self.record_reader
-                                .read_one(abs_series_info.pos.to_usize().unwrap())
+                                .read_one(mem_series_info.pos.to_usize().unwrap())
                                 .await
                                 .map_err(|err| ForwardIndexError::ReadFile { source: err })?;
                         if record.data_type != ForwardIndexAction::AddSeriesInfo.u8_number() {
@@ -79,28 +112,34 @@ impl ForwardIndex {
                         if record.data_version != VERSION {
                             return Err(ForwardIndexError::Version);
                         }
-                        let abs_field_info = field_info.to_abstract();
-                        let mut origin_series_info = SeriesInfo::decoded(&record.data);
-                        origin_series_info.field_infos.push(field_info);
+                        let mut origin_series_info = SeriesInfo::decode(&record.data);
+                        origin_series_info.push_field_info(field_info.clone());
+
+                        // Write series_info at the end of ForwardIndex file.
                         let pos = self.record_writer
                                       .write_record(VERSION,
                                                     ForwardIndexAction::AddSeriesInfo.u8_number(),
                                                     &origin_series_info.encode())
                                       .await
                                       .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
-                        abs_series_info.pos = pos;
-                        abs_series_info.abstract_field_infos.push(abs_field_info);
+                        mem_series_info.pos = pos as usize;
+
+                        // Put field_info in memory
+                        let mem_field_info = InMemFieldInfo::from(field_info);
+                        mem_series_info.field_infos.push(mem_field_info);
                     }
                 }
             },
             std::collections::hash_map::Entry::Vacant(entry) => {
+                // None series_info here
                 let data = series_info.encode();
+                // Write series_info at the end of ForwardIndex file.
                 let pos =
                     self.record_writer
                         .write_record(VERSION, ForwardIndexAction::AddSeriesInfo.u8_number(), &data)
                         .await
                         .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
-                entry.insert(series_info.to_abstract(pos));
+                entry.insert(InMemSeriesInfo::with_series_info(&series_info, pos as usize));
             },
         }
 
@@ -156,9 +195,9 @@ impl ForwardIndex {
 
         match ForwardIndexAction::from(record.data_type) {
             ForwardIndexAction::AddSeriesInfo => {
-                let series_info = SeriesInfo::decoded(&record.data);
-                let abs_series_info = series_info.to_abstract(record.pos);
-                self.series_info_set.insert(abs_series_info.id, abs_series_info);
+                let series_info = SeriesInfo::decode(&record.data);
+                let series_info = InMemSeriesInfo::with_series_info(&series_info, 0);
+                self.series_info_set.insert(series_info.id, series_info);
             },
 
             ForwardIndexAction::DelSeriesInfo => {

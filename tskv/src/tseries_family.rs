@@ -8,6 +8,9 @@ use std::{
         Arc, Mutex,
     },
 };
+use std::borrow::Borrow;
+use std::mem::replace;
+use crossbeam::channel::internal::SelectHandle;
 
 use models::ValueType;
 use tokio::sync::RwLock;
@@ -188,7 +191,8 @@ impl TseriesFamily {
                opts: cf }
     }
 
-    pub fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
+    pub async fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
+        self.super_version.mut_cache.write().await.switch_to_immutable();
         self.immut_cache.push(self.mut_cache.clone());
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         let vers = SuperVersion::new(self.tf_id,
@@ -201,8 +205,23 @@ impl TseriesFamily {
         self.mut_cache = cache;
     }
 
-    pub async fn put_mutcache(&self, fid: u64, val: &[u8], dtype: ValueType, seq: u64, ts: i64) {
+    //todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
+    // version_set when we insert each point
+    pub async fn put_mutcache(&mut self, fid: u64, val: &[u8], dtype: ValueType, seq: u64, ts: i64) {
         let mut mem = self.super_version.mut_cache.write().await;
         let _ = mem.insert_raw(seq, fid, ts, dtype, val);
+        if mem.is_full() {
+            mem.switch_to_immutable();
+
+            self.immut_cache.push(self.mut_cache.clone());
+            self.mut_cache = Arc::from(RwLock::new(MemCache::new(
+                self.super_version.mut_cache.read().await.tf_id(),
+                self.super_version.mut_cache.read().await.max_buf_size(),
+                self.super_version.mut_cache.read().await.seq_no)));
+        }
+    }
+
+    pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
+        &self.mut_cache
     }
 }
