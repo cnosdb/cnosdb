@@ -2,8 +2,6 @@ use std::{
     collections::HashMap,
     io::{Seek, SeekFrom, Write},
 };
-
-use datafusion::arrow::csv::writer;
 use models::FieldId;
 use snafu::ResultExt;
 use utils::{BkdrHasher, BloomFilter};

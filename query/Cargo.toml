@@ -4,3 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+datafusion = { version = "9.0.0", features = ["scheduler"] }
+tokio = { version = "1.17", features = ["full"] }
+futures = { version = "0.3"}
+parking_lot = "0.12"
+pin-project = "1.0"
+tokio-util = { version = "0.7.0" }
+async-trait = "0.1"
+rand = "0.8"
+chrono = "0.4"
+# use libc on unix like platforms to set worker priority in DedicatedExecutor
+[target."cfg(unix)".dependencies.libc]
+version = "0.2"
