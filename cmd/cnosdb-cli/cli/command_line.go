@@ -391,7 +391,6 @@ func (c *CommandLine) setDatabaseAndRP(cmd string) {
 	}
 
 	if !c.requestDbExists(db) {
-		fmt.Printf("ERR: database %s does not exist!\n", db)
 		return
 	}
 
