@@ -1,14 +1,9 @@
 #![allow(dead_code)]
-
 use std::path::PathBuf;
 
+use config::GLOBAL_CONFIG;
+
 use crate::forward_index::ForwardIndexConfig;
-
-pub const MAX_MEMCACHE_SIZE: u64 = 128 * 1024 * 1024;
-// 128M
-pub const MAX_SUMMARY_SIZE: u64 = 128 * 1024 * 1024; //128M
-
-pub const MAX_IMMEMCACHE_NUM: usize = 4;
 
 #[derive(Clone)]
 pub struct DBOptions {
@@ -22,12 +17,12 @@ pub struct DBOptions {
 
 impl Default for DBOptions {
     fn default() -> Self {
-        Self { front_cpu: 2,
-               back_cpu: 2,
-               max_summary_size: MAX_SUMMARY_SIZE, // 128MB
-               create_if_missing: false,
-               db_path: "dev/db".to_string(),
-               db_name: "db".to_string() }
+        Self { front_cpu: GLOBAL_CONFIG.front_cpu,
+               back_cpu: GLOBAL_CONFIG.back_cpu,
+               max_summary_size: GLOBAL_CONFIG.max_memcache_size, // 128MB
+               create_if_missing: GLOBAL_CONFIG.create_if_missing,
+               db_path: GLOBAL_CONFIG.db_path.clone(),
+               db_name: GLOBAL_CONFIG.db_name.clone() }
     }
 }
 
@@ -62,7 +57,9 @@ pub struct WalConfig {
 
 impl Default for WalConfig {
     fn default() -> Self {
-        Self { enabled: true, dir: "dev/wal".to_string(), sync: true }
+        Self { enabled: GLOBAL_CONFIG.enabled,
+               dir: GLOBAL_CONFIG.wal_config_dir.clone(),
+               sync: GLOBAL_CONFIG.sync }
     }
 }
 
@@ -101,14 +98,14 @@ impl TseriesFamOpt {
 
 impl Default for TseriesFamOpt {
     fn default() -> Self {
-        Self { max_level: 4,
+        Self { max_level: GLOBAL_CONFIG.max_level,
                // base_file_size: 256 * 1024 * 1024,
-               level_ratio: 16f64,
-               base_file_size: 16 * 1024 * 1024,
-               compact_trigger: 4,
-               max_compact_size: 2 * 1024 * 1024 * 1024,
-               tsm_dir: "db/tsm/".to_string(),
-               delta_dir: "db/delta/".to_string() }
+               level_ratio: GLOBAL_CONFIG.level_ratio,
+               base_file_size: GLOBAL_CONFIG.base_file_size,
+               compact_trigger: GLOBAL_CONFIG.compact_trigger,
+               max_compact_size: GLOBAL_CONFIG.max_compact_size,
+               tsm_dir: GLOBAL_CONFIG.tsm_dir.clone(),
+               delta_dir: GLOBAL_CONFIG.delta_dir.clone() }
     }
 }
 
@@ -125,7 +122,9 @@ pub struct MemCacheOpt {
 
 impl Default for MemCacheOpt {
     fn default() -> Self {
-        Self { tf_id: 0, max_size: MAX_MEMCACHE_SIZE, seq_no: 0 }
+        Self { tf_id: GLOBAL_CONFIG.tf_id,
+               max_size: GLOBAL_CONFIG.max_memcache_size,
+               seq_no: GLOBAL_CONFIG.seq_no }
     }
 }
 
@@ -136,6 +135,6 @@ pub struct SchemaStoreConfig {
 
 impl Default for SchemaStoreConfig {
     fn default() -> Self {
-        Self { dir: "dev/schema".to_string() }
+        Self { dir: GLOBAL_CONFIG.schema_store_config_dir.clone() }
     }
 }

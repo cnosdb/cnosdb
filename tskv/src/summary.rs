@@ -211,6 +211,9 @@ impl Summary {
             }
             let mut lvls: Vec<LevelInfo> = levels.into_values().collect();
             lvls.reverse();
+            if max_level_ts == i64::MIN {
+                max_level_ts = i64::MAX;
+            }
             let ver = Version::new(id, max_log, tsf_name, lvls, max_level_ts);
             versions.insert(id, Arc::new(RwLock::new(ver)));
         }

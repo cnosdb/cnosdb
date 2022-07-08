@@ -11,6 +11,7 @@ use std::{
     },
 };
 
+use config::GLOBAL_CONFIG;
 use crossbeam::channel::internal::SelectHandle;
 use datafusion::logical_expr::BuiltinScalarFunction::Random;
 use lazy_static::lazy_static;
@@ -24,7 +25,7 @@ use crate::{
     compaction::FlushReq,
     direct_io::FileCursor,
     file_manager::FileManager,
-    kv_option::{TseriesFamOpt, MAX_IMMEMCACHE_NUM, MAX_MEMCACHE_SIZE},
+    kv_option::TseriesFamOpt,
     memcache::{DataType, MemCache},
     new_bloom_filter,
     summary::{CompactMeta, VersionEdit},
@@ -273,7 +274,8 @@ impl TseriesFamily {
         let cf = Arc::new(opt);
         let seq = version.read().await.log_no;
         let max_level_ts = version.read().await.max_level_ts;
-        let delta_mm = Arc::new(RwLock::new(MemCache::new(tf_id, MAX_MEMCACHE_SIZE, seq, true)));
+        let delta_mm =
+            Arc::new(RwLock::new(MemCache::new(tf_id, GLOBAL_CONFIG.max_memcache_size, seq, true)));
         Self { tf_id,
                seq_no: seq,
                delta_mut_cache: delta_mm.clone(),
@@ -313,7 +315,7 @@ impl TseriesFamily {
 
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(self.tf_id,
-                                                             MAX_MEMCACHE_SIZE,
+                                                             GLOBAL_CONFIG.max_memcache_size,
                                                              self.seq_no,
                                                              false)));
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
@@ -331,7 +333,10 @@ impl TseriesFamily {
         let mut req_mem = vec![];
         req_mem.push((self.tf_id, self.delta_mut_cache.clone()));
         self.delta_mut_cache =
-            Arc::new(RwLock::new(MemCache::new(self.tf_id, MAX_MEMCACHE_SIZE, self.seq_no, true)));
+            Arc::new(RwLock::new(MemCache::new(self.tf_id,
+                                               GLOBAL_CONFIG.max_memcache_size,
+                                               self.seq_no,
+                                               true)));
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         let vers = SuperVersion::new(self.tf_id,
                                      self.delta_mut_cache.clone(),
@@ -396,7 +401,7 @@ impl TseriesFamily {
         if self.super_version.mut_cache.read().await.is_full() {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable().await;
-            if self.immut_cache.len() >= MAX_IMMEMCACHE_NUM {
+            if self.immut_cache.len() >= GLOBAL_CONFIG.max_immemcache_num {
                 self.immut_ts_min = self.mut_ts_max;
                 self.version.write().await.max_level_ts = self.mut_ts_max;
                 self.wrap_flush_req(sender.clone());
