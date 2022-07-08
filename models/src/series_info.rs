@@ -1,15 +1,15 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
-use utils::bkdr_hash::BkdrHasher;
+use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
-    tag, FieldID, FieldInfo, FieldName, SeriesID, Tag,
+    tag, FieldId, FieldInfo, FieldName, SeriesId, Tag,
 };
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SeriesInfo {
-    id: SeriesID,
+    id: SeriesId,
     tags: Vec<Tag>,
     field_infos: Vec<FieldInfo>,
 
@@ -65,15 +65,7 @@ impl SeriesInfo {
         }
     }
 
-    pub fn merge(&mut self, series_info: &SeriesInfo) {
-        let mut final_field_infos: Vec<FieldInfo> = Vec::new();
-        for field_info in series_info.field_infos.iter() {
-            let dup_field_infos = self.field_info_with_id(&field_info.filed_id());
-            final_field_infos.push(field_info.clone());
-        }
-    }
-
-    pub fn series_id(&self) -> SeriesID {
+    pub fn series_id(&self) -> SeriesId {
         self.id
     }
 
@@ -89,8 +81,8 @@ impl SeriesInfo {
         self.field_infos.push(field_info)
     }
 
-    pub fn field_info_with_id(&self, field_id: &FieldID) -> Vec<&FieldInfo> {
-        self.field_infos.iter().filter(|f| f.filed_id().cmp(field_id).is_eq()).collect()
+    pub fn field_info_with_id(&self, field_id: FieldId) -> Vec<&FieldInfo> {
+        self.field_infos.iter().filter(|f| f.field_id().cmp(&field_id).is_eq()).collect()
     }
 
     pub fn field_info_with_name(&self, field_name: &FieldName) -> Vec<&FieldInfo> {
@@ -101,12 +93,12 @@ impl SeriesInfo {
         bincode::serialize(self).unwrap()
     }
 
-    pub fn decode(data: &Vec<u8>) -> SeriesInfo {
-        bincode::deserialize(&data[..]).unwrap()
+    pub fn decode(data: &[u8]) -> SeriesInfo {
+        bincode::deserialize(data).unwrap()
     }
 }
 
-pub fn generate_series_id(tags: &[Tag]) -> SeriesID {
+pub fn generate_series_id(tags: &[Tag]) -> SeriesId {
     let mut hasher = BkdrHasher::new();
     for tag in tags {
         hasher.hash_with(&tag.key);
@@ -123,9 +115,8 @@ mod tests_series_info {
 
     #[test]
     fn test_series_info_encode_and_decode() {
-        let mut info =
-            SeriesInfo::new(vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
-                            vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)]);
+        let info = SeriesInfo::new(vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
+                                   vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)]);
         let data = info.encode();
         let new_info = SeriesInfo::decode(&data);
         assert_eq!(info, new_info);
@@ -140,18 +131,18 @@ mod tests_series_info {
         let tag_v = fb.create_vector("tag_v".as_bytes());
         let tag =
             models::Tag::create(&mut fb, &models::TagArgs { key: Some(tag_k), value: Some(tag_v) });
-        // build filed
-        let f_n = fb.create_vector("filed_name".as_bytes());
-        let f_v = fb.create_vector("filed_value".as_bytes());
+        // build field
+        let f_n = fb.create_vector("field_name".as_bytes());
+        let f_v = fb.create_vector("field_value".as_bytes());
 
-        let filed =
+        let field =
             models::Field::create(&mut fb,
                                   &models::FieldArgs { name: Some(f_n),
                                                        type_:
                                                            protos::models::FieldType::Integer,
                                                        value: Some(f_v) });
         // build series_info
-        let fields = Some(fb.create_vector(&[filed]));
+        let fields = Some(fb.create_vector(&[field]));
         let tags = Some(fb.create_vector(&[tag]));
         // build point
         let point =

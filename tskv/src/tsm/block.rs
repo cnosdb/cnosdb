@@ -11,31 +11,31 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataBlock {
-    U64Block { index: u32, ts: Vec<i64>, val: Vec<u64> },
-    I64Block { index: u32, ts: Vec<i64>, val: Vec<i64> },
-    StrBlock { index: u32, ts: Vec<i64>, val: Vec<Byte> },
-    F64Block { index: u32, ts: Vec<i64>, val: Vec<f64> },
-    BoolBlock { index: u32, ts: Vec<i64>, val: Vec<bool> },
+    U64 { index: u32, ts: Vec<i64>, val: Vec<u64> },
+    I64 { index: u32, ts: Vec<i64>, val: Vec<i64> },
+    Str { index: u32, ts: Vec<i64>, val: Vec<Byte> },
+    F64 { index: u32, ts: Vec<i64>, val: Vec<f64> },
+    Bool { index: u32, ts: Vec<i64>, val: Vec<bool> },
 }
 
 impl DataBlock {
     pub fn new(size: usize, field_type: ValueType) -> Self {
         match field_type {
-            ValueType::Unsigned => Self::U64Block { index: 0,
-                                                    ts: Vec::with_capacity(size),
-                                                    val: Vec::with_capacity(size) },
-            ValueType::Integer => Self::I64Block { index: 0,
-                                                   ts: Vec::with_capacity(size),
-                                                   val: Vec::with_capacity(size) },
-            ValueType::Float => Self::F64Block { index: 0,
-                                                 ts: Vec::with_capacity(size),
-                                                 val: Vec::with_capacity(size) },
-            ValueType::String => Self::StrBlock { index: 0,
-                                                  ts: Vec::with_capacity(size),
-                                                  val: Vec::with_capacity(size) },
-            ValueType::Boolean => Self::BoolBlock { index: 0,
-                                                    ts: Vec::with_capacity(size),
-                                                    val: Vec::with_capacity(size) },
+            ValueType::Unsigned => {
+                Self::U64 { index: 0, ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            },
+            ValueType::Integer => {
+                Self::I64 { index: 0, ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            },
+            ValueType::Float => {
+                Self::F64 { index: 0, ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            },
+            ValueType::String => {
+                Self::Str { index: 0, ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            },
+            ValueType::Boolean => {
+                Self::Bool { index: 0, ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            },
             ValueType::Unknown => {
                 todo!()
             },
@@ -44,31 +44,31 @@ impl DataBlock {
     pub fn insert(&mut self, data: DataType) {
         match data {
             DataType::Bool(item) => {
-                if let Self::BoolBlock { ts, val, index } = self {
+                if let Self::Bool { ts, val, index } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
             },
             DataType::U64(item) => {
-                if let Self::U64Block { ts, val, index } = self {
+                if let Self::U64 { ts, val, index } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
             },
             DataType::I64(item) => {
-                if let Self::I64Block { ts, val, index } = self {
+                if let Self::I64 { ts, val, index } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
             },
             DataType::Str(item) => {
-                if let Self::StrBlock { ts, val, index } = self {
+                if let Self::Str { ts, val, index } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
             },
             DataType::F64(item) => {
-                if let Self::F64Block { ts, val, index } = self {
+                if let Self::F64 { ts, val, index } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
@@ -78,42 +78,42 @@ impl DataBlock {
 
     pub fn time_range(&self, start: usize, end: usize) -> (i64, i64) {
         match self {
-            DataBlock::U64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::I64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::StrBlock { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::F64Block { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::BoolBlock { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::U64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::I64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::Str { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::F64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::Bool { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
         }
     }
-    pub fn batch_insert(&mut self, cells: &Vec<DataType>) {
+    pub fn batch_insert(&mut self, cells: &[DataType]) {
         for iter in cells.iter() {
             match iter {
                 DataType::U64(item) => {
-                    if let Self::U64Block { ts, val, index } = self {
+                    if let Self::U64 { ts, val, index } = self {
                         ts.push(item.ts);
                         val.push(item.val);
                     }
                 },
                 DataType::I64(item) => {
-                    if let Self::I64Block { ts, val, index } = self {
+                    if let Self::I64 { ts, val, index } = self {
                         ts.push(item.ts);
                         val.push(item.val);
                     }
                 },
                 DataType::Str(item) => {
-                    if let Self::StrBlock { ts, val, index } = self {
+                    if let Self::Str { ts, val, index } = self {
                         ts.push(item.ts);
                         val.push(item.val.clone());
                     }
                 },
                 DataType::F64(item) => {
-                    if let Self::F64Block { ts, val, index } = self {
+                    if let Self::F64 { ts, val, index } = self {
                         ts.push(item.ts);
                         val.push(item.val);
                     }
                 },
                 DataType::Bool(item) => {
-                    if let Self::BoolBlock { ts, val, index } = self {
+                    if let Self::Bool { ts, val, index } = self {
                         ts.push(item.ts);
                         val.push(item.val);
                     }
@@ -125,38 +125,38 @@ impl DataBlock {
 
     pub fn len(&self) -> usize {
         match &self {
-            Self::U64Block { ts, .. } => ts.len(),
-            Self::I64Block { ts, .. } => ts.len(),
-            Self::F64Block { ts, .. } => ts.len(),
-            Self::StrBlock { ts, .. } => ts.len(),
-            Self::BoolBlock { ts, .. } => ts.len(),
+            Self::U64 { ts, .. } => ts.len(),
+            Self::I64 { ts, .. } => ts.len(),
+            Self::F64 { ts, .. } => ts.len(),
+            Self::Str { ts, .. } => ts.len(),
+            Self::Bool { ts, .. } => ts.len(),
         }
     }
-    pub fn filed_type(&self) -> ValueType {
+    pub fn field_type(&self) -> ValueType {
         match &self {
-            DataBlock::U64Block { .. } => ValueType::Unsigned,
-            DataBlock::I64Block { .. } => ValueType::Integer,
-            DataBlock::StrBlock { .. } => ValueType::String,
-            DataBlock::F64Block { .. } => ValueType::Float,
-            DataBlock::BoolBlock { .. } => ValueType::Boolean,
+            DataBlock::U64 { .. } => ValueType::Unsigned,
+            DataBlock::I64 { .. } => ValueType::Integer,
+            DataBlock::Str { .. } => ValueType::String,
+            DataBlock::F64 { .. } => ValueType::Float,
+            DataBlock::Bool { .. } => ValueType::Boolean,
         }
     }
     pub fn get_type(&self) -> DataType {
         match &self {
-            DataBlock::U64Block { index, ts, val } => DataType::U64(U64Cell::default()),
-            DataBlock::I64Block { index, ts, val } => DataType::I64(I64Cell::default()),
-            DataBlock::StrBlock { index, ts, val } => DataType::Str(StrCell::default()),
-            DataBlock::F64Block { index, ts, val } => DataType::F64(F64Cell::default()),
-            DataBlock::BoolBlock { index, ts, val } => DataType::Bool(BoolCell::default()),
+            DataBlock::U64 { index, ts, val } => DataType::U64(U64Cell::default()),
+            DataBlock::I64 { index, ts, val } => DataType::I64(I64Cell::default()),
+            DataBlock::Str { index, ts, val } => DataType::Str(StrCell::default()),
+            DataBlock::F64 { index, ts, val } => DataType::F64(F64Cell::default()),
+            DataBlock::Bool { index, ts, val } => DataType::Bool(BoolCell::default()),
         }
     }
     pub fn is_empty(&self) -> bool {
         match &self {
-            DataBlock::U64Block { index, ts, val } => *index == ts.len() as u32,
-            DataBlock::I64Block { index, ts, val } => *index == ts.len() as u32,
-            DataBlock::StrBlock { index, ts, val } => *index == ts.len() as u32,
-            DataBlock::F64Block { index, ts, val } => *index == ts.len() as u32,
-            DataBlock::BoolBlock { index, ts, val } => *index == ts.len() as u32,
+            DataBlock::U64 { index, ts, val } => *index == ts.len() as u32,
+            DataBlock::I64 { index, ts, val } => *index == ts.len() as u32,
+            DataBlock::Str { index, ts, val } => *index == ts.len() as u32,
+            DataBlock::F64 { index, ts, val } => *index == ts.len() as u32,
+            DataBlock::Bool { index, ts, val } => *index == ts.len() as u32,
         }
     }
     pub fn next(&mut self) -> Option<DataType> {
@@ -164,27 +164,27 @@ impl DataBlock {
             return None;
         }
         match self {
-            DataBlock::U64Block { index, ts, val } => {
+            DataBlock::U64 { index, ts, val } => {
                 let i = *index as usize;
                 *index += 1;
                 Some(DataType::U64(U64Cell { ts: ts[i], val: val[i] }))
             },
-            DataBlock::I64Block { index, ts, val } => {
+            DataBlock::I64 { index, ts, val } => {
                 let i = *index as usize;
                 *index += 1;
                 Some(DataType::I64(I64Cell { ts: ts[i], val: val[i] }))
             },
-            DataBlock::StrBlock { index, ts, val } => {
+            DataBlock::Str { index, ts, val } => {
                 let i = *index as usize;
                 *index += 1;
                 Some(DataType::Str(StrCell { ts: ts[i], val: val[i].clone() }))
             },
-            DataBlock::F64Block { index, ts, val } => {
+            DataBlock::F64 { index, ts, val } => {
                 let i = *index as usize;
                 *index += 1;
                 Some(DataType::F64(F64Cell { ts: ts[i], val: val[i] }))
             },
-            DataBlock::BoolBlock { index, ts, val } => {
+            DataBlock::Bool { index, ts, val } => {
                 let i = *index as usize;
                 *index += 1;
                 Some(DataType::Bool(BoolCell { ts: ts[i], val: val[i] }))
@@ -198,7 +198,7 @@ impl DataBlock {
         }
 
         let mut res =
-            Self::new(blocks.first().unwrap().len(), blocks.first().unwrap().filed_type());
+            Self::new(blocks.first().unwrap().len(), blocks.first().unwrap().field_type());
         let mut buf = vec![None; blocks.len()];
         loop {
             match Self::rebuild_vec(&mut blocks, &mut buf) {
@@ -240,36 +240,36 @@ impl DataBlock {
         min_ts
     }
     // todo:
-    pub fn encode(&mut self, start: usize, end: usize) -> Result<(Vec<u8>, Vec<u8>)> {
+    pub fn encode(&self, start: usize, end: usize) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
         match self {
-            DataBlock::BoolBlock { ts, val, .. } => {
+            DataBlock::Bool { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
                 coders::boolean::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
-            DataBlock::U64Block { ts, val, .. } => {
+            DataBlock::U64 { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
                 coders::unsigned::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
-            DataBlock::I64Block { ts, val, .. } => {
+            DataBlock::I64 { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
                 coders::integer::encode(&val[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
-            DataBlock::StrBlock { ts, val, .. } => {
+            DataBlock::Str { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
                 coders::string::encode(&strs[start..end], &mut data_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
             },
-            DataBlock::F64Block { ts, val, .. } => {
+            DataBlock::F64 { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)
                     .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
                 coders::float::encode(&val[start..end], &mut data_buf)
@@ -283,15 +283,13 @@ impl DataBlock {
 
 #[test]
 fn merge_blocks() {
-    let res = DataBlock::merge_blocks(vec![DataBlock::U64Block { index: 0,
-                                                                 ts: vec![1, 2, 3, 4, 5],
-                                                                 val: vec![10, 20, 30, 40, 50] },
-                                           DataBlock::U64Block { index: 0,
-                                                                 ts: vec![2, 3, 4],
-                                                                 val: vec![12, 13, 15] },]);
+    let res = DataBlock::merge_blocks(vec![DataBlock::U64 { index: 0,
+                                                            ts: vec![1, 2, 3, 4, 5],
+                                                            val: vec![10, 20, 30, 40, 50] },
+                                           DataBlock::U64 { index: 0,
+                                                            ts: vec![2, 3, 4],
+                                                            val: vec![12, 13, 15] },]);
 
     assert_eq!(res,
-               DataBlock::U64Block { index: 0,
-                                     ts: vec![1, 2, 3, 4, 5],
-                                     val: vec![10, 12, 13, 15, 50] },);
+               DataBlock::U64 { index: 0, ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50] },);
 }

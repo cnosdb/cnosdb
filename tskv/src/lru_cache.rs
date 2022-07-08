@@ -133,7 +133,7 @@ impl<T> LRUList<T> {
 }
 
 pub type CacheKey = [u8; 16];
-pub type CacheID = u64;
+pub type CacheId = u64;
 type CacheEntry<T> = (T, LRUHandle<CacheKey>);
 
 /// Implementation of `ShardedLRUCache`.
@@ -156,7 +156,7 @@ impl<T> Cache<T> {
 
     /// Returns an ID that is unique for this cache and that can be used to partition the cache
     /// among several users.
-    pub fn new_cache_id(&mut self) -> CacheID {
+    pub fn new_cache_id(&mut self) -> CacheId {
         self.id += 1;
         self.id
     }
@@ -358,8 +358,8 @@ mod tests {
                            lru.insert(7),
                            lru.insert(8),];
 
-        for i in 0..9 {
-            lru.reinsert_front(handles[i]);
+        for (i, handle) in handles.into_iter().enumerate() {
+            lru.reinsert_front(handle);
             assert_eq!(lru._testing_head_ref().copied(), Some(i));
         }
     }

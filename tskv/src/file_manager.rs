@@ -130,7 +130,7 @@ pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
                                           Ok(dir_entry) if dir_entry.file_type().is_file() => {
                                               dir_entry
                                           },
-                                          _ | Err(_) => {
+                                          _ => {
                                               return None;
                                           },
                                       };
@@ -147,10 +147,7 @@ pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
 
 /// Case `std::fs::try_exists` is unstable, so copied the same logic to here
 pub fn try_exists(path: impl AsRef<Path>) -> bool {
-    match std::fs::metadata(path) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    fs::metadata(path).is_ok()
 }
 
 #[cfg(test)]

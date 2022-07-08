@@ -11,7 +11,6 @@ force_explicit_abi=false
 comment_width=100
 wrap_comments=true
 normalize_comments=true
-report_fixme="Unnumbered"
 condense_wildcard_suffixes=true
 newline_style="Unix"
 merge_derives = false

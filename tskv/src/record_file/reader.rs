@@ -1,7 +1,17 @@
-use std::{borrow::Borrow, fs, hash::Hasher, io::Read, path::PathBuf};
+use std::{
+    borrow::Borrow,
+    cmp::Ordering,
+    fs,
+    hash::Hasher,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use async_recursion::async_recursion;
+use bytes::{Buf, BufMut};
 use direct_io::File;
+use futures::future::ok;
+use logger::info;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 
@@ -17,39 +27,47 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(path: &PathBuf) -> Self {
+    pub fn new(path: &Path) -> Self {
         let file = open_file(path).unwrap();
         let mut buf = Vec::<u8>::new();
         buf.resize(READER_BUF_SIZE, 0);
-        Reader { path: path.clone(), file: Mutex::new(file), buf, pos: 0, buf_len: 0, buf_use: 0 }
+        Reader { path: path.to_path_buf(),
+                 file: Mutex::new(file),
+                 buf,
+                 pos: 0,
+                 buf_len: 0,
+                 buf_use: 0 }
     }
 
     async fn set_pos(&mut self, pos: usize) -> RecordFileResult<()> {
         if pos > self.file.lock().len().to_usize().unwrap() {
             return Err(RecordFileError::InvalidPos);
         }
-
-        return if self.pos > pos {
-            let size = self.pos - pos;
-            self.pos = pos;
-            if self.buf_use > size {
-                self.buf_use -= size;
-                Ok(())
-            } else {
-                self.load_buf().await
-            }
-        } else if self.pos < pos {
-            let size = pos - self.pos;
-            self.pos = pos;
-            if self.buf_len - self.buf_use > size {
-                self.buf_use += size;
-                Ok(())
-            } else {
-                self.load_buf().await
-            }
-        } else {
-            Ok(())
-        };
+        match self.pos.cmp(&pos) {
+            Ordering::Greater => {
+                let size = self.pos - pos;
+                self.pos = pos;
+                match self.buf_use.cmp(&size) {
+                    Ordering::Greater => {
+                        self.buf_use -= size;
+                        Ok(())
+                    },
+                    _ => self.load_buf().await,
+                }
+            },
+            Ordering::Less => {
+                let size = pos - self.pos;
+                self.pos = pos;
+                match (self.buf_len - self.buf_use).cmp(&size) {
+                    Ordering::Greater => {
+                        self.buf_use += size;
+                        Ok(())
+                    },
+                    _ => self.load_buf().await,
+                }
+            },
+            Ordering::Equal => Ok(()),
+        }
     }
 
     async fn find_magic(&mut self) -> RecordFileResult<()> {
@@ -84,7 +102,7 @@ impl Reader {
         }
 
         p += RECORD_MAGIC_NUMBER_LEN;
-        let data_size = u16::from_le_bytes(buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
+        let data_size = u32::from_le_bytes(buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
         p += RECORD_DATA_SIZE_LEN;
         let data_version =
             u8::from_le_bytes(buf[p..p + RECORD_DATA_VERSION_LEN].try_into().unwrap());
@@ -99,14 +117,13 @@ impl Reader {
                 return self.read_record().await;
             },
         };
-
         let (_, crc32_number_buf) = self.read_buf(RECORD_CRC32_NUMBER_LEN).await?;
         let crc32_number = u32::from_le_bytes(crc32_number_buf.try_into().unwrap());
 
         // check crc32 number
         let mut hasher = crc32fast::Hasher::new();
-        hasher.write(&mut buf[RECORD_MAGIC_NUMBER_LEN..].borrow());
-        hasher.write(&mut data.borrow());
+        hasher.write(buf[RECORD_MAGIC_NUMBER_LEN..].borrow());
+        hasher.write(data.borrow());
         if hasher.finalize() != crc32_number {
             self.set_pos(origin_pos + 1).await?;
             self.find_magic().await?;
@@ -131,7 +148,7 @@ impl Reader {
             self.load_buf().await?;
         }
 
-        return if self.buf_len - self.buf_use >= size {
+        if self.buf_len - self.buf_use >= size {
             let origin_pos = self.pos;
             let data = self.buf[self.buf_use..self.buf_use + size].to_vec();
 
@@ -140,8 +157,8 @@ impl Reader {
 
             Ok((origin_pos, data))
         } else {
-            Err(RecordFileError::EOF)
-        };
+            Err(RecordFileError::Eof)
+        }
     }
 
     pub async fn read_one(&self, pos: usize) -> RecordFileResult<Record> {
@@ -207,15 +224,8 @@ async fn test_reader_read_one() {
 async fn test_reader() {
     let mut r = Reader::from("/tmp/test.log_file");
 
-    loop {
-        match r.read_record().await {
-            Ok(record) => {
-                println!("{}, {}, {}, {:?}",
-                         record.pos, record.data_type, record.data_version, record.data);
-            },
-            Err(_) => {
-                break;
-            },
-        }
+    while let Ok(record) = r.read_record().await {
+        println!("{}, {}, {}, {:?}",
+                 record.pos, record.data_type, record.data_version, record.data);
     }
 }

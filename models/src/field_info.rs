@@ -1,10 +1,10 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
-use utils::bkdr_hash::BkdrHasher;
+use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
-    FieldID, FieldName, SeriesID,
+    FieldId, FieldName, SeriesId,
 };
 
 const FIELD_NAME_MAX_LEN: usize = 512;
@@ -60,7 +60,7 @@ impl From<protos::models::FieldType> for ValueType {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FieldInfo {
-    id: FieldID,
+    id: FieldId,
     name: FieldName,
     value_type: ValueType,
 
@@ -69,7 +69,7 @@ pub struct FieldInfo {
 }
 
 impl FieldInfo {
-    pub fn new(series_id: SeriesID, name: FieldName, value_type: ValueType) -> Self {
+    pub fn new(series_id: SeriesId, name: FieldName, value_type: ValueType) -> Self {
         let mut fi = FieldInfo { id: 0, name, value_type, finished: true };
         fi.finish(series_id);
         fi
@@ -92,12 +92,12 @@ impl FieldInfo {
         Ok(())
     }
 
-    pub fn finish(&mut self, series_id: SeriesID) {
+    pub fn finish(&mut self, series_id: SeriesId) {
         self.finished = true;
         self.id = generate_field_id(&self.name, series_id);
     }
 
-    pub fn filed_id(&self) -> FieldID {
+    pub fn field_id(&self) -> FieldId {
         self.id
     }
 
@@ -110,11 +110,16 @@ impl FieldInfo {
     }
 }
 
-pub fn generate_field_id(name: &FieldName, sid: SeriesID) -> FieldID {
+pub fn generate_field_id(name: &FieldName, sid: SeriesId) -> FieldId {
     let mut hash = BkdrHasher::with_number(sid);
     hash.hash_with(name.as_slice());
     hash.number()
 }
+
+/// Split a 16 byte FieldId to 8 byte SeriesId and 8 byte FieldHash
+// pub fn split_field_id(fid: &FieldId) -> (SeriesId, FieldHash) {
+//     ((*fid >> 64 & u64::MAX as u128) as u64, (*fid & u64::MAX as u128) as u64)
+// }
 
 #[cfg(test)]
 mod test {

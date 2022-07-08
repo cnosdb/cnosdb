@@ -1,10 +1,12 @@
 use protos::models as fb_models;
 
-use crate::{Result, field_info, generate_series_id, FieldID, SeriesID, Tag, Timestamp, ValueType, Error};
+use crate::{
+    field_info, generate_series_id, Error, FieldId, Result, SeriesId, Tag, Timestamp, ValueType,
+};
 
 #[derive(Debug)]
 pub struct FieldValue {
-    pub field_id: FieldID,
+    pub field_id: FieldId,
     pub value_type: ValueType,
     pub value: Vec<u8>,
 }
@@ -12,22 +14,21 @@ pub struct FieldValue {
 impl FieldValue {
     pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
         Ok(Self { field_id: 0,
-            value_type: field.type_().into(),
-            value: match field.value() {
-                Some(v) => v.to_vec(),
-                None => Vec::new(),
-            },
-            })
+                  value_type: field.type_().into(),
+                  value: match field.value() {
+                      Some(v) => v.to_vec(),
+                      None => Vec::new(),
+                  } })
     }
 
-    pub fn filed_id(&self) -> FieldID {
+    pub fn field_id(&self) -> FieldId {
         self.field_id
     }
 }
 
 #[derive(Debug)]
 pub struct InMemPoint {
-    pub series_id: SeriesID,
+    pub series_id: SeriesId,
     pub timestamp: Timestamp,
     pub fields: Vec<FieldValue>,
 }
@@ -44,25 +45,21 @@ impl InMemPoint {
             },
             None => return Err(Error::InvalidFlatbufferMessage { err: "Point fields cannot be empty".to_string() }),
         };
-        Ok(Self {
-            series_id: 0,
-            timestamp: point.timestamp(),
-            fields,
-        })
+        Ok(Self { series_id: 0, timestamp: point.timestamp(), fields })
     }
 
-    pub fn series_id(&self) -> SeriesID {
+    pub fn series_id(&self) -> SeriesId {
         self.series_id
     }
 
-    pub fn fileds(&self) -> &Vec<FieldValue> {
+    pub fn fields(&self) -> &Vec<FieldValue> {
         &self.fields
     }
 }
 
 impl From<fb_models::Point<'_>> for InMemPoint {
     fn from(p: fb_models::Point<'_>) -> Self {
-        let mut fileds = Vec::new();
+        let mut fields = Vec::new();
         let mut tags = Vec::new();
 
         for tit in p.tags().into_iter() {
@@ -74,7 +71,7 @@ impl From<fb_models::Point<'_>> for InMemPoint {
             }
         }
 
-        let sid = generate_series_id(&mut tags);
+        let sid = generate_series_id(&tags);
 
         for fit in p.fields().into_iter() {
             for f in fit.into_iter() {
@@ -82,12 +79,12 @@ impl From<fb_models::Point<'_>> for InMemPoint {
                 let val_type = f.type_().into();
                 let val = f.value().unwrap().to_vec();
                 let fid = field_info::generate_field_id(&field_name, sid);
-                fileds.push(FieldValue { field_id: fid, value_type: val_type, value: val });
+                fields.push(FieldValue { field_id: fid, value_type: val_type, value: val });
             }
         }
         let ts = p.timestamp();
 
-        Self { series_id: sid, timestamp: ts, fields: fileds }
+        Self { series_id: sid, timestamp: ts, fields }
     }
 }
 
@@ -106,18 +103,18 @@ mod test_points {
         let tag_v = fb.create_vector("tag_v".as_bytes());
         let tag =
             models::Tag::create(&mut fb, &models::TagArgs { key: Some(tag_k), value: Some(tag_v) });
-        // build filed
-        let f_n = fb.create_vector("filed_name".as_bytes());
-        let f_v = fb.create_vector("filed_value".as_bytes());
+        // build field
+        let f_n = fb.create_vector("field_name".as_bytes());
+        let f_v = fb.create_vector("field_value".as_bytes());
 
-        let filed =
+        let field =
             models::Field::create(&mut fb,
                                   &models::FieldArgs { name: Some(f_n),
                                                        type_:
                                                            protos::models::FieldType::Integer,
                                                        value: Some(f_v) });
         // build series_info
-        let fields = Some(fb.create_vector(&[filed]));
+        let fields = Some(fb.create_vector(&[field]));
         let tags = Some(fb.create_vector(&[tag]));
         // build point
         let point =

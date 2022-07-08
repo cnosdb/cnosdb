@@ -1,6 +1,14 @@
-use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, sync::Arc, thread::JoinHandle};
+use std::{
+    borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::DerefMut, sync, sync::Arc,
+    thread::JoinHandle,
+};
 
-use ::models::{InMemPoint, FieldInfo, SeriesInfo, Tag, ValueType};
+use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use datafusion::arrow::compute::lexsort_to_indices;
+use futures::stream::SelectNextSome;
+use lazy_static::lazy_static;
+use logger::{debug, error, info, init, trace, warn};
+use models::{FieldId, SeriesId, Timestamp};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
@@ -15,26 +23,26 @@ use tokio::{
         oneshot, RwLock,
     },
 };
-use models::{FieldID, SeriesID};
 
 use crate::{
+    compaction::{run_flush_memtable_job, FlushReq},
     context::GlobalContext,
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
     forward_index::ForwardIndex,
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
-    memcache::MemCache,
+    memcache::{DataType, MemCache},
     record_file::Reader,
     runtime::WorkerQueue,
-    summary::{Summary, VersionEdit},
-    tseries_family::Version,
+    summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
+    tseries_family::{TimeRange, Version},
+    tsm::{BlockReader, TsmBlockReader, TsmIndexReader, TsmTombstone},
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task,
 };
-use crate::tseries_family::TimeRange;
 
 pub struct Entry {
     pub series_id: u64,
@@ -47,13 +55,17 @@ pub struct TsKv {
 
     wal_sender: UnboundedSender<WalTask>,
     forward_index: Arc<RwLock<ForwardIndex>>,
+
+    flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
 }
 
 impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
         let shared_options = Arc::new(opt);
         let kvctx = Arc::new(KvContext::new(shared_options.clone()));
-        let version_set = Self::recover(shared_options.clone()).await;
+        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
+        let (version_set, summary) =
+            Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
         let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
         fidx.load_cache_file().await.map_err(|err| Error::LogRecordErr { source: err })?;
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -61,13 +73,17 @@ impl TsKv {
                           kvctx,
                           forward_index: Arc::new(RwLock::new(fidx)),
                           version_set,
-                          wal_sender };
+                          wal_sender,
+                          flush_task_sender };
         core.run_wal_job(wal_receiver);
+        core.run_flush_job(flush_task_receiver, summary.global_context(), summary);
 
         Ok(core)
     }
 
-    async fn recover(opt: Arc<Options>) -> Arc<RwLock<VersionSet>> {
+    async fn recover(opt: Arc<Options>,
+                     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
+                     -> (Arc<RwLock<VersionSet>>, Summary) {
         if !file_manager::try_exists(&opt.db.db_path) {
             std::fs::create_dir_all(&opt.db.db_path).context(error::IOSnafu).unwrap();
         }
@@ -83,11 +99,15 @@ impl TsKv {
                          &opt.db).await
                                  .unwrap()
         };
-        let version_set = summary.version_set();
+        let version_set = summary.version_set().clone();
         let wal_manager = WalManager::new(opt.wal.clone());
-        wal_manager.recover(version_set.clone(), summary.global_context()).await.unwrap();
+        wal_manager.recover(version_set.clone(),
+                            summary.global_context().clone(),
+                            flush_task_sender)
+                   .await
+                   .unwrap();
 
-        version_set.clone()
+        (version_set.clone(), summary)
     }
 
     pub async fn write(&self,
@@ -122,16 +142,17 @@ impl TsKv {
                 let p = InMemPoint::from(point);
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fileds().iter() {
-                        tsf.put_mutcache(f.filed_id(),
+                    for f in p.fields().iter() {
+                        tsf.put_mutcache(f.field_id(),
                                          &f.value,
                                          f.value_type,
                                          seq,
-                                         point.timestamp() as i64)
+                                         point.timestamp() as i64,
+                                         self.flush_task_sender.clone())
                            .await
                     }
                 } else {
-                    println!("[WARN] [tskv] ts_family for sid {} not found.", sid);
+                    warn!("ts_family for sid {} not found.", sid);
                 }
             }
         }
@@ -140,23 +161,89 @@ impl TsKv {
         Ok(WritePointsRpcResponse { version: 1, points: vec![] })
     }
 
-    pub async fn read(&self, sids: Vec<SeriesID>, time_range: TimeRange, fields: Vec<FieldID>) {
+    pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
         let mut version_set = self.version_set.write().await;
+        if let Some(tsf) = version_set.get_tsfamily(sid) {
+            // get data from memcache
+            if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
+                info!("memcache::{}::{}", sid.clone(), field_id);
+                mem_entry.read_cell(time_range);
+            }
+
+            // get data from delta_memcache
+            if let Some(mem_entry) = tsf.delta_cache().read().await.data_cache.get(&field_id) {
+                info!("delta memcache::{}::{}", sid.clone(), field_id);
+                mem_entry.read_cell(time_range);
+            }
+
+            // get data from im_memcache
+            for mem_cache in tsf.im_cache().iter() {
+                if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+                    info!("im_memcache::{}::{}", sid.clone(), field_id);
+                    mem_entry.read_cell(time_range);
+                }
+            }
+
+            // get data from levelinfo
+            for level_info in tsf.version().read().await.levels_info.iter() {
+                if level_info.level == 0 {
+                    continue;
+                }
+                info!("levelinfo::{}::{}", sid.clone(), field_id);
+                level_info.read_columnfile(tsf.tf_id(), field_id, time_range);
+            }
+
+            // get data from delta
+            let level_info = &tsf.version().read().await.levels_info;
+            if !level_info.is_empty() {
+                info!("delta::{}::{}", sid.clone(), field_id);
+                level_info[0].read_columnfile(tsf.tf_id(), field_id, time_range);
+            }
+        } else {
+            warn!("ts_family with sid {} not found.", sid);
+        }
+    }
+
+    pub async fn read(&self, sids: Vec<SeriesId>, time_range: &TimeRange, fields: Vec<FieldId>) {
         for sid in sids {
-            if let Some(tsf) = version_set.get_tsfamily(sid) {
-                for field_id in fields.iter() {
-                    if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(field_id) {
-                        if mem_entry.ts_max < time_range.min_ts || mem_entry.ts_min > time_range.max_ts {
-                            break;
-                        } else {
-                            for i in mem_entry.cells.iter() {
-                                //todo()
+            for field_id in fields.iter() {
+                self.read_point(sid, time_range, *field_id).await;
+            }
+        }
+    }
+
+    pub async fn delete_series(&self,
+                               sids: Vec<SeriesId>,
+                               min: Timestamp,
+                               max: Timestamp)
+                               -> Result<()> {
+        let series_infos = self.forward_index.read().await.get_series_info_list(&sids);
+        let timerange = TimeRange { max_ts: max, min_ts: min };
+        let path = self.options.db.db_path.clone();
+        for series_info in series_infos {
+            let vs = self.version_set.read().await;
+            if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
+                let version = tsf.version().read().await;
+                for level in version.levels_info() {
+                    if level.ts_range.overlaps(&timerange) {
+                        for column_file in level.files.iter() {
+                            if column_file.range().overlaps(&timerange) {
+                                let field_ids: Vec<FieldId> = series_info.field_infos()
+                                                                         .iter()
+                                                                         .map(|f| f.field_id())
+                                                                         .collect();
+                                let tombstone_manager =
+                                    TsmTombstone::with_tsm_file_id(&path, column_file.file_id())?;
+                                tombstone_manager.add_range(&field_ids, min, max)?;
+                                tombstone_manager.sync()?;
                             }
                         }
                     }
                 }
             }
         }
+
+        Ok(())
     }
 
     pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {
@@ -171,12 +258,13 @@ impl TsKv {
                 // please keep the series id
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fileds().iter() {
-                        tsf.put_mutcache(f.filed_id(),
+                    for f in p.fields().iter() {
+                        tsf.put_mutcache(f.field_id(),
                                          &f.value,
                                          f.value_type,
                                          seq,
-                                         point.timestamp() as i64)
+                                         point.timestamp() as i64,
+                                         self.flush_task_sender.clone())
                            .await
                     }
                 }
@@ -187,7 +275,7 @@ impl TsKv {
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
-        println!("[WARN] [tskv] job 'WAL' starting.");
+        warn!("job 'WAL' starting.");
         let wal_opt = self.options.wal.clone();
         let mut wal_manager = WalManager::new(wal_opt);
         let f = async move {
@@ -200,7 +288,7 @@ impl TsKv {
                         match send_ret {
                             Ok(wal_result) => {},
                             Err(err) => {
-                                println!("[WARN] send WAL write result failed.")
+                                warn!("send WAL write result failed.")
                             },
                         }
                     },
@@ -208,16 +296,47 @@ impl TsKv {
             }
         };
         tokio::spawn(f);
-        println!("[WARN] [tskv] job 'WAL' started.");
+        warn!("job 'WAL' started.");
+    }
+
+    fn run_flush_job(&self,
+                     mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
+                     ctx: Arc<GlobalContext>,
+                     summary: Summary) {
+        let f = async move {
+            let mut summary_processer = SummaryProcesser::new(Box::new(summary));
+            while let Some(x) = receiver.recv().await {
+                let (summary_task_sender, summary_task_receiver) = oneshot::channel();
+                run_flush_memtable_job(x.clone(),
+                                       ctx.clone(),
+                                       HashMap::new(),
+                                       summary_processer.summary().version_set().clone(),
+                                       summary_task_sender).await
+                                                           .unwrap();
+                match summary_task_receiver.await {
+                    Ok(x) => {
+                        summary_processer.batch(x);
+                        summary_processer.apply().await;
+                        info!("summary edits has been apply to file");
+                    },
+                    Err(_) => {
+                        error!("failed to get Summary task");
+                    },
+                }
+            }
+        };
+        tokio::spawn(f);
+        warn!("Flush task handler started");
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
-        println!("[WARN] [tskv] job 'main' starting.");
+        init();
+        warn!("job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
-                        println!("[WARN] [tskv] writing points.");
+                        warn!("writing points.");
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
@@ -226,7 +345,7 @@ impl TsKv {
                                 let _ret = tx.send(Err(err));
                             },
                         }
-                        println!("[WARN] [tskv] write points completed.");
+                        warn!("write points completed.");
                     },
                     _ => panic!("unimplented."),
                 }
@@ -234,7 +353,7 @@ impl TsKv {
         };
 
         tokio::spawn(f);
-        println!("[WARN] [tskv] job 'main' started.");
+        warn!("job 'main' started.");
     }
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
@@ -295,13 +414,20 @@ impl KvContext {
 mod test {
     use std::sync::Arc;
 
+    use chrono::Local;
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use protos::{kv_service, kv_service::WritePointsRpcResponse, models_helper};
+    use logger::{debug, error, info, warn};
+    use models::{FieldInfo, SeriesInfo, Tag, ValueType};
+    use protos::{
+        kv_service, kv_service::WritePointsRpcResponse, models as fb_models, models_helper,
+    };
+    use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
 
-    use crate::{kv_option::WalConfig, Task, TsKv};
+    use crate::{error, kv_option::WalConfig, tseries_family::TimeRange, Error, Task, TsKv};
 
     async fn get_tskv() -> TsKv {
+        logger::init_with_config_path("tests/test_kvcore_log.yaml");
         let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
                                                                ..Default::default() },
                                               ..Default::default() };
@@ -328,6 +454,57 @@ mod test {
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
 
         tskv.write(request).await.unwrap();
+    }
+
+    // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
+    #[tokio::test]
+    async fn test_read() -> Result<(), Error> {
+        let tskv = get_tskv().await;
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points(&mut fbb, 10);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        tskv.write(request.clone()).await.unwrap();
+
+        let shared_write_batch = Arc::new(request.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+        let mut sids = vec![];
+        let mut fields_id = vec![];
+        for point in fb_points.points().unwrap() {
+            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            info.finish();
+            sids.push(info.series_id());
+            for field in info.field_infos().iter() {
+                fields_id.push(field.field_id());
+            }
+        }
+        // remove repeat sid and fields_id
+        const MAX_APPEAR_TIMES: usize = 1;
+        pub fn remove_duplicates(nums: &mut [u64]) -> usize {
+            if nums.len() <= MAX_APPEAR_TIMES {
+                return nums.len() as usize;
+            }
+            let mut l = MAX_APPEAR_TIMES;
+            for r in MAX_APPEAR_TIMES..nums.len() {
+                if nums[r] != nums[l - MAX_APPEAR_TIMES] {
+                    nums[l] = nums[r];
+                    l += 1;
+                }
+            }
+            l as usize
+        }
+        sids.sort_unstable();
+        fields_id.sort_unstable();
+        let l = remove_duplicates(&mut sids);
+        sids = sids[0..l].to_owned();
+        let l = remove_duplicates(&mut fields_id);
+        fields_id = fields_id[0..l].to_owned();
+        tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id).await;
+        Ok(())
     }
 
     #[tokio::test]
@@ -380,5 +557,14 @@ mod test {
             Ok(Ok(resp)) => println!("successful"),
             _ => println!("wrong"),
         };
+    }
+
+    #[tokio::test]
+    async fn test_log() {
+        let tskv = get_tskv().await;
+        info!("hello");
+        warn!("hello");
+        debug!("hello");
+        error!("hello"); //maybe we can use panic directly
     }
 }

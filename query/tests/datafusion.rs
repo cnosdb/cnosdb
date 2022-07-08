@@ -92,7 +92,7 @@ impl TableProvider for Table {
         let schema = Table::test_schema();
         let df_schema = schema.clone().to_dfschema_ref()?;
 
-        if filters.len() > 0 {
+        if !filters.is_empty() {
             let predicate = planner::create_physical_expr(&filters[0],
                                                           df_schema.as_ref(),
                                                           schema.as_ref(),

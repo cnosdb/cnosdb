@@ -1,6 +1,10 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use models::{FieldID, FieldInfo, SeriesID, SeriesInfo, ValueType};
+use models::{FieldId, FieldInfo, SeriesId, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
 
 use super::*;
@@ -9,31 +13,32 @@ use crate::record_file::{self, Record, RecordFileError, RecordFileResult};
 const VERSION: u8 = 1;
 
 struct InMemSeriesInfo {
-    id: SeriesID,
+    id: SeriesId,
     pos: usize,
     field_infos: Vec<InMemFieldInfo>,
 }
 
 impl InMemSeriesInfo {
     fn with_series_info(series_info: &SeriesInfo, pos: usize) -> Self {
-        Self { id: series_info.series_id(), pos, field_infos: series_info.field_infos().iter().map(|f| f.into()).collect()
-        }
+        Self { id: series_info.series_id(),
+               pos,
+               field_infos: series_info.field_infos().iter().map(|f| f.into()).collect() }
     }
 }
 
 struct InMemFieldInfo {
-    id: FieldID,
+    id: FieldId,
     value_type: ValueType,
 }
 
 impl From<&FieldInfo> for InMemFieldInfo {
     fn from(field_info: &FieldInfo) -> Self {
-        Self { id: field_info.filed_id(), value_type: field_info.value_type() }
+        Self { id: field_info.field_id(), value_type: field_info.value_type() }
     }
 }
 
 pub struct ForwardIndex {
-    series_info_set: HashMap<models::SeriesID, InMemSeriesInfo>,
+    series_info_set: HashMap<models::SeriesId, InMemSeriesInfo>,
     record_writer: record_file::Writer,
     record_reader: record_file::Reader,
     file_path: PathBuf,
@@ -65,11 +70,11 @@ impl From<u8> for ForwardIndexAction {
 }
 
 impl ForwardIndex {
-    pub fn new(path: &PathBuf) -> ForwardIndex {
+    pub fn new(path: &Path) -> ForwardIndex {
         ForwardIndex { series_info_set: HashMap::new(),
                        record_writer: record_file::Writer::new(path),
                        record_reader: record_file::Reader::new(path),
-                       file_path: path.clone() }
+                       file_path: path.to_path_buf() }
     }
 
     pub async fn add_series_info_if_not_exists(&mut self,
@@ -87,7 +92,7 @@ impl ForwardIndex {
                     // 1. Check if specified field_id exists.
                     // 2. Check if all field with same field_id has the same value_type.
                     for old_field_info in &mem_series_info.field_infos {
-                        if field_info.filed_id() == old_field_info.id {
+                        if field_info.field_id() == old_field_info.id {
                             if field_info.value_type() == old_field_info.value_type {
                                 flag = true;
                                 break;
@@ -153,13 +158,17 @@ impl ForwardIndex {
             .map_err(|err| ForwardIndexError::CloseFile { source: err })
     }
 
-    pub async fn del_series_info(&mut self, series_id: SeriesID) -> ForwardIndexResult<()> {
+    pub fn get_series_info_list(&self, sids: &[SeriesId]) -> Vec<SeriesInfo> {
+        todo!()
+    }
+
+    pub async fn del_series_info(&mut self, series_id: SeriesId) -> ForwardIndexResult<()> {
         match self.series_info_set.entry(series_id) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 self.record_writer
                     .write_record(VERSION,
                                   ForwardIndexAction::DelSeriesInfo.u8_number(),
-                                  &series_id.to_le_bytes().to_vec())
+                                  series_id.to_le_bytes().as_ref())
                     .await
                     .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
                 entry.remove();
@@ -174,15 +183,8 @@ impl ForwardIndex {
 
     pub async fn load_cache_file(&mut self) -> RecordFileResult<()> {
         let mut record_reader = record_file::Reader::new(&self.file_path);
-        loop {
-            match record_reader.read_record().await {
-                Ok(record) => {
-                    self.handle_record(record).await;
-                },
-                Err(_) => {
-                    break;
-                },
-            }
+        while let Ok(record) = record_reader.read_record().await {
+            self.handle_record(record).await;
         }
         Ok(())
     }

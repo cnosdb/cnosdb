@@ -1,4 +1,8 @@
-use std::{borrow::Borrow, fs, path::PathBuf};
+use std::{
+    borrow::Borrow,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
@@ -15,16 +19,16 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub fn new(path: &PathBuf) -> Self {
+    pub fn new(path: &Path) -> Self {
         let file = open_file(path).unwrap();
-        Writer { path: path.clone(), file: Mutex::new(file) }
+        Writer { path: path.to_path_buf(), file: Mutex::new(file) }
     }
 
     // Returns the POS of record in the file
     pub async fn write_record(&mut self,
                               data_version: u8,
                               data_type: u8,
-                              data: &Vec<u8>)
+                              data: &[u8])
                               -> RecordFileResult<u64> {
         let mut buf = Vec::<u8>::with_capacity(RECORD_MAGIC_NUMBER_LEN
                                                + RECORD_DATA_SIZE_LEN

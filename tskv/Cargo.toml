@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-protos = { path = "../protos", features = ["test"]}
-utils = {path = "../utils"}
-models = {path = "../models"}
+config = { path = "../config" }
+logger = { path = "../logger" }
+models = { path = "../models" }
+protos = { path = "../protos", features = ["test"] }
+utils  = { path = "../utils"  }
 
 chrono = "0.4"
 core_affinity = "0.5.10"

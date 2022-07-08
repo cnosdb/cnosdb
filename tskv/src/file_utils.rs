@@ -72,6 +72,20 @@ pub fn make_tsm_file_name(path: &str, sequence: u64) -> PathBuf {
     PathBuf::from(p)
 }
 
+// TSM tombstone file
+
+pub fn make_tsm_tombstone_file_name(path: &str, sequence: u64) -> PathBuf {
+    let p = format!("{}/_{:06}.tombstone", path, sequence);
+    PathBuf::from(p)
+}
+
+// delta file
+
+pub fn make_delta_file_name(path: &str, sequence: u64) -> PathBuf {
+    let p = format!("{}/_{:06}.delta", path, sequence);
+    PathBuf::from(p)
+}
+
 // Schema file
 
 pub fn make_schema_file(path: &str, sequence: u64) -> PathBuf {
@@ -112,7 +126,7 @@ pub fn get_max_sequence_file_name<F>(dir: impl AsRef<Path>,
     let mut max_id = 1;
     let mut max_index = 0;
     for (i, file_name) in segments.iter().enumerate() {
-        match get_sequence(&file_name) {
+        match get_sequence(file_name) {
             Ok(id) => {
                 if max_id < id {
                     max_id = id;

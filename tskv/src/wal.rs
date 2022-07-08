@@ -5,18 +5,18 @@ use std::{
     sync::Arc,
 };
 
-use crc32fast;
 use lazy_static::lazy_static;
+use logger::{debug, info, warn};
 use parking_lot::Mutex;
 use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
-use tokio::sync::{oneshot, RwLock};
-use utils::bkdr_hash;
+use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 use walkdir::IntoIter;
 
 use crate::{
-    compute,
+    byte_utils,
+    compaction::FlushReq,
     context::GlobalContext,
     direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
@@ -70,18 +70,14 @@ pub struct WalEntryBlock {
 
 impl WalEntryBlock {
     pub fn new(typ: WalEntryType, buf: &[u8]) -> Self {
-        Self { typ: typ.into(),
-               seq: 0,
-               crc: crc32fast::hash(buf),
-               len: buf.len() as u32,
-               buf: buf.into() }
+        Self { typ, seq: 0, crc: crc32fast::hash(buf), len: buf.len() as u32, buf: buf.into() }
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let typ = WalEntryType::from(bytes[0]);
-        let seq = compute::decode_be_u64(&bytes[1..9]);
-        let crc = compute::decode_be_u32(&bytes[9..13]);
-        let len = compute::decode_be_u32(&bytes[13..17]);
+        let seq = byte_utils::decode_be_u64(&bytes[1..9]);
+        let crc = byte_utils::decode_be_u32(&bytes[9..13]);
+        let len = byte_utils::decode_be_u32(&bytes[13..17]);
         let buf = bytes[17..].to_vec();
         Self { typ, seq, crc, len, buf }
     }
@@ -148,8 +144,8 @@ impl WalWriter {
                 .context(error::IOSnafu)?;
         } else {
             file.read_at(0, &mut header_buf[..]).context(error::IOSnafu)?;
-            min_sequence = compute::decode_be_u64(&header_buf[4..12]);
-            max_sequence = compute::decode_be_u64(&header_buf[12..20]);
+            min_sequence = byte_utils::decode_be_u64(&header_buf[4..12]);
+            max_sequence = byte_utils::decode_be_u64(&header_buf[12..20]);
         }
         let size = file.len();
 
@@ -256,7 +252,7 @@ impl WalManager {
         let file = file_manager::get_file_manager().open_create_file(last.clone()).unwrap();
         let size = file.len();
 
-        let current_file = WalWriter::open(seq, last.clone(), config.clone()).unwrap();
+        let current_file = WalWriter::open(seq, last, config.clone()).unwrap();
 
         WalManager { config, current_dir: current_dir_path, current_file }
     }
@@ -286,25 +282,27 @@ impl WalManager {
 
     pub async fn recover(&self,
                          version_set: Arc<RwLock<VersionSet>>,
-                         global_context: Arc<GlobalContext>)
+                         global_context: Arc<GlobalContext>,
+                         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
                          -> Result<()> {
-        let min_log_seq = global_context.log_seq();
-        println!("[WARN] [wal] recovering version set from seq '{}'", &min_log_seq);
-        let mut max_log_seq = min_log_seq;
+        let min_log_seq = global_context.last_seq();
+        warn!("recovering version set from seq '{}'", &min_log_seq);
 
         let wal_files = file_manager::list_file_names(&self.current_dir);
         for file_name in wal_files {
             let id = file_utils::get_wal_file_id(&file_name)?;
-            if id < min_log_seq {
-                continue;
-            }
-            max_log_seq = id;
             let tmp_walfile = WalWriter::open(id,
                                               self.current_dir.join(file_name),
                                               Arc::new(kv_option::WalConfig::default()))?;
             let mut reader = WalReader::new(tmp_walfile.file.into())?;
+            if reader.max_sequence < min_log_seq {
+                continue;
+            }
             let mut version_set = version_set.write().await;
             while let Some(e) = reader.next_wal_entry() {
+                if e.seq < min_log_seq {
+                    continue;
+                }
                 match e.typ {
                     WalEntryType::Write => {
                         let entry = flatbuffers::root::<fb_models::Points>(&e.buf)
@@ -324,10 +322,9 @@ impl WalManager {
                                         } else {
                                             vec![]
                                         };
-                                        point_tags.push(models::Tag::new(tag_key,
-                                                                                tag_value));
+                                        point_tags.push(models::Tag::new(tag_key, tag_value));
                                     }
-                                    models::generate_series_id(&mut point_tags)
+                                    models::generate_series_id(&point_tags)
                                 } else {
                                     // TODO error: no tags
                                     0
@@ -369,7 +366,8 @@ impl WalManager {
                                                              val,
                                                              dtype,
                                                              e.seq,
-                                                             p.timestamp() as i64)
+                                                             p.timestamp() as i64,
+                                                             flush_task_sender.clone())
                                                .await
                                         }
                                     }
@@ -389,10 +387,6 @@ impl WalManager {
                 };
             }
         }
-
-        global_context.set_log_seq(max_log_seq);
-        println!("[WARN] [wal] version set recovered, log_seq is '{}'", &max_log_seq);
-
         Ok(())
     }
 }
@@ -409,43 +403,44 @@ impl WalManager {
 ///     // ...
 /// }
 /// ```
-pub fn reader<'a>(f: File) -> Result<WalReader<'a>> {
+pub fn reader(f: File) -> Result<WalReader> {
     WalReader::new(f.into_cursor())
 }
 
-pub struct WalReader<'a> {
+pub struct WalReader {
     cursor: FileCursor,
     header_buf: [u8; SEGMENT_HEADER_SIZE],
     block_header_buf: [u8; BLOCK_HEADER_SIZE],
+    max_sequence: u64,
     body_buf: Vec<u8>,
-    phantom: PhantomData<&'a Self>,
 }
 
-impl<'a> WalReader<'_> {
+impl WalReader {
     pub fn new(mut cursor: FileCursor) -> Result<Self> {
         let header_buf = WalWriter::reade_header(&mut cursor)?;
+        let max_sequence = byte_utils::decode_be_u64(&header_buf[12..20]);
 
         Ok(Self { cursor,
                   header_buf,
+                  max_sequence,
                   block_header_buf: [0_u8; BLOCK_HEADER_SIZE],
-                  body_buf: vec![],
-                  phantom: PhantomData })
+                  body_buf: vec![] })
     }
 
     pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
-        println!("[DEBUG] [wal] WalReader: cursor.pos={}", self.cursor.pos());
+        debug!("WalReader: cursor.pos={}", self.cursor.pos());
         let read_bytes = self.cursor.read(&mut self.block_header_buf[..]).unwrap();
         if read_bytes < 8 {
             return None;
         }
         let typ = self.block_header_buf[0];
-        let seq = compute::decode_be_u64(self.block_header_buf[1..9].into());
-        let crc = compute::decode_be_u32(self.block_header_buf[9..13].into());
-        let data_len = compute::decode_be_u32(self.block_header_buf[13..17].try_into().unwrap());
-        if data_len <= 0 {
+        let seq = byte_utils::decode_be_u64(self.block_header_buf[1..9].into());
+        let crc = byte_utils::decode_be_u32(self.block_header_buf[9..13].into());
+        let data_len = byte_utils::decode_be_u32(self.block_header_buf[13..17].try_into().unwrap());
+        if data_len == 0 {
             return None;
         }
-        println!("[DEBUG] [wal] WalReader: data_len={}", data_len);
+        debug!("WalReader: data_len={}", data_len);
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
@@ -466,7 +461,6 @@ mod test {
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use protos::{models as fb_models, models_helper};
-    use rand;
 
     use crate::{
         direct_io::{File, FileCursor, FileSync},
@@ -475,7 +469,7 @@ mod test {
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
 
-    const DIR: &'static str = "/tmp/test/wal";
+    const DIR: &str = "/tmp/test/wal";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
@@ -573,7 +567,7 @@ mod test {
         )
     }
 
-    fn random_wal_entry_block<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>) -> WalEntryBlock {
+    fn random_wal_entry_block(_fbb: &mut flatbuffers::FlatBufferBuilder) -> WalEntryBlock {
         let fbb = _fbb.borrow_mut();
 
         let entry_type = random_wal_entry_type();

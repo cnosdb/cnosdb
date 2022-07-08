@@ -94,7 +94,7 @@ mod test {
         {
             let mut f = BufWriter::new(&mut src);
             for i in 0..file_len {
-                f.write(&[i as u8]).unwrap();
+                f.write_all(&[i as u8]).unwrap();
             }
             f.flush().unwrap();
         }

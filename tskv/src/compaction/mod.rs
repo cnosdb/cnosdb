@@ -5,6 +5,7 @@ mod picker;
 pub use compact::*;
 pub use flush::*;
 pub use picker::*;
+use tokio::sync::RwLock;
 
 use crate::{
     memcache::MemCache,
@@ -23,13 +24,15 @@ pub struct CompactReq {
     out_lvl: u32,
 }
 
+#[derive(Debug)]
 pub struct FlushReq {
-    pub mems: Vec<(u32, std::sync::Arc<MemCache>)>,
+    //(tsf id,memcache)
+    pub mems: Vec<(u32, std::sync::Arc<RwLock<MemCache>>)>,
     pub wait_req: u64,
 }
 
 impl FlushReq {
-    pub fn new(mems: Vec<(u32, std::sync::Arc<MemCache>)>, wait_req: u64) -> Self {
+    pub fn new(mems: Vec<(u32, std::sync::Arc<RwLock<MemCache>>)>, wait_req: u64) -> Self {
         Self { mems, wait_req }
     }
 }
