@@ -11,7 +11,6 @@ use models::{FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
-use super::{FileBlock, IndexEntry, TsmIndexReader};
 use crate::{
     byte_utils,
     direct_io::{File, FileCursor, FileSync},
@@ -150,7 +149,7 @@ mod test {
     use std::sync::Arc;
 
     use super::TsmTombstone;
-    use crate::{byte_utils, file_manager, tseries_family::TimeRange, tsm::TsmIndexReader};
+    use crate::{byte_utils, file_manager, tseries_family::TimeRange};
 
     #[test]
     fn test_write_read() {

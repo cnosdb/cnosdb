@@ -17,21 +17,22 @@ use crate::{
     memcache::{MemCache, MemEntry},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::LevelInfo,
-    tsm::{DataBlock, TsmBlockWriter, TsmFooterWriter, TsmHeaderWriter, TsmIndexWriter},
+    tsm::{DataBlock, TsmCacheWriter, TsmWriter},
     version_set::VersionSet,
+    TseriesFamilyId,
 };
 
 pub struct FlushTask {
     mems: Vec<Arc<RwLock<MemCache>>>,
     meta: CompactMeta,
-    tsf_id: u32,
+    tsf_id: TseriesFamilyId,
     path_tsm: String,
     path_delta: String,
 }
 
 impl FlushTask {
     pub fn new(mems: Vec<Arc<RwLock<MemCache>>>,
-               tsf_id: u32,
+               tsf_id: TseriesFamilyId,
                path_tsm: String,
                path_delta: String)
                -> Self {
@@ -194,17 +195,9 @@ fn build_block_set(field_size: HashMap<&FieldId, usize>,
 
 fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldId, DataBlock>) -> Result<u64> {
     let file = file_manager::get_file_manager().create_file(fname).unwrap();
-    let mut fs_cursor = file.into_cursor();
-
-    TsmHeaderWriter::write_to(&mut fs_cursor)?;
-    let index = TsmBlockWriter::write_to(&mut fs_cursor, block_set)?;
-    let index_pos = fs_cursor.pos();
-    let bloom_filter = TsmIndexWriter::write_to(&mut fs_cursor, index)?;
-    TsmFooterWriter::write_to(&mut fs_cursor, &bloom_filter, index_pos)?;
-    fs_cursor.sync_all(FileSync::Hard)
-             .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-    let len = fs_cursor.len();
-    Ok(len)
+    let mut writer = TsmCacheWriter::new(file.into_cursor(), block_set);
+    let size = writer.write()?;
+    Ok(size as u64)
 }
 
 pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,

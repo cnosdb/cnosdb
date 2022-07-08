@@ -20,8 +20,8 @@ pub trait CompactionEngine: Clone + Sync + Send {
 pub struct CompactReq {
     files: (u32, Vec<std::sync::Arc<ColumnFile>>),
     version: std::sync::Arc<Version>,
-    cf: u32,
-    out_lvl: u32,
+    tsf_id: u32,
+    out_level: u32,
 }
 
 #[derive(Debug)]

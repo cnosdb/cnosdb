@@ -36,7 +36,7 @@ use crate::{
     runtime::WorkerQueue,
     summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
     tseries_family::{TimeRange, Version},
-    tsm::{BlockReader, TsmBlockReader, TsmIndexReader, TsmTombstone},
+    tsm::TsmTombstone,
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},

@@ -1,5 +1,3 @@
-// use std::fmt::Error;
-
 use models::ValueType;
 use protos::models::FieldType;
 
@@ -148,6 +146,15 @@ impl DataBlock {
             DataBlock::Str { index, ts, val } => DataType::Str(StrCell::default()),
             DataBlock::F64 { index, ts, val } => DataType::F64(F64Cell::default()),
             DataBlock::Bool { index, ts, val } => DataType::Bool(BoolCell::default()),
+        }
+    }
+    pub fn ts(&self) -> &[i64] {
+        match self {
+            DataBlock::U64 { ts, .. } => ts.as_slice(),
+            DataBlock::I64 { ts, .. } => ts.as_slice(),
+            DataBlock::Str { ts, .. } => ts.as_slice(),
+            DataBlock::F64 { ts, .. } => ts.as_slice(),
+            DataBlock::Bool { ts, .. } => ts.as_slice(),
         }
     }
     pub fn is_empty(&self) -> bool {
