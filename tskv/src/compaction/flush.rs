@@ -21,9 +21,7 @@ use crate::{
     version_set::VersionSet,
 };
 
-// 构建flush task 将memcache中的数据 flush到 tsm文件中
 pub struct FlushTask {
-    edit: VersionEdit,
     mems: Vec<Arc<RwLock<MemCache>>>,
     meta: CompactMeta,
     tsf_id: u32,
@@ -34,16 +32,11 @@ pub struct FlushTask {
 impl FlushTask {
     pub fn new(mems: Vec<Arc<RwLock<MemCache>>>,
                tsf_id: u32,
-               file_id: u64,
                path_tsm: String,
                path_delta: String)
                -> Self {
-        let mut edit = VersionEdit::new();
-        edit.set_log_seq(file_id);
-        edit.set_tsf_id(tsf_id);
-
-        let meta = CompactMeta::new(file_id, 1); //flush to level 1 default
-        Self { edit, mems, meta, tsf_id, path_tsm, path_delta }
+        let meta = CompactMeta::new();
+        Self { mems, meta, tsf_id, path_tsm, path_delta }
     }
     pub async fn run(&mut self,
                      version_set: Arc<RwLock<VersionSet>>,
@@ -87,6 +80,8 @@ impl FlushTask {
             build_block_set(field_size_delta, field_map_delta, &mut ts_max, &mut ts_min);
         // build tsm file
         if !block_set_delta.is_empty() {
+            self.meta.file_id = kernel.file_id();
+            kernel.file_id_next();
             build_tsm_file_workflow(&mut self.meta,
                                     block_set_delta,
                                     self.tsf_id,
@@ -100,12 +95,12 @@ impl FlushTask {
                                     edits,
                                     version_set.clone()).await
                                                         .expect("failed to build delta file");
-            kernel.file_id_next();
-            self.meta.file_id = kernel.file_id();
         }
         (ts_min, ts_max) = (i64::MAX, i64::MIN);
         let block_set = build_block_set(field_size, field_map, &mut ts_max, &mut ts_min);
         if !block_set.is_empty() {
+            self.meta.file_id = kernel.file_id();
+            kernel.file_id_next();
             build_tsm_file_workflow(&mut self.meta,
                                     block_set,
                                     self.tsf_id,
@@ -132,7 +127,7 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
                                  high_seq: u64,
                                  ts_max: i64,
                                  ts_min: i64,
-                                 level: u32,
+                                 level: usize,
                                  is_delta: bool,
                                  edits: &mut Vec<VersionEdit>,
                                  version_set: Arc<RwLock<VersionSet>>)
@@ -148,17 +143,18 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
     meta.high_seq = high_seq;
     meta.ts_max = ts_max;
     meta.ts_min = ts_min;
-    meta.level = 1;
+    meta.level = level as u32;
     meta.file_size = file_size;
-    meta.is_delta = false;
+    meta.is_delta = is_delta;
     let mut version_s = version_set.write().await;
     let mut version = version_s.get_tsfamily(tsf_id as u64).unwrap().version().write().await;
-    while version.levels_info.len() < 2 {
-        version.levels_info.push(LevelInfo::init(1));
+    while version.levels_info.len() <= level {
+        let i: u32 = version.levels_info.len() as u32;
+        version.levels_info.push(LevelInfo::init(i));
     }
-    version.levels_info[1].apply(&meta);
+    version.levels_info[level].apply(&meta);
     let mut edit = VersionEdit::new();
-    edit.add_file(1, tsf_id, meta.file_id, high_seq, version.max_level_ts, meta.clone());
+    edit.add_file(meta.level, tsf_id, meta.file_id, high_seq, version.max_level_ts, meta.clone());
     edits.push(edit);
     Ok(())
 }
@@ -233,10 +229,7 @@ pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,
 
             let path_tsm = cf_opt.tsm_dir.clone() + &i.to_string();
             let path_delta = cf_opt.delta_dir.clone() + &i.to_string();
-            kernel.file_id_next();
-            let log_seq = kernel.file_id();
-            let mut job =
-                FlushTask::new(memtables.clone(), i as u32, log_seq, path_tsm, path_delta);
+            let mut job = FlushTask::new(memtables.clone(), i as u32, path_tsm, path_delta);
             job.run(version_set.clone(), kernel.clone(), &mut edits).await?;
         }
     }

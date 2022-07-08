@@ -165,8 +165,8 @@ impl LevelInfo {
             }
             let (mut fs_cursor, len) = match file.file_reader(tf_id) {
                 Ok(v) => v,
-                Err(_) => {
-                    warn!("can not find file");
+                Err(e) => {
+                    warn!("{:?}", e);
                     continue;
                 },
             };
