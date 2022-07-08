@@ -13,9 +13,9 @@ use datafusion::{
     execution::context::{SessionState, TaskContext},
     logical_expr::TableType,
     logical_plan::{
-        DFSchemaRef, LogicalPlan, LogicalPlanBuilder, Operator, ToDFSchema, UserDefinedLogicalNode,
+        DFSchemaRef, LogicalPlan, LogicalPlanBuilder, ToDFSchema, UserDefinedLogicalNode,
     },
-    physical_expr::{expressions, planner, PhysicalSortExpr},
+    physical_expr::{planner, PhysicalSortExpr},
     physical_plan::{
         filter::FilterExec, planner::ExtensionPlanner, ExecutionPlan, Partitioning,
         PhysicalPlanner, RecordBatchStream, SendableRecordBatchStream, Statistics,

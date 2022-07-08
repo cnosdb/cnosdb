@@ -8,6 +8,7 @@ members = [
     "rpctests",
     "utils",
     "models",
+    "query",
 ]
 
 default-members = ["main"]

@@ -11,7 +11,6 @@ models = {path = "../models"}
 chrono = "0.4"
 core_affinity = "0.5.10"
 crossbeam = "0.8.1"
-datafusion = "9.0.0"
 futures = { version = "0.3", features = ["std", "thread-pool"] }
 flatbuffers = "2.1"
 lazy_static = "1.4"
