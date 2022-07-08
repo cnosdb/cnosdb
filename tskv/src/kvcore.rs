@@ -4,7 +4,6 @@ use std::{
 };
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
-use datafusion::arrow::compute::lexsort_to_indices;
 use futures::stream::SelectNextSome;
 use lazy_static::lazy_static;
 use logger::{debug, error, info, init, trace, warn};

@@ -61,10 +61,6 @@ impl CatalogProvider for Db {
     }
 }
 
-
-
-
-
 #[cfg(test)]
 mod tests {
     use std::{ops::Range, sync::Arc};

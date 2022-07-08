@@ -13,7 +13,6 @@ use std::{
 
 use config::GLOBAL_CONFIG;
 use crossbeam::channel::internal::SelectHandle;
-use datafusion::logical_expr::BuiltinScalarFunction::Random;
 use lazy_static::lazy_static;
 use logger::{debug, info, warn};
 use models::{FieldId, ValueType};
