@@ -1,4 +1,5 @@
 #[actix_rt::test]
+#[ignore]
 async fn test_call_add_series() {
     use protos::kv_service::{tskv_service_client, AddSeriesRpcRequest, FieldInfo, FieldType, Tag};
 

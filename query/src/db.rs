@@ -225,6 +225,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn query_exec() {
         let db = Arc::new(Db::default());
         run_query(db).await;

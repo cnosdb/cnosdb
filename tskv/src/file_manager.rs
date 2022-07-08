@@ -155,6 +155,7 @@ mod test {
     use std::sync::Arc;
 
     use futures::channel::oneshot;
+    use logger::info;
     use tokio::runtime::Builder;
 
     use super::FileManager;
@@ -166,19 +167,20 @@ mod test {
     #[test]
     fn test_get_instance() {
         let file_manager_1 = file_manager::get_file_manager();
-        println!("0x{:X}", file_manager_1 as *const FileManager as usize);
+        info!("0x{:X}", file_manager_1 as *const FileManager as usize);
         let file_manager_2 = file_manager::get_file_manager();
-        println!("0x{:X}", file_manager_2 as *const FileManager as usize);
+        info!("0x{:X}", file_manager_2 as *const FileManager as usize);
         assert_eq!(file_manager_1 as *const FileManager as usize,
                    file_manager_2 as *const FileManager as usize);
 
         let file_manager_3 = FileManager::new();
-        println!("0x{:X}", &file_manager_3 as *const FileManager as usize);
+        info!("0x{:X}", &file_manager_3 as *const FileManager as usize);
         assert_ne!(file_manager_1 as *const FileManager as usize,
                    &file_manager_3 as *const FileManager as usize);
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_io_task() {
         let file_manager = file_manager::get_file_manager();
 

@@ -184,7 +184,7 @@ impl Reader {
         }
         p += RECORD_MAGIC_NUMBER_LEN;
         let data_size =
-            u16::from_le_bytes(head_buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
+            u32::from_le_bytes(head_buf[p..p + RECORD_DATA_SIZE_LEN].try_into().unwrap());
         p += RECORD_DATA_SIZE_LEN;
         let data_version =
             u8::from_le_bytes(head_buf[p..p + RECORD_DATA_VERSION_LEN].try_into().unwrap());
@@ -216,7 +216,7 @@ impl From<&str> for Reader {
 #[tokio::test]
 async fn test_reader_read_one() {
     let r = Reader::from("/tmp/test.log_file");
-    let record = r.read_one(68).await.unwrap();
+    let record = r.read_one(19).await.unwrap();
     println!("{}, {}, {}, {:?}", record.pos, record.data_type, record.data_version, record.data);
 }
 

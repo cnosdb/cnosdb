@@ -197,6 +197,7 @@ impl TsmBlockWriter {
 mod test {
     use std::collections::HashMap;
 
+    use logger::info;
     use models::FieldId;
 
     use crate::{
@@ -204,8 +205,8 @@ mod test {
         file_manager::{self, get_file_manager, FileManager},
         memcache::StrCell,
         tsm::{
-            coders, DataBlock, FileBlock, TsmBlockWriter, TsmFooterWriter, TsmHeaderWriter,
-            TsmIndexWriter,
+            coders, BlockReader, DataBlock, FileBlock, TsmBlockReader, TsmBlockWriter,
+            TsmFooterWriter, TsmHeaderWriter, TsmIndexReader, TsmIndexWriter,
         },
     };
 
@@ -241,6 +242,43 @@ mod test {
         let bloom_filter = TsmIndexWriter::write_to(&mut fs_cursor, file_block_map).unwrap();
         let _ = TsmFooterWriter::write_to(&mut fs_cursor, &bloom_filter, index_pos);
         let _ = fs_cursor.sync_all(FileSync::Hard);
-        println!("column write finsh");
+        info!("column write finsh");
+
+        tsm_reader_test();
+    }
+
+    fn tsm_reader_test() {
+        let fs = get_file_manager();
+        let fs = fs.open_file("./writer_test.tsm").unwrap();
+        let len = fs.len();
+        let mut fs_cursor = fs.into_cursor();
+        let index = TsmIndexReader::try_new(&mut fs_cursor, len as usize).unwrap();
+        let mut blocks = Vec::new();
+        let mut block_field_id: Vec<FieldId> = Vec::new();
+        for res in index {
+            let entry = res.unwrap();
+            let key = entry.field_id();
+
+            blocks.push(entry.block);
+            block_field_id.push(key);
+        }
+
+        let mut block_reader = TsmBlockReader::new(&mut fs_cursor);
+        let ori_data: HashMap<FieldId, DataBlock> =
+            HashMap::from([(0,
+                            DataBlock::U64 { index: 0,
+                                             ts: vec![2, 3, 4],
+                                             val: vec![12, 13, 15] }),
+                           (1,
+                            DataBlock::U64 { index: 0,
+                                             ts: vec![2, 3, 4],
+                                             val: vec![101, 102, 103] })]);
+
+        for (i, block) in blocks.iter().enumerate() {
+            let data = block_reader.decode(block).expect("error decoding block data");
+            let field_id = block_field_id.get(i).unwrap();
+            assert_eq!(*ori_data.get(field_id).unwrap(), data);
+        }
+        info!("read test finish");
     }
 }
