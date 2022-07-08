@@ -391,18 +391,6 @@ impl WalManager {
     }
 }
 
-/// Get a WalReader, for loading file to cache.
-/// ```
-/// use crate::direct_io::{File, FileSystem, Options};
-///
-/// let file_system: FileSystem = FileSystem::new(&Options::default());
-/// let file: File = file_system.open("_00001.wal").unwrap();
-///
-/// let mut reader: WalReader = reader(file.into_cursor());
-/// while let Some(block) = reader.next_wal_entry() {
-///     // ...
-/// }
-/// ```
 pub fn reader(f: File) -> Result<WalReader> {
     WalReader::new(f.into_cursor())
 }
@@ -626,12 +614,12 @@ mod test {
 
     #[test]
     fn test_read_entry() {
-        let wal_config =
-            crate::kv_option::WalConfig { dir: String::from("/tmp/test/"), ..Default::default() };
+        let wal_config = crate::kv_option::WalConfig { dir: String::from("/tmp/test/wal"),
+                                                       ..Default::default() };
 
         let mgr = WalManager::new(wal_config);
 
-        let wal_files = list_file_names("/tmp/test/");
+        let wal_files = list_file_names("/tmp/test/wal");
         for wal_file in wal_files {
             let file =
                 file_manager::get_file_manager().open_file(mgr.current_dir.join(wal_file)).unwrap();

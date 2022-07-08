@@ -420,6 +420,7 @@ mod test {
     use protos::{
         kv_service, kv_service::WritePointsRpcResponse, models as fb_models, models_helper,
     };
+    use serial_test::serial;
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
 
@@ -435,6 +436,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_init() {
         let tskv = get_tskv().await;
 
@@ -442,6 +444,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_write() {
         let tskv = get_tskv().await;
 
@@ -457,6 +460,7 @@ mod test {
 
     // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
     #[tokio::test]
+    #[serial]
     async fn test_read() -> Result<(), Error> {
         let tskv = get_tskv().await;
 
@@ -507,6 +511,8 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
+    #[ignore]
     async fn test_big_write() {
         let tskv = get_tskv().await;
 
@@ -522,6 +528,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_insert_cache() {
         let tskv = get_tskv().await;
 
@@ -535,6 +542,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_start() {
         let tskv = get_tskv().await;
 
@@ -553,12 +561,13 @@ mod test {
         TsKv::start(tskv, wal_receiver);
 
         match rx.await {
-            Ok(Ok(resp)) => println!("successful"),
-            _ => println!("wrong"),
+            Ok(Ok(resp)) => info!("successful"),
+            _ => panic!("wrong"),
         };
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_log() {
         let tskv = get_tskv().await;
         info!("hello");

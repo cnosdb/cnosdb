@@ -6,6 +6,7 @@ mod test {
     use tonic::Request;
 
     #[tokio::test]
+    #[ignore]
     async fn test_tskv_ping() {
         use protos::kv_service::tskv_service_client::TskvServiceClient;
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -40,6 +41,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_tskv_write_points() {
         let (tx, rx) = mpsc::channel(1);
         tokio::spawn(async move {

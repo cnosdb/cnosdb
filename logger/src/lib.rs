@@ -1,11 +1,21 @@
 pub use log::{debug, error, info, trace, warn, LevelFilter};
 
 pub fn init() {
-    log4rs::init_file("../logger/tskv_log.yaml", Default::default()).unwrap();
+    match log4rs::init_file("../logger/tskv_log.yaml", Default::default()) {
+        Ok(_) => (),
+        Err(e) => {
+            info!("{}", e);
+        },
+    };
 }
 
 pub fn init_with_config_path(path: &str) {
-    log4rs::init_file(path, Default::default()).unwrap();
+    match log4rs::init_file(path, Default::default()) {
+        Ok(_) => (),
+        Err(e) => {
+            info!("{}", e);
+        },
+    };
 }
 
 #[test]
