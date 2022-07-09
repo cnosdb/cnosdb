@@ -93,11 +93,8 @@ impl ColumnFile {
         }
     }
 
-    pub fn have(&self, time_range: &TimeRange) -> bool {
-        if self.range.min_ts >= time_range.max_ts && self.range.max_ts <= time_range.min_ts {
-            return false;
-        }
-        true
+    pub fn overlap(&self, time_range: &TimeRange) -> bool {
+        self.range.overlaps(time_range)
     }
 }
 
@@ -159,7 +156,7 @@ impl LevelInfo {
     }
     pub fn read_columnfile(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) {
         for file in self.files.iter() {
-            if file.is_deleted() || !file.have(time_range) {
+            if file.is_deleted() || !file.overlap(time_range) {
                 continue;
             }
             let (mut fs_cursor, len) = match file.file_reader(tf_id) {
@@ -412,6 +409,26 @@ impl TseriesFamily {
         }
     }
 
+    pub async fn delete_cache(&self, time_range: &TimeRange) {
+        for i in self.mut_cache.write().await.data_cache.iter_mut() {
+            if i.1.overlap(&time_range) {
+                i.1.delete_data_cell(&time_range);
+            }
+        }
+        for i in self.delta_mut_cache.write().await.data_cache.iter_mut() {
+            if i.1.overlap(&time_range) {
+                i.1.delete_data_cell(&time_range);
+            }
+        }
+        for memcache in self.immut_cache.iter() {
+            for i in memcache.write().await.data_cache.iter_mut() {
+                if i.1.overlap(&time_range) {
+                    i.1.delete_data_cell(&time_range);
+                }
+            }
+        }
+    }
+
     pub fn tf_id(&self) -> u32 {
         self.tf_id
     }
@@ -434,5 +451,45 @@ impl TseriesFamily {
 
     pub fn imut_ts_min(&self) -> i64 {
         self.immut_ts_min
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use logger::info;
+    use models::ValueType;
+    use tokio::sync::{mpsc, RwLock};
+
+    use crate::{
+        kv_option::TseriesFamOpt,
+        memcache::MemCache,
+        tseries_family::{TimeRange, TseriesFamily, Version},
+    };
+
+    #[tokio::test]
+    pub async fn test_tsf_delete() {
+        let tcfg = TseriesFamOpt::default();
+        let mut tsf = TseriesFamily::new(0,
+                                         "db".to_string(),
+                                         MemCache::new(0, 500, 0, false),
+                                         Arc::new(RwLock::new(Version::new(0,
+                                                                           0,
+                                                                           "db".to_string(),
+                                                                           vec![],
+                                                                           0))),
+                                         tcfg).await;
+        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
+        tsf.put_mutcache(0,
+                         10_i32.to_be_bytes().as_slice(),
+                         ValueType::Integer,
+                         0,
+                         0,
+                         flush_task_sender)
+           .await;
+        assert_eq!(tsf.mut_cache.read().await.data_cache.get(&0).unwrap().cells.len(), 1);
+        tsf.delete_cache(&TimeRange { max_ts: 0, min_ts: 0 }).await;
+        assert_eq!(tsf.mut_cache.read().await.data_cache.get(&0).unwrap().cells.len(), 0);
     }
 }

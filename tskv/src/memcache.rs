@@ -67,6 +67,15 @@ impl MemEntry {
             }
         }
     }
+
+    pub fn overlap(&self, time_range: &TimeRange) -> bool {
+        !(self.ts_min > time_range.max_ts && self.ts_max < time_range.min_ts)
+    }
+
+    pub fn delete_data_cell(&mut self, time_range: &TimeRange) {
+        self.cells
+            .retain(|x| x.timestamp() < time_range.min_ts || x.timestamp() > time_range.max_ts);
+    }
 }
 
 #[allow(dead_code)]

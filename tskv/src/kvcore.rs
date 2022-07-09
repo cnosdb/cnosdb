@@ -222,6 +222,7 @@ impl TsKv {
         for series_info in series_infos {
             let vs = self.version_set.read().await;
             if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
+                tsf.delete_cache(&TimeRange { min_ts: min, max_ts: max }).await;
                 let version = tsf.version().read().await;
                 for level in version.levels_info() {
                     if level.ts_range.overlaps(&timerange) {
@@ -458,6 +459,21 @@ mod test {
         tskv.write(request).await.unwrap();
     }
 
+    // remove repeat sid and fields_id
+    pub fn remove_duplicates(nums: &mut [u64]) -> usize {
+        if nums.len() <= 1 {
+            return nums.len() as usize;
+        }
+        let mut l = 1;
+        for r in 1..nums.len() {
+            if nums[r] != nums[l - 1] {
+                nums[l] = nums[r];
+                l += 1;
+            }
+        }
+        l as usize
+    }
+
     // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
     #[tokio::test]
     #[serial]
@@ -485,21 +501,7 @@ mod test {
                 fields_id.push(field.field_id());
             }
         }
-        // remove repeat sid and fields_id
-        const MAX_APPEAR_TIMES: usize = 1;
-        pub fn remove_duplicates(nums: &mut [u64]) -> usize {
-            if nums.len() <= MAX_APPEAR_TIMES {
-                return nums.len() as usize;
-            }
-            let mut l = MAX_APPEAR_TIMES;
-            for r in MAX_APPEAR_TIMES..nums.len() {
-                if nums[r] != nums[l - MAX_APPEAR_TIMES] {
-                    nums[l] = nums[r];
-                    l += 1;
-                }
-            }
-            l as usize
-        }
+
         sids.sort_unstable();
         fields_id.sort_unstable();
         let l = remove_duplicates(&mut sids);
@@ -507,6 +509,52 @@ mod test {
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
         tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[ignore]
+    async fn test_delete_cache() -> Result<(), Error> {
+        let tskv = get_tskv().await;
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points(&mut fbb, 5);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        tskv.write(request.clone()).await.unwrap();
+
+        let shared_write_batch = Arc::new(request.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+        let mut sids = vec![];
+        let mut fields_id = vec![];
+        for point in fb_points.points().unwrap() {
+            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            info.finish();
+            sids.push(info.series_id());
+            for field in info.field_infos().iter() {
+                fields_id.push(field.field_id());
+            }
+        }
+
+        sids.sort_unstable();
+        fields_id.sort_unstable();
+        let l = remove_duplicates(&mut sids);
+        sids = sids[0..l].to_owned();
+        let l = remove_duplicates(&mut fields_id);
+        fields_id = fields_id[0..l].to_owned();
+        tskv.read(sids.clone(),
+                  &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+                  fields_id.clone())
+            .await;
+        info!("delete delta data");
+        tskv.delete_series(sids.clone(), 1, 1).await.unwrap();
+        tskv.read(sids.clone(),
+                  &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+                  fields_id.clone())
+            .await;
         Ok(())
     }
 
