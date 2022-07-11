@@ -2,8 +2,12 @@ use std::{io::SeekFrom, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
 
-use super::{BlockMetaIterator, BLOCK_META_SIZE, INDEX_META_SIZE};
-use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64};
+use super::{BlockMetaIterator, BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE};
+use crate::{
+    byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u64},
+    direct_io::File,
+    error::{Error, Result},
+};
 
 pub trait IndexT {}
 
@@ -63,6 +67,7 @@ impl IndexMeta {
         let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         BlockMetaIterator::new(self.index_ref.clone(),
                                index_offset,
+                               self.field_id,
                                self.field_type,
                                self.block_count)
     }
@@ -71,6 +76,7 @@ impl IndexMeta {
         let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         let mut iter = BlockMetaIterator::new(self.index_ref.clone(),
                                               index_offset,
+                                              self.field_id,
                                               self.field_type,
                                               self.block_count);
         iter.filter_timerange(min_ts, max_ts);
@@ -91,12 +97,27 @@ impl IndexMeta {
     pub fn block_count(&self) -> u16 {
         self.block_count
     }
+
+    #[inline(always)]
+    pub fn timerange(&self) -> (Timestamp, Timestamp) {
+        if self.block_count == 0 {
+            return (Timestamp::MIN, Timestamp::MIN);
+        }
+        let first_blk_beg = self.index_ref.offsets()[self.index_idx] as usize + INDEX_META_SIZE;
+        let min_ts =
+            byte_utils::decode_be_i64(&self.index_ref.data[first_blk_beg..first_blk_beg + 8]);
+        let last_blk_beg = first_blk_beg + BLOCK_META_SIZE * (self.block_count as usize - 1);
+        let max_ts =
+            byte_utils::decode_be_i64(&self.index_ref.data[last_blk_beg + 8..last_blk_beg + 16]);
+        (min_ts, max_ts)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockMeta {
     index_ref: Arc<Index>,
     /// Array index in `Index::data` which current `BlockMeta` starts.
+    field_id: FieldId,
     block_offset: usize,
     field_type: ValueType,
 
@@ -105,15 +126,24 @@ pub struct BlockMeta {
 }
 
 impl BlockMeta {
-    fn new(index: Arc<Index>, field_type: ValueType, block_offset: usize) -> Self {
+    fn new(index: Arc<Index>,
+           field_id: FieldId,
+           field_type: ValueType,
+           block_offset: usize)
+           -> Self {
         let min_ts = decode_be_i64(&index.data()[block_offset..block_offset + 8]);
         let max_ts = decode_be_i64(&&index.data()[block_offset + 8..block_offset + 16]);
-        Self { index_ref: index, block_offset, field_type, min_ts, max_ts }
+        Self { index_ref: index, field_id, block_offset, field_type, min_ts, max_ts }
     }
 
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         &self.index_ref.data()[self.block_offset..]
+    }
+
+    #[inline(always)]
+    pub fn field_id(&self) -> FieldId {
+        self.field_id
     }
 
     #[inline(always)]
@@ -160,8 +190,9 @@ pub(crate) fn get_index_meta_unchecked(index: Arc<Index>, idx: usize) -> IndexMe
 pub(crate) fn get_data_block_meta_unchecked(index: Arc<Index>,
                                             index_offset: usize,
                                             block_idx: usize,
+                                            field_id: FieldId,
                                             field_type: ValueType)
                                             -> BlockMeta {
     let base = index_offset + INDEX_META_SIZE + block_idx * BLOCK_META_SIZE;
-    BlockMeta::new(index, field_type, base)
+    BlockMeta::new(index, field_id, field_type, base)
 }

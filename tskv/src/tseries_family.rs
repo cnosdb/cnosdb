@@ -79,6 +79,11 @@ impl ColumnFile {
         get_file_manager().open_file(p)
     }
 
+    pub fn tombstone_file(&self, tsf_opt: Arc<TseriesFamOpt>) -> Result<File> {
+        let p = file_utils::make_tsm_tombstone_file_name(&tsf_opt.tsm_dir, self.file_id);
+        get_file_manager().open_file(p)
+    }
+
     pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
         let fs = get_file_manager();
         let ts_cf = TseriesFamOpt::default();
@@ -169,7 +174,7 @@ impl LevelInfo {
             let file = file.file(self.tsf_opt.clone()).unwrap();
             let file = Arc::new(file);
 
-            let index = IndexReader::load(file.clone()).unwrap();
+            let index = IndexReader::open(file.clone()).unwrap();
             for idx in index.iter_opt(field_id) {
                 for blk in idx.iter() {
                     if blk.min_ts() < time_range.max_ts && blk.max_ts() > time_range.min_ts {

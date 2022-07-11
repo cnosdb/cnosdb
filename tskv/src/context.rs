@@ -25,8 +25,8 @@ impl GlobalContext {
         self.file_id.load(Ordering::Acquire)
     }
 
-    pub fn file_id_next(&self) {
-        self.file_id.fetch_add(1, Ordering::SeqCst);
+    pub fn file_id_next(&self) -> u64 {
+        self.file_id.fetch_add(1, Ordering::SeqCst)
     }
 
     pub fn mem_seq_next(&self) -> u64 {

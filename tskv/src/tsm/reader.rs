@@ -4,9 +4,10 @@ use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 
 use super::{
-    boolean, float, get_data_block_meta_unchecked, get_index_meta_unchecked, index::Index, integer,
-    string, timestamp, unsigned, BlockMeta, DataBlock, IndexMeta, BLOCK_META_SIZE, FOOTER_SIZE,
-    INDEX_META_SIZE, MAX_BLOCK_VALUES,
+    block, boolean, float, get_data_block_meta_unchecked, get_index_meta_unchecked,
+    index::{self, Index},
+    integer, string, timestamp, unsigned, BlockMeta, DataBlock, IndexMeta, Tombstone, TsmTombstone,
+    BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
 use crate::{
     byte_utils,
@@ -110,51 +111,54 @@ impl IndexFile {
     }
 }
 
+pub fn load_index(reader: Arc<File>) -> Result<Index> {
+    let len = reader.len();
+    let mut buf = [0u8; 8];
+
+    // Read index data offset
+    reader.read_at(len - 8, &mut buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    let offset = u64::from_be_bytes(buf);
+    let data_len = (len - offset) as usize - FOOTER_SIZE;
+    let mut data = vec![0_u8; data_len];
+    // Read index data
+    reader.read_at(offset, &mut data).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+
+    // Decode index data
+    let mut offsets = Vec::new();
+    let mut field_ids = Vec::new();
+    let mut pos = 0_usize;
+    while pos < data_len {
+        offsets.push(pos as u64);
+        field_ids.push(decode_be_u64(&data[pos..pos + 8]));
+        pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
+    }
+
+    // Sort by field id
+    let len = field_ids.len();
+    for i in 0..len {
+        let mut j = i;
+        for k in (i + 1)..len {
+            if field_ids[j] > field_ids[k] {
+                j = k;
+            }
+        }
+        field_ids.swap(i, j);
+        offsets.swap(i, j);
+    }
+
+    Ok(Index::new(data, field_ids, offsets))
+}
+
 /// Memory-based index reader
 pub struct IndexReader {
     index_ref: Arc<Index>,
 }
 
 impl IndexReader {
-    pub fn load(reader: Arc<File>) -> Result<Self> {
-        let len = reader.len();
-        let mut buf = [0u8; 8];
+    pub fn open(reader: Arc<File>) -> Result<Self> {
+        let idx = load_index(reader)?;
 
-        // Read index data offset
-        reader.read_at(len - 8, &mut buf)
-              .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        let offset = u64::from_be_bytes(buf);
-        let data_len = (len - offset) as usize - FOOTER_SIZE;
-        let mut data = vec![0_u8; data_len];
-        // Read index data
-        reader.read_at(offset, &mut data)
-              .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-
-        // Decode index data
-        let mut offsets = Vec::new();
-        let mut field_ids = Vec::new();
-        let mut pos = 0_usize;
-        while pos < data_len {
-            offsets.push(pos as u64);
-            field_ids.push(decode_be_u64(&data[pos..pos + 8]));
-            pos += INDEX_META_SIZE
-                   + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
-        }
-
-        // Sort by field id
-        let len = field_ids.len();
-        for i in 0..len {
-            let mut j = i;
-            for k in (i + 1)..len {
-                if field_ids[j] > field_ids[k] {
-                    j = k;
-                }
-            }
-            field_ids.swap(i, j);
-            offsets.swap(i, j);
-        }
-
-        Ok(Self { index_ref: Arc::new(Index::new(data, field_ids, offsets)) })
+        Ok(Self { index_ref: Arc::new(idx) })
     }
 
     pub fn iter(&self) -> IndexIterator {
@@ -208,6 +212,7 @@ pub struct BlockMetaIterator {
     index_ref: Arc<Index>,
     /// Array index in `Index::offsets`
     index_offset: usize,
+    field_id: FieldId,
     field_type: ValueType,
     /// Array index in `Index::data` which current `BlockMeta` starts.
     block_offset: usize,
@@ -220,11 +225,13 @@ pub struct BlockMetaIterator {
 impl BlockMetaIterator {
     pub fn new(index: Arc<Index>,
                index_offset: usize,
+               field_id: FieldId,
                field_type: ValueType,
                block_count: u16)
                -> Self {
         Self { index_ref: index,
                index_offset,
+               field_id,
                field_type,
                block_offset: index_offset + INDEX_META_SIZE,
                block_count,
@@ -267,10 +274,52 @@ impl Iterator for BlockMetaIterator {
         let ret = Some(get_data_block_meta_unchecked(self.index_ref.clone(),
                                                      self.index_offset,
                                                      self.block_idx,
+                                                     self.field_id,
                                                      self.field_type));
         self.block_idx += 1;
         self.block_offset += BLOCK_META_SIZE;
         ret
+    }
+}
+
+pub struct TsmReader {
+    reader: Arc<File>,
+    index_reader: Arc<IndexReader>,
+    tombstones: Vec<Tombstone>,
+}
+
+impl TsmReader {
+    pub fn open(reader: Arc<File>, tombstone: Arc<File>) -> Result<Self> {
+        let idx = IndexReader::open(reader.clone())?;
+        let tombstones = TsmTombstone::load_all(reader.as_ref())?;
+        Ok(Self { reader, index_reader: Arc::new(idx), tombstones })
+    }
+
+    pub fn index_iterator(&self) -> IndexIterator {
+        self.index_reader.iter()
+    }
+
+    pub fn get_data_block(&self, block_meta: &BlockMeta) -> Result<DataBlock> {
+        let mut buf = vec![0_u8; block_meta.size() as usize];
+        let tombsotne: Vec<Tombstone> = self.tombstones
+                                            .iter()
+                                            .filter(|t| t.field_id == block_meta.field_id())
+                                            .map(|t| *t)
+                                            .collect();
+        decode_data_block(self.reader.clone(),
+                          &mut buf,
+                          block_meta.field_type(),
+                          block_meta.offset(),
+                          block_meta.size(),
+                          block_meta.val_off())
+    }
+
+    pub fn copy_to(&self, block_meta: &BlockMeta, writer: &mut FileCursor) -> Result<usize> {
+        let mut buf = vec![0_u8; block_meta.size() as usize];
+        self.reader
+            .read_at(block_meta.offset(), &mut buf)
+            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        writer.write(&buf[..]).map_err(|e| Error::WriteTsmErr { reason: e.to_string() })
     }
 }
 
@@ -296,60 +345,12 @@ impl ColumnReader {
     fn decode(&mut self, block_meta: &BlockMeta) -> Result<DataBlock> {
         let (offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
-
-        let val_offset = block_meta.val_off();
-
-        self.reader
-            .read_at(offset, &mut self.buf)
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        // let crc_ts = &self.buf[..4];
-        let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES);
-        timestamp::decode(&self.buf[4..(val_offset - offset) as usize], &mut ts)
-        .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        // let crc_data = &self.buf[(val_offset - offset) as usize..4];
-        let data = &self.buf[(val_offset - offset + 4) as usize..];
-        match block_meta.field_type() {
-            ValueType::Float => {
-                // values will be same length as time-stamps.
-                let mut val = Vec::with_capacity(ts.len());
-                float::decode(&data, &mut val)
-                    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-                Ok(DataBlock::F64 { index: 0, ts, val })
-            },
-            ValueType::Integer => {
-                // values will be same length as time-stamps.
-                let mut val = Vec::with_capacity(ts.len());
-                integer::decode(&data, &mut val)
-                    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-                Ok(DataBlock::I64 { index: 0, ts, val })
-            },
-            ValueType::Boolean => {
-                // values will be same length as time-stamps.
-                let mut val = Vec::with_capacity(ts.len());
-                boolean::decode(&data, &mut val)
-                    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-
-                Ok(DataBlock::Bool { index: 0, ts, val })
-            },
-            ValueType::String => {
-                // values will be same length as time-stamps.
-                let mut val = Vec::with_capacity(ts.len());
-                string::decode(&data, &mut val)
-                    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-                Ok(DataBlock::Str { index: 0, ts, val })
-            },
-            ValueType::Unsigned => {
-                // values will be same length as time-stamps.
-                let mut val = Vec::with_capacity(ts.len());
-                unsigned::decode(&data, &mut val)
-                    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-                Ok(DataBlock::U64 { index: 0, ts, val })
-            },
-            _ => {
-                Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
-                                                        block_meta.field_type()) })
-            },
-        }
+        decode_data_block(self.reader.clone(),
+                          &mut self.buf,
+                          block_meta.field_type(),
+                          block_meta.offset(),
+                          block_meta.size(),
+                          block_meta.val_off())
     }
 }
 
@@ -362,6 +363,66 @@ impl Iterator for ColumnReader {
         }
 
         None
+    }
+}
+
+pub fn decode_data_block(reader: Arc<File>,
+                         buf: &mut [u8],
+                         field_type: ValueType,
+                         offset: u64,
+                         size: u64,
+                         val_off: u64)
+                         -> Result<DataBlock> {
+    assert!(buf.len() >= size as usize);
+
+    reader.read_at(offset, buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    // let crc_ts = &self.buf[..4];
+    let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES);
+    timestamp::decode(&buf[4..(val_off - offset) as usize], &mut ts)
+    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    // let crc_data = &self.buf[(val_offset - offset) as usize..4];
+    let data = &buf[(val_off - offset + 4) as usize..];
+    match field_type {
+        ValueType::Float => {
+            // values will be same length as time-stamps.
+            let mut val = Vec::with_capacity(ts.len());
+            float::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
+                                                                               e.to_string() })?;
+            Ok(DataBlock::F64 { index: 0, ts, val })
+        },
+        ValueType::Integer => {
+            // values will be same length as time-stamps.
+            let mut val = Vec::with_capacity(ts.len());
+            integer::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
+                                                                                 e.to_string() })?;
+            Ok(DataBlock::I64 { index: 0, ts, val })
+        },
+        ValueType::Boolean => {
+            // values will be same length as time-stamps.
+            let mut val = Vec::with_capacity(ts.len());
+            boolean::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
+                                                                                 e.to_string() })?;
+
+            Ok(DataBlock::Bool { index: 0, ts, val })
+        },
+        ValueType::String => {
+            // values will be same length as time-stamps.
+            let mut val = Vec::with_capacity(ts.len());
+            string::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
+                                                                                e.to_string() })?;
+            Ok(DataBlock::Str { index: 0, ts, val })
+        },
+        ValueType::Unsigned => {
+            // values will be same length as time-stamps.
+            let mut val = Vec::with_capacity(ts.len());
+            unsigned::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
+                                                                                  e.to_string() })?;
+            Ok(DataBlock::U64 { index: 0, ts, val })
+        },
+        _ => {
+            Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
+                                                    field_type) })
+        },
     }
 }
 
@@ -383,7 +444,7 @@ mod test {
         let fs = Arc::new(fs);
         let len = fs.len();
 
-        let index = IndexReader::load(fs.clone()).unwrap();
+        let index = IndexReader::open(fs.clone()).unwrap();
         let mut column_readers: HashMap<FieldId, ColumnReader> = HashMap::new();
         for index_meta in index.iter() {
             column_readers.insert(index_meta.field_id(),

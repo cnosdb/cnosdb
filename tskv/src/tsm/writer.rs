@@ -348,7 +348,7 @@ mod test {
         let fs = Arc::new(fs);
         let len = fs.len();
 
-        let index = IndexReader::load(fs.clone()).unwrap();
+        let index = IndexReader::open(fs.clone()).unwrap();
         let mut column_readers: HashMap<FieldId, ColumnReader> = HashMap::new();
         for index_meta in index.iter() {
             column_readers.insert(index_meta.field_id(),
