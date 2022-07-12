@@ -4,7 +4,7 @@ use logger::{debug, error, info, warn};
 use models::FieldId;
 use parking_lot::Mutex;
 use regex::internal::Input;
-use tokio::sync::{oneshot, oneshot::Sender, RwLock};
+use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender, RwLock};
 
 use crate::{
     compaction::FlushReq,
@@ -152,7 +152,7 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
         let i: u32 = version.levels_info.len() as u32;
         version.levels_info.push(LevelInfo::init(i));
     }
-    version.levels_info[level].apply(&meta);
+    version.levels_info[level].apply(meta);
     let mut edit = VersionEdit::new();
     edit.add_file(meta.level, tsf_id, meta.file_id, high_seq, version.max_level_ts, meta.clone());
     edits.push(edit);
@@ -203,7 +203,7 @@ pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,
                                     kernel: Arc<GlobalContext>,
                                     tsf_config: HashMap<u32, Arc<TseriesFamOpt>>,
                                     version_set: Arc<RwLock<VersionSet>>,
-                                    summary_task_sender: Sender<SummaryTask>)
+                                    summary_task_sender: UnboundedSender<SummaryTask>)
                                     -> Result<()> {
     let mut mems = vec![];
     {

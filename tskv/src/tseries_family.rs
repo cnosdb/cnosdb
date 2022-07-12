@@ -189,7 +189,7 @@ impl LevelInfo {
 #[derive(Default)]
 pub struct Version {
     pub id: u32,
-    pub log_no: u64,
+    pub last_seq: u64,
     pub max_level_ts: i64,
     pub name: String,
     pub levels_info: Vec<LevelInfo>,
@@ -197,12 +197,12 @@ pub struct Version {
 
 impl Version {
     pub fn new(id: u32,
-               log_no: u64,
+               last_seq: u64,
                name: String,
                levels_info: Vec<LevelInfo>,
                max_level_ts: i64)
                -> Self {
-        Self { id, log_no, name, levels_info, max_level_ts }
+        Self { id, last_seq, name, levels_info, max_level_ts }
     }
 
     pub fn get_name(&self) -> &str {
@@ -268,7 +268,7 @@ impl TseriesFamily {
                      -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let cf = Arc::new(opt);
-        let seq = version.read().await.log_no;
+        let seq = version.read().await.last_seq;
         let max_level_ts = version.read().await.max_level_ts;
         let delta_mm =
             Arc::new(RwLock::new(MemCache::new(tf_id, GLOBAL_CONFIG.max_memcache_size, seq, true)));
@@ -376,7 +376,7 @@ impl TseriesFamily {
                               seq: u64,
                               ts: i64,
                               sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
-        if self.immut_ts_min == i64::MAX {
+        if self.immut_ts_min == i64::MIN {
             self.immut_ts_min = ts;
         }
 
@@ -411,19 +411,19 @@ impl TseriesFamily {
 
     pub async fn delete_cache(&self, time_range: &TimeRange) {
         for i in self.mut_cache.write().await.data_cache.iter_mut() {
-            if i.1.overlap(&time_range) {
-                i.1.delete_data_cell(&time_range);
+            if i.1.overlap(time_range) {
+                i.1.delete_data_cell(time_range);
             }
         }
         for i in self.delta_mut_cache.write().await.data_cache.iter_mut() {
-            if i.1.overlap(&time_range) {
-                i.1.delete_data_cell(&time_range);
+            if i.1.overlap(time_range) {
+                i.1.delete_data_cell(time_range);
             }
         }
         for memcache in self.immut_cache.iter() {
             for i in memcache.write().await.data_cache.iter_mut() {
-                if i.1.overlap(&time_range) {
-                    i.1.delete_data_cell(&time_range);
+                if i.1.overlap(time_range) {
+                    i.1.delete_data_cell(time_range);
                 }
             }
         }

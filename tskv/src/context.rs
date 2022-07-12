@@ -56,8 +56,8 @@ impl GlobalContext {
         self.max_tsf_id.load(Ordering::Acquire)
     }
 
-    pub fn next_tsf_id(&self) -> u32 {
-        self.max_tsf_id.fetch_add(1, Ordering::SeqCst) + 1
+    pub fn next_tsf_id(&self) {
+        self.max_tsf_id.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn mark_log_number_used(&self, v: u64) {

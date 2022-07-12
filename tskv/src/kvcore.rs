@@ -56,6 +56,7 @@ pub struct TsKv {
     forward_index: Arc<RwLock<ForwardIndex>>,
 
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
+    summary_task_sender: UnboundedSender<SummaryTask>,
 }
 
 impl TsKv {
@@ -68,14 +69,20 @@ impl TsKv {
         let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
         fidx.load_cache_file().await.map_err(|err| Error::LogRecordErr { source: err })?;
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
+        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self { options: shared_options,
                           kvctx,
                           forward_index: Arc::new(RwLock::new(fidx)),
                           version_set,
                           wal_sender,
-                          flush_task_sender };
+                          flush_task_sender,
+                          summary_task_sender: summary_task_sender.clone() };
         core.run_wal_job(wal_receiver);
-        core.run_flush_job(flush_task_receiver, summary.global_context(), summary);
+        core.run_flush_job(flush_task_receiver,
+                           summary.global_context(),
+                           summary.version_set(),
+                           summary_task_sender.clone());
+        core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
 
         Ok(core)
     }
@@ -88,15 +95,9 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(&[TseriesFamDesc { name: "default".to_string(),
-                                                opt: TseriesFamOpt::default() }],
-                             &opt.db).await
-                                     .unwrap()
+            Summary::recover(&opt.db).await.unwrap()
         } else {
-            Summary::new(&[TseriesFamDesc { name: "default".to_string(),
-                                            opt: TseriesFamOpt::default() }],
-                         &opt.db).await
-                                 .unwrap()
+            Summary::new(&opt.db).await.unwrap()
         };
         let version_set = summary.version_set().clone();
         let wal_manager = WalManager::new(opt.wal.clone());
@@ -302,31 +303,36 @@ impl TsKv {
     fn run_flush_job(&self,
                      mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
                      ctx: Arc<GlobalContext>,
-                     summary: Summary) {
+                     version_set: Arc<RwLock<VersionSet>>,
+                     sender: UnboundedSender<SummaryTask>) {
         let f = async move {
-            let mut summary_processer = SummaryProcesser::new(Box::new(summary));
             while let Some(x) = receiver.recv().await {
-                let (summary_task_sender, summary_task_receiver) = oneshot::channel();
                 run_flush_memtable_job(x.clone(),
                                        ctx.clone(),
                                        HashMap::new(),
-                                       summary_processer.summary().version_set().clone(),
-                                       summary_task_sender).await
-                                                           .unwrap();
-                match summary_task_receiver.await {
-                    Ok(x) => {
-                        summary_processer.batch(x);
-                        summary_processer.apply().await;
-                        info!("summary edits has been apply to file");
-                    },
-                    Err(_) => {
-                        error!("failed to get Summary task");
-                    },
-                }
+                                       version_set.clone(),
+                                       sender.clone()).await
+                                                      .unwrap();
             }
         };
         tokio::spawn(f);
         warn!("Flush task handler started");
+    }
+
+    fn run_summary_job(&self,
+                       summary: Summary,
+                       mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
+                       summary_task_sender: UnboundedSender<SummaryTask>) {
+        let f = async move {
+            let mut summary_processer = SummaryProcesser::new(Box::new(summary));
+            while let Some(x) = summary_task_receiver.recv().await {
+                debug!("Apply Summary task");
+                summary_processer.batch(x);
+                summary_processer.apply().await;
+            }
+        };
+        tokio::spawn(f);
+        warn!("Summary task handler started");
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
@@ -354,6 +360,10 @@ impl TsKv {
 
         tokio::spawn(f);
         warn!("job 'main' started.");
+    }
+
+    pub fn version_set(&self) -> Arc<RwLock<VersionSet>> {
+        self.version_set.clone()
     }
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
@@ -415,6 +425,7 @@ mod test {
     use std::sync::Arc;
 
     use chrono::Local;
+    use config::GLOBAL_CONFIG;
     use futures::{channel::oneshot, future::join_all, SinkExt};
     use logger::{debug, error, info, warn};
     use models::{FieldInfo, SeriesInfo, Tag, ValueType};
@@ -425,7 +436,13 @@ mod test {
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
 
-    use crate::{error, kv_option::WalConfig, tseries_family::TimeRange, Error, Task, TsKv};
+    use crate::{
+        error,
+        kv_option::{TseriesFamDesc, TseriesFamOpt, WalConfig},
+        summary::{Summary, VersionEdit},
+        tseries_family::TimeRange,
+        Error, Task, TsKv,
+    };
 
     async fn get_tskv() -> TsKv {
         logger::init_with_config_path("tests/test_kvcore_log.yaml");
@@ -612,6 +629,40 @@ mod test {
             Ok(Ok(resp)) => info!("successful"),
             _ => panic!("wrong"),
         };
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_add_del_tsf() {
+        let tskv = get_tskv().await;
+        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
+                                                               ..Default::default() },
+                                              ..Default::default() };
+        let shared_options = Arc::new(opt);
+        let summary = Summary::new(&shared_options.db).await.unwrap();
+        summary.global_context().next_tsf_id();
+        let tf_id = summary.global_context().max_tsf_id();
+
+        tskv.version_set()
+            .write()
+            .await
+            .add_tsfamily(tf_id,
+                          "hello".to_string(),
+                          0,
+                          0,
+                          TseriesFamOpt::default(),
+                          tskv.summary_task_sender.clone())
+            .await;
+        assert_eq!(tskv.version_set().read().await.tsf_num(),
+                   (GLOBAL_CONFIG.tsfamily_num + 1) as usize);
+
+        tskv.version_set()
+            .write()
+            .await
+            .del_tsfamily(tf_id, "hello".to_string(), tskv.summary_task_sender.clone());
+        assert_eq!(tskv.version_set().read().await.tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
+
+        info!("success");
     }
 
     #[tokio::test]

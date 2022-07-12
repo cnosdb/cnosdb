@@ -69,7 +69,7 @@ mod tests {
     use chrono::Utc;
     use datafusion::{
         arrow::{
-            array::{ArrayRef, Float32Array, Int32Array, PrimitiveArray, StringArray},
+            array::{ArrayRef, Float32Array, Int32Array, PrimitiveArray},
             datatypes::{
                 ArrowPrimitiveType, DataType, Field, Float64Type, Int32Type, Schema, SchemaRef,
             },
