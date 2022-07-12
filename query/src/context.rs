@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, result, sync::Arc};
+use std::{fmt, result, sync::Arc};
 
 use datafusion::{
     catalog::catalog::CatalogProvider,

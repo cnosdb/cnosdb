@@ -86,17 +86,28 @@ impl VersionEdit {
     pub fn add_file(&mut self,
                     level: u32,
                     tsf_id: u32,
-                    log_seq: u64,
+                    file_id: u64,
                     seq_no: u64,
                     max_level_ts: i64,
                     meta: CompactMeta) {
         self.has_file_id = true;
-        self.file_id = log_seq;
+        self.file_id = file_id;
         self.has_seq_no = true;
         self.seq_no = seq_no;
         self.level = level;
         self.max_level_ts = max_level_ts;
         self.add_files.push(meta);
+    }
+    pub fn add_tsf(&mut self, tsf_id: u32, tsf_name: String, seq_no: u64) {
+        self.add_tsf = true;
+        self.has_seq_no = true;
+        self.seq_no = seq_no;
+        self.tsf_name = tsf_name;
+        self.tsf_id = tsf_id;
+    }
+    pub fn del_tsf(&mut self, tsf_if: u32) {
+        self.del_tsf = true;
+        self.tsf_id = tsf_if;
     }
     // todo:
     pub fn del_file(&mut self) {}
@@ -109,6 +120,7 @@ impl VersionEdit {
     }
 }
 
+use config::GLOBAL_CONFIG;
 use logger::{debug, info};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
@@ -127,7 +139,7 @@ pub struct Summary {
 
 impl Summary {
     // create a new summary file
-    pub async fn new(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
+    pub async fn new(db_opt: &DBOptions) -> Result<Self> {
         let db = VersionEdit::new();
         let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
         let buf = db.encode()?;
@@ -135,35 +147,41 @@ impl Summary {
                  .map_err(|e| Error::LogRecordErr { source: (e) })
                  .await?;
         w.hard_sync().map_err(|e| Error::LogRecordErr { source: e }).await?;
-        Self::recover(tf_desc, db_opt).await
+        Self::recover(db_opt).await
     }
 
-    pub async fn recover(tf_desc: &[TseriesFamDesc], db_opt: &DBOptions) -> Result<Self> {
+    pub async fn recover(db_opt: &DBOptions) -> Result<Self> {
         let writer = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
-        let vs = Self::recover_version(tf_desc, rd, &ctx).await?;
+        let vs = Self::recover_version(rd, &ctx).await?;
 
         Ok(Self { file_no: 0, version_set: Arc::new(RwLock::new(vs)), ctx, writer })
     }
 
     // recover from summary file
-    pub async fn recover_version(tf_cfg: &[TseriesFamDesc],
-                                 mut rd: Box<Reader>,
-                                 ctx: &GlobalContext)
-                                 -> Result<VersionSet> {
+    pub async fn recover_version(mut rd: Box<Reader>, ctx: &GlobalContext) -> Result<VersionSet> {
+        let mut tf_cfg = vec![];
         let mut edits: HashMap<u32, Vec<VersionEdit>> = HashMap::default();
-        edits.insert(0, vec![]);
         let mut tf_names: HashMap<u32, String> = HashMap::default();
-        tf_names.insert(0, "default".to_string());
+        for i in 0..GLOBAL_CONFIG.tsfamily_num {
+            edits.insert(i, vec![]);
+            let name = format!("default{}", i);
+            tf_names.insert(i, name.clone());
+            tf_cfg.push(TseriesFamDesc { name, opt: TseriesFamOpt::default() });
+        }
+        ctx.set_max_tsf_idy(GLOBAL_CONFIG.tsfamily_num - 1);
         loop {
             let res = rd.read_record().await.map_err(|e| Error::LogRecordErr { source: (e) });
             match res {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.add_tsf {
+                        ctx.set_max_tsf_idy(ed.tsf_id);
                         edits.insert(ed.tsf_id, vec![]);
-                        tf_names.insert(ed.tsf_id, ed.tsf_name);
+                        tf_names.insert(ed.tsf_id, ed.tsf_name.clone());
+                        tf_cfg.push(TseriesFamDesc { name: ed.tsf_name,
+                                                     opt: TseriesFamOpt::default() });
                     } else if ed.del_tsf {
                         edits.remove(&ed.tsf_id);
                         tf_names.remove(&ed.tsf_id);
@@ -190,7 +208,7 @@ impl Summary {
                 if e.has_file_id {
                     ctx.set_file_id(e.file_id);
                 }
-                max_log = std::cmp::max(max_log, e.file_id);
+                max_log = std::cmp::max(max_log, e.seq_no);
                 max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
                 for m in e.del_files {
                     files.remove(&m.file_id);
@@ -208,13 +226,10 @@ impl Summary {
             }
             let mut lvls: Vec<LevelInfo> = levels.into_values().collect();
             lvls.reverse();
-            if max_level_ts == i64::MIN {
-                max_level_ts = i64::MAX;
-            }
             let ver = Version::new(id, max_log, tsf_name, lvls, max_level_ts);
             versions.insert(id, Arc::new(RwLock::new(ver)));
         }
-        let vs = VersionSet::new(tf_cfg, versions);
+        let vs = VersionSet::new(&tf_cfg, versions);
         Ok(vs.await)
     }
     // apply version edit to summary file

@@ -3,7 +3,6 @@ use std::{fs::File, io::prelude::Read};
 use lazy_static::lazy_static;
 use logger::debug;
 use serde::{Deserialize, Serialize};
-use toml;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalConfig {
@@ -34,6 +33,8 @@ pub struct GlobalConfig {
     pub seq_no: u64,
     // SchemaStoreConfig
     pub schema_store_config_dir: String,
+    // tsfamily num
+    pub tsfamily_num: u32,
 }
 
 impl GlobalConfig {

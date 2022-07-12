@@ -25,3 +25,5 @@ tf_id = 0
 seq_no = 0
 #SchemaStoreConfig
 schema_store_config_dir = "dev/schema"
+#tsfamily num
+tsfamily_num = 2
