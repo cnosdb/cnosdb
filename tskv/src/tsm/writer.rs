@@ -207,7 +207,7 @@ impl TsmCacheWriter {
             writer.write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
                   .map(|s| blk_size += s)
                   .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-            // Write timstamp blocks
+            // Write timestamp blocks
             writer.write(&ts_buf)
                   .map(|s| blk_size += s)
                   .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
@@ -266,6 +266,42 @@ impl TsmWriter for TsmCacheWriter {
     }
 }
 
+pub struct DefaultTsmWriter {
+    writer: FileCursor,
+    index_buf: IndexBuf,
+    size: usize,
+}
+
+impl DefaultTsmWriter {
+    pub fn new(writer: FileCursor) -> Self {
+        Self { writer, index_buf: IndexBuf::new(), size: 0 }
+    }
+}
+
+impl TsmWriter for DefaultTsmWriter {
+    fn write_header(&mut self) -> Result<usize> {
+        write_header_to(&mut self.writer)
+    }
+
+    fn write_blocks(&mut self) -> Result<usize> {
+        todo!()
+    }
+
+    fn write_index(&mut self) -> Result<usize> {
+        todo!()
+    }
+
+    fn write_footer(&mut self) -> Result<usize> {
+        write_footer_to(&mut self.writer, &self.index_buf.bloom_filter, self.index_buf.index_offset)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        self.writer
+            .sync_all(FileSync::Hard)
+            .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })
+    }
+}
+
 pub fn write_header_to(writer: &mut FileCursor) -> Result<usize> {
     let mut size = 0_usize;
     writer.write(&TSM_MAGIC.to_be_bytes().as_ref())
@@ -302,12 +338,13 @@ mod test {
     use std::{collections::HashMap, sync::Arc};
 
     use logger::info;
-    use models::FieldId;
+    use models::{FieldId, ValueType};
 
+    use super::DefaultTsmWriter;
     use crate::{
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
-        memcache::StrCell,
+        memcache::{BoolCell, DataType, F64Cell, I64Cell, StrCell, U64Cell},
         tsm::{coders, ColumnReader, DataBlock, IndexReader, TsmCacheWriter, TsmWriter},
     };
 
@@ -324,27 +361,22 @@ mod test {
     }
 
     #[test]
-    fn test_tsm_write() {
-        let file = get_file_manager().create_file("/tmp/test/writer_test.tsm").unwrap();
+    fn test_tsm_write_fast() {
+        let file =
+            get_file_manager().create_file("/tmp/test/tsm_writer/tsm_write_fast.tsm").unwrap();
         let data: HashMap<FieldId, DataBlock> =
-            HashMap::from([(1,
-                            DataBlock::U64 { index: 0,
-                                             ts: vec![2, 3, 4],
-                                             val: vec![12, 13, 15] }),
-                           (2,
-                            DataBlock::U64 { index: 0,
-                                             ts: vec![2, 3, 4],
-                                             val: vec![101, 102, 103] })]);
+            HashMap::from([(1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
+                           (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] })]);
 
         let mut writer = TsmCacheWriter::new(file.into_cursor(), data);
         writer.write().unwrap();
 
         println!("column write finsh");
-        tsm_reader_test();
+        test_tsm_read_fast();
     }
 
-    fn tsm_reader_test() {
-        let fs = get_file_manager().open_file("/tmp/test/writer_test.tsm").unwrap();
+    fn test_tsm_read_fast() {
+        let fs = get_file_manager().open_file("/tmp/test/tsm_writer/tsm_write_fast.tsm").unwrap();
         let fs = Arc::new(fs);
         let len = fs.len();
 
@@ -356,14 +388,9 @@ mod test {
         }
 
         let ori_data: HashMap<FieldId, Vec<DataBlock>> =
-            HashMap::from([(1,
-                            vec![DataBlock::U64 { index: 0,
-                                                  ts: vec![2, 3, 4],
-                                                  val: vec![12, 13, 15] }]),
+            HashMap::from([(1, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }]),
                            (2,
-                            vec![DataBlock::U64 { index: 0,
-                                                  ts: vec![2, 3, 4],
-                                                  val: vec![101, 102, 103] }])]);
+                            vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] }])]);
 
         for (fid, col_reader) in column_readers.iter_mut() {
             dbg!(fid);
@@ -376,5 +403,44 @@ mod test {
             assert_eq!(*ori_data.get(fid).unwrap(), data);
         }
         info!("read test finish");
+    }
+
+    #[test]
+    fn test_tsm_write_slow() {
+        let mut cache_data: HashMap<FieldId, DataBlock> = HashMap::new();
+        // Produce many field_ids, from 1 to 1000
+        for i in 1..1000 {
+            let fid = i as u64;
+            // Use i%5 as ValueType
+            let vtyp = ValueType::from((i % 5) as u8);
+            cache_data.insert(fid, DataBlock::new(10000, vtyp));
+            let blk_ref = cache_data.get_mut(&fid).unwrap();
+            // Produce many ts-val pair, ts is from 1 to 10000, val is randomly generated
+            for j in 1..10000 {
+                let val = match vtyp {
+                    ValueType::Unknown => panic!("value type is unknown"),
+                    ValueType::Float => {
+                        DataType::F64(F64Cell { ts: j, val: rand::random::<f64>() })
+                    },
+                    ValueType::Integer => {
+                        DataType::I64(I64Cell { ts: j, val: rand::random::<i64>() })
+                    },
+                    ValueType::Unsigned => {
+                        DataType::U64(U64Cell { ts: j, val: rand::random::<u64>() })
+                    },
+                    ValueType::Boolean => {
+                        DataType::Bool(BoolCell { ts: j, val: rand::random::<bool>() })
+                    },
+                    ValueType::String => {
+                        DataType::Str(StrCell { ts: j, val: b"hello world".to_vec() })
+                    },
+                };
+                blk_ref.insert(&val);
+            }
+        }
+
+        // Write to tsm
+        let fs = get_file_manager().open_file("/tmp/test/tsm_writer/tsm_write_slow.tsm").unwrap();
+        let writer = DefaultTsmWriter::new(fs.into_cursor());
     }
 }

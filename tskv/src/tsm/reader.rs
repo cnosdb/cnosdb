@@ -388,14 +388,14 @@ pub fn decode_data_block(reader: Arc<File>,
             let mut val = Vec::with_capacity(ts.len());
             float::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
                                                                                e.to_string() })?;
-            Ok(DataBlock::F64 { index: 0, ts, val })
+            Ok(DataBlock::F64 { ts, val })
         },
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             integer::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
                                                                                  e.to_string() })?;
-            Ok(DataBlock::I64 { index: 0, ts, val })
+            Ok(DataBlock::I64 { ts, val })
         },
         ValueType::Boolean => {
             // values will be same length as time-stamps.
@@ -403,73 +403,25 @@ pub fn decode_data_block(reader: Arc<File>,
             boolean::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
                                                                                  e.to_string() })?;
 
-            Ok(DataBlock::Bool { index: 0, ts, val })
+            Ok(DataBlock::Bool { ts, val })
         },
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             string::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
                                                                                 e.to_string() })?;
-            Ok(DataBlock::Str { index: 0, ts, val })
+            Ok(DataBlock::Str { ts, val })
         },
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             unsigned::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
                                                                                   e.to_string() })?;
-            Ok(DataBlock::U64 { index: 0, ts, val })
+            Ok(DataBlock::U64 { ts, val })
         },
         _ => {
             Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
                                                     field_type) })
         },
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::{collections::HashMap, sync::Arc};
-
-    use models::FieldId;
-
-    use super::{ColumnReader, Index, IndexReader};
-    use crate::{
-        file_manager::{get_file_manager, FileManager},
-        tsm::DataBlock,
-    };
-
-    #[test]
-    fn tsm_reader_test() {
-        let fs = get_file_manager().open_file("/tmp/test/writer_test.tsm").unwrap();
-        let fs = Arc::new(fs);
-        let len = fs.len();
-
-        let index = IndexReader::open(fs.clone()).unwrap();
-        let mut column_readers: HashMap<FieldId, ColumnReader> = HashMap::new();
-        for index_meta in index.iter() {
-            column_readers.insert(index_meta.field_id(),
-                                  ColumnReader::new(fs.clone(), index_meta.iter()));
-        }
-
-        let ori_data: HashMap<FieldId, Vec<DataBlock>> =
-            HashMap::from([(1,
-                            vec![DataBlock::U64 { index: 0,
-                                                  ts: vec![2, 3, 4],
-                                                  val: vec![12, 13, 15] }]),
-                           (2,
-                            vec![DataBlock::U64 { index: 0,
-                                                  ts: vec![2, 3, 4],
-                                                  val: vec![101, 102, 103] }])]);
-
-        for (fid, col_reader) in column_readers.iter_mut() {
-            dbg!(fid);
-            let mut data = Vec::new();
-            for block in col_reader.next().unwrap() {
-                data.push(block);
-            }
-            dbg!(&data);
-
-            assert_eq!(*ori_data.get(fid).unwrap(), data);
-        }
     }
 }
