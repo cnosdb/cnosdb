@@ -285,9 +285,10 @@ impl SchemaStore {
 
 #[cfg(test)]
 mod test {
+    use serial_test::serial;
+
     use super::SchemaStore;
     use crate::kv_option::SchemaStoreConfig;
-    use serial_test::serial;
 
     const DIR: &str = "/tmp/test/meta";
 

@@ -121,6 +121,7 @@ mod test {
     async fn test_reader_read_one() {
         let r = Reader::from("/tmp/test.log_file");
         let record = r.read_one(19).await.unwrap();
-        println!("{}, {}, {}, {:?}", record.pos, record.data_type, record.data_version, record.data);
+        println!("{}, {}, {}, {:?}",
+                 record.pos, record.data_type, record.data_version, record.data);
     }
 }
