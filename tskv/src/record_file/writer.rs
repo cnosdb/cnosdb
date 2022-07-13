@@ -102,13 +102,25 @@ impl From<&str> for Writer {
     }
 }
 
-#[tokio::test]
-async fn test_writer() -> Result<(), RecordFileError> {
-    let mut w = Writer::from("/tmp/test.log_file");
-    for i in 0..10 {
-        let pos = w.write_record(1, 1, &Vec::from("hello")).await?;
-        println!("{}", pos);
+mod test {
+    use crate::record_file::{Reader, RecordFileError, Writer};
+
+    #[tokio::test]
+    async fn test_writer() -> Result<(), RecordFileError> {
+        let mut w = Writer::from("/tmp/test.log_file");
+        for i in 0..10 {
+            let pos = w.write_record(1, 1, &Vec::from("hello")).await?;
+            println!("{}", pos);
+        }
+        w.close().await?;
+
+        test_reader_read_one().await;
+        Ok(())
     }
-    w.close().await?;
-    Ok(())
+
+    async fn test_reader_read_one() {
+        let r = Reader::from("/tmp/test.log_file");
+        let record = r.read_one(19).await.unwrap();
+        println!("{}, {}, {}, {:?}", record.pos, record.data_type, record.data_version, record.data);
+    }
 }

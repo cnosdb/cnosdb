@@ -5,7 +5,6 @@ use std::{
 };
 
 use config::GLOBAL_CONFIG;
-use libc::{backtrace, task_t};
 use logger::error;
 use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
 

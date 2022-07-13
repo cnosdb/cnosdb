@@ -287,10 +287,12 @@ impl SchemaStore {
 mod test {
     use super::SchemaStore;
     use crate::kv_option::SchemaStoreConfig;
+    use serial_test::serial;
 
-    const DIR: &str = "/tmp/test/";
+    const DIR: &str = "/tmp/test/meta";
 
     #[tokio::test]
+    #[serial]
     async fn test() {
         let config = SchemaStoreConfig { dir: DIR.to_string() };
         let store = SchemaStore::new(config);

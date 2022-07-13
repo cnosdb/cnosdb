@@ -1,0 +1,31 @@
+name: Makefile CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: dep
+      run: |
+        git clone https://github.com/google/flatbuffers.git
+        cd flatbuffers
+        cmake .
+        make
+        sudo make install
+        sudo ldconfig
+        flatc --version
+    
+    - name: test
+      run: make test
+
+    - name: clean
+      run: make clean
