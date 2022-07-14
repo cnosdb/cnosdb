@@ -35,6 +35,7 @@ pub struct GlobalConfig {
     pub schema_store_config_dir: String,
     // tsfamily num
     pub tsfamily_num: u32,
+    pub forward_index_path: String,
 }
 
 impl GlobalConfig {

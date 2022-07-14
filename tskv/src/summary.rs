@@ -98,14 +98,12 @@ impl VersionEdit {
         self.max_level_ts = max_level_ts;
         self.add_files.push(meta);
     }
-    pub fn add_tsf(&mut self, tsf_id: u32, tsf_name: String, seq_no: u64) {
+    pub fn add_tsfamily(&mut self, tsf_id: u32, tsf_name: String) {
         self.add_tsf = true;
-        self.has_seq_no = true;
-        self.seq_no = seq_no;
         self.tsf_name = tsf_name;
         self.tsf_id = tsf_id;
     }
-    pub fn del_tsf(&mut self, tsf_if: u32) {
+    pub fn del_tsfamily(&mut self, tsf_if: u32) {
         self.del_tsf = true;
         self.tsf_id = tsf_if;
     }
@@ -314,23 +312,39 @@ impl SummaryScheduler {
     }
 }
 
-#[test]
-fn test_version_edit() {
-    let compact = CompactMeta { file_id: 100, ..Default::default() };
-    let add_list = vec![compact];
-    let compact2 = CompactMeta { file_id: 101, ..Default::default() };
-    let del_list = vec![compact2];
-    let ve = VersionEdit::new();
-    let buf = ve.encode().unwrap();
-    let ve2 = VersionEdit::decode(&buf).unwrap();
-    assert_eq!(ve2, ve);
-}
+#[cfg(test)]
+mod test {
+    use snafu::ResultExt;
 
-fn test_enum_convert() {
-    let t = EditType::SummaryEdit;
-    let i: u8 = t.into();
-    let y: u8 = EditType::SummaryEdit.into();
-    dbg!(y, i);
-    let zero: EditType = 1u8.try_into().unwrap();
-    assert_eq!(zero, EditType::SummaryEdit);
+    use crate::{
+        error, file_manager, file_utils,
+        kv_option::{DBOptions, WalConfig},
+        summary::{CompactMeta, EditType, Summary, VersionEdit},
+    };
+    #[tokio::test]
+    async fn test_summary_recover() {
+        let opt = DBOptions { db_path: "/tmp/summary".to_string(), ..Default::default() };
+        if !file_manager::try_exists(&opt.db_path) {
+            std::fs::create_dir_all(&opt.db_path).context(error::IOSnafu).unwrap();
+        }
+        let summary_file = file_utils::make_summary_file(&opt.db_path, 0);
+        let mut summary = Summary::new(&opt).await.unwrap();
+        let mut edit = VersionEdit::new();
+        edit.add_tsfamily(100, "hello".to_string());
+        summary.apply_version_edit(&[edit]).await.unwrap();
+        let summary = Summary::recover(&opt).await.unwrap();
+        assert_eq!(summary.ctx.max_tsf_id(), 100);
+    }
+
+    #[test]
+    fn test_version_edit() {
+        let compact = CompactMeta { file_id: 100, ..Default::default() };
+        let add_list = vec![compact];
+        let compact2 = CompactMeta { file_id: 101, ..Default::default() };
+        let del_list = vec![compact2];
+        let ve = VersionEdit::new();
+        let buf = ve.encode().unwrap();
+        let ve2 = VersionEdit::decode(&buf).unwrap();
+        assert_eq!(ve2, ve);
+    }
 }

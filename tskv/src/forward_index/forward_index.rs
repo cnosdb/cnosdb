@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use config::GLOBAL_CONFIG;
 use models::{FieldId, FieldInfo, SeriesId, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
 
@@ -70,11 +71,11 @@ impl From<u8> for ForwardIndexAction {
 }
 
 impl ForwardIndex {
-    pub fn new(path: &Path) -> ForwardIndex {
+    pub fn new(path: &String) -> ForwardIndex {
         ForwardIndex { series_info_set: HashMap::new(),
-                       record_writer: record_file::Writer::new(path),
-                       record_reader: record_file::Reader::new(path),
-                       file_path: path.to_path_buf() }
+                       record_writer: record_file::Writer::new(Path::new(&path)),
+                       record_reader: record_file::Reader::new(Path::new(&path)),
+                       file_path: Path::new(&path).to_path_buf() }
     }
 
     pub async fn add_series_info_if_not_exists(&mut self,
@@ -219,17 +220,17 @@ impl ForwardIndex {
 
 impl From<&str> for ForwardIndex {
     fn from(path: &str) -> Self {
-        ForwardIndex::new(&PathBuf::from(path))
+        ForwardIndex::new(&path.to_string())
     }
 }
 
 #[derive(Clone)]
 pub struct ForwardIndexConfig {
-    pub path: PathBuf,
+    pub path: String,
 }
 
 impl Default for ForwardIndexConfig {
     fn default() -> Self {
-        ForwardIndexConfig { path: PathBuf::from("/tmp/test/tskv.fidx") }
+        ForwardIndexConfig { path: GLOBAL_CONFIG.forward_index_path.clone() }
     }
 }
