@@ -15,7 +15,7 @@ const MAX_I32: usize = i32::MAX as usize;
 
 /// Encodes a slice of byte slices representing string data into a vector of
 /// bytes. Currently uses Snappy compression.
-pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
+pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
@@ -75,7 +75,7 @@ pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
 /// Decodes a slice of bytes representing Snappy-compressed data into a vector
 /// of vectors of bytes representing string data, which may or may not be valid
 /// UTF-8.
-pub fn decode(src: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error>> {
+pub fn decode(src: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }

@@ -16,7 +16,7 @@ const BOOLEAN_COMPRESSED_BIT_PACKED: u8 = 1;
 /// 1 byte header indicating the compression type, followed by a variable byte
 /// encoded length indicating how many booleans are packed in the slice. The
 /// remaining bytes contain 1 byte for every 8 boolean values encoded.
-pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
+pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear();
     if src.is_empty() {
         return Ok(());
@@ -59,7 +59,7 @@ pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
 }
 
 /// Decodes a slice of bytes into a destination vector of `bool`s.
-pub fn decode(src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error>> {
+pub fn decode(src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }

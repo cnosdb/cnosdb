@@ -1,6 +1,9 @@
 use snafu::Snafu;
 
-use crate::wal;
+use crate::{
+    tsm::{ReadTsmError, WriteTsmError},
+    wal,
+};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -52,11 +55,11 @@ pub enum Error {
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,
 
-    #[snafu(display("read tsm block file error: {}", reason))]
-    ReadTsmErr { reason: String },
+    #[snafu(display("read tsm block file error: {}", source))]
+    ReadTsm { source: ReadTsmError },
 
-    #[snafu(display("write tsm block file error: {}", reason))]
-    WriteTsmErr { reason: String },
+    #[snafu(display("write tsm block file error: {}", source))]
+    WriteTsm { source: WriteTsmError },
 
     #[snafu(display("unable to walk dir: {}", source))]
     UnableToWalkDir { source: walkdir::Error },

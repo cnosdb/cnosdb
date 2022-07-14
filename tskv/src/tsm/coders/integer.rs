@@ -21,7 +21,7 @@ pub enum Encoding {
 /// deltas are then zig-zag encoded. The resulting zig-zag encoded deltas are
 /// further compressed if possible, either via bit-packing using simple8b or by
 /// run-length encoding the deltas if they're all the same.
-pub fn encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
+pub fn encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
@@ -123,7 +123,7 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
 }
 
 /// decode decodes a slice of bytes into a vector of signed integers.
-pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
@@ -138,7 +138,7 @@ pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() || src.len() & 0x7 != 0 {
         return Err(From::from("invalid uncompressed block length"));
     }
@@ -161,7 +161,7 @@ fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Err
 
 // decode_rle decodes an RLE encoded slice containing only unsigned into the
 // destination vector.
-fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.len() < 8 {
         return Err(From::from("not enough data to decode using RLE"));
     }
@@ -193,7 +193,7 @@ fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.len() < 8 {
         return Err(From::from("not enough data to decode packed integer."));
     }

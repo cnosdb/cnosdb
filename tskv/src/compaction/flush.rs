@@ -4,20 +4,21 @@ use logger::{debug, error, info, warn};
 use models::FieldId;
 use parking_lot::Mutex;
 use regex::internal::Input;
+use snafu::ResultExt;
 use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender, RwLock};
 
 use crate::{
     compaction::FlushReq,
     context::GlobalContext,
     direct_io::FileSync,
-    error::{Error, Result},
+    error::{self, Error, Result},
     file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::TseriesFamOpt,
     memcache::{MemCache, MemEntry},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::LevelInfo,
-    tsm::{DataBlock, TsmCacheWriter, TsmWriter},
+    tsm::{DataBlock, TsmWriter},
     version_set::VersionSet,
     TseriesFamilyId,
 };
@@ -194,10 +195,13 @@ fn build_block_set(field_size: HashMap<&FieldId, usize>,
 }
 
 fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldId, DataBlock>) -> Result<u64> {
-    let file = file_manager::get_file_manager().create_file(fname).unwrap();
-    let mut writer = TsmCacheWriter::new(file.into_cursor(), block_set);
-    let size = writer.write()?;
-    Ok(size as u64)
+    let file = file_manager::get_file_manager().create_file(fname)?;
+    let mut writer = TsmWriter::open(file.into_cursor())?;
+    for (fid, blk) in block_set.iter() {
+        writer.insert(*fid, blk).context(error::WriteTsmSnafu)?;
+    }
+    writer.flush().context(error::WriteTsmSnafu)?;
+    Ok(writer.size())
 }
 
 pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,

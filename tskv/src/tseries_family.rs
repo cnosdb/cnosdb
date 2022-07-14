@@ -1,6 +1,5 @@
 use std::{
     borrow::{Borrow, BorrowMut},
-    cell::{Ref, RefCell},
     cmp::min,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -28,7 +27,7 @@ use crate::{
     kv_option::TseriesFamOpt,
     memcache::{DataType, MemCache},
     summary::{CompactMeta, VersionEdit},
-    tsm::{BlockReader, ColumnReader, Index, IndexReader},
+    tsm::{ColumnReader, Index, IndexReader},
     ColumnFileId, TseriesFamilyId, VersionId,
 };
 

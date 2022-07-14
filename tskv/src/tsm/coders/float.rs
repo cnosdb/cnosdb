@@ -23,7 +23,7 @@ fn is_sentinel_u64(v: u64, sentinel: u64) -> bool {
 /// two is determined. Leading and trailing zero bits are then analysed and
 /// representations based on those are stored.
 #[allow(clippy::many_single_char_names)]
-pub fn encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
+pub fn encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
@@ -316,7 +316,7 @@ const BIT_MASK: [u64; 64] = [0xffff_ffff_ffff_ffff,
                              0x7fff_ffff_ffff_ffff];
 
 /// decode decodes the provided slice of bytes into a vector of f64 values.
-pub fn decode(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error>> {
+pub fn decode(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     decode_with_sentinel(src, dst, SENTINEL)
 }
 
@@ -327,7 +327,7 @@ pub fn decode(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error>> {
 /// than we chose to use for the float decoder. As we settle on a story around
 /// compression of f64 blocks we may be able to clean this API and not have
 /// multiple methods.
-pub fn decode_influxdb(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error>> {
+pub fn decode_influxdb(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     decode_with_sentinel(src, dst, SENTINEL_INFLUXDB)
 }
 
@@ -337,7 +337,7 @@ pub fn decode_influxdb(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Err
 fn decode_with_sentinel(src: &[u8],
                         dst: &mut Vec<f64>,
                         sentinel: u64)
-                        -> Result<(), Box<dyn Error>> {
+                        -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.len() < 9 {
         return Ok(());
     }
@@ -357,7 +357,7 @@ fn decode_with_sentinel(src: &[u8],
 
     // Refill br_cached_value, reading up to 8 bytes from b, returning the new
     // values for the cached value, the valid bits and the number of bytes read.
-    let mut refill_cache = |i: usize| -> Result<(u64, u8, usize), Box<dyn Error>> {
+    let mut refill_cache = |i: usize| -> Result<(u64, u8, usize), Box<dyn Error + Send + Sync>> {
         let remaining_bytes = src.len() - i;
         if remaining_bytes >= 8 {
             // read 8 bytes directly

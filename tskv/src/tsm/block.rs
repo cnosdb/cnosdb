@@ -1,13 +1,8 @@
-use std::cell::Cell;
-
 use models::ValueType;
 use protos::models::FieldType;
 
 use super::coders;
-use crate::{
-    error::{Error, Result},
-    memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell},
-};
+use crate::memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataBlock {
@@ -354,40 +349,33 @@ impl DataBlock {
 
     // todo:
     /// Encodes timestamps and values of this `DataBlock` to bytes.
-    pub fn encode(&self, start: usize, end: usize) -> Result<(Vec<u8>, Vec<u8>)> {
+    pub fn encode(&self,
+                  start: usize,
+                  end: usize)
+                  -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
         match self {
             DataBlock::Bool { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::boolean::encode(&val[start..end], &mut data_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                coders::boolean::encode(&val[start..end], &mut data_buf)?;
             },
             DataBlock::U64 { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::unsigned::encode(&val[start..end], &mut data_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                coders::unsigned::encode(&val[start..end], &mut data_buf)?;
             },
             DataBlock::I64 { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::integer::encode(&val[start..end], &mut data_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                coders::integer::encode(&val[start..end], &mut data_buf)?;
             },
             DataBlock::Str { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
-                coders::string::encode(&strs[start..end], &mut data_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::string::encode(&strs[start..end], &mut data_buf)?;
             },
             DataBlock::F64 { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-                coders::float::encode(&val[start..end], &mut data_buf)
-                    .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
+                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                coders::float::encode(&val[start..end], &mut data_buf)?;
             },
         }
         Ok((ts_buf, data_buf))

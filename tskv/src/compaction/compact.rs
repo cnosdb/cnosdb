@@ -7,12 +7,13 @@ use std::{
 
 use evmap::new;
 use models::{FieldId, Timestamp, ValueType};
+use snafu::ResultExt;
 
 use crate::{
     compaction::CompactReq,
     context::GlobalContext,
     direct_io::File,
-    error::Result,
+    error::{self, Result},
     memcache::DataType,
     summary::VersionEdit,
     tseries_family::ColumnFile,
@@ -121,7 +122,6 @@ pub async fn run_compaction_job(request: CompactReq, kernel: Arc<GlobalContext>)
 
         // merge these blocks of this field id
         if turn_tsm_blks_cnt <= 1 {
-            // 只有一个块，直接输出
             // write()
             continue;
         }
@@ -139,19 +139,22 @@ pub async fn run_compaction_job(request: CompactReq, kernel: Arc<GlobalContext>)
                     if i == 1 {
                         // Add first block
                         (blk_min_ts, blk_max_ts) = (blk_meta.min_ts(), blk_meta.max_ts());
-                        let data_blk = tsm_readers[i].get_data_block(&blk_meta)?;
+                        let data_blk = tsm_readers[i].get_data_block(&blk_meta)
+                                                     .context(error::ReadTsmSnafu)?;
                         // TODO remove tombstombs
                         merging_blks.push(data_blk);
                         // Go to next
                         blk_iter.next();
                     } else {
+                        // TODO block is earlier than the timerange also needed to merge.
                         // Add the next overlaping blocks
                         if overlaps((blk_min_ts, blk_max_ts),
                                     (blk_meta.min_ts(), blk_meta.max_ts()))
                         {
                             blk_min_ts = blk_min_ts.min(blk_meta.min_ts());
                             blk_max_ts = blk_max_ts.max(blk_meta.max_ts());
-                            let data_blk = tsm_readers[i].get_data_block(&blk_meta)?;
+                            let data_blk = tsm_readers[i].get_data_block(&blk_meta)
+                                                         .context(error::ReadTsmSnafu)?;
                             // TODO remove tombstombs
                             merging_blks.push(data_blk);
                             // Go to next

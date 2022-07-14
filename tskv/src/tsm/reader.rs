@@ -1,7 +1,7 @@
 use std::{io::SeekFrom, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
-use snafu::ResultExt;
+use snafu::{ResultExt, Snafu};
 
 use super::{
     block, boolean, float, get_data_block_meta_unchecked, get_index_meta_unchecked,
@@ -13,9 +13,26 @@ use crate::{
     byte_utils,
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64},
     direct_io::{File, FileCursor},
-    error::{self, Result},
-    Error,
+    error::{self, Error, Result},
 };
+
+pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
+
+#[derive(Snafu, Debug)]
+#[snafu(visibility(pub))]
+pub enum ReadTsmError {
+    #[snafu(display("IO error: {}", source))]
+    IO { source: std::io::Error },
+
+    #[snafu(display("Decode error: {}", source))]
+    Decode { source: Box<dyn std::error::Error + Send + Sync> },
+}
+
+impl Into<Error> for ReadTsmError {
+    fn into(self) -> Error {
+        Error::ReadTsm { source: self }
+    }
+}
 
 /// Disk-based index reader
 pub struct IndexFile {
@@ -30,11 +47,10 @@ pub struct IndexFile {
 }
 
 impl IndexFile {
-    pub fn open(reader: Arc<File>) -> Result<Self> {
+    pub fn open(reader: Arc<File>) -> ReadTsmResult<Self> {
         let file_len = reader.len();
         let mut buf = [0_u8; 8];
-        reader.read_at(file_len - 8, &mut buf)
-              .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        reader.read_at(file_len - 8, &mut buf).context(IOSnafu)?;
         let index_offset = u64::from_be_bytes(buf);
         Ok(Self { reader,
                   buf,
@@ -46,18 +62,14 @@ impl IndexFile {
     }
 
     // TODO: not implemented
-    pub fn next_index_entry(&mut self) -> Result<Option<()>> {
+    pub fn next_index_entry(&mut self) -> ReadTsmResult<Option<()>> {
         if self.pos >= self.end_pos {
             return Ok(None);
         }
-        self.reader
-            .read_at(self.pos, &mut self.buf[..])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         let field_id = u64::from_be_bytes(self.buf);
         self.pos += 8;
-        self.reader
-            .read_at(self.pos, &mut self.buf[..3])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..3]).context(IOSnafu)?;
         self.pos += 3;
         let field_type = ValueType::from(self.buf[0]);
         let block_count = decode_be_u16(&self.buf[1..3]);
@@ -68,42 +80,32 @@ impl IndexFile {
     }
 
     // TODO: not implemented
-    pub fn next_block_entry(&mut self) -> Result<Option<()>> {
+    pub fn next_block_entry(&mut self) -> ReadTsmResult<Option<()>> {
         if self.index_block_idx >= self.index_block_count {
             return Ok(None);
         }
         // read min time on block entry
-        self.reader
-            .read_at(self.pos, &mut self.buf[..])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         self.pos += 8;
         let min_ts = i64::from_be_bytes(self.buf);
 
         // read max time on block entry
-        self.reader
-            .read_at(self.pos, &mut self.buf[..])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         self.pos += 8;
         let max_ts = i64::from_be_bytes(self.buf);
 
         // read block data offset
-        self.reader
-            .read_at(self.pos, &mut self.buf[..])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         self.pos += 8;
         let offset = u64::from_be_bytes(self.buf);
 
         // read block size
-        self.reader
-            .read_at(self.pos, &mut self.buf[..])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         self.pos += 8;
         let size = u64::from_be_bytes(self.buf);
 
         // read value offset
-        self.reader
-            .read_at(self.pos, &mut self.buf[..])
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+        self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         self.pos += 8;
         let val_off = u64::from_be_bytes(self.buf);
 
@@ -111,17 +113,17 @@ impl IndexFile {
     }
 }
 
-pub fn load_index(reader: Arc<File>) -> Result<Index> {
+pub fn load_index(reader: Arc<File>) -> ReadTsmResult<Index> {
     let len = reader.len();
     let mut buf = [0u8; 8];
 
     // Read index data offset
-    reader.read_at(len - 8, &mut buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    reader.read_at(len - 8, &mut buf).context(IOSnafu)?;
     let offset = u64::from_be_bytes(buf);
     let data_len = (len - offset) as usize - FOOTER_SIZE;
     let mut data = vec![0_u8; data_len];
     // Read index data
-    reader.read_at(offset, &mut data).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    reader.read_at(offset, &mut data).context(IOSnafu)?;
 
     // Decode index data
     let mut offsets = Vec::new();
@@ -156,7 +158,7 @@ pub struct IndexReader {
 
 impl IndexReader {
     pub fn open(reader: Arc<File>) -> Result<Self> {
-        let idx = load_index(reader)?;
+        let idx = load_index(reader).context(error::ReadTsmSnafu)?;
 
         Ok(Self { index_ref: Arc::new(idx) })
     }
@@ -299,7 +301,7 @@ impl TsmReader {
         self.index_reader.iter()
     }
 
-    pub fn get_data_block(&self, block_meta: &BlockMeta) -> Result<DataBlock> {
+    pub fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let mut buf = vec![0_u8; block_meta.size() as usize];
         let tombsotne: Vec<Tombstone> = self.tombstones
                                             .iter()
@@ -314,12 +316,10 @@ impl TsmReader {
                           block_meta.val_off())
     }
 
-    pub fn copy_to(&self, block_meta: &BlockMeta, writer: &mut FileCursor) -> Result<usize> {
+    pub fn copy_to(&self, block_meta: &BlockMeta, writer: &mut FileCursor) -> ReadTsmResult<usize> {
         let mut buf = vec![0_u8; block_meta.size() as usize];
-        self.reader
-            .read_at(block_meta.offset(), &mut buf)
-            .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
-        writer.write(&buf[..]).map_err(|e| Error::WriteTsmErr { reason: e.to_string() })
+        self.reader.read_at(block_meta.offset(), &mut buf).context(IOSnafu)?;
+        writer.write(&buf[..]).context(IOSnafu)
     }
 }
 
@@ -342,7 +342,7 @@ impl ColumnReader {
         Self { reader, inner, buf: vec![] }
     }
 
-    fn decode(&mut self, block_meta: &BlockMeta) -> Result<DataBlock> {
+    fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let (offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
         decode_data_block(self.reader.clone(),
@@ -359,7 +359,7 @@ impl Iterator for ColumnReader {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(dbm) = self.inner.next() {
-            return Some(self.decode(&dbm));
+            return Some(self.decode(&dbm).context(error::ReadTsmSnafu));
         }
 
         None
@@ -372,56 +372,50 @@ pub fn decode_data_block(reader: Arc<File>,
                          offset: u64,
                          size: u64,
                          val_off: u64)
-                         -> Result<DataBlock> {
+                         -> ReadTsmResult<DataBlock> {
     assert!(buf.len() >= size as usize);
 
-    reader.read_at(offset, buf).map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    reader.read_at(offset, buf).context(IOSnafu)?;
     // let crc_ts = &self.buf[..4];
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES);
-    timestamp::decode(&buf[4..(val_off - offset) as usize], &mut ts)
-    .map_err(|e| Error::ReadTsmErr { reason: e.to_string() })?;
+    timestamp::decode(&buf[4..(val_off - offset) as usize], &mut ts).context(DecodeSnafu)?;
     // let crc_data = &self.buf[(val_offset - offset) as usize..4];
     let data = &buf[(val_off - offset + 4) as usize..];
     match field_type {
         ValueType::Float => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            float::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
-                                                                               e.to_string() })?;
+            float::decode(&data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::F64 { ts, val })
         },
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            integer::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
-                                                                                 e.to_string() })?;
+            integer::decode(&data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::I64 { ts, val })
         },
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            boolean::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
-                                                                                 e.to_string() })?;
+            boolean::decode(&data, &mut val).context(DecodeSnafu)?;
 
             Ok(DataBlock::Bool { ts, val })
         },
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            string::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
-                                                                                e.to_string() })?;
+            string::decode(&data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::Str { ts, val })
         },
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            unsigned::decode(&data, &mut val).map_err(|e| Error::ReadTsmErr { reason:
-                                                                                  e.to_string() })?;
+            unsigned::decode(&data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::U64 { ts, val })
         },
         _ => {
-            Err(Error::ReadTsmErr { reason: format!("cannot decode block {:?} with no unknown value type",
-                                                    field_type) })
+            Err(ReadTsmError::Decode { source: From::from(format!("cannot decode block {:?} with no unknown value type",
+                                                                  field_type)) })
         },
     }
 }
