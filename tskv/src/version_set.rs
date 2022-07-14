@@ -102,7 +102,7 @@ impl VersionSet {
         self.ts_families_names.insert(name.clone(), tf_id);
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
-        edit.add_tsf(tf_id, "hello".to_string(), 0);
+        edit.add_tsfamily(tf_id, "hello".to_string());
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask { edits, cb: task_state_sender };
@@ -123,7 +123,7 @@ impl VersionSet {
         self.ts_families_names.remove(&name);
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
-        edit.del_tsf(tf_id);
+        edit.del_tsfamily(tf_id);
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask { edits, cb: task_state_sender };
