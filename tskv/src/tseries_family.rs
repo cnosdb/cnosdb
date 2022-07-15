@@ -63,6 +63,16 @@ pub struct ColumnFile {
 }
 
 impl ColumnFile {
+    pub fn new(file_id: ColumnFileId, range: TimeRange, size: u64, is_delta: bool) -> Self {
+        Self { file_id,
+               being_compact: AtomicBool::new(false),
+               deleted: AtomicBool::new(false),
+               range,
+               size,
+               field_id_bloom_filter: BloomFilter::new(512),
+               is_delta }
+    }
+
     pub fn file_id(&self) -> ColumnFileId {
         self.file_id
     }
@@ -71,6 +81,9 @@ impl ColumnFile {
     }
     pub fn range(&self) -> &TimeRange {
         &self.range
+    }
+    pub fn is_delta(&self) -> bool {
+        self.is_delta
     }
 
     pub fn file(&self, tsf_opt: Arc<TseriesFamOpt>) -> Result<File> {
@@ -149,14 +162,10 @@ impl LevelInfo {
                ts_range: TimeRange { max_ts: 0, min_ts: 0 } }
     }
     pub fn apply(&mut self, delta: &CompactMeta) {
-        self.files.push(Arc::new(ColumnFile { file_id: delta.file_id,
-                                              being_compact: AtomicBool::new(false),
-                                              deleted: AtomicBool::new(false),
-                                              range: TimeRange::new(delta.ts_max,
-                                                                    delta.ts_min),
-                                              size: delta.file_size,
-                                              field_id_bloom_filter: BloomFilter::new(512),
-                                              is_delta: delta.is_delta }));
+        self.files.push(Arc::new(ColumnFile::new(delta.file_id,
+                                                 TimeRange::new(delta.ts_max, delta.ts_min),
+                                                 delta.file_size,
+                                                 delta.is_delta)));
         self.cur_size += delta.file_size;
         if self.ts_range.max_ts < delta.ts_max {
             self.ts_range.max_ts = delta.ts_max;
@@ -175,11 +184,11 @@ impl LevelInfo {
 
             let index = IndexReader::open(file.clone()).unwrap();
             for idx in index.iter_opt(field_id) {
-                for blk in idx.iter() {
+                for blk in idx.block_iterator() {
                     if blk.min_ts() < time_range.max_ts && blk.max_ts() > time_range.min_ts {
                         let mut cr = ColumnReader::new(file.clone(),
-                                                       idx.iter_opt(time_range.min_ts,
-                                                                    time_range.max_ts));
+                                                       idx.block_iterator_opt(time_range.min_ts,
+                                                                              time_range.max_ts));
                         while let Some(blk_ret) = cr.next() {
                             if let Ok(blk) = blk_ret {
                                 println!("{:?}", &blk);

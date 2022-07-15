@@ -1,13 +1,9 @@
-use std::{
-    borrow::BorrowMut, collections::HashMap, ops::DerefMut, sync, sync::Arc, thread::JoinHandle,
-};
+use std::{collections::HashMap, sync, sync::Arc, thread::JoinHandle};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use lazy_static::lazy_static;
 use logger::{debug, error, info, init, trace, warn};
 use models::{FieldId, SeriesId, Timestamp};
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -246,10 +242,10 @@ impl TsKv {
                                                                          .iter()
                                                                          .map(|f| f.field_id())
                                                                          .collect();
-                                let tombstone_manager =
+                                let mut tombstone =
                                     TsmTombstone::with_tsm_file_id(&path, column_file.file_id())?;
-                                tombstone_manager.add_range(&field_ids, min, max)?;
-                                tombstone_manager.sync()?;
+                                tombstone.add_range(&field_ids, min, max)?;
+                                tombstone.flush()?;
                             }
                         }
                     }
@@ -294,19 +290,19 @@ impl TsKv {
         let mut wal_manager = WalManager::new(wal_opt);
         let f = async move {
             while let Some(x) = receiver.recv().await {
-                // match x {
-                //     WalTask::Write { points, cb } => {
-                //         // write wal
-                //         let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
-                //         let send_ret = cb.send(ret);
-                //         match send_ret {
-                //             Ok(wal_result) => {},
-                //             Err(err) => {
-                //                 warn!("send WAL write result failed.")
-                //             },
-                //         }
-                //     },
-                // }
+                match x {
+                    WalTask::Write { points, cb } => {
+                        // write wal
+                        let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
+                        let send_ret = cb.send(ret);
+                        match send_ret {
+                            Ok(wal_result) => {},
+                            Err(err) => {
+                                warn!("send WAL write result failed.")
+                            },
+                        }
+                    },
+                }
             }
         };
         tokio::spawn(f);
@@ -320,12 +316,12 @@ impl TsKv {
                      sender: UnboundedSender<SummaryTask>) {
         let f = async move {
             while let Some(x) = receiver.recv().await {
-                // run_flush_memtable_job(x.clone(),
-                //                        ctx.clone(),
-                //                        HashMap::new(),
-                //                        version_set.clone(),
-                //                        sender.clone()).await
-                //                                       .unwrap();
+                run_flush_memtable_job(x.clone(),
+                                       ctx.clone(),
+                                       HashMap::new(),
+                                       version_set.clone(),
+                                       sender.clone()).await
+                                                      .unwrap();
             }
         };
         tokio::spawn(f);
@@ -339,9 +335,9 @@ impl TsKv {
         let f = async move {
             let mut summary_processer = SummaryProcesser::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
-                // debug!("Apply Summary task");
-                // summary_processer.batch(x);
-                // summary_processer.apply().await;
+                debug!("Apply Summary task");
+                summary_processer.batch(x);
+                summary_processer.apply().await;
             }
         };
         tokio::spawn(f);
@@ -353,21 +349,21 @@ impl TsKv {
         warn!("job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {
-                // match command {
-                //     Task::WritePoints { req, tx } => {
-                //         warn!("writing points.");
-                //         match tskv.write(req).await {
-                //             Ok(resp) => {
-                //                 let _ret = tx.send(Ok(resp));
-                //             },
-                //             Err(err) => {
-                //                 let _ret = tx.send(Err(err));
-                //             },
-                //         }
-                //         warn!("write points completed.");
-                //     },
-                //     _ => panic!("unimplented."),
-                // }
+                match command {
+                    Task::WritePoints { req, tx } => {
+                        warn!("writing points.");
+                        match tskv.write(req).await {
+                            Ok(resp) => {
+                                let _ret = tx.send(Ok(resp));
+                            },
+                            Err(err) => {
+                                let _ret = tx.send(Err(err));
+                            },
+                        }
+                        warn!("write points completed.");
+                    },
+                    _ => panic!("unimplented."),
+                }
             }
         };
 

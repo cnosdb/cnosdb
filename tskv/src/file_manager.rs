@@ -145,9 +145,26 @@ pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
     list
 }
 
-/// Case `std::fs::try_exists` is unstable, so copied the same logic to here
+/// Case `std::fs::try_exists` is unstable, so copied the same logic to here.
+/// Todo For that reason, this way to check file exists may be disabled someday.
+#[inline(always)]
 pub fn try_exists(path: impl AsRef<Path>) -> bool {
     fs::metadata(path).is_ok()
+}
+
+#[inline(always)]
+pub fn open_file(path: impl AsRef<Path>) -> Result<direct_io::File> {
+    get_file_manager().open_file(path)
+}
+
+#[inline(always)]
+pub fn create_file(path: impl AsRef<Path>) -> Result<direct_io::File> {
+    get_file_manager().create_file(path)
+}
+
+#[inline(always)]
+pub fn open_create_file(path: impl AsRef<Path>) -> Result<direct_io::File> {
+    get_file_manager().open_create_file(path)
 }
 
 #[cfg(test)]

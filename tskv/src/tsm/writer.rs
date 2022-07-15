@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use models::{FieldId, Timestamp, ValueType};
 use snafu::{ResultExt, Snafu};
@@ -11,6 +11,7 @@ use super::{
 use crate::{
     direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
+    file_manager, file_utils,
     tsm::{BlockMeta, DataBlock},
 };
 
@@ -52,7 +53,7 @@ use crate::{
 // └───────────────┴─────────┘
 
 const HEADER_LEN: u64 = 5;
-const TSM_MAGIC: u32 = 0x1346613;
+const TSM_MAGIC: u32 = 0x01346613;
 const VERSION: u8 = 1;
 
 pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
@@ -159,18 +160,46 @@ impl IndexBuf {
     }
 }
 
+/// TSM file writer.
+///
+/// # Examples
+/// ```rust
+/// let path = "/tmp/tsm_writer/test_write.tsm";
+/// let file = file_manager::get_file_manager().create_file(path);
+/// // Create a new TSM file, write header.
+/// let mut writer = TsmWriter::open(file).unwrap();
+/// // Write blocks.
+/// writer.write_block(1, &DataBlock::I64{ ts: vec![1], val: vec![1] }).unwrap();
+/// // Write index and footer.
+/// writer.write_index().unwrap();
+/// // Sync to disk.
+/// writer.flush().unwrap();
+/// ```
 pub struct TsmWriter {
     writer: FileCursor,
+    /// Store tsm sequence for debug
+    sequence: u64,
+    /// Store is_delta for debug
+    is_delta: bool,
     size: u64,
     max_size: u64,
     index_buf: IndexBuf,
 }
 
 impl TsmWriter {
-    pub fn open(writer: FileCursor) -> Result<Self> {
-        let mut w = Self { writer, size: 0, max_size: 4 * 1024 * 1024, index_buf: IndexBuf::new() };
+    pub fn open(writer: FileCursor, sequence: u64, is_delta: bool, max_size: u64) -> Result<Self> {
+        let mut w =
+            Self { writer, sequence, is_delta, size: 0, max_size, index_buf: IndexBuf::new() };
         write_header_to(&mut w.writer).context(error::WriteTsmSnafu).map(|s| w.size = s as u64)?;
         Ok(w)
+    }
+
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    pub fn is_delta(&self) -> bool {
+        self.is_delta
     }
 
     pub fn size(&self) -> u64 {
@@ -181,7 +210,7 @@ impl TsmWriter {
         self.size = size;
     }
 
-    pub fn insert(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
+    pub fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
         let mut write_pos = self.writer.pos();
         let ret =
             write_block_to(&mut self.writer, &mut write_pos, &mut self.index_buf, field_id, block);
@@ -191,7 +220,8 @@ impl TsmWriter {
         ret
     }
 
-    pub fn finish(&mut self) -> WriteTsmResult<usize> {
+    pub fn write_index(&mut self) -> WriteTsmResult<usize> {
+        println!("[DEBUG] TsmWRiter::write_index()");
         let mut size = 0_usize;
 
         self.index_buf.set_index_offset(self.writer.pos());
@@ -204,11 +234,22 @@ impl TsmWriter {
     }
 
     pub fn flush(&self) -> WriteTsmResult<()> {
+        println!("[DEBUG] TsmWriter::flush()");
         self.writer.sync_all(FileSync::Hard).context(IOSnafu)
     }
 }
 
-fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
+pub fn new_tsm_writer(dir: &str,
+                      tsm_sequence: u64,
+                      is_delta: bool,
+                      max_size: u64)
+                      -> Result<TsmWriter> {
+    let tsm_path = file_utils::make_tsm_file_name(dir, tsm_sequence);
+    let tsm_cursor = file_manager::create_file(&tsm_path)?.into_cursor();
+    TsmWriter::open(tsm_cursor, tsm_sequence, is_delta, max_size)
+}
+
+pub fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
     let start = writer.pos();
     writer.write(&TSM_MAGIC.to_be_bytes().as_ref())
           .and_then(|_| writer.write(&VERSION.to_be_bytes()[..]))
@@ -243,7 +284,11 @@ fn write_block_to(writer: &mut FileCursor,
     while i < block_count as usize {
         blk_size = 0_usize;
         let start = last_index;
-        let end = point_cnt % MAX_BLOCK_VALUES + i * MAX_BLOCK_VALUES;
+        // let end = point_cnt % MAX_BLOCK_VALUES + i * MAX_BLOCK_VALUES;
+        let mut end = start + MAX_BLOCK_VALUES;
+        if end > point_cnt {
+            end = point_cnt;
+        }
         last_index = end;
 
         min_ts = ts_sli[start];
@@ -309,6 +354,7 @@ mod test {
 
     use models::{FieldId, ValueType};
 
+    use super::new_tsm_writer;
     use crate::{
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
@@ -342,11 +388,11 @@ mod test {
             HashMap::from([(1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
                            (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] })]);
 
-        let mut writer = TsmWriter::open(file).unwrap();
+        let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
         for (fid, blk) in data.iter() {
-            writer.insert(*fid, blk).unwrap();
+            writer.write_block(*fid, blk).unwrap();
         }
-        writer.finish().unwrap();
+        writer.write_index().unwrap();
         writer.flush().unwrap();
 
         println!("File write finish: {}/tsm_write_fast.tsm", dir.to_str().unwrap());
@@ -366,7 +412,7 @@ mod test {
         let mut column_readers: HashMap<FieldId, ColumnReader> = HashMap::new();
         for index_meta in index.iter() {
             column_readers.insert(index_meta.field_id(),
-                                  ColumnReader::new(file.clone(), index_meta.iter()));
+                                  ColumnReader::new(file.clone(), index_meta.block_iterator()));
         }
 
         let ori_data: HashMap<FieldId, Vec<DataBlock>> =
@@ -389,52 +435,53 @@ mod test {
 
     #[test]
     fn test_tsm_write_slow() {
-        let mut cache_data: HashMap<FieldId, DataBlock> = HashMap::new();
-        // Produce many field_ids, from 1 to 1000
-        for i in 1..1000 {
-            let fid = i as u64;
-            // Use i%5 as ValueType
-            let vtyp = ValueType::from((i % 5) as u8);
-            cache_data.insert(fid, DataBlock::new(10000, vtyp));
-            let blk_ref = cache_data.get_mut(&fid).unwrap();
-            // Produce many ts-val pair, ts is from 1 to 10000, val is randomly generated
-            for j in 1..10000 {
-                let val = match vtyp {
-                    ValueType::Unknown => panic!("value type is unknown"),
-                    ValueType::Float => {
-                        DataType::F64(F64Cell { ts: j, val: rand::random::<f64>() })
-                    },
-                    ValueType::Integer => {
-                        DataType::I64(I64Cell { ts: j, val: rand::random::<i64>() })
-                    },
-                    ValueType::Unsigned => {
-                        DataType::U64(U64Cell { ts: j, val: rand::random::<u64>() })
-                    },
-                    ValueType::Boolean => {
-                        DataType::Bool(BoolCell { ts: j, val: rand::random::<bool>() })
-                    },
-                    ValueType::String => {
-                        DataType::Str(StrCell { ts: j, val: b"hello world".to_vec() })
-                    },
-                };
-                blk_ref.insert(&val);
-            }
-        }
-
-        // Write to tsm
-        let dir = Path::new("/tmp/test/tsm_writer");
+        let dir = "/tmp/test/tsm_writer";
         if !file_manager::try_exists(dir) {
             std::fs::create_dir_all(dir).unwrap();
         }
-        let file =
-            get_file_manager().create_file(dir.join("tsm_write_slow.tsm")).unwrap().into_cursor();
-        let len = file.len();
+        // Write 3 files.
+        for file_seq in 1..4 {
+            let mut cache_data: HashMap<FieldId, DataBlock> = HashMap::new();
+            let fid_start = (file_seq - 1) * 100 + 1;
+            let fid_end = (file_seq) * 100 + 1;
+            for i in fid_start..fid_end {
+                let fid = i as u64;
+                // Use i%5 as ValueType
+                let vtyp = ValueType::from((i % 5) as u8);
+                cache_data.insert(fid, DataBlock::new(10000, vtyp));
+                let blk_ref = cache_data.get_mut(&fid).unwrap();
+                // Produce many ts-val pair, ts is from 1 to 10000, val is randomly generated
+                for j in 1..10001 {
+                    let val = match vtyp {
+                        ValueType::Unknown => panic!("value type is unknown"),
+                        ValueType::Float => {
+                            DataType::F64(F64Cell { ts: j, val: rand::random::<f64>() })
+                        },
+                        ValueType::Integer => {
+                            DataType::I64(I64Cell { ts: j, val: rand::random::<i64>() })
+                        },
+                        ValueType::Unsigned => {
+                            DataType::U64(U64Cell { ts: j, val: rand::random::<u64>() })
+                        },
+                        ValueType::Boolean => {
+                            DataType::Bool(BoolCell { ts: j, val: rand::random::<bool>() })
+                        },
+                        ValueType::String => {
+                            DataType::Str(StrCell { ts: j, val: b"hello world".to_vec() })
+                        },
+                    };
+                    blk_ref.insert(&val);
+                }
+            }
 
-        let mut writer = TsmWriter::open(file).unwrap();
-        for (fid, blk) in cache_data.iter() {
-            writer.insert(*fid, blk).unwrap();
+            // Write to tsm
+            let mut writer = new_tsm_writer(&dir, file_seq, false, 0).unwrap();
+            for (fid, blk) in cache_data.iter() {
+                println!("{}", blk);
+                writer.write_block(*fid, blk).unwrap();
+            }
+            writer.write_index().unwrap();
+            writer.flush().unwrap();
         }
-        writer.finish().unwrap();
-        writer.flush().unwrap();
     }
 }

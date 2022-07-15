@@ -137,12 +137,12 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
                                  edits: &mut Vec<VersionEdit>,
                                  version_set: Arc<RwLock<VersionSet>>)
                                  -> Result<()> {
-    let fname = if is_delta {
-        make_delta_file_name(path, meta.file_id)
+    let (fname, fseq) = if is_delta {
+        (make_delta_file_name(path, meta.file_id), meta.file_id)
     } else {
-        make_tsm_file_name(path, meta.file_id)
+        (make_tsm_file_name(path, meta.file_id), meta.file_id)
     };
-    let file_size = build_tsm_file(fname, block_set)?;
+    let file_size = build_tsm_file(fname, fseq, is_delta, block_set)?;
     // update meta
     meta.low_seq = low_seq;
     meta.high_seq = high_seq;
@@ -194,12 +194,17 @@ fn build_block_set(field_size: HashMap<&FieldId, usize>,
     block_set
 }
 
-fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldId, DataBlock>) -> Result<u64> {
-    let file = file_manager::get_file_manager().create_file(fname)?;
-    let mut writer = TsmWriter::open(file.into_cursor())?;
+fn build_tsm_file(tsm_path: PathBuf,
+                  tsm_sequence: u64,
+                  is_delta: bool,
+                  block_set: HashMap<FieldId, DataBlock>)
+                  -> Result<u64> {
+    let file = file_manager::get_file_manager().create_file(tsm_path)?;
+    let mut writer = TsmWriter::open(file.into_cursor(), tsm_sequence, is_delta, 0)?;
     for (fid, blk) in block_set.iter() {
-        writer.insert(*fid, blk).context(error::WriteTsmSnafu)?;
+        writer.write_block(*fid, blk).context(error::WriteTsmSnafu)?;
     }
+    writer.write_index().context(error::WriteTsmSnafu)?;
     writer.flush().context(error::WriteTsmSnafu)?;
     Ok(writer.size())
 }

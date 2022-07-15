@@ -1,4 +1,4 @@
-use std::{io::SeekFrom, sync::Arc};
+use std::{fmt::Display, io::SeekFrom, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
 
@@ -63,7 +63,7 @@ pub struct IndexMeta {
 }
 
 impl IndexMeta {
-    pub fn iter(&self) -> BlockMetaIterator {
+    pub fn block_iterator(&self) -> BlockMetaIterator {
         let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         BlockMetaIterator::new(self.index_ref.clone(),
                                index_offset,
@@ -72,7 +72,7 @@ impl IndexMeta {
                                self.block_count)
     }
 
-    pub fn iter_opt(&self, min_ts: Timestamp, max_ts: Timestamp) -> BlockMetaIterator {
+    pub fn block_iterator_opt(&self, min_ts: Timestamp, max_ts: Timestamp) -> BlockMetaIterator {
         let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         let mut iter = BlockMetaIterator::new(self.index_ref.clone(),
                                               index_offset,
@@ -174,6 +174,19 @@ impl BlockMeta {
     #[inline(always)]
     pub fn val_off(&self) -> u64 {
         decode_be_u64(&self.index_ref.data()[self.block_offset + 32..self.block_offset + 40])
+    }
+}
+
+impl Display for BlockMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+               "BlockMeta: {{ field_id: {}, field_type: {:?}, min_ts: {}, max_ts: {}, offset: {}, val_off: {} }}",
+               self.field_id,
+               self.field_type,
+               self.min_ts,
+               self.max_ts,
+               self.offset(),
+               self.val_off())
     }
 }
 

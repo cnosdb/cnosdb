@@ -61,6 +61,9 @@ pub enum Error {
     #[snafu(display("write tsm block file error: {}", source))]
     WriteTsm { source: WriteTsmError },
 
+    #[snafu(display("compact tsm block file error: {}", reason))]
+    Compact { reason: String },
+
     #[snafu(display("unable to walk dir: {}", source))]
     UnableToWalkDir { source: walkdir::Error },
 

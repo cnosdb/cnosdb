@@ -1,10 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt::write,
-    io::SeekFrom,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{fmt::write, path::Path, sync::Arc};
 
 use bytes::buf;
 use models::{FieldId, SeriesId, Timestamp, ValueType};
@@ -39,29 +33,48 @@ pub struct Tombstone {
 /// - - max: i64 8 bytes
 /// - loop end
 pub struct TsmTombstone {
-    path: PathBuf,
+    path: String,
     tombstones: RwLock<Vec<Tombstone>>,
-    reader: Mutex<File>,
+    tomb_accessor: Mutex<File>,
+    tomb_size: u64,
 }
 
 impl TsmTombstone {
+    #[cfg(test)]
+    pub fn with_path(path: &str) -> Result<Self> {
+        let file = file_manager::get_file_manager().create_file(&path)?;
+        Self::write_header_to(&file)?;
+        file.sync_data(FileSync::Hard).context(error::IOSnafu)?;
+        let tomb_size = file.len();
+
+        Ok(Self { path: path.to_string(),
+                  tombstones: RwLock::new(vec![]),
+                  tomb_accessor: Mutex::new(file),
+                  tomb_size })
+    }
+
     pub fn with_tsm_file_id(path: &str, file_id: u64) -> Result<Self> {
-        let tombstone_path = file_utils::make_tsm_tombstone_file_name(path, file_id);
+        let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
+        let path = path.to_str().expect("UTF-8 tombstone path").to_string();
         let mut is_new = false;
-        if !file_manager::try_exists(&tombstone_path) {
+        if !file_manager::try_exists(&path) {
             is_new = true;
         }
-        let file = file_manager::get_file_manager().open_create_file(&tombstone_path)?;
+        let file = file_manager::get_file_manager().open_create_file(&path)?;
         if is_new {
             Self::write_header_to(&file)?;
             file.sync_data(FileSync::Hard).context(error::IOSnafu)?;
         }
+        let tomb_size = file.len();
 
-        Ok(Self { path: tombstone_path, tombstones: RwLock::new(vec![]), reader: Mutex::new(file) })
+        Ok(Self { path,
+                  tombstones: RwLock::new(vec![]),
+                  tomb_accessor: Mutex::new(file),
+                  tomb_size })
     }
 
     pub fn load(&self) -> Result<()> {
-        let file = self.reader.lock();
+        let file = self.tomb_accessor.lock();
         let mut tombstones = self.tombstones.write();
         tombstones.truncate(0);
         let file_len = file.len();
@@ -105,21 +118,43 @@ impl TsmTombstone {
         Ok(tombstones)
     }
 
-    fn write_header_to(writer: &File) -> Result<()> {
-        writer.write_at(0, &TOMBSTONE_MAGIC.to_be_bytes()[..]).context(error::IOSnafu)?;
-        Ok(())
+    fn write_header_to(writer: &File) -> Result<usize> {
+        writer.write_at(0, &TOMBSTONE_MAGIC.to_be_bytes()[..]).context(error::IOSnafu)
     }
 
-    fn write_to(writer: &File, tombstone: &Tombstone) -> Result<()> {
-        let offset = writer.len();
-        writer.write_at(offset, &tombstone.field_id.to_be_bytes()[..]).context(error::IOSnafu)?;
-        Ok(())
+    fn write_to(writer: &File, pos: u64, tombstone: &Tombstone) -> Result<usize> {
+        let mut size = 0_usize;
+        let ret = writer.write_at(pos, &tombstone.field_id.to_be_bytes()[..])
+                        .and_then(|s| {
+                            size += s;
+                            writer.write_at(pos + size as u64, &tombstone.min_ts.to_be_bytes()[..])
+                        })
+                        .and_then(|s| {
+                            size += s;
+                            writer.write_at(pos + size as u64, &tombstone.max_ts.to_be_bytes()[..])
+                        })
+                        .map(|s| {
+                            size += s;
+                            size
+                        })
+                        .map_err(|e| {
+                            // Write fail, recover writer offset
+                            writer.set_len(pos);
+                            Error::IO { source: e }
+                        });
+
+        ret
     }
 
-    pub fn add_range(&self, field_ids: &[FieldId], min: Timestamp, max: Timestamp) -> Result<()> {
-        let file = self.reader.lock();
+    pub fn add_range(&mut self,
+                     field_ids: &[FieldId],
+                     min: Timestamp,
+                     max: Timestamp)
+                     -> Result<()> {
+        let file = self.tomb_accessor.lock();
         for field_id in field_ids.iter() {
-            Self::write_to(&file, &Tombstone { field_id: *field_id, min_ts: min, max_ts: max })?;
+            Self::write_to(&file, self.tomb_size, &Tombstone { field_id: *field_id, min_ts: min, max_ts: max })
+                .map(|s| self.tomb_size = s as u64)?;
         }
         Ok(())
     }
@@ -135,8 +170,8 @@ impl TsmTombstone {
         false
     }
 
-    pub fn sync(&self) -> Result<()> {
-        let file_cursor = self.reader.lock();
+    pub fn flush(&self) -> Result<()> {
+        let file_cursor = self.tomb_accessor.lock();
         file_cursor.sync_all(FileSync::Hard).context(error::IOSnafu)?;
         Ok(())
     }
@@ -151,12 +186,12 @@ mod test {
 
     #[test]
     fn test_write_read() {
-        let tsm_tombstone = TsmTombstone::with_tsm_file_id("/tmp/", 1).unwrap();
+        let mut tombstone = TsmTombstone::with_tsm_file_id("/tmp/", 1).unwrap();
         // tsm_tombstone.load().unwrap();
-        tsm_tombstone.add_range(&[1, 2, 3], 1, 100).unwrap();
-        tsm_tombstone.sync().unwrap();
+        tombstone.add_range(&[1, 2, 3], 1, 100).unwrap();
+        tombstone.flush().unwrap();
 
-        tsm_tombstone.load().unwrap();
-        let b = tsm_tombstone.overlaps(&TimeRange { max_ts: 2, min_ts: 99 });
+        tombstone.load().unwrap();
+        let b = tombstone.overlaps(&TimeRange { max_ts: 2, min_ts: 99 });
     }
 }

@@ -1,4 +1,6 @@
-use models::ValueType;
+use std::{fmt::Display, mem::size_of, ops::Index};
+
+use models::{Timestamp, ValueType};
 use protos::models::FieldType;
 
 use super::coders;
@@ -148,40 +150,6 @@ impl DataBlock {
         }
     }
 
-    /// Returns the next `DataType` at the inner index.
-    // pub fn next(&mut self) -> Option<DataType> {
-    //     if self.is_empty() {
-    //         return None;
-    //     }
-    //     match self {
-    //         DataBlock::U64 { index, ts, val } => {
-    //             let i = *index as usize;
-    //             *index += 1;
-    //             Some(DataType::U64(U64Cell { ts: ts[i], val: val[i] }))
-    //         },
-    //         DataBlock::I64 { index, ts, val } => {
-    //             let i = *index as usize;
-    //             *index += 1;
-    //             Some(DataType::I64(I64Cell { ts: ts[i], val: val[i] }))
-    //         },
-    //         DataBlock::Str { index, ts, val } => {
-    //             let i = *index as usize;
-    //             *index += 1;
-    //             Some(DataType::Str(StrCell { ts: ts[i], val: val[i].clone() }))
-    //         },
-    //         DataBlock::F64 { index, ts, val } => {
-    //             let i = *index as usize;
-    //             *index += 1;
-    //             Some(DataType::F64(F64Cell { ts: ts[i], val: val[i] }))
-    //         },
-    //         DataBlock::Bool { index, ts, val } => {
-    //             let i = *index as usize;
-    //             *index += 1;
-    //             Some(DataType::Bool(BoolCell { ts: ts[i], val: val[i] }))
-    //         },
-    //     }
-    // }
-
     /// Returns the (ts, val) wrapped by `DataType` at the index 'i'
     pub fn get(&self, i: usize) -> Option<DataType> {
         match self {
@@ -253,7 +221,7 @@ impl DataBlock {
 
     /// Append a `DataBlock` into this `DataBlock`, sorted by timestamp,
     /// if two (timestamp, value) conflict with the same timestamp, use the last value.
-    pub fn append(&mut self, other: &Self) {
+    pub fn merge(&mut self, other: &Self) {
         if other.is_empty() {
             return;
         }
@@ -316,6 +284,61 @@ impl DataBlock {
                 },
                 None => return res,
             }
+        }
+    }
+
+    /// Remote (ts, val) in this `DataBlock` where ts is greater equal than min_ts
+    /// and ts is less than the max_ts
+    pub fn exclude(&mut self, min_ts: Timestamp, max_ts: Timestamp) {
+        fn binary_earch(sli: &[i64], ts: &i64) -> usize {
+            match sli.binary_search(ts) {
+                Ok(i) => i,
+                Err(i) => i,
+            }
+        }
+        let ts_sli = self.ts();
+        let min_idx = binary_earch(ts_sli, &min_ts);
+        let max_idx = binary_earch(ts_sli, &max_ts);
+
+        fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize) {
+            let a = v.as_mut_ptr();
+            unsafe {
+                let b = a.add(min_idx);
+                let c = a.add(max_idx);
+                c.copy_to(b, v.len() - max_idx);
+                v.set_len(v.len() + min_idx - max_idx);
+            }
+        }
+
+        fn exclude_slow(v: &mut Vec<Byte>, min_idx: usize, max_idx: usize) {
+            let len = v.len() + min_idx - max_idx;
+            for i in min_idx..len {
+                v[i] = v[max_idx - min_idx + i].clone();
+            }
+            v.truncate(len);
+        }
+
+        match self {
+            DataBlock::U64 { ts, val } => {
+                exclude_fast(ts, min_idx, max_idx);
+                exclude_fast(val, min_idx, max_idx);
+            },
+            DataBlock::I64 { ts, val } => {
+                exclude_fast(ts, min_idx, max_idx);
+                exclude_fast(val, min_idx, max_idx);
+            },
+            DataBlock::Str { ts, val } => {
+                exclude_fast(ts, min_idx, max_idx);
+                exclude_slow(val, min_idx, max_idx);
+            },
+            DataBlock::F64 { ts, val } => {
+                exclude_fast(ts, min_idx, max_idx);
+                exclude_fast(val, min_idx, max_idx);
+            },
+            DataBlock::Bool { ts, val } => {
+                exclude_fast(ts, min_idx, max_idx);
+                exclude_fast(val, min_idx, max_idx);
+            },
         }
     }
 
@@ -384,8 +407,72 @@ impl DataBlock {
     pub fn decode() {}
 }
 
+impl Display for DataBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataBlock::U64 { ts, val } => {
+                if ts.len() > 0 {
+                    write!(f,
+                           "U64 {{ len: {}, min_ts: {}, max_ts: {} }}",
+                           ts.len(),
+                           ts.first().unwrap(),
+                           ts.last().unwrap())
+                } else {
+                    write!(f, "U64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
+                }
+            },
+            DataBlock::I64 { ts, val } => {
+                if ts.len() > 0 {
+                    write!(f,
+                           "I64 {{ len: {}, min_ts: {}, max_ts: {} }}",
+                           ts.len(),
+                           ts.first().unwrap(),
+                           ts.last().unwrap())
+                } else {
+                    write!(f, "I64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
+                }
+            },
+            DataBlock::Str { ts, val } => {
+                if ts.len() > 0 {
+                    write!(f,
+                           "Str {{ len: {}, min_ts: {}, max_ts: {} }}",
+                           ts.len(),
+                           ts.first().unwrap(),
+                           ts.last().unwrap())
+                } else {
+                    write!(f, "Str {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
+                }
+            },
+            DataBlock::F64 { ts, val } => {
+                if ts.len() > 0 {
+                    write!(f,
+                           "F64 {{ len: {}, min_ts: {}, max_ts: {} }}",
+                           ts.len(),
+                           ts.first().unwrap(),
+                           ts.last().unwrap())
+                } else {
+                    write!(f, "F64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
+                }
+            },
+            DataBlock::Bool { ts, val } => {
+                if ts.len() > 0 {
+                    write!(f,
+                           "Bool {{ len: {}, min_ts: {}, max_ts: {} }}",
+                           ts.len(),
+                           ts.first().unwrap(),
+                           ts.last().unwrap())
+                } else {
+                    write!(f, "Bool {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
+                }
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::mem::size_of;
+
     use crate::tsm::DataBlock;
 
     #[test]
@@ -401,5 +488,31 @@ mod test {
     #[test]
     fn test_append_block() {
         // let b1 = DataBlock
+    }
+
+    #[test]
+    fn test_data_block_exclude() {
+        let mut blk = DataBlock::U64 { ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+                                       val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19] };
+        blk.exclude(2, 8);
+        dbg!(&blk);
+        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 8, 9], val: vec![10, 11, 18, 19] });
+
+        let mut blk = DataBlock::Str { ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+                                       val: vec![vec![10],
+                                                 vec![11],
+                                                 vec![12],
+                                                 vec![13],
+                                                 vec![14],
+                                                 vec![15],
+                                                 vec![16],
+                                                 vec![17],
+                                                 vec![18],
+                                                 vec![19]] };
+        blk.exclude(2, 8);
+        dbg!(&blk);
+        assert_eq!(blk,
+                   DataBlock::Str { ts: vec![0, 1, 8, 9],
+                                    val: vec![vec![10], vec![11], vec![18], vec![19]] })
     }
 }
