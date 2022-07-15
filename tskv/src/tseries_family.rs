@@ -2,7 +2,6 @@ use std::{
     borrow::{Borrow, BorrowMut},
     cell::{Ref, RefCell},
     cmp::min,
-    mem::replace,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::{
@@ -222,6 +221,7 @@ impl Version {
 pub struct SuperVersion {
     pub id: u32,
     pub delta_mut_cache: Arc<RwLock<MemCache>>,
+    pub delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
     pub mut_cache: Arc<RwLock<MemCache>>,
     pub immut_cache: Vec<Arc<RwLock<MemCache>>>,
     pub cur_version: Arc<RwLock<Version>>,
@@ -232,19 +232,28 @@ pub struct SuperVersion {
 impl SuperVersion {
     pub fn new(id: u32,
                delta_mut_cache: Arc<RwLock<MemCache>>,
+               delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
                mut_cache: Arc<RwLock<MemCache>>,
                immut_cache: Vec<Arc<RwLock<MemCache>>>,
                cur_version: Arc<RwLock<Version>>,
                opt: Arc<TseriesFamOpt>,
                version_id: u64)
                -> Self {
-        Self { id, delta_mut_cache, mut_cache, immut_cache, cur_version, opt, version_id }
+        Self { id,
+               delta_mut_cache,
+               delta_immut_cache,
+               mut_cache,
+               immut_cache,
+               cur_version,
+               opt,
+               version_id }
     }
 }
 
 pub struct TseriesFamily {
     tf_id: u32,
     delta_mut_cache: Arc<RwLock<MemCache>>,
+    delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     // todo: need to del RwLock in memcache
@@ -275,10 +284,12 @@ impl TseriesFamily {
         Self { tf_id,
                seq_no: seq,
                delta_mut_cache: delta_mm.clone(),
+               delta_immut_cache: Default::default(),
                mut_cache: mm.clone(),
                immut_cache: Default::default(),
                super_version: Arc::new(SuperVersion::new(tf_id,
                                                          delta_mm,
+                                                         Default::default(),
                                                          mm,
                                                          Default::default(),
                                                          version.clone(),
@@ -296,8 +307,9 @@ impl TseriesFamily {
         self.immut_cache.push(self.mut_cache.clone());
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         let vers = SuperVersion::new(self.tf_id,
-                                     cache.clone(),
                                      self.delta_mut_cache.clone(),
+                                     self.delta_immut_cache.clone(),
+                                     cache.clone(),
                                      self.immut_cache.clone(),
                                      self.version.clone(),
                                      self.opts.clone(),
@@ -317,6 +329,27 @@ impl TseriesFamily {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         let vers = SuperVersion::new(self.tf_id,
                                      self.delta_mut_cache.clone(),
+                                     self.delta_immut_cache.clone(),
+                                     self.mut_cache.clone(),
+                                     self.immut_cache.clone(),
+                                     self.version.clone(),
+                                     self.opts.clone(),
+                                     self.super_version_id.load(Ordering::SeqCst));
+        self.super_version = Arc::new(vers);
+    }
+
+    pub async fn switch_to_delta_immutable(&mut self) {
+        self.delta_mut_cache.write().await.switch_to_immutable();
+        self.delta_immut_cache.push(self.delta_mut_cache.clone());
+        self.delta_mut_cache =
+            Arc::new(RwLock::new(MemCache::new(self.tf_id,
+                                               GLOBAL_CONFIG.max_memcache_size,
+                                               self.seq_no,
+                                               true)));
+        self.super_version_id.fetch_add(1, Ordering::SeqCst);
+        let vers = SuperVersion::new(self.tf_id,
+                                     self.delta_mut_cache.clone(),
+                                     self.delta_immut_cache.clone(),
                                      self.mut_cache.clone(),
                                      self.immut_cache.clone(),
                                      self.version.clone(),
@@ -326,42 +359,92 @@ impl TseriesFamily {
     }
 
     async fn wrap_delta_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+        info!("delta memcache full or other,switch to immutable");
+        self.switch_to_delta_immutable().await;
+        let len = self.delta_immut_cache.len();
+        let mut imut = vec![];
+        for i in self.delta_immut_cache.iter() {
+            if !i.read().await.flushed {
+                imut.push(i.clone());
+            }
+        }
+        self.delta_immut_cache = imut;
+
+        if len != self.delta_immut_cache.len() {
+            self.super_version_id.fetch_add(1, Ordering::SeqCst);
+            let vers = SuperVersion::new(self.tf_id,
+                                         self.delta_mut_cache.clone(),
+                                         self.delta_immut_cache.clone(),
+                                         self.mut_cache.clone(),
+                                         self.immut_cache.clone(),
+                                         self.version.clone(),
+                                         self.opts.clone(),
+                                         self.super_version_id.load(Ordering::SeqCst));
+            self.super_version = Arc::new(vers);
+        }
+
         let mut req_mem = vec![];
-        req_mem.push((self.tf_id, self.delta_mut_cache.clone()));
-        self.delta_mut_cache =
-            Arc::new(RwLock::new(MemCache::new(self.tf_id,
-                                               GLOBAL_CONFIG.max_memcache_size,
-                                               self.seq_no,
-                                               true)));
-        self.super_version_id.fetch_add(1, Ordering::SeqCst);
-        let vers = SuperVersion::new(self.tf_id,
-                                     self.delta_mut_cache.clone(),
-                                     self.mut_cache.clone(),
-                                     self.immut_cache.clone(),
-                                     self.version.clone(),
-                                     self.opts.clone(),
-                                     self.super_version_id.load(Ordering::SeqCst));
-        self.super_version = Arc::new(vers);
+        {
+            for i in self.delta_immut_cache.iter() {
+                {
+                    let mut write_i = i.write().await;
+                    if write_i.flushing == true {
+                        continue;
+                    }
+                    write_i.flushing = true;
+                }
+                req_mem.push((self.tf_id, i.clone()));
+            }
+            if req_mem.is_empty() {
+                return;
+            }
+        }
+
         FLUSH_REQ.lock().push(FlushReq { mems: req_mem, wait_req: 0 });
         info!("delta flush_req send,now req queue len : {}", FLUSH_REQ.lock().len());
         sender.send(FLUSH_REQ.clone()).expect("error send flush req to kvcore");
     }
 
-    fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    async fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+        let len = self.immut_cache.len();
+        let mut imut = vec![];
+        for i in self.immut_cache.iter() {
+            if !i.read().await.flushed {
+                imut.push(i.clone());
+            }
+        }
+        self.immut_cache = imut;
+
+        if len != self.immut_cache.len() {
+            self.super_version_id.fetch_add(1, Ordering::SeqCst);
+            let vers = SuperVersion::new(self.tf_id,
+                                         self.delta_mut_cache.clone(),
+                                         self.delta_immut_cache.clone(),
+                                         self.mut_cache.clone(),
+                                         self.immut_cache.clone(),
+                                         self.version.clone(),
+                                         self.opts.clone(),
+                                         self.super_version_id.load(Ordering::SeqCst));
+            self.super_version = Arc::new(vers);
+        }
+
+        self.immut_ts_min = self.mut_ts_max;
+        self.version.write().await.max_level_ts = self.mut_ts_max;
         let mut req_mem = vec![];
         for i in self.immut_cache.iter() {
+            {
+                let mut write_i = i.write().await;
+                if write_i.flushing == true {
+                    continue;
+                }
+                write_i.flushing = true;
+            }
             req_mem.push((self.tf_id, i.clone()));
         }
-        self.immut_cache = vec![];
-        self.super_version_id.fetch_add(1, Ordering::SeqCst);
-        let vers = SuperVersion::new(self.tf_id,
-                                     self.delta_mut_cache.clone(),
-                                     self.mut_cache.clone(),
-                                     self.immut_cache.clone(),
-                                     self.version.clone(),
-                                     self.opts.clone(),
-                                     self.super_version_id.load(Ordering::SeqCst));
-        self.super_version = Arc::new(vers);
+        if req_mem.len() < GLOBAL_CONFIG.max_immemcache_num {
+            return;
+        }
+
         FLUSH_REQ.lock().push(FlushReq { mems: req_mem, wait_req: 0 });
         info!("flush_req send,now req queue len : {}", FLUSH_REQ.lock().len());
         sender.send(FLUSH_REQ.clone()).expect("error send flush req to kvcore");
@@ -390,6 +473,7 @@ impl TseriesFamily {
             let mut delta_mem = self.super_version.delta_mut_cache.write().await;
             let _ = delta_mem.insert_raw(seq, fid, ts, dtype, val);
         }
+
         if ts >= self.immut_ts_min && !self.delta_mut_cache.read().await.data_cache.is_empty() {
             self.wrap_delta_flush_req(sender.clone()).await
         }
@@ -398,9 +482,7 @@ impl TseriesFamily {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable().await;
             if self.immut_cache.len() >= GLOBAL_CONFIG.max_immemcache_num {
-                self.immut_ts_min = self.mut_ts_max;
-                self.version.write().await.max_level_ts = self.mut_ts_max;
-                self.wrap_flush_req(sender.clone());
+                self.wrap_flush_req(sender.clone()).await;
             }
         }
 
@@ -439,6 +521,10 @@ impl TseriesFamily {
 
     pub fn delta_cache(&self) -> &Arc<RwLock<MemCache>> {
         &self.delta_mut_cache
+    }
+
+    pub fn delta_immut_cache(&self) -> &Vec<Arc<RwLock<MemCache>>> {
+        &self.delta_immut_cache
     }
 
     pub fn im_cache(&self) -> &Vec<Arc<RwLock<MemCache>>> {
