@@ -51,7 +51,7 @@ impl FlushTask {
         let mut field_size_delta = HashMap::new();
         let mut mem_guard = vec![];
         for i in self.mems.iter() {
-            mem_guard.push(i.read().await);
+            mem_guard.push(i.write().await);
         }
         for mem in mem_guard.iter() {
             let data = &mem.data_cache;
@@ -115,6 +115,9 @@ impl FlushTask {
                                     version_set.clone()).await
                                                         .expect("Failed to build tsm file");
         }
+        for i in mem_guard.iter_mut() {
+            i.flushed = true;
+        }
         Ok(())
     }
 }
@@ -146,15 +149,20 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
     meta.level = level as u32;
     meta.file_size = file_size;
     meta.is_delta = is_delta;
-    let mut version_s = version_set.write().await;
-    let mut version = version_s.get_tsfamily(tsf_id as u64).unwrap().version().write().await;
-    while version.levels_info.len() <= level {
-        let i: u32 = version.levels_info.len() as u32;
-        version.levels_info.push(LevelInfo::init(i));
+    let max_level_ts;
+    {
+        let version_s = version_set.read().await;
+        let mut version =
+            version_s.get_tsfamily_immut(tsf_id as u64).unwrap().version().write().await;
+        max_level_ts = version.max_level_ts;
+        while version.levels_info.len() <= level {
+            let i: u32 = version.levels_info.len() as u32;
+            version.levels_info.push(LevelInfo::init(i));
+        }
+        version.levels_info[level].apply(meta);
     }
-    version.levels_info[level].apply(meta);
     let mut edit = VersionEdit::new();
-    edit.add_file(meta.level, tsf_id, meta.file_id, high_seq, version.max_level_ts, meta.clone());
+    edit.add_file(meta.level, tsf_id, meta.file_id, high_seq, max_level_ts, meta.clone());
     edits.push(edit);
     Ok(())
 }
@@ -209,6 +217,9 @@ pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,
     {
         let mut reqs = reqs.lock();
         info!("get flush request len {}", reqs.len());
+        if reqs.len() == 0 {
+            return Ok(());
+        }
         for req in reqs.iter() {
             for (tf, mem) in &req.mems {
                 while *tf >= mems.len() as u32 {

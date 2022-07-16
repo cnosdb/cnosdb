@@ -81,6 +81,10 @@ impl MemEntry {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct MemCache {
+    // has been flushed
+    pub flushed: bool,
+    // flushing
+    pub flushing: bool,
     // if true,ready be pushed into immemcache
     immutable: bool,
     // partiton id
@@ -101,7 +105,9 @@ pub struct MemCache {
 impl MemCache {
     pub fn new(tf_id: u32, max_size: u64, seq: u64, is_delta: bool) -> Self {
         let cache = HashMap::new();
-        Self { immutable: false,
+        Self { flushed: false,
+               flushing: false,
+               immutable: false,
                tf_id,
                max_buf_size: max_size,
                data_cache: cache,
@@ -188,5 +194,9 @@ impl MemCache {
 
     pub fn max_buf_size(&self) -> u64 {
         self.max_buf_size
+    }
+
+    pub fn cache_size(&self) -> u64 {
+        self.cache_size
     }
 }

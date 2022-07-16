@@ -26,6 +26,6 @@ seq_no = 0
 #SchemaStoreConfig
 schema_store_config_dir = "dev/schema"
 #tsfamily num
-tsfamily_num = 2
+tsfamily_num = 1
 #forward index config
 forward_index_path = "/tmp/test/tskv.fidx"

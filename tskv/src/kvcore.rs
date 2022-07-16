@@ -162,8 +162,8 @@ impl TsKv {
     }
 
     pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
-        let mut version_set = self.version_set.write().await;
-        if let Some(tsf) = version_set.get_tsfamily(sid) {
+        let version_set = self.version_set.read().await;
+        if let Some(tsf) = version_set.get_tsfamily_immut(sid) {
             // get data from memcache
             if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
                 info!("memcache::{}::{}", sid.clone(), field_id);
@@ -176,8 +176,22 @@ impl TsKv {
                 mem_entry.read_cell(time_range);
             }
 
+            // get data from immut_delta_memcache
+            for mem_cache in tsf.delta_immut_cache().iter() {
+                if mem_cache.read().await.flushed {
+                    continue;
+                }
+                if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+                    info!("delta im_memcache::{}::{}", sid.clone(), field_id);
+                    mem_entry.read_cell(time_range);
+                }
+            }
+
             // get data from im_memcache
             for mem_cache in tsf.im_cache().iter() {
+                if mem_cache.read().await.flushed {
+                    continue;
+                }
                 if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
                     info!("im_memcache::{}::{}", sid.clone(), field_id);
                     mem_entry.read_cell(time_range);
@@ -499,7 +513,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 10);
+        let points = models_helper::create_random_points(&mut fbb, 5);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
