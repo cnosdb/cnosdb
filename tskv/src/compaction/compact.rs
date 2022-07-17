@@ -51,6 +51,13 @@ impl Ord for CompactingBlockMeta {
     }
 }
 
+enum CompactingBlock {
+    DataBlock { field_id: FieldId, data_block: DataBlock },
+    Raw { meta: BlockMeta, raw: Vec<u8> },
+}
+
+impl CompactingBlock {}
+
 struct CompactIterator {
     tsm_readers: Vec<TsmReader>,
 
@@ -66,7 +73,7 @@ struct CompactIterator {
     curr_fid: Option<FieldId>,
     last_fid: Option<FieldId>,
 
-    merged_blocks: VecDeque<DataBlock>,
+    merged_blocks: VecDeque<CompactingBlock>,
 
     max_datablock_values: u64,
 }
@@ -96,40 +103,34 @@ impl CompactIterator {
         for (i, idx) in self.tsm_index_iters.iter_mut().enumerate() {
             next_tsm_file_idx += 1;
             if self.finished_readers[i] {
-                println!("file no.{} has been finished.", i);
+                info!("file no.{} has been finished, continue.", i);
                 continue;
             }
             if let Some(idx_meta) = idx.peek() {
-                println!("got idx_meta: field_id: {}, field_type: {:?}, block_count: {}",
-                         idx_meta.field_id(),
-                         idx_meta.field_type(),
-                         idx_meta.block_count());
                 // Get field id from first block for this turn
                 if let Some(fid) = self.curr_fid {
                     // This is the idx of the next field_id.
                     if fid != idx_meta.field_id() {
-                        println!("skip idx_meta to {}", idx_meta.field_id());
                         continue;
                     }
                 } else {
                     // This is the first idx.
                     self.curr_fid = Some(idx_meta.field_id());
                     self.last_fid = Some(idx_meta.field_id());
-                    println!("turn first field_id: {}", idx_meta.field_id());
                 }
 
                 let blk_cnt = idx_meta.block_count();
 
                 self.turn_tsm_blks.push(idx_meta.block_iterator());
                 self.turn_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx - 1);
-                println!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, timerange: {:?}",
-                         idx_meta.field_id(),
-                         idx_meta.field_type(),
-                         idx_meta.block_count(),
-                         idx_meta.timerange());
+                info!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, timerange: {:?}",
+                      idx_meta.field_id(),
+                      idx_meta.field_type(),
+                      idx_meta.block_count(),
+                      idx_meta.timerange());
             } else {
                 // This tsm-file has been finished
-                println!("file no.{} is finished.", i);
+                info!("file no.{} is finished.", i);
                 self.finished_readers[i] = true;
                 self.finished_reader_cnt += 1;
             }
@@ -144,7 +145,7 @@ impl CompactIterator {
             let mut sorted_blk_metas: BinaryHeap<CompactingBlockMeta> =
                 BinaryHeap::with_capacity(self.turn_tsm_blks.len());
             let (mut blk_min_ts, mut blk_max_ts) = (Timestamp::MIN, Timestamp::MAX);
-            let mut has_overlaps = false;
+            let mut _has_overlaps = false;
             for (i, blk_iter) in self.turn_tsm_blks.iter_mut().enumerate() {
                 while let Some(blk_meta) = blk_iter.next() {
                     if i == 0 {
@@ -157,7 +158,7 @@ impl CompactIterator {
                         {
                             blk_min_ts = blk_min_ts.min(blk_meta.min_ts());
                             blk_max_ts = blk_max_ts.max(blk_meta.max_ts());
-                            has_overlaps = true;
+                            _has_overlaps = true;
                         }
                     }
                     sorted_blk_metas.push(CompactingBlockMeta(self.turn_tsm_blk_tsm_reader_idx[i],
@@ -167,7 +168,6 @@ impl CompactIterator {
 
             let mut merging_blks: Vec<DataBlock> = Vec::with_capacity(self.turn_tsm_blks.len());
             while let Some(cbm) = sorted_blk_metas.pop() {
-                println!("sorted block meta: {}-{}", cbm.0, cbm.1);
                 let data_blk = match self.tsm_readers[cbm.0].get_data_block(&cbm.1)
                                                             .context(error::ReadTsmSnafu)
                 {
@@ -182,8 +182,10 @@ impl CompactIterator {
                 break;
             }
             let data_blk = DataBlock::merge_blocks(merging_blks);
-            println!("get merged data block: {}", data_blk);
-            self.merged_blocks.push_back(data_blk);
+            self.merged_blocks
+                .push_back(CompactingBlock::DataBlock { field_id: self.curr_fid
+                                                                      .expect("been checked"),
+                                                        data_block: data_blk });
         }
 
         Ok(())
@@ -191,25 +193,24 @@ impl CompactIterator {
 }
 
 impl Iterator for CompactIterator {
-    type Item = Result<(FieldId, DataBlock)>;
+    type Item = Result<CompactingBlock>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(blk) = self.merged_blocks.pop_front() {
-            if (blk.len() as u64) < self.max_datablock_values {
-                // This block may be half-writen in past turn
-            }
-            println!("pop the front merged data block-1: {}", blk);
-            return Some(Ok((self.last_fid.expect("been checked"), blk)));
+            // if (blk.len() as u64) < self.max_datablock_values {
+            // // This block may be half-writen in past turn
+            // }
+            return Some(Ok(blk));
         }
         loop {
-            println!("------------------------------");
+            info!("------------------------------");
 
             // For each tsm-file, get next index reader for current turn field id
             self.next_field_id();
 
-            println!("selected turn blocks count: {}", self.turn_tsm_blks.len());
+            info!("selected turn blocks count: {}", self.turn_tsm_blks.len());
             if self.turn_tsm_blks.len() == 0 {
-                println!("turn for field_id {:?} is finished", self.curr_fid);
+                info!("turn for field_id {:?} is finished", self.curr_fid);
                 self.curr_fid = None;
                 break;
             }
@@ -225,11 +226,7 @@ impl Iterator for CompactIterator {
         }
 
         if let Some(blk) = self.merged_blocks.pop_front() {
-            if (blk.len() as u64) < self.max_datablock_values {
-                // This block may be half-writen in past turn
-            }
-            println!("pop the front merged data block-2: {}", blk);
-            return Some(Ok((self.last_fid.expect("been checked"), blk)));
+            return Some(Ok(blk));
         }
         None
     }
@@ -285,29 +282,32 @@ pub fn run_compaction_job(request: CompactReq,
     }
 
     let tsm_readers_cnt = tsm_readers.len();
-    // TODO max_datablock_values is a const value in module `tsm`.
     let mut iter = CompactIterator { tsm_readers,
                                      tsm_index_iters,
                                      finished_readers: vec![false; tsm_readers_cnt],
-                                     max_datablock_values: 1000,
+                                     max_datablock_values: max_data_block_size,
                                      ..Default::default() };
     let tsm_dir = tsf_opt.expect("been checked").tsm_dir.clone();
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edits: Vec<VersionEdit> = Vec::new();
     while let Some(next_blk) = iter.next() {
-        println!("===============================");
-        println!("got next block: {}", next_blk.is_err());
-        if let Ok((fid, blk)) = next_blk {
-            println!("field_id: {}, data_block: {}", fid, blk);
-            match tsm_writer.write_block(fid, &blk) {
+        if let Ok(blk) = next_blk {
+            info!("===============================");
+            let write_ret = match blk {
+                CompactingBlock::DataBlock { field_id: fid, data_block: b } => {
+                    tsm_writer.write_block(fid, &b)
+                },
+                CompactingBlock::Raw { meta, raw } => tsm_writer.write_raw(&meta, &raw),
+            };
+            match write_ret {
                 Err(e) => match e {
                     crate::tsm::WriteTsmError::IO { source } => {
-                        // error!("IO error when write tsm");
-                        println!("IO error when write tsm");
+                        // TODO handle this
+                        error!("IO error when write tsm");
                     },
                     crate::tsm::WriteTsmError::Encode { source } => {
-                        // error!("Encoding error when write tsm");
-                        println!("Encoding error when write tsm");
+                        // TODO handle this
+                        error!("Encoding error when write tsm");
                     },
                     crate::tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                         tsm_writer.write_index().context(error::WriteTsmSnafu)?;
@@ -365,12 +365,14 @@ mod test {
     use std::{
         collections::HashMap,
         default,
+        path::Path,
         sync::{
             atomic::{AtomicBool, AtomicU32, AtomicU64},
             Arc,
         },
     };
 
+    use models::FieldId;
     use utils::BloomFilter;
 
     use crate::{
@@ -379,30 +381,21 @@ mod test {
         file_manager,
         kv_option::TseriesFamOpt,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
-        tsm::{self, DataBlock},
+        tsm::{self, DataBlock, TsmReader},
     };
 
-    fn prepare_column_file() -> (u64, Vec<Arc<ColumnFile>>) {
-        let dir = "/tmp/test/compaction";
-        if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).unwrap();
+    fn write_data_blocks_to_column_file(dir: impl AsRef<Path>,
+                                        data: Vec<HashMap<FieldId, DataBlock>>)
+                                        -> (u64, Vec<Arc<ColumnFile>>) {
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
         }
-        let test_data =
-            vec![HashMap::from([(1, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
-                                (2, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
-                                (3, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] })]),
-                 HashMap::from([(1, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
-                                (2, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
-                                (3, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] })]),
-                 HashMap::from([(1, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
-                                (2, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
-                                (3, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] })]),];
-
         let mut cfs = Vec::new();
-        for (i, data) in test_data.iter().enumerate() {
-            let file_seq = i as u64 + 1;
+        let mut file_seq = 0;
+        for (i, d) in data.iter().enumerate() {
+            file_seq = i as u64 + 1;
             let mut writer = tsm::new_tsm_writer(&dir, file_seq, false, 0).unwrap();
-            for (fid, blk) in data.iter() {
+            for (fid, blk) in d.iter() {
                 writer.write_block(*fid, blk).unwrap();
             }
             writer.write_index().unwrap();
@@ -412,21 +405,62 @@ mod test {
                                               writer.size(),
                                               false)));
         }
-
-        (4, cfs)
+        (file_seq + 1, cfs)
     }
 
-    fn prepare_tseries_fam_opt() -> Arc<TseriesFamOpt> {
+    fn read_data_block_from_column_file(path: impl AsRef<Path>) -> HashMap<FieldId, DataBlock> {
+        let tsm_reader = TsmReader::open(path).unwrap();
+        let mut data: HashMap<FieldId, DataBlock> = HashMap::new();
+        for idx in tsm_reader.index_iterator() {
+            let field_id = idx.field_id();
+            for blk_meta in idx.block_iterator() {
+                let blk = tsm_reader.get_data_block(&blk_meta).unwrap();
+                data.insert(field_id, blk);
+            }
+        }
+        data
+    }
+
+    fn check_column_file(path: impl AsRef<Path>, expected_data: HashMap<FieldId, DataBlock>) {
+        let data = read_data_block_from_column_file(path);
+        for (k, v) in expected_data.iter() {
+            assert_eq!(v, data.get(k).unwrap());
+        }
+    }
+
+    fn prepare_tseries_fam_opt(tsm_dir: impl AsRef<Path>) -> Arc<TseriesFamOpt> {
         Arc::new(TseriesFamOpt { base_file_size: 16777216,
                                  max_compact_size: 2147483648,
-                                 tsm_dir: "/tmp/test/compaction".to_string(),
+                                 tsm_dir: tsm_dir.as_ref()
+                                                 .to_str()
+                                                 .expect("UTF-8 path")
+                                                 .to_string(),
                                  ..Default::default() })
     }
 
     #[test]
     fn test_compaction_fast() {
-        let (next_file_id, files) = prepare_column_file();
-        let tsf_opt = prepare_tseries_fam_opt();
+        let (next_file_id, files) = write_data_blocks_to_column_file(
+                                                                     "/tmp/test/compaction",
+                                                                     vec![
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+                (2, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+                (3, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+            ]),
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+                (2, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+                (3, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+            ]),
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+                (2, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+                (3, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+            ]),
+        ],
+        );
+        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction");
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
         let level_infos =
@@ -437,18 +471,48 @@ mod test {
         kernel.set_file_id(next_file_id);
 
         run_compaction_job(compact_req, kernel.clone()).unwrap();
+
+        check_column_file("/tmp/test/compaction/_000004.tsm",
+                          HashMap::from([(1,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] }),
+                                         (2,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] }),
+                                         (3,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] })]));
     }
 
     #[test]
-    fn test_compaction_slow() {
-        let files =
-            vec![Arc::new(ColumnFile::new(1, TimeRange::new(1, 10000), 9626716, false)),
-                 Arc::new(ColumnFile::new(2, TimeRange::new(10001, 20000), 9628296, false)),
-                 Arc::new(ColumnFile::new(3, TimeRange::new(20001, 30000), 9628799, false)),];
-        let tsf_opt = Arc::new(TseriesFamOpt { base_file_size: 16777216,
-                                               max_compact_size: 2147483648,
-                                               tsm_dir: "/tmp/test/compaction".to_string(),
-                                               ..Default::default() });
+    fn test_compaction_1() {
+        let (next_file_id, files) = write_data_blocks_to_column_file(
+                                                                     "/tmp/test/compaction/1",
+                                                                     vec![
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+                (2, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+                (3, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+            ]),
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+                (2, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+                (3, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+            ]),
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+                (2, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+                (3, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+            ]),
+        ],
+        );
+        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/1");
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
         let level_infos =
@@ -456,8 +520,77 @@ mod test {
         let version = Arc::new(Version::new(1, 1, "version_1".to_string(), level_infos, 1000));
         let compact_req = CompactReq { files: (1, files), version, tsf_id: 1, out_level: 2 };
         let kernel = Arc::new(GlobalContext::new());
-        kernel.set_file_id(4);
+        kernel.set_file_id(next_file_id);
 
         run_compaction_job(compact_req, kernel.clone()).unwrap();
+
+        check_column_file("/tmp/test/compaction/1/_000004.tsm",
+                          HashMap::from([(1,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] }),
+                                         (2,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] }),
+                                         (3,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] })]));
+    }
+
+    #[test]
+    fn test_compaction_2() {
+        let (next_file_id, files) = write_data_blocks_to_column_file(
+                                                                     "/tmp/test/compaction/2",
+                                                                     vec![
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }),
+                (2, DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }),
+                (3, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
+            ]),
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+                (2, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
+                (3, DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8] }),
+            ]),
+            HashMap::from([
+                (1, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+                (2, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+                (3, DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }),
+            ]),
+        ],
+        );
+        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/2");
+        let mut lv1_info = LevelInfo::init(1);
+        lv1_info.tsf_opt = tsf_opt;
+        let level_infos =
+            vec![lv1_info, LevelInfo::init(2), LevelInfo::init(3), LevelInfo::init(4),];
+        let version = Arc::new(Version::new(1, 1, "version_1".to_string(), level_infos, 1000));
+        let compact_req = CompactReq { files: (1, files), version, tsf_id: 1, out_level: 2 };
+        let kernel = Arc::new(GlobalContext::new());
+        kernel.set_file_id(next_file_id);
+
+        run_compaction_job(compact_req, kernel.clone()).unwrap();
+
+        check_column_file("/tmp/test/compaction/2/_000004.tsm",
+                          HashMap::from([(1,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] }),
+                                         (2,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] }),
+                                         (3,
+                                          DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8,
+                                                                    9],
+                                                           val: vec![1, 2, 3, 4, 5, 6, 7,
+                                                                     8, 9] })]));
     }
 }

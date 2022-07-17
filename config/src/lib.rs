@@ -46,7 +46,7 @@ impl GlobalConfig {
 
 lazy_static! {
     pub static ref GLOBAL_CONFIG: GlobalConfig = {
-        let mut file = File::open("/tmp/test/config/config.toml").unwrap();
+        let mut file = File::open("../config/config.toml").unwrap();
         let mut content = String::new();
         file.read_to_string(&mut content).unwrap();
         let config: GlobalConfig = toml::from_str(&content).unwrap();

@@ -241,8 +241,26 @@ impl TsmWriter {
         ret
     }
 
+    pub fn write_raw(&mut self, block_meta: &BlockMeta, block: &[u8]) -> WriteTsmResult<usize> {
+        let mut write_pos = self.writer.pos();
+        self.min_ts = self.min_ts.min(block_meta.min_ts());
+        self.max_ts = self.max_ts.max(block_meta.max_ts());
+        let ret = write_raw_data_to(&mut self.writer,
+                                    &mut write_pos,
+                                    &mut self.index_buf,
+                                    block_meta.field_id(),
+                                    block_meta.field_type(),
+                                    block_meta.min_ts(),
+                                    block_meta.max_ts(),
+                                    block_meta.val_off() - block_meta.offset(),
+                                    block);
+        if let Ok(s) = ret {
+            self.size += s as u64
+        }
+        ret
+    }
+
     pub fn write_index(&mut self) -> WriteTsmResult<usize> {
-        println!("[DEBUG] TsmWRiter::write_index()");
         let mut size = 0_usize;
 
         self.index_buf.set_index_offset(self.writer.pos());
@@ -255,7 +273,6 @@ impl TsmWriter {
     }
 
     pub fn flush(&self) -> WriteTsmResult<()> {
-        println!("[DEBUG] TsmWriter::flush()");
         self.writer.sync_all(FileSync::Hard).context(IOSnafu)
     }
 }
@@ -277,6 +294,30 @@ pub fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
           .context(IOSnafu)?;
 
     Ok((writer.pos() - start) as usize)
+}
+
+fn write_raw_data_to(writer: &mut FileCursor,
+                     write_pos: &mut u64,
+                     index_buf: &mut IndexBuf,
+                     field_id: FieldId,
+                     block_type: ValueType,
+                     min_ts: Timestamp,
+                     max_ts: Timestamp,
+                     ts_block_len: u64,
+                     block: &[u8])
+                     -> WriteTsmResult<usize> {
+    let mut size = 0_usize;
+    let offset = writer.pos();
+    writer.write(&block)
+          .map(|s| {
+              size += s;
+          })
+          .context(IOSnafu)?;
+
+    index_buf.insert_block_meta(min_ts, max_ts, offset, block.len() as u64, offset + ts_block_len);
+    index_buf.insert_index_meta(field_id, block_type, 1);
+
+    Ok(size)
 }
 
 fn write_block_to(writer: &mut FileCursor,

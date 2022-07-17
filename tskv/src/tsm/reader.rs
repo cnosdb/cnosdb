@@ -349,7 +349,7 @@ impl TsmReader {
         self.index_reader.iter()
     }
 
-    /// Retuens a DataBlock without tombstoe
+    /// Returns a DataBlock without tombstoe
     pub fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
@@ -359,7 +359,7 @@ impl TsmReader {
                                         block_meta.offset(),
                                         block_meta.size(),
                                         block_meta.val_off())?;
-        // TODO test code below
+        // TODO fully test the code below
         if let Some(tomb_ref) = &self.tombstone {
             let tomb = tomb_ref.lock();
             tomb.tombstones()
@@ -375,6 +375,18 @@ impl TsmReader {
         }
 
         Ok(blk)
+    }
+
+    // Reads raw data from file and returns the read data size.
+    pub fn get_raw_data(&self, block_meta: &BlockMeta, dst: &mut Vec<u8>) -> ReadTsmResult<usize> {
+        // TODO fully test the code below
+        let data_len = (block_meta.size() - block_meta.offset()) as usize;
+        if dst.capacity() < data_len {
+            dst.resize(data_len, 0);
+        }
+        let a = &dst[0..1];
+        self.reader.read_at(block_meta.offset(), &mut dst[..data_len]).context(IOSnafu)?;
+        Ok(data_len)
     }
 }
 
