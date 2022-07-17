@@ -181,6 +181,10 @@ pub struct TsmWriter {
     sequence: u64,
     /// Store is_delta for debug
     is_delta: bool,
+    /// Store min_ts for version edit
+    min_ts: Timestamp,
+    /// Store max_ts for version edit
+    max_ts: Timestamp,
     size: u64,
     max_size: u64,
     index_buf: IndexBuf,
@@ -188,8 +192,14 @@ pub struct TsmWriter {
 
 impl TsmWriter {
     pub fn open(writer: FileCursor, sequence: u64, is_delta: bool, max_size: u64) -> Result<Self> {
-        let mut w =
-            Self { writer, sequence, is_delta, size: 0, max_size, index_buf: IndexBuf::new() };
+        let mut w = Self { writer,
+                           sequence,
+                           is_delta,
+                           min_ts: Timestamp::MAX,
+                           max_ts: Timestamp::MIN,
+                           size: 0,
+                           max_size,
+                           index_buf: IndexBuf::new() };
         write_header_to(&mut w.writer).context(error::WriteTsmSnafu).map(|s| w.size = s as u64)?;
         Ok(w)
     }
@@ -202,16 +212,24 @@ impl TsmWriter {
         self.is_delta
     }
 
+    pub fn min_ts(&self) -> Timestamp {
+        self.min_ts
+    }
+
+    pub fn max_ts(&self) -> Timestamp {
+        self.max_ts
+    }
+
     pub fn size(&self) -> u64 {
         self.size
     }
 
-    fn set_size(&mut self, size: u64) {
-        self.size = size;
-    }
-
     pub fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
         let mut write_pos = self.writer.pos();
+        if let Some(rg) = block.time_range() {
+            self.min_ts = self.min_ts.min(rg.0);
+            self.max_ts = self.max_ts.max(rg.1);
+        }
         let ret =
             write_block_to(&mut self.writer, &mut write_pos, &mut self.index_buf, field_id, block);
         if let Ok(s) = ret {

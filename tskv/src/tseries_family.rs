@@ -22,8 +22,7 @@ use crate::{
     compaction::FlushReq,
     direct_io::{File, FileCursor},
     error::{Error, Result},
-    file_manager::get_file_manager,
-    file_utils,
+    file_manager, file_utils,
     kv_option::TseriesFamOpt,
     memcache::{DataType, MemCache},
     summary::{CompactMeta, VersionEdit},
@@ -88,23 +87,22 @@ impl ColumnFile {
 
     pub fn file(&self, tsf_opt: Arc<TseriesFamOpt>) -> Result<File> {
         let p = file_utils::make_tsm_file_name(&tsf_opt.tsm_dir, self.file_id);
-        get_file_manager().open_file(p)
+        file_manager::open_file(p)
     }
 
     pub fn tombstone_file(&self, tsf_opt: Arc<TseriesFamOpt>) -> Result<File> {
         let p = file_utils::make_tsm_tombstone_file_name(&tsf_opt.tsm_dir, self.file_id);
-        get_file_manager().open_file(p)
+        file_manager::open_file(p)
     }
 
     pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
-        let fs = get_file_manager();
         let ts_cf = TseriesFamOpt::default();
         let fs = if self.is_delta {
             let p = format!("/_{:06}.delta", self.file_id());
-            fs.open_file(ts_cf.delta_dir + tf_id.to_string().as_str() + p.as_str())
+            file_manager::open_file(ts_cf.delta_dir + tf_id.to_string().as_str() + p.as_str())
         } else {
             let p = format!("/_{:06}.tsm", self.file_id());
-            fs.open_file(ts_cf.tsm_dir + tf_id.to_string().as_str() + p.as_str())
+            file_manager::open_file(ts_cf.tsm_dir + tf_id.to_string().as_str() + p.as_str())
         };
         match fs {
             Ok(v) => {

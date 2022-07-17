@@ -75,9 +75,23 @@ impl DataBlock {
         }
     }
 
+    pub fn time_range(&self) -> Option<(Timestamp, Timestamp)> {
+        if self.len() == 0 {
+            return None;
+        }
+        let end = self.len();
+        match self {
+            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+        }
+    }
+
     /// Returns (`timestamp[start]`, `timestamp[end]`) from this `DataBlock` at the specified
     /// indexes.
-    pub fn time_range(&self, start: usize, end: usize) -> (i64, i64) {
+    pub fn time_range_by_range(&self, start: usize, end: usize) -> (i64, i64) {
         match self {
             DataBlock::U64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
             DataBlock::I64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
@@ -157,7 +171,6 @@ impl DataBlock {
                 if ts.len() <= i {
                     None
                 } else {
-                    dbg!(ts.len());
                     Some(DataType::U64(U64Cell { ts: ts[i], val: val[i] }))
                 }
             },
@@ -228,8 +241,8 @@ impl DataBlock {
         if self.field_type() != other.field_type() {
             return;
         }
-        let (smin_ts, smax_ts) = self.time_range(0, self.len());
-        let (min_ts, max_ts) = other.time_range(0, other.len());
+        let (smin_ts, smax_ts) = self.time_range_by_range(0, self.len());
+        let (min_ts, max_ts) = other.time_range_by_range(0, other.len());
 
         let i_ts_sli = self.ts();
         let ts_sli = other.ts();
@@ -354,7 +367,6 @@ impl DataBlock {
                 *dst = block.get(offsets[i]);
                 offsets[i] += 1;
             }
-            dbg!(&dst);
 
             if let Some(pair) = dst {
                 match min_ts {
@@ -487,7 +499,7 @@ mod test {
 
     #[test]
     fn test_append_block() {
-        // let b1 = DataBlock
+        // TODO
     }
 
     #[test]

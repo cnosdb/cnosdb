@@ -30,6 +30,7 @@ pub use kv_option::Options;
 pub use kvcore::TsKv;
 use protos::kv_service::WritePointsRpcResponse;
 use tokio::sync::oneshot;
+pub use tsm::print_tsm_statistics;
 use utils::BloomFilter;
 
 type ColumnFileId = u64;

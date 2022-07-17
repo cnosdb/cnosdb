@@ -2,7 +2,6 @@ use std::{io::SeekFrom, path::Path, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
 use snafu::{ResultExt, Snafu};
-use utils::overlaps_tuples;
 
 use super::{
     block, boolean, float, get_data_block_meta_unchecked, get_index_meta_unchecked,
@@ -328,6 +327,11 @@ pub struct TsmReader {
     tombstones: Vec<Tombstone>,
 }
 
+/// Returns if r1 (min_ts, max_ts) overlaps r2 (min_ts, max_ts)
+pub fn overlaps_tombstone(r1: (i64, i64), r2: (i64, i64)) -> bool {
+    r1.0 <= r2.1 && r1.1 >= r2.0
+}
+
 impl TsmReader {
     pub fn open(reader: Arc<File>, tomb_file: Option<Arc<File>>) -> Result<Self> {
         let idx = IndexReader::open(reader.clone())?;
@@ -350,11 +354,12 @@ impl TsmReader {
                                         block_meta.offset(),
                                         block_meta.size(),
                                         block_meta.val_off())?;
+        // TODO test code below
         self.tombstones
             .iter()
             .filter(|t| {
                 t.field_id == block_meta.field_id()
-                && overlaps_tuples((t.min_ts, t.max_ts), blk_range)
+                && overlaps_tombstone((t.min_ts, t.max_ts), blk_range)
             })
             .for_each(|t| blk.exclude(t.min_ts, t.max_ts));
 
@@ -536,6 +541,6 @@ mod test {
 
     #[test]
     fn test_tsm_print_statistics() {
-        print_tsm_statistics("/tmp/test/compaction/_000001.tsm");
+        print_tsm_statistics("/tmp/test/compaction/_000004.tsm");
     }
 }
