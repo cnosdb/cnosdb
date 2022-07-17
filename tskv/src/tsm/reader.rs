@@ -1,6 +1,7 @@
-use std::{io::SeekFrom, path::Path, sync::Arc};
+use std::{f32::consts::E, io::SeekFrom, path::Path, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
+use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
 use super::{
@@ -14,7 +15,7 @@ use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64},
     direct_io::{File, FileCursor},
     error::{self, Error, Result},
-    file_manager,
+    file_manager, file_utils,
 };
 
 pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
@@ -118,8 +119,7 @@ impl IndexFile {
 }
 
 pub fn print_tsm_statistics(path: impl AsRef<Path>) {
-    let file = Arc::new(file_manager::open_file(path).unwrap());
-    let reader = TsmReader::open(file, None).unwrap();
+    let reader = TsmReader::open(&path).unwrap();
     for idx in reader.index_iterator() {
         let tr = idx.timerange();
         println!("============================================================");
@@ -324,7 +324,7 @@ impl Iterator for BlockMetaIterator {
 pub struct TsmReader {
     reader: Arc<File>,
     index_reader: Arc<IndexReader>,
-    tombstones: Vec<Tombstone>,
+    tombstone: Option<Arc<Mutex<TsmTombstone>>>,
 }
 
 /// Returns if r1 (min_ts, max_ts) overlaps r2 (min_ts, max_ts)
@@ -333,11 +333,16 @@ pub fn overlaps_tombstone(r1: (i64, i64), r2: (i64, i64)) -> bool {
 }
 
 impl TsmReader {
-    pub fn open(reader: Arc<File>, tomb_file: Option<Arc<File>>) -> Result<Self> {
-        let idx = IndexReader::open(reader.clone())?;
-        let tombstones =
-            if let Some(f) = tomb_file { TsmTombstone::load_all(f.as_ref())? } else { vec![] };
-        Ok(Self { reader, index_reader: Arc::new(idx), tombstones })
+    pub fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
+        let path = tsm_path.as_ref().to_path_buf();
+        let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
+        let tsm = Arc::new(file_manager::open_file(tsm_path)?);
+        let tsm_idx = IndexReader::open(tsm.clone())?;
+        let tsm_tomb = match TsmTombstone::with_tsm_file_id(&path, tsm_id) {
+            Ok(tomb) => Some(Arc::new(Mutex::new(tomb))),
+            Err(e) => None,
+        };
+        Ok(Self { reader: tsm, index_reader: Arc::new(tsm_idx), tombstone: tsm_tomb })
     }
 
     pub fn index_iterator(&self) -> IndexIterator {
@@ -355,21 +360,21 @@ impl TsmReader {
                                         block_meta.size(),
                                         block_meta.val_off())?;
         // TODO test code below
-        self.tombstones
-            .iter()
-            .filter(|t| {
-                t.field_id == block_meta.field_id()
-                && overlaps_tombstone((t.min_ts, t.max_ts), blk_range)
-            })
-            .for_each(|t| blk.exclude(t.min_ts, t.max_ts));
+        if let Some(tomb_ref) = &self.tombstone {
+            let tomb = tomb_ref.lock();
+            tomb.tombstones()
+                .iter()
+                .filter(|t| {
+                    t.field_id == block_meta.field_id()
+                    && overlaps_tombstone((t.min_ts, t.max_ts), blk_range)
+                })
+                .for_each(|t| {
+                    blk.exclude(t.min_ts, t.max_ts);
+                    println!("data block {} excluded ({}, {})", blk, t.min_ts, t.max_ts);
+                });
+        }
 
         Ok(blk)
-    }
-
-    pub fn copy_to(&self, block_meta: &BlockMeta, writer: &mut FileCursor) -> ReadTsmResult<usize> {
-        let mut buf = vec![0_u8; block_meta.size() as usize];
-        self.reader.read_at(block_meta.offset(), &mut buf).context(IOSnafu)?;
-        writer.write(&buf[..]).context(IOSnafu)
     }
 }
 
@@ -479,6 +484,7 @@ mod test {
     };
 
     use models::FieldId;
+    use parking_lot::Mutex;
 
     use super::print_tsm_statistics;
     use crate::{
@@ -488,12 +494,12 @@ mod test {
     };
 
     fn prepare() -> (PathBuf, PathBuf) {
-        let dir = "/tmp/test/tsm_reader";
-        if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).unwrap();
+        let dir = PathBuf::from("/tmp/test/tsm_reader".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
         }
-        let tsm_file = file_utils::make_tsm_file_name(dir, 1);
-        let tombstone_file = file_utils::make_tsm_tombstone_file_name(dir, 1);
+        let tsm_file = file_utils::make_tsm_file_name(&dir, 1);
+        let tombstone_file = file_utils::make_tsm_tombstone_file_name(&dir, 1);
         println!("Writing file: {}, {}",
                  tsm_file.to_str().unwrap(),
                  tombstone_file.to_str().unwrap());
@@ -513,7 +519,7 @@ mod test {
         writer.write_index().unwrap();
         writer.flush().unwrap();
 
-        let mut tombstone = TsmTombstone::with_path(tombstone_file.to_str().unwrap()).unwrap();
+        let mut tombstone = TsmTombstone::with_path(&tombstone_file).unwrap();
         tombstone.add_range(&[1], 2, 4).unwrap();
         tombstone.flush().unwrap();
 
@@ -526,21 +532,14 @@ mod test {
         println!("Reading file: {}, {}",
                  tsm_file.to_str().unwrap(),
                  tombstone_file.to_str().unwrap());
+        print_tsm_statistics(&tsm_file);
 
-        let file = Arc::new(get_file_manager().open_file(&tsm_file).unwrap());
-        let tombstone = Arc::new(get_file_manager().open_file(&tombstone_file).unwrap());
-
-        let reader = TsmReader::open(file.clone(), Some(tombstone.clone())).unwrap();
+        let reader = TsmReader::open(&tsm_file).unwrap();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
                 let data_blk = reader.get_data_block(&blk).unwrap();
                 dbg!(&data_blk);
             }
         }
-    }
-
-    #[test]
-    fn test_tsm_print_statistics() {
-        print_tsm_statistics("/tmp/test/compaction/_000004.tsm");
     }
 }

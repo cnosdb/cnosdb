@@ -1,4 +1,9 @@
-use std::{cmp::max, collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    cmp::max,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use logger::{debug, error, info, warn};
 use models::FieldId;
@@ -194,7 +199,7 @@ fn build_block_set(field_size: HashMap<&FieldId, usize>,
     block_set
 }
 
-fn build_tsm_file(tsm_path: PathBuf,
+fn build_tsm_file(tsm_path: impl AsRef<Path>,
                   tsm_sequence: u64,
                   is_delta: bool,
                   block_set: HashMap<FieldId, DataBlock>)

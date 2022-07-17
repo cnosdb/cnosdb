@@ -1,7 +1,8 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BinaryHeap, HashMap, VecDeque},
     iter::Peekable,
     marker::PhantomData,
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -28,159 +29,206 @@ use crate::{
     Error, LevelId,
 };
 
+struct CompactingBlockMeta(usize, BlockMeta);
+
+impl PartialEq for CompactingBlockMeta {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0 && self.1 == other.1
+    }
+}
+
+impl Eq for CompactingBlockMeta {}
+
+impl PartialOrd for CompactingBlockMeta {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.1.cmp(&other.1))
+    }
+}
+
+impl Ord for CompactingBlockMeta {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.1.cmp(&other.1)
+    }
+}
+
 struct CompactIterator {
     tsm_readers: Vec<TsmReader>,
 
     tsm_index_iters: Vec<Peekable<IndexIterator>>,
+    turn_tsm_blks: Vec<BlockMetaIterator>,
+    /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
+    /// turn_tsm_blks[i] is in self.tsm_readers[ turn_tsm_blk_tsm_reader_idx[i] ]
+    turn_tsm_blk_tsm_reader_idx: Vec<usize>,
     /// When a TSM file at index i is ended, finished_idxes[i] is set to true.
     finished_readers: Vec<bool>,
     /// How many finished_idxes is set to true
     finished_reader_cnt: usize,
     curr_fid: Option<FieldId>,
     last_fid: Option<FieldId>,
-    mergine_blocks: VecDeque<DataBlock>,
+
+    merged_blocks: VecDeque<DataBlock>,
+
+    max_datablock_values: u64,
 }
 
-impl CompactIterator {}
+/// To reduce construction code
+impl Default for CompactIterator {
+    fn default() -> Self {
+        Self { tsm_readers: Default::default(),
+               tsm_index_iters: Default::default(),
+               turn_tsm_blks: Default::default(),
+               turn_tsm_blk_tsm_reader_idx: Default::default(),
+               finished_readers: Default::default(),
+               finished_reader_cnt: Default::default(),
+               curr_fid: Default::default(),
+               last_fid: Default::default(),
+               merged_blocks: Default::default(),
+               max_datablock_values: Default::default() }
+    }
+}
+
+impl CompactIterator {
+    /// Update turn_tsm_blks and turn_tsm_blk_tsm_reader_idx for next turn field id.
+    fn next_field_id(&mut self) {
+        self.turn_tsm_blks = Vec::with_capacity(self.tsm_index_iters.len());
+        self.turn_tsm_blk_tsm_reader_idx = Vec::with_capacity(self.tsm_index_iters.len());
+        let mut next_tsm_file_idx = 0_usize;
+        for (i, idx) in self.tsm_index_iters.iter_mut().enumerate() {
+            next_tsm_file_idx += 1;
+            if self.finished_readers[i] {
+                println!("file no.{} has been finished.", i);
+                continue;
+            }
+            if let Some(idx_meta) = idx.peek() {
+                println!("got idx_meta: field_id: {}, field_type: {:?}, block_count: {}",
+                         idx_meta.field_id(),
+                         idx_meta.field_type(),
+                         idx_meta.block_count());
+                // Get field id from first block for this turn
+                if let Some(fid) = self.curr_fid {
+                    // This is the idx of the next field_id.
+                    if fid != idx_meta.field_id() {
+                        println!("skip idx_meta to {}", idx_meta.field_id());
+                        continue;
+                    }
+                } else {
+                    // This is the first idx.
+                    self.curr_fid = Some(idx_meta.field_id());
+                    self.last_fid = Some(idx_meta.field_id());
+                    println!("turn first field_id: {}", idx_meta.field_id());
+                }
+
+                let blk_cnt = idx_meta.block_count();
+
+                self.turn_tsm_blks.push(idx_meta.block_iterator());
+                self.turn_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx - 1);
+                println!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, timerange: {:?}",
+                         idx_meta.field_id(),
+                         idx_meta.field_type(),
+                         idx_meta.block_count(),
+                         idx_meta.timerange());
+            } else {
+                // This tsm-file has been finished
+                println!("file no.{} is finished.", i);
+                self.finished_readers[i] = true;
+                self.finished_reader_cnt += 1;
+            }
+
+            // To next field
+            idx.next();
+        }
+    }
+
+    fn next_merging_blocks(&mut self) -> Result<()> {
+        loop {
+            let mut sorted_blk_metas: BinaryHeap<CompactingBlockMeta> =
+                BinaryHeap::with_capacity(self.turn_tsm_blks.len());
+            let (mut blk_min_ts, mut blk_max_ts) = (Timestamp::MIN, Timestamp::MAX);
+            let mut has_overlaps = false;
+            for (i, blk_iter) in self.turn_tsm_blks.iter_mut().enumerate() {
+                while let Some(blk_meta) = blk_iter.next() {
+                    if i == 0 {
+                        // Add first block
+                        (blk_min_ts, blk_max_ts) = (blk_meta.min_ts(), blk_meta.max_ts());
+                    } else {
+                        // Check overlaps
+                        if overlaps_tuples((blk_min_ts, blk_max_ts),
+                                           (blk_meta.min_ts(), blk_meta.max_ts()))
+                        {
+                            blk_min_ts = blk_min_ts.min(blk_meta.min_ts());
+                            blk_max_ts = blk_max_ts.max(blk_meta.max_ts());
+                            has_overlaps = true;
+                        }
+                    }
+                    sorted_blk_metas.push(CompactingBlockMeta(self.turn_tsm_blk_tsm_reader_idx[i],
+                                                              blk_meta));
+                }
+            }
+
+            let mut merging_blks: Vec<DataBlock> = Vec::with_capacity(self.turn_tsm_blks.len());
+            while let Some(cbm) = sorted_blk_metas.pop() {
+                println!("sorted block meta: {}-{}", cbm.0, cbm.1);
+                let data_blk = match self.tsm_readers[cbm.0].get_data_block(&cbm.1)
+                                                            .context(error::ReadTsmSnafu)
+                {
+                    Ok(blk) => blk,
+                    Err(e) => return Err(e),
+                };
+                merging_blks.push(data_blk);
+            }
+
+            // All blocks handled, this turn finished.
+            if merging_blks.len() == 0 {
+                break;
+            }
+            let data_blk = DataBlock::merge_blocks(merging_blks);
+            println!("get merged data block: {}", data_blk);
+            self.merged_blocks.push_back(data_blk);
+        }
+
+        Ok(())
+    }
+}
 
 impl Iterator for CompactIterator {
     type Item = Result<(FieldId, DataBlock)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(blk) = self.mergine_blocks.pop_front() {
+        if let Some(blk) = self.merged_blocks.pop_front() {
+            if (blk.len() as u64) < self.max_datablock_values {
+                // This block may be half-writen in past turn
+            }
+            println!("pop the front merged data block-1: {}", blk);
             return Some(Ok((self.last_fid.expect("been checked"), blk)));
         }
         loop {
-            println!("----------------------------");
-            // Get all of block_metas of this field id
-            let mut turn_tsm_blks: Vec<Peekable<BlockMetaIterator>> = Vec::new();
-            let mut turn_tsm_blks_cnt = 0_usize;
-            // turn_tsm_blks[i] is in tsm_files[ tsm_blk_tsm_file_idx_map[i] ]
-            // turn_tsm_blks[i] is in tsm_readers[ tsm_blk_tsm_file_idx_map[i] ]
-            let mut tsm_blk_tsm_file_idx_map: Vec<usize> = Vec::new();
-            let mut next_tsm_file_idx = 0_usize;
-            let (mut turn_min_ts, mut turn_max_ts) = (Timestamp::MAX, Timestamp::MIN);
+            println!("------------------------------");
 
-            // For each tsm-file, handle one field id
-            for (i, idx) in self.tsm_index_iters.iter_mut().enumerate() {
-                next_tsm_file_idx += 1;
-                if self.finished_readers[i] {
-                    println!("file no.{} has been finished.", i);
-                    continue;
-                }
-                if let Some(idx_meta) = idx.peek() {
-                    println!("got idx_meta: field_id: {}, field_type: {:?}, block_count: {}",
-                             idx_meta.field_id(),
-                             idx_meta.field_type(),
-                             idx_meta.block_count());
-                    // Get field id from first block for this turn
-                    if let Some(fid) = self.curr_fid {
-                        if fid != idx_meta.field_id() {
-                            println!("skip idx_meta to {}", idx_meta.field_id());
-                            continue;
-                        }
-                    } else {
-                        // This is the first idx.
-                        self.curr_fid = Some(idx_meta.field_id());
-                        self.last_fid = Some(idx_meta.field_id());
-                        println!("turn first field_id: {}", idx_meta.field_id());
-                        (turn_min_ts, turn_max_ts) = idx_meta.timerange();
-                    }
+            // For each tsm-file, get next index reader for current turn field id
+            self.next_field_id();
 
-                    let blk_cnt = idx_meta.block_count();
-                    turn_tsm_blks_cnt += idx_meta.block_count() as usize;
-
-                    let (min_ts, max_ts) = idx_meta.timerange();
-                    if overlaps_tuples((turn_min_ts, turn_max_ts), (min_ts, max_ts)) {
-                        turn_min_ts = turn_min_ts.min(min_ts);
-                        turn_max_ts = turn_max_ts.max(max_ts);
-                        turn_tsm_blks.push(idx_meta.block_iterator().peekable());
-                        tsm_blk_tsm_file_idx_map.push(next_tsm_file_idx - 1);
-                    } else {
-                        println!("skip idx_meta: field_id: {}, field_type: {:?}, block_count: {}",
-                                 idx_meta.field_id(),
-                                 idx_meta.field_type(),
-                                 idx_meta.block_count());
-                        continue;
-                    }
-                } else {
-                    // This tsm-file has been finished
-                    println!("file no.{} is finished.", i);
-                    self.finished_readers[i] = true;
-                    self.finished_reader_cnt += 1;
-                }
-
-                // To next field
-                idx.next();
+            println!("selected turn blocks count: {}", self.turn_tsm_blks.len());
+            if self.turn_tsm_blks.len() == 0 {
+                println!("turn for field_id {:?} is finished", self.curr_fid);
+                self.curr_fid = None;
+                break;
             }
 
-            if turn_tsm_blks_cnt == 0 {
-                if self.finished_reader_cnt >= self.finished_readers.len() {
-                    break;
-                }
-                continue;
+            // Get all of block_metas of this field id, and merge these blocks
+            if let Err(e) = self.next_merging_blocks() {
+                return Some(Err(e));
             }
 
-            // Starts to merge blocks for this field id
-            let (mut blk_min_ts, mut blk_max_ts) = (Timestamp::MIN, Timestamp::MAX);
-            loop {
-                let mut overlaped_blks: Vec<DataBlock> = Vec::new();
-                for (i, blk_iter) in turn_tsm_blks.iter_mut().enumerate() {
-                    if let Some(blk_meta) = blk_iter.peek() {
-                        if i == 0 {
-                            // Add first block
-                            (blk_min_ts, blk_max_ts) = (blk_meta.min_ts(), blk_meta.max_ts());
-                            let data_blk =
-                                match self.tsm_readers[tsm_blk_tsm_file_idx_map[i]].get_data_block(&blk_meta)
-                                                                        .context(error::ReadTsmSnafu) {
-                                    Ok(blk) => blk,
-                                    Err(e) => return Some(Err(e)),
-                                };
-                            println!("add data block first: {}", data_blk);
-                            overlaped_blks.push(data_blk);
-                            // Go to next
-                            blk_iter.next();
-                        } else {
-                            // Add the next overlaping blocks
-                            // TODO block is earlier than the timerange also needed to merge.
-                            if overlaps_tuples((blk_min_ts, blk_max_ts),
-                                               (blk_meta.min_ts(), blk_meta.max_ts()))
-                            {
-                                blk_min_ts = blk_min_ts.min(blk_meta.min_ts());
-                                blk_max_ts = blk_max_ts.max(blk_meta.max_ts());
-                                let data_blk =
-                                    match self.tsm_readers[i].get_data_block(&blk_meta)
-                                                             .context(error::ReadTsmSnafu)
-                                    {
-                                        Ok(blk) => blk,
-                                        Err(e) => return Some(Err(e)),
-                                    };
-                                println!("add data block next: {}", data_blk);
-                                overlaped_blks.push(data_blk);
-                                // Go to next
-                                blk_iter.next();
-                            } else {
-                                continue;
-                            }
-                        }
-                    }
-                }
-                // All blocks handled, this turn finished.
-                if overlaped_blks.len() == 0 {
-                    break;
-                }
-                let data_blk = DataBlock::merge_blocks(overlaped_blks);
-                println!("merge data block: {}", data_blk);
-                self.mergine_blocks.push_back(data_blk);
-            }
-
-            self.curr_fid = None;
             if self.finished_reader_cnt >= self.finished_readers.len() {
                 break;
             }
         }
 
-        if let Some(blk) = self.mergine_blocks.pop_front() {
+        if let Some(blk) = self.merged_blocks.pop_front() {
+            if (blk.len() as u64) < self.max_datablock_values {
+                // This block may be half-writen in past turn
+            }
+            println!("pop the front merged data block-2: {}", blk);
             return Some(Ok((self.last_fid.expect("been checked"), blk)));
         }
         None
@@ -204,7 +252,7 @@ pub fn run_compaction_job(request: CompactReq,
     // Buffers all tsm-files and it's indexes for this compaction
     let max_data_block_size = 1000; // TODO this const value is in module tsm
     let mut tsf_opt: Option<Arc<TseriesFamOpt>> = None;
-    let mut tsm_files: Vec<Arc<File>> = Vec::new();
+    let mut tsm_files: Vec<PathBuf> = Vec::new();
     let mut tsm_readers = Vec::new();
     let mut tsm_index_iters = Vec::new();
     for lvl in version.levels_info().iter() {
@@ -217,15 +265,9 @@ pub fn run_compaction_job(request: CompactReq,
             if col_file.is_delta() {
                 continue;
             }
-            let file = Arc::new(col_file.file(lvl.tsf_opt.clone())?);
-            tsm_files.push(file.clone());
-            let tsm_reader = match col_file.tombstone_file(lvl.tsf_opt.clone()) {
-                Ok(f) => TsmReader::open(file, Some(Arc::new(f)))?,
-                Err(e) => match e {
-                    Error::OpenFile { source } => TsmReader::open(file, None)?,
-                    others => return Err(others),
-                },
-            };
+            let tsm_file = col_file.tsm_path(lvl.tsf_opt.clone());
+            tsm_files.push(tsm_file.clone());
+            let tsm_reader = TsmReader::open(&tsm_file)?;
             let idx_iter = tsm_reader.index_iterator().peekable();
             tsm_readers.push(tsm_reader);
             tsm_index_iters.push(idx_iter);
@@ -243,17 +285,17 @@ pub fn run_compaction_job(request: CompactReq,
     }
 
     let tsm_readers_cnt = tsm_readers.len();
+    // TODO max_datablock_values is a const value in module `tsm`.
     let mut iter = CompactIterator { tsm_readers,
                                      tsm_index_iters,
                                      finished_readers: vec![false; tsm_readers_cnt],
-                                     finished_reader_cnt: 0_usize,
-                                     curr_fid: None,
-                                     last_fid: None,
-                                     mergine_blocks: VecDeque::new() };
+                                     max_datablock_values: 1000,
+                                     ..Default::default() };
     let tsm_dir = tsf_opt.expect("been checked").tsm_dir.clone();
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edits: Vec<VersionEdit> = Vec::new();
     while let Some(next_blk) = iter.next() {
+        println!("===============================");
         println!("got next block: {}", next_blk.is_err());
         if let Ok((fid, blk)) = next_blk {
             println!("field_id: {}, data_block: {}", fid, blk);

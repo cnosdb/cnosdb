@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use models::{FieldId, Timestamp, ValueType};
 use snafu::{ResultExt, Snafu};
@@ -257,7 +260,7 @@ impl TsmWriter {
     }
 }
 
-pub fn new_tsm_writer(dir: &str,
+pub fn new_tsm_writer(dir: impl AsRef<Path>,
                       tsm_sequence: u64,
                       is_delta: bool,
                       max_size: u64)
@@ -368,7 +371,11 @@ fn write_footer_to(writer: &mut FileCursor,
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, path::Path, sync::Arc};
+    use std::{
+        collections::HashMap,
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
 
     use models::{FieldId, ValueType};
 
@@ -453,9 +460,9 @@ mod test {
 
     #[test]
     fn test_tsm_write_slow() {
-        let dir = "/tmp/test/tsm_writer";
-        if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).unwrap();
+        let dir = PathBuf::from("/tmp/test/tsm_writer".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
         }
         // Write 3 files.
         for file_seq in 1..4 {

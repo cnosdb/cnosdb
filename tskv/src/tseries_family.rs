@@ -2,6 +2,7 @@ use std::{
     borrow::{Borrow, BorrowMut},
     cmp::min,
     ops::{Deref, DerefMut},
+    path::PathBuf,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -85,14 +86,8 @@ impl ColumnFile {
         self.is_delta
     }
 
-    pub fn file(&self, tsf_opt: Arc<TseriesFamOpt>) -> Result<File> {
-        let p = file_utils::make_tsm_file_name(&tsf_opt.tsm_dir, self.file_id);
-        file_manager::open_file(p)
-    }
-
-    pub fn tombstone_file(&self, tsf_opt: Arc<TseriesFamOpt>) -> Result<File> {
-        let p = file_utils::make_tsm_tombstone_file_name(&tsf_opt.tsm_dir, self.file_id);
-        file_manager::open_file(p)
+    pub fn tsm_path(&self, tsf_opt: Arc<TseriesFamOpt>) -> PathBuf {
+        file_utils::make_tsm_file_name(&tsf_opt.tsm_dir, self.file_id)
     }
 
     pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
@@ -177,7 +172,7 @@ impl LevelInfo {
             if file.is_deleted() || !file.overlap(time_range) {
                 continue;
             }
-            let file = file.file(self.tsf_opt.clone()).unwrap();
+            let file = file_manager::open_file(file.tsm_path(self.tsf_opt.clone())).unwrap();
             let file = Arc::new(file);
 
             let index = IndexReader::open(file.clone()).unwrap();

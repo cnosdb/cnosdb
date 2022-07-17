@@ -1,4 +1,4 @@
-use std::{fmt::Display, io::SeekFrom, sync::Arc};
+use std::{cmp, fmt::Display, io::SeekFrom, sync::Arc};
 
 use models::{FieldId, Timestamp, ValueType};
 
@@ -123,6 +123,36 @@ pub struct BlockMeta {
 
     min_ts: Timestamp,
     max_ts: Timestamp,
+}
+
+impl PartialEq for BlockMeta {
+    fn eq(&self, other: &Self) -> bool {
+        self.field_id == other.field_id
+        && self.block_offset == other.block_offset
+        && self.field_type == other.field_type
+        && self.min_ts == other.min_ts
+        && self.max_ts == other.max_ts
+    }
+}
+
+impl Eq for BlockMeta {}
+
+impl PartialOrd for BlockMeta {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BlockMeta {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.field_id.cmp(&other.field_id) {
+            cmp::Ordering::Equal => match self.min_ts.cmp(&other.min_ts) {
+                cmp::Ordering::Equal => self.max_ts.cmp(&other.max_ts),
+                other => other.reverse(),
+            },
+            other => other.reverse(),
+        }
+    }
 }
 
 impl BlockMeta {
