@@ -1,6 +1,6 @@
 # CnosDB Isipho Road Map
 ## CnosDB Isipho的设计目标
-设计并开发一个高性能、高压缩比、高可用的分布式云原生时间序列数据库，在CnosDB V1 的基础上，改进并满足以下目标：
+设计并开发一个高性能、高压缩比、高可用的分布式云原生时间序列数据库，满足以下目标：
 ### 存储
 1. 存算分离，时间序列膨胀（理论无上限 ）支持横/纵向扩展；
 2. 性能和成本，高性能io，Run-to-Completion调度模型，支持使用对象存储进行分级存储；
@@ -17,31 +17,22 @@
 11. 兼容国际与国内主要公有云生态。
 ## CnosDB Isipho的模块划分
 ### Store Engine
-重要模块：
-
-WAL：写前日志，用于停机后恢复 Memcache。
-
-Memcache： memtable和 immutmemtable 内存中缓存数据。
-
-TSM： 时序数据的列式存储格式。
-
-Summary (TSM的MetaData) ：tsm文件版本变更产生的元数据文件，用于恢复数据。
-
-Versionset：tskv全局视图，类似于manager。
-
-Tsfamily： series的列簇，一个LSM的基本单元。
-
-tsm的压缩：支持多种field类型的压缩。
-
-tsm的有损压缩：支持降低数据精度的数据压缩。
-
-支持操作：
-1. 写操作：grpc -> WAL -> memcache 。
-2. 读操作： 支持point查询和range查询，能从memtable 和 tsm中读数据。
-3. 标记式delete，通过compact删除文件， memtable中的数据实时清除。
-4. flush:  immutcache 刷到 L0 层 较小的tsm文件。
-5. compact:  tsm文件合并。
-6. other： 配置文件， 支持从环境变量和配置读取。
+1.重要模块：
+   1.WAL：写前日志，用于停机后恢复 Memcache。
+   2.Memcache： memtable和 immutmemtable 内存中缓存数据。
+   3.TSM： 时序数据的列式存储格式。
+   4.Summary (TSM的MetaData) ：tsm文件版本变更产生的元数据文件，用于恢复数据。
+   5.Versionset：tskv全局视图，类似于manager。
+   6.Tsfamily： series的列簇，一个LSM的基本单元。
+   7.tsm的压缩：支持多种field类型的压缩。
+   8.tsm的有损压缩：支持降低数据精度的数据压缩。
+2.支持操作：
+   1. 写操作：grpc -> WAL -> memcache 。
+   2. 读操作： 支持point查询和range查询，能从memtable 和 tsm中读数据。
+   3. 标记式delete，通过compact删除文件， memtable中的数据实时清除。
+   4. flush:  immutcache 刷到 L0 层 较小的tsm文件。
+   5. compact:  tsm文件合并。
+   6. other： 配置文件， 支持从环境变量和配置读取。
 ### Query Engine
 1. impl catalog provider
 2. schema存储
