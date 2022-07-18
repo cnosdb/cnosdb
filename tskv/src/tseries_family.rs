@@ -1,6 +1,7 @@
 use std::{
     borrow::{Borrow, BorrowMut},
     cmp::min,
+    collections::HashMap,
     ops::{Deref, DerefMut},
     path::PathBuf,
     rc::Rc,
@@ -24,10 +25,10 @@ use crate::{
     direct_io::{File, FileCursor},
     error::{Error, Result},
     file_manager, file_utils,
-    kv_option::TseriesFamOpt,
+    kv_option::{TseriesFamDesc, TseriesFamOpt},
     memcache::{DataType, MemCache},
     summary::{CompactMeta, VersionEdit},
-    tsm::{ColumnReader, Index, IndexReader},
+    tsm::{ColumnReader, IndexReader, TsmTombstone},
     ColumnFileId, TseriesFamilyId, VersionId,
 };
 
@@ -86,8 +87,14 @@ impl ColumnFile {
         self.is_delta
     }
 
-    pub fn tsm_path(&self, tsf_opt: Arc<TseriesFamOpt>) -> PathBuf {
-        file_utils::make_tsm_file_name(&tsf_opt.tsm_dir, self.file_id)
+    pub fn file_path(&self, tsf_opt: Arc<TseriesFamOpt>, tf_id: u32) -> PathBuf {
+        if self.is_delta {
+            let path = tsf_opt.delta_dir.clone() + tf_id.to_string().as_str() + "/";
+            file_utils::make_delta_file_name(path, self.file_id)
+        } else {
+            let path = tsf_opt.tsm_dir.clone() + tf_id.to_string().as_str() + "/";
+            file_utils::make_tsm_file_name(path, self.file_id)
+        }
     }
 
     pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
@@ -138,6 +145,7 @@ impl ColumnFile {
 #[derive(Default, Debug)]
 pub struct LevelInfo {
     pub files: Vec<Arc<ColumnFile>>,
+    pub tsf_id: u32,
     pub tsf_opt: Arc<TseriesFamOpt>,
     pub level: u32,
     pub cur_size: u64,
@@ -148,12 +156,14 @@ pub struct LevelInfo {
 impl LevelInfo {
     pub fn init(level: u32) -> Self {
         Self { files: Vec::new(),
+               tsf_id: 0,
                tsf_opt: Arc::new(TseriesFamOpt::default()),
                level,
                cur_size: 0,
                max_size: 0,
                ts_range: TimeRange { max_ts: 0, min_ts: 0 } }
     }
+
     pub fn apply(&mut self, delta: &CompactMeta) {
         self.files.push(Arc::new(ColumnFile::new(delta.file_id,
                                                  TimeRange::new(delta.ts_max, delta.ts_min),
@@ -167,24 +177,45 @@ impl LevelInfo {
             self.ts_range.min_ts = delta.ts_min;
         }
     }
+
     pub fn read_columnfile(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) {
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
                 continue;
             }
-            let file = file_manager::open_file(file.tsm_path(self.tsf_opt.clone())).unwrap();
+
+            let mut tomb = HashMap::new();
+            if let Ok(mut tombstone) =
+                TsmTombstone::with_tsm_file_id(GLOBAL_CONFIG.db_path.clone(), file.file_id)
+            {
+                tombstone.load().unwrap();
+                for i in tombstone.tombstones() {
+                    tomb.insert(i.field_id, TimeRange { min_ts: i.min_ts, max_ts: i.max_ts });
+                }
+            }
+
+            let file =
+                file_manager::open_file(file.file_path(self.tsf_opt.clone(), tf_id)).unwrap();
             let file = Arc::new(file);
 
             let index = IndexReader::open(file.clone()).unwrap();
             for idx in index.iter_opt(field_id) {
                 for blk in idx.block_iterator() {
-                    if blk.min_ts() < time_range.max_ts && blk.max_ts() > time_range.min_ts {
+                    if blk.min_ts() <= time_range.max_ts && blk.max_ts() >= time_range.min_ts {
                         let mut cr = ColumnReader::new(file.clone(),
                                                        idx.block_iterator_opt(time_range.min_ts,
                                                                               time_range.max_ts));
                         while let Some(blk_ret) = cr.next() {
-                            if let Ok(blk) = blk_ret {
-                                info!("{:?}", &blk);
+                            if let Ok(mut blk) = blk_ret {
+                                if let Some(del_time_range) = tomb.get(&field_id) {
+                                    // we need to remove greater equal than min_ts and less than
+                                    // min_ts + 1
+                                    println!("{:?}",
+                                             &blk.exclude(del_time_range.min_ts,
+                                                          del_time_range.max_ts + 1));
+                                } else {
+                                    println!("{:?}", &blk);
+                                }
                             }
                         }
                     }
@@ -286,10 +317,9 @@ impl TseriesFamily {
                      name: String,
                      cache: MemCache,
                      version: Arc<RwLock<Version>>,
-                     opt: TseriesFamOpt)
+                     tsf_opt: Arc<TseriesFamOpt>)
                      -> Self {
         let mm = Arc::new(RwLock::new(cache));
-        let tsf_opt = Arc::new(opt);
         let seq = version.read().await.last_seq;
         let max_level_ts = version.read().await.max_level_ts;
         let delta_mm =
@@ -555,21 +585,27 @@ impl TseriesFamily {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
     use logger::info;
     use models::ValueType;
+    use parking_lot::Mutex;
     use tokio::sync::{mpsc, RwLock};
 
     use crate::{
+        compaction::{run_flush_memtable_job, FlushReq},
+        context::GlobalContext,
+        file_manager,
         kv_option::TseriesFamOpt,
         memcache::MemCache,
         tseries_family::{TimeRange, TseriesFamily, Version},
+        tsm::TsmTombstone,
+        version_set::VersionSet,
     };
 
     #[tokio::test]
     pub async fn test_tsf_delete() {
-        let tcfg = TseriesFamOpt::default();
+        let tcfg = Arc::new(TseriesFamOpt::default());
         let mut tsf = TseriesFamily::new(0,
                                          "db".to_string(),
                                          MemCache::new(0, 500, 0, false),
@@ -578,7 +614,7 @@ mod test {
                                                                            "db".to_string(),
                                                                            vec![],
                                                                            0))),
-                                         tcfg).await;
+                                         tcfg.clone()).await;
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         tsf.put_mutcache(0,
                          10_i32.to_be_bytes().as_slice(),
@@ -590,5 +626,56 @@ mod test {
         assert_eq!(tsf.mut_cache.read().await.data_cache.get(&0).unwrap().cells.len(), 1);
         tsf.delete_cache(&TimeRange { max_ts: 0, min_ts: 0 }).await;
         assert_eq!(tsf.mut_cache.read().await.data_cache.get(&0).unwrap().cells.len(), 0);
+    }
+
+    #[tokio::test]
+    pub async fn test_read_with_tomb() {
+        let dir = PathBuf::from("db/tsm/test/0".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+        let mut mem = MemCache::new(0, 1000, 0, false);
+        mem.insert_raw(0, 0, 0, ValueType::Integer, 10_i64.to_be_bytes().as_slice()).unwrap();
+        let mem = Arc::new(RwLock::new(mem));
+        let mut req_mem = vec![];
+        req_mem.push((0, mem));
+        let flush_seq = Arc::new(Mutex::new(vec![FlushReq { mems: req_mem, wait_req: 0 }]));
+
+        let kernel = Arc::new(GlobalContext::new());
+        let version_set = Arc::new(RwLock::new(VersionSet::new_default()));
+        let cfg =
+            Arc::new(TseriesFamOpt { tsm_dir: "db/tsm/test/".to_string(), ..Default::default() });
+        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        version_set.write()
+                   .await
+                   .add_tsfamily(0,
+                                 "test".to_string(),
+                                 0,
+                                 0,
+                                 cfg.clone(),
+                                 summary_task_sender.clone())
+                   .await;
+        let mut cfg_set = HashMap::new();
+        cfg_set.insert(0, cfg.clone());
+        run_flush_memtable_job(flush_seq,
+                               kernel,
+                               cfg_set,
+                               version_set.clone(),
+                               summary_task_sender).await
+                                                   .unwrap();
+
+        let mut version_set = version_set.write().await;
+        let tsf = version_set.get_tsfamily(0).unwrap();
+        let version = tsf.version().read().await;
+        version.levels_info[1].read_columnfile(0, 0, &TimeRange { max_ts: 0, min_ts: 0 });
+        let file = version.levels_info[1].files[0].clone();
+
+        let mut tombstone =
+            TsmTombstone::with_tsm_file_id("dev/db".to_string(), file.file_id).unwrap();
+        tombstone.add_range(&[0], 0, 0).unwrap();
+        tombstone.flush().unwrap();
+        tombstone.load().unwrap();
+
+        version.levels_info[1].read_columnfile(0, 0, &TimeRange { max_ts: 0, min_ts: 0 });
     }
 }

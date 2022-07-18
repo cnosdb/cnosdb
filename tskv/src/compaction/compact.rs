@@ -262,7 +262,7 @@ pub fn run_compaction_job(request: CompactReq,
             if col_file.is_delta() {
                 continue;
             }
-            let tsm_file = col_file.tsm_path(lvl.tsf_opt.clone());
+            let tsm_file = col_file.file_path(lvl.tsf_opt.clone(), lvl.tsf_id);
             tsm_files.push(tsm_file.clone());
             let tsm_reader = TsmReader::open(&tsm_file)?;
             let idx_iter = tsm_reader.index_iterator().peekable();
@@ -441,7 +441,7 @@ mod test {
     #[test]
     fn test_compaction_fast() {
         let (next_file_id, files) = write_data_blocks_to_column_file(
-                                                                     "/tmp/test/compaction",
+                                                                     "/tmp/test/compaction/0",
                                                                      vec![
             HashMap::from([
                 (1, DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }),
@@ -460,7 +460,7 @@ mod test {
             ]),
         ],
         );
-        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction");
+        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/");
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
         let level_infos =
@@ -493,7 +493,7 @@ mod test {
     #[test]
     fn test_compaction_1() {
         let (next_file_id, files) = write_data_blocks_to_column_file(
-                                                                     "/tmp/test/compaction/1",
+                                                                     "/tmp/test/compaction/1/0",
                                                                      vec![
             HashMap::from([
                 (1, DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }),
@@ -512,7 +512,7 @@ mod test {
             ]),
         ],
         );
-        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/1");
+        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/1/");
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
         let level_infos =
@@ -545,7 +545,7 @@ mod test {
     #[test]
     fn test_compaction_2() {
         let (next_file_id, files) = write_data_blocks_to_column_file(
-                                                                     "/tmp/test/compaction/2",
+                                                                     "/tmp/test/compaction/2/0",
                                                                      vec![
             HashMap::from([
                 (1, DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }),
@@ -564,7 +564,7 @@ mod test {
             ]),
         ],
         );
-        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/2");
+        let tsf_opt = prepare_tseries_fam_opt("/tmp/test/compaction/2/");
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
         let level_infos =

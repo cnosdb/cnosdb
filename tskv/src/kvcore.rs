@@ -455,8 +455,8 @@ mod test {
 
     async fn get_tskv() -> TsKv {
         logger::init_with_config_path("tests/test_kvcore_log.yaml");
-        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
-                                                               ..Default::default() },
+        let opt = crate::kv_option::Options { wal: Arc::new(WalConfig { dir: String::from("/tmp/test/wal"),
+                                                                        ..Default::default() }),
                                               ..Default::default() };
 
         TsKv::open(opt).await.unwrap()
@@ -644,8 +644,8 @@ mod test {
     #[serial]
     async fn test_add_del_tsf() {
         let tskv = get_tskv().await;
-        let opt = crate::kv_option::Options { wal: WalConfig { dir: String::from("/tmp/test/wal"),
-                                                               ..Default::default() },
+        let opt = crate::kv_option::Options { wal: Arc::new(WalConfig { dir: String::from("/tmp/test/wal"),
+                                                                        ..Default::default() }),
                                               ..Default::default() };
         let shared_options = Arc::new(opt);
         let summary = Summary::new(&shared_options.db).await.unwrap();
@@ -659,7 +659,7 @@ mod test {
                           "hello".to_string(),
                           0,
                           0,
-                          TseriesFamOpt::default(),
+                          Arc::new(TseriesFamOpt::default()),
                           tskv.summary_task_sender.clone())
             .await;
         assert_eq!(tskv.version_set().read().await.tsf_num(),

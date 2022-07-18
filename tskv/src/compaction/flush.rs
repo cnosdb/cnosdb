@@ -48,7 +48,8 @@ impl FlushTask {
     pub async fn run(&mut self,
                      version_set: Arc<RwLock<VersionSet>>,
                      kernel: Arc<GlobalContext>,
-                     edits: &mut Vec<VersionEdit>)
+                     edits: &mut Vec<VersionEdit>,
+                     cf_opt: Arc<TseriesFamOpt>)
                      -> Result<()> {
         let (mut ts_min, mut ts_max) = (i64::MAX, i64::MIN);
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
@@ -100,8 +101,9 @@ impl FlushTask {
                                     0,
                                     true,
                                     edits,
-                                    version_set.clone()).await
-                                                        .expect("failed to build delta file");
+                                    version_set.clone(),
+                                    cf_opt.clone()).await
+                                                   .expect("failed to build delta file");
         }
         (ts_min, ts_max) = (i64::MAX, i64::MIN);
         let block_set = build_block_set(field_size, field_map, &mut ts_max, &mut ts_min);
@@ -119,8 +121,9 @@ impl FlushTask {
                                     1,
                                     false,
                                     edits,
-                                    version_set.clone()).await
-                                                        .expect("Failed to build tsm file");
+                                    version_set.clone(),
+                                    cf_opt).await
+                                           .expect("Failed to build tsm file");
         }
         for i in mem_guard.iter_mut() {
             i.flushed = true;
@@ -140,7 +143,8 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
                                  level: usize,
                                  is_delta: bool,
                                  edits: &mut Vec<VersionEdit>,
-                                 version_set: Arc<RwLock<VersionSet>>)
+                                 version_set: Arc<RwLock<VersionSet>>,
+                                 cf_opt: Arc<TseriesFamOpt>)
                                  -> Result<()> {
     let (fname, fseq) = if is_delta {
         (make_delta_file_name(path, meta.file_id), meta.file_id)
@@ -149,6 +153,7 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
     };
     let file_size = build_tsm_file(fname, fseq, is_delta, block_set)?;
     // update meta
+    meta.tsf_id = tsf_id;
     meta.low_seq = low_seq;
     meta.high_seq = high_seq;
     meta.ts_max = ts_max;
@@ -165,6 +170,7 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
         while version.levels_info.len() <= level {
             let i: u32 = version.levels_info.len() as u32;
             version.levels_info.push(LevelInfo::init(i));
+            version.levels_info[i as usize].tsf_opt = cf_opt.clone()
         }
         version.levels_info[level].apply(meta);
     }
@@ -248,7 +254,7 @@ pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,
             let path_tsm = cf_opt.tsm_dir.clone() + &i.to_string();
             let path_delta = cf_opt.delta_dir.clone() + &i.to_string();
             let mut job = FlushTask::new(memtables.clone(), i as u32, path_tsm, path_delta);
-            job.run(version_set.clone(), kernel.clone(), &mut edits).await?;
+            job.run(version_set.clone(), kernel.clone(), &mut edits, cf_opt.clone()).await?;
         }
     }
     let (task_state_sender, task_state_receiver) = oneshot::channel();

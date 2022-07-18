@@ -292,6 +292,10 @@ impl BlockMetaIterator {
                 break;
             }
         }
+        if max_ts == min_ts {
+            self.block_count = 1;
+            return;
+        }
         let min_pos = pos;
         while pos < sli.len() {
             if max_ts > decode_be_i64(&sli[pos + 8..pos + 16]) {

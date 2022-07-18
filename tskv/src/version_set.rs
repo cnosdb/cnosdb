@@ -20,7 +20,7 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
-    pub async fn new(desc: &[TseriesFamDesc],
+    pub async fn new(desc: &[Arc<TseriesFamDesc>],
                      vers_set: HashMap<u32, Arc<RwLock<Version>>>)
                      -> Self {
         let mut ts_families = HashMap::new();
@@ -83,7 +83,7 @@ impl VersionSet {
                               name: String,
                               seq_no: u64,
                               file_id: u64,
-                              opt: TseriesFamOpt,
+                              opt: Arc<TseriesFamOpt>,
                               summary_task_sender: UnboundedSender<SummaryTask>) {
         let tf = TseriesFamily::new(tf_id,
                                     name.clone(),
@@ -101,7 +101,7 @@ impl VersionSet {
         self.ts_families_names.insert(name.clone(), tf_id);
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(tf_id, "hello".to_string());
+        edit.add_tsfamily(tf_id, name);
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask { edits, cb: task_state_sender };
