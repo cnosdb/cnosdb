@@ -78,8 +78,8 @@ impl TsmTombstone {
     }
 
     pub fn load(&mut self) -> Result<()> {
-        self.tombstones.truncate(0);
-        let tombstones = Self::load_all(&self.tomb_accessor);
+        let tombstones = Self::load_all(&self.tomb_accessor)?;
+        self.tombstones = tombstones;
 
         Ok(())
     }
