@@ -166,7 +166,7 @@ impl IndexBuf {
 /// TSM file writer.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let path = "/tmp/tsm_writer/test_write.tsm";
 /// let file = file_manager::get_file_manager().create_file(path);
 /// // Create a new TSM file, write header.

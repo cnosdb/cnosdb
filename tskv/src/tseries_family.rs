@@ -184,7 +184,7 @@ impl LevelInfo {
                                                                               time_range.max_ts));
                         while let Some(blk_ret) = cr.next() {
                             if let Ok(blk) = blk_ret {
-                                println!("{:?}", &blk);
+                                info!("{:?}", &blk);
                             }
                         }
                     }

@@ -314,26 +314,48 @@ impl SummaryScheduler {
 
 #[cfg(test)]
 mod test {
+    use config::GLOBAL_CONFIG;
     use snafu::ResultExt;
 
     use crate::{
-        error, file_manager, file_utils,
-        kv_option::{DBOptions, WalConfig},
+        error, file_manager,
+        kv_option::DBOptions,
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };
+
     #[tokio::test]
     async fn test_summary_recover() {
-        let opt = DBOptions { db_path: "/tmp/summary".to_string(), ..Default::default() };
+        let opt = DBOptions { db_path: "/tmp/summary/0".to_string(), ..Default::default() };
         if !file_manager::try_exists(&opt.db_path) {
             std::fs::create_dir_all(&opt.db_path).context(error::IOSnafu).unwrap();
         }
-        let summary_file = file_utils::make_summary_file(&opt.db_path, 0);
         let mut summary = Summary::new(&opt).await.unwrap();
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(&[edit]).await.unwrap();
         let summary = Summary::recover(&opt).await.unwrap();
         assert_eq!(summary.ctx.max_tsf_id(), 100);
+    }
+
+    #[tokio::test]
+    async fn test_tsf_num_recover() {
+        let opt = DBOptions { db_path: "/tmp/summary/1".to_string(), ..Default::default() };
+        if !file_manager::try_exists(&opt.db_path) {
+            std::fs::create_dir_all(&opt.db_path).context(error::IOSnafu).unwrap();
+        }
+        let mut summary = Summary::new(&opt).await.unwrap();
+        assert_eq!(summary.version_set.read().await.tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
+        let mut edit = VersionEdit::new();
+        edit.add_tsfamily(100, "hello".to_string());
+        summary.apply_version_edit(&[edit]).await.unwrap();
+        let mut summary = Summary::recover(&opt).await.unwrap();
+        assert_eq!(summary.version_set.read().await.tsf_num(),
+                   (GLOBAL_CONFIG.tsfamily_num + 1) as usize);
+        let mut edit = VersionEdit::new();
+        edit.del_tsfamily(100);
+        summary.apply_version_edit(&[edit]).await.unwrap();
+        let summary = Summary::recover(&opt).await.unwrap();
+        assert_eq!(summary.version_set.read().await.tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
     }
 
     #[test]
