@@ -59,7 +59,7 @@ mod test {
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         let mut points = vec![];
         for i in 0..num {
-            let timestamp = if i < num / 2 { Local::now().timestamp_millis() } else { 1 };
+            let timestamp = if i <= num / 2 { Local::now().timestamp_millis() } else { 1 };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
             let tags = create_tags(fbb,

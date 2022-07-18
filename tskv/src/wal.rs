@@ -457,7 +457,7 @@ mod test {
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
 
-    const DIR: &str = "/tmp/test/wal";
+    const DIR: &str = "/tmp/test_wal";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
@@ -614,12 +614,12 @@ mod test {
 
     #[test]
     fn test_read_entry() {
-        let wal_config = crate::kv_option::WalConfig { dir: String::from("/tmp/test/wal"),
+        let wal_config = crate::kv_option::WalConfig { dir: String::from("/tmp/test_wal"),
                                                        ..Default::default() };
 
         let mgr = WalManager::new(wal_config);
 
-        let wal_files = list_file_names("/tmp/test/wal");
+        let wal_files = list_file_names("/tmp/test_wal");
         for wal_file in wal_files {
             let file =
                 file_manager::get_file_manager().open_file(mgr.current_dir.join(wal_file)).unwrap();
