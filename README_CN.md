@@ -17,16 +17,16 @@
 11. 兼容国际与国内主要公有云生态。
 ## CnosDB Isipho的模块划分
 ### Store Engine
-1.重要模块：
-   1.WAL：写前日志，用于停机后恢复 Memcache。
-   2.Memcache： memtable和 immutmemtable 内存中缓存数据。
-   3.TSM： 时序数据的列式存储格式。
-   4.Summary (TSM的MetaData) ：tsm文件版本变更产生的元数据文件，用于恢复数据。
-   5.Versionset：tskv全局视图，类似于manager。
-   6.Tsfamily： series的列簇，一个LSM的基本单元。
-   7.tsm的压缩：支持多种field类型的压缩。
-   8.tsm的有损压缩：支持降低数据精度的数据压缩。
-2.支持操作：
+1. 重要模块
+   1. WAL：写前日志，用于停机后恢复 Memcache.
+   2. Memcache： memtable和 immutmemtable 内存中缓存数据。
+   3. TSM： 时序数据的列式存储格式。
+   4. Summary (TSM的MetaData) ：tsm文件版本变更产生的元数据文件，用于恢复数据。
+   5. Versionset：tskv全局视图，类似于manager。
+   6. Tsfamily： series的列簇，一个LSM的基本单元。
+   7. tsm的压缩：支持多种field类型的压缩。
+   8. tsm的有损压缩：支持降低数据精度的数据压缩。
+2. 支持操作：
    1. 写操作：grpc -> WAL -> memcache 。
    2. 读操作： 支持point查询和range查询，能从memtable 和 tsm中读数据。
    3. 标记式delete，通过compact删除文件， memtable中的数据实时清除。
@@ -34,16 +34,15 @@
    5. compact:  tsm文件合并。
    6. other： 配置文件， 支持从环境变量和配置读取。
 ### Query Engine
-1. impl catalog provider
-2. schema存储
-3. 将tsm file中的数据组装成arrow中的recordbatch。
-4. table scan，解析tsm文件中的数据。
-5. system table & infomation schema 用于数据统计。
-6. 正排索引
-7. 倒排索引
-8. db管理
-9. 查询优化
-10. 定制化索引
+   1. 重要模块
+      1. impl catalog provider
+      2. schema存储
+      3. 将tsm file中的数据组装成arrow中的recordbatch。
+      4. table scan，解析tsm文件中的数据。
+      5. system table & infomation schema 用于数据统计。
+      6. 正排索引、倒排索引、定制化索引
+      7. 数据库db管理
+      8. 查询优化相关功能
 ### 基础Lib库
 1. fs： 用户态cache 的 direct IO。
 2. schedule：Run-to-Completion 的模型。
