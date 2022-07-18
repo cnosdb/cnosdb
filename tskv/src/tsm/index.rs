@@ -192,6 +192,12 @@ impl BlockMeta {
     }
 
     #[inline(always)]
+    pub fn data_count() -> u32 {
+        // TODO return value count of this data block
+        0
+    }
+
+    #[inline(always)]
     pub fn offset(&self) -> u64 {
         decode_be_u64(&self.index_ref.data()[self.block_offset + 16..self.block_offset + 24])
     }
@@ -238,4 +244,38 @@ pub(crate) fn get_data_block_meta_unchecked(index: Arc<Index>,
                                             -> BlockMeta {
     let base = index_offset + INDEX_META_SIZE + block_idx * BLOCK_META_SIZE;
     BlockMeta::new(index, field_id, field_type, base)
+}
+
+pub(crate) struct IndexEntry {
+    pub field_id: FieldId,
+    pub field_type: ValueType,
+    pub blocks: Vec<BlockEntry>,
+}
+
+impl IndexEntry {
+    pub(crate) fn encode(&self, buf: &mut [u8]) {
+        assert!(buf.len() >= 11);
+        buf[0..8].copy_from_slice(&self.field_id.to_be_bytes()[..]);
+        buf[8] = self.field_type.into();
+        buf[9..11].copy_from_slice(&(self.blocks.len() as u16).to_be_bytes()[..]);
+    }
+}
+
+pub(crate) struct BlockEntry {
+    pub min_ts: Timestamp,
+    pub max_ts: Timestamp,
+    pub offset: u64,
+    pub size: u64,
+    pub val_offset: u64,
+}
+
+impl BlockEntry {
+    pub(crate) fn encode(&self, buf: &mut [u8]) {
+        assert!(buf.len() >= 40);
+        buf[0..8].copy_from_slice(&self.min_ts.to_be_bytes()[..]);
+        buf[8..16].copy_from_slice(&self.max_ts.to_be_bytes()[..]);
+        buf[16..24].copy_from_slice(&self.offset.to_be_bytes()[..]);
+        buf[24..32].copy_from_slice(&self.size.to_be_bytes()[..]);
+        buf[32..40].copy_from_slice(&self.val_offset.to_be_bytes()[..]);
+    }
 }

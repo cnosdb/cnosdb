@@ -372,7 +372,7 @@ mod test {
         },
     };
 
-    use models::FieldId;
+    use models::{FieldId, Timestamp};
     use utils::BloomFilter;
 
     use crate::{
