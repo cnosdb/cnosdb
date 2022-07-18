@@ -30,13 +30,13 @@ pub use kv_option::Options;
 pub use kvcore::TsKv;
 use protos::kv_service::WritePointsRpcResponse;
 use tokio::sync::oneshot;
+pub use tsm::print_tsm_statistics;
 use utils::BloomFilter;
 
-/// Returns a 64 bytes bloom filter
-#[inline(always)]
-pub fn new_bloom_filter() -> BloomFilter {
-    BloomFilter::new(512)
-}
+type ColumnFileId = u64;
+type TseriesFamilyId = u32;
+type LevelId = u32;
+type VersionId = u32;
 
 #[derive(Debug)]
 pub enum Task {

@@ -21,7 +21,7 @@ enum Encoding {
 /// encoding is potentially carried out. If all the deltas are the same the
 /// block can be encoded using RLE. If not, as long as the deltas are not bigger
 /// than simple8b::MAX_VALUE they can be encoded using simple8b.
-pub fn encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
+pub fn encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
@@ -148,7 +148,7 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
 
 /// decode decodes a slice of bytes encoded using encode back into a
 /// vector of signed integers.
-pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
@@ -164,7 +164,7 @@ pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
 }
 
 // decode_uncompressed writes the binary encoded values in src into dst.
-fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() || src.len() & 0x7 != 0 {
         return Err(From::from("invalid uncompressed block length"));
     }
@@ -187,7 +187,7 @@ fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Err
 
 // decode_rle decodes an RLE encoded slice containing only unsigned into the
 // destination vector.
-fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.len() < 9 {
         return Err(From::from("not enough data to decode using RLE"));
     }
@@ -218,7 +218,7 @@ fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error>> {
+fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.len() < 9 {
         return Err(From::from("not enough data to decode packed timestamp"));
     }

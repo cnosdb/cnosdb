@@ -31,10 +31,10 @@ impl FileCursor {
         Ok(read)
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> Result<()> {
-        self.file.write_at(self.pos, buf)?;
+    pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let size = self.file.write_at(self.pos, buf)?;
         self.seek(SeekFrom::Current(buf.len().try_into().unwrap())).unwrap();
-        Ok(())
+        Ok(size)
     }
 
     pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {

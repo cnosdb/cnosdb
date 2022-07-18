@@ -1,37 +1,44 @@
-use std::{cmp::max, collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    cmp::max,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use logger::{debug, error, info, warn};
 use models::FieldId;
 use parking_lot::Mutex;
 use regex::internal::Input;
+use snafu::ResultExt;
 use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender, RwLock};
 
 use crate::{
     compaction::FlushReq,
     context::GlobalContext,
     direct_io::FileSync,
-    error::{Error, Result},
+    error::{self, Error, Result},
     file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::TseriesFamOpt,
     memcache::{MemCache, MemEntry},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::LevelInfo,
-    tsm::{DataBlock, TsmBlockWriter, TsmFooterWriter, TsmHeaderWriter, TsmIndexWriter},
+    tsm::{DataBlock, TsmWriter},
     version_set::VersionSet,
+    TseriesFamilyId,
 };
 
 pub struct FlushTask {
     mems: Vec<Arc<RwLock<MemCache>>>,
     meta: CompactMeta,
-    tsf_id: u32,
+    tsf_id: TseriesFamilyId,
     path_tsm: String,
     path_delta: String,
 }
 
 impl FlushTask {
     pub fn new(mems: Vec<Arc<RwLock<MemCache>>>,
-               tsf_id: u32,
+               tsf_id: TseriesFamilyId,
                path_tsm: String,
                path_delta: String)
                -> Self {
@@ -135,12 +142,12 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
                                  edits: &mut Vec<VersionEdit>,
                                  version_set: Arc<RwLock<VersionSet>>)
                                  -> Result<()> {
-    let fname = if is_delta {
-        make_delta_file_name(path, meta.file_id)
+    let (fname, fseq) = if is_delta {
+        (make_delta_file_name(path, meta.file_id), meta.file_id)
     } else {
-        make_tsm_file_name(path, meta.file_id)
+        (make_tsm_file_name(path, meta.file_id), meta.file_id)
     };
-    let file_size = build_tsm_file(fname, block_set)?;
+    let file_size = build_tsm_file(fname, fseq, is_delta, block_set)?;
     // update meta
     meta.low_seq = low_seq;
     meta.high_seq = high_seq;
@@ -192,19 +199,19 @@ fn build_block_set(field_size: HashMap<&FieldId, usize>,
     block_set
 }
 
-fn build_tsm_file(fname: PathBuf, block_set: HashMap<FieldId, DataBlock>) -> Result<u64> {
-    let file = file_manager::get_file_manager().create_file(fname).unwrap();
-    let mut fs_cursor = file.into_cursor();
-
-    TsmHeaderWriter::write_to(&mut fs_cursor)?;
-    let index = TsmBlockWriter::write_to(&mut fs_cursor, block_set)?;
-    let index_pos = fs_cursor.pos();
-    let bloom_filter = TsmIndexWriter::write_to(&mut fs_cursor, index)?;
-    TsmFooterWriter::write_to(&mut fs_cursor, &bloom_filter, index_pos)?;
-    fs_cursor.sync_all(FileSync::Hard)
-             .map_err(|e| Error::WriteTsmErr { reason: e.to_string() })?;
-    let len = fs_cursor.len();
-    Ok(len)
+fn build_tsm_file(tsm_path: impl AsRef<Path>,
+                  tsm_sequence: u64,
+                  is_delta: bool,
+                  block_set: HashMap<FieldId, DataBlock>)
+                  -> Result<u64> {
+    let file = file_manager::get_file_manager().create_file(tsm_path)?;
+    let mut writer = TsmWriter::open(file.into_cursor(), tsm_sequence, is_delta, 0)?;
+    for (fid, blk) in block_set.iter() {
+        writer.write_block(*fid, blk).context(error::WriteTsmSnafu)?;
+    }
+    writer.write_index().context(error::WriteTsmSnafu)?;
+    writer.flush().context(error::WriteTsmSnafu)?;
+    Ok(writer.size())
 }
 
 pub async fn run_flush_memtable_job(reqs: Arc<Mutex<Vec<FlushReq>>>,

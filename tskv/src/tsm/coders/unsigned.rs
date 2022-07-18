@@ -8,13 +8,13 @@ use std::error::Error;
 /// Deltas between the integers in the input are first calculated, then the
 /// deltas are further compressed if possible, either via bit-packing using
 /// simple8b or by run-length encoding the deltas if they're all the same.
-pub fn encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error>> {
+pub fn encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let signed = u64_to_i64_vector(src);
     super::integer::encode(&signed, dst)
 }
 
 /// Decodes a slice of bytes into a destination vector of unsigned integers.
-pub fn decode(src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error>> {
+pub fn decode(src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }

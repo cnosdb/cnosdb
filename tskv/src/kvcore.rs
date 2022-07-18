@@ -1,14 +1,9 @@
-use std::{
-    borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::DerefMut, sync, sync::Arc,
-    thread::JoinHandle,
-};
+use std::{collections::HashMap, sync, sync::Arc, thread::JoinHandle};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use lazy_static::lazy_static;
 use logger::{debug, error, info, init, trace, warn};
 use models::{FieldId, SeriesId, Timestamp};
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -36,7 +31,7 @@ use crate::{
     runtime::WorkerQueue,
     summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
     tseries_family::{TimeRange, Version},
-    tsm::{BlockReader, TsmBlockReader, TsmIndexReader, TsmTombstone},
+    tsm::TsmTombstone,
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
@@ -247,10 +242,10 @@ impl TsKv {
                                                                          .iter()
                                                                          .map(|f| f.field_id())
                                                                          .collect();
-                                let tombstone_manager =
+                                let mut tombstone =
                                     TsmTombstone::with_tsm_file_id(&path, column_file.file_id())?;
-                                tombstone_manager.add_range(&field_ids, min, max)?;
-                                tombstone_manager.sync()?;
+                                tombstone.add_range(&field_ids, min, max)?;
+                                tombstone.flush()?;
                             }
                         }
                     }

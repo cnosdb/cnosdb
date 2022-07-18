@@ -78,7 +78,7 @@ pub struct QueryOption {
     series_id: u64,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TseriesFamOpt {
     pub max_level: u32,
     // pub base_file_size: u64,

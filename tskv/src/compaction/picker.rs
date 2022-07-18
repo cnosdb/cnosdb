@@ -6,19 +6,23 @@ use crate::{
     error::Result,
     kv_option::TseriesFamOpt,
     tseries_family::{ColumnFile, Version},
+    TseriesFamilyId,
 };
 
 pub struct LevelCompactionPicker {
-    cf_opts: HashMap<u32, Arc<TseriesFamOpt>>,
+    tseries_fam_opts: HashMap<u32, Arc<TseriesFamOpt>>,
 }
 
 impl LevelCompactionPicker {
-    pub fn new(cf_opts: HashMap<u32, Arc<TseriesFamOpt>>) -> Self {
-        Self { cf_opts }
+    pub fn new(tsries_fam_opts: HashMap<u32, Arc<TseriesFamOpt>>) -> Self {
+        Self { tseries_fam_opts: tsries_fam_opts }
     }
 
-    pub fn pick_compaction(&self, cf: u32, version: Arc<Version>) -> Option<CompactReq> {
-        let opts = self.cf_opts.get(&cf).cloned().unwrap();
+    pub fn pick_compaction(&self,
+                           tsf_id: TseriesFamilyId,
+                           version: Arc<Version>)
+                           -> Option<CompactReq> {
+        let opts = self.tseries_fam_opts.get(&tsf_id).cloned().unwrap();
         let mut ctx = LevelCompatContext::default();
         ctx.cal_score(version.as_ref(), opts.as_ref());
         if let Some((start_level, out_lvl)) = ctx.pick_level() {
@@ -29,11 +33,12 @@ impl LevelCompactionPicker {
                 }
                 let request = CompactReq { files: (lvl, files),
                                            version,
-                                           cf,
-                                           out_lvl /* target_file_size_base:
-                                                    * opts.target_file_size_base,
-                                                    * cf_options: opts,
-                                                    * options: self.db_opts.clone(), */ };
+                                           tsf_id,
+                                           out_level: out_lvl /* target_file_size_base:
+                                                               * opts.target_file_size_base,
+                                                               * cf_options: opts,
+                                                               * options: self.db_opts.
+                                                               * clone(), */ };
                 return Some(request);
             }
         }
@@ -42,7 +47,7 @@ impl LevelCompactionPicker {
 }
 #[derive(Default)]
 struct LevelCompatContext {
-    lvl_scores: Vec<(u32, f64)>,
+    level_scores: Vec<(u32, f64)>,
     base_level: u32,
     max_level: u32,
 }
@@ -62,23 +67,24 @@ impl LevelCompatContext {
 
         if !level0_being_compact {
             let score = info[0].files.len() as f64 / opts.compact_trigger as f64;
-            self.lvl_scores
+            self.level_scores
                 .push((0,
                        f64::max(score,
                                 info[0].cur_size as f64 / info[base_level].max_size as f64)));
         }
         for (l, item) in info.iter().enumerate() {
             let score = item.cur_size.checked_div(item.max_size).unwrap();
-            self.lvl_scores.push((l as u32, score as f64));
+            self.level_scores.push((l as u32, score as f64));
         }
         self.base_level = 0;
         self.max_level = info.len() as u32 - 1;
     }
 
     fn pick_level(&mut self) -> Option<(u32, u32)> {
-        self.lvl_scores.sort_by(|a, b| if a.1 > b.1 { Ordering::Less } else { Ordering::Greater });
+        self.level_scores
+            .sort_by(|a, b| if a.1 > b.1 { Ordering::Less } else { Ordering::Greater });
         let base_level = self.base_level;
-        if let Some((level, score)) = self.lvl_scores.first() {
+        if let Some((level, score)) = self.level_scores.first() {
             if *score < 1.0 {
                 return None;
             } else if *level == 0 {
