@@ -24,7 +24,7 @@ fn main() {
     }
 
     if let Some(p) = tsm_path {
-        print!("Path: {}", p);
+        println!("Path: {}", p);
         tskv::print_tsm_statistics(p);
     }
 }

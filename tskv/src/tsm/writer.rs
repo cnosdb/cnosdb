@@ -4,12 +4,13 @@ use std::{
 };
 
 use models::{FieldId, Timestamp, ValueType};
+use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
 use utils::{BkdrHasher, BloomFilter};
 
 use super::{
-    block, index::Index, BlockMetaIterator, BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE,
-    MAX_BLOCK_VALUES,
+    block, index::Index, BlockEntry, BlockMetaIterator, IndexEntry, IndexMeta, BLOCK_META_SIZE,
+    BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
 use crate::{
     direct_io::{File, FileCursor, FileSync},
@@ -96,21 +97,14 @@ impl Into<Error> for WriteTsmError {
 
 struct IndexBuf {
     index_offset: u64,
-    index_meta: Vec<u8>,
-    last_block_meta_offset: usize,
-    block_meta_offsets: Vec<usize>,
-    block_meta: Vec<u8>,
-
+    buf: HashMap<FieldId, IndexEntry>,
     bloom_filter: BloomFilter,
 }
 
 impl IndexBuf {
     pub fn new() -> Self {
         Self { index_offset: 0,
-               index_meta: Vec::new(),
-               last_block_meta_offset: 0,
-               block_meta_offsets: Vec::new(),
-               block_meta: Vec::new(),
+               buf: HashMap::new(),
                bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS) }
     }
 
@@ -118,45 +112,33 @@ impl IndexBuf {
         self.index_offset = index_offset;
     }
 
-    pub fn insert_index_meta(&mut self,
-                             field_id: FieldId,
-                             block_type: ValueType,
-                             block_count: u16) {
-        self.index_meta.extend_from_slice(&field_id.to_be_bytes()[..]);
-        self.index_meta.extend_from_slice(&[u8::from(block_type)][..]);
-        self.index_meta.extend_from_slice(&block_count.to_be_bytes()[..]);
-        self.block_meta_offsets.push(self.last_block_meta_offset);
-        self.last_block_meta_offset = self.block_meta.len();
-    }
-
     pub fn insert_block_meta(&mut self,
+                             field_id: FieldId,
+                             field_type: ValueType,
                              min_ts: i64,
                              max_ts: i64,
                              offset: u64,
                              size: u64,
-                             val_off: u64) {
-        self.block_meta.extend_from_slice(&min_ts.to_be_bytes()[..]);
-        self.block_meta.extend_from_slice(&max_ts.to_be_bytes()[..]);
-        self.block_meta.extend_from_slice(&offset.to_be_bytes()[..]);
-        self.block_meta.extend_from_slice(&size.to_be_bytes()[..]);
-        self.block_meta.extend_from_slice(&val_off.to_be_bytes()[..]);
+                             val_offset: u64) {
+        let idx =
+            self.buf.entry(field_id).or_insert(IndexEntry { field_id, field_type, blocks: vec![] });
+        idx.blocks.push(BlockEntry { min_ts, max_ts, offset, size, val_offset });
+        self.bloom_filter.insert(&field_id.to_be_bytes()[..]);
     }
 
     pub fn write_to(&self, writer: &mut FileCursor) -> WriteTsmResult<usize> {
         let mut size = 0_usize;
-        let mut index_pos = 0_usize;
-        let mut index_idx = 0_usize;
-        while index_pos < self.index_meta.len() {
-            writer.write(&self.index_meta[index_pos..index_pos + INDEX_META_SIZE])
-                  .map(|s| size += s)
-                  .context(IOSnafu)?;
-            index_pos += INDEX_META_SIZE;
-            let blocks_sli = match self.block_meta_offsets.get(index_idx + 1) {
-                Some(nbp) => &self.block_meta[self.block_meta_offsets[index_idx]..*nbp],
-                None => &self.block_meta[self.block_meta_offsets[index_idx]..],
-            };
-            writer.write(&blocks_sli).map(|s| size += s).context(IOSnafu)?;
-            index_idx += 1;
+
+        let mut buf = vec![0_u8; 40];
+        for (_, idx) in self.buf.iter() {
+            idx.encode(&mut buf[..11]);
+            writer.write(&buf[..11]).context(IOSnafu)?;
+            size += 11;
+            for blk in idx.blocks.iter() {
+                blk.encode(&mut buf);
+                writer.write(&buf[..]).context(IOSnafu)?;
+                size += 40;
+            }
         }
 
         Ok(size)
@@ -168,7 +150,7 @@ impl IndexBuf {
 /// # Examples
 /// ```ignore
 /// let path = "/tmp/tsm_writer/test_write.tsm";
-/// let file = file_manager::get_file_manager().create_file(path);
+/// let file = file_manager::create_file(path);
 /// // Create a new TSM file, write header.
 /// let mut writer = TsmWriter::open(file).unwrap();
 /// // Write blocks.
@@ -314,8 +296,13 @@ fn write_raw_data_to(writer: &mut FileCursor,
           })
           .context(IOSnafu)?;
 
-    index_buf.insert_block_meta(min_ts, max_ts, offset, block.len() as u64, offset + ts_block_len);
-    index_buf.insert_index_meta(field_id, block_type, 1);
+    index_buf.insert_block_meta(field_id,
+                                block_type,
+                                min_ts,
+                                max_ts,
+                                offset,
+                                block.len() as u64,
+                                offset + ts_block_len);
 
     Ok(size)
 }
@@ -326,76 +313,52 @@ fn write_block_to(writer: &mut FileCursor,
                   field_id: FieldId,
                   block: &DataBlock)
                   -> WriteTsmResult<usize> {
-    let point_cnt = block.len();
-    let block_count = ((point_cnt - 1) / MAX_BLOCK_VALUES + 1) as u16;
-    let idx_meta_beg = writer.pos();
-    let block_type = block.field_type();
-    let mut min_ts: i64;
-    let mut max_ts: i64;
-    let mut offset: u64;
-    let mut val_off: u64;
-
-    let ts_sli = block.ts();
-
-    let field_type = block.field_type();
-    let mut i = 0_usize;
-    let mut last_index = 0_usize;
-    let mut total_size = 0_usize;
-    let mut blk_size: usize;
-
-    while i < block_count as usize {
-        blk_size = 0_usize;
-        let start = last_index;
-        // let end = point_cnt % MAX_BLOCK_VALUES + i * MAX_BLOCK_VALUES;
-        let mut end = start + MAX_BLOCK_VALUES;
-        if end > point_cnt {
-            end = point_cnt;
-        }
-        last_index = end;
-
-        min_ts = ts_sli[start];
-        max_ts = ts_sli[end - 1];
-        offset = writer.pos();
-
-        // TODO Make encoding result streamable
-        let (ts_buf, data_buf) = block.encode(start, end).context(EncodeSnafu)?;
-        // Write u32 hash for timestamps
-        writer.write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
-              .map(|s| {
-                  blk_size += s;
-              })
-              .context(IOSnafu)?;
-        // Write timestamp blocks
-        writer.write(&ts_buf)
-              .map(|s| {
-                  blk_size += s;
-              })
-              .context(IOSnafu)?;
-
-        val_off = writer.pos();
-
-        // Write u32 hash for value blocks
-        writer.write(&crc32fast::hash(&data_buf).to_be_bytes()[..])
-              .map(|s| {
-                  blk_size += s;
-              })
-              .context(IOSnafu)?;
-        // Write value blocks
-        writer.write(&data_buf)
-              .map(|s| {
-                  blk_size += s;
-              })
-              .context(IOSnafu)?;
-
-        total_size += blk_size;
-
-        index_buf.insert_block_meta(min_ts, max_ts, offset, blk_size as u64, val_off);
-
-        i += 1;
+    if block.len() == 0 {
+        return Ok(0);
     }
-    index_buf.insert_index_meta(field_id, block_type, block_count);
 
-    Ok(total_size)
+    let offset = writer.pos();
+    let mut size = 0;
+
+    // TODO Make encoding result streamable
+    let (ts_buf, data_buf) = block.encode(0, block.len()).context(EncodeSnafu)?;
+    // Write u32 hash for timestamps
+    writer.write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
+          .map(|s| {
+              size += s;
+          })
+          .context(IOSnafu)?;
+    // Write timestamp blocks
+    writer.write(&ts_buf)
+          .map(|s| {
+              size += s;
+          })
+          .context(IOSnafu)?;
+
+    let val_off = writer.pos();
+
+    // Write u32 hash for value blocks
+    writer.write(&crc32fast::hash(&data_buf).to_be_bytes()[..])
+          .map(|s| {
+              size += s;
+          })
+          .context(IOSnafu)?;
+    // Write value blocks
+    writer.write(&data_buf)
+          .map(|s| {
+              size += s;
+          })
+          .context(IOSnafu)?;
+
+    index_buf.insert_block_meta(field_id,
+                                block.field_type(),
+                                block.ts()[0],
+                                block.ts()[block.len() - 1],
+                                offset,
+                                size as u64,
+                                val_off);
+
+    Ok(size)
 }
 
 fn write_footer_to(writer: &mut FileCursor,
@@ -425,8 +388,10 @@ mod test {
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
         memcache::{BoolCell, DataType, F64Cell, I64Cell, StrCell, U64Cell},
-        tsm::{coders, ColumnReader, DataBlock, IndexReader, TsmWriter},
+        tsm::{coders, ColumnReader, DataBlock, IndexReader, TsmReader, TsmWriter},
     };
+
+    const TEST_PATH: &str = "/tmp/test/tsm_writer";
 
     #[test]
     fn test_str_encode() {
@@ -440,114 +405,92 @@ mod test {
         let _ = coders::string::encode(&tmp, &mut data);
     }
 
-    #[test]
-    fn test_tsm_write_fast() {
-        let dir = Path::new("/tmp/test/tsm_writer");
-        if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).unwrap();
+    fn write_to_tsm(dir: impl AsRef<Path>, file_name: &str, data: &HashMap<FieldId, DataBlock>) {
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
         }
-        println!("Writing file: {}/tsm_write_fast.tsm", dir.to_str().unwrap());
-        let file =
-            get_file_manager().create_file(dir.join("tsm_write_fast.tsm")).unwrap().into_cursor();
-
-        let data: HashMap<FieldId, DataBlock> =
-            HashMap::from([(1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
-                           (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] })]);
-
+        let tsm_path = dir.as_ref().join(file_name);
+        println!("Writing to {}", tsm_path.to_str().unwrap());
+        let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
         let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
         for (fid, blk) in data.iter() {
             writer.write_block(*fid, blk).unwrap();
         }
         writer.write_index().unwrap();
         writer.flush().unwrap();
-
-        println!("File write finish: {}/tsm_write_fast.tsm", dir.to_str().unwrap());
-        test_tsm_read_fast();
     }
 
-    fn test_tsm_read_fast() {
-        let dir = Path::new("/tmp/test/tsm_writer");
-        if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).unwrap();
-        }
-        println!("Reading file: {}/tsm_write_fast.tsm", dir.to_str().unwrap());
-        let file = Arc::new(get_file_manager().open_file(dir.join("tsm_write_fast.tsm")).unwrap());
+    fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, DataBlock> {
+        println!("Reading from {}", path.as_ref().to_str().unwrap());
+        let file = Arc::new(file_manager::open_file(&path).unwrap());
         let len = file.len();
 
         let index = IndexReader::open(file.clone()).unwrap();
-        let mut column_readers: HashMap<FieldId, ColumnReader> = HashMap::new();
-        for index_meta in index.iter() {
-            column_readers.insert(index_meta.field_id(),
-                                  ColumnReader::new(file.clone(), index_meta.block_iterator()));
-        }
-
-        let ori_data: HashMap<FieldId, Vec<DataBlock>> =
-            HashMap::from([(1, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }]),
-                           (2,
-                            vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] }])]);
-
-        for (fid, col_reader) in column_readers.iter_mut() {
-            dbg!(fid);
-            let mut data = Vec::new();
-            for block in col_reader.next().unwrap() {
-                data.push(block);
+        let mut data: HashMap<FieldId, DataBlock> = HashMap::new();
+        for idx_meta in index.iter() {
+            let mut cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
+            while let Some(blk_ret) = cr.next() {
+                let blk = blk_ret.unwrap();
+                data.insert(idx_meta.field_id(), blk);
             }
-            dbg!(&data);
-
-            assert_eq!(*ori_data.get(fid).unwrap(), data);
         }
-        println!("File read finish: {}/tsm_write_fast.tsm", dir.to_str().unwrap());
+
+        data
+    }
+
+    fn check_tsm(path: impl AsRef<Path>, data: &HashMap<FieldId, DataBlock>) {
+        let data = read_from_tsm(path);
+        for (k, v) in data.iter() {
+            assert_eq!(v, data.get(k).unwrap());
+        }
     }
 
     #[test]
-    fn test_tsm_write_slow() {
-        let dir = PathBuf::from("/tmp/test/tsm_writer".to_string());
+    fn test_tsm_write_fast() {
+        let dir = Path::new(TEST_PATH);
+        let data: HashMap<FieldId, DataBlock> =
+            HashMap::from([(1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
+                           (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] })]);
+
+        write_to_tsm(&dir, "tsm_write_fast.tsm", &data);
+        check_tsm(dir.join("tsm_write_fast.tsm"), &data);
+    }
+
+    #[test]
+    fn test_tsm_write_1() {
+        let mut ts_1: Vec<i64> = Vec::new();
+        let mut val_1: Vec<i64> = Vec::new();
+        for i in 0..1001 {
+            ts_1.push(i as i64);
+            val_1.push(i as i64);
+        }
+        let mut ts_2: Vec<i64> = Vec::new();
+        let mut val_2: Vec<i64> = Vec::new();
+        for i in 1001..2001 {
+            ts_2.push(i as i64);
+            val_2.push(i as i64);
+        }
+        let ts = ts_1.iter().chain(ts_2.iter()).map(|d| *d).collect();
+        let val = val_1.iter().chain(val_2.iter()).map(|d| *d).collect();
+
+        let dir = Path::new(TEST_PATH).join("1");
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        // Write 3 files.
-        for file_seq in 1..4 {
-            let mut cache_data: HashMap<FieldId, DataBlock> = HashMap::new();
-            let fid_start = (file_seq - 1) * 100 + 1;
-            let fid_end = (file_seq) * 100 + 1;
-            for i in fid_start..fid_end {
-                let fid = i as u64;
-                // Use i%5 as ValueType
-                let vtyp = ValueType::from((i % 5) as u8);
-                cache_data.insert(fid, DataBlock::new(10000, vtyp));
-                let blk_ref = cache_data.get_mut(&fid).unwrap();
-                // Produce many ts-val pair, ts is from 1 to 10000, val is randomly generated
-                for j in 1..10001 {
-                    let val = match vtyp {
-                        ValueType::Unknown => panic!("value type is unknown"),
-                        ValueType::Float => {
-                            DataType::F64(F64Cell { ts: j, val: rand::random::<f64>() })
-                        },
-                        ValueType::Integer => {
-                            DataType::I64(I64Cell { ts: j, val: rand::random::<i64>() })
-                        },
-                        ValueType::Unsigned => {
-                            DataType::U64(U64Cell { ts: j, val: rand::random::<u64>() })
-                        },
-                        ValueType::Boolean => {
-                            DataType::Bool(BoolCell { ts: j, val: rand::random::<bool>() })
-                        },
-                        ValueType::String => {
-                            DataType::Str(StrCell { ts: j, val: b"hello world".to_vec() })
-                        },
-                    };
-                    blk_ref.insert(&val);
-                }
-            }
+        let tsm_path = dir.join("test_tsm_write_1.tsm");
+        println!("Writing to {}", tsm_path.to_str().unwrap());
+        let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
+        let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
 
-            // Write to tsm
-            let mut writer = new_tsm_writer(&dir, file_seq, false, 0).unwrap();
-            for (fid, blk) in cache_data.iter() {
-                println!("{}", blk);
-                writer.write_block(*fid, blk).unwrap();
-            }
-            writer.write_index().unwrap();
-            writer.flush().unwrap();
+        let data = vec![(1, DataBlock::I64 { ts: ts_1, val: val_1 }),
+                        (1, DataBlock::I64 { ts: ts_2, val: val_2 }),];
+        for (fid, blk) in data.iter() {
+            writer.write_block(*fid, blk).unwrap();
         }
+        writer.write_index().unwrap();
+        writer.flush().unwrap();
+
+        check_tsm(dir.join("test_tsm_write_1.tsm"),
+                  &HashMap::from([(1, DataBlock::I64 { ts, val })]));
     }
 }
