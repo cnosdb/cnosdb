@@ -104,7 +104,7 @@ impl TsmTombstone {
             reader.read_at(pos as u64, &mut buf).context(error::ReadFileSnafu)?;
             pos += buf_len;
             let mut buf_pos = 0;
-            while buf_pos < buf_len {
+            while buf_pos < buf_len - 24 {
                 let field_id = byte_utils::decode_be_u64(&buf[buf_pos..buf_pos + 8]);
                 buf_pos += 8;
                 let min = byte_utils::decode_be_i64(&buf[buf_pos..buf_pos + 8]);
@@ -211,5 +211,26 @@ mod test {
         assert_eq!(true, tombstone.overlaps(1, &TimeRange { max_ts: 2, min_ts: 99 }));
         assert_eq!(true, tombstone.overlaps(2, &TimeRange { max_ts: 2, min_ts: 99 }));
         assert_eq!(false, tombstone.overlaps(3, &TimeRange { max_ts: 101, min_ts: 103 }));
+    }
+
+    #[test]
+    fn test_write_read_slow() {
+        let dir = PathBuf::from("/tmp/test/tombstone/slow".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+        let path = file_utils::make_tsm_tombstone_file_name(&dir, 1);
+
+        let mut tombstone = TsmTombstone::with_path(&path).unwrap();
+        // tsm_tombstone.load().unwrap();
+        for i in 0..10000 {
+            tombstone.add_range(&[3 * i as u64 + 1, 3 * i as u64 + 2, 3 * i as u64 + 3], i as i64 * 2, i as i64 * 2 + 100).unwrap();
+        }
+        tombstone.flush().unwrap();
+
+        tombstone.load().unwrap();
+        assert_eq!(true, tombstone.overlaps(1, &TimeRange { max_ts: 2, min_ts: 99 }));
+        assert_eq!(true, tombstone.overlaps(2, &TimeRange { max_ts: 3, min_ts: 100 }));
+        assert_eq!(false, tombstone.overlaps(3, &TimeRange { max_ts: 4, min_ts: 101 }));
     }
 }
