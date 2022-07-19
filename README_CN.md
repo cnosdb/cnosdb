@@ -1,104 +1,67 @@
-# CnosDB Isipho Road Map
+
+<img src="docs/source/_static/img/cnosdb_logo_white.svg" width="360"/>
+
+<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
+![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
+
+[English](./README.md) | 简体中文
+
+
+CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序数据库；CnosDB依托于Rust, [Apache Arrow](https://arrow.apache.org/) 与 [DataFusion](https://github.com/apache/arrow-datafusion) 进行构建。
+
 ## CnosDB Isipho的设计目标
 设计并开发一个高性能、高压缩比、高可用的分布式云原生时间序列数据库，满足以下目标：
 ### 存储
-1. 存算分离，时间序列膨胀（理论无上限 ）支持横/纵向扩展；
-2. 性能和成本，高性能io，Run-to-Completion调度模型，支持使用对象存储进行分级存储；
-3. 有损压缩，在用户可选择的情况下实现降精度的有损压缩；
+- 存算分离，时间序列膨胀（理论无上限 ）支持横/纵向扩展；
+- 性能和成本，高性能io，Run-to-Completion调度模型，支持使用对象存储进行分级存储；
+- 有损压缩，在用户可选择的情况下实现降精度的有损压缩；
 ### 查询
-4. 使用Apache Arrow及Datafusion实现查询引擎；
-5. 支持查询引擎矢量化的执行，执行复杂的查询语句；
-6. 支持标准SQL，Flux，支持丰富的聚合查询及算子。
+- 使用Apache Arrow及Datafusion实现查询引擎；
+- 支持查询引擎矢量化的执行，执行复杂的查询语句；
+- 支持标准SQL，Flux，支持丰富的聚合查询及算子。
 ### 生态
-7. 面向多租设计，提供更多的配置参数，能够提供资源更加灵活的配置；
-8. cdc、WAL可以提供订阅和分发到其他节点，更加灵活的部署和支持；
-9. 生态型兼容K8s生态，减少共享内存；
-10. 与其他数据生态系统相结合，支持导入/导出parquet文件；
-11. 兼容国际与国内主要公有云生态。
-## CnosDB Isipho的模块划分
-### Store Engine
-1. 重要模块
-   1. WAL：写前日志，用于停机后恢复 Memcache.
-   2. Memcache： memtable和 immutmemtable 内存中缓存数据。
-   3. TSM： 时序数据的列式存储格式。
-   4. Summary (TSM的MetaData) ：tsm文件版本变更产生的元数据文件，用于恢复数据。
-   5. Versionset：tskv全局视图，类似于manager。
-   6. Tsfamily： series的列簇，一个LSM的基本单元。
-   7. tsm的压缩：支持多种field类型的压缩。
-   8. tsm的有损压缩：支持降低数据精度的数据压缩。
-2. 支持操作：
-   1. 写操作：grpc -> WAL -> memcache 。
-   2. 读操作： 支持point查询和range查询，能从memtable 和 tsm中读数据。
-   3. 标记式delete，通过compact删除文件， memtable中的数据实时清除。
-   4. flush:  immutcache 刷到 L0 层 较小的tsm文件。
-   5. compact:  tsm文件合并。
-   6. other： 配置文件， 支持从环境变量和配置读取。
-### Query Engine
-   1. 重要模块
-      1. impl catalog provider
-      2. schema存储
-      3. 将tsm file中的数据组装成arrow中的recordbatch。
-      4. table scan，解析tsm文件中的数据。
-      5. system table & infomation schema 用于数据统计。
-      6. 正排索引、倒排索引、定制化索引
-      7. 数据库db管理
-      8. 查询优化相关功能
-### 基础Lib库
-1. fs： 用户态cache 的 direct IO。
-2. schedule：Run-to-Completion 的模型。
-### 分布式
-1. 基于Rust语言的原生分布式系统
-   1. 分布式架构、整体框架设计、计算存储分离
-   2. 数据分片规则，基于一致性哈希
-   3. 扩容缩容数据迁移
-   4. 副本同步
-   5. 运维工具
-   6. 数据备份与还原
-2. 实现数据最终一致性
-   1. Hinted-Handoff
-   2. 读修复
-   3. 墓碑机制
-   4. anti-entropy反熵
-### 生态
-因为CnosDB 1.0已经支持并兼容了很多优秀生态，所以Isipho会在一定程度上复用1.0的生态，并且做更多的支持。
-1. CnosDB Isipho必须支持
-   1. 行协议
-   2. http 接口
-2. 需要支持的生态伙伴产品
-   1. 第三方与CnosDB的数据异构
-   Telegraf（1.0 支持）
-   Influxdb（1.0 支持）
-   Prometheus（1.0 支持）
-   Timescales
-   Kafka/Pulsar
-   MySQL/PgSQL（1.0 支持）
-3. 数据管理工具涉及引擎层工具
-   1. 数据文件备份（可以指定DB、shard、时间段等）与还原
-   2. 导出为行协议（可以按照多个不同维度：DB、Shard、时间段）与批量导入
-   3. 磁盘文件分析工具（分析tsm、WAL、index文件等，索引重建，文件合法性校验等）
-   d. 按照多个维度删除数据：DB、table、shard、时间段
-### 测试支持
-1. 基础测试
-2. 持续压力测试
-3. 集群全功能测试框架
-4. 混沌测试
-## CnosDB Isipho的时间表
-### 202207 JULY GO
-kv:
-1. 读操作过滤删除  并补充测试用例
-2. 删除操作完成  并补充测试用例
-3. compact merge iterator
-4. 支持离散点数据生产delta文件
-5. 补充基本测试用例 搭建ci 自动跑门禁 补充压测
-6. 配置文件， 支持从环境变量和配置读取
-7. 优化 不必要的lock  （长期工作）
+- 面向多租设计，提供更多的配置参数，能够提供资源更加灵活的配置；
+- cdc、WAL可以提供订阅和分发到其他节点，更加灵活的部署和支持；
+- 生态型兼容K8s生态，减少共享内存；
+- 与其他数据生态系统相结合，支持导入/导出parquet文件；
+- 兼容国际与国内主要公有云生态。
+## 路线图
+* [路线图](docs/roadmap/ROADMAP_CN.md)
+## 加入社区
+欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
 
-query:
-1. impl catalog provider
-2. schema存储 对接arrow schema
-3. 将tsm file中的数据组装成arrow中的recordbatch。
-### 202208
-### 202209
-### 202210
-### 202211
-### 202212
+入群前请查看[入群须知](./docs/guidelines/CnosDBWeChatUserGroupGuidelines.md)
+
+<img src="docs/source/_static/img/u.jpg" width="256"/>
+
+
+## 社区贡献指南
+
+- 维护中，敬请期待
+
+## 联系我们
+
+* [官方主页 (维护者中)](https://www.cnosdb.com)
+
+* [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
+
+* [推特:@CnosDB](https://twitter.com/CnosDB)
+
+* [领英主页](https://www.linkedin.com/company/cnosdb)
+
+* [B站](https://space.bilibili.com/36231559)
+
+* [抖音](https://www.douyin.com/user/MS4wLjABAAAA6ua1UPmYWCcTl0AT0Lf1asILf9ogmj7J257KEq812csox9FBrAkxxKcok1GIzPMv)
+
+* [知乎](https://www.zhihu.com/org/cnosdb)
+
+* [CSDN](https://blog.csdn.net/CnosDB)
+
+* [简书](https://www.jianshu.com/u/745811688e9e)
+
+## 我们正在招聘
+* 如果您对全职、兼职或者实习工作感兴趣，请发简历到 hr@cnosdb.com
+
+## 许可证
+
+* [AGPL-3.0 License](./LICENSE.md)
