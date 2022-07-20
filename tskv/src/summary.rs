@@ -20,8 +20,9 @@ use crate::{
 const MAX_BATCH_SIZE: usize = 64;
 #[derive(Serialize, Deserialize, PartialEq, Debug, Default, Clone)]
 pub struct CompactMeta {
-    pub file_id: u64, // file id
+    pub file_id: u64,
     pub file_size: u64,
+    pub tsf_id: u32,
     pub ts_min: i64,
     pub ts_max: i64,
     pub level: u32,
@@ -33,6 +34,7 @@ impl CompactMeta {
     pub fn new() -> Self {
         Self { file_id: 0,
                file_size: 0,
+               tsf_id: 0,
                ts_min: i64::MAX,
                ts_max: i64::MIN,
                level: 0,
@@ -95,14 +97,17 @@ impl VersionEdit {
         self.has_seq_no = true;
         self.seq_no = seq_no;
         self.level = level;
+        self.tsf_id = tsf_id;
         self.max_level_ts = max_level_ts;
         self.add_files.push(meta);
     }
+
     pub fn add_tsfamily(&mut self, tsf_id: u32, tsf_name: String) {
         self.add_tsf = true;
         self.tsf_name = tsf_name;
         self.tsf_id = tsf_id;
     }
+
     pub fn del_tsfamily(&mut self, tsf_if: u32) {
         self.del_tsf = true;
         self.tsf_id = tsf_if;
@@ -166,7 +171,7 @@ impl Summary {
             edits.insert(i, vec![]);
             let name = format!("default{}", i);
             tf_names.insert(i, name.clone());
-            tf_cfg.push(TseriesFamDesc { name, opt: TseriesFamOpt::default() });
+            tf_cfg.push(Arc::new(TseriesFamDesc { name, opt: Arc::new(TseriesFamOpt::default()) }));
         }
         ctx.set_max_tsf_idy(GLOBAL_CONFIG.tsfamily_num - 1);
         loop {
@@ -178,8 +183,8 @@ impl Summary {
                         ctx.set_max_tsf_idy(ed.tsf_id);
                         edits.insert(ed.tsf_id, vec![]);
                         tf_names.insert(ed.tsf_id, ed.tsf_name.clone());
-                        tf_cfg.push(TseriesFamDesc { name: ed.tsf_name,
-                                                     opt: TseriesFamOpt::default() });
+                        tf_cfg.push(Arc::new(TseriesFamDesc { name: ed.tsf_name,
+                                                              opt: Default::default() }));
                     } else if ed.del_tsf {
                         edits.remove(&ed.tsf_id);
                         tf_names.remove(&ed.tsf_id);
@@ -314,12 +319,14 @@ impl SummaryScheduler {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use config::GLOBAL_CONFIG;
     use snafu::ResultExt;
 
     use crate::{
         error, file_manager,
-        kv_option::DBOptions,
+        kv_option::{DBOptions, TseriesFamOpt},
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };
 

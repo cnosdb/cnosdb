@@ -1,7 +1,8 @@
 #![allow(dead_code)]
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use config::GLOBAL_CONFIG;
+use serde::{Deserialize, Serialize};
 
 use crate::forward_index::ForwardIndexConfig;
 
@@ -28,13 +29,13 @@ impl Default for DBOptions {
 
 #[derive(Default, Clone)]
 pub struct Options {
-    pub db: DBOptions,
-    pub lrucache: CacheConfig,
-    pub wal: WalConfig,
+    pub db: Arc<DBOptions>,
+    pub lrucache: Arc<CacheConfig>,
+    pub wal: Arc<WalConfig>,
     // pub(crate) write_batch: WriteBatchConfig,
-    pub compact_conf: CompactConfig,
-    pub forward_index_conf: ForwardIndexConfig,
-    pub schema_store: SchemaStoreConfig,
+    pub compact_conf: Arc<CompactConfig>,
+    pub forward_index_conf: Arc<ForwardIndexConfig>,
+    pub schema_store: Arc<SchemaStoreConfig>,
 }
 
 impl Options {
@@ -111,7 +112,7 @@ impl Default for TseriesFamOpt {
 
 pub struct TseriesFamDesc {
     pub name: String,
-    pub opt: TseriesFamOpt,
+    pub opt: Arc<TseriesFamOpt>,
 }
 
 pub struct MemCacheOpt {

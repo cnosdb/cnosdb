@@ -4,7 +4,10 @@ use models::{Timestamp, ValueType};
 use protos::models::FieldType;
 
 use super::coders;
-use crate::memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell};
+use crate::{
+    memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell},
+    tseries_family::TimeRange,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataBlock {
@@ -300,7 +303,7 @@ impl DataBlock {
         }
     }
 
-    /// Remote (ts, val) in this `DataBlock` where ts is greater equal than min_ts
+    /// Remove (ts, val) in this `DataBlock` where ts is greater equal than min_ts
     /// and ts is less than the max_ts
     pub fn exclude(&mut self, min_ts: Timestamp, max_ts: Timestamp) {
         fn binary_earch(sli: &[i64], ts: &i64) -> usize {

@@ -231,8 +231,7 @@ unsafe impl Send for WalManager {}
 unsafe impl Sync for WalManager {}
 
 impl WalManager {
-    pub fn new(config: kv_option::WalConfig) -> Self {
-        let config = Arc::new(config);
+    pub fn new(config: Arc<kv_option::WalConfig>) -> Self {
         let current_dir_path = PathBuf::from(config.dir.clone());
 
         let (last, seq) =
@@ -581,7 +580,8 @@ mod test {
 
     #[tokio::test]
     async fn test_write_entry() {
-        let wal_config = kv_option::WalConfig { dir: String::from(DIR), ..Default::default() };
+        let wal_config =
+            Arc::new(kv_option::WalConfig { dir: String::from(DIR), ..Default::default() });
 
         let mut mgr = WalManager::new(wal_config);
 
@@ -614,8 +614,8 @@ mod test {
 
     #[test]
     fn test_read_entry() {
-        let wal_config = crate::kv_option::WalConfig { dir: String::from("/tmp/test_wal"),
-                                                       ..Default::default() };
+        let wal_config = Arc::new(kv_option::WalConfig { dir: String::from("/tmp/test_wal"),
+                                                         ..Default::default() });
 
         let mgr = WalManager::new(wal_config);
 
@@ -651,7 +651,7 @@ mod test {
     #[tokio::test]
     async fn test_read_and_write() {
         let wal_config =
-            crate::kv_option::WalConfig { dir: String::from(DIR), ..Default::default() };
+            Arc::new(kv_option::WalConfig { dir: String::from(DIR), ..Default::default() });
 
         let mut mgr = WalManager::new(wal_config);
 
