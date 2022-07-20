@@ -40,7 +40,7 @@ Please check [Instructions for joining the group](./docs/guidelines/CnosDBWeChat
 
 ## Contributing
 
-* Maintenance is in progress, so stay tuned!
+* Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to CnosDB.
 
 ## Contact
 

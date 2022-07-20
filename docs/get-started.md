@@ -69,6 +69,6 @@
 ## Compile
 
 ```sh
-$ git clone https://github.com/cnosdb/cnosdb-isipho.git && cd cnosdb-isipho 
+$ git clone https://github.com/cnosdb/cnosdb.git && cd cnosdb 
 $ cargo build
 ```
