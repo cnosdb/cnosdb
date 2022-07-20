@@ -4,7 +4,7 @@ use models::{FieldId, Timestamp, ValueType};
 
 use super::{BlockMetaIterator, BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE};
 use crate::{
-    byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u64},
+    byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     direct_io::File,
     error::{Error, Result},
 };
@@ -123,6 +123,7 @@ pub struct BlockMeta {
 
     min_ts: Timestamp,
     max_ts: Timestamp,
+    count: u32,
 }
 
 impl PartialEq for BlockMeta {
@@ -163,7 +164,8 @@ impl BlockMeta {
            -> Self {
         let min_ts = decode_be_i64(&index.data()[block_offset..block_offset + 8]);
         let max_ts = decode_be_i64(&&index.data()[block_offset + 8..block_offset + 16]);
-        Self { index_ref: index, field_id, block_offset, field_type, min_ts, max_ts }
+        let count = decode_be_u32(&&index.data()[block_offset + 16..block_offset + 20]);
+        Self { index_ref: index, field_id, block_offset, field_type, min_ts, max_ts, count }
     }
 
     #[inline(always)]
@@ -192,35 +194,35 @@ impl BlockMeta {
     }
 
     #[inline(always)]
-    pub fn data_count() -> u32 {
-        // TODO return value count of this data block
-        0
+    pub fn count(&self) -> u32 {
+        self.count
     }
 
     #[inline(always)]
     pub fn offset(&self) -> u64 {
-        decode_be_u64(&self.index_ref.data()[self.block_offset + 16..self.block_offset + 24])
+        decode_be_u64(&self.index_ref.data()[self.block_offset + 20..self.block_offset + 28])
     }
 
     #[inline(always)]
     pub fn size(&self) -> u64 {
-        decode_be_u64(&self.index_ref.data()[self.block_offset + 24..self.block_offset + 32])
+        decode_be_u64(&self.index_ref.data()[self.block_offset + 28..self.block_offset + 36])
     }
 
     #[inline(always)]
     pub fn val_off(&self) -> u64 {
-        decode_be_u64(&self.index_ref.data()[self.block_offset + 32..self.block_offset + 40])
+        decode_be_u64(&self.index_ref.data()[self.block_offset + 36..self.block_offset + 44])
     }
 }
 
 impl Display for BlockMeta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f,
-               "BlockMeta: {{ field_id: {}, field_type: {:?}, min_ts: {}, max_ts: {}, offset: {}, val_off: {} }}",
+               "BlockMeta: {{ field_id: {}, field_type: {:?}, min_ts: {}, max_ts: {}, count:{}, offset: {}, val_off: {} }}",
                self.field_id,
                self.field_type,
                self.min_ts,
                self.max_ts,
+               self.count,
                self.offset(),
                self.val_off())
     }
@@ -246,6 +248,7 @@ pub(crate) fn get_data_block_meta_unchecked(index: Arc<Index>,
     BlockMeta::new(index, field_id, field_type, base)
 }
 
+#[derive(Debug)]
 pub(crate) struct IndexEntry {
     pub field_id: FieldId,
     pub field_type: ValueType,
@@ -261,9 +264,11 @@ impl IndexEntry {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct BlockEntry {
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
+    pub count: u32,
     pub offset: u64,
     pub size: u64,
     pub val_offset: u64,
@@ -271,11 +276,12 @@ pub(crate) struct BlockEntry {
 
 impl BlockEntry {
     pub(crate) fn encode(&self, buf: &mut [u8]) {
-        assert!(buf.len() >= 40);
+        assert!(buf.len() >= BLOCK_META_SIZE);
         buf[0..8].copy_from_slice(&self.min_ts.to_be_bytes()[..]);
         buf[8..16].copy_from_slice(&self.max_ts.to_be_bytes()[..]);
-        buf[16..24].copy_from_slice(&self.offset.to_be_bytes()[..]);
-        buf[24..32].copy_from_slice(&self.size.to_be_bytes()[..]);
-        buf[32..40].copy_from_slice(&self.val_offset.to_be_bytes()[..]);
+        buf[16..20].copy_from_slice(&self.count.to_be_bytes()[..]);
+        buf[20..28].copy_from_slice(&self.offset.to_be_bytes()[..]);
+        buf[28..36].copy_from_slice(&self.size.to_be_bytes()[..]);
+        buf[36..44].copy_from_slice(&self.val_offset.to_be_bytes()[..]);
     }
 }

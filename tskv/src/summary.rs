@@ -15,6 +15,7 @@ use crate::{
     record_file::{Reader, Writer},
     tseries_family::{LevelInfo, Version},
     version_set::VersionSet,
+    LevelId,
 };
 
 const MAX_BATCH_SIZE: usize = 64;
@@ -112,8 +113,14 @@ impl VersionEdit {
         self.del_tsf = true;
         self.tsf_id = tsf_if;
     }
-    // todo:
-    pub fn del_file(&mut self) {}
+
+    pub fn del_file(&mut self, level: LevelId, file_id: u64, is_delta: bool) {
+        let mut cm = CompactMeta::new();
+        cm.file_id = file_id;
+        cm.level = level;
+        cm.is_delta = is_delta;
+        self.del_files.push(cm);
+    }
 
     pub fn set_log_seq(&mut self, file_id: u64) {
         self.file_id = file_id;

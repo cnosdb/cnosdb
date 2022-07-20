@@ -3,7 +3,7 @@ use std::{
     cmp::min,
     collections::HashMap,
     ops::{Deref, DerefMut},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -89,22 +89,20 @@ impl ColumnFile {
 
     pub fn file_path(&self, tsf_opt: Arc<TseriesFamOpt>, tf_id: u32) -> PathBuf {
         if self.is_delta {
-            let path = tsf_opt.delta_dir.clone() + tf_id.to_string().as_str() + "/";
-            file_utils::make_delta_file_name(path, self.file_id)
+            file_utils::make_delta_file_name(tsf_opt.delta_dir(tf_id), self.file_id)
         } else {
-            let path = tsf_opt.tsm_dir.clone() + tf_id.to_string().as_str() + "/";
-            file_utils::make_tsm_file_name(path, self.file_id)
+            file_utils::make_tsm_file_name(tsf_opt.tsm_dir(tf_id), self.file_id)
         }
     }
 
     pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
         let ts_cf = TseriesFamOpt::default();
         let fs = if self.is_delta {
-            let p = format!("/_{:06}.delta", self.file_id());
-            file_manager::open_file(ts_cf.delta_dir + tf_id.to_string().as_str() + p.as_str())
+            let file_name = format!("_{:06}.delta", self.file_id());
+            file_manager::open_file(ts_cf.delta_dir(tf_id).join(file_name))
         } else {
-            let p = format!("/_{:06}.tsm", self.file_id());
-            file_manager::open_file(ts_cf.tsm_dir + tf_id.to_string().as_str() + p.as_str())
+            let file_name = format!("_{:06}.tsm", self.file_id());
+            file_manager::open_file(ts_cf.tsm_dir(tf_id).join(file_name))
         };
         match fs {
             Ok(v) => {

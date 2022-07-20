@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     byte_utils,
-    byte_utils::{decode_be_i64, decode_be_u16, decode_be_u64},
+    byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     direct_io::{File, FileCursor},
     error::{self, Error, Result},
     file_manager, file_utils,
@@ -99,6 +99,11 @@ impl IndexFile {
         self.pos += 8;
         let max_ts = i64::from_be_bytes(self.buf);
 
+        // read count on block entry
+        self.reader.read_at(self.pos, &mut self.buf[..4]).context(IOSnafu)?;
+        self.pos += 4;
+        let count = decode_be_u32(&self.buf[..4]);
+
         // read block data offset
         self.reader.read_at(self.pos, &mut self.buf[..]).context(IOSnafu)?;
         self.pos += 8;
@@ -131,10 +136,11 @@ pub fn print_tsm_statistics(path: impl AsRef<Path>) {
                  tr.1);
         println!("------------------------------------------------------------");
         for blk in idx.block_iterator() {
-            println!("Block | FieldId: {}, MinTime: {}, MaxTime: {}, Offset: {}, ValOffset: {}",
+            println!("Block | FieldId: {}, MinTime: {}, MaxTime: {}, Count: {}, Offset: {}, ValOffset: {}",
                      blk.field_id(),
                      blk.min_ts(),
                      blk.max_ts(),
+                     blk.count(),
                      blk.offset(),
                      blk.val_off())
         }
@@ -357,13 +363,13 @@ impl TsmReader {
     pub fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
-        let mut blk = decode_data_block(self.reader.clone(),
-                                        &mut buf,
-                                        block_meta.field_type(),
-                                        block_meta.offset(),
-                                        block_meta.size(),
-                                        block_meta.val_off())?;
-        // TODO fully test the code below
+        let mut blk = read_data_block(self.reader.clone(),
+                                      &mut buf,
+                                      block_meta.field_type(),
+                                      block_meta.offset(),
+                                      block_meta.size(),
+                                      block_meta.val_off())?;
+        // TODO This costs too much
         if let Some(tomb_ref) = &self.tombstone {
             let tomb = tomb_ref.lock();
             tomb.tombstones()
@@ -374,7 +380,6 @@ impl TsmReader {
                 })
                 .for_each(|t| {
                     blk.exclude(t.min_ts, t.max_ts);
-                    println!("data block {} excluded ({}, {})", blk, t.min_ts, t.max_ts);
                 });
         }
 
@@ -383,12 +388,10 @@ impl TsmReader {
 
     // Reads raw data from file and returns the read data size.
     pub fn get_raw_data(&self, block_meta: &BlockMeta, dst: &mut Vec<u8>) -> ReadTsmResult<usize> {
-        // TODO fully test the code below
-        let data_len = (block_meta.size() - block_meta.offset()) as usize;
-        if dst.capacity() < data_len {
+        let data_len = block_meta.size() as usize;
+        if dst.len() < data_len {
             dst.resize(data_len, 0);
         }
-        let a = &dst[0..1];
         self.reader.read_at(block_meta.offset(), &mut dst[..data_len]).context(IOSnafu)?;
         Ok(data_len)
     }
@@ -416,12 +419,12 @@ impl ColumnReader {
     fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let (offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
-        decode_data_block(self.reader.clone(),
-                          &mut self.buf,
-                          block_meta.field_type(),
-                          block_meta.offset(),
-                          block_meta.size(),
-                          block_meta.val_off())
+        read_data_block(self.reader.clone(),
+                        &mut self.buf,
+                        block_meta.field_type(),
+                        block_meta.offset(),
+                        block_meta.size(),
+                        block_meta.val_off())
     }
 }
 
@@ -437,21 +440,31 @@ impl Iterator for ColumnReader {
     }
 }
 
-pub fn decode_data_block(reader: Arc<File>,
-                         buf: &mut [u8],
+fn read_data_block(reader: Arc<File>,
+                   buf: &mut [u8],
+                   field_type: ValueType,
+                   offset: u64,
+                   size: u64,
+                   val_off: u64)
+                   -> ReadTsmResult<DataBlock> {
+    assert!(buf.len() >= size as usize);
+
+    reader.read_at(offset, buf).context(IOSnafu)?;
+    decode_data_block(buf, field_type, size, val_off - offset)
+}
+
+pub fn decode_data_block(buf: &[u8],
                          field_type: ValueType,
-                         offset: u64,
                          size: u64,
                          val_off: u64)
                          -> ReadTsmResult<DataBlock> {
     assert!(buf.len() >= size as usize);
 
-    reader.read_at(offset, buf).context(IOSnafu)?;
     // let crc_ts = &self.buf[..4];
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES);
-    timestamp::decode(&buf[4..(val_off - offset) as usize], &mut ts).context(DecodeSnafu)?;
+    timestamp::decode(&buf[4..val_off as usize], &mut ts).context(DecodeSnafu)?;
     // let crc_data = &self.buf[(val_offset - offset) as usize..4];
-    let data = &buf[(val_off - offset + 4) as usize..];
+    let data = &buf[(val_off + 4) as usize..];
     match field_type {
         ValueType::Float => {
             // values will be same length as time-stamps.
