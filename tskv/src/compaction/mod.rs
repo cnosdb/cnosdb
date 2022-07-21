@@ -4,8 +4,8 @@ mod picker;
 
 pub use compact::*;
 pub use flush::*;
+use parking_lot::RwLock;
 pub use picker::*;
-use tokio::sync::RwLock;
 
 use crate::{
     memcache::MemCache,
