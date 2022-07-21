@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
 };
 
@@ -42,12 +42,12 @@ use crate::{
 // │ 4 bytes │ N bytes │ 4 bytes │ N bytes │
 // └─────────┴─────────┴─────────┴─────────┴
 //
-// ┌──────────────────────────────────────────────────────────────────────┐
-// │                               Index                                  │
-// ├─────────┬──────┬───────┬─────────┬─────────┬────────┬────────┬───────┤
-// │ fieldId │ Type │ Count │Min Time │Max Time │ Offset │  Size  │Valoff │
-// │ 8 bytes │1 byte│2 bytes│ 8 bytes │ 8 bytes │8 bytes │8 bytes │8 bytes│
-// └─────────┴──────┴───────┴─────────┴─────────┴────────┴────────┴───────┘
+// ┌───────────────────────────────────────────────────────────────────────────────┐
+// │                               Index                                           │
+// ├─────────┬──────┬───────┬─────────┬─────────┬────────┬────────┬────────┬───────┤
+// │ fieldId │ Type │ Count │Min Time │Max Time │ count  │ Offset │  Size  │Valoff │
+// │ 8 bytes │1 byte│2 bytes│ 8 bytes │ 8 bytes │4 bytes │8 bytes │8 bytes │8 bytes│
+// └─────────┴──────┴───────┴─────────┴─────────┴────────┴────────┴────────┴───────┘
 //
 // ┌─────────────────────────┐
 // │ Footer                  │
@@ -97,14 +97,14 @@ impl Into<Error> for WriteTsmError {
 
 struct IndexBuf {
     index_offset: u64,
-    buf: HashMap<FieldId, IndexEntry>,
+    buf: BTreeMap<FieldId, IndexEntry>,
     bloom_filter: BloomFilter,
 }
 
 impl IndexBuf {
     pub fn new() -> Self {
         Self { index_offset: 0,
-               buf: HashMap::new(),
+               buf: BTreeMap::new(),
                bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS) }
     }
 
@@ -117,27 +117,28 @@ impl IndexBuf {
                              field_type: ValueType,
                              min_ts: i64,
                              max_ts: i64,
+                             count: u32,
                              offset: u64,
                              size: u64,
                              val_offset: u64) {
         let idx =
             self.buf.entry(field_id).or_insert(IndexEntry { field_id, field_type, blocks: vec![] });
-        idx.blocks.push(BlockEntry { min_ts, max_ts, offset, size, val_offset });
+        idx.blocks.push(BlockEntry { min_ts, max_ts, count, offset, size, val_offset });
         self.bloom_filter.insert(&field_id.to_be_bytes()[..]);
     }
 
     pub fn write_to(&self, writer: &mut FileCursor) -> WriteTsmResult<usize> {
         let mut size = 0_usize;
 
-        let mut buf = vec![0_u8; 40];
+        let mut buf = vec![0_u8; BLOCK_META_SIZE];
         for (_, idx) in self.buf.iter() {
-            idx.encode(&mut buf[..11]);
-            writer.write(&buf[..11]).context(IOSnafu)?;
+            idx.encode(&mut buf[..INDEX_META_SIZE]);
+            writer.write(&buf[..INDEX_META_SIZE]).context(IOSnafu)?;
             size += 11;
             for blk in idx.blocks.iter() {
                 blk.encode(&mut buf);
                 writer.write(&buf[..]).context(IOSnafu)?;
-                size += 40;
+                size += 44;
             }
         }
 
@@ -230,11 +231,7 @@ impl TsmWriter {
         let ret = write_raw_data_to(&mut self.writer,
                                     &mut write_pos,
                                     &mut self.index_buf,
-                                    block_meta.field_id(),
-                                    block_meta.field_type(),
-                                    block_meta.min_ts(),
-                                    block_meta.max_ts(),
-                                    block_meta.val_off() - block_meta.offset(),
+                                    block_meta,
                                     block);
         if let Ok(s) = ret {
             self.size += s as u64
@@ -281,11 +278,7 @@ pub fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
 fn write_raw_data_to(writer: &mut FileCursor,
                      write_pos: &mut u64,
                      index_buf: &mut IndexBuf,
-                     field_id: FieldId,
-                     block_type: ValueType,
-                     min_ts: Timestamp,
-                     max_ts: Timestamp,
-                     ts_block_len: u64,
+                     block_meta: &BlockMeta,
                      block: &[u8])
                      -> WriteTsmResult<usize> {
     let mut size = 0_usize;
@@ -295,11 +288,13 @@ fn write_raw_data_to(writer: &mut FileCursor,
               size += s;
           })
           .context(IOSnafu)?;
+    let ts_block_len = block_meta.val_off() - block_meta.offset();
 
-    index_buf.insert_block_meta(field_id,
-                                block_type,
-                                min_ts,
-                                max_ts,
+    index_buf.insert_block_meta(block_meta.field_id(),
+                                block_meta.field_type(),
+                                block_meta.min_ts(),
+                                block_meta.max_ts(),
+                                block_meta.count(),
                                 offset,
                                 block.len() as u64,
                                 offset + ts_block_len);
@@ -354,6 +349,7 @@ fn write_block_to(writer: &mut FileCursor,
                                 block.field_type(),
                                 block.ts()[0],
                                 block.ts()[block.len() - 1],
+                                block.len() as u32,
                                 offset,
                                 size as u64,
                                 val_off);
@@ -410,7 +406,6 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let tsm_path = dir.as_ref().join(file_name);
-        println!("Writing to {}", tsm_path.to_str().unwrap());
         let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
         let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
         for (fid, blk) in data.iter() {
@@ -421,7 +416,6 @@ mod test {
     }
 
     fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, DataBlock> {
-        println!("Reading from {}", path.as_ref().to_str().unwrap());
         let file = Arc::new(file_manager::open_file(&path).unwrap());
         let len = file.len();
 
@@ -460,7 +454,7 @@ mod test {
     fn test_tsm_write_1() {
         let mut ts_1: Vec<i64> = Vec::new();
         let mut val_1: Vec<i64> = Vec::new();
-        for i in 0..1001 {
+        for i in 1..1001 {
             ts_1.push(i as i64);
             val_1.push(i as i64);
         }
@@ -478,7 +472,6 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let tsm_path = dir.join("test_tsm_write_1.tsm");
-        println!("Writing to {}", tsm_path.to_str().unwrap());
         let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
         let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
 

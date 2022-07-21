@@ -195,8 +195,25 @@ mod test {
     use crate::{byte_utils, file_manager, file_utils, tseries_family::TimeRange};
 
     #[test]
-    fn test_write_read() {
-        let dir = PathBuf::from("/tmp/test/tombstone".to_string());
+    fn test_write_read_1() {
+        let dir = PathBuf::from("/tmp/test/tombstone/1".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+        let path = file_utils::make_tsm_tombstone_file_name(&dir, 1);
+
+        let mut tombstone = TsmTombstone::with_path(&path).unwrap();
+        // tsm_tombstone.load().unwrap();
+        tombstone.add_range(&[0], 0, 0).unwrap();
+        tombstone.flush().unwrap();
+
+        tombstone.load().unwrap();
+        assert_eq!(true, tombstone.overlaps(0, &TimeRange { max_ts: 0, min_ts: 0 }));
+    }
+
+    #[test]
+    fn test_write_read_2() {
+        let dir = PathBuf::from("/tmp/test/tombstone/2".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -214,26 +231,8 @@ mod test {
     }
 
     #[test]
-    fn test_write_read_tiny() {
-        let dir = PathBuf::from("/tmp/test/tombstone/1".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
-        let path = file_utils::make_tsm_tombstone_file_name(&dir, 1);
-
-        let mut tombstone = TsmTombstone::with_path(&path).unwrap();
-        // tsm_tombstone.load().unwrap();
-        tombstone.add_range(&[0], 0, 0).unwrap();
-        tombstone.flush().unwrap();
-
-        tombstone.load().unwrap();
-
-        assert_eq!(true, tombstone.overlaps(0, &TimeRange { max_ts: 0, min_ts: 0 }));
-    }
-
-    #[test]
-    fn test_write_read_slow() {
-        let dir = PathBuf::from("/tmp/test/tombstone/slow".to_string());
+    fn test_write_read_3() {
+        let dir = PathBuf::from("/tmp/test/tombstone/3".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }

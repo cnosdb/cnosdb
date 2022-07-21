@@ -95,6 +95,14 @@ impl TseriesFamOpt {
     pub fn level_file_size(&self, lvl: u32) -> u64 {
         self.base_file_size * lvl as u64 * self.compact_trigger as u64
     }
+
+    pub fn tsm_dir(&self, tsf_id: u32) -> PathBuf {
+        PathBuf::from(self.tsm_dir.clone()).join(tsf_id.to_string())
+    }
+
+    pub fn delta_dir(&self, tsf_id: u32) -> PathBuf {
+        PathBuf::from(self.delta_dir.clone()).join(tsf_id.to_string())
+    }
 }
 
 impl Default for TseriesFamOpt {
