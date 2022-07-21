@@ -234,82 +234,6 @@ impl DataBlock {
         }
     }
 
-    /// Append a `DataBlock` into this `DataBlock`, sorted by timestamp,
-    /// if two (timestamp, value) conflict with the same timestamp, use the last value.
-    ///
-    /// If max_block_size is not 0, when length of this `DataBlock` reach max_block_size,
-    /// returns the remaining `DataBlock`.
-    pub fn merge<'other>(&mut self,
-                         other: &'other mut Self,
-                         max_block_size: u32)
-                         -> Option<&'other DataBlock> {
-        if other.is_empty() || self.field_type() != other.field_type() {
-            return None;
-        }
-        if max_block_size != 0 && self.len() >= max_block_size as usize {
-            return Some(other);
-        }
-
-        let mut new_blk = Self::new(self.len() + other.len(), self.field_type());
-        let (mut i, mut j, mut k) = (0_usize, 0_usize, 0_usize);
-        while i < self.len() && j < other.len() {
-            match self.ts()[i].cmp(&other.ts()[j]) {
-                std::cmp::Ordering::Less => {
-                    new_blk.insert(&self.get(i).expect("checked index i"));
-                    i += 1;
-                },
-                std::cmp::Ordering::Equal => {
-                    new_blk.insert(&self.get(i).expect("checked index i"));
-                    i += 1;
-                    j += 1;
-                },
-                std::cmp::Ordering::Greater => {
-                    new_blk.insert(&other.get(j).expect("checked index j"));
-                    j += 1;
-                },
-            }
-            k += 1;
-            if max_block_size != 0 && k > max_block_size as usize {
-                other.exclude_by_index(0, k);
-                std::mem::swap(self, &mut new_blk);
-                return Some(other);
-            }
-        }
-        if max_block_size == 0 {
-            // TODO implements slice `copy_from_slice` method.
-            if i < self.len() {
-                for l in i..self.len() {
-                    new_blk.insert(&self.get(l).unwrap())
-                }
-            } else if j < other.len() {
-                for l in j..other.len() {
-                    new_blk.insert(&other.get(j).unwrap())
-                }
-            }
-        } else {
-            let remaining_new = max_block_size as usize - k;
-            if remaining_new > 0 {
-                let remaining_self = self.len() - i;
-                let remaining_other = other.len() - j;
-                // TODO implements slice `copy_from_slice` method.
-                if remaining_self > 0 {
-                    let remaining = remaining_new.min(remaining_self);
-                    for l in i..i + remaining {
-                        new_blk.insert(&self.get(l).unwrap())
-                    }
-                } else if remaining_other > 0 {
-                    let remaining = remaining_new.min(remaining_other);
-                    for l in j..j + remaining {
-                        new_blk.insert(&other.get(l).unwrap())
-                    }
-                }
-            }
-        }
-
-        std::mem::swap(self, &mut new_blk);
-        return None;
-    }
-
     /// Merges many `DataBlock`s into one `DataBlock`, sorted by timestamp,
     /// if many (timestamp, value) conflict with the same timestamp, use the last value.
     pub fn merge_blocks(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
@@ -387,16 +311,16 @@ impl DataBlock {
     /// Remove (ts, val) in this `DataBlock` where ts is greater equal than min_ts
     /// and ts is less equal than the max_ts
     pub fn exclude(&mut self, min_ts: Timestamp, max_ts: Timestamp) {
-        fn binary_earch(sli: &[i64], ts: &i64) -> usize {
+        fn binary_earch(sli: &[i64], ts: &i64) -> (usize, bool) {
             match sli.binary_search(ts) {
-                Ok(i) => i,
-                Err(i) => i,
+                Ok(i) => (i, true),
+                Err(i) => (i, i != 0 && i != sli.len()),
             }
         }
         let ts_sli = self.ts();
-        let min_idx = binary_earch(ts_sli, &min_ts);
-        let mut max_idx = binary_earch(ts_sli, &max_ts);
-        if min_idx > max_idx {
+        let (min_idx, has_min) = binary_earch(ts_sli, &min_ts);
+        let (mut max_idx, has_max) = binary_earch(ts_sli, &max_ts);
+        if min_idx > max_idx || !has_min && !has_max {
             return;
         }
         if max_idx + 1 < ts_sli.len() {
@@ -580,58 +504,13 @@ mod test {
     }
 
     #[test]
-    fn test_self_merge_1() {
-        let mut a = DataBlock::U64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] };
-        let mut b = DataBlock::U64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] };
-        a.merge(&mut b, 10);
-        assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1, 2, 3, 4, 5, 6] });
-
-        let mut a = DataBlock::U64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] };
-        let mut b = DataBlock::U64 { ts: vec![3, 4, 5], val: vec![3, 4, 5] };
-        a.merge(&mut b, 10);
-        assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![1, 2, 3, 4, 5] });
-
-        let mut a = DataBlock::U64 { ts: vec![3, 4, 5], val: vec![3, 4, 5] };
-        let mut b = DataBlock::U64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] };
-        a.merge(&mut b, 10);
-        assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![1, 2, 3, 4, 5] });
-
-        let mut a = DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1, 2, 3, 4, 5, 6] };
-        let mut b = DataBlock::U64 { ts: vec![3, 4, 5], val: vec![3, 4, 5] };
-        a.merge(&mut b, 10);
-        assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1, 2, 3, 4, 5, 6] });
-
-        let mut a = DataBlock::U64 { ts: vec![3, 4, 5,], val: vec![3, 4, 5] };
-        let mut b = DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1, 2, 3, 4, 5, 6] };
-        a.merge(&mut b, 10);
-        assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1, 2, 3, 4, 5, 6] });
-
-        let mut a = DataBlock::U64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] };
-        let mut b = DataBlock::U64 { ts: vec![3, 4, 5, 6, 7, 8], val: vec![3, 4, 5, 6, 7, 8] };
-        let rem = a.merge(&mut b, 10);
-        assert_eq!(a,
-                   DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8],
-                                    val: vec![1, 2, 3, 4, 5, 6, 7, 8] });
-
-        #[rustfmt::skip]
-        let mut a = DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] };
-        #[rustfmt::skip]
-        let mut b = DataBlock::U64 { ts: vec![7, 8, 9, 10, 11, 12, 13], val: vec![7, 8, 9, 10, 11, 12, 13] };
-        let rem = a.merge(&mut b, 10);
-        assert_eq!(a,
-                   DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                                    val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10] });
-    }
-
-    #[test]
-    fn test_data_block_exclude() {
+    fn test_data_block_exclude_1() {
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
         };
         blk.exclude(2, 8);
-        dbg!(&blk);
         assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 9], val: vec![10, 11, 19] });
 
         #[rustfmt::skip]
@@ -640,8 +519,38 @@ mod test {
             val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
         };
         blk.exclude(2, 8);
-        dbg!(&blk);
         assert_eq!(blk,
                    DataBlock::Str { ts: vec![0, 1, 9], val: vec![vec![10], vec![11], vec![19]] })
+    }
+
+    #[test]
+    fn test_data_block_exclude_2() {
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+        };
+        blk.exclude(-2, 0);
+        assert_eq!(blk, DataBlock::U64 { ts: vec![1, 2, 3], val: vec![11, 12, 13] });
+
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+        };
+        blk.exclude(3, 5);
+        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2], val: vec![10, 11, 12] });
+
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+        };
+        blk.exclude(-3, -1);
+        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13] });
+
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+        };
+        blk.exclude(5, 7);
+        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13] });
     }
 }
