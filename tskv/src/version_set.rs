@@ -5,7 +5,8 @@ use std::{
 
 use config::GLOBAL_CONFIG;
 use logger::error;
-use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
+use parking_lot::RwLock;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use crate::{
     kv_option::{TseriesFamDesc, TseriesFamOpt},
@@ -26,8 +27,8 @@ impl VersionSet {
         let mut ts_families = HashMap::new();
         let mut ts_families_names = HashMap::new();
         for (id, ver) in vers_set {
-            let name = ver.read().await.get_name().to_string();
-            let seq = ver.read().await.last_seq;
+            let name = ver.read().get_name().to_string();
+            let seq = ver.read().last_seq;
             for item in desc.iter() {
                 if item.name == name {
                     let tf = TseriesFamily::new(id,
@@ -37,7 +38,7 @@ impl VersionSet {
                                                               seq,
                                                               false),
                                                 ver.clone(),
-                                                item.opt.clone()).await;
+                                                item.opt.clone());
                     ts_families.insert(id, tf);
                     ts_families_names.insert(name.clone(), id);
                 }
@@ -96,7 +97,7 @@ impl VersionSet {
                                                                       name.clone(),
                                                                       vec![],
                                                                       i64::MIN))),
-                                    opt.clone()).await;
+                                    opt.clone());
         self.ts_families.insert(tf_id, tf);
         self.ts_families_names.insert(name.clone(), tf_id);
         let mut edits = vec![];

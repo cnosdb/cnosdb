@@ -7,10 +7,10 @@ use std::{
 
 use logger::{debug, error, info, warn};
 use models::FieldId;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
 use snafu::ResultExt;
-use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender, RwLock};
+use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender};
 
 use crate::{
     compaction::FlushReq,
@@ -59,7 +59,7 @@ impl FlushTask {
         let mut field_size_delta = HashMap::new();
         let mut mem_guard = vec![];
         for i in self.mems.iter() {
-            mem_guard.push(i.write().await);
+            mem_guard.push(i.write());
         }
         for mem in mem_guard.iter() {
             let data = &mem.data_cache;
@@ -163,9 +163,8 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
     meta.is_delta = is_delta;
     let max_level_ts;
     {
-        let version_s = version_set.read().await;
-        let mut version =
-            version_s.get_tsfamily_immut(tsf_id as u64).unwrap().version().write().await;
+        let version_s = version_set.read();
+        let mut version = version_s.get_tsfamily_immut(tsf_id as u64).unwrap().version().write();
         max_level_ts = version.max_level_ts;
         while version.levels_info.len() <= level {
             let i: u32 = version.levels_info.len() as u32;

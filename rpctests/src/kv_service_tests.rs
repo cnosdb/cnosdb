@@ -47,7 +47,7 @@ mod test {
         tokio::spawn(async move {
             for _ in 0..10 {
                 let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                let points = models_helper::create_random_points(&mut fbb, 1);
+                let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
                 tx.send(WritePointsRpcRequest { version: 1,

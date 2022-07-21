@@ -4,7 +4,7 @@ use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
 use logger::{debug, error, info, init, trace, warn};
 use models::{FieldId, SeriesId, Timestamp};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -14,7 +14,7 @@ use tokio::{
     runtime::Builder,
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot, RwLock,
+        oneshot,
     },
 };
 
@@ -117,7 +117,6 @@ impl TsKv {
             let info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             self.forward_index
                 .write()
-                .await
                 .add_series_info_if_not_exists(info)
                 .await
                 .context(error::ForwardIndexErrSnafu)?;
@@ -132,7 +131,7 @@ impl TsKv {
 
         // write memcache
         if let Some(points) = fb_points.points() {
-            let mut version_set = self.version_set.write().await;
+            let mut version_set = self.version_set.write();
             for point in points.iter() {
                 let p = InMemPoint::from(point);
                 let sid = p.series_id();
@@ -157,26 +156,26 @@ impl TsKv {
     }
 
     pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
-        let version_set = self.version_set.read().await;
+        let version_set = self.version_set.read();
         if let Some(tsf) = version_set.get_tsfamily_immut(sid) {
             // get data from memcache
-            if let Some(mem_entry) = tsf.cache().read().await.data_cache.get(&field_id) {
+            if let Some(mem_entry) = tsf.cache().read().data_cache.get(&field_id) {
                 info!("memcache::{}::{}", sid.clone(), field_id);
                 mem_entry.read_cell(time_range);
             }
 
             // get data from delta_memcache
-            if let Some(mem_entry) = tsf.delta_cache().read().await.data_cache.get(&field_id) {
+            if let Some(mem_entry) = tsf.delta_cache().read().data_cache.get(&field_id) {
                 info!("delta memcache::{}::{}", sid.clone(), field_id);
                 mem_entry.read_cell(time_range);
             }
 
             // get data from immut_delta_memcache
             for mem_cache in tsf.delta_immut_cache().iter() {
-                if mem_cache.read().await.flushed {
+                if mem_cache.read().flushed {
                     continue;
                 }
-                if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+                if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
                     info!("delta im_memcache::{}::{}", sid.clone(), field_id);
                     mem_entry.read_cell(time_range);
                 }
@@ -184,17 +183,17 @@ impl TsKv {
 
             // get data from im_memcache
             for mem_cache in tsf.im_cache().iter() {
-                if mem_cache.read().await.flushed {
+                if mem_cache.read().flushed {
                     continue;
                 }
-                if let Some(mem_entry) = mem_cache.read().await.data_cache.get(&field_id) {
+                if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
                     info!("im_memcache::{}::{}", sid.clone(), field_id);
                     mem_entry.read_cell(time_range);
                 }
             }
 
             // get data from levelinfo
-            for level_info in tsf.version().read().await.levels_info.iter() {
+            for level_info in tsf.version().read().levels_info.iter() {
                 if level_info.level == 0 {
                     continue;
                 }
@@ -203,7 +202,7 @@ impl TsKv {
             }
 
             // get data from delta
-            let level_info = &tsf.version().read().await.levels_info;
+            let level_info = &tsf.version().read().levels_info;
             if !level_info.is_empty() {
                 info!("delta::{}::{}", sid.clone(), field_id);
                 level_info[0].read_columnfile(tsf.tf_id(), field_id, time_range);
@@ -226,14 +225,14 @@ impl TsKv {
                                min: Timestamp,
                                max: Timestamp)
                                -> Result<()> {
-        let series_infos = self.forward_index.read().await.get_series_info_list(&sids);
+        let series_infos = self.forward_index.read().get_series_info_list(&sids);
         let timerange = TimeRange { max_ts: max, min_ts: min };
         let path = self.options.db.db_path.clone();
         for series_info in series_infos {
-            let vs = self.version_set.read().await;
+            let vs = self.version_set.read();
             if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
                 tsf.delete_cache(&TimeRange { min_ts: min, max_ts: max }).await;
-                let version = tsf.version().read().await;
+                let version = tsf.version().read();
                 for level in version.levels_info() {
                     if level.ts_range.overlaps(&timerange) {
                         for column_file in level.files.iter() {
@@ -260,7 +259,7 @@ impl TsKv {
         let ps =
             flatbuffers::root::<fb_models::Points>(buf).context(error::InvalidFlatbufferSnafu)?;
         if let Some(points) = ps.points() {
-            let mut version_set = self.version_set.write().await;
+            let mut version_set = self.version_set.write();
             for point in points.iter() {
                 let p = InMemPoint::from(point);
                 // use sid to dispatch to tsfamily
@@ -477,7 +476,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 1);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
@@ -508,7 +507,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 20);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
@@ -545,7 +544,7 @@ mod test {
         let tskv = get_tskv().await;
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 5);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 5);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
@@ -610,7 +609,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 1);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data();
 
@@ -627,7 +626,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 1);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let req = kv_service::WritePointsRpcRequest { version: 1, database, points };
@@ -656,7 +655,6 @@ mod test {
 
         tskv.version_set()
             .write()
-            .await
             .add_tsfamily(tf_id,
                           "hello".to_string(),
                           0,
@@ -664,16 +662,28 @@ mod test {
                           Arc::new(TseriesFamOpt::default()),
                           tskv.summary_task_sender.clone())
             .await;
-        assert_eq!(tskv.version_set().read().await.tsf_num(),
-                   (GLOBAL_CONFIG.tsfamily_num + 1) as usize);
+        assert_eq!(tskv.version_set().read().tsf_num(), (GLOBAL_CONFIG.tsfamily_num + 1) as usize);
 
         tskv.version_set()
             .write()
-            .await
             .del_tsfamily(tf_id, "hello".to_string(), tskv.summary_task_sender.clone());
-        assert_eq!(tskv.version_set().read().await.tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
+        assert_eq!(tskv.version_set().read().tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
 
         info!("success");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_flush_delta() {
+        let tskv = get_tskv().await;
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+
+        tskv.write(request).await.unwrap();
     }
 
     #[tokio::test]
