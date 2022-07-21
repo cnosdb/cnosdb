@@ -53,13 +53,37 @@ mod test {
         point_builder.finish()
     }
 
-    pub fn create_random_points<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-                                    num: usize)
-                                    -> WIPOffset<Points<'a>> {
+    pub fn create_random_points_with_delta<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+                                               num: usize)
+                                               -> WIPOffset<Points<'a>> {
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i <= num / 2 { Local::now().timestamp_millis() } else { 1 };
+            let tav = area[rand::random::<usize>() % 3].clone();
+            let tbv = area[rand::random::<usize>() % 3].clone();
+            let tags = create_tags(fbb,
+                                   vec![("ta", &("a".to_string() + &tav)),
+                                        ("tb", &("b".to_string() + &tbv))]);
+
+            let fav = rand::random::<f64>().to_be_bytes();
+            let fbv = rand::random::<i64>().to_be_bytes();
+            let fields = create_fields(fbb,
+                                       vec![("fa", models::FieldType::Integer, fav.as_slice()),
+                                            ("fb", models::FieldType::Float, fbv.as_slice()),]);
+            points.push(create_point(fbb, timestamp, tags, fields))
+        }
+        let points = fbb.create_vector(&points);
+        models::Points::create(fbb, &models::PointsArgs { points: Some(points) })
+    }
+
+    pub fn create_random_points_include_delta<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+                                                  num: usize)
+                                                  -> WIPOffset<Points<'a>> {
+        let area = ["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut points = vec![];
+        for i in 0..num {
+            let timestamp = if i % 2 == 0 { Local::now().timestamp_millis() } else { 1 };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
             let tags = create_tags(fbb,

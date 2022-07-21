@@ -48,7 +48,7 @@ fn run(c: &mut Criterion) {
     let tskv = Arc::new(Mutex::new(rt.block_on(get_tskv())));
     let database = "db".to_string();
     let mut fbb = flatbuffers::FlatBufferBuilder::new();
-    let points = models_helper::create_random_points(&mut fbb, 1);
+    let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
     fbb.finish(points, None);
     let points_str = fbb.finished_data();
     let points = points_str.to_vec();

@@ -2,9 +2,9 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use futures::TryFutureExt;
 use libc::write;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender, RwLock};
+use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use crate::{
     context::GlobalContext,
@@ -358,18 +358,17 @@ mod test {
             std::fs::create_dir_all(&opt.db_path).context(error::IOSnafu).unwrap();
         }
         let mut summary = Summary::new(&opt).await.unwrap();
-        assert_eq!(summary.version_set.read().await.tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
+        assert_eq!(summary.version_set.read().tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(&[edit]).await.unwrap();
         let mut summary = Summary::recover(&opt).await.unwrap();
-        assert_eq!(summary.version_set.read().await.tsf_num(),
-                   (GLOBAL_CONFIG.tsfamily_num + 1) as usize);
+        assert_eq!(summary.version_set.read().tsf_num(), (GLOBAL_CONFIG.tsfamily_num + 1) as usize);
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(&[edit]).await.unwrap();
         let summary = Summary::recover(&opt).await.unwrap();
-        assert_eq!(summary.version_set.read().await.tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
+        assert_eq!(summary.version_set.read().tsf_num(), GLOBAL_CONFIG.tsfamily_num as usize);
     }
 
     #[test]

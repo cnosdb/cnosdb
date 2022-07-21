@@ -7,11 +7,11 @@ use std::{
 
 use lazy_static::lazy_static;
 use logger::{debug, info, warn};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
-use tokio::sync::{mpsc::UnboundedSender, oneshot, RwLock};
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use walkdir::IntoIter;
 
 use crate::{
@@ -297,7 +297,7 @@ impl WalManager {
             if reader.max_sequence < min_log_seq {
                 continue;
             }
-            let mut version_set = version_set.write().await;
+            let mut version_set = version_set.write();
             while let Some(e) = reader.next_wal_entry() {
                 if e.seq < min_log_seq {
                     continue;
@@ -517,7 +517,7 @@ mod test {
     fn random_write_wal_entry<'a>(_fbb: &mut flatbuffers::FlatBufferBuilder<'a>)
                                   -> WIPOffset<fb_models::Points<'a>> {
         let fbb = _fbb.borrow_mut();
-        models_helper::create_random_points(fbb, 5)
+        models_helper::create_random_points_with_delta(fbb, 5)
     }
 
     fn random_delete_wal_entry_item() -> fb_models::ColumnKey {
