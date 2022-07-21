@@ -41,7 +41,6 @@ impl IsiphoSessionCfg {
 
     pub fn build(self) -> IsiophoSessionCtx {
         let state = SessionState::with_config_rt(self.session_config, self.runtime);
-        // .with_query_planner(Arc::new(SqlQueryPlanner {}));
 
         let inner = SessionContext::with_state(state);
 

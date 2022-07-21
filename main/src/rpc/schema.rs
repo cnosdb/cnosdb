@@ -1,14 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use parking_lot::Mutex;
 use protos::schema_service::{
     schema_service_server::SchemaService, Database, GetDatabaseRequest, GetDatabaseResponse,
 };
+// use query::schema::SchemaStore;
 use tonic::{Request, Response, Status};
-use tskv::schema::SchemaStore;
 
 pub struct SchemaServiceImpl {
-    schema_store: Arc<Mutex<SchemaStore>>,
+    // schema_store: Arc<Mutex<SchemaStore>>,
 }
 
 #[tonic::async_trait]

@@ -91,7 +91,7 @@ impl TableProvider for Table {
             TableScanExec { columns: Table::test_columns(), data: Arc::new(Table::test_data()) };
         let schema = Table::test_schema();
         let df_schema = schema.clone().to_dfschema_ref()?;
-
+        // todo: sid, timerange
         if !filters.is_empty() {
             let predicate = planner::create_physical_expr(&filters[0],
                                                           df_schema.as_ref(),

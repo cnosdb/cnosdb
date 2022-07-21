@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thread::JoinHandle};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
