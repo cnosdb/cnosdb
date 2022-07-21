@@ -85,7 +85,7 @@ mod test {
             let timestamp = Local::now().timestamp_millis();
             let mut tags = vec![];
             let tav = rand::random::<u8>().to_string();
-            for _ in 0..199999 {
+            for _ in 0..19999 {
                 tags.push(("tag", tav.as_str()));
             }
             let tags = create_tags(fbb, tags);
@@ -93,7 +93,7 @@ mod test {
             let mut fields = vec![];
             let fav = rand::random::<i64>().to_be_bytes();
             let fbv = rand::random::<f64>().to_be_bytes();
-            for _ in 0..199999 {
+            for _ in 0..19999 {
                 fields.push(("field_integer", models::FieldType::Integer, fav.as_slice()));
                 fields.push(("field_float", models::FieldType::Float, fbv.as_slice()));
             }

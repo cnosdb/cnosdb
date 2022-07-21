@@ -475,17 +475,20 @@ impl TseriesFamily {
         self.version.write().await.max_level_ts = self.mut_ts_max;
         let mut req_mem = vec![];
         for i in self.immut_cache.iter() {
-            {
-                let mut write_i = i.write().await;
-                if write_i.flushing == true {
-                    continue;
-                }
-                write_i.flushing = true;
+            let read_i = i.read().await;
+            if read_i.flushing == true {
+                continue;
             }
             req_mem.push((self.tf_id, i.clone()));
         }
+
         if req_mem.len() < GLOBAL_CONFIG.max_immemcache_num {
             return;
+        }
+
+        for i in req_mem.iter() {
+            let mut write_i = i.1.write().await;
+            write_i.flushing = true;
         }
 
         FLUSH_REQ.lock().push(FlushReq { mems: req_mem, wait_req: 0 });
@@ -502,10 +505,6 @@ impl TseriesFamily {
                               seq: u64,
                               ts: Timestamp,
                               sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
-        if self.immut_ts_min == i64::MIN {
-            self.immut_ts_min = ts;
-        }
-
         if ts >= self.immut_ts_min {
             if ts > self.mut_ts_max {
                 self.mut_ts_max = ts;
@@ -517,7 +516,7 @@ impl TseriesFamily {
             let _ = delta_mem.insert_raw(seq, fid, ts, dtype, val);
         }
 
-        if ts >= self.immut_ts_min && !self.delta_mut_cache.read().await.data_cache.is_empty() {
+        if ts >= self.mut_ts_max && !self.delta_mut_cache.read().await.data_cache.is_empty() {
             self.wrap_delta_flush_req(sender.clone()).await
         }
 

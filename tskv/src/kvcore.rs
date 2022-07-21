@@ -144,7 +144,7 @@ impl TsKv {
                                          seq,
                                          point.timestamp() as i64,
                                          self.flush_task_sender.clone())
-                           .await
+                           .await;
                     }
                 } else {
                     warn!("ts_family for sid {} not found.", sid);
@@ -503,12 +503,12 @@ mod test {
     // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
     #[tokio::test]
     #[serial]
-    async fn test_read() -> Result<(), Error> {
+    async fn test_read() {
         let tskv = get_tskv().await;
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points(&mut fbb, 5);
+        let points = models_helper::create_random_points(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
@@ -516,11 +516,12 @@ mod test {
         tskv.write(request.clone()).await.unwrap();
 
         let shared_write_batch = Arc::new(request.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu).unwrap();
         let mut sids = vec![];
         let mut fields_id = vec![];
         for point in fb_points.points().unwrap() {
-            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu).unwrap();
             info.finish();
             sids.push(info.series_id());
             for field in info.field_infos().iter() {
@@ -535,13 +536,12 @@ mod test {
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
         tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id).await;
-        Ok(())
     }
 
     #[tokio::test]
     #[serial]
     #[ignore]
-    async fn test_delete_cache() -> Result<(), Error> {
+    async fn test_delete_cache() {
         let tskv = get_tskv().await;
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -553,11 +553,12 @@ mod test {
         tskv.write(request.clone()).await.unwrap();
 
         let shared_write_batch = Arc::new(request.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu)?;
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu).unwrap();
         let mut sids = vec![];
         let mut fields_id = vec![];
         for point in fb_points.points().unwrap() {
-            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu).unwrap();
             info.finish();
             sids.push(info.series_id());
             for field in info.field_infos().iter() {
@@ -581,7 +582,6 @@ mod test {
                   &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
                   fields_id.clone())
             .await;
-        Ok(())
     }
 
     #[tokio::test]
@@ -590,15 +590,17 @@ mod test {
     async fn test_big_write() {
         let tskv = get_tskv().await;
 
-        let database = "db".to_string();
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_big_random_points(&mut fbb, 1);
-        fbb.finish(points, None);
-        let points = fbb.finished_data().to_vec();
+        for i in 0..100 {
+            let database = "db".to_string();
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+            let points = models_helper::create_big_random_points(&mut fbb, 10);
+            fbb.finish(points, None);
+            let points = fbb.finished_data().to_vec();
 
-        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+            let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
 
-        tskv.write(request).await.unwrap();
+            tskv.write(request).await.unwrap();
+        }
     }
 
     #[tokio::test]
