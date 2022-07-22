@@ -208,12 +208,9 @@ impl LevelInfo {
                                 if let Some(del_time_range) = tomb.get(&field_id) {
                                     // we need to remove greater equal than min_ts and less than
                                     // min_ts + 1
-                                    println!("{:?}",
-                                             &blk.exclude(del_time_range.min_ts,
-                                                          del_time_range.max_ts + 1));
-                                } else {
-                                    println!("{:?}", &blk);
+                                    blk.exclude(del_time_range.min_ts, del_time_range.max_ts + 1)
                                 }
+                                println!("{:?}", &blk);
                             }
                         }
                     }

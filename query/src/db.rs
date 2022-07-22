@@ -47,20 +47,6 @@ impl Db {
     }
 }
 
-impl CatalogProvider for Db {
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
-
-    fn schema_names(&self) -> Vec<String> {
-        self.catalog.schema_names()
-    }
-
-    fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
-        self.catalog.schema(name)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{ops::Range, sync::Arc};
@@ -76,9 +62,11 @@ mod tests {
             record_batch::RecordBatch,
             util::pretty::pretty_format_batches,
         },
+        catalog::{catalog::CatalogProvider, schema::SchemaProvider},
         datasource::{MemTable, TableProvider, TableType},
         error::Result,
         execution::context::SessionState,
+        logical_expr::TableProviderFilterPushDown,
         physical_plan::{empty::EmptyExec, ExecutionPlan},
         prelude::{Expr, SessionContext},
         scheduler::Scheduler,
@@ -86,7 +74,7 @@ mod tests {
     use futures::TryStreamExt;
     use rand::{distributions::uniform::SampleUniform, thread_rng, Rng};
 
-    use crate::db::Db;
+    use crate::{catalog::IsiphoSchema, db::Db};
 
     #[derive(Debug)]
     pub struct Column {
@@ -102,12 +90,6 @@ mod tests {
             vec![Column { name: "fa".to_string(), data_type: DataType::Int32 },
                  Column { name: "fb".to_string(), data_type: DataType::Int32 },
                  Column { name: "fc".to_string(), data_type: DataType::Float32 },]
-        }
-
-        fn test_data() -> Vec<ArrayRef> {
-            vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-                 Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-                 Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0])),]
         }
 
         fn test_schema() -> SchemaRef {
@@ -137,12 +119,18 @@ mod tests {
 
         async fn scan(&self,
                       _ctx: &SessionState,
-                      _projection: &Option<Vec<usize>>,
-                      _filters: &[Expr],
-                      _limit: Option<usize>)
+                      projection: &Option<Vec<usize>>,
+                      filters: &[Expr],
+                      limit: Option<usize>)
                       -> Result<Arc<dyn ExecutionPlan>> {
+            println!("projection: {:?}", projection);
+            println!("filters: {:?}", filters);
+            println!("limit: {:?}", limit);
             let empty = EmptyExec::new(false, self.schema());
             return Ok(Arc::new(empty));
+        }
+        fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
+            Ok(TableProviderFilterPushDown::Exact)
         }
     }
 
@@ -206,10 +194,17 @@ mod tests {
         // 3    18857000
         // 4    16241000
         // 5    16445000
+
         let scheduler = Scheduler::new(4);
         let ctx = db.new_query_context();
-        let query =
-            "select distinct * from cnosdb.public.table1 where fb > 100 order by fa limit 10";
+
+        // todo： init tables
+        let table = Arc::new(Table {});
+        let schema = Arc::new(IsiphoSchema::new());
+        schema.register_table("table1".to_string(), table).unwrap();
+        db.catalog.register_schema("public", schema.clone()).unwrap();
+
+        let query = "select distinct * from cnosdb.public.table1 where fb > 1 order by fa limit 1";
         let task = ctx.inner().task_ctx();
         let frame = ctx.inner().sql(query).await.unwrap();
 
@@ -225,7 +220,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn query_exec() {
         let db = Arc::new(Db::default());
         run_query(db).await;
@@ -240,7 +234,7 @@ mod tests {
         ctx.set_cxt(context);
         ctx.inner().register_table("table1", make_provider()).unwrap();
 
-        let query = "select distinct * from table1 where b > 100 order by a limit 10";
+        let query = "select distinct * from table1 where b > 100 order by a limit 1";
         let task = ctx.inner().task_ctx();
         let frame = ctx.inner().sql(query).await.unwrap();
 
