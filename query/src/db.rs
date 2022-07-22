@@ -92,12 +92,6 @@ mod tests {
                  Column { name: "fc".to_string(), data_type: DataType::Float32 },]
         }
 
-        fn test_data() -> Vec<ArrayRef> {
-            vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-                 Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-                 Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0])),]
-        }
-
         fn test_schema() -> SchemaRef {
             Arc::new(Schema::new(Table::test_columns().iter()
                                                       .map(|c| {

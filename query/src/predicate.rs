@@ -1,26 +1,46 @@
 use std::{collections::HashSet, sync::Arc};
 
 use datafusion::{
-    arrow::{array::BooleanArray, compute::filter_record_batch, record_batch::RecordBatch},
+    arrow::{
+        array::BooleanArray, compute::filter_record_batch, error::ArrowError,
+        record_batch::RecordBatch,
+    },
     error::DataFusionError,
     logical_expr::{utils::expr_to_columns, Expr, Operator},
     physical_expr::PhysicalExpr,
+    physical_plan::metrics::Time,
 };
-use datafusion::arrow::error::ArrowError;
 use logger::info;
 
 type ArrowResult<T> = std::result::Result<T, ArrowError>;
 pub type PredicateRef = Arc<Predicate>;
 
-#[derive(Debug,Default)]
+#[derive(Default, Debug)]
+pub struct TimeRange {
+    pub max_ts: i64,
+    pub min_ts: i64,
+}
+
+impl TimeRange {
+    pub fn new(max_ts: i64, min_ts: i64) -> Self {
+        Self { max_ts, min_ts }
+    }
+
+    pub fn overlaps(&self, range: &TimeRange) -> bool {
+        !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct Predicate {
     filters: Vec<Expr>,
     limit: Option<usize>,
+    timeframe: TimeRange,
 }
 
 impl Predicate {
-    pub fn new(filters: Vec<Expr>, limit: Option<usize>) -> Self {
-        Self { filters, limit }
+    pub fn new(filters: Vec<Expr>, limit: Option<usize>, timeframe: TimeRange) -> Self {
+        Self { filters, limit, timeframe }
     }
     pub fn set_limit(mut self, limit: Option<usize>) -> Predicate {
         self.limit = limit;
@@ -29,11 +49,7 @@ impl Predicate {
     pub fn combine_expr(&self) -> Option<Expr> {
         let mut res: Option<Expr> = None;
         for i in &self.filters {
-            if let Some(e) = res {
-                res = Some(e.and(i.clone()))
-            } else {
-                res = Some(i.clone())
-            }
+            if let Some(e) = res { res = Some(e.and(i.clone())) } else { res = Some(i.clone()) }
         }
         res
     }
@@ -110,7 +126,6 @@ pub fn batch_filter(batch: &RecordBatch,
                     )
                         .into()
                       })
-                      // apply filter array to record batch
                       .and_then(|filter_array| filter_record_batch(batch, filter_array))
              })
 }

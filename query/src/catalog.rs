@@ -28,7 +28,6 @@ impl CatalogProvider for IsiphoCatalog {
     }
 
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
-        println!("this is isipho calalog provider {}", name);
         let schemas = self.schemas.read();
         schemas.get(name).cloned()
     }

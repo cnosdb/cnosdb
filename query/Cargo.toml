@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 protos = { path = "../protos" }
 logger = { path = "../logger" }
+tskv = { path = "../tskv" }
+models = {path = "../models"}
 
 datafusion = { version = "9.0.0", features = ["scheduler"] }
 tokio = { version = "1.17", features = ["full"] }
