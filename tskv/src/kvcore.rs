@@ -242,7 +242,7 @@ impl TsKv {
                                                                          .map(|f| f.field_id())
                                                                          .collect();
                                 let mut tombstone =
-                                    TsmTombstone::with_tsm_file_id(&path, column_file.file_id())?;
+                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
                                 tombstone.add_range(&field_ids, min, max)?;
                                 tombstone.flush()?;
                             }

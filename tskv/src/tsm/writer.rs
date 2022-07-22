@@ -132,7 +132,7 @@ impl IndexBuf {
 
         let mut buf = vec![0_u8; BLOCK_META_SIZE];
         for (_, idx) in self.buf.iter() {
-            idx.encode(&mut buf[..INDEX_META_SIZE]);
+            idx.encode(&mut buf[..INDEX_META_SIZE])?;
             writer.write(&buf[..INDEX_META_SIZE]).context(IOSnafu)?;
             size += 11;
             for blk in idx.blocks.iter() {

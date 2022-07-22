@@ -8,6 +8,7 @@ use super::coders;
 use crate::{
     compaction::overlaps_tuples,
     memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell},
+    tseries_family::TimeRange,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -318,20 +319,29 @@ impl DataBlock {
 
     /// Remove (ts, val) in this `DataBlock` where ts is greater equal than min_ts
     /// and ts is less equal than the max_ts
-    pub fn exclude(&mut self, min_ts: Timestamp, max_ts: Timestamp) {
-        fn binary_earch(sli: &[i64], ts: &i64) -> (usize, bool) {
-            match sli.binary_search(ts) {
-                Ok(i) => (i, true),
-                Err(i) => (i, i != 0 && i != sli.len()),
-            }
-        }
-        let ts_sli = self.ts();
-        let (min_idx, has_min) = binary_earch(ts_sli, &min_ts);
-        let (mut max_idx, has_max) = binary_earch(ts_sli, &max_ts);
-        if min_idx > max_idx || !has_min && !has_max {
+    pub fn exclude(&mut self, time_range: &TimeRange) {
+        if self.len() == 0 {
             return;
         }
-        if max_idx + 1 < ts_sli.len() {
+        let TimeRange { min_ts, max_ts } = *time_range;
+
+        /// Returns possible position of ts in sli,
+        /// and if ts is not found, and position is at the bounds of sli, return (pos, false).
+        fn binary_search(sli: &[i64], ts: &i64) -> (usize, bool) {
+            match sli.binary_search(ts) {
+                Ok(i) => (i, true),
+                Err(i) => (i, false),
+            }
+        }
+
+        let ts_sli = self.ts();
+        let (min_idx, has_min) = binary_search(ts_sli, &min_ts);
+        let (mut max_idx, has_max) = binary_search(ts_sli, &max_ts);
+        // If ts_sli doesn't contain supported time range then return.
+        if min_idx > max_idx || min_idx == max_idx && !has_min && !has_max {
+            return;
+        }
+        if max_idx < ts_sli.len() {
             max_idx += 1;
         }
 
@@ -465,11 +475,18 @@ impl Display for DataBlock {
 }
 
 fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize) {
+    if v.len() == 0 {
+        return;
+    }
     if min_idx == max_idx {
         v.remove(min_idx);
+        return;
     }
     let a = v.as_mut_ptr();
+    // SAFETY: min_idx and max_idx must not out of the bounds of v
     unsafe {
+        assert!(min_idx <= v.len());
+        assert!(max_idx <= v.len());
         let b = a.add(min_idx);
         let c = a.add(max_idx);
         c.copy_to(b, v.len() - max_idx);
@@ -492,7 +509,10 @@ fn exclude_slow(v: &mut Vec<Byte>, min_idx: usize, max_idx: usize) {
 mod test {
     use std::mem::size_of;
 
-    use crate::tsm::DataBlock;
+    use crate::{
+        tseries_family::TimeRange,
+        tsm::{block::exclude_fast, DataBlock},
+    };
 
     #[test]
     fn test_merge_blocks() {
@@ -518,7 +538,17 @@ mod test {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
         };
-        blk.exclude(2, 8);
+        blk.exclude(&TimeRange::from((2, 3)));
+        assert_eq!(blk,
+                   DataBlock::U64 { ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
+                                    val: vec![10, 11, 14, 15, 16, 17, 18, 19] });
+
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        };
+        blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 9], val: vec![10, 11, 19] });
 
         #[rustfmt::skip]
@@ -526,7 +556,24 @@ mod test {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
         };
-        blk.exclude(2, 8);
+        blk.exclude(&TimeRange::from((2, 3)));
+        assert_eq!(blk,
+                   DataBlock::Str { ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
+                                    val: vec![vec![10],
+                                              vec![11],
+                                              vec![14],
+                                              vec![15],
+                                              vec![16],
+                                              vec![17],
+                                              vec![18],
+                                              vec![19]] });
+
+        #[rustfmt::skip]
+        let mut blk = DataBlock::Str {
+            ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
+        };
+        blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(blk,
                    DataBlock::Str { ts: vec![0, 1, 9], val: vec![vec![10], vec![11], vec![19]] })
     }
@@ -537,28 +584,37 @@ mod test {
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
-        blk.exclude(-2, 0);
+        blk.exclude(&TimeRange::from((-2, 0)));
         assert_eq!(blk, DataBlock::U64 { ts: vec![1, 2, 3], val: vec![11, 12, 13] });
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
-        blk.exclude(3, 5);
+        blk.exclude(&TimeRange::from((3, 5)));
         assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2], val: vec![10, 11, 12] });
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
-        blk.exclude(-3, -1);
+        blk.exclude(&TimeRange::from((-3, -1)));
         assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13] });
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
-        blk.exclude(5, 7);
+        blk.exclude(&TimeRange::from((5, 7)));
         assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13] });
+
+        #[rustfmt::skip]
+        let mut blk = DataBlock::U64 {
+            ts: vec![0, 1, 2, 3, 7, 8, 9, 10], val: vec![10, 11, 12, 13, 17, 18, 19, 20]
+        };
+        blk.exclude(&TimeRange::from((5, 6)));
+        assert_eq!(blk,
+                   DataBlock::U64 { ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
+                                    val: vec![10, 11, 12, 13, 17, 18, 19, 20] });
     }
 }

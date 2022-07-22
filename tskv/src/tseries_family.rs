@@ -28,7 +28,7 @@ use crate::{
     kv_option::{TseriesFamDesc, TseriesFamOpt},
     memcache::{DataType, MemCache},
     summary::{CompactMeta, VersionEdit},
-    tsm::{ColumnReader, IndexReader, TsmTombstone},
+    tsm::{ColumnReader, IndexReader, TsmReader, TsmTombstone},
     ColumnFileId, TseriesFamilyId, VersionId,
 };
 
@@ -36,10 +36,10 @@ lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct TimeRange {
-    pub max_ts: i64,
     pub min_ts: i64,
+    pub max_ts: i64,
 }
 
 impl TimeRange {
@@ -47,8 +47,26 @@ impl TimeRange {
         Self { max_ts, min_ts }
     }
 
+    #[inline(always)]
     pub fn overlaps(&self, range: &TimeRange) -> bool {
         !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
+    }
+
+    #[inline(always)]
+    pub fn includes(&self, other: &TimeRange) -> bool {
+        self.min_ts <= other.min_ts && self.max_ts >= other.max_ts
+    }
+}
+
+impl From<(Timestamp, Timestamp)> for TimeRange {
+    fn from(time_range: (Timestamp, Timestamp)) -> Self {
+        Self { min_ts: time_range.0, max_ts: time_range.1 }
+    }
+}
+
+impl Into<(Timestamp, Timestamp)> for TimeRange {
+    fn into(self) -> (Timestamp, Timestamp) {
+        (self.min_ts, self.max_ts)
     }
 }
 
@@ -182,55 +200,17 @@ impl LevelInfo {
                 continue;
             }
 
-            let mut tomb = HashMap::new();
-            if let Ok(mut tombstone) =
-                TsmTombstone::with_tsm_file_id(GLOBAL_CONFIG.db_path.clone(), file.file_id)
-            {
-                match tombstone.load() {
-                    Ok(_) => {},
-                    Err(e) => {
-                        error!("failed to load tombstone, in case {:?}", e);
-                    },
-                };
-                for i in tombstone.tombstones() {
-                    tomb.insert(i.field_id, TimeRange { min_ts: i.min_ts, max_ts: i.max_ts });
-                }
-            }
-
-            let file = match file_manager::open_file(file.file_path(self.tsf_opt.clone(), tf_id)) {
-                Ok(v) => v,
+            let tsm_reader = match TsmReader::open(file.file_path(self.tsf_opt.clone(), tf_id)) {
+                Ok(tr) => tr,
                 Err(e) => {
-                    error!("failed to get file, path : {:?}, in case {:?}",
-                           file.file_path(self.tsf_opt.clone(), tf_id),
-                           e);
+                    error!("failed to load tombstone, in case {:?}", e);
                     return;
                 },
             };
-            let file = Arc::new(file);
-
-            let index = match IndexReader::open(file.clone()) {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("failed get index reader : {:?}", e);
-                    return;
-                },
-            };
-            for idx in index.iter_opt(field_id) {
-                for blk in idx.block_iterator() {
-                    if blk.min_ts() <= time_range.max_ts && blk.max_ts() >= time_range.min_ts {
-                        let mut cr = ColumnReader::new(file.clone(),
-                                                       idx.block_iterator_opt(time_range.min_ts,
-                                                                              time_range.max_ts));
-                        while let Some(blk_ret) = cr.next() {
-                            if let Ok(mut blk) = blk_ret {
-                                if let Some(del_time_range) = tomb.get(&field_id) {
-                                    // we need to remove greater equal than min_ts and less than
-                                    // min_ts + 1
-                                    blk.exclude(del_time_range.min_ts, del_time_range.max_ts + 1)
-                                }
-                                println!("{:?}", &blk);
-                            }
-                        }
+            for idx in tsm_reader.index_iterator_opt(field_id) {
+                for blk in idx.block_iterator_opt(time_range) {
+                    if let Ok(blk) = tsm_reader.get_data_block(&blk) {
+                        println!("{:?}", &blk);
                     }
                 }
             }
@@ -688,7 +668,7 @@ mod test {
         let file = version.levels_info[1].files[0].clone();
 
         let mut tombstone =
-            TsmTombstone::with_tsm_file_id("dev/db".to_string(), file.file_id).unwrap();
+            TsmTombstone::open_for_write("dev/db".to_string(), file.file_id).unwrap();
         tombstone.add_range(&[0], 0, 0).unwrap();
         tombstone.flush().unwrap();
         tombstone.load().unwrap();

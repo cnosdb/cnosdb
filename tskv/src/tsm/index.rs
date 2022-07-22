@@ -7,6 +7,8 @@ use crate::{
     byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     direct_io::File,
     error::{Error, Result},
+    tseries_family::TimeRange,
+    tsm::{WriteTsmError, WriteTsmResult},
 };
 
 pub trait IndexT {}
@@ -72,14 +74,14 @@ impl IndexMeta {
                                self.block_count)
     }
 
-    pub fn block_iterator_opt(&self, min_ts: Timestamp, max_ts: Timestamp) -> BlockMetaIterator {
+    pub fn block_iterator_opt(&self, time_range: &TimeRange) -> BlockMetaIterator {
         let index_offset = self.index_ref.offsets()[self.index_idx] as usize;
         let mut iter = BlockMetaIterator::new(self.index_ref.clone(),
                                               index_offset,
                                               self.field_id,
                                               self.field_type,
                                               self.block_count);
-        iter.filter_timerange(min_ts, max_ts);
+        iter.filter_time_range(time_range);
         iter
     }
 
@@ -99,7 +101,7 @@ impl IndexMeta {
     }
 
     #[inline(always)]
-    pub fn timerange(&self) -> (Timestamp, Timestamp) {
+    pub fn time_range(&self) -> (Timestamp, Timestamp) {
         if self.block_count == 0 {
             return (Timestamp::MIN, Timestamp::MIN);
         }
@@ -256,11 +258,16 @@ pub(crate) struct IndexEntry {
 }
 
 impl IndexEntry {
-    pub(crate) fn encode(&self, buf: &mut [u8]) {
-        assert!(buf.len() >= 11);
+    pub(crate) fn encode(&self, buf: &mut [u8]) -> WriteTsmResult<()> {
+        debug_assert!(buf.len() >= INDEX_META_SIZE);
+        if buf.len() < INDEX_META_SIZE {
+            return Err(WriteTsmError::Encode { source: "buffer too short".into() });
+        }
+
         buf[0..8].copy_from_slice(&self.field_id.to_be_bytes()[..]);
         buf[8] = self.field_type.into();
         buf[9..11].copy_from_slice(&(self.blocks.len() as u16).to_be_bytes()[..]);
+        Ok(())
     }
 }
 

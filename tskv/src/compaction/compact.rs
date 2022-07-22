@@ -21,7 +21,7 @@ use crate::{
     kv_option::TseriesFamOpt,
     memcache::DataType,
     summary::{CompactMeta, VersionEdit},
-    tseries_family::ColumnFile,
+    tseries_family::{ColumnFile, TimeRange},
     tsm::{
         self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
         IndexMeta, IndexReader, TsmReader, TsmWriter,
@@ -29,11 +29,16 @@ use crate::{
     Error, LevelId,
 };
 
-struct CompactingBlockMeta(usize, BlockMeta);
+/// Temporary compacting data block meta
+struct CompactingBlockMeta {
+    readers_idx: usize,
+    has_tombstone: bool,
+    block_meta: BlockMeta,
+}
 
 impl PartialEq for CompactingBlockMeta {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && self.1 == other.1
+        self.readers_idx == other.readers_idx && self.block_meta == other.block_meta
     }
 }
 
@@ -41,33 +46,52 @@ impl Eq for CompactingBlockMeta {}
 
 impl PartialOrd for CompactingBlockMeta {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.1.cmp(&other.1))
+        Some(self.block_meta.cmp(&other.block_meta))
     }
 }
 
 impl Ord for CompactingBlockMeta {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.1.cmp(&other.1)
+        self.block_meta.cmp(&other.block_meta)
     }
 }
 
+impl CompactingBlockMeta {
+    pub fn new(readers_idx: usize, has_tombstone: bool, block_meta: BlockMeta) -> Self {
+        Self { readers_idx, has_tombstone, block_meta }
+    }
+}
+
+/// Temporary compacting data block.
+/// - priority: When merging two (timestamp, value) pair with the same
+/// timestamp from two data blocks, pair from data block with lower
+/// priority will be discarded.
 enum CompactingBlock {
-    DataBlock { field_id: FieldId, data_block: DataBlock },
-    Raw { meta: BlockMeta, raw: Vec<u8> },
+    DataBlock { priority: usize, field_id: FieldId, data_block: DataBlock },
+    Raw { priority: usize, meta: BlockMeta, raw: Vec<u8> },
 }
 
 impl CompactingBlock {
-    fn to_data_blocks(source: Vec<Self>) -> Result<Vec<DataBlock>> {
+    /// Sort the given `CompactingBlock`s by priority, transform all of them
+    /// into CompactingBlock::DataBlock (for CompactingBlock::Raw)
+    fn rebuild_data_blocks(mut source: Vec<Self>) -> Result<Vec<DataBlock>> {
+        source.sort_by_key(|k| match k {
+                  CompactingBlock::DataBlock { priority, .. } => *priority,
+                  CompactingBlock::Raw { priority, .. } => *priority,
+              });
         let mut res: Vec<DataBlock> = Vec::with_capacity(source.len());
         for cb in source.into_iter() {
             match cb {
                 CompactingBlock::DataBlock { data_block, .. } => {
                     res.push(data_block);
                 },
-                CompactingBlock::Raw { meta, raw } => {
-                    let data_block = tsm::decode_data_block(&raw, meta.field_type(), meta.size(),
-                                         meta.val_off() - meta.offset())
-                                         .context(error::ReadTsmSnafu)?;
+                CompactingBlock::Raw { meta, raw, .. } => {
+                    let data_block = tsm::decode_data_block(
+                        &raw,
+                        meta.field_type(),
+                        meta.val_off() - meta.offset(),
+                    )
+                    .context(error::ReadTsmSnafu)?;
                     res.push(data_block);
                 },
             }
@@ -142,11 +166,11 @@ impl CompactIterator {
 
                 self.tmp_tsm_blks.push(idx_meta.block_iterator());
                 self.tmp_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx - 1);
-                info!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, timerange: {:?}",
+                info!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
                       idx_meta.field_id(),
                       idx_meta.field_type(),
                       idx_meta.block_count(),
-                      idx_meta.timerange());
+                      idx_meta.time_range());
             } else {
                 // This tsm-file has been finished
                 info!("file no.{} is finished.", i);
@@ -161,17 +185,20 @@ impl CompactIterator {
 
     /// Collect merging `DataBlock`s.
     fn next_merging_blocks(&mut self) -> Result<()> {
-        if self.tmp_tsm_blks.len() == 0 {
+        if self.tmp_tsm_blks.is_empty() {
             return Ok(());
         }
         let mut sorted_blk_metas: BinaryHeap<CompactingBlockMeta> =
             BinaryHeap::with_capacity(self.tmp_tsm_blks.len());
         let field_id = self.curr_fid.expect("method next_field_id has been called");
-        // Get all block_meta, and check overlaps.
+        // Get all block_meta, and check if it's tsm file has a related tombstone file.
         for (i, blk_iter) in self.tmp_tsm_blks.iter_mut().enumerate() {
-            while let Some(blk_meta) = blk_iter.next() {
-                sorted_blk_metas.push(CompactingBlockMeta(self.tmp_tsm_blk_tsm_reader_idx[i],
-                                                          blk_meta));
+            for blk_meta in blk_iter.by_ref() {
+                let tsm_has_tombstone =
+                    self.tsm_readers[self.tmp_tsm_blk_tsm_reader_idx[i]].has_tombstone();
+                sorted_blk_metas.push(CompactingBlockMeta::new(self.tmp_tsm_blk_tsm_reader_idx[i],
+                                                               tsm_has_tombstone,
+                                                               blk_meta));
             }
         }
 
@@ -179,101 +206,144 @@ impl CompactIterator {
         // next block
         let mut merging_blks: Vec<CompactingBlock> = Vec::new();
         // let mut merging_blk: Option<DataBlock> = None;
-        let mut merged_blk_timerange = (Timestamp::MAX, Timestamp::MIN);
+        let mut merged_blk_time_range = (Timestamp::MAX, Timestamp::MIN);
         // If BlockMeta::count reaches max_datablock_values, we don't decode the block.
         let mut buf = vec![0_u8; 1024];
         let mut is_first = true;
         while let Some(cbm) = sorted_blk_metas.pop() {
-            // 1. Store DataBlocks in merging_blocks, merged_blk_timerange set by the first
+            // 1. Store DataBlocks in merging_blocks, merged_blk_time_range set by the first
             //      BlockMeta
             // 2. For each BlockMeta:
-            //   2.1. If it's timerange overlaps with merged_blk_timerange, read DataBlock and push
-            //          to merging_blocks, and update merged_blk_timerange
+            //   2.1. If it's time_range overlaps with merged_blk_time_range, read DataBlock and
+            //          push to merging_blocks, and update merged_blk_time_range
             //   2.2. Else:
             //     2.2.1. If merging_blks's length is 1 and it's a Raw, put to self::merged_blocks.
             //     2.2.2. Else merge merging_blks into Vec<DataBlock>, push to back of
             //              self::merged_blocks, and clean merging_blks.
             //            The last one of the Vec<DataBlock> is special, if it's length is less than
             //              self::max_datablock_values, do not push it.
-            //     2.2.3. If it's length reaches self::max_datablock_values, put Raw to
-            //              merging_blks, otherwise put DataBlock (2.2.1).
+            //     2.2.3. If it's length reaches self::max_datablock_values, and there is no
+            //              tombstones, put Raw to merging_blks, otherwise put DataBlock
+            //              (used in 2.2.1).
             // 3. Read DataBLock for the remaining BlockMeta, push to self::merged_blks.
 
             // Exists merging DataBlock in past iteration
             if is_first {
                 is_first = false;
-                merged_blk_timerange = (cbm.1.min_ts(), cbm.1.max_ts());
-                if cbm.1.size() as usize > buf.len() {
-                    buf.resize(cbm.1.size() as usize, 0);
+                merged_blk_time_range = (cbm.block_meta.min_ts(), cbm.block_meta.max_ts());
+                if cbm.block_meta.size() as usize > buf.len() {
+                    buf.resize(cbm.block_meta.size() as usize, 0);
                 }
-                let size = self.tsm_readers[cbm.0].get_raw_data(&cbm.1, &mut buf)
-                                                  .context(error::ReadTsmSnafu)?;
-                merging_blks.push(CompactingBlock::Raw { meta: cbm.1, raw: buf[..size].to_vec() });
-            } else if overlaps_tuples(merged_blk_timerange, (cbm.1.min_ts(), cbm.1.max_ts())) {
+                if cbm.has_tombstone {
+                    let data_block =
+                        self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
+                                                         .context(error::ReadTsmSnafu)?;
+                    merging_blks.push(CompactingBlock::DataBlock { priority: cbm.readers_idx
+                                                                             + 1,
+                                                                   field_id,
+                                                                   data_block });
+                } else {
+                    let size = self.tsm_readers[cbm.readers_idx].get_raw_data(&cbm.block_meta,
+                                                                              &mut buf)
+                                                                .context(error::ReadTsmSnafu)?;
+                    merging_blks.push(CompactingBlock::Raw { priority: cbm.readers_idx + 1,
+                                                             meta: cbm.block_meta,
+                                                             raw: buf[..size].to_vec() });
+                }
+            } else if overlaps_tuples(merged_blk_time_range,
+                                      (cbm.block_meta.min_ts(), cbm.block_meta.max_ts()))
+            {
                 // 2.1
-                let data_block =
-                    self.tsm_readers[cbm.0].get_data_block(&cbm.1).context(error::ReadTsmSnafu)?;
+                let data_block = self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
+                                                                  .context(error::ReadTsmSnafu)?;
+                merging_blks.push(CompactingBlock::DataBlock { priority: cbm.readers_idx + 1,
+                                                               field_id,
+                                                               data_block });
 
-                merged_blk_timerange.0 = merged_blk_timerange.0.min(cbm.1.min_ts());
-                merged_blk_timerange.1 = merged_blk_timerange.0.max(cbm.1.max_ts());
-                merging_blks.push(CompactingBlock::DataBlock { field_id, data_block });
+                merged_blk_time_range.0 = merged_blk_time_range.0.min(cbm.block_meta.min_ts());
+                merged_blk_time_range.1 = merged_blk_time_range.0.max(cbm.block_meta.max_ts());
             } else {
                 // 2.2
-                if merging_blks.len() > 0 {
+                if !merging_blks.is_empty() {
                     if merging_blks.len() == 1 {
                         // 2.2.1
-                        if let Some(CompactingBlock::Raw { meta, raw }) = merging_blks.first() {
+                        if let Some(CompactingBlock::Raw { meta, raw, .. }) = merging_blks.first() {
                             if meta.count() == self.max_datablock_values {
                                 self.merged_blocks.push_back(merging_blks.remove(0));
                             }
                         }
                     } else {
                         // 2.2.2
-                        let merging_data_blks = CompactingBlock::to_data_blocks(merging_blks)?;
+                        let merging_data_blks = CompactingBlock::rebuild_data_blocks(merging_blks)?;
                         merging_blks = Vec::new();
                         let merged_data_blks =
                             DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
                         for (i, data_block) in merged_data_blks.into_iter().enumerate() {
                             if data_block.len() < self.max_datablock_values as usize {
-                                merging_blks.push(CompactingBlock::DataBlock { field_id,
+                                merging_blks.push(CompactingBlock::DataBlock { priority: 0,
+                                                                               field_id,
                                                                                data_block });
                                 break;
                             }
                             self.merged_blocks
-                                .push_back(CompactingBlock::DataBlock { field_id, data_block });
+                                .push_back(CompactingBlock::DataBlock { priority: 0,
+                                                                        field_id,
+                                                                        data_block });
                         }
                     }
 
                     // This DataBlock doesn't need to merge
-                    if cbm.1.count() == self.max_datablock_values {
+                    if cbm.block_meta.count() == self.max_datablock_values {
                         // 2.2.3
-                        if cbm.1.size() as usize > buf.len() {
-                            buf.resize(cbm.1.size() as usize, 0);
+                        if cbm.block_meta.size() as usize > buf.len() {
+                            buf.resize(cbm.block_meta.size() as usize, 0);
                         }
-                        let size = self.tsm_readers[cbm.0].get_raw_data(&cbm.1, &mut buf)
-                                                          .context(error::ReadTsmSnafu)?;
-                        merged_blk_timerange.0 = merged_blk_timerange.0.min(cbm.1.min_ts());
-                        merged_blk_timerange.1 = merged_blk_timerange.0.max(cbm.1.max_ts());
-                        merging_blks.push(CompactingBlock::Raw { meta: cbm.1,
-                                                                 raw: buf[..size].to_vec() });
+                        merged_blk_time_range.0 =
+                            merged_blk_time_range.0.min(cbm.block_meta.min_ts());
+                        merged_blk_time_range.1 =
+                            merged_blk_time_range.0.max(cbm.block_meta.max_ts());
+                        if cbm.has_tombstone {
+                            let data_block =
+                                self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
+                                                                 .context(error::ReadTsmSnafu)?;
+                            merging_blks.push(CompactingBlock::DataBlock { priority:
+                                                                           cbm.readers_idx
+                                                                           + 1,
+                                                                       field_id,
+                                                                       data_block });
+                        } else {
+                            let size =
+                                self.tsm_readers[cbm.readers_idx].get_raw_data(&cbm.block_meta,
+                                                                               &mut buf)
+                                                                 .context(error::ReadTsmSnafu)?;
+                            merging_blks.push(CompactingBlock::Raw { priority: cbm.readers_idx
+                                                                               + 1,
+                                                                     meta: cbm.block_meta,
+                                                                     raw: buf[..size].to_vec() });
+                        }
                     } else {
-                        // cbm.1.count is less than max_datablock_values
-                        let data_block = self.tsm_readers[cbm.0].get_data_block(&cbm.1)
-                                                                .context(error::ReadTsmSnafu)?;
-                        merging_blks.push(CompactingBlock::DataBlock { field_id, data_block });
+                        // cbm.block_meta.count is less than max_datablock_values
+                        let data_block =
+                            self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
+                                                             .context(error::ReadTsmSnafu)?;
+                        merging_blks.push(CompactingBlock::DataBlock { priority: cbm.readers_idx
+                                                                                 + 1,
+                                                                       field_id,
+                                                                       data_block });
                     }
                 }
             }
         }
 
-        if merging_blks.len() > 0 {
-            let merging_data_blks = CompactingBlock::to_data_blocks(merging_blks)?;
+        if !merging_blks.is_empty() {
+            let merging_data_blks = CompactingBlock::rebuild_data_blocks(merging_blks)?;
             let merged_data_blks =
                 DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
             for (i, data_block) in merged_data_blks.into_iter().enumerate() {
-                self.merged_blocks.push_back(CompactingBlock::DataBlock { field_id, data_block });
+                self.merged_blocks
+                    .push_back(CompactingBlock::DataBlock { priority: 0, field_id, data_block });
             }
         }
 
@@ -295,7 +365,7 @@ impl Iterator for CompactIterator {
             self.next_field_id();
 
             info!("selected blocks count: {} in iteration", self.tmp_tsm_blks.len());
-            if self.tmp_tsm_blks.len() == 0 {
+            if self.tmp_tsm_blks.is_empty() {
                 info!("iteration field_id {:?} is finished", self.curr_fid);
                 self.curr_fid = None;
                 break;
@@ -328,7 +398,7 @@ pub fn run_compaction_job(request: CompactReq,
                           -> Result<Vec<VersionEdit>> {
     let version = request.version;
 
-    if version.levels_info().len() == 0 {
+    if version.levels_info().is_empty() {
         return Ok(vec![]);
     }
 
@@ -364,40 +434,40 @@ pub fn run_compaction_job(request: CompactReq,
         error!("Cannot get tseries_fam_opt");
         return Err(Error::Compact { reason: "TseriesFamOpt is none".to_string() });
     }
-    if tsm_index_iters.len() == 0 {
+    if tsm_index_iters.is_empty() {
         // Nothing to compact
         return Ok(vec![]);
     }
 
     let tsm_readers_cnt = tsm_readers.len();
-    let mut iter = CompactIterator { tsm_readers,
-                                     tsm_index_iters,
-                                     finished_readers: vec![false; tsm_readers_cnt],
-                                     max_datablock_values: max_data_block_size,
-                                     ..Default::default() };
+    let iter = CompactIterator { tsm_readers,
+                                 tsm_index_iters,
+                                 finished_readers: vec![false; tsm_readers_cnt],
+                                 max_datablock_values: max_data_block_size,
+                                 ..Default::default() };
     let tsm_dir = tsf_opt.expect("been checked").tsm_dir(tsf_id.expect("been checked"));
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edits: Vec<VersionEdit> = Vec::new();
-    while let Some(next_blk) = iter.next() {
+    for next_blk in iter {
         if let Ok(blk) = next_blk {
             info!("===============================");
             let write_ret = match blk {
-                CompactingBlock::DataBlock { field_id: fid, data_block: b } => {
+                CompactingBlock::DataBlock { field_id: fid, data_block: b, .. } => {
                     tsm_writer.write_block(fid, &b)
                 },
-                CompactingBlock::Raw { meta, raw } => tsm_writer.write_raw(&meta, &raw),
+                CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
             };
-            match write_ret {
-                Err(e) => match e {
-                    crate::tsm::WriteTsmError::IO { source } => {
+            if let Err(e) = write_ret {
+                match e {
+                    tsm::WriteTsmError::IO { source } => {
                         // TODO handle this
                         error!("IO error when write tsm");
                     },
-                    crate::tsm::WriteTsmError::Encode { source } => {
+                    tsm::WriteTsmError::Encode { source } => {
                         // TODO handle this
                         error!("Encoding error when write tsm");
                     },
-                    crate::tsm::WriteTsmError::MaxFileSizeExceed { source } => {
+                    tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                         tsm_writer.write_index().context(error::WriteTsmSnafu)?;
                         tsm_writer.flush().context(error::WriteTsmSnafu)?;
                         let cm = new_compact_meta(tsm_writer.sequence(),
@@ -414,8 +484,7 @@ pub fn run_compaction_job(request: CompactReq,
                         tsm_writer =
                             tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                     },
-                },
-                _ => {},
+                }
             }
         }
     }
@@ -473,7 +542,7 @@ mod test {
         file_manager,
         kv_option::TseriesFamOpt,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
-        tsm::{self, DataBlock, TsmReader},
+        tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone},
     };
 
     fn write_data_blocks_to_column_file(dir: impl AsRef<Path>,
@@ -519,13 +588,20 @@ mod test {
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
     fn check_column_file(path: impl AsRef<Path>, expected_data: HashMap<FieldId, Vec<DataBlock>>) {
         let data = read_data_block_from_column_file(path);
-        let data_field_ids = data.keys().copied().collect::<Vec<_>>().sort();
-        let expected_data_field_ids = expected_data.keys().copied().collect::<Vec<_>>().sort();
+        let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
+        data_field_ids.sort_unstable();
+        let mut expected_data_field_ids = expected_data.keys().copied().collect::<Vec<_>>();
+        expected_data_field_ids.sort_unstable();
         assert_eq!(data_field_ids, expected_data_field_ids);
 
         for (k, v) in expected_data.iter() {
             let data_blks = data.get(k).unwrap();
-            assert_eq!(data.get(k).unwrap(), v);
+            if v.len() != data_blks.len() {
+                panic!("v.len() != data_blks.len()");
+            }
+            for (v_idx, v_blk) in v.iter().enumerate() {
+                assert_eq!(data_blks.get(v_idx).unwrap(), v_blk);
+            }
         }
     }
 
@@ -543,7 +619,7 @@ mod test {
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
         let level_infos =
-            vec![lv1_info, LevelInfo::init(2), LevelInfo::init(3), LevelInfo::init(4),];
+            vec![lv1_info, LevelInfo::init(2), LevelInfo::init(3), LevelInfo::init(4)];
         let version = Arc::new(Version::new(1, 1, "version_1".to_string(), level_infos, 1000));
         let compact_req = CompactReq { files: (1, files), version, tsf_id: 1, out_level: 2 };
         let kernel = Arc::new(GlobalContext::new());
@@ -584,8 +660,7 @@ mod test {
         let dir = tsf_opt.tsm_dir(0);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
-        let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(tsf_opt.clone(), next_file_id, files);
+        let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
         run_compaction_job(compact_req, kernel).unwrap();
         check_column_file(dir.join("_000004.tsm"), expected_data);
     }
@@ -618,13 +693,12 @@ mod test {
         ]);
 
         let dir = "/tmp/test/compaction/1";
-        let tsf_opt = get_tsf_opt(&dir);
+        let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(0);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
-        let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(tsf_opt.clone(), next_file_id, files);
-        run_compaction_job(compact_req, kernel.clone()).unwrap();
+        let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
+        run_compaction_job(compact_req, kernel).unwrap();
         check_column_file(dir.join("_000004.tsm"), expected_data);
     }
 
@@ -660,14 +734,13 @@ mod test {
         let dir = tsf_opt.tsm_dir(0);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
-        let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(tsf_opt.clone(), next_file_id, files);
-        run_compaction_job(compact_req, kernel.clone()).unwrap();
+        let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
+        run_compaction_job(compact_req, kernel).unwrap();
         check_column_file(dir.join("_000004.tsm"), expected_data);
     }
 
     /// Returns a generated `DataBlock` with default value and specified size, `DataBlock::ts`
-    /// is from arg `min_ts`.
+    /// is all the time-ranges in data_descriptors.
     ///
     /// The default value is different for each ValueType:
     /// - Unsigned: 1
@@ -676,23 +749,27 @@ mod test {
     /// - Float: 1.0
     /// - Boolean: true
     /// - Unknown: will create a panic
-    fn generate_data_block(value_type: ValueType, min_ts: Timestamp, size: usize) -> DataBlock {
+    fn generate_data_block(value_type: ValueType, data_descriptors: Vec<(i64, i64)>) -> DataBlock {
         match value_type {
             ValueType::Unsigned => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
                 let mut val_vec: Vec<u64> = Vec::with_capacity(1000);
-                for ts in min_ts..min_ts + size as Timestamp {
-                    ts_vec.push(ts);
-                    val_vec.push(1_u64);
+                for (min_ts, max_ts) in data_descriptors {
+                    for ts in min_ts..max_ts + 1 {
+                        ts_vec.push(ts);
+                        val_vec.push(1_u64);
+                    }
                 }
                 DataBlock::U64 { ts: ts_vec, val: val_vec }
             },
             ValueType::Integer => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
                 let mut val_vec: Vec<i64> = Vec::with_capacity(1000);
-                for ts in min_ts..min_ts + size as Timestamp {
-                    ts_vec.push(ts);
-                    val_vec.push(1_i64);
+                for (min_ts, max_ts) in data_descriptors {
+                    for ts in min_ts..max_ts + 1 {
+                        ts_vec.push(ts);
+                        val_vec.push(1_i64);
+                    }
                 }
                 DataBlock::I64 { ts: ts_vec, val: val_vec }
             },
@@ -700,28 +777,33 @@ mod test {
                 let word = b"1".to_vec();
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
                 let mut val_vec: Vec<Vec<u8>> = Vec::with_capacity(10000);
-                for ts in min_ts..min_ts + size as Timestamp {
-                    ts_vec.push(ts);
-                    let idx = rand::random::<usize>() % 20;
-                    val_vec.push(word.clone());
+                for (min_ts, max_ts) in data_descriptors {
+                    for ts in min_ts..max_ts + 1 {
+                        ts_vec.push(ts);
+                        val_vec.push(word.clone());
+                    }
                 }
                 DataBlock::Str { ts: ts_vec, val: val_vec }
             },
             ValueType::Float => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
                 let mut val_vec: Vec<f64> = Vec::with_capacity(10000);
-                for ts in min_ts..min_ts + size as Timestamp {
-                    ts_vec.push(ts);
-                    val_vec.push(1.0);
+                for (min_ts, max_ts) in data_descriptors {
+                    for ts in min_ts..max_ts + 1 {
+                        ts_vec.push(ts);
+                        val_vec.push(1.0);
+                    }
                 }
                 DataBlock::F64 { ts: ts_vec, val: val_vec }
             },
             ValueType::Boolean => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
                 let mut val_vec: Vec<bool> = Vec::with_capacity(10000);
-                for ts in min_ts..min_ts + size as Timestamp {
-                    ts_vec.push(ts);
-                    val_vec.push(true);
+                for (min_ts, max_ts) in data_descriptors {
+                    for ts in min_ts..max_ts + 1 {
+                        ts_vec.push(ts);
+                        val_vec.push(true);
+                    }
                 }
                 DataBlock::Bool { ts: ts_vec, val: val_vec }
             },
@@ -735,48 +817,48 @@ mod test {
     fn test_compaction_3() {
         #[rustfmt::skip]
         let data_desc = [
-            // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, DataBlock_Size) ] )]
+            // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
             (1_u64, vec![
                 // 1, 1~2500
-                (ValueType::Unsigned, 1_u64, 1_i64, 1000_usize),
-                (ValueType::Unsigned, 1, 1001, 1000),
-                (ValueType::Unsigned, 1, 2001, 500),
+                (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64),
+                (ValueType::Unsigned, 1, 1001, 2000),
+                (ValueType::Unsigned, 1, 2001, 2500),
                 // 2, 1~1500
                 (ValueType::Integer, 2, 1, 1000),
-                (ValueType::Integer, 2, 1001, 500),
+                (ValueType::Integer, 2, 1001, 1500),
                 // 3, 1~1500
                 (ValueType::Boolean, 3, 1, 1000),
-                (ValueType::Boolean, 3, 1001, 500),
+                (ValueType::Boolean, 3, 1001, 1500),
             ]),
             (2, vec![
                 // 1, 2001~4500
-                (ValueType::Unsigned, 1, 2001, 1000),
-                (ValueType::Unsigned, 1, 3001, 1000),
-                (ValueType::Unsigned, 1, 4001, 500),
+                (ValueType::Unsigned, 1, 2001, 3000),
+                (ValueType::Unsigned, 1, 3001, 4000),
+                (ValueType::Unsigned, 1, 4001, 4500),
                 // 2, 1001~3000
-                (ValueType::Integer, 2, 1001, 1000),
-                (ValueType::Integer, 2, 2001, 1000),
+                (ValueType::Integer, 2, 1001, 2000),
+                (ValueType::Integer, 2, 2001, 3000),
                 // 3, 1001~2500
-                (ValueType::Boolean, 3, 1001, 1000),
-                (ValueType::Boolean, 3, 2001, 500),
+                (ValueType::Boolean, 3, 1001, 2000),
+                (ValueType::Boolean, 3, 2001, 2500),
                 // 4, 1~1500
                 (ValueType::Float, 4, 1, 1000),
-                (ValueType::Float, 4, 1001, 500),
+                (ValueType::Float, 4, 1001, 1500),
             ]),
             (3, vec![
                 // 1, 4001~6500
-                (ValueType::Unsigned, 1, 4001, 1000),
-                (ValueType::Unsigned, 1, 5001, 1000),
-                (ValueType::Unsigned, 1, 6001, 500),
+                (ValueType::Unsigned, 1, 4001, 5000),
+                (ValueType::Unsigned, 1, 5001, 6000),
+                (ValueType::Unsigned, 1, 6001, 6500),
                 // 2, 3001~5000
-                (ValueType::Integer, 2, 3001, 1000),
-                (ValueType::Integer, 2, 4001, 1000),
+                (ValueType::Integer, 2, 3001, 4000),
+                (ValueType::Integer, 2, 4001, 5000),
                 // 3, 2001~3500
-                (ValueType::Boolean, 3, 2001, 1000),
-                (ValueType::Boolean, 3, 3001, 500),
+                (ValueType::Boolean, 3, 2001, 3000),
+                (ValueType::Boolean, 3, 3001, 3500),
                 // 4. 1001~2500
-                (ValueType::Float, 4, 1001, 1000),
-                (ValueType::Float, 4, 2001, 500),
+                (ValueType::Float, 4, 1001, 2000),
+                (ValueType::Float, 4, 2001, 2500),
             ]),
         ];
         #[rustfmt::skip]
@@ -784,34 +866,34 @@ mod test {
             [
                 // 1, 1~6500
                 (1, vec![
-                    generate_data_block(ValueType::Unsigned, 1, 1000),
-                    generate_data_block(ValueType::Unsigned, 1001, 1000),
-                    generate_data_block(ValueType::Unsigned, 2001, 1000),
-                    generate_data_block(ValueType::Unsigned, 3001, 1000),
-                    generate_data_block(ValueType::Unsigned, 4001, 1000),
-                    generate_data_block(ValueType::Unsigned, 5001, 1000),
-                    generate_data_block(ValueType::Unsigned, 6001, 500),
+                    generate_data_block(ValueType::Unsigned, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(4001, 5000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(5001, 6000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(6001, 6500)]),
                 ]),
                 // 2, 1~5000
                 (2, vec![
-                    generate_data_block(ValueType::Integer, 1, 1000),
-                    generate_data_block(ValueType::Integer, 1001, 1000),
-                    generate_data_block(ValueType::Integer, 2001, 1000),
-                    generate_data_block(ValueType::Integer, 3001, 1000),
-                    generate_data_block(ValueType::Integer, 4001, 1000),
+                    generate_data_block(ValueType::Integer, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Integer, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Integer, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Integer, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Integer, vec![(4001, 5000)]),
                 ]),
                 // 3, 1~3500
                 (3, vec![
-                    generate_data_block(ValueType::Boolean, 1, 1000),
-                    generate_data_block(ValueType::Boolean, 1001, 1000),
-                    generate_data_block(ValueType::Boolean, 2001, 1000),
-                    generate_data_block(ValueType::Boolean, 3001, 500),
+                    generate_data_block(ValueType::Boolean, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Boolean, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Boolean, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Boolean, vec![(3001, 3500)]),
                 ]),
                 // 4, 1~2500
                 (4, vec![
-                    generate_data_block(ValueType::Float, 1, 1000),
-                    generate_data_block(ValueType::Float, 1001, 1000),
-                    generate_data_block(ValueType::Float, 2001, 500),
+                    generate_data_block(ValueType::Float, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Float, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Float, vec![(2001, 2500)]),
                 ]),
             ]
         );
@@ -827,7 +909,8 @@ mod test {
         for (tsm_sequence, args) in data_desc.iter() {
             let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
             for arg in args.iter() {
-                tsm_writer.write_block(arg.1, &generate_data_block(arg.0, arg.2, arg.3)).unwrap();
+                tsm_writer.write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                          .unwrap();
             }
             tsm_writer.write_index().unwrap();
             tsm_writer.flush().unwrap();
@@ -841,9 +924,153 @@ mod test {
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(tsf_opt.clone(), next_file_id, column_files);
+            prepare_compact_req_and_kernel(tsf_opt, next_file_id, column_files);
 
-        run_compaction_job(compact_req, kernel.clone()).unwrap();
+        run_compaction_job(compact_req, kernel).unwrap();
+
+        check_column_file(dir.join("_000004.tsm"), expected_data);
+    }
+
+    #[test]
+    fn test_compaction_4() {
+        #[rustfmt::skip]
+        let data_desc = [
+            // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
+            (1_u64, vec![
+                // 1, 1~2500
+                (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64),
+                (ValueType::Unsigned, 1, 1001, 2000),
+                (ValueType::Unsigned, 1, 2001, 2500),
+                // 2, 1~1500
+                (ValueType::Integer, 2, 1, 1000),
+                (ValueType::Integer, 2, 1001, 1500),
+                // 3, 1~1500
+                (ValueType::Boolean, 3, 1, 1000),
+                (ValueType::Boolean, 3, 1001, 1500),
+            ], vec![
+                Some((1_u64, 1_i64, 2_i64)),
+                None, None,
+                Some((2, 1001, 1002)),
+                None, None,
+                None, Some((3, 1499, 1500)), None
+            ]),
+            (2, vec![
+                // 1, 2001~4500
+                (ValueType::Unsigned, 1, 2001, 3000),
+                (ValueType::Unsigned, 1, 3001, 4000),
+                (ValueType::Unsigned, 1, 4001, 4500),
+                // 2, 1001~3000
+                (ValueType::Integer, 2, 1001, 2000),
+                (ValueType::Integer, 2, 2001, 3000),
+                // 3, 1001~2500
+                (ValueType::Boolean, 3, 1001, 2000),
+                (ValueType::Boolean, 3, 2001, 2500),
+                // 4, 1~1500
+                (ValueType::Float, 4, 1, 1000),
+                (ValueType::Float, 4, 1001, 1500),
+            ], vec![
+                Some((1, 2001, 2100)),
+                None, Some((1, 4500, 4501)),
+                Some((2, 2501, 2502)),
+                None, None,
+                None, None, None
+            ]),
+            (3, vec![
+                // 1, 4001~6500
+                (ValueType::Unsigned, 1, 4001, 5000),
+                (ValueType::Unsigned, 1, 5001, 6000),
+                (ValueType::Unsigned, 1, 6001, 6500),
+                // 2, 3001~5000
+                (ValueType::Integer, 2, 3001, 4000),
+                (ValueType::Integer, 2, 4001, 5000),
+                // 3, 2001~3500
+                (ValueType::Boolean, 3, 2001, 3000),
+                (ValueType::Boolean, 3, 3001, 3500),
+                // 4. 1001~2500
+                (ValueType::Float, 4, 1001, 2000),
+                (ValueType::Float, 4, 2001, 2500),
+            ], vec![
+                Some((1, 4500, 4501)),
+                None, None,
+                Some((2, 4001, 4002)),
+                None, None,
+                None, None, None
+            ]),
+        ];
+        #[rustfmt::skip]
+        let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
+            [
+                // 1, 3~2000,2101~4999,4502~6500
+                (1, vec![
+                    generate_data_block(ValueType::Unsigned, vec![(3, 1002)]),
+                    generate_data_block(ValueType::Unsigned, vec![(1003, 2002)]),
+                    generate_data_block(ValueType::Unsigned, vec![(2003, 3002)]),
+                    generate_data_block(ValueType::Unsigned, vec![(3003, 4002)]),
+                    generate_data_block(ValueType::Unsigned, vec![(4003, 4499), (4502, 5004)]),
+                    generate_data_block(ValueType::Unsigned, vec![(5005, 6004)]),
+                    generate_data_block(ValueType::Unsigned, vec![(6005, 6500)]),
+                ]),
+                // 2, 1~1000,1003~2500,2503~4000,4003~5000
+                (2, vec![
+                    generate_data_block(ValueType::Integer, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Integer, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Integer, vec![(2001, 2500), (2503, 3002)]),
+                    generate_data_block(ValueType::Integer, vec![(3003, 4000), (4003, 4004)]),
+                    generate_data_block(ValueType::Integer, vec![(4005, 5000)]),
+                ]),
+                // 3, 1~1498,1501~3500
+                (3, vec![
+                    generate_data_block(ValueType::Boolean, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Boolean, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Boolean, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Boolean, vec![(3001, 3500)]),
+                ]),
+                // 4, 1~2500
+                (4, vec![
+                    generate_data_block(ValueType::Float, vec![(1, 1000)]),
+                    generate_data_block(ValueType::Float, vec![(1001, 2000)]),
+                    generate_data_block(ValueType::Float, vec![(2001, 2500)]),
+                ]),
+            ]
+        );
+
+        let dir = "/tmp/test/compaction/4";
+        let tsf_opt = get_tsf_opt(&dir);
+        let dir = tsf_opt.tsm_dir(0);
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+
+        let mut column_files = Vec::new();
+        for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
+            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
+            for arg in tsm_desc.iter() {
+                tsm_writer.write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                          .unwrap();
+            }
+            tsm_writer.write_index().unwrap();
+            tsm_writer.flush().unwrap();
+            let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence).unwrap();
+            for tomb in tombstone_desc.iter() {
+                if let Some(t) = tomb {
+                    tsm_tombstone.add_range(&[t.0][..], t.1, t.2).unwrap();
+                }
+            }
+
+            tsm_tombstone.flush().unwrap();
+            column_files.push(Arc::new(ColumnFile::new(*tsm_sequence,
+                                                       TimeRange::new(tsm_writer.min_ts(),
+                                                                      tsm_writer.max_ts()),
+                                                       tsm_writer.size(),
+                                                       false)));
+        }
+
+        let next_file_id = 4_u64;
+
+        let (compact_req, kernel) =
+            prepare_compact_req_and_kernel(tsf_opt, next_file_id, column_files);
+
+        run_compaction_job(compact_req, kernel).unwrap();
 
         check_column_file(dir.join("_000004.tsm"), expected_data);
     }

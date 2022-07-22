@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::write,
     path::{Path, PathBuf},
     sync::{
@@ -12,6 +13,7 @@ use models::{FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
+use super::DataBlock;
 use crate::{
     byte_utils,
     direct_io::{File, FileCursor, FileSync},
@@ -26,8 +28,7 @@ const TOMBSTONE_MAGIC: u32 = 0x544F4D42;
 #[derive(Debug, Clone, Copy)]
 pub struct Tombstone {
     pub field_id: FieldId,
-    pub min_ts: Timestamp,
-    pub max_ts: Timestamp,
+    pub time_range: TimeRange,
 }
 
 /// Tombstones for a tsm file
@@ -40,17 +41,13 @@ pub struct Tombstone {
 /// - - max: i64 8 bytes
 /// - loop end
 pub struct TsmTombstone {
-    tombstones: Vec<Tombstone>,
+    tombstones: HashMap<FieldId, Vec<TimeRange>>,
     tomb_accessor: File,
     tomb_size: u64,
     mutex: Mutex<()>,
 }
 
 impl TsmTombstone {
-    pub fn tombstones(&self) -> &[Tombstone] {
-        self.tombstones.as_slice()
-    }
-
     #[cfg(test)]
     pub fn with_path(path: impl AsRef<Path>) -> Result<Self> {
         let file = file_manager::get_file_manager().create_file(&path)?;
@@ -58,10 +55,27 @@ impl TsmTombstone {
         file.sync_data(FileSync::Hard).context(error::IOSnafu)?;
         let tomb_size = file.len();
 
-        Ok(Self { tombstones: vec![], tomb_accessor: file, tomb_size, mutex: Mutex::new(()) })
+        Ok(Self { tombstones: HashMap::new(),
+                  tomb_accessor: file,
+                  tomb_size,
+                  mutex: Mutex::new(()) })
     }
 
-    pub fn with_tsm_file_id(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
+    pub fn open_for_read(path: impl AsRef<Path>, file_id: u64) -> Result<Option<Self>> {
+        let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
+        if !file_manager::try_exists(&path) {
+            return Ok(None);
+        }
+        let file = file_manager::get_file_manager().open_file(&path)?;
+        let tomb_size = file.len();
+
+        Ok(Some(Self { tombstones: HashMap::new(),
+                       tomb_accessor: file,
+                       tomb_size,
+                       mutex: Mutex::new(()) }))
+    }
+
+    pub fn open_for_write(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
         let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
         let mut is_new = false;
         if !file_manager::try_exists(&path) {
@@ -74,17 +88,21 @@ impl TsmTombstone {
         }
         let tomb_size = file.len();
 
-        Ok(Self { tombstones: vec![], tomb_accessor: file, tomb_size, mutex: Mutex::new(()) })
+        Ok(Self { tombstones: HashMap::new(),
+                  tomb_accessor: file,
+                  tomb_size,
+                  mutex: Mutex::new(()) })
     }
 
     pub fn load(&mut self) -> Result<()> {
-        let tombstones = Self::load_all(&self.tomb_accessor)?;
+        let mut tombstones = HashMap::new();
+        Self::load_all(&self.tomb_accessor, &mut tombstones)?;
         self.tombstones = tombstones;
 
         Ok(())
     }
 
-    fn load_all(reader: &File) -> Result<Vec<Tombstone>> {
+    fn load_all(reader: &File, tombstones: &mut HashMap<FieldId, Vec<TimeRange>>) -> Result<()> {
         const HEADER_SIZE: usize = 4;
         let file_len = reader.len() as usize;
         let mut header = vec![0_u8; HEADER_SIZE];
@@ -99,7 +117,6 @@ impl TsmTombstone {
             (vec![0_u8; BUF_SIZE], BUF_SIZE)
         };
         let mut pos = HEADER_SIZE;
-        let mut tombstones = Vec::new();
         while pos < file_len {
             reader.read_at(pos as u64, &mut buf).context(error::ReadFileSnafu)?;
             pos += buf_len;
@@ -111,11 +128,31 @@ impl TsmTombstone {
                 buf_pos += 8;
                 let max = byte_utils::decode_be_i64(&buf[buf_pos..buf_pos + 8]);
                 buf_pos += 8;
-                let tombstone = Tombstone { field_id, min_ts: min, max_ts: max };
-                tombstones.push(tombstone);
+                let bucket = tombstones.entry(field_id).or_insert(Vec::new());
+                bucket.push(TimeRange { min_ts: min, max_ts: max });
             }
         }
-        Ok(tombstones)
+        Ok(())
+    }
+
+    pub fn add_range(&mut self,
+                     field_ids: &[FieldId],
+                     min: Timestamp,
+                     max: Timestamp)
+                     -> Result<()> {
+        let time_range = TimeRange { min_ts: min, max_ts: max };
+        for field_id in field_ids.iter() {
+            let tomb = Tombstone { field_id: *field_id, time_range };
+            Self::write_to(&self.tomb_accessor, self.tomb_size, &tomb).map(|s| {
+                                                                          self.tomb_size +=
+                                                                              s as u64;
+                                                                          self.tombstones
+                                                                              .entry(*field_id)
+                                                                              .or_insert(Vec::new())
+                                                                              .push(time_range);
+                                                                      })?;
+        }
+        Ok(())
     }
 
     fn write_header_to(writer: &File) -> Result<usize> {
@@ -127,11 +164,13 @@ impl TsmTombstone {
         let ret = writer.write_at(pos, &tombstone.field_id.to_be_bytes()[..])
                         .and_then(|s| {
                             size += s;
-                            writer.write_at(pos + size as u64, &tombstone.min_ts.to_be_bytes()[..])
+                            writer.write_at(pos + size as u64,
+                                            &tombstone.time_range.min_ts.to_be_bytes()[..])
                         })
                         .and_then(|s| {
                             size += s;
-                            writer.write_at(pos + size as u64, &tombstone.max_ts.to_be_bytes()[..])
+                            writer.write_at(pos + size as u64,
+                                            &tombstone.time_range.max_ts.to_be_bytes()[..])
                         })
                         .map(|s| {
                             size += s;
@@ -146,40 +185,62 @@ impl TsmTombstone {
         ret
     }
 
-    pub fn add_range(&mut self,
-                     field_ids: &[FieldId],
-                     min: Timestamp,
-                     max: Timestamp)
-                     -> Result<()> {
-        for field_id in field_ids.iter() {
-            let tomb = Tombstone { field_id: *field_id, min_ts: min, max_ts: max };
-            Self::write_to(&self.tomb_accessor, self.tomb_size, &tomb).map(|s| {
-                                                                          self.tomb_size +=
-                                                                              s as u64;
-                                                                          self.tombstones
-                                                                              .push(tomb);
-                                                                      })?;
-        }
+    pub fn flush(&self) -> Result<()> {
+        self.tomb_accessor.set_len(self.tomb_size);
+        self.tomb_accessor.sync_all(FileSync::Hard).context(error::IOSnafu)?;
         Ok(())
     }
 
-    pub fn overlaps(&self, field_id: FieldId, timerange: &TimeRange) -> bool {
-        for t in self.tombstones.iter() {
-            if t.field_id == field_id
-               && t.max_ts >= timerange.min_ts
-               && t.min_ts <= timerange.max_ts
-            {
-                return true;
+    /// Returns all TimeRanges for a FieldId cloned from TsmTombstone.
+    pub(crate) fn get_cloned_time_ranges(&self, field_id: FieldId) -> Option<Vec<TimeRange>> {
+        self.tombstones.get(&field_id).map(|f| f.clone())
+    }
+
+    pub fn overlaps(&self, field_id: FieldId, time_range: &TimeRange) -> bool {
+        if let Some(time_ranges) = self.tombstones.get(&field_id) {
+            for t in time_ranges.iter() {
+                if t.overlaps(time_range) {
+                    return true;
+                }
             }
         }
 
         false
     }
 
-    pub fn flush(&self) -> Result<()> {
-        self.tomb_accessor.set_len(self.tomb_size);
-        self.tomb_accessor.sync_all(FileSync::Hard).context(error::IOSnafu)?;
-        Ok(())
+    /// Returns all tombstone `TimeRange`s that overlaps the given `TimeRange`.
+    /// Returns None if there is nothing to return, or `TimeRange`s is empty.
+    pub fn get_overlaped_time_ranges(&self,
+                                     field_id: FieldId,
+                                     time_range: &TimeRange)
+                                     -> Option<Vec<TimeRange>> {
+        if let Some(time_ranges) = self.tombstones.get(&field_id) {
+            let mut trs = Vec::new();
+            for t in time_ranges.iter() {
+                if t.overlaps(time_range) {
+                    trs.push(*t);
+                }
+            }
+            if trs.is_empty() {
+                return None;
+            }
+            return Some(trs);
+        }
+
+        None
+    }
+
+    pub fn data_block_exlcude_tombstones(&self, field_id: FieldId, data_block: &mut DataBlock) {
+        if let Some(tr_tuple) = data_block.time_range() {
+            let time_range: &TimeRange = &tr_tuple.into();
+            if let Some(time_ranges) = self.tombstones.get(&field_id) {
+                for t in time_ranges.iter() {
+                    if t.overlaps(time_range) {
+                        data_block.exclude(t);
+                    }
+                }
+            }
+        }
     }
 }
 
