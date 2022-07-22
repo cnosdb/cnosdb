@@ -12,8 +12,7 @@ impl BloomFilter {
     pub fn new(m: u64) -> Self {
         let m = Self::pow2(m);
         let l = m as usize >> 3;
-        let mut b: Vec<u8> = Vec::with_capacity(l);
-        b.resize(l, 0);
+        let b: Vec<u8> = vec![0; l];
         Self { b, mask: m - 1 }
     }
 
@@ -43,6 +42,10 @@ impl BloomFilter {
 
     pub fn len(&self) -> usize {
         self.b.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.b.is_empty()
     }
 
     pub fn bytes(&self) -> &[u8] {
