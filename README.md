@@ -29,7 +29,7 @@ To design and develop a high performance, high compression ratio, highly availab
 - Be compatible with major international and domestic public cloud ecosystems.
 
 ## Roadmap
-- Click to view [Roadmap](docs/roadmap/ROADMAP.md)
+- Click to view [Roadmap](https://github.com/cnosdb/cnosdb/issues/483)
 
 ## Join the community
 All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR code below and add CC to join the group.

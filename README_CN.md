@@ -26,7 +26,7 @@ CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序�
 - 与其他数据生态系统相结合，支持导入/导出parquet文件；
 - 兼容国际与国内主要公有云生态。
 ## 路线图
-* [路线图](docs/roadmap/ROADMAP_CN.md)
+* [路线图](https://github.com/cnosdb/cnosdb/issues/483)
 ## 加入社区
 欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
 
