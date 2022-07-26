@@ -14,10 +14,10 @@ use std::{
 use config::GLOBAL_CONFIG;
 use crossbeam::channel::internal::SelectHandle;
 use lazy_static::lazy_static;
-use logger::{debug, info, warn};
 use models::{FieldId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
+use trace::{debug, info, warn};
 use utils::BloomFilter;
 
 use crate::{
@@ -581,10 +581,10 @@ impl TseriesFamily {
 mod test {
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-    use logger::info;
     use models::ValueType;
     use parking_lot::{Mutex, RwLock};
     use tokio::sync::mpsc;
+    use trace::info;
 
     use crate::{
         compaction::{run_flush_memtable_job, FlushReq},

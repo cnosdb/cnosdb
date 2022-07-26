@@ -10,7 +10,7 @@ use datafusion::{
     physical_expr::PhysicalExpr,
     physical_plan::metrics::Time,
 };
-use logger::info;
+use trace::info;
 
 type ArrowResult<T> = std::result::Result<T, ArrowError>;
 pub type PredicateRef = Arc<Predicate>;

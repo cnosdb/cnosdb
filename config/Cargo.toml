@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-logger = {path = "../logger"}
+trace = {path = "../trace" }
 
 lazy_static = "1.4.0"
 serde = "1.0.138"

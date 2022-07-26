@@ -2,7 +2,6 @@ use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thre
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use logger::{debug, error, info, init, trace, warn};
 use models::{FieldId, SeriesId, Timestamp};
 use parking_lot::{Mutex, RwLock};
 use protos::{
@@ -17,6 +16,7 @@ use tokio::{
         oneshot,
     },
 };
+use trace::{debug, error, info, trace, warn};
 
 use crate::{
     compaction::{run_flush_memtable_job, FlushReq},
@@ -344,7 +344,6 @@ impl TsKv {
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
-        init();
         warn!("job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {
@@ -435,7 +434,6 @@ mod test {
     use chrono::Local;
     use config::GLOBAL_CONFIG;
     use futures::{channel::oneshot, future::join_all, SinkExt};
-    use logger::{debug, error, info, warn};
     use models::{FieldInfo, SeriesInfo, Tag, ValueType};
     use protos::{
         kv_service, kv_service::WritePointsRpcResponse, models as fb_models, models_helper,
@@ -443,6 +441,7 @@ mod test {
     use serial_test::serial;
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
+    use trace::{debug, error, info, init_default_global_tracing, warn};
 
     use crate::{
         error,
@@ -453,7 +452,6 @@ mod test {
     };
 
     async fn get_tskv() -> TsKv {
-        logger::init_with_config_path("tests/test_kvcore_log.yaml");
         let opt = crate::kv_option::Options { wal: Arc::new(WalConfig { dir: String::from("/tmp/test/wal"),
                                                                         ..Default::default() }),
                                               ..Default::default() };
@@ -464,6 +462,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_init() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
 
         dbg!("Ok");
@@ -472,6 +471,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_write() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
 
         let database = "db".to_string();
@@ -486,6 +486,7 @@ mod test {
 
     // remove repeat sid and fields_id
     pub fn remove_duplicates(nums: &mut [u64]) -> usize {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         if nums.len() <= 1 {
             return nums.len() as usize;
         }
@@ -503,6 +504,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_read() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
 
         let database = "db".to_string();
@@ -541,6 +543,7 @@ mod test {
     #[serial]
     #[ignore]
     async fn test_delete_cache() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -587,6 +590,7 @@ mod test {
     #[serial]
     #[ignore]
     async fn test_big_write() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
 
         for i in 0..100 {
@@ -605,6 +609,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_insert_cache() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
 
         let database = "db".to_string();
@@ -619,6 +624,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_start() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
 
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -644,6 +650,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_add_del_tsf() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
         let opt = crate::kv_option::Options { wal: Arc::new(WalConfig { dir: String::from("/tmp/test/wal"),
                                                                         ..Default::default() }),
@@ -675,6 +682,7 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_flush_delta() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -689,10 +697,12 @@ mod test {
     #[tokio::test]
     #[serial]
     async fn test_log() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let tskv = get_tskv().await;
         info!("hello");
         warn!("hello");
         debug!("hello");
         error!("hello"); //maybe we can use panic directly
+        // panic!("hello");
     }
 }

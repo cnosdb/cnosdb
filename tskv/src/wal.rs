@@ -6,12 +6,12 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use logger::{debug, info, warn};
 use parking_lot::{Mutex, RwLock};
 use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use trace::{debug, info, warn};
 use walkdir::IntoIter;
 
 use crate::{

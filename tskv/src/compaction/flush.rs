@@ -5,12 +5,12 @@ use std::{
     sync::Arc,
 };
 
-use logger::{debug, error, info, warn};
 use models::FieldId;
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
 use snafu::ResultExt;
 use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender};
+use trace::{debug, error, info, warn};
 
 use crate::{
     compaction::FlushReq,
