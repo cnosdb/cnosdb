@@ -172,8 +172,8 @@ mod test {
     use std::sync::Arc;
 
     use futures::channel::oneshot;
-    use logger::info;
     use tokio::runtime::Builder;
+    use trace::info;
 
     use super::FileManager;
     use crate::{

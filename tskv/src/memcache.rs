@@ -2,9 +2,9 @@ use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 
 use flatbuffers::Push;
 use futures::future::ok;
-use logger::{info, warn};
 use models::{FieldId, Timestamp, ValueType};
 use protos::models::FieldType;
+use trace::{info, warn};
 
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 

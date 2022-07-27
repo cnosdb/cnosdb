@@ -7,9 +7,9 @@ use std::{
 };
 
 use evmap::new;
-use logger::{error, info};
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
+use trace::{error, info};
 
 use crate::{
     compaction::CompactReq,

@@ -11,9 +11,9 @@ use async_recursion::async_recursion;
 use bytes::{Buf, BufMut};
 use direct_io::File;
 use futures::future::ok;
-use logger::info;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+use trace::info;
 
 use super::*;
 

@@ -1,8 +1,8 @@
 use std::{fs::File, io::prelude::Read};
 
 use lazy_static::lazy_static;
-use logger::debug;
 use serde::{Deserialize, Serialize};
+use trace::debug;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalConfig {

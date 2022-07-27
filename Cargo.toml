@@ -2,10 +2,10 @@
 
 members = [
     "config",
-    "logger",
     "main",
     "protos",
     "tskv",
+    "trace",
     "rpctests",
     "utils",
     "models",

@@ -131,8 +131,8 @@ impl VersionEdit {
 }
 
 use config::GLOBAL_CONFIG;
-use logger::{debug, info};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use trace::{debug, info};
 
 #[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]

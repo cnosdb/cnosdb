@@ -4,9 +4,9 @@ use std::{
 };
 
 use config::GLOBAL_CONFIG;
-use logger::error;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use trace::error;
 
 use crate::{
     kv_option::{TseriesFamDesc, TseriesFamOpt},
