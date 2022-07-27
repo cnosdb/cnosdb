@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, ops::Div, sync::Arc};
 
+use trace::error;
+
 use crate::{
     compaction::CompactReq,
     direct_io::File,
@@ -22,7 +24,13 @@ impl LevelCompactionPicker {
                            tsf_id: TseriesFamilyId,
                            version: Arc<Version>)
                            -> Option<CompactReq> {
-        let opts = self.tseries_fam_opts.get(&tsf_id).cloned().unwrap();
+        let opts = match self.tseries_fam_opts.get(&tsf_id).cloned() {
+            None => {
+                error!("failed to get TseriesFamOpt by tsf id {}", &tsf_id);
+                return None;
+            },
+            Some(v) => v,
+        };
         let mut ctx = LevelCompatContext::default();
         ctx.cal_score(version.as_ref(), opts.as_ref());
         if let Some((start_level, out_lvl)) = ctx.pick_level() {
@@ -73,7 +81,13 @@ impl LevelCompatContext {
                                 info[0].cur_size as f64 / info[base_level].max_size as f64)));
         }
         for (l, item) in info.iter().enumerate() {
-            let score = item.cur_size.checked_div(item.max_size).unwrap();
+            let score = match item.cur_size.checked_div(item.max_size) {
+                None => {
+                    error!("failed to get score by max size");
+                    continue;
+                },
+                Some(v) => v,
+            };
             self.level_scores.push((l as u32, score as f64));
         }
         self.base_level = 0;

@@ -7,6 +7,7 @@ use std::{
 use config::GLOBAL_CONFIG;
 use models::{FieldId, FieldInfo, SeriesId, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
+use trace::error;
 
 use super::*;
 use crate::record_file::{self, Record, RecordFileError, RecordFileResult};
@@ -73,8 +74,8 @@ impl From<u8> for ForwardIndexAction {
 impl ForwardIndex {
     pub fn new(path: &String) -> ForwardIndex {
         ForwardIndex { series_info_set: HashMap::new(),
-                       record_writer: record_file::Writer::new(Path::new(&path)),
-                       record_reader: record_file::Reader::new(Path::new(&path)),
+                       record_writer: record_file::Writer::new(Path::new(&path)).unwrap(),
+                       record_reader: record_file::Reader::new(Path::new(&path)).unwrap(),
                        file_path: Path::new(&path).to_path_buf() }
     }
 
@@ -109,7 +110,13 @@ impl ForwardIndex {
                         // Read a series_info from the ForwardIndex file.
                         let record =
                             self.record_reader
-                                .read_one(mem_series_info.pos.to_usize().unwrap())
+                                .read_one(match mem_series_info.pos.to_usize() {
+                                              None => {
+                                                  error!("failed convert series info pos to usize");
+                                                  0
+                                              },
+                                              Some(v) => v,
+                                          })
                                 .await
                                 .map_err(|err| ForwardIndexError::ReadFile { source: err })?;
                         if record.data_type != ForwardIndexAction::AddSeriesInfo.u8_number() {
@@ -183,7 +190,7 @@ impl ForwardIndex {
     }
 
     pub async fn load_cache_file(&mut self) -> RecordFileResult<()> {
-        let mut record_reader = record_file::Reader::new(&self.file_path);
+        let mut record_reader = record_file::Reader::new(&self.file_path).unwrap();
         while let Ok(record) = record_reader.read_record().await {
             self.handle_record(record).await;
         }
@@ -208,7 +215,14 @@ impl ForwardIndex {
                     // TODO warning log
                     return;
                 }
-                let series_id = u64::from_le_bytes(record.data.try_into().unwrap());
+                let bytes = match record.data.try_into() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        error!("failed handle record in case data try into");
+                        return;
+                    },
+                };
+                let series_id = u64::from_le_bytes(bytes);
                 self.series_info_set.remove(&series_id);
             },
             ForwardIndexAction::Unknown => {

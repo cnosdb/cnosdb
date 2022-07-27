@@ -13,7 +13,7 @@ use direct_io::File;
 use futures::future::ok;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
-use trace::info;
+use trace::{error, info};
 
 use super::*;
 
@@ -27,20 +27,33 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(path: &Path) -> Self {
-        let file = open_file(path).unwrap();
+    pub fn new(path: &Path) -> Option<Self> {
+        let file = match open_file(path) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("failed to open file path : {:?}, in case {:?}", path, e);
+                return None;
+            },
+        };
         let mut buf = Vec::<u8>::new();
         buf.resize(READER_BUF_SIZE, 0);
-        Reader { path: path.to_path_buf(),
-                 file: Mutex::new(file),
-                 buf,
-                 pos: 0,
-                 buf_len: 0,
-                 buf_use: 0 }
+        Some(Reader { path: path.to_path_buf(),
+                      file: Mutex::new(file),
+                      buf,
+                      pos: 0,
+                      buf_len: 0,
+                      buf_use: 0 })
     }
 
     async fn set_pos(&mut self, pos: usize) -> RecordFileResult<()> {
-        if pos > self.file.lock().len().to_usize().unwrap() {
+        let len = match self.file.lock().len().to_usize() {
+            None => {
+                error!("file len is  illegal");
+                0
+            },
+            Some(v) => v,
+        };
+        if pos > len {
             return Err(RecordFileError::InvalidPos);
         }
         match self.pos.cmp(&pos) {
@@ -73,7 +86,14 @@ impl Reader {
     async fn find_magic(&mut self) -> RecordFileResult<()> {
         loop {
             let (origin_pos, data) = self.read_buf(RECORD_MAGIC_NUMBER_LEN).await?;
-            let magic_number = u32::from_le_bytes(data.try_into().unwrap());
+            let data_bytes = match data.try_into() {
+                Ok(v) => v,
+                Err(_) => {
+                    error!("failed data try into");
+                    return Err(RecordFileError::InvalidTryInto);
+                },
+            };
+            let magic_number = u32::from_le_bytes(data_bytes);
             if magic_number != MAGIC_NUMBER {
                 self.set_pos(origin_pos + 1).await?;
             } else {
@@ -209,7 +229,7 @@ impl Reader {
 
 impl From<&str> for Reader {
     fn from(path: &str) -> Self {
-        Reader::new(&PathBuf::from(path))
+        Reader::new(&PathBuf::from(path)).unwrap()
     }
 }
 

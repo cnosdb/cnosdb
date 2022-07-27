@@ -13,7 +13,8 @@ use std::{
     task::{Context, RawWaker, RawWakerVTable, Waker},
 };
 
-use crossbeam::channel::Sender;
+use crossbeam::channel::{SendError, Sender};
+use trace::error;
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -94,7 +95,12 @@ unsafe fn wake_raw(this: *const ()) {
         match status {
             WAITING => match task.0.status.compare_exchange(WAITING, POLLING, ORDERING, ORDERING) {
                 Ok(_) => {
-                    task.0.queue.send(clone_task(&*task.0)).unwrap();
+                    match task.0.queue.send(clone_task(&*task.0)) {
+                        Ok(_) => {},
+                        Err(e) => {
+                            error!("failed to send runtime task : {:?}", e);
+                        },
+                    };
                     break;
                 },
                 Err(cur) => status = cur,
@@ -116,7 +122,12 @@ unsafe fn wake_ref_raw(this: *const ()) {
         match status {
             WAITING => match task.0.status.compare_exchange(WAITING, POLLING, ORDERING, ORDERING) {
                 Ok(_) => {
-                    task.0.queue.send(clone_task(&*task.0)).unwrap();
+                    match task.0.queue.send(clone_task(&*task.0)) {
+                        Ok(_) => {},
+                        Err(e) => {
+                            error!("failed to send runtime task : {:?}", e);
+                        },
+                    };
                     break;
                 },
                 Err(cur) => status = cur,

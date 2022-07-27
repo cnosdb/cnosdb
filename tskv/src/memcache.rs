@@ -1,10 +1,10 @@
-use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
+use std::{borrow::BorrowMut, cmp::Ordering, collections::HashMap, mem::size_of_val, rc::Rc};
 
 use flatbuffers::Push;
 use futures::future::ok;
 use models::{FieldId, Timestamp, ValueType};
 use protos::models::FieldType;
-use trace::{info, warn};
+use trace::{error, info, warn};
 
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 
@@ -175,7 +175,13 @@ impl MemCache {
 
     pub fn switch_to_immutable(&mut self) {
         for data in self.data_cache.iter_mut() {
-            data.1.cells.sort_by(|a, b| a.timestamp().partial_cmp(&b.timestamp()).unwrap())
+            data.1.cells.sort_by(|a, b| match a.timestamp().partial_cmp(&b.timestamp()) {
+                            None => {
+                                error!("timestamp is illegal");
+                                Ordering::Less
+                            },
+                            Some(v) => v,
+                        })
         }
         self.immutable = true;
     }

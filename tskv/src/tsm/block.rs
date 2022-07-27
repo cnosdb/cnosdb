@@ -2,6 +2,7 @@ use std::{fmt::Display, mem::size_of, ops::Index};
 
 use models::{Timestamp, ValueType};
 use protos::models::FieldType;
+use trace::error;
 
 use super::coders;
 use crate::{
@@ -243,8 +244,15 @@ impl DataBlock {
         if blocks.len() == 1 {
             return vec![blocks.remove(0)];
         }
-        let capacity = blocks.first().unwrap().len();
-        let field_type = blocks.first().unwrap().field_type();
+        let data_blocks = match blocks.first() {
+            None => {
+                error!("failed to get data block");
+                return vec![];
+            },
+            Some(v) => v,
+        };
+        let capacity = data_blocks.len();
+        let field_type = data_blocks.field_type();
 
         let mut res = vec![];
         let mut blk = Self::new(capacity, field_type);

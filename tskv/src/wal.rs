@@ -11,7 +11,7 @@ use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::{debug, info, warn};
+use trace::{debug, error, info, warn};
 use walkdir::IntoIter;
 
 use crate::{
@@ -416,14 +416,27 @@ impl WalReader {
 
     pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
         debug!("WalReader: cursor.pos={}", self.cursor.pos());
-        let read_bytes = self.cursor.read(&mut self.block_header_buf[..]).unwrap();
+        let read_bytes = match self.cursor.read(&mut self.block_header_buf[..]) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("failed read block header buf : {:?}", e);
+                return None;
+            },
+        };
         if read_bytes < 8 {
             return None;
         }
         let typ = self.block_header_buf[0];
         let seq = byte_utils::decode_be_u64(self.block_header_buf[1..9].into());
         let crc = byte_utils::decode_be_u32(self.block_header_buf[9..13].into());
-        let data_len = byte_utils::decode_be_u32(self.block_header_buf[13..17].try_into().unwrap());
+        let key = match self.block_header_buf[13..17].try_into() {
+            Ok(v) => v,
+            Err(e) => {
+                error!("failed try into block header buf : {:?}", e);
+                return None;
+            },
+        };
+        let data_len = byte_utils::decode_be_u32(key);
         if data_len == 0 {
             return None;
         }
@@ -433,7 +446,13 @@ impl WalReader {
             self.body_buf.resize(data_len as usize, 0);
         }
         let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let read_bytes = self.cursor.read(buf).unwrap();
+        let read_bytes = match self.cursor.read(buf) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("failed read body buf : {:?}", e);
+                return None;
+            },
+        };
 
         Some(WalEntryBlock { typ: typ.into(), seq, crc, len: read_bytes as u32, buf: buf.to_vec() })
     }

@@ -72,4 +72,7 @@ pub enum Error {
 
     #[snafu(display("invalid model: {}", source))]
     InvalidModel { source: models::Error },
+
+    #[snafu(display("invalid tseries id : {}", tf_id))]
+    InvalidTsfid { tf_id: u32 },
 }

@@ -151,7 +151,7 @@ impl Summary {
     // create a new summary file
     pub async fn new(db_opt: &DBOptions) -> Result<Self> {
         let db = VersionEdit::new();
-        let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
+        let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0)).unwrap();
         let buf = db.encode()?;
         let _ = w.write_record(1, EditType::SummaryEdit.into(), &buf)
                  .map_err(|e| Error::LogRecordErr { source: (e) })
@@ -161,9 +161,9 @@ impl Summary {
     }
 
     pub async fn recover(db_opt: &DBOptions) -> Result<Self> {
-        let writer = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0));
+        let writer = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0)).unwrap();
         let ctx = Arc::new(GlobalContext::default());
-        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)));
+        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)).unwrap());
         let vs = Self::recover_version(rd, &ctx).await?;
 
         Ok(Self { file_no: 0, version_set: Arc::new(RwLock::new(vs)), ctx, writer })

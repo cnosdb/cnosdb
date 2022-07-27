@@ -17,7 +17,7 @@ use lazy_static::lazy_static;
 use models::{FieldId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
-use trace::{debug, info, warn};
+use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
 use crate::{
@@ -186,17 +186,35 @@ impl LevelInfo {
             if let Ok(mut tombstone) =
                 TsmTombstone::with_tsm_file_id(GLOBAL_CONFIG.db_path.clone(), file.file_id)
             {
-                tombstone.load().unwrap();
+                match tombstone.load() {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("failed to load tombstone, in case {:?}", e);
+                    },
+                };
                 for i in tombstone.tombstones() {
                     tomb.insert(i.field_id, TimeRange { min_ts: i.min_ts, max_ts: i.max_ts });
                 }
             }
 
-            let file =
-                file_manager::open_file(file.file_path(self.tsf_opt.clone(), tf_id)).unwrap();
+            let file = match file_manager::open_file(file.file_path(self.tsf_opt.clone(), tf_id)) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!("failed to get file, path : {:?}, in case {:?}",
+                           file.file_path(self.tsf_opt.clone(), tf_id),
+                           e);
+                    return;
+                },
+            };
             let file = Arc::new(file);
 
-            let index = IndexReader::open(file.clone()).unwrap();
+            let index = match IndexReader::open(file.clone()) {
+                Ok(v) => v,
+                Err(e) => {
+                    error!("failed get index reader : {:?}", e);
+                    return;
+                },
+            };
             for idx in index.iter_opt(field_id) {
                 for blk in idx.block_iterator() {
                     if blk.min_ts() <= time_range.max_ts && blk.max_ts() >= time_range.min_ts {

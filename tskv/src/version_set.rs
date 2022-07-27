@@ -53,12 +53,18 @@ impl VersionSet {
     }
 
     pub async fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
-        let tf = self.ts_families.get_mut(&tf_id).unwrap();
-        let mem = Arc::new(RwLock::new(MemCache::new(tf_id,
-                                                     GLOBAL_CONFIG.max_memcache_size,
-                                                     seq,
-                                                     false)));
-        tf.switch_memcache(mem).await;
+        match self.ts_families.get_mut(&tf_id) {
+            Some(tf) => {
+                let mem = Arc::new(RwLock::new(MemCache::new(tf_id,
+                                                             GLOBAL_CONFIG.max_memcache_size,
+                                                             seq,
+                                                             false)));
+                tf.switch_memcache(mem).await;
+            },
+            None => {
+                error!("ts_family with tsf id {} not found.", tf_id);
+            },
+        }
     }
 
     // todo: deal with add tsf and del tsf
@@ -77,6 +83,13 @@ impl VersionSet {
         }
         let partid = sid as u32 % self.ts_families.len() as u32;
         self.ts_families.get_mut(&partid)
+    }
+
+    pub fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<&TseriesFamily> {
+        if self.ts_families.is_empty() {
+            return None;
+        }
+        self.ts_families.get(&tf_id)
     }
 
     pub async fn add_tsfamily(&mut self,
@@ -115,9 +128,16 @@ impl VersionSet {
                         tf_id: u32,
                         name: String,
                         summary_task_sender: UnboundedSender<SummaryTask>) {
-        if tf_id != *self.ts_families_names.get(&name).unwrap() {
-            error!("tf_id and name can`t match");
-            return;
+        match self.ts_families_names.get(&name) {
+            None => {
+                error!("failed get tf id with tf name {}", &name);
+            },
+            Some(v) => {
+                if tf_id != *v {
+                    error!("tf_id and name can`t match");
+                    return;
+                }
+            },
         }
         self.ts_families.remove(&tf_id);
         self.ts_families_names.remove(&name);

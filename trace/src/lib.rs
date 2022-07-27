@@ -53,9 +53,7 @@ pub fn init_global_tracing(dir: &str, file_name: &str, level: &str) -> Vec<Worke
 
 #[cfg(test)]
 mod tests {
-    use crate::{info, error, instrument};
-
-    use crate::init_default_global_tracing;
+    use crate::{error, info, init_default_global_tracing, instrument};
     #[instrument]
     fn return_err() {
         error!("wrong");
