@@ -1,5 +1,6 @@
 use futures::Future;
 use runtime::Runtime;
+use trace::error;
 
 use crate::{error::Result, runtime::runtime};
 
@@ -10,7 +11,13 @@ pub struct WorkerQueue {
 
 impl WorkerQueue {
     pub fn new(core_num: usize) -> Self {
-        let core_ids = core_affinity::get_core_ids().unwrap();
+        let core_ids = match core_affinity::get_core_ids() {
+            None => {
+                error!("failed to get core_ids, return none");
+                vec![]
+            },
+            Some(v) => v,
+        };
         let queue = Runtime::new(&core_ids[0..core_num]);
         Self { work_queue: queue, core_num }
     }

@@ -32,6 +32,8 @@ pub enum RecordFileError {
     Eof,
 
     InvalidPos,
+
+    InvalidTryInto,
 }
 
 pub type RecordFileResult<T> = std::result::Result<T, RecordFileError>;

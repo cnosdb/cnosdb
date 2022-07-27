@@ -6,6 +6,7 @@ use std::{
 
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+use trace::error;
 
 use super::*;
 use crate::{
@@ -19,9 +20,15 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub fn new(path: &Path) -> Self {
-        let file = open_file(path).unwrap();
-        Writer { path: path.to_path_buf(), file: Mutex::new(file) }
+    pub fn new(path: &Path) -> Option<Self> {
+        let file = match open_file(path) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("failed to open file path : {:?}, in case {:?}", path, e);
+                return None;
+            },
+        };
+        Some(Writer { path: path.to_path_buf(), file: Mutex::new(file) })
     }
 
     // Returns the POS of record in the file
@@ -37,9 +44,17 @@ impl Writer {
                                                + data.len()
                                                + RECORD_CRC32_NUMBER_LEN);
 
+        let data_len = match data.len().to_u32() {
+            None => {
+                error!("failed to get data len, return 0");
+                0
+            },
+            Some(v) => v,
+        };
+
         // build buf
         buf.append(&mut MAGIC_NUMBER.to_le_bytes().to_vec()); // magic_number
-        buf.append(&mut data.len().to_u32().unwrap().to_le_bytes().to_vec()); //data_size
+        buf.append(&mut data_len.to_le_bytes().to_vec()); //data_size
         buf.append(&mut data_version.to_le_bytes().to_vec()); //data_version
         buf.append(&mut data_type.to_le_bytes().to_vec()); //data_type
         buf.append(&mut data.to_vec()); //data
@@ -50,8 +65,15 @@ impl Writer {
         let mut p = 0;
         let mut pos = self.file.lock().len();
         let origin_pos = pos;
+        let pos_usize = match pos.to_usize() {
+            None => {
+                error!("pos is illegal");
+                0
+            },
+            Some(v) => v,
+        };
         while p < buf.len() {
-            let mut write_len = BLOCK_SIZE - pos.to_usize().unwrap() % BLOCK_SIZE;
+            let mut write_len = BLOCK_SIZE - pos_usize % BLOCK_SIZE;
             if write_len > buf.len() - p {
                 write_len = buf.len() - p;
             }
@@ -63,7 +85,13 @@ impl Writer {
             {
                 Ok(_) => {
                     p += write_len;
-                    pos += write_len.to_u64().unwrap();
+                    pos += match write_len.to_u64() {
+                        None => {
+                            error!("write len is illegal");
+                            0
+                        },
+                        Some(v) => v,
+                    };
                 },
                 Err(e) => {
                     return Err(e);
@@ -98,7 +126,7 @@ impl Writer {
 
 impl From<&str> for Writer {
     fn from(path: &str) -> Self {
-        Writer::new(&PathBuf::from(path))
+        Writer::new(&PathBuf::from(path)).unwrap()
     }
 }
 

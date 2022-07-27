@@ -8,7 +8,7 @@ use std::{
 use models::FieldId;
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
-use snafu::ResultExt;
+use snafu::{NoneError, ResultExt};
 use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender};
 use trace::{debug, error, info, warn};
 
@@ -164,7 +164,14 @@ async fn build_tsm_file_workflow(meta: &mut CompactMeta,
     let max_level_ts;
     {
         let version_s = version_set.read();
-        let mut version = version_s.get_tsfamily_immut(tsf_id as u64).unwrap().version().write();
+        let tsf_immut = match version_s.get_tsfamily_by_tf_id(tsf_id) {
+            None => {
+                error!("failed get tsfamily by tsf id {}", tsf_id);
+                return Err(Error::InvalidTsfid { tf_id: tsf_id });
+            },
+            Some(v) => v,
+        };
+        let mut version = tsf_immut.version().write();
         max_level_ts = version.max_level_ts;
         while version.levels_info.len() <= level {
             let i: u32 = version.levels_info.len() as u32;
@@ -186,8 +193,21 @@ fn build_block_set(field_size: HashMap<&FieldId, usize>,
                    -> HashMap<FieldId, DataBlock> {
     let mut block_set = HashMap::new();
     for (fid, entrys) in field_map {
-        let size = field_size.get(&fid).unwrap();
-        let entry = entrys.first().unwrap();
+        let size = match field_size.get(&fid) {
+            None => {
+                error!("failed to get field size");
+                continue;
+            },
+            Some(v) => v,
+        };
+
+        let entry = match entrys.first() {
+            None => {
+                error!("failed to get mem entry");
+                continue;
+            },
+            Some(v) => v,
+        };
         let mut block = DataBlock::new(*size, entry.field_type);
         for entry in entrys.iter() {
             // get tsm ts range
