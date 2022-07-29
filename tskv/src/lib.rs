@@ -7,7 +7,7 @@ mod byte_utils;
 mod compaction;
 mod context;
 mod direct_io;
-mod error;
+pub mod error;
 mod file_manager;
 mod file_utils;
 mod forward_index;
@@ -28,7 +28,9 @@ pub use error::{Error, Result};
 pub use kv_option::Options;
 pub use kvcore::TsKv;
 use protos::kv_service::WritePointsRpcResponse;
+pub use summary::Summary;
 use tokio::sync::oneshot;
+pub use tseries_family::TimeRange;
 pub use tsm::print_tsm_statistics;
 use utils::BloomFilter;
 

@@ -41,6 +41,7 @@ num-traits = "0.2.14"
 num_enum = "0.5.7"
 integer-encoding = "3.0.3"
 snap = "1.0.0"
+tracing = "0.1.35"
 
 [dev-dependencies]
 criterion = { version = "0.3.5", features = ["async_tokio"] }

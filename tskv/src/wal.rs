@@ -475,7 +475,7 @@ mod test {
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
 
-    const DIR: &str = "/tmp/test_wal";
+    const DIR: &str = "/tmp/test_wal_1";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {

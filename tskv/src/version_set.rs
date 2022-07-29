@@ -119,8 +119,8 @@ impl VersionSet {
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask { edits, cb: task_state_sender };
-        if let Err(_) = summary_task_sender.send(task) {
-            error!("failed to send Summary task,the edits not be loaded!")
+        if let Err(e) = summary_task_sender.send(task) {
+            error!("failed to send Summary task, {:?}", e);
         }
     }
 
@@ -147,8 +147,8 @@ impl VersionSet {
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask { edits, cb: task_state_sender };
-        if let Err(_) = summary_task_sender.send(task) {
-            error!("failed to send Summary task,the edits not be loaded!")
+        if let Err(e) = summary_task_sender.send(task) {
+            error!("failed to send Summary task, {:?}", e);
         }
     }
 
