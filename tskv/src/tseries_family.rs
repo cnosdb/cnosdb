@@ -646,6 +646,12 @@ mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+
+        let dir = PathBuf::from("dev/db".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+
         let mut mem = MemCache::new(0, 1000, 0, false);
         mem.insert_raw(0, 0, 0, ValueType::Integer, 10_i64.to_be_bytes().as_slice()).unwrap();
         let mem = Arc::new(RwLock::new(mem));
