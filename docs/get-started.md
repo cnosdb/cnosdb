@@ -61,7 +61,9 @@
          # Arch Linux
          pacman -S flatbuffers 
          # Fedora
-         dnf install flatbuffers 
+         dnf install flatbuffers
+         # Ubuntu 
+         snap install flatbuffers 
          # macOS
          brew install flatbuffers 
          ```

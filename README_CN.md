@@ -10,38 +10,49 @@
 CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序数据库；CnosDB依托于Rust, [Apache Arrow](https://arrow.apache.org/) 与 [DataFusion](https://github.com/apache/arrow-datafusion) 进行构建。
 
 ## CnosDB Isipho的设计目标
+
 设计并开发一个高性能、高压缩比、高可用的分布式云原生时间序列数据库，满足以下目标：
+
 ### 存储
+
 - 存算分离，时间序列膨胀（理论无上限 ）支持横/纵向扩展；
 - 性能和成本，高性能io，Run-to-Completion调度模型，支持使用对象存储进行分级存储；
 - 有损压缩，在用户可选择的情况下实现降精度的有损压缩；
+
 ### 查询
+
 - 使用Apache Arrow及Datafusion实现查询引擎；
 - 支持查询引擎矢量化的执行，执行复杂的查询语句；
 - 支持标准SQL，Flux，支持丰富的聚合查询及算子。
+
 ### 生态
+
 - 面向多租设计，提供更多的配置参数，能够提供资源更加灵活的配置；
 - cdc、WAL可以提供订阅和分发到其他节点，更加灵活的部署和支持；
 - 生态型兼容K8s生态，减少共享内存；
 - 与其他数据生态系统相结合，支持导入/导出parquet文件；
 - 兼容国际与国内主要公有云生态。
+
 ## 路线图
+
 * [路线图](https://github.com/cnosdb/cnosdb/issues/483)
+
 ## 加入社区
+
 欢迎所有热爱时序数据库的开发者/用户参与到CnosDB User Group中。扫描下方二维码，加CC为好友，即可入群。
 
 入群前请查看[入群须知](./docs/guidelines/CnosDBWeChatUserGroupGuidelines.md)
 
 <img src="docs/source/_static/img/u.jpg" width="256"/>
 
-
 ## 社区贡献指南
 
-- 请参照[贡献指南](CONTRIBUTING.md)为CnosDB做贡献。
+- 上手编译代码请参考[快速上手](docs/get-started.md)。
+- 请参照[贡献指南](CONTRIBUTING.md)成为CnosDB的Contributor。
 
 ## 联系我们
 
-* [官方主页 (维护者中)](https://www.cnosdb.com)
+* [官方主页 (维护中)](https://www.cnosdb.com)
 
 * [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
 
