@@ -3,18 +3,17 @@ mod tests {
     use std::sync::Arc;
 
     use chrono::Local;
-    use config::GLOBAL_CONFIG;
-    use lazy_static::lazy_static;
+    
+    
     use models::SeriesInfo;
     use protos::{kv_service, models as fb_models, models_helper};
     use serial_test::serial;
     use snafu::ResultExt;
-    use tokio::sync::{mpsc, oneshot::channel, OnceCell};
+    use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::{
         error, kv_option,
-        kv_option::{TseriesFamOpt, WalConfig},
-        Summary, Task, TimeRange, TsKv,
+        kv_option::{WalConfig}, Task, TimeRange, TsKv,
     };
 
     async fn get_tskv() -> TsKv {
