@@ -64,7 +64,7 @@ impl ExecutionPlan for TskvExec {
         _partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let batch_size = context.session_config().batch_size;
+        let batch_size = context.session_config().batch_size();
         Ok(Box::pin(TableScanStream::new(
             self.schema(),
             self.filter(),
