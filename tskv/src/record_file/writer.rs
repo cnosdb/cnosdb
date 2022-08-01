@@ -132,6 +132,14 @@ impl Writer {
             .sync_all(FileSync::Hard)
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
+
+    pub fn file_size(&self) -> u64 {
+        self.file.lock().len()
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
 }
 
 impl From<&str> for Writer {
@@ -142,8 +150,10 @@ impl From<&str> for Writer {
 
 mod test {
     use crate::record_file::{Reader, RecordFileError, Writer};
+    use serial_test::serial;
 
     #[tokio::test]
+    #[serial]
     async fn test_writer() -> Result<(), RecordFileError> {
         let mut w = Writer::from("/tmp/test.log_file");
         for i in 0..10 {
@@ -153,6 +163,7 @@ mod test {
         w.close().await?;
 
         test_reader_read_one().await;
+        test_reader().await;
         Ok(())
     }
 
@@ -163,5 +174,16 @@ mod test {
             "{}, {}, {}, {:?}",
             record.pos, record.data_type, record.data_version, record.data
         );
+    }
+
+    async fn test_reader() {
+        let mut r = Reader::from("/tmp/test.log_file");
+
+        while let Ok(record) = r.read_record().await {
+            println!(
+                "{}, {}, {}, {:?}",
+                record.pos, record.data_type, record.data_version, record.data
+            );
+        }
     }
 }

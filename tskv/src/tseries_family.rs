@@ -197,6 +197,7 @@ impl LevelInfo {
             delta.file_size,
             delta.is_delta,
         )));
+        self.tsf_id = delta.tsf_id;
         self.cur_size += delta.file_size;
         if self.ts_range.max_ts < delta.ts_max {
             self.ts_range.max_ts = delta.ts_max;
@@ -722,17 +723,14 @@ mod test {
             ..Default::default()
         });
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
-        version_set
-            .write()
-            .add_tsfamily(
-                0,
-                "test".to_string(),
-                0,
-                0,
-                cfg.clone(),
-                summary_task_sender.clone(),
-            )
-            .await;
+        version_set.write().add_tsfamily(
+            0,
+            "test".to_string(),
+            0,
+            0,
+            cfg.clone(),
+            summary_task_sender.clone(),
+        );
         let mut cfg_set = HashMap::new();
         cfg_set.insert(0, cfg.clone());
         run_flush_memtable_job(
