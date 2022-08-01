@@ -21,6 +21,7 @@ chrono = "0.4"
 crossbeam = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 snafu = "0.7"
+sled = "0.34"
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]
 version = "0.2"

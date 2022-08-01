@@ -57,10 +57,10 @@ impl ExecutionPlan for TskvExec {
 
     fn execute(&self,
                _partition: usize,
-               _context: Arc<TaskContext>)
+               context: Arc<TaskContext>)
                -> Result<SendableRecordBatchStream> {
-        // TODO 实现一个stream 去远端读文件，文件批量返回
-        Ok(Box::pin(TableScanStream::try_new(self.schema(), self.filter())))
+        let batch_size = context.session_config().batch_size;
+        Ok(Box::pin(TableScanStream::new(self.schema(), self.filter(), batch_size)))
     }
 
     fn statistics(&self) -> Statistics {

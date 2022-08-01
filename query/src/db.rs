@@ -1,11 +1,13 @@
 use std::{any::Any, sync::Arc};
+use datafusion::arrow::record_batch::RecordBatch;
 
 use datafusion::catalog::{catalog::CatalogProvider, schema::SchemaProvider};
+use futures::TryStreamExt;
 use parking_lot::RwLock;
 
 use crate::{
     catalog::IsiphoCatalog,
-    context::IsiophoSessionCtx,
+    context::IsiphoSessionCtx,
     exec::{Executor, ExecutorType},
 };
 
@@ -39,11 +41,20 @@ impl Default for Db {
 }
 
 impl Db {
-    fn new_query_context(&self) -> IsiophoSessionCtx {
+    fn new_query_context(&self) -> IsiphoSessionCtx {
         self.exec
             .new_execution_config(ExecutorType::Query)
             .with_default_catalog(Arc::clone(&self.catalog) as _)
             .build()
+    }
+    pub async fn run_query(&mut self, query: &str) -> Option<Vec<RecordBatch>>{
+        let ctx = self.new_query_context();
+        let task = ctx.inner().task_ctx();
+        let frame = ctx.inner().sql(query).await.unwrap();
+        let plan = frame.create_physical_plan().await.unwrap();
+        let stream = self.exec.run(plan, task).unwrap().stream();
+        let result: Vec<_> = stream.try_collect().await.ok()?;
+        Some(result)
     }
 }
 

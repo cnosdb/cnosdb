@@ -11,23 +11,25 @@ pub struct TableScanStream {
     // index: usize,
     proj_schema: SchemaRef,
     filter: PredicateRef,
+    batch_size: usize,
 }
 
 impl TableScanStream {
-    pub fn try_new(proj_schema: SchemaRef, filter: PredicateRef) -> Self {
-        Self { proj_schema, filter }
+    pub fn new(proj_schema: SchemaRef, filter: PredicateRef, batch_size:usize) -> Self {
+        Self { proj_schema, filter, batch_size}
     }
 }
 
-type ArrowResult<T> = std::result::Result<T, ArrowError>;
+type ArrowResult<T> = Result<T, ArrowError>;
 
 impl Stream for TableScanStream {
     type Item = ArrowResult<RecordBatch>;
 
     fn poll_next(mut self: std::pin::Pin<&mut Self>,
-                 context: &mut std::task::Context<'_>)
+                 _: &mut std::task::Context<'_>)
                  -> std::task::Poll<Option<Self::Item>> {
-        // let batch_size = context.session_config().batch_size;
+        //todo: 1. filter series by filter;
+        //      2. get fieldid by proj_schema;
 
         std::task::Poll::Ready(None)
     }

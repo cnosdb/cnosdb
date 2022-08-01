@@ -1,11 +1,17 @@
+use std::result;
 use std::sync::Arc;
+use datafusion::common::DataFusionError;
+use datafusion::execution::context::TaskContext;
 
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::physical_plan::ExecutionPlan;
+use datafusion::scheduler::{ExecutionResults, Scheduler};
 
 use crate::{
-    context::{IsiophoSessionCtx, IsiphoSessionCfg},
-    executor::DedicatedExecutor,
+    context::{IsiphoSessionCtx, IsiphoSessionCfg},
 };
+pub type Result<T> = result::Result<T, DataFusionError>;
+
 
 #[derive(Debug, Clone)]
 pub struct ExecutorConfig {
@@ -13,14 +19,14 @@ pub struct ExecutorConfig {
     pub query_partitions: usize,
 }
 
-#[derive(Debug)]
+
 pub struct Executor {
-    query_exec: DedicatedExecutor,
+    query_exec: Arc<Scheduler>,
     config: ExecutorConfig,
     runtime: Arc<RuntimeEnv>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ExecutorType {
     Query,
 }
@@ -31,7 +37,7 @@ impl Executor {
     }
 
     pub fn new_with_config(config: ExecutorConfig) -> Self {
-        let query_exec = DedicatedExecutor::new("Query Executor Thread", config.num_threads);
+        let query_exec = Arc::new(Scheduler::new(config.num_threads));
         let runtime_config = RuntimeConfig::new();
         let runtime = Arc::new(RuntimeEnv::new(runtime_config).expect("creating runtime"));
 
@@ -44,21 +50,20 @@ impl Executor {
             .with_target_partitions(self.config.query_partitions)
     }
 
-    pub fn new_context(&self, executor_type: ExecutorType) -> IsiophoSessionCtx {
+    pub fn new_context(&self, executor_type: ExecutorType) -> IsiphoSessionCtx {
         self.new_execution_config(executor_type).build()
     }
 
-    fn executor(&self, executor_type: ExecutorType) -> &DedicatedExecutor {
+    fn executor(&self, executor_type: ExecutorType) -> Arc<Scheduler> {
         match executor_type {
-            ExecutorType::Query => &self.query_exec,
+            ExecutorType::Query => self.query_exec.clone(),
         }
     }
-
-    pub fn shutdown(&self) {
-        self.query_exec.shutdown();
-    }
-
-    pub async fn join(&self) {
-        self.query_exec.join().await;
+    pub fn run(
+        &self,
+        plan: Arc<dyn ExecutionPlan>,
+        context: Arc<TaskContext>,
+    ) -> Result<ExecutionResults> {
+        self.query_exec.schedule(plan, context)
     }
 }

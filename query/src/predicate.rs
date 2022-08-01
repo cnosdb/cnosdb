@@ -12,7 +12,7 @@ use datafusion::{
 };
 use logger::info;
 
-type ArrowResult<T> = std::result::Result<T, ArrowError>;
+type ArrowResult<T> = Result<T, ArrowError>;
 pub type PredicateRef = Arc<Predicate>;
 
 #[derive(Default, Debug)]
