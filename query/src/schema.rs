@@ -9,9 +9,9 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use datafusion::arrow::datatypes::{DataType as ArrowDataType, DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef};
 use models::ValueType;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 

@@ -5,15 +5,14 @@ use datafusion::{
     common::DataFusionError,
     execution::{context::SessionState, runtime_env::RuntimeEnv},
     prelude::{SessionConfig, SessionContext},
+    scheduler::Scheduler,
 };
-
-use crate::executor::DedicatedExecutor;
 
 pub type Result<T> = result::Result<T, DataFusionError>;
 
 #[derive(Clone)]
 pub struct IsiphoSessionCfg {
-    exec: DedicatedExecutor,
+    exec: Arc<Scheduler>,
     session_config: SessionConfig,
     runtime: Arc<RuntimeEnv>,
     catalog: Option<Arc<dyn CatalogProvider>>,
@@ -23,7 +22,7 @@ pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_SCHEMA: &str = "public";
 
 impl IsiphoSessionCfg {
-    pub(super) fn new(exec: DedicatedExecutor, runtime: Arc<RuntimeEnv>) -> Self {
+    pub(super) fn new(exec: Arc<Scheduler>, runtime: Arc<RuntimeEnv>) -> Self {
         let session_config =
             SessionConfig::new().with_batch_size(SIZE).with_information_schema(true);
 
@@ -39,7 +38,7 @@ impl IsiphoSessionCfg {
         Self { catalog: Some(catalog), ..self }
     }
 
-    pub fn build(self) -> IsiophoSessionCtx {
+    pub fn build(self) -> IsiphoSessionCtx {
         let state = SessionState::with_config_rt(self.session_config, self.runtime);
 
         let inner = SessionContext::with_state(state);
@@ -48,17 +47,17 @@ impl IsiphoSessionCfg {
             inner.register_catalog(DEFAULT_CATALOG, default_catalog);
         }
 
-        IsiophoSessionCtx { inner, exec: Some(self.exec) }
+        IsiphoSessionCtx { inner, exec: Some(self.exec) }
     }
 }
 
 #[derive(Default)]
-pub struct IsiophoSessionCtx {
+pub struct IsiphoSessionCtx {
     inner: SessionContext,
-    exec: Option<DedicatedExecutor>,
+    exec: Option<Arc<Scheduler>>,
 }
 
-impl fmt::Debug for IsiophoSessionCtx {
+impl fmt::Debug for IsiphoSessionCtx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IsiophoSessionCtx")
          .field("inner", &"<DataFusion ExecutionContext>")
@@ -66,7 +65,7 @@ impl fmt::Debug for IsiophoSessionCtx {
     }
 }
 
-impl IsiophoSessionCtx {
+impl IsiphoSessionCtx {
     pub fn inner(&self) -> &SessionContext {
         &self.inner
     }
@@ -74,21 +73,5 @@ impl IsiophoSessionCtx {
     // for test
     pub fn set_cxt(&mut self, ctx: SessionContext) {
         self.inner = ctx
-    }
-
-    pub async fn run<Fut, T>(&self, fut: Fut) -> Result<T>
-        where Fut: std::future::Future<Output = Result<T>> + Send + 'static,
-              T: Send + 'static
-    {
-        match &self.exec {
-            Some(exec) => {
-                exec.spawn(fut)
-                    .await
-                    .unwrap_or_else(|e| {
-                        Err(DataFusionError::Execution(format!("Join Error: {}", e)))
-                    })
-            },
-            None => unimplemented!("spawn onto current threadpool"),
-        }
     }
 }

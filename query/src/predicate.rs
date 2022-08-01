@@ -8,11 +8,10 @@ use datafusion::{
     error::DataFusionError,
     logical_expr::{utils::expr_to_columns, Expr, Operator},
     physical_expr::PhysicalExpr,
-    physical_plan::metrics::Time,
 };
 use trace::info;
 
-type ArrowResult<T> = std::result::Result<T, ArrowError>;
+type ArrowResult<T> = Result<T, ArrowError>;
 pub type PredicateRef = Arc<Predicate>;
 
 #[derive(Default, Debug)]
