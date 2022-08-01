@@ -3,8 +3,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Arc,
-    thread,
-    thread::JoinHandle,
 };
 
 use futures::channel::oneshot::{self, Sender};
@@ -13,7 +11,7 @@ use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
 use crate::{
-    direct_io::{self, make_io_task, run_io_task, AsyncContext, File, IoTask, TaskType},
+    direct_io::{self},
     error, Error, Result,
 };
 
@@ -33,9 +31,7 @@ pub enum FileError {
 }
 
 pub struct FileManager {
-    file_system: Arc<direct_io::FileSystem>,
-    async_rt: Arc<AsyncContext>,
-    thread_pool: Mutex<Vec<thread::JoinHandle<()>>>,
+    file_system: Arc<direct_io::FileSystem>
 }
 
 pub fn get_file_manager() -> &'static FileManager {
@@ -46,22 +42,8 @@ pub fn get_file_manager() -> &'static FileManager {
 impl FileManager {
     fn new() -> Self {
         let fs_options = direct_io::Options::default();
-        let thread_num = fs_options.get_thread_num();
-        let rt = Arc::new(AsyncContext::new(fs_options.get_thread_num()));
-        let mut pool = Vec::new();
-        for i in 0..thread_num {
-            let mrt = rt.clone();
-            let h = thread::Builder::new()
-                .name("AsyncIOThread_".to_string() + &i.to_string())
-                .spawn(move || run_io_task(mrt, i))
-                .unwrap();
-            pool.push(h);
-        }
-
         Self {
-            file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
-            async_rt: rt,
-            thread_pool: Mutex::new(pool),
+            file_system: Arc::new(direct_io::FileSystem::new(&fs_options))
         }
     }
 
@@ -103,39 +85,6 @@ impl FileManager {
             .context(error::SyncFileSnafu)
     }
 
-    pub async fn write_at(&self, file: Arc<direct_io::File>, pos: u64, buf: &mut [u8]) {
-        let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
-        let task = make_io_task(
-            TaskType::FrontWrite,
-            buf.as_mut_ptr(),
-            buf.len(),
-            pos,
-            file,
-            cb,
-        );
-
-        self.put_io_task(task).unwrap();
-
-        self.async_rt.try_wakeup();
-
-        let ret = rx.await.unwrap();
-    }
-
-    pub async fn read_at(&self, file: direct_io::File, pos: u64, size: u64) {}
-
-    pub fn put_io_task(&self, task: IoTask) -> Result<()> {
-        if self.async_rt.is_closed() {
-            return Err(Error::Cancel);
-        }
-        if task.is_pri_high() {
-            let _ = self.async_rt.high_op_queue.push(task);
-        } else if task.task_type == TaskType::BackRead {
-            let _ = self.async_rt.read_queue.push(task);
-        } else if task.task_type == TaskType::BackWrite {
-            let _ = self.async_rt.write_queue.push(task);
-        }
-        Ok(())
-    }
 }
 
 pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
@@ -197,7 +146,7 @@ mod test {
 
     use super::FileManager;
     use crate::{
-        direct_io::{make_io_task, FileSync, TaskType},
+        direct_io::{FileSync},
         file_manager,
     };
 
@@ -218,47 +167,5 @@ mod test {
             file_manager_1 as *const FileManager as usize,
             &file_manager_3 as *const FileManager as usize
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_io_task() {
-        let file_manager = file_manager::get_file_manager();
-
-        let mut buf = vec![1_u8; 1024];
-        let file = file_manager.create_file("./a.hex").unwrap();
-
-        let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
-        let task = make_io_task(
-            TaskType::FrontWrite,
-            buf.as_mut_ptr(),
-            buf.len(),
-            0,
-            Arc::new(file),
-            cb,
-        );
-
-        file_manager.put_io_task(task).unwrap();
-
-        file_manager.async_rt.try_wakeup();
-
-        let ret = rx.await.unwrap();
-        file_manager.sync_all(FileSync::Hard).await.unwrap();
-        ret.unwrap();
-    }
-    #[test]
-    fn test_file() {
-        let file_manager = file_manager::get_file_manager();
-        let rt = Builder::new_current_thread()
-            // let rt = Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async move {
-            let mut buf = vec![1_u8; 1024];
-            let file = Arc::new(file_manager.create_file("./test_lyt.log").unwrap());
-
-            file_manager.write_at(file.clone(), 0, &mut buf[..]).await;
-        });
     }
 }

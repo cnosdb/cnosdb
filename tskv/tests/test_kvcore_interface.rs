@@ -33,7 +33,7 @@ mod tests {
     #[serial]
     async fn test_kvcore_init() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+        let _tskv = get_tskv().await;
 
         dbg!("Ok");
     }
