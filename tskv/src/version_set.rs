@@ -100,7 +100,7 @@ impl VersionSet {
         self.ts_families.get(&tf_id)
     }
 
-    pub async fn add_tsfamily(
+    pub fn add_tsfamily(
         &mut self,
         tf_id: u32,
         name: String,
@@ -173,5 +173,13 @@ impl VersionSet {
 
     pub fn tsf_num(&self) -> usize {
         self.ts_families.len()
+    }
+
+    pub fn ts_families(&self) -> &HashMap<u32, TseriesFamily> {
+        &self.ts_families
+    }
+
+    pub fn ts_families_names(&self) -> &HashMap<String, u32> {
+        &self.ts_families_names
     }
 }

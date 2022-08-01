@@ -1,3 +1,5 @@
+use std::fs::{remove_file, rename};
+use std::path::Path;
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use futures::TryFutureExt;
@@ -46,7 +48,7 @@ impl CompactMeta {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct VersionEdit {
     pub level: u32,
 
@@ -135,9 +137,11 @@ impl VersionEdit {
     }
 }
 
+use crate::file_manager::try_exists;
 use config::GLOBAL_CONFIG;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use trace::{debug, info};
+use tracing::log::error;
 
 #[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
@@ -251,6 +255,7 @@ impl Summary {
             let mut levels = HashMap::new();
             let test: CompactMeta = CompactMeta::default();
             // according files map to recover levels_info;
+            levels.entry(0).or_insert_with(|| LevelInfo::init(0));
             for (fd, meta) in files {
                 let info = levels
                     .entry(meta.level)
@@ -258,7 +263,7 @@ impl Summary {
                 info.apply(&meta);
             }
             let mut lvls: Vec<LevelInfo> = levels.into_values().collect();
-            lvls.reverse();
+            lvls.sort_by(|a,b| a.level.partial_cmp(&b.level).unwrap());
             let ver = Version::new(id, max_log, tsf_name, lvls, max_level_ts);
             versions.insert(id, Arc::new(RwLock::new(ver)));
         }
@@ -268,6 +273,12 @@ impl Summary {
     // apply version edit to summary file
     // and write to memory struct
     pub async fn apply_version_edit(&mut self, eds: &[VersionEdit]) -> Result<()> {
+        self.write_summary(eds).await?;
+        self.roll_summary_file().await?;
+        Ok(())
+    }
+
+    async fn write_summary(&mut self, eds: &[VersionEdit]) -> Result<()> {
         for edit in eds {
             let buf = edit.encode()?;
             let _ = self
@@ -279,6 +290,70 @@ impl Summary {
                 .hard_sync()
                 .map_err(|e| Error::LogRecordErr { source: e })
                 .await?;
+        }
+        Ok(())
+    }
+
+    async fn roll_summary_file(&mut self) -> Result<()> {
+        if self.writer.file_size() >= GLOBAL_CONFIG.max_summary_size {
+            let mut edits = vec![];
+            {
+                let vs = self.version_set.read();
+                for i in vs.ts_families_names().iter() {
+                    let mut edit = VersionEdit::new();
+                    edit.add_tsfamily(*i.1, i.0.clone());
+                    edits.push(edit);
+                }
+                for i in vs.ts_families().iter() {
+                    let mut edit = VersionEdit::new();
+                    let version = i.1.version().read();
+                    let max_level_ts = version.max_level_ts;
+                    for files in version.levels_info.iter() {
+                        for file in files.files.iter() {
+                            let mut meta = CompactMeta::new();
+                            meta.file_id = file.file_id();
+                            meta.is_delta = file.is_delta();
+                            meta.file_size = file.size();
+                            meta.level = files.level;
+                            meta.ts_min = file.range().max_ts;
+                            meta.ts_max = file.range().min_ts;
+                            meta.tsf_id = files.tsf_id;
+                            meta.high_seq = self.ctx.last_seq();
+                            edit.add_file(
+                                files.level,
+                                files.tsf_id,
+                                file.file_id(),
+                                self.ctx.last_seq(),
+                                max_level_ts,
+                                meta,
+                            );
+                        }
+                    }
+                    edits.push(edit);
+                }
+            }
+            let new_path = &file_utils::make_summary_file_tmp(GLOBAL_CONFIG.db_path.clone());
+            let old_path = &self.writer.path().clone();
+            if try_exists(new_path) {
+                match remove_file(new_path) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        error!("failed remove file {:?}, in case {:?}", new_path, e);
+                    }
+                };
+            }
+            self.writer = Writer::new(new_path).unwrap();
+            self.write_summary(&edits).await?;
+            match rename(new_path, old_path) {
+                Ok(_) => (),
+                Err(e) => {
+                    error!(
+                        "failed remove old file {:?}, and create new file {:?},in case {:?}",
+                        old_path, new_path, e
+                    );
+                }
+            };
+            self.writer = Writer::new(old_path).unwrap();
         }
         Ok(())
     }
@@ -361,12 +436,15 @@ mod test {
 
     use config::GLOBAL_CONFIG;
     use snafu::ResultExt;
+    use tokio::sync::mpsc;
+    use tracing::debug;
 
     use crate::{
         error, file_manager,
         kv_option::{DBOptions, TseriesFamOpt},
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };
+    use crate::tseries_family::LevelInfo;
 
     #[tokio::test]
     async fn test_summary_recover() {
@@ -437,5 +515,129 @@ mod test {
         let buf = ve.encode().unwrap();
         let ve2 = VersionEdit::decode(&buf).unwrap();
         assert_eq!(ve2, ve);
+    }
+
+    // tips : we can use a small max_summary_size
+    #[tokio::test]
+    async fn test_recover_summary_with_roll_0() {
+        let opt = DBOptions {
+            db_path: "/tmp/summary/2".to_string(),
+            ..Default::default()
+        };
+        if !file_manager::try_exists(&opt.db_path) {
+            std::fs::create_dir_all(&opt.db_path)
+                .context(error::IOSnafu)
+                .unwrap();
+        }
+        let mut summary = Summary::new(&opt).await.unwrap();
+
+        let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
+
+        let mut edits = vec![];
+        for i in 0..40 {
+            summary.version_set.write().add_tsfamily(
+                i,
+                format!("hello{}", i),
+                0,
+                0,
+                Arc::new(TseriesFamOpt::default()),
+                summary_task_sender.clone(),
+            );
+            let mut edit = VersionEdit::new();
+            edit.add_tsfamily(i, "hello".to_string());
+            edits.push(edit.clone());
+        }
+        for _ in 0..100 {
+            for i in 1..21 {
+                summary.version_set.write().del_tsfamily(
+                    i,
+                    format!("hello{}", i),
+                    summary_task_sender.clone(),
+                );
+                let mut edit = VersionEdit::new();
+                edit.del_tsfamily(i);
+                edits.push(edit.clone());
+            }
+        }
+        summary.apply_version_edit(&edits).await.unwrap();
+        let summary = Summary::recover(&opt).await.unwrap();
+
+        assert_eq!(summary.version_set.read().tsf_num(), 20);
+    }
+
+    #[tokio::test]
+    async fn test_recover_summary_with_roll_1() {
+        let opt = DBOptions {
+            db_path: "/tmp/summary/3".to_string(),
+            ..Default::default()
+        };
+        if !file_manager::try_exists(&opt.db_path) {
+            std::fs::create_dir_all(&opt.db_path)
+                .context(error::IOSnafu)
+                .unwrap();
+        }
+        let mut summary = Summary::new(&opt).await.unwrap();
+
+        let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
+
+        let mut edits = vec![];
+        {
+            summary.version_set.write().add_tsfamily(
+                10,
+                "hello".to_string(),
+                0,
+                0,
+                Arc::new(TseriesFamOpt::default()),
+                summary_task_sender.clone(),
+            );
+            let mut edit = VersionEdit::new();
+            edit.add_tsfamily(10, "hello".to_string());
+            edits.push(edit.clone());
+
+            for _ in 0..100 {
+                summary.version_set.write().del_tsfamily(
+                    0,
+                    "default0".to_string(),
+                    summary_task_sender.clone(),
+                );
+                let mut edit = VersionEdit::new();
+                edit.del_tsfamily(0);
+                edits.push(edit.clone());
+            }
+
+            let vs = summary.version_set.read();
+            let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
+
+            tsf.version().write().levels_info.push(LevelInfo::init(0));
+            tsf.version().write().levels_info.push(LevelInfo::init(1));
+
+            summary.ctx.set_last_seq(1);
+            let mut edit = VersionEdit::new();
+            let mut meta = CompactMeta::new();
+            meta.file_id = 15;
+            meta.is_delta = false;
+            meta.file_size = 100;
+            meta.level = 1;
+            meta.ts_min = 1;
+            meta.ts_max = 1;
+            meta.tsf_id = 10;
+            meta.high_seq = 1;
+            tsf.version().write().levels_info[1].apply(&meta);
+
+            edit.add_file(1, 10, 15, 1, 1, meta);
+            edits.push(edit.clone());
+        }
+        summary.apply_version_edit(&edits).await.unwrap();
+        let summary = Summary::recover(&opt).await.unwrap();
+
+        let vs = summary.version_set.read();
+        let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
+        assert_eq!(tsf.version().read().last_seq,1);
+        assert_eq!(tsf.version().read().levels_info[1].tsf_id,10);
+        assert_eq!(tsf.version().read().levels_info[1].files[0].is_delta(), false);
+        assert_eq!(tsf.version().read().levels_info[1].files[0].file_id(), 15);
+        assert_eq!(tsf.version().read().levels_info[1].files[0].size(), 100);
+        assert_eq!(summary.ctx.file_id(), 15);
+        assert_eq!(summary.ctx.max_tsf_id(), 10);
     }
 }

@@ -20,6 +20,11 @@ pub fn make_summary_file(path: impl AsRef<Path>, number: u64) -> PathBuf {
     path.as_ref().join(p)
 }
 
+pub fn make_summary_file_tmp(path: impl AsRef<Path>) -> PathBuf {
+    let p = format!("summary.tmp");
+    path.as_ref().join(p)
+}
+
 pub fn check_summary_file_name(file_name: &str) -> bool {
     SUMMARY_FILE_NAME_PATTERN.is_match(file_name)
 }

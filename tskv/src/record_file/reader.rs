@@ -252,15 +252,3 @@ impl From<&str> for Reader {
         Reader::new(&PathBuf::from(path)).unwrap()
     }
 }
-
-#[tokio::test]
-async fn test_reader() {
-    let mut r = Reader::from("/tmp/test.log_file");
-
-    while let Ok(record) = r.read_record().await {
-        println!(
-            "{}, {}, {}, {:?}",
-            record.pos, record.data_type, record.data_version, record.data
-        );
-    }
-}
