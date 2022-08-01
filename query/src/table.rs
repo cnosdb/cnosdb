@@ -20,11 +20,12 @@ pub struct ClusterTable {
 }
 
 impl ClusterTable {
-    pub(crate) async fn create_physical_plan(&self,
-                                             projections: &Option<Vec<usize>>,
-                                             predicate: Arc<Predicate>,
-                                             schema: SchemaRef)
-                                             -> Result<Arc<dyn ExecutionPlan>> {
+    pub(crate) async fn create_physical_plan(
+        &self,
+        projections: &Option<Vec<usize>>,
+        predicate: Arc<Predicate>,
+        schema: SchemaRef,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
         Ok(Arc::new(TskvExec::new(proj_schema, predicate)))
     }
@@ -44,14 +45,21 @@ impl TableProvider for ClusterTable {
         TableType::Base
     }
 
-    async fn scan(&self,
-                  _ctx: &SessionState,
-                  projection: &Option<Vec<usize>>,
-                  filters: &[Expr],
-                  limit: Option<usize>)
-                  -> Result<Arc<dyn ExecutionPlan>> {
-        let filter = Arc::new(Predicate::default().set_limit(limit).pushdown_exprs(filters));
-        return self.create_physical_plan(projection, filter.clone(), self.schema()).await;
+    async fn scan(
+        &self,
+        _ctx: &SessionState,
+        projection: &Option<Vec<usize>>,
+        filters: &[Expr],
+        limit: Option<usize>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let filter = Arc::new(
+            Predicate::default()
+                .set_limit(limit)
+                .pushdown_exprs(filters),
+        );
+        return self
+            .create_physical_plan(projection, filter.clone(), self.schema())
+            .await;
     }
     fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
         let cols = vec!["test".to_string()];

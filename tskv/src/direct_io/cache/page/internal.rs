@@ -100,7 +100,10 @@ pub struct Io {
 
 impl Io {
     fn new() -> Self {
-        Self { waiters: 0, result: Default::default() }
+        Self {
+            waiters: 0,
+            result: Default::default(),
+        }
     }
 
     pub fn begin(&mut self) -> IoRef {
@@ -163,27 +166,31 @@ pub struct Page_<T: Scope> {
 
 impl<T: Scope> Page_<T> {
     pub fn new(scope: &ScopeRef<T>, id: PageId, data: Box<RwLock<Page>>) -> Box<Self> {
-        Box::new(Self { scope: Some(scope.share().clone()),
-                        id,
-                        io: Io::new(),
-                        prev: PagePtr::dangling(),
-                        next: PagePtr::dangling(),
-                        status: Status::Test,
-                        data: AtomicPtr::new(Box::into_raw(data)),
-                        lock: Lock::new_exclusive(),
-                        refd: AtomicBool::new(false) })
+        Box::new(Self {
+            scope: Some(scope.share().clone()),
+            id,
+            io: Io::new(),
+            prev: PagePtr::dangling(),
+            next: PagePtr::dangling(),
+            status: Status::Test,
+            data: AtomicPtr::new(Box::into_raw(data)),
+            lock: Lock::new_exclusive(),
+            refd: AtomicBool::new(false),
+        })
     }
 
     pub fn end() -> PagePtr<T> {
-        let mut page = Box::new(Self { scope: None,
-                                       id: Default::default(),
-                                       prev: PagePtr::dangling(),
-                                       next: PagePtr::dangling(),
-                                       status: Status::End,
-                                       data: Default::default(),
-                                       io: Io::new(),
-                                       lock: Lock::new_exclusive(),
-                                       refd: Default::default() });
+        let mut page = Box::new(Self {
+            scope: None,
+            id: Default::default(),
+            prev: PagePtr::dangling(),
+            next: PagePtr::dangling(),
+            status: Status::End,
+            data: Default::default(),
+            io: Io::new(),
+            lock: Lock::new_exclusive(),
+            refd: Default::default(),
+        });
         page.prev = page.ptr();
         page.next = page.ptr();
         page.into_ptr()
@@ -226,17 +233,23 @@ impl<T: Scope> Page_<T> {
     /// ```
     #[cfg(test)]
     pub fn dump_short(&self) {
-        print!("{id}{status}{refd}{res} ",
-               id = self.id,
-               status = match self.status {
-                   Status::Hot => "H",
-                   Status::Test => "T",
-                   Status::ProtectedTest => "P",
-                   Status::Cold => "C",
-                   Status::End => "P",
-               },
-               refd = if self.refd.load(Ordering::SeqCst) { "1" } else { "0" },
-               res = if self.is_resident() { "+" } else { "-" });
+        print!(
+            "{id}{status}{refd}{res} ",
+            id = self.id,
+            status = match self.status {
+                Status::Hot => "H",
+                Status::Test => "T",
+                Status::ProtectedTest => "P",
+                Status::Cold => "C",
+                Status::End => "P",
+            },
+            refd = if self.refd.load(Ordering::SeqCst) {
+                "1"
+            } else {
+                "0"
+            },
+            res = if self.is_resident() { "+" } else { "-" }
+        );
     }
 
     pub fn finish_io(&mut self, io: IoRef, result: IoResult) {
@@ -252,7 +265,11 @@ impl<T: Scope> Page_<T> {
 
     pub fn take_data(&self) -> Option<Box<RwLock<Page>>> {
         let r = self.data.swap(ptr::null_mut(), Ordering::SeqCst);
-        if r.is_null() { None } else { Some(unsafe { Box::from_raw(r) }) }
+        if r.is_null() {
+            None
+        } else {
+            Some(unsafe { Box::from_raw(r) })
+        }
     }
 
     pub fn data(&self) -> &RwLock<Page> {
@@ -284,7 +301,11 @@ impl<T: Scope> Page_<T> {
 
     #[must_use]
     pub fn lock_shared_data(&self) -> Option<PageRef<T>> {
-        if self.lock.lock_shared() { Some(self.data_ref()) } else { None }
+        if self.lock.lock_shared() {
+            Some(self.data_ref())
+        } else {
+            None
+        }
     }
 
     pub fn mark_refd(&self) {
@@ -307,11 +328,13 @@ impl<T: Scope> Drop for Page_<T> {
     fn drop(&mut self) {
         if self.lock.ensure_exclusive() {
             let page = self.take_data();
-            assert!(std::thread::panicking()
+            assert!(
+                std::thread::panicking()
                     || page.is_none()
                     || !page.unwrap().try_read().unwrap().is_dirty(),
-                    "page {} was dirty during drop",
-                    self.id);
+                "page {} was dirty during drop",
+                self.id
+            );
         } else if !std::thread::panicking() {
             panic!("page {} was locked during drop", self.id);
         }

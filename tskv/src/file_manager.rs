@@ -51,22 +51,28 @@ impl FileManager {
         let mut pool = Vec::new();
         for i in 0..thread_num {
             let mrt = rt.clone();
-            let h = thread::Builder::new().name("AsyncIOThread_".to_string() + &i.to_string())
-                                          .spawn(move || run_io_task(mrt, i))
-                                          .unwrap();
+            let h = thread::Builder::new()
+                .name("AsyncIOThread_".to_string() + &i.to_string())
+                .spawn(move || run_io_task(mrt, i))
+                .unwrap();
             pool.push(h);
         }
 
-        Self { file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
-               async_rt: rt,
-               thread_pool: Mutex::new(pool) }
+        Self {
+            file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
+            async_rt: rt,
+            thread_pool: Mutex::new(pool),
+        }
     }
 
-    pub fn open_file_with(&self,
-                          path: impl AsRef<Path>,
-                          options: &fs::OpenOptions)
-                          -> Result<direct_io::File> {
-        self.file_system.open_with(path, options).context(error::OpenFileSnafu)
+    pub fn open_file_with(
+        &self,
+        path: impl AsRef<Path>,
+        options: &fs::OpenOptions,
+    ) -> Result<direct_io::File> {
+        self.file_system
+            .open_with(path, options)
+            .context(error::OpenFileSnafu)
     }
 
     pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
@@ -78,20 +84,35 @@ impl FileManager {
     }
 
     pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
-        if try_exists(path.as_ref()) { self.open_file(path) } else { self.create_file(path) }
+        if try_exists(path.as_ref()) {
+            self.open_file(path)
+        } else {
+            self.create_file(path)
+        }
     }
 
     pub async fn sync_all(&self, sync: direct_io::FileSync) -> Result<()> {
-        self.file_system.sync_all(sync).context(error::SyncFileSnafu)
+        self.file_system
+            .sync_all(sync)
+            .context(error::SyncFileSnafu)
     }
 
     pub async fn sync_data(&self, sync: direct_io::FileSync) -> Result<()> {
-        self.file_system.sync_data(sync).context(error::SyncFileSnafu)
+        self.file_system
+            .sync_data(sync)
+            .context(error::SyncFileSnafu)
     }
 
     pub async fn write_at(&self, file: Arc<direct_io::File>, pos: u64, buf: &mut [u8]) {
         let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
-        let task = make_io_task(TaskType::FrontWrite, buf.as_mut_ptr(), buf.len(), pos, file, cb);
+        let task = make_io_task(
+            TaskType::FrontWrite,
+            buf.as_mut_ptr(),
+            buf.len(),
+            pos,
+            file,
+            cb,
+        );
 
         self.put_io_task(task).unwrap();
 
@@ -120,24 +141,23 @@ impl FileManager {
 pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
     let mut list = Vec::new();
 
-    for file_name in
-        walkdir::WalkDir::new(dir).min_depth(1)
-                                  .max_depth(1)
-                                  .sort_by_file_name()
-                                  .into_iter()
-                                  .filter_map(|e| {
-                                      let dir_entry = match e {
-                                          Ok(dir_entry) if dir_entry.file_type().is_file() => {
-                                              dir_entry
-                                          },
-                                          _ => {
-                                              return None;
-                                          },
-                                      };
-                                      dir_entry.file_name()
-                                               .to_str()
-                                               .map(|file_name| file_name.to_string())
-                                  })
+    for file_name in walkdir::WalkDir::new(dir)
+        .min_depth(1)
+        .max_depth(1)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(|e| {
+            let dir_entry = match e {
+                Ok(dir_entry) if dir_entry.file_type().is_file() => dir_entry,
+                _ => {
+                    return None;
+                }
+            };
+            dir_entry
+                .file_name()
+                .to_str()
+                .map(|file_name| file_name.to_string())
+        })
     {
         list.push(file_name);
     }
@@ -187,13 +207,17 @@ mod test {
         info!("0x{:X}", file_manager_1 as *const FileManager as usize);
         let file_manager_2 = file_manager::get_file_manager();
         info!("0x{:X}", file_manager_2 as *const FileManager as usize);
-        assert_eq!(file_manager_1 as *const FileManager as usize,
-                   file_manager_2 as *const FileManager as usize);
+        assert_eq!(
+            file_manager_1 as *const FileManager as usize,
+            file_manager_2 as *const FileManager as usize
+        );
 
         let file_manager_3 = FileManager::new();
         info!("0x{:X}", &file_manager_3 as *const FileManager as usize);
-        assert_ne!(file_manager_1 as *const FileManager as usize,
-                   &file_manager_3 as *const FileManager as usize);
+        assert_ne!(
+            file_manager_1 as *const FileManager as usize,
+            &file_manager_3 as *const FileManager as usize
+        );
     }
 
     #[tokio::test]
@@ -205,8 +229,14 @@ mod test {
         let file = file_manager.create_file("./a.hex").unwrap();
 
         let (cb, rx) = oneshot::channel::<crate::error::Result<usize>>();
-        let task =
-            make_io_task(TaskType::FrontWrite, buf.as_mut_ptr(), buf.len(), 0, Arc::new(file), cb);
+        let task = make_io_task(
+            TaskType::FrontWrite,
+            buf.as_mut_ptr(),
+            buf.len(),
+            0,
+            Arc::new(file),
+            cb,
+        );
 
         file_manager.put_io_task(task).unwrap();
 
@@ -220,15 +250,15 @@ mod test {
     fn test_file() {
         let file_manager = file_manager::get_file_manager();
         let rt = Builder::new_current_thread()
-                                              // let rt = Builder::new_multi_thread()
-                                              .enable_all()
-                                              .build()
-                                              .unwrap();
+            // let rt = Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         rt.block_on(async move {
-              let mut buf = vec![1_u8; 1024];
-              let file = Arc::new(file_manager.create_file("./test_lyt.log").unwrap());
+            let mut buf = vec![1_u8; 1024];
+            let file = Arc::new(file_manager.create_file("./test_lyt.log").unwrap());
 
-              file_manager.write_at(file.clone(), 0, &mut buf[..]).await;
-          });
+            file_manager.write_at(file.clone(), 0, &mut buf[..]).await;
+        });
     }
 }

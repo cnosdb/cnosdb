@@ -13,7 +13,9 @@ pub struct IsiphoCatalog {
 
 impl IsiphoCatalog {
     pub fn new() -> Self {
-        Self { schemas: RwLock::new(HashMap::new()) }
+        Self {
+            schemas: RwLock::new(HashMap::new()),
+        }
     }
 }
 
@@ -32,10 +34,11 @@ impl CatalogProvider for IsiphoCatalog {
         schemas.get(name).cloned()
     }
 
-    fn register_schema(&self,
-                       name: &str,
-                       schema: Arc<dyn SchemaProvider>)
-                       -> Result<Option<Arc<dyn SchemaProvider>>> {
+    fn register_schema(
+        &self,
+        name: &str,
+        schema: Arc<dyn SchemaProvider>,
+    ) -> Result<Option<Arc<dyn SchemaProvider>>> {
         let mut schemas = self.schemas.write();
         Ok(schemas.insert(name.into(), schema))
     }
@@ -47,7 +50,9 @@ pub struct IsiphoSchema {
 
 impl IsiphoSchema {
     pub fn new() -> Self {
-        Self { tables: RwLock::new(HashMap::new()) }
+        Self {
+            tables: RwLock::new(HashMap::new()),
+        }
     }
 }
 
@@ -73,12 +78,16 @@ impl SchemaProvider for IsiphoSchema {
         tables.get(name).cloned()
     }
 
-    fn register_table(&self,
-                      name: String,
-                      table: Arc<dyn TableProvider>)
-                      -> Result<Option<Arc<dyn TableProvider>>> {
+    fn register_table(
+        &self,
+        name: String,
+        table: Arc<dyn TableProvider>,
+    ) -> Result<Option<Arc<dyn TableProvider>>> {
         if self.table_exist(name.as_str()) {
-            return Err(DataFusionError::Execution(format!("The table {} already exists", name)));
+            return Err(DataFusionError::Execution(format!(
+                "The table {} already exists",
+                name
+            )));
         }
         let mut tables = self.tables.write();
         Ok(tables.insert(name, table))

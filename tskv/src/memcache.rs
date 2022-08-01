@@ -52,10 +52,12 @@ pub struct MemEntry {
 }
 impl Default for MemEntry {
     fn default() -> Self {
-        MemEntry { ts_min: i64::MAX,
-                   ts_max: i64::MIN,
-                   field_type: ValueType::Unknown,
-                   cells: Vec::new() }
+        MemEntry {
+            ts_min: i64::MAX,
+            ts_max: i64::MIN,
+            field_type: ValueType::Unknown,
+            cells: Vec::new(),
+        }
     }
 }
 
@@ -105,51 +107,54 @@ pub struct MemCache {
 impl MemCache {
     pub fn new(tf_id: u32, max_size: u64, seq: u64, is_delta: bool) -> Self {
         let cache = HashMap::new();
-        Self { flushed: false,
-               flushing: false,
-               immutable: false,
-               tf_id,
-               max_buf_size: max_size,
-               data_cache: cache,
-               seq_no: seq,
-               cache_size: 0,
-               is_delta }
+        Self {
+            flushed: false,
+            flushing: false,
+            immutable: false,
+            tf_id,
+            max_buf_size: max_size,
+            data_cache: cache,
+            seq_no: seq,
+            cache_size: 0,
+            is_delta,
+        }
     }
 
-    pub fn insert_raw(&mut self,
-                      seq: u64,
-                      field_id: FieldId,
-                      ts: Timestamp,
-                      field_type: ValueType,
-                      buf: &[u8])
-                      -> Result<()> {
+    pub fn insert_raw(
+        &mut self,
+        seq: u64,
+        field_id: FieldId,
+        ts: Timestamp,
+        field_type: ValueType,
+        buf: &[u8],
+    ) -> Result<()> {
         self.seq_no = seq;
         match field_type {
             ValueType::Unsigned => {
                 let val = byte_utils::decode_be_u64(buf);
                 let data = DataType::U64(U64Cell { ts, val });
                 self.insert(field_id, data, ValueType::Unsigned);
-            },
+            }
             ValueType::Integer => {
                 let val = byte_utils::decode_be_i64(buf);
                 let data = DataType::I64(I64Cell { ts, val });
                 self.insert(field_id, data, ValueType::Integer);
-            },
+            }
             ValueType::Float => {
                 let val = byte_utils::decode_be_f64(buf);
                 let data = DataType::F64(F64Cell { ts, val });
                 self.insert(field_id, data, ValueType::Float);
-            },
+            }
             ValueType::String => {
                 let val = Vec::from(buf);
                 let data = DataType::Str(StrCell { ts, val });
                 self.insert(field_id, data, ValueType::String);
-            },
+            }
             ValueType::Boolean => {
                 let val = byte_utils::decode_be_bool(buf);
                 let data = DataType::Bool(BoolCell { ts, val });
                 self.insert(field_id, data, ValueType::Boolean)
-            },
+            }
             _ => todo!(),
         };
         Ok(())
@@ -157,7 +162,10 @@ impl MemCache {
 
     pub fn insert(&mut self, field_id: FieldId, val: DataType, value_type: ValueType) {
         let ts = val.timestamp();
-        let item = self.data_cache.entry(field_id).or_insert_with(MemEntry::default);
+        let item = self
+            .data_cache
+            .entry(field_id)
+            .or_insert_with(MemEntry::default);
         if item.ts_max < ts {
             item.ts_max = ts;
         }
@@ -175,13 +183,15 @@ impl MemCache {
 
     pub fn switch_to_immutable(&mut self) {
         for data in self.data_cache.iter_mut() {
-            data.1.cells.sort_by(|a, b| match a.timestamp().partial_cmp(&b.timestamp()) {
-                            None => {
-                                error!("timestamp is illegal");
-                                Ordering::Less
-                            },
-                            Some(v) => v,
-                        })
+            data.1
+                .cells
+                .sort_by(|a, b| match a.timestamp().partial_cmp(&b.timestamp()) {
+                    None => {
+                        error!("timestamp is illegal");
+                        Ordering::Less
+                    }
+                    Some(v) => v,
+                })
         }
         self.immutable = true;
     }

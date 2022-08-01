@@ -34,7 +34,12 @@ impl Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { max_resident: 1024, max_non_resident: 1024, page_len_scale: 1, thread_num: 1 }
+        Self {
+            max_resident: 1024,
+            max_non_resident: 1024,
+            page_len_scale: 1,
+            thread_num: 1,
+        }
     }
 }
 
@@ -49,14 +54,15 @@ assert_impl_all!(FileSystem: Send, Sync);
 impl FileSystem {
     pub fn new(options: &Options) -> Self {
         let os_page_len = page_size::get();
-        Self { cache:
-                   cache::new(cache::Options { max_resident: options.max_resident,
-                                               max_non_resident: options.max_non_resident,
-                                               page_len:
-                                                   os_page_len.checked_mul(options.page_len_scale)
-                                                              .unwrap(),
-                                               page_align: os_page_len }),
-               scope_map: Default::default() }
+        Self {
+            cache: cache::new(cache::Options {
+                max_resident: options.max_resident,
+                max_non_resident: options.max_non_resident,
+                page_len: os_page_len.checked_mul(options.page_len_scale).unwrap(),
+                page_align: os_page_len,
+            }),
+            scope_map: Default::default(),
+        }
     }
 
     pub fn max_resident(&self) -> usize {
@@ -108,7 +114,14 @@ impl FileSystem {
     }
 
     pub fn create(&self, path: impl AsRef<Path>) -> Result<File> {
-        self.open_with(path, OpenOptions::new().read(true).write(true).create(true).truncate(true))
+        self.open_with(
+            path,
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true),
+        )
     }
 
     pub fn discard(&self) {
@@ -138,6 +151,9 @@ impl FileSystem {
     }
 
     fn all_scopes(&self) -> Vec<WeakScopeHandle> {
-        self.scope_map.iter().map(|e| e.value().clone()).collect::<Vec<_>>()
+        self.scope_map
+            .iter()
+            .map(|e| e.value().clone())
+            .collect::<Vec<_>>()
     }
 }

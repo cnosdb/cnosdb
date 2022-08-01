@@ -8,9 +8,11 @@ use tokio::{runtime::Runtime, sync::mpsc};
 mod rpc;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
-    format!("{}, revision {}",
-            option_env!("CARGO_PKG_VERSION").unwrap_or("UNKNOWN"),
-            option_env!("GIT_HASH").unwrap_or("UNKNOWN"))
+    format!(
+        "{}, revision {}",
+        option_env!("CARGO_PKG_VERSION").unwrap_or("UNKNOWN"),
+        option_env!("GIT_HASH").unwrap_or("UNKNOWN")
+    )
 });
 
 // cli exmples is here
@@ -27,7 +29,13 @@ long_about = r#"cnosdb and command line tools
 )]
 struct Cli {
     /// gRPC address
-    #[clap(short, long, global = true, env = "server_addr", default_value = "127.0.0.1:31006")]
+    #[clap(
+        short,
+        long,
+        global = true,
+        env = "server_addr",
+        default_value = "127.0.0.1:31006"
+    )]
     host: String,
 
     #[clap(short, long, global = true)]
@@ -67,40 +75,43 @@ fn main() -> Result<(), std::io::Error> {
     install_crash_handler();
     let config = Cli::parse();
     let runtime = init_runtime(config.cpu)?;
-    println!("params: host:{}, cpu:{:?}, memory:{:?}, sub:{:?}",
-             config.host, config.cpu, config.memory, config.subcmd);
+    println!(
+        "params: host:{}, cpu:{:?}, memory:{:?}, sub:{:?}",
+        config.host, config.cpu, config.memory, config.subcmd
+    );
     runtime.block_on(async move {
-               match &config.subcmd {
-                   SubCommand::Debug { debug } => {
-                       println!("Debug {}", debug);
-                   },
-                   SubCommand::Run {} => todo!(),
-                   SubCommand::Tskv { debug } => {
-                       println!("TSKV {}", debug);
+        match &config.subcmd {
+            SubCommand::Debug { debug } => {
+                println!("Debug {}", debug);
+            }
+            SubCommand::Run {} => todo!(),
+            SubCommand::Tskv { debug } => {
+                println!("TSKV {}", debug);
 
-                       let host = config.host.parse::<SocketAddr>().expect("Invalid host");
+                let host = config.host.parse::<SocketAddr>().expect("Invalid host");
 
-                       let (sender, receiver) = mpsc::unbounded_channel();
+                let (sender, receiver) = mpsc::unbounded_channel();
 
-                       let tskv =
-                           tskv::TsKv::open(tskv::kv_option::Options::default()).await.unwrap();
-                       tskv::TsKv::start(tskv, receiver);
+                let tskv = tskv::TsKv::open(tskv::kv_option::Options::default())
+                    .await
+                    .unwrap();
+                tskv::TsKv::start(tskv, receiver);
 
-                       let tskv_impl = rpc::tskv::TskvServiceImpl { sender };
+                let tskv_impl = rpc::tskv::TskvServiceImpl { sender };
 
-                       let tskv_service = TskvServiceServer::new(tskv_impl);
+                let tskv_service = TskvServiceServer::new(tskv_impl);
 
-                       let mut builder = tonic::transport::server::Server::builder();
-                       let router = builder.add_service(tskv_service);
+                let mut builder = tonic::transport::server::Server::builder();
+                let router = builder.add_service(tskv_service);
 
-                       if let Err(e) = router.serve(host).await {
-                           eprintln!("{}", e);
-                           std::process::exit(1)
-                       }
-                   },
-                   SubCommand::Query {} => todo!(),
-               }
-           });
+                if let Err(e) = router.serve(host).await {
+                    eprintln!("{}", e);
+                    std::process::exit(1)
+                }
+            }
+            SubCommand::Query {} => todo!(),
+        }
+    });
     Ok(())
 }
 
@@ -115,19 +126,25 @@ fn install_crash_handler() {
     }
 }
 
-unsafe extern fn signal_handler(sig: i32) {
+unsafe extern "C" fn signal_handler(sig: i32) {
     use std::process::abort;
 
     use backtrace::Backtrace;
-    let name = std::thread::current().name()
-                                     .map(|n| format!(" for thread \"{}\"", n))
-                                     .unwrap_or_else(|| "".to_owned());
-    eprintln!("Signal {}, Stack trace{}\n{:?}", sig, name, Backtrace::new());
+    let name = std::thread::current()
+        .name()
+        .map(|n| format!(" for thread \"{}\"", n))
+        .unwrap_or_else(|| "".to_owned());
+    eprintln!(
+        "Signal {}, Stack trace{}\n{:?}",
+        sig,
+        name,
+        Backtrace::new()
+    );
     abort();
 }
 
 // based on https://github.com/adjivas/sig/blob/master/src/lib.rs#L34-L52
-unsafe fn set_signal_handler(signal: libc::c_int, handler: unsafe extern fn(libc::c_int)) {
+unsafe fn set_signal_handler(signal: libc::c_int, handler: unsafe extern "C" fn(libc::c_int)) {
     use libc::{sigaction, sigfillset, sighandler_t};
     let mut sigset = std::mem::zeroed();
     if sigfillset(&mut sigset) != -1 {
@@ -144,16 +161,22 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     match cores {
         None => Runtime::new(),
         Some(cores) => {
-            println!("Setting core number to '{}' per command line request", cores);
+            println!(
+                "Setting core number to '{}' per command line request",
+                cores
+            );
 
             match cores {
                 0 => {
                     let msg = format!("Invalid core number: '{}' must be greater than zero", cores);
                     Err(std::io::Error::new(kind, msg))
-                },
+                }
                 1 => Builder::new_current_thread().enable_all().build(),
-                _ => Builder::new_multi_thread().enable_all().worker_threads(cores).build(),
+                _ => Builder::new_multi_thread()
+                    .enable_all()
+                    .worker_threads(cores)
+                    .build(),
             }
-        },
+        }
     }
 }

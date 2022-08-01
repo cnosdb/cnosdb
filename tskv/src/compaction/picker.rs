@@ -17,18 +17,21 @@ pub struct LevelCompactionPicker {
 
 impl LevelCompactionPicker {
     pub fn new(tsries_fam_opts: HashMap<u32, Arc<TseriesFamOpt>>) -> Self {
-        Self { tseries_fam_opts: tsries_fam_opts }
+        Self {
+            tseries_fam_opts: tsries_fam_opts,
+        }
     }
 
-    pub fn pick_compaction(&self,
-                           tsf_id: TseriesFamilyId,
-                           version: Arc<Version>)
-                           -> Option<CompactReq> {
+    pub fn pick_compaction(
+        &self,
+        tsf_id: TseriesFamilyId,
+        version: Arc<Version>,
+    ) -> Option<CompactReq> {
         let opts = match self.tseries_fam_opts.get(&tsf_id).cloned() {
             None => {
                 error!("failed to get TseriesFamOpt by tsf id {}", &tsf_id);
                 return None;
-            },
+            }
             Some(v) => v,
         };
         let mut ctx = LevelCompatContext::default();
@@ -39,14 +42,16 @@ impl LevelCompactionPicker {
                 for file in files.iter_mut() {
                     file.mark_compaction();
                 }
-                let request = CompactReq { files: (lvl, files),
-                                           version,
-                                           tsf_id,
-                                           out_level: out_lvl /* target_file_size_base:
-                                                               * opts.target_file_size_base,
-                                                               * cf_options: opts,
-                                                               * options: self.db_opts.
-                                                               * clone(), */ };
+                let request = CompactReq {
+                    files: (lvl, files),
+                    version,
+                    tsf_id,
+                    out_level: out_lvl, /* target_file_size_base:
+                                         * opts.target_file_size_base,
+                                         * cf_options: opts,
+                                         * options: self.db_opts.
+                                         * clone(), */
+                };
                 return Some(request);
             }
         }
@@ -75,17 +80,20 @@ impl LevelCompatContext {
 
         if !level0_being_compact {
             let score = info[0].files.len() as f64 / opts.compact_trigger as f64;
-            self.level_scores
-                .push((0,
-                       f64::max(score,
-                                info[0].cur_size as f64 / info[base_level].max_size as f64)));
+            self.level_scores.push((
+                0,
+                f64::max(
+                    score,
+                    info[0].cur_size as f64 / info[base_level].max_size as f64,
+                ),
+            ));
         }
         for (l, item) in info.iter().enumerate() {
             let score = match item.cur_size.checked_div(item.max_size) {
                 None => {
                     error!("failed to get score by max size");
                     continue;
-                },
+                }
                 Some(v) => v,
             };
             self.level_scores.push((l as u32, score as f64));
@@ -95,8 +103,13 @@ impl LevelCompatContext {
     }
 
     fn pick_level(&mut self) -> Option<(u32, u32)> {
-        self.level_scores
-            .sort_by(|a, b| if a.1 > b.1 { Ordering::Less } else { Ordering::Greater });
+        self.level_scores.sort_by(|a, b| {
+            if a.1 > b.1 {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        });
         let base_level = self.base_level;
         if let Some((level, score)) = self.level_scores.first() {
             if *score < 1.0 {
@@ -112,12 +125,13 @@ impl LevelCompatContext {
         None
     }
 
-    fn pick_files(&self,
-                  version: &Version,
-                  opts: &TseriesFamOpt,
-                  level: u32,
-                  output_level: u32)
-                  -> Option<(u32, Vec<Arc<ColumnFile>>)> {
+    fn pick_files(
+        &self,
+        version: &Version,
+        opts: &TseriesFamOpt,
+        level: u32,
+        output_level: u32,
+    ) -> Option<(u32, Vec<Arc<ColumnFile>>)> {
         let infos = version.levels_info();
         if level > (infos.len() - 1) as u32 {
             return None;

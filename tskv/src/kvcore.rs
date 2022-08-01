@@ -62,31 +62,40 @@ impl TsKv {
         let (version_set, summary) =
             Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
         let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
-        fidx.load_cache_file().await.map_err(|err| Error::LogRecordErr { source: err })?;
+        fidx.load_cache_file()
+            .await
+            .map_err(|err| Error::LogRecordErr { source: err })?;
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
-        let core = Self { options: shared_options,
-                          kvctx,
-                          forward_index: Arc::new(RwLock::new(fidx)),
-                          version_set,
-                          wal_sender,
-                          flush_task_sender,
-                          summary_task_sender: summary_task_sender.clone() };
+        let core = Self {
+            options: shared_options,
+            kvctx,
+            forward_index: Arc::new(RwLock::new(fidx)),
+            version_set,
+            wal_sender,
+            flush_task_sender,
+            summary_task_sender: summary_task_sender.clone(),
+        };
         core.run_wal_job(wal_receiver);
-        core.run_flush_job(flush_task_receiver,
-                           summary.global_context(),
-                           summary.version_set(),
-                           summary_task_sender.clone());
+        core.run_flush_job(
+            flush_task_receiver,
+            summary.global_context(),
+            summary.version_set(),
+            summary_task_sender.clone(),
+        );
         core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
 
         Ok(core)
     }
 
-    async fn recover(opt: Arc<Options>,
-                     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>)
-                     -> (Arc<RwLock<VersionSet>>, Summary) {
+    async fn recover(
+        opt: Arc<Options>,
+        flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
+    ) -> (Arc<RwLock<VersionSet>>, Summary) {
         if !file_manager::try_exists(&opt.db.db_path) {
-            std::fs::create_dir_all(&opt.db.db_path).context(error::IOSnafu).unwrap();
+            std::fs::create_dir_all(&opt.db.db_path)
+                .context(error::IOSnafu)
+                .unwrap();
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
@@ -96,18 +105,22 @@ impl TsKv {
         };
         let version_set = summary.version_set().clone();
         let wal_manager = WalManager::new(opt.wal.clone());
-        wal_manager.recover(version_set.clone(),
-                            summary.global_context().clone(),
-                            flush_task_sender)
-                   .await
-                   .unwrap();
+        wal_manager
+            .recover(
+                version_set.clone(),
+                summary.global_context().clone(),
+                flush_task_sender,
+            )
+            .await
+            .unwrap();
 
         (version_set.clone(), summary)
     }
 
-    pub async fn write(&self,
-                       write_batch: WritePointsRpcRequest)
-                       -> Result<WritePointsRpcResponse> {
+    pub async fn write(
+        &self,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse> {
         let shared_write_batch = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
             .context(error::InvalidFlatbufferSnafu)?;
@@ -125,7 +138,10 @@ impl TsKv {
         // write wal
         let (cb, rx) = oneshot::channel();
         self.wal_sender
-            .send(WalTask::Write { points: shared_write_batch.clone(), cb })
+            .send(WalTask::Write {
+                points: shared_write_batch.clone(),
+                cb,
+            })
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
 
@@ -137,13 +153,15 @@ impl TsKv {
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
                     for f in p.fields().iter() {
-                        tsf.put_mutcache(f.field_id(),
-                                         &f.value,
-                                         f.value_type,
-                                         seq,
-                                         point.timestamp() as i64,
-                                         self.flush_task_sender.clone())
-                           .await;
+                        tsf.put_mutcache(
+                            f.field_id(),
+                            &f.value,
+                            f.value_type,
+                            seq,
+                            point.timestamp() as i64,
+                            self.flush_task_sender.clone(),
+                        )
+                        .await;
                     }
                 } else {
                     warn!("ts_family for sid {} not found.", sid);
@@ -152,7 +170,10 @@ impl TsKv {
         }
 
         // let _ = self.kvctx.shard_write(0, write_batch).await;
-        Ok(WritePointsRpcResponse { version: 1, points: vec![] })
+        Ok(WritePointsRpcResponse {
+            version: 1,
+            points: vec![],
+        })
     }
 
     pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
@@ -220,27 +241,36 @@ impl TsKv {
         }
     }
 
-    pub async fn delete_series(&self,
-                               sids: Vec<SeriesId>,
-                               min: Timestamp,
-                               max: Timestamp)
-                               -> Result<()> {
+    pub async fn delete_series(
+        &self,
+        sids: Vec<SeriesId>,
+        min: Timestamp,
+        max: Timestamp,
+    ) -> Result<()> {
         let series_infos = self.forward_index.read().get_series_info_list(&sids);
-        let timerange = TimeRange { max_ts: max, min_ts: min };
+        let timerange = TimeRange {
+            max_ts: max,
+            min_ts: min,
+        };
         let path = self.options.db.db_path.clone();
         for series_info in series_infos {
             let vs = self.version_set.read();
             if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
-                tsf.delete_cache(&TimeRange { min_ts: min, max_ts: max }).await;
+                tsf.delete_cache(&TimeRange {
+                    min_ts: min,
+                    max_ts: max,
+                })
+                .await;
                 let version = tsf.version().read();
                 for level in version.levels_info() {
                     if level.ts_range.overlaps(&timerange) {
                         for column_file in level.files.iter() {
                             if column_file.range().overlaps(&timerange) {
-                                let field_ids: Vec<FieldId> = series_info.field_infos()
-                                                                         .iter()
-                                                                         .map(|f| f.field_id())
-                                                                         .collect();
+                                let field_ids: Vec<FieldId> = series_info
+                                    .field_infos()
+                                    .iter()
+                                    .map(|f| f.field_id())
+                                    .collect();
                                 let mut tombstone =
                                     TsmTombstone::open_for_write(&path, column_file.file_id())?;
                                 tombstone.add_range(&field_ids, min, max)?;
@@ -268,13 +298,15 @@ impl TsKv {
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
                     for f in p.fields().iter() {
-                        tsf.put_mutcache(f.field_id(),
-                                         &f.value,
-                                         f.value_type,
-                                         seq,
-                                         point.timestamp() as i64,
-                                         self.flush_task_sender.clone())
-                           .await
+                        tsf.put_mutcache(
+                            f.field_id(),
+                            &f.value,
+                            f.value_type,
+                            seq,
+                            point.timestamp() as i64,
+                            self.flush_task_sender.clone(),
+                        )
+                        .await
                     }
                 }
             }
@@ -295,12 +327,12 @@ impl TsKv {
                         let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
                         let send_ret = cb.send(ret);
                         match send_ret {
-                            Ok(wal_result) => {},
+                            Ok(wal_result) => {}
                             Err(err) => {
                                 warn!("send WAL write result failed.")
-                            },
+                            }
                         }
-                    },
+                    }
                 }
             }
         };
@@ -308,29 +340,36 @@ impl TsKv {
         warn!("job 'WAL' started.");
     }
 
-    fn run_flush_job(&self,
-                     mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
-                     ctx: Arc<GlobalContext>,
-                     version_set: Arc<RwLock<VersionSet>>,
-                     sender: UnboundedSender<SummaryTask>) {
+    fn run_flush_job(
+        &self,
+        mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
+        ctx: Arc<GlobalContext>,
+        version_set: Arc<RwLock<VersionSet>>,
+        sender: UnboundedSender<SummaryTask>,
+    ) {
         let f = async move {
             while let Some(x) = receiver.recv().await {
-                run_flush_memtable_job(x.clone(),
-                                       ctx.clone(),
-                                       HashMap::new(),
-                                       version_set.clone(),
-                                       sender.clone()).await
-                                                      .unwrap();
+                run_flush_memtable_job(
+                    x.clone(),
+                    ctx.clone(),
+                    HashMap::new(),
+                    version_set.clone(),
+                    sender.clone(),
+                )
+                .await
+                .unwrap();
             }
         };
         tokio::spawn(f);
         warn!("Flush task handler started");
     }
 
-    fn run_summary_job(&self,
-                       summary: Summary,
-                       mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
-                       summary_task_sender: UnboundedSender<SummaryTask>) {
+    fn run_summary_job(
+        &self,
+        summary: Summary,
+        mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
+        summary_task_sender: UnboundedSender<SummaryTask>,
+    ) {
         let f = async move {
             let mut summary_processer = SummaryProcesser::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
@@ -353,13 +392,13 @@ impl TsKv {
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
-                            },
+                            }
                             Err(err) => {
                                 let _ret = tx.send(Err(err));
-                            },
+                            }
                         }
                         warn!("write points completed.");
-                    },
+                    }
                     _ => panic!("unimplented."),
                 }
             }
@@ -397,7 +436,11 @@ impl KvContext {
     pub fn new(opt: Arc<Options>) -> Self {
         let front_work_queue = Arc::new(WorkerQueue::new(opt.db.front_cpu));
         let worker_handle = Vec::with_capacity(opt.db.back_cpu);
-        Self { front_handler: front_work_queue, handler: worker_handle, status: KvStatus::Init }
+        Self {
+            front_handler: front_work_queue,
+            handler: worker_handle,
+            status: KvStatus::Init,
+        }
     }
 
     pub fn recover(&mut self) -> Result<()> {
@@ -406,19 +449,19 @@ impl KvContext {
         Ok(())
     }
 
-    pub async fn shard_write(&self,
-                             partion_id: usize,
-                             mem: Arc<RwLock<MemCache>>,
-                             entry: WritePointsRpcRequest)
-                             -> Result<()> {
+    pub async fn shard_write(
+        &self,
+        partion_id: usize,
+        mem: Arc<RwLock<MemCache>>,
+        entry: WritePointsRpcRequest,
+    ) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.front_handler.add_task(partion_id, async move {
-                               let ps =
-                                   flatbuffers::root::<fb_models::Points>(&entry.points).unwrap();
-                               let err = 0;
-                               // todo
-                               let _ = tx.send(err);
-                           })?;
+            let ps = flatbuffers::root::<fb_models::Points>(&entry.points).unwrap();
+            let err = 0;
+            // todo
+            let _ = tx.send(err);
+        })?;
         rx.await.unwrap();
         Ok(())
     }

@@ -18,9 +18,13 @@ mod tests {
     };
 
     async fn get_tskv() -> TsKv {
-        let opt = kv_option::Options { wal: Arc::new(WalConfig { dir: String::from("/tmp/test/wal"),
-                                                                 ..Default::default() }),
-                                       ..Default::default() };
+        let opt = kv_option::Options {
+            wal: Arc::new(WalConfig {
+                dir: String::from("/tmp/test/wal"),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
 
         TsKv::open(opt).await.unwrap()
     }
@@ -45,7 +49,11 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            database,
+            points,
+        };
 
         tskv.write(request).await.unwrap();
     }
@@ -78,17 +86,24 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            database,
+            points,
+        };
 
         tskv.write(request.clone()).await.unwrap();
 
         let shared_write_batch = Arc::new(request.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu).unwrap();
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
+            .context(error::InvalidFlatbufferSnafu)
+            .unwrap();
         let mut sids = vec![];
         let mut fields_id = vec![];
         for point in fb_points.points().unwrap() {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu).unwrap();
+            let mut info = SeriesInfo::from_flatbuffers(&point)
+                .context(error::InvalidModelSnafu)
+                .unwrap();
             info.finish();
             sids.push(info.series_id());
             for field in info.field_infos().iter() {
@@ -102,7 +117,12 @@ mod tests {
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
-        tskv.read(sids, &TimeRange::new(Local::now().timestamp_millis() + 100, 0), fields_id).await;
+        tskv.read(
+            sids,
+            &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+            fields_id,
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -115,17 +135,24 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 5);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            database,
+            points,
+        };
 
         tskv.write(request.clone()).await.unwrap();
 
         let shared_write_batch = Arc::new(request.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch).context(error::InvalidFlatbufferSnafu).unwrap();
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
+            .context(error::InvalidFlatbufferSnafu)
+            .unwrap();
         let mut sids = vec![];
         let mut fields_id = vec![];
         for point in fb_points.points().unwrap() {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu).unwrap();
+            let mut info = SeriesInfo::from_flatbuffers(&point)
+                .context(error::InvalidModelSnafu)
+                .unwrap();
             info.finish();
             sids.push(info.series_id());
             for field in info.field_infos().iter() {
@@ -139,16 +166,20 @@ mod tests {
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
-        tskv.read(sids.clone(),
-                  &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
-                  fields_id.clone())
-            .await;
+        tskv.read(
+            sids.clone(),
+            &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+            fields_id.clone(),
+        )
+        .await;
         info!("delete delta data");
         tskv.delete_series(sids.clone(), 1, 1).await.unwrap();
-        tskv.read(sids.clone(),
-                  &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
-                  fields_id.clone())
-            .await;
+        tskv.read(
+            sids.clone(),
+            &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+            fields_id.clone(),
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -164,7 +195,11 @@ mod tests {
             fbb.finish(points, None);
             let points = fbb.finished_data().to_vec();
 
-            let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+            let request = kv_service::WritePointsRpcRequest {
+                version: 1,
+                database,
+                points,
+            };
 
             tskv.write(request).await.unwrap();
         }
@@ -198,7 +233,11 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let req = kv_service::WritePointsRpcRequest { version: 1, database, points };
+        let req = kv_service::WritePointsRpcRequest {
+            version: 1,
+            database,
+            points,
+        };
 
         wal_sender.send(Task::WritePoints { req, tx }).unwrap();
 
@@ -220,7 +259,11 @@ mod tests {
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest { version: 1, database, points };
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            database,
+            points,
+        };
 
         tskv.write(request).await.unwrap();
     }
@@ -233,6 +276,6 @@ mod tests {
         warn!("hello");
         debug!("hello");
         error!("hello"); //maybe we can use panic directly
-        // panic!("hello");
+                         // panic!("hello");
     }
 }

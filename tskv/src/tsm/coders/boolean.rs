@@ -42,7 +42,7 @@ pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Sen
             dst[index] |= 128 >> (n & 7); // Set current bit on current byte.
         } else {
             dst[index] &= !(128 >> (n & 7)); // Clear current bit on current
-            // byte.
+                                             // byte.
         }
         n += 1;
     }

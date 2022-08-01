@@ -23,24 +23,29 @@ pub enum DataBlock {
 impl DataBlock {
     pub fn new(size: usize, field_type: ValueType) -> Self {
         match field_type {
-            ValueType::Unsigned => {
-                Self::U64 { ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            ValueType::Unsigned => Self::U64 {
+                ts: Vec::with_capacity(size),
+                val: Vec::with_capacity(size),
             },
-            ValueType::Integer => {
-                Self::I64 { ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            ValueType::Integer => Self::I64 {
+                ts: Vec::with_capacity(size),
+                val: Vec::with_capacity(size),
             },
-            ValueType::Float => {
-                Self::F64 { ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            ValueType::Float => Self::F64 {
+                ts: Vec::with_capacity(size),
+                val: Vec::with_capacity(size),
             },
-            ValueType::String => {
-                Self::Str { ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            ValueType::String => Self::Str {
+                ts: Vec::with_capacity(size),
+                val: Vec::with_capacity(size),
             },
-            ValueType::Boolean => {
-                Self::Bool { ts: Vec::with_capacity(size), val: Vec::with_capacity(size) }
+            ValueType::Boolean => Self::Bool {
+                ts: Vec::with_capacity(size),
+                val: Vec::with_capacity(size),
             },
             ValueType::Unknown => {
                 todo!()
-            },
+            }
         }
     }
 
@@ -52,31 +57,31 @@ impl DataBlock {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
-            },
+            }
             DataType::U64(item) => {
                 if let Self::U64 { ts, val, .. } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
-            },
+            }
             DataType::I64(item) => {
                 if let Self::I64 { ts, val, .. } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
-            },
+            }
             DataType::Str(item) => {
                 if let Self::Str { ts, val, .. } = self {
                     ts.push(item.ts);
                     val.push(item.val.clone());
                 }
-            },
+            }
             DataType::F64(item) => {
                 if let Self::F64 { ts, val, .. } = self {
                     ts.push(item.ts);
                     val.push(item.val);
                 }
-            },
+            }
         }
     }
 
@@ -175,37 +180,52 @@ impl DataBlock {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::U64(U64Cell { ts: ts[i], val: val[i] }))
+                    Some(DataType::U64(U64Cell {
+                        ts: ts[i],
+                        val: val[i],
+                    }))
                 }
-            },
+            }
             DataBlock::I64 { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::I64(I64Cell { ts: ts[i], val: val[i] }))
+                    Some(DataType::I64(I64Cell {
+                        ts: ts[i],
+                        val: val[i],
+                    }))
                 }
-            },
+            }
             DataBlock::Str { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::Str(StrCell { ts: ts[i], val: val[i].clone() }))
+                    Some(DataType::Str(StrCell {
+                        ts: ts[i],
+                        val: val[i].clone(),
+                    }))
                 }
-            },
+            }
             DataBlock::F64 { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::F64(F64Cell { ts: ts[i], val: val[i] }))
+                    Some(DataType::F64(F64Cell {
+                        ts: ts[i],
+                        val: val[i],
+                    }))
                 }
-            },
+            }
             DataBlock::Bool { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::Bool(BoolCell { ts: ts[i], val: val[i] }))
+                    Some(DataType::Bool(BoolCell {
+                        ts: ts[i],
+                        val: val[i],
+                    }))
                 }
-            },
+            }
         }
     }
 
@@ -215,24 +235,24 @@ impl DataBlock {
             (DataBlock::U64 { ts, val, .. }, DataType::U64(c)) => {
                 ts[i] = c.ts;
                 val[i] = c.val;
-            },
+            }
             (DataBlock::I64 { ts, val, .. }, DataType::I64(c)) => {
                 ts[i] = c.ts;
                 val[i] = c.val;
-            },
+            }
             (DataBlock::Str { ts, val, .. }, DataType::Str(c)) => {
                 ts[i] = c.ts;
                 val[i] = c.val;
-            },
+            }
             (DataBlock::F64 { ts, val, .. }, DataType::F64(c)) => {
                 ts[i] = c.ts;
                 val[i] = c.val;
-            },
+            }
             (DataBlock::Bool { ts, val, .. }, DataType::Bool(c)) => {
                 ts[i] = c.ts;
                 val[i] = c.val;
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 
@@ -249,7 +269,7 @@ impl DataBlock {
             None => {
                 error!("failed to get data block");
                 return vec![];
-            },
+            }
             Some(v) => v,
         };
         let capacity = data_blocks.len();
@@ -277,13 +297,13 @@ impl DataBlock {
                             blk = Self::new(capacity, field_type);
                         }
                     }
-                },
+                }
                 None => {
                     if blk.len() > 0 {
                         res.push(blk);
                     }
                     return res;
-                },
+                }
             }
         }
     }
@@ -297,23 +317,23 @@ impl DataBlock {
             DataBlock::U64 { ts, val } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
-            },
+            }
             DataBlock::I64 { ts, val } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
-            },
+            }
             DataBlock::Str { ts, val } => {
                 exclude_fast(ts, min, max);
                 exclude_slow(val, min, max);
-            },
+            }
             DataBlock::F64 { ts, val } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
-            },
+            }
             DataBlock::Bool { ts, val } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
-            },
+            }
         }
     }
 
@@ -350,10 +370,11 @@ impl DataBlock {
 
     /// Extract `DataBlock`s to `DataType`s,
     /// returns the minimum timestamp in a series of `DataBlock`s
-    fn next_min(blocks: &mut [Self],
-                dst: &mut Vec<Option<DataType>>,
-                offsets: &mut [usize])
-                -> Option<i64> {
+    fn next_min(
+        blocks: &mut [Self],
+        dst: &mut Vec<Option<DataType>>,
+        offsets: &mut [usize],
+    ) -> Option<i64> {
         let mut min_ts = None;
         for (i, (block, dst)) in blocks.iter_mut().zip(dst).enumerate() {
             if dst.is_none() {
@@ -367,7 +388,7 @@ impl DataBlock {
                         if pair.timestamp() < min {
                             min_ts = Some(pair.timestamp());
                         }
-                    },
+                    }
                     None => min_ts = Some(pair.timestamp()),
                 }
             };
@@ -377,34 +398,35 @@ impl DataBlock {
 
     // todo:
     /// Encodes timestamps and values of this `DataBlock` to bytes.
-    pub fn encode(&self,
-                  start: usize,
-                  end: usize)
-                  -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+    pub fn encode(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
         match self {
             DataBlock::Bool { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
                 coders::boolean::encode(&val[start..end], &mut data_buf)?;
-            },
+            }
             DataBlock::U64 { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
                 coders::unsigned::encode(&val[start..end], &mut data_buf)?;
-            },
+            }
             DataBlock::I64 { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
                 coders::integer::encode(&val[start..end], &mut data_buf)?;
-            },
+            }
             DataBlock::Str { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
                 coders::string::encode(&strs[start..end], &mut data_buf)?;
-            },
+            }
             DataBlock::F64 { ts, val, .. } => {
                 coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
                 coders::float::encode(&val[start..end], &mut data_buf)?;
-            },
+            }
         }
         Ok((ts_buf, data_buf))
     }
@@ -417,59 +439,73 @@ impl Display for DataBlock {
         match self {
             DataBlock::U64 { ts, val } => {
                 if ts.len() > 0 {
-                    write!(f,
-                           "U64 {{ len: {}, min_ts: {}, max_ts: {} }}",
-                           ts.len(),
-                           ts.first().unwrap(),
-                           ts.last().unwrap())
+                    write!(
+                        f,
+                        "U64 {{ len: {}, min_ts: {}, max_ts: {} }}",
+                        ts.len(),
+                        ts.first().unwrap(),
+                        ts.last().unwrap()
+                    )
                 } else {
                     write!(f, "U64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
-            },
+            }
             DataBlock::I64 { ts, val } => {
                 if ts.len() > 0 {
-                    write!(f,
-                           "I64 {{ len: {}, min_ts: {}, max_ts: {} }}",
-                           ts.len(),
-                           ts.first().unwrap(),
-                           ts.last().unwrap())
+                    write!(
+                        f,
+                        "I64 {{ len: {}, min_ts: {}, max_ts: {} }}",
+                        ts.len(),
+                        ts.first().unwrap(),
+                        ts.last().unwrap()
+                    )
                 } else {
                     write!(f, "I64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
-            },
+            }
             DataBlock::Str { ts, val } => {
                 if ts.len() > 0 {
-                    write!(f,
-                           "Str {{ len: {}, min_ts: {}, max_ts: {} }}",
-                           ts.len(),
-                           ts.first().unwrap(),
-                           ts.last().unwrap())
+                    write!(
+                        f,
+                        "Str {{ len: {}, min_ts: {}, max_ts: {} }}",
+                        ts.len(),
+                        ts.first().unwrap(),
+                        ts.last().unwrap()
+                    )
                 } else {
                     write!(f, "Str {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
-            },
+            }
             DataBlock::F64 { ts, val } => {
                 if ts.len() > 0 {
-                    write!(f,
-                           "F64 {{ len: {}, min_ts: {}, max_ts: {} }}",
-                           ts.len(),
-                           ts.first().unwrap(),
-                           ts.last().unwrap())
+                    write!(
+                        f,
+                        "F64 {{ len: {}, min_ts: {}, max_ts: {} }}",
+                        ts.len(),
+                        ts.first().unwrap(),
+                        ts.last().unwrap()
+                    )
                 } else {
                     write!(f, "F64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
-            },
+            }
             DataBlock::Bool { ts, val } => {
                 if ts.len() > 0 {
-                    write!(f,
-                           "Bool {{ len: {}, min_ts: {}, max_ts: {} }}",
-                           ts.len(),
-                           ts.first().unwrap(),
-                           ts.last().unwrap())
+                    write!(
+                        f,
+                        "Bool {{ len: {}, min_ts: {}, max_ts: {} }}",
+                        ts.len(),
+                        ts.first().unwrap(),
+                        ts.last().unwrap()
+                    )
                 } else {
-                    write!(f, "Bool {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
+                    write!(
+                        f,
+                        "Bool {{ len: {}, min_ts: NONE, max_ts: NONE }}",
+                        ts.len()
+                    )
                 }
-            },
+            }
         }
     }
 }
@@ -539,9 +575,13 @@ mod test {
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
         };
         blk.exclude(&TimeRange::from((2, 3)));
-        assert_eq!(blk,
-                   DataBlock::U64 { ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
-                                    val: vec![10, 11, 14, 15, 16, 17, 18, 19] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
+                val: vec![10, 11, 14, 15, 16, 17, 18, 19]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
@@ -549,7 +589,13 @@ mod test {
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
         };
         blk.exclude(&TimeRange::from((2, 8)));
-        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 9], val: vec![10, 11, 19] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![0, 1, 9],
+                val: vec![10, 11, 19]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
@@ -557,16 +603,22 @@ mod test {
             val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
         };
         blk.exclude(&TimeRange::from((2, 3)));
-        assert_eq!(blk,
-                   DataBlock::Str { ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
-                                    val: vec![vec![10],
-                                              vec![11],
-                                              vec![14],
-                                              vec![15],
-                                              vec![16],
-                                              vec![17],
-                                              vec![18],
-                                              vec![19]] });
+        assert_eq!(
+            blk,
+            DataBlock::Str {
+                ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
+                val: vec![
+                    vec![10],
+                    vec![11],
+                    vec![14],
+                    vec![15],
+                    vec![16],
+                    vec![17],
+                    vec![18],
+                    vec![19]
+                ]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
@@ -574,8 +626,13 @@ mod test {
             val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
         };
         blk.exclude(&TimeRange::from((2, 8)));
-        assert_eq!(blk,
-                   DataBlock::Str { ts: vec![0, 1, 9], val: vec![vec![10], vec![11], vec![19]] })
+        assert_eq!(
+            blk,
+            DataBlock::Str {
+                ts: vec![0, 1, 9],
+                val: vec![vec![10], vec![11], vec![19]]
+            }
+        )
     }
 
     #[test]
@@ -585,36 +642,64 @@ mod test {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
         blk.exclude(&TimeRange::from((-2, 0)));
-        assert_eq!(blk, DataBlock::U64 { ts: vec![1, 2, 3], val: vec![11, 12, 13] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![1, 2, 3],
+                val: vec![11, 12, 13]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
         blk.exclude(&TimeRange::from((3, 5)));
-        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2], val: vec![10, 11, 12] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![0, 1, 2],
+                val: vec![10, 11, 12]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
         blk.exclude(&TimeRange::from((-3, -1)));
-        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![0, 1, 2, 3],
+                val: vec![10, 11, 12, 13]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
         };
         blk.exclude(&TimeRange::from((5, 7)));
-        assert_eq!(blk, DataBlock::U64 { ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![0, 1, 2, 3],
+                val: vec![10, 11, 12, 13]
+            }
+        );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 7, 8, 9, 10], val: vec![10, 11, 12, 13, 17, 18, 19, 20]
         };
         blk.exclude(&TimeRange::from((5, 6)));
-        assert_eq!(blk,
-                   DataBlock::U64 { ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
-                                    val: vec![10, 11, 12, 13, 17, 18, 19, 20] });
+        assert_eq!(
+            blk,
+            DataBlock::U64 {
+                ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
+                val: vec![10, 11, 12, 13, 17, 18, 19, 20]
+            }
+        );
     }
 }

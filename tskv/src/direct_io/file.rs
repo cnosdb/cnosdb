@@ -221,8 +221,11 @@ impl Drop for PageWriteGuard<'_> {
         let file_len = self.page.0.scope().len();
         let new_file_len = pos + self.len as u64;
 
-        let update =
-            if self.len > self.old_len { file_len < new_file_len } else { file_len > new_file_len };
+        let update = if self.len > self.old_len {
+            file_len < new_file_len
+        } else {
+            file_len > new_file_len
+        };
         if update {
             self.page.0.scope().set_len(new_file_len);
         }
@@ -238,25 +241,43 @@ impl PageRef {
     pub fn read(&self) -> PageReadGuard<'_> {
         let inner = self.0.read();
         let (_, len) = self.span();
-        PageReadGuard { page: self, inner, len }
+        PageReadGuard {
+            page: self,
+            inner,
+            len,
+        }
     }
 
     pub fn try_read(&self) -> Option<PageReadGuard> {
         let inner = self.0.try_read()?;
         let (_, len) = self.span();
-        Some(PageReadGuard { page: self, inner, len })
+        Some(PageReadGuard {
+            page: self,
+            inner,
+            len,
+        })
     }
 
     pub fn write(&self) -> PageWriteGuard<'_> {
         let inner = self.0.write();
         let (_, len) = self.span();
-        PageWriteGuard { page: self, inner, old_len: len, len }
+        PageWriteGuard {
+            page: self,
+            inner,
+            old_len: len,
+            len,
+        }
     }
 
     pub fn try_write(&self) -> Option<PageWriteGuard> {
         let inner = self.0.try_write()?;
         let (_, len) = self.span();
-        Some(PageWriteGuard { page: self, inner, old_len: len, len })
+        Some(PageWriteGuard {
+            page: self,
+            inner,
+            old_len: len,
+            len,
+        })
     }
 
     fn span(&self) -> (u64, usize) {
@@ -276,9 +297,12 @@ mod test {
     use crate::direct_io::*;
 
     fn new(max_resident: usize, max_non_resident: usize, page_len_scale: usize) -> FileSystem {
-        FileSystem::new(Options::default().max_resident(max_resident)
-                                          .max_non_resident(max_non_resident)
-                                          .page_len_scale(page_len_scale))
+        FileSystem::new(
+            Options::default()
+                .max_resident(max_resident)
+                .max_non_resident(max_non_resident)
+                .page_len_scale(page_len_scale),
+        )
     }
 
     fn file_len(file: &StdFile) -> u64 {

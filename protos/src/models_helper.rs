@@ -10,8 +10,8 @@ mod test {
 
     pub fn create_tags<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        tags: Vec<(&str, &str)>)
-        -> WIPOffset<flatbuffers::Vector<'a, ForwardsUOffset<models::Tag<'a>>>> {
+        tags: Vec<(&str, &str)>,
+    ) -> WIPOffset<flatbuffers::Vector<'a, ForwardsUOffset<models::Tag<'a>>>> {
         let mut vec = vec![];
         for (k, v) in tags.iter() {
             let k = fbb.create_vector(k.as_bytes());
@@ -26,8 +26,8 @@ mod test {
 
     pub fn create_fields<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        fields: Vec<(&str, models::FieldType, &[u8])>)
-        -> WIPOffset<flatbuffers::Vector<'a, ForwardsUOffset<models::Field<'a>>>> {
+        fields: Vec<(&str, models::FieldType, &[u8])>,
+    ) -> WIPOffset<flatbuffers::Vector<'a, ForwardsUOffset<models::Field<'a>>>> {
         let mut vec = vec![];
         for (name, ft, val) in fields.iter() {
             let name = fbb.create_vector(name.as_bytes());
@@ -41,11 +41,12 @@ mod test {
         fbb.create_vector(&vec)
     }
 
-    pub fn create_point<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-                            timestamp: i64,
-                            tags: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Tag>>>,
-                            fields: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Field>>>)
-                            -> WIPOffset<models::Point<'a>> {
+    pub fn create_point<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        timestamp: i64,
+        tags: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Tag>>>,
+        fields: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Field>>>,
+    ) -> WIPOffset<models::Point<'a>> {
         let mut point_builder = PointBuilder::new(fbb);
         point_builder.add_tags(tags);
         point_builder.add_fields(fields);
@@ -53,57 +54,94 @@ mod test {
         point_builder.finish()
     }
 
-    pub fn create_random_points_with_delta<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-                                               num: usize)
-                                               -> WIPOffset<Points<'a>> {
+    pub fn create_random_points_with_delta<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        num: usize,
+    ) -> WIPOffset<Points<'a>> {
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         let mut points = vec![];
         for i in 0..num {
-            let timestamp = if i <= num / 2 { Local::now().timestamp_millis() } else { 1 };
+            let timestamp = if i <= num / 2 {
+                Local::now().timestamp_millis()
+            } else {
+                1
+            };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let tags = create_tags(fbb,
-                                   vec![("ta", &("a".to_string() + &tav)),
-                                        ("tb", &("b".to_string() + &tbv))]);
+            let tags = create_tags(
+                fbb,
+                vec![
+                    ("ta", &("a".to_string() + &tav)),
+                    ("tb", &("b".to_string() + &tbv)),
+                ],
+            );
 
             let fav = rand::random::<f64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
-            let fields = create_fields(fbb,
-                                       vec![("fa", models::FieldType::Integer, fav.as_slice()),
-                                            ("fb", models::FieldType::Float, fbv.as_slice()),]);
+            let fields = create_fields(
+                fbb,
+                vec![
+                    ("fa", models::FieldType::Integer, fav.as_slice()),
+                    ("fb", models::FieldType::Float, fbv.as_slice()),
+                ],
+            );
             points.push(create_point(fbb, timestamp, tags, fields))
         }
         let points = fbb.create_vector(&points);
-        models::Points::create(fbb, &models::PointsArgs { points: Some(points) })
+        models::Points::create(
+            fbb,
+            &models::PointsArgs {
+                points: Some(points),
+            },
+        )
     }
 
-    pub fn create_random_points_include_delta<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-                                                  num: usize)
-                                                  -> WIPOffset<Points<'a>> {
+    pub fn create_random_points_include_delta<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        num: usize,
+    ) -> WIPOffset<Points<'a>> {
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         let mut points = vec![];
         for i in 0..num {
-            let timestamp = if i % 2 == 0 { Local::now().timestamp_millis() } else { 1 };
+            let timestamp = if i % 2 == 0 {
+                Local::now().timestamp_millis()
+            } else {
+                1
+            };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let tags = create_tags(fbb,
-                                   vec![("ta", &("a".to_string() + &tav)),
-                                        ("tb", &("b".to_string() + &tbv))]);
+            let tags = create_tags(
+                fbb,
+                vec![
+                    ("ta", &("a".to_string() + &tav)),
+                    ("tb", &("b".to_string() + &tbv)),
+                ],
+            );
 
             let fav = rand::random::<f64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
-            let fields = create_fields(fbb,
-                                       vec![("fa", models::FieldType::Integer, fav.as_slice()),
-                                            ("fb", models::FieldType::Float, fbv.as_slice()),]);
+            let fields = create_fields(
+                fbb,
+                vec![
+                    ("fa", models::FieldType::Integer, fav.as_slice()),
+                    ("fb", models::FieldType::Float, fbv.as_slice()),
+                ],
+            );
             points.push(create_point(fbb, timestamp, tags, fields))
         }
         let points = fbb.create_vector(&points);
-        models::Points::create(fbb, &models::PointsArgs { points: Some(points) })
+        models::Points::create(
+            fbb,
+            &models::PointsArgs {
+                points: Some(points),
+            },
+        )
     }
 
-    pub fn create_big_random_points<'a>(fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-                                        num: usize)
-                                        -> WIPOffset<Points<'a>> {
+    pub fn create_big_random_points<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        num: usize,
+    ) -> WIPOffset<Points<'a>> {
         let mut points = vec![];
         for _ in 0..num {
             let timestamp = Local::now().timestamp_millis();
@@ -126,6 +164,11 @@ mod test {
             points.push(create_point(fbb, timestamp, tags, fields));
         }
         let points = fbb.create_vector(&points);
-        models::Points::create(fbb, &models::PointsArgs { points: Some(points) })
+        models::Points::create(
+            fbb,
+            &models::PointsArgs {
+                points: Some(points),
+            },
+        )
     }
 }

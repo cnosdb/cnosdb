@@ -7,9 +7,13 @@ use tokio::runtime::Runtime;
 use tskv::{kv_option::WalConfig, TsKv};
 
 async fn get_tskv() -> TsKv {
-    let opt = tskv::kv_option::Options { wal: Arc::new(WalConfig { dir: String::from("/tmp/test_bench/wal"),
-                                                                   ..Default::default() }),
-                                         ..Default::default() };
+    let opt = tskv::kv_option::Options {
+        wal: Arc::new(WalConfig {
+            dir: String::from("/tmp/test_bench/wal"),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
 
     TsKv::open(opt).await.unwrap()
 }
@@ -26,21 +30,25 @@ fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, points: &[u8]) {
 
 fn big_write(c: &mut Criterion) {
     c.bench_function("big_write", |b| {
-         b.iter(|| {
-              let rt = Runtime::new().unwrap();
-              let tskv = rt.block_on(get_tskv());
-              for _i in 0..50 {
-                  let database = "db".to_string();
-                  let mut fbb = flatbuffers::FlatBufferBuilder::new();
-                  let points = models_helper::create_big_random_points(&mut fbb, 10);
-                  fbb.finish(points, None);
-                  let points = fbb.finished_data().to_vec();
+        b.iter(|| {
+            let rt = Runtime::new().unwrap();
+            let tskv = rt.block_on(get_tskv());
+            for _i in 0..50 {
+                let database = "db".to_string();
+                let mut fbb = flatbuffers::FlatBufferBuilder::new();
+                let points = models_helper::create_big_random_points(&mut fbb, 10);
+                fbb.finish(points, None);
+                let points = fbb.finished_data().to_vec();
 
-                  let request = WritePointsRpcRequest { version: 1, database, points };
-                  rt.block_on(tskv.write(request)).unwrap();
-              }
-          })
-     });
+                let request = WritePointsRpcRequest {
+                    version: 1,
+                    database,
+                    points,
+                };
+                rt.block_on(tskv.write(request)).unwrap();
+            }
+        })
+    });
 }
 
 fn run(c: &mut Criterion) {
@@ -52,14 +60,20 @@ fn run(c: &mut Criterion) {
     fbb.finish(points, None);
     let points_str = fbb.finished_data();
     let points = points_str.to_vec();
-    let request = WritePointsRpcRequest { version: 1, database, points };
+    let request = WritePointsRpcRequest {
+        version: 1,
+        database,
+        points,
+    };
 
     // maybe 500 us
-    c.bench_function("write", |b| b.iter(|| test_write(tskv.clone(), request.clone())));
+    c.bench_function("write", |b| {
+        b.iter(|| test_write(tskv.clone(), request.clone()))
+    });
     // maybe 200 us
     c.bench_function("insert_cache", |b| {
-         b.iter(|| test_insert_cache(tskv.clone(), &(*points_str)))
-     });
+        b.iter(|| test_insert_cache(tskv.clone(), &(*points_str)))
+    });
 }
 
 criterion_group!(benches, big_write);

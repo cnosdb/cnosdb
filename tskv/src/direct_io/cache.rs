@@ -57,7 +57,10 @@ impl<T: Scope> CacheHandle<T> {
     }
 
     pub fn new_scope(&self, scope: T) -> ScopeHandle<T> {
-        ScopeHandle { cache: self.clone(), scope: ScopeRef::new(scope, self.0.options.page_len) }
+        ScopeHandle {
+            cache: self.clone(),
+            scope: ScopeRef::new(scope, self.0.options.page_len),
+        }
     }
 }
 
@@ -74,7 +77,10 @@ pub struct ScopeHandle<T: Scope> {
 
 impl<T: Scope> ScopeHandle<T> {
     pub fn downgrade(&self) -> WeakScopeHandle<T> {
-        WeakScopeHandle { cache: self.cache.clone(), scope: self.scope.downgrade() }
+        WeakScopeHandle {
+            cache: self.cache.clone(),
+            scope: self.scope.downgrade(),
+        }
     }
 
     pub fn cache(&self) -> &CacheHandle<T> {
@@ -105,7 +111,10 @@ impl<T: Scope> ScopeHandle<T> {
 
 impl<T: Scope> Clone for ScopeHandle<T> {
     fn clone(&self) -> Self {
-        Self { cache: self.cache.clone(), scope: self.scope.clone() }
+        Self {
+            cache: self.cache.clone(),
+            scope: self.scope.clone(),
+        }
     }
 }
 
@@ -116,13 +125,19 @@ pub struct WeakScopeHandle<T: Scope> {
 
 impl<T: Scope> WeakScopeHandle<T> {
     pub fn upgrade(&self) -> Option<ScopeHandle<T>> {
-        self.scope.upgrade().map(|scope| ScopeHandle { cache: self.cache.clone(), scope })
+        self.scope.upgrade().map(|scope| ScopeHandle {
+            cache: self.cache.clone(),
+            scope,
+        })
     }
 }
 
 impl<T: Scope> Clone for WeakScopeHandle<T> {
     fn clone(&self) -> Self {
-        Self { cache: self.cache.clone(), scope: self.scope.clone() }
+        Self {
+            cache: self.cache.clone(),
+            scope: self.scope.clone(),
+        }
     }
 }
 
@@ -183,17 +198,19 @@ impl<T: Scope> CacheInner<T> {
 
         let pages = Page_::end();
 
-        Self { options,
-               pages,
-               hot_page_count: 0,
-               resident_cold_page_count: 0,
-               non_resident_page_count: 0,
-               io_page_count: 0,
-               hand_hot: pages,
-               hand_cold: pages,
-               hand_cold_cost: 0,
-               max_hand_cold_cost: 0,
-               hand_test: pages }
+        Self {
+            options,
+            pages,
+            hot_page_count: 0,
+            resident_cold_page_count: 0,
+            non_resident_page_count: 0,
+            io_page_count: 0,
+            hand_hot: pages,
+            hand_cold: pages,
+            hand_cold_cost: 0,
+            max_hand_cold_cost: 0,
+            hand_test: pages,
+        }
     }
 
     #[cfg(test)]
@@ -211,7 +228,10 @@ impl<T: Scope> CacheInner<T> {
     #[cfg(test)]
     fn dump(&self, pages: bool) {
         println!("hot_page_count: {}", self.hot_page_count);
-        println!("resident_cold_page_count: {}", self.resident_cold_page_count);
+        println!(
+            "resident_cold_page_count: {}",
+            self.resident_cold_page_count
+        );
         println!("non_resident_page_count: {}", self.non_resident_page_count);
         println!("hand_hot: {:?}", unsafe { self.hand_hot.as_ref() }.id());
         println!("hand_cold: {:?}", unsafe { self.hand_cold.as_ref() }.id());
@@ -259,8 +279,8 @@ impl<T: Scope> CacheInner<T> {
                         self.remove_page(page, PageCountKind::Cold { resident: false });
                         break;
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             }
             if self.hand_test == stop {
                 break;
@@ -293,8 +313,10 @@ impl<T: Scope> CacheInner<T> {
                             // If page is in its test period, we turn the cold page into a hot page,
                             // and ask HAND_hot for its actions.
                             page.status = Status::Hot;
-                            self.update_page_count(PageCountKind::Cold { resident: true },
-                                                   PageCountUpdate::Dec);
+                            self.update_page_count(
+                                PageCountKind::Cold { resident: true },
+                                PageCountUpdate::Dec,
+                            );
                             self.update_page_count(PageCountKind::Hot, PageCountUpdate::Inc);
                             self.run_hand_hot(true);
                         } else {
@@ -326,17 +348,23 @@ impl<T: Scope> CacheInner<T> {
                             // Once the number exceeds _m_, the memory size in the number of pages,
                             // we terminate the test period of the cold
                             // page pointed to by HAND_test.
-                            self.update_page_count(PageCountKind::Cold { resident: true },
-                                                   PageCountUpdate::Dec);
-                            self.update_page_count(PageCountKind::Cold { resident: false },
-                                                   PageCountUpdate::Inc);
+                            self.update_page_count(
+                                PageCountKind::Cold { resident: true },
+                                PageCountUpdate::Dec,
+                            );
+                            self.update_page_count(
+                                PageCountKind::Cold { resident: false },
+                                PageCountUpdate::Inc,
+                            );
 
-                            debug_assert!(self.non_resident_page_count
-                                          <= self.options.max_non_resident + 1);
+                            debug_assert!(
+                                self.non_resident_page_count <= self.options.max_non_resident + 1
+                            );
                             if self.non_resident_page_count > self.options.max_non_resident {
                                 self.run_hand_test();
-                                debug_assert!(self.non_resident_page_count
-                                              == self.options.max_non_resident);
+                                debug_assert!(
+                                    self.non_resident_page_count == self.options.max_non_resident
+                                );
                             }
                         } else {
                             // If not (in the test period), we move it out of the clock.
@@ -345,8 +373,8 @@ impl<T: Scope> CacheInner<T> {
 
                         break (DonorPage { id, scope }, page_data);
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
     }
@@ -386,7 +414,7 @@ impl<T: Scope> CacheInner<T> {
                     if self.handle_hot(page) {
                         return;
                     }
-                },
+                }
                 Status::Cold | Status::Test => {
                     // Whenever the hand encounters a cold page, it will terminate the page’s test
                     // period.
@@ -402,7 +430,7 @@ impl<T: Scope> CacheInner<T> {
                     } else {
                         stop.track(page.ptr())
                     }
-                },
+                }
                 Status::ProtectedTest | Status::End => stop.track(page.ptr()),
             }
         }
@@ -539,7 +567,10 @@ impl<T: Scope> CacheInner<T> {
         // into a hot page and is placed at the head of the list.
         debug_assert_eq!(page.status, Status::ProtectedTest);
         self.remove_page_from_list(page);
-        self.update_page_count(PageCountKind::Cold { resident: false }, PageCountUpdate::Dec);
+        self.update_page_count(
+            PageCountKind::Cold { resident: false },
+            PageCountUpdate::Dec,
+        );
 
         page.status = Status::Hot;
         page.set_data(data);
@@ -553,11 +584,12 @@ impl<T: Scope> CacheInner<T> {
         page.ptr()
     }
 
-    fn add_page_data(&mut self,
-                     scope: &ScopeRef<T>,
-                     id: PageId,
-                     data: Box<RwLock<Page>>)
-                     -> PagePtr<T> {
+    fn add_page_data(
+        &mut self,
+        scope: &ScopeRef<T>,
+        id: PageId,
+        data: Box<RwLock<Page>>,
+    ) -> PagePtr<T> {
         // If the faulted cold page is not in the list, its reuse distance is highly likely to
         // be larger than the recency of hot pages. So the page is still categorized a
         // cold page and is placed at the list head. The page also initiates its test period.
@@ -595,12 +627,14 @@ struct Cache<T: Scope> {
 
 impl<T: Scope> Cache<T> {
     fn new(options: Options) -> Self {
-        Self { inner: Mutex::new(CacheInner::new(options.clone())),
-               options,
-               hit_count: 0.into(),
-               miss_count: 0.into(),
-               read_count: 0.into(),
-               write_count: 0.into() }
+        Self {
+            inner: Mutex::new(CacheInner::new(options.clone())),
+            options,
+            hit_count: 0.into(),
+            miss_count: 0.into(),
+            read_count: 0.into(),
+            write_count: 0.into(),
+        }
     }
 
     pub fn hit_count(&self) -> u64 {
@@ -637,7 +671,12 @@ impl<T: Scope> Cache<T> {
         let (donor_page, mut page, page_io) = loop {
             let mut inner = self.inner.lock();
 
-            let page = { scope.page_map_r().get(&id).map(|page| *page.iter().next().unwrap()) };
+            let page = {
+                scope
+                    .page_map_r()
+                    .get(&id)
+                    .map(|page| *page.iter().next().unwrap())
+            };
             if let Some(mut page) = page {
                 let page = unsafe { page.as_mut() };
                 if page.io().is_running() {
@@ -654,9 +693,11 @@ impl<T: Scope> Cache<T> {
                 debug_assert!(!page.is_resident());
 
                 // Protect the page from being removed or altered otherwise.
-                debug_assert!(matches!(page.status, Status::Test | Status::ProtectedTest),
-                              "{:?}",
-                              page.status);
+                debug_assert!(
+                    matches!(page.status, Status::Test | Status::ProtectedTest),
+                    "{:?}",
+                    page.status
+                );
                 page.status = Status::ProtectedTest;
             }
 
@@ -708,9 +749,13 @@ impl<T: Scope> Cache<T> {
 
                 let (page_io_result, result) = match (write_result, read_result) {
                     (Ok(_), Some(r)) => {
-                        let pr = if r.is_ok() { Ok(()) } else { Err(IoError::Read) };
+                        let pr = if r.is_ok() {
+                            Ok(())
+                        } else {
+                            Err(IoError::Read)
+                        };
                         (pr, r)
-                    },
+                    }
                     (Err(e), None) => (Err(IoError::Write), Err(e)),
                     _ => unreachable!(),
                 };
@@ -728,7 +773,7 @@ impl<T: Scope> Cache<T> {
                             Status::Hot => {
                                 page.status = Status::Cold;
                                 PageCountKind::Hot
-                            },
+                            }
                             Status::Test => PageCountKind::Cold { resident: true },
                             Status::Cold | Status::ProtectedTest | Status::End => unreachable!(),
                         };
@@ -741,16 +786,19 @@ impl<T: Scope> Cache<T> {
                 }
             } else {
                 match unsafe { page.as_ref() }.io().wait_finish() {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(IoError::Read) => {
-                        return Err(Error::new(ErrorKind::Other,
-                                              format!("error reading page {}", id)));
-                    },
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            format!("error reading page {}", id),
+                        ));
+                    }
                     Err(IoError::Write) => {
-                        return Err(Error::new(ErrorKind::Other,
-                                              format!("error writing page {}",
-                                                      donor_page.as_ref().unwrap().id)));
-                    },
+                        return Err(Error::new(
+                            ErrorKind::Other,
+                            format!("error writing page {}", donor_page.as_ref().unwrap().id),
+                        ));
+                    }
                 }
             }
         }
@@ -779,21 +827,22 @@ impl<T: Scope> Cache<T> {
     }
 
     fn find_dirty_pages(&self, scope: &ScopeRef<T>) -> Vec<(PageId, PageRef<T>)> {
-        scope.page_map_r()
-             .read()
-             .unwrap()
-             .iter()
-             .filter_map(|(_, page)| {
-                 let mut page = *page.iter().next().unwrap();
-                 let page = unsafe { page.as_mut() };
-                 page.lock_shared_data()
-                     // If a page is write-locked this situation is interpreted as if the page was
-                     // clean here but got dirty later, before this method returned.
-                     // This interpretation allows skipping write-locked pages.
-                     .filter(|data| data.try_read().map(|data| data.is_dirty()).unwrap_or(false))
-                     .map(|data| (page.id(), data))
-             })
-             .collect::<Vec<_>>()
+        scope
+            .page_map_r()
+            .read()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, page)| {
+                let mut page = *page.iter().next().unwrap();
+                let page = unsafe { page.as_mut() };
+                page.lock_shared_data()
+                    // If a page is write-locked this situation is interpreted as if the page was
+                    // clean here but got dirty later, before this method returned.
+                    // This interpretation allows skipping write-locked pages.
+                    .filter(|data| data.try_read().map(|data| data.is_dirty()).unwrap_or(false))
+                    .map(|data| (page.id(), data))
+            })
+            .collect::<Vec<_>>()
     }
 
     fn read(&self, scope: &ScopeShare<T>, id: PageId, page: &mut Page) -> Result<()> {

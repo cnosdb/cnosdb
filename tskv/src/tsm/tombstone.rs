@@ -55,10 +55,12 @@ impl TsmTombstone {
         file.sync_data(FileSync::Hard).context(error::IOSnafu)?;
         let tomb_size = file.len();
 
-        Ok(Self { tombstones: HashMap::new(),
-                  tomb_accessor: file,
-                  tomb_size,
-                  mutex: Mutex::new(()) })
+        Ok(Self {
+            tombstones: HashMap::new(),
+            tomb_accessor: file,
+            tomb_size,
+            mutex: Mutex::new(()),
+        })
     }
 
     pub fn open_for_read(path: impl AsRef<Path>, file_id: u64) -> Result<Option<Self>> {
@@ -69,10 +71,12 @@ impl TsmTombstone {
         let file = file_manager::get_file_manager().open_file(&path)?;
         let tomb_size = file.len();
 
-        Ok(Some(Self { tombstones: HashMap::new(),
-                       tomb_accessor: file,
-                       tomb_size,
-                       mutex: Mutex::new(()) }))
+        Ok(Some(Self {
+            tombstones: HashMap::new(),
+            tomb_accessor: file,
+            tomb_size,
+            mutex: Mutex::new(()),
+        }))
     }
 
     pub fn open_for_write(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
@@ -88,10 +92,12 @@ impl TsmTombstone {
         }
         let tomb_size = file.len();
 
-        Ok(Self { tombstones: HashMap::new(),
-                  tomb_accessor: file,
-                  tomb_size,
-                  mutex: Mutex::new(()) })
+        Ok(Self {
+            tombstones: HashMap::new(),
+            tomb_accessor: file,
+            tomb_size,
+            mutex: Mutex::new(()),
+        })
     }
 
     pub fn load(&mut self) -> Result<()> {
@@ -107,7 +113,9 @@ impl TsmTombstone {
         let file_len = reader.len() as usize;
         let mut header = vec![0_u8; HEADER_SIZE];
         // TODO: unable to read tombstone file
-        reader.read_at(0, &mut header).context(error::ReadFileSnafu)?;
+        reader
+            .read_at(0, &mut header)
+            .context(error::ReadFileSnafu)?;
 
         const BUF_SIZE: usize = 1024 * 64;
         let (mut buf, buf_len) = if file_len < BUF_SIZE {
@@ -118,7 +126,9 @@ impl TsmTombstone {
         };
         let mut pos = HEADER_SIZE;
         while pos < file_len {
-            reader.read_at(pos as u64, &mut buf).context(error::ReadFileSnafu)?;
+            reader
+                .read_at(pos as u64, &mut buf)
+                .context(error::ReadFileSnafu)?;
             pos += buf_len;
             let mut buf_pos = 0;
             while buf_pos <= buf_len - 24 {
@@ -129,65 +139,83 @@ impl TsmTombstone {
                 let max = byte_utils::decode_be_i64(&buf[buf_pos..buf_pos + 8]);
                 buf_pos += 8;
                 let bucket = tombstones.entry(field_id).or_insert(Vec::new());
-                bucket.push(TimeRange { min_ts: min, max_ts: max });
+                bucket.push(TimeRange {
+                    min_ts: min,
+                    max_ts: max,
+                });
             }
         }
         Ok(())
     }
 
-    pub fn add_range(&mut self,
-                     field_ids: &[FieldId],
-                     min: Timestamp,
-                     max: Timestamp)
-                     -> Result<()> {
-        let time_range = TimeRange { min_ts: min, max_ts: max };
+    pub fn add_range(
+        &mut self,
+        field_ids: &[FieldId],
+        min: Timestamp,
+        max: Timestamp,
+    ) -> Result<()> {
+        let time_range = TimeRange {
+            min_ts: min,
+            max_ts: max,
+        };
         for field_id in field_ids.iter() {
-            let tomb = Tombstone { field_id: *field_id, time_range };
+            let tomb = Tombstone {
+                field_id: *field_id,
+                time_range,
+            };
             Self::write_to(&self.tomb_accessor, self.tomb_size, &tomb).map(|s| {
-                                                                          self.tomb_size +=
-                                                                              s as u64;
-                                                                          self.tombstones
-                                                                              .entry(*field_id)
-                                                                              .or_insert(Vec::new())
-                                                                              .push(time_range);
-                                                                      })?;
+                self.tomb_size += s as u64;
+                self.tombstones
+                    .entry(*field_id)
+                    .or_insert(Vec::new())
+                    .push(time_range);
+            })?;
         }
         Ok(())
     }
 
     fn write_header_to(writer: &File) -> Result<usize> {
-        writer.write_at(0, &TOMBSTONE_MAGIC.to_be_bytes()[..]).context(error::IOSnafu)
+        writer
+            .write_at(0, &TOMBSTONE_MAGIC.to_be_bytes()[..])
+            .context(error::IOSnafu)
     }
 
     fn write_to(writer: &File, pos: u64, tombstone: &Tombstone) -> Result<usize> {
         let mut size = 0_usize;
-        let ret = writer.write_at(pos, &tombstone.field_id.to_be_bytes()[..])
-                        .and_then(|s| {
-                            size += s;
-                            writer.write_at(pos + size as u64,
-                                            &tombstone.time_range.min_ts.to_be_bytes()[..])
-                        })
-                        .and_then(|s| {
-                            size += s;
-                            writer.write_at(pos + size as u64,
-                                            &tombstone.time_range.max_ts.to_be_bytes()[..])
-                        })
-                        .map(|s| {
-                            size += s;
-                            size
-                        })
-                        .map_err(|e| {
-                            // Write fail, recover writer offset
-                            writer.set_len(pos);
-                            Error::IO { source: e }
-                        });
+        let ret = writer
+            .write_at(pos, &tombstone.field_id.to_be_bytes()[..])
+            .and_then(|s| {
+                size += s;
+                writer.write_at(
+                    pos + size as u64,
+                    &tombstone.time_range.min_ts.to_be_bytes()[..],
+                )
+            })
+            .and_then(|s| {
+                size += s;
+                writer.write_at(
+                    pos + size as u64,
+                    &tombstone.time_range.max_ts.to_be_bytes()[..],
+                )
+            })
+            .map(|s| {
+                size += s;
+                size
+            })
+            .map_err(|e| {
+                // Write fail, recover writer offset
+                writer.set_len(pos);
+                Error::IO { source: e }
+            });
 
         ret
     }
 
     pub fn flush(&self) -> Result<()> {
         self.tomb_accessor.set_len(self.tomb_size);
-        self.tomb_accessor.sync_all(FileSync::Hard).context(error::IOSnafu)?;
+        self.tomb_accessor
+            .sync_all(FileSync::Hard)
+            .context(error::IOSnafu)?;
         Ok(())
     }
 
@@ -210,10 +238,11 @@ impl TsmTombstone {
 
     /// Returns all tombstone `TimeRange`s that overlaps the given `TimeRange`.
     /// Returns None if there is nothing to return, or `TimeRange`s is empty.
-    pub fn get_overlaped_time_ranges(&self,
-                                     field_id: FieldId,
-                                     time_range: &TimeRange)
-                                     -> Option<Vec<TimeRange>> {
+    pub fn get_overlaped_time_ranges(
+        &self,
+        field_id: FieldId,
+        time_range: &TimeRange,
+    ) -> Option<Vec<TimeRange>> {
         if let Some(time_ranges) = self.tombstones.get(&field_id) {
             let mut trs = Vec::new();
             for t in time_ranges.iter() {
@@ -269,7 +298,16 @@ mod test {
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
-        assert_eq!(true, tombstone.overlaps(0, &TimeRange { max_ts: 0, min_ts: 0 }));
+        assert_eq!(
+            true,
+            tombstone.overlaps(
+                0,
+                &TimeRange {
+                    max_ts: 0,
+                    min_ts: 0
+                }
+            )
+        );
     }
 
     #[test]
@@ -286,9 +324,36 @@ mod test {
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
-        assert_eq!(true, tombstone.overlaps(1, &TimeRange { max_ts: 2, min_ts: 99 }));
-        assert_eq!(true, tombstone.overlaps(2, &TimeRange { max_ts: 2, min_ts: 99 }));
-        assert_eq!(false, tombstone.overlaps(3, &TimeRange { max_ts: 101, min_ts: 103 }));
+        assert_eq!(
+            true,
+            tombstone.overlaps(
+                1,
+                &TimeRange {
+                    max_ts: 2,
+                    min_ts: 99
+                }
+            )
+        );
+        assert_eq!(
+            true,
+            tombstone.overlaps(
+                2,
+                &TimeRange {
+                    max_ts: 2,
+                    min_ts: 99
+                }
+            )
+        );
+        assert_eq!(
+            false,
+            tombstone.overlaps(
+                3,
+                &TimeRange {
+                    max_ts: 101,
+                    min_ts: 103
+                }
+            )
+        );
     }
 
     #[test]
@@ -302,16 +367,46 @@ mod test {
         let mut tombstone = TsmTombstone::with_path(&path).unwrap();
         // tsm_tombstone.load().unwrap();
         for i in 0..10000 {
-            tombstone.add_range(&[3 * i as u64 + 1, 3 * i as u64 + 2, 3 * i as u64 + 3],
-                                i as i64 * 2,
-                                i as i64 * 2 + 100)
-                     .unwrap();
+            tombstone
+                .add_range(
+                    &[3 * i as u64 + 1, 3 * i as u64 + 2, 3 * i as u64 + 3],
+                    i as i64 * 2,
+                    i as i64 * 2 + 100,
+                )
+                .unwrap();
         }
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
-        assert_eq!(true, tombstone.overlaps(1, &TimeRange { max_ts: 2, min_ts: 99 }));
-        assert_eq!(true, tombstone.overlaps(2, &TimeRange { max_ts: 3, min_ts: 100 }));
-        assert_eq!(false, tombstone.overlaps(3, &TimeRange { max_ts: 4, min_ts: 101 }));
+        assert_eq!(
+            true,
+            tombstone.overlaps(
+                1,
+                &TimeRange {
+                    max_ts: 2,
+                    min_ts: 99
+                }
+            )
+        );
+        assert_eq!(
+            true,
+            tombstone.overlaps(
+                2,
+                &TimeRange {
+                    max_ts: 3,
+                    min_ts: 100
+                }
+            )
+        );
+        assert_eq!(
+            false,
+            tombstone.overlaps(
+                3,
+                &TimeRange {
+                    max_ts: 4,
+                    min_ts: 101
+                }
+            )
+        );
     }
 }

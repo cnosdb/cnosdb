@@ -16,7 +16,11 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(proj_schema: SchemaRef, filter: PredicateRef, batch_size: usize) -> Self {
-        Self { proj_schema, filter, batch_size }
+        Self {
+            proj_schema,
+            filter,
+            batch_size,
+        }
     }
 }
 
@@ -25,9 +29,10 @@ type ArrowResult<T> = Result<T, ArrowError>;
 impl Stream for TableScanStream {
     type Item = ArrowResult<RecordBatch>;
 
-    fn poll_next(self: std::pin::Pin<&mut Self>,
-                 _: &mut std::task::Context<'_>)
-                 -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         // todo: 1. filter series by filter;
         //      2. get fieldid by proj_schema;
 

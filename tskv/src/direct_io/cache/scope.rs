@@ -44,7 +44,10 @@ struct ScopeRefInner<T: Scope> {
 
 impl<T: Scope> Clone for ScopeRefInner<T> {
     fn clone(&self) -> Self {
-        Self { page_map_r: self.page_map_r.clone(), share: self.share.clone() }
+        Self {
+            page_map_r: self.page_map_r.clone(),
+            share: self.share.clone(),
+        }
     }
 }
 
@@ -53,10 +56,14 @@ pub struct ScopeRef<T: Scope>(ScopeRefInner<T>);
 impl<T: Scope> ScopeRef<T> {
     pub fn new(scope: T, page_len: usize) -> Self {
         let (page_map_r, page_map_w) = evmap::new();
-        Self(ScopeRefInner { page_map_r,
-                             share: Arc::new(ScopeShare { page_map_w: Mutex::new(page_map_w),
-                                                          scope: Box::new(scope),
-                                                          page_len }) })
+        Self(ScopeRefInner {
+            page_map_r,
+            share: Arc::new(ScopeShare {
+                page_map_w: Mutex::new(page_map_w),
+                scope: Box::new(scope),
+                page_len,
+            }),
+        })
     }
 
     pub fn page_map_r(&self) -> &PageMapR<T> {
@@ -76,10 +83,10 @@ impl<T: Scope> ScopeRef<T> {
     }
 
     pub fn downgrade(&self) -> WeakScopeRef<T> {
-        WeakScopeRef(WeakScopeRefInner { page_map_r: Arc::new(Mutex::new(self.0
-                                                                             .page_map_r
-                                                                             .clone())),
-                                         share: Arc::downgrade(self.share()) })
+        WeakScopeRef(WeakScopeRefInner {
+            page_map_r: Arc::new(Mutex::new(self.0.page_map_r.clone())),
+            share: Arc::downgrade(self.share()),
+        })
     }
 }
 
@@ -96,7 +103,10 @@ struct WeakScopeRefInner<T: Scope> {
 
 impl<T: Scope> Clone for WeakScopeRefInner<T> {
     fn clone(&self) -> Self {
-        Self { page_map_r: self.page_map_r.clone(), share: self.share.clone() }
+        Self {
+            page_map_r: self.page_map_r.clone(),
+            share: self.share.clone(),
+        }
     }
 }
 
@@ -105,12 +115,11 @@ pub struct WeakScopeRef<T: Scope>(WeakScopeRefInner<T>);
 impl<T: Scope> WeakScopeRef<T> {
     pub fn upgrade(&self) -> Option<ScopeRef<T>> {
         self.0.share.upgrade().map(|share| {
-                                  ScopeRef(ScopeRefInner { page_map_r: self.0
-                                                                           .page_map_r
-                                                                           .lock()
-                                                                           .clone(),
-                                                           share })
-                              })
+            ScopeRef(ScopeRefInner {
+                page_map_r: self.0.page_map_r.lock().clone(),
+                share,
+            })
+        })
     }
 }
 

@@ -40,11 +40,14 @@ unsafe impl Send for ArcTask {}
 impl ArcTask {
     #[inline]
     pub fn new<F>(future: F, queue: Sender<ArcTask>) -> Self
-        where F: Future<Output = ()> + Send + 'static
+    where
+        F: Future<Output = ()> + Send + 'static,
     {
-        let future = Arc::new(Task { task: UnsafeCell::new(Box::pin(future)),
-                                     queue,
-                                     status: AtomicU8::new(WAITING) });
+        let future = Arc::new(Task {
+            task: UnsafeCell::new(Box::pin(future)),
+            queue,
+            status: AtomicU8::new(WAITING),
+        });
         let future: *const Task = Arc::into_raw(future) as *const Task;
         unsafe { task(future) }
     }
@@ -58,7 +61,11 @@ impl ArcTask {
             if Pin::new(&mut *self.0.task.get()).poll(&mut cx).is_ready() {
                 break self.0.status.store(COMPLETE, ORDERING);
             }
-            match self.0.status.compare_exchange(POLLING, WAITING, ORDERING, ORDERING) {
+            match self
+                .0
+                .status
+                .compare_exchange(POLLING, WAITING, ORDERING, ORDERING)
+            {
                 Ok(_) => break,
                 Err(_) => self.0.status.store(POLLING, ORDERING),
             }
@@ -68,18 +75,19 @@ impl ArcTask {
 
 #[inline]
 unsafe fn waker(task: *const Task) -> Waker {
-    Waker::from_raw(RawWaker::new(task as *const (),
-                                  &RawWakerVTable::new(clone_raw,
-                                                       wake_raw,
-                                                       wake_ref_raw,
-                                                       drop_raw)))
+    Waker::from_raw(RawWaker::new(
+        task as *const (),
+        &RawWakerVTable::new(clone_raw, wake_raw, wake_ref_raw, drop_raw),
+    ))
 }
 
 #[inline]
 unsafe fn clone_raw(this: *const ()) -> RawWaker {
     let task = clone_task(this as *const Task);
-    RawWaker::new(Arc::into_raw(task.0) as *const (),
-                  &RawWakerVTable::new(clone_raw, wake_raw, wake_ref_raw, drop_raw))
+    RawWaker::new(
+        Arc::into_raw(task.0) as *const (),
+        &RawWakerVTable::new(clone_raw, wake_raw, wake_ref_raw, drop_raw),
+    )
 }
 
 #[inline]
@@ -93,19 +101,27 @@ unsafe fn wake_raw(this: *const ()) {
     let mut status = task.0.status.load(ORDERING);
     loop {
         match status {
-            WAITING => match task.0.status.compare_exchange(WAITING, POLLING, ORDERING, ORDERING) {
+            WAITING => match task
+                .0
+                .status
+                .compare_exchange(WAITING, POLLING, ORDERING, ORDERING)
+            {
                 Ok(_) => {
                     match task.0.queue.send(clone_task(&*task.0)) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             error!("failed to send runtime task : {:?}", e);
-                        },
+                        }
                     };
                     break;
-                },
+                }
                 Err(cur) => status = cur,
             },
-            POLLING => match task.0.status.compare_exchange(POLLING, REPOLL, ORDERING, ORDERING) {
+            POLLING => match task
+                .0
+                .status
+                .compare_exchange(POLLING, REPOLL, ORDERING, ORDERING)
+            {
                 Ok(_) => break,
                 Err(cur) => status = cur,
             },
@@ -120,19 +136,27 @@ unsafe fn wake_ref_raw(this: *const ()) {
     let mut status = task.0.status.load(ORDERING);
     loop {
         match status {
-            WAITING => match task.0.status.compare_exchange(WAITING, POLLING, ORDERING, ORDERING) {
+            WAITING => match task
+                .0
+                .status
+                .compare_exchange(WAITING, POLLING, ORDERING, ORDERING)
+            {
                 Ok(_) => {
                     match task.0.queue.send(clone_task(&*task.0)) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             error!("failed to send runtime task : {:?}", e);
-                        },
+                        }
                     };
                     break;
-                },
+                }
                 Err(cur) => status = cur,
             },
-            POLLING => match task.0.status.compare_exchange(POLLING, REPOLL, ORDERING, ORDERING) {
+            POLLING => match task
+                .0
+                .status
+                .compare_exchange(POLLING, REPOLL, ORDERING, ORDERING)
+            {
                 Ok(_) => break,
                 Err(cur) => status = cur,
             },

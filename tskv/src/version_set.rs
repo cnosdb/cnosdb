@@ -21,9 +21,10 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
-    pub async fn new(desc: &[Arc<TseriesFamDesc>],
-                     vers_set: HashMap<u32, Arc<RwLock<Version>>>)
-                     -> Self {
+    pub async fn new(
+        desc: &[Arc<TseriesFamDesc>],
+        vers_set: HashMap<u32, Arc<RwLock<Version>>>,
+    ) -> Self {
         let mut ts_families = HashMap::new();
         let mut ts_families_names = HashMap::new();
         for (id, ver) in vers_set {
@@ -31,39 +32,46 @@ impl VersionSet {
             let seq = ver.read().last_seq;
             for item in desc.iter() {
                 if item.name == name {
-                    let tf = TseriesFamily::new(id,
-                                                name.clone(),
-                                                MemCache::new(id,
-                                                              GLOBAL_CONFIG.max_memcache_size,
-                                                              seq,
-                                                              false),
-                                                ver.clone(),
-                                                item.opt.clone());
+                    let tf = TseriesFamily::new(
+                        id,
+                        name.clone(),
+                        MemCache::new(id, GLOBAL_CONFIG.max_memcache_size, seq, false),
+                        ver.clone(),
+                        item.opt.clone(),
+                    );
                     ts_families.insert(id, tf);
                     ts_families_names.insert(name.clone(), id);
                 }
             }
         }
 
-        Self { ts_families, ts_families_names }
+        Self {
+            ts_families,
+            ts_families_names,
+        }
     }
 
     pub fn new_default() -> Self {
-        Self { ts_families: Default::default(), ts_families_names: Default::default() }
+        Self {
+            ts_families: Default::default(),
+            ts_families_names: Default::default(),
+        }
     }
 
     pub async fn switch_memcache(&mut self, tf_id: u32, seq: u64) {
         match self.ts_families.get_mut(&tf_id) {
             Some(tf) => {
-                let mem = Arc::new(RwLock::new(MemCache::new(tf_id,
-                                                             GLOBAL_CONFIG.max_memcache_size,
-                                                             seq,
-                                                             false)));
+                let mem = Arc::new(RwLock::new(MemCache::new(
+                    tf_id,
+                    GLOBAL_CONFIG.max_memcache_size,
+                    seq,
+                    false,
+                )));
                 tf.switch_memcache(mem).await;
-            },
+            }
             None => {
                 error!("ts_family with tsf id {} not found.", tf_id);
-            },
+            }
         }
     }
 
@@ -92,25 +100,28 @@ impl VersionSet {
         self.ts_families.get(&tf_id)
     }
 
-    pub async fn add_tsfamily(&mut self,
-                              tf_id: u32,
-                              name: String,
-                              seq_no: u64,
-                              file_id: u64,
-                              opt: Arc<TseriesFamOpt>,
-                              summary_task_sender: UnboundedSender<SummaryTask>) {
-        let tf = TseriesFamily::new(tf_id,
-                                    name.clone(),
-                                    MemCache::new(tf_id,
-                                                  GLOBAL_CONFIG.max_memcache_size,
-                                                  seq_no,
-                                                  false),
-                                    Arc::new(RwLock::new(Version::new(tf_id,
-                                                                      file_id,
-                                                                      name.clone(),
-                                                                      vec![],
-                                                                      i64::MIN))),
-                                    opt.clone());
+    pub async fn add_tsfamily(
+        &mut self,
+        tf_id: u32,
+        name: String,
+        seq_no: u64,
+        file_id: u64,
+        opt: Arc<TseriesFamOpt>,
+        summary_task_sender: UnboundedSender<SummaryTask>,
+    ) {
+        let tf = TseriesFamily::new(
+            tf_id,
+            name.clone(),
+            MemCache::new(tf_id, GLOBAL_CONFIG.max_memcache_size, seq_no, false),
+            Arc::new(RwLock::new(Version::new(
+                tf_id,
+                file_id,
+                name.clone(),
+                vec![],
+                i64::MIN,
+            ))),
+            opt.clone(),
+        );
         self.ts_families.insert(tf_id, tf);
         self.ts_families_names.insert(name.clone(), tf_id);
         let mut edits = vec![];
@@ -118,26 +129,31 @@ impl VersionSet {
         edit.add_tsfamily(tf_id, name);
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask { edits, cb: task_state_sender };
+        let task = SummaryTask {
+            edits,
+            cb: task_state_sender,
+        };
         if let Err(e) = summary_task_sender.send(task) {
             error!("failed to send Summary task, {:?}", e);
         }
     }
 
-    pub fn del_tsfamily(&mut self,
-                        tf_id: u32,
-                        name: String,
-                        summary_task_sender: UnboundedSender<SummaryTask>) {
+    pub fn del_tsfamily(
+        &mut self,
+        tf_id: u32,
+        name: String,
+        summary_task_sender: UnboundedSender<SummaryTask>,
+    ) {
         match self.ts_families_names.get(&name) {
             None => {
                 error!("failed get tf id with tf name {}", &name);
-            },
+            }
             Some(v) => {
                 if tf_id != *v {
                     error!("tf_id and name can`t match");
                     return;
                 }
-            },
+            }
         }
         self.ts_families.remove(&tf_id);
         self.ts_families_names.remove(&name);
@@ -146,7 +162,10 @@ impl VersionSet {
         edit.del_tsfamily(tf_id);
         edits.push(edit);
         let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask { edits, cb: task_state_sender };
+        let task = SummaryTask {
+            edits,
+            cb: task_state_sender,
+        };
         if let Err(e) = summary_task_sender.send(task) {
             error!("failed to send Summary task, {:?}", e);
         }

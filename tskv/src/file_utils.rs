@@ -32,12 +32,12 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
         });
     }
     let (_, file_number) = file_name.split_at(8);
-    file_number.parse::<u64>().map_err(|_| {
-                                  Error::InvalidFileName {
-        file_name: file_name.to_string(),
-        message: "sumary file name contains an invalid id".to_string(),
-    }
-                              })
+    file_number
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "sumary file name contains an invalid id".to_string(),
+        })
 }
 
 // WAL (wrhte ahead log) file.
@@ -53,17 +53,18 @@ pub fn check_wal_file_name(file_name: &str) -> bool {
 
 pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
     if !check_wal_file_name(file_name) {
-        return Err(Error::InvalidFileName { file_name: file_name.to_string(),
-                                            message:
-                                                "wal file name does not contain an id".to_string() });
+        return Err(Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "wal file name does not contain an id".to_string(),
+        });
     }
     let file_number = &file_name[1..7];
-    file_number.parse::<u64>().map_err(|_| {
-                                  Error::InvalidFileName {
-        file_name: file_name.to_string(),
-        message: "wal file name contains an invalid id".to_string(),
-    }
-                              })
+    file_number
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "wal file name contains an invalid id".to_string(),
+        })
 }
 
 // TSM file
@@ -75,24 +76,26 @@ pub fn make_tsm_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
 
 pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
     let path = tsm_path.as_ref();
-    let file_name = path.file_name()
-                        .expect("path must not be ..")
-                        .to_str()
-                        .expect("file name must be UTF-8 string");
+    let file_name = path
+        .file_name()
+        .expect("path must not be ..")
+        .to_str()
+        .expect("file name must be UTF-8 string");
     if file_name.len() == 1 {
-        return Err(Error::InvalidFileName { file_name: file_name.to_string(),
-                                            message:
-                                                "tsm file name contains an invalid id".to_string() });
+        return Err(Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "tsm file name contains an invalid id".to_string(),
+        });
     }
     let start = file_name.find("_").unwrap_or(0_usize) + 1;
     let end = file_name.find(".").unwrap_or(file_name.len());
     let file_number = &file_name[start..end];
-    file_number.parse::<u64>().map_err(|_| {
-                                  Error::InvalidFileName {
-        file_name: file_name.to_string(),
-        message: "tsm file name contains an invalid id".to_string(),
-    }
-                              })
+    file_number
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "tsm file name contains an invalid id".to_string(),
+        })
 }
 
 // TSM tombstone file
@@ -122,25 +125,28 @@ pub fn check_schema_file(file_name: &str) -> bool {
 
 pub fn get_schema_file_id(file_name: &str) -> Result<u64> {
     if !check_schema_file(file_name) {
-        return Err(Error::InvalidFileName { file_name: file_name.to_string(),
-                                            message:
-                                                "schema file name does not contain an id".to_string() });
+        return Err(Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "schema file name does not contain an id".to_string(),
+        });
     }
     let file_number = &file_name[1..7];
-    file_number.parse::<u64>().map_err(|_| {
-                                  Error::InvalidFileName {
-        file_name: file_name.to_string(),
-        message: "schema file name contains an invalid id".to_string(),
-    }
-                              })
+    file_number
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "schema file name contains an invalid id".to_string(),
+        })
 }
 
 // Common
 
-pub fn get_max_sequence_file_name<F>(dir: impl AsRef<Path>,
-                                     get_sequence: F)
-                                     -> Option<(PathBuf, u64)>
-    where F: Fn(&str) -> Result<u64>
+pub fn get_max_sequence_file_name<F>(
+    dir: impl AsRef<Path>,
+    get_sequence: F,
+) -> Option<(PathBuf, u64)>
+where
+    F: Fn(&str) -> Result<u64>,
 {
     let segments = file_manager::list_file_names(dir);
     if segments.is_empty() {
@@ -155,7 +161,7 @@ pub fn get_max_sequence_file_name<F>(dir: impl AsRef<Path>,
                     max_id = id;
                     max_index = i;
                 }
-            },
+            }
             Err(_) => continue,
         }
     }
