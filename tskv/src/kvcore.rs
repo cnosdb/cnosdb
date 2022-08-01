@@ -28,7 +28,6 @@ use crate::{
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
     memcache::{DataType, MemCache},
     record_file::Reader,
-    runtime::WorkerQueue,
     summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
     tseries_family::{TimeRange, Version},
     tsm::TsmTombstone,
@@ -44,7 +43,6 @@ pub struct Entry {
 
 pub struct TsKv {
     options: Arc<Options>,
-    kvctx: Arc<KvContext>,
     version_set: Arc<RwLock<VersionSet>>,
 
     wal_sender: UnboundedSender<WalTask>,
@@ -57,7 +55,6 @@ pub struct TsKv {
 impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
         let shared_options = Arc::new(opt);
-        let kvctx = Arc::new(KvContext::new(shared_options.clone()));
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (version_set, summary) =
             Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
@@ -69,7 +66,6 @@ impl TsKv {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self {
             options: shared_options,
-            kvctx,
             forward_index: Arc::new(RwLock::new(fidx)),
             version_set,
             wal_sender,
@@ -416,56 +412,3 @@ impl TsKv {
     }
 }
 
-#[allow(dead_code)]
-enum KvStatus {
-    Init,
-    Recover,
-    Runing,
-    Closed,
-}
-
-#[allow(dead_code)]
-pub(crate) struct KvContext {
-    front_handler: Arc<WorkerQueue>,
-    handler: Vec<JoinHandle<()>>,
-    status: KvStatus,
-}
-
-#[allow(dead_code)]
-impl KvContext {
-    pub fn new(opt: Arc<Options>) -> Self {
-        let front_work_queue = Arc::new(WorkerQueue::new(opt.db.front_cpu));
-        let worker_handle = Vec::with_capacity(opt.db.back_cpu);
-        Self {
-            front_handler: front_work_queue,
-            handler: worker_handle,
-            status: KvStatus::Init,
-        }
-    }
-
-    pub fn recover(&mut self) -> Result<()> {
-        // todo: index wal summary shardinfo recover here.
-        self.status = KvStatus::Recover;
-        Ok(())
-    }
-
-    pub async fn shard_write(
-        &self,
-        partion_id: usize,
-        mem: Arc<RwLock<MemCache>>,
-        entry: WritePointsRpcRequest,
-    ) -> Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.front_handler.add_task(partion_id, async move {
-            let ps = flatbuffers::root::<fb_models::Points>(&entry.points).unwrap();
-            let err = 0;
-            // todo
-            let _ = tx.send(err);
-        })?;
-        rx.await.unwrap();
-        Ok(())
-    }
-    pub async fn shard_query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-        Ok(None)
-    }
-}

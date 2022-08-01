@@ -728,6 +728,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_read_and_write() {
         let wal_config = Arc::new(kv_option::WalConfig {
             dir: String::from(DIR),
@@ -736,7 +737,8 @@ mod test {
 
         let mut mgr = WalManager::new(wal_config);
 
-        for i in 0..10 {
+        for _i in 0..10 {
+
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
 
             let entry = random_wal_entry_block(&mut fbb);

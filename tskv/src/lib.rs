@@ -17,7 +17,6 @@ mod lru_cache;
 mod memcache;
 mod reader;
 mod record_file;
-mod runtime;
 mod summary;
 mod tseries_family;
 mod tsm;
