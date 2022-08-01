@@ -13,10 +13,12 @@ pub struct GlobalContext {
 
 impl GlobalContext {
     pub fn new() -> Self {
-        Self { file_id: AtomicU64::new(0),
-               mem_seq: AtomicU64::new(0),
-               last_seq: AtomicU64::new(0),
-               max_tsf_id: AtomicU32::new(0) }
+        Self {
+            file_id: AtomicU64::new(0),
+            mem_seq: AtomicU64::new(0),
+            last_seq: AtomicU64::new(0),
+            max_tsf_id: AtomicU32::new(0),
+        }
     }
 }
 
@@ -63,7 +65,10 @@ impl GlobalContext {
     pub fn mark_log_number_used(&self, v: u64) {
         let mut old = self.file_id.load(Ordering::Acquire);
         while old <= v {
-            match self.file_id.compare_exchange(old, v + 1, Ordering::SeqCst, Ordering::SeqCst) {
+            match self
+                .file_id
+                .compare_exchange(old, v + 1, Ordering::SeqCst, Ordering::SeqCst)
+            {
                 Ok(_) => break,
                 Err(x) => old = x,
             }

@@ -24,11 +24,11 @@ fn main() {
                         if tsm_path.is_none() {
                             println!("Invalid arguments: --tsm <tsm_path>");
                         }
-                    },
+                    }
                     ARG_TOMBSTONE => {
                         show_tombstone = true;
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
         }

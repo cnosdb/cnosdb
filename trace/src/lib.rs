@@ -15,9 +15,9 @@ pub fn init_default_global_tracing(dir: &str, file_name: &str, level: &str) {
     static START: Once = Once::new();
 
     START.call_once(|| {
-             let mut g = GLOBAL_UT_LOG_GUARD.as_ref().lock().unwrap();
-             *g = Some(init_global_tracing(dir, file_name, level));
-         });
+        let mut g = GLOBAL_UT_LOG_GUARD.as_ref().lock().unwrap();
+        *g = Some(init_global_tracing(dir, file_name, level));
+    });
 }
 
 static GLOBAL_UT_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
@@ -33,17 +33,18 @@ pub fn init_global_tracing(dir: &str, file_name: &str, level: &str) -> Vec<Worke
 
     let guards = vec![guard];
 
-    Registry::default().with(env_filter)
-                       .with(ErrorLayer::default())
-                       .with(formatting_layer)
-                       .with(file_layer)
-                       .init();
+    Registry::default()
+        .with(env_filter)
+        .with(ErrorLayer::default())
+        .with(formatting_layer)
+        .with(file_layer)
+        .init();
 
     match color_eyre::install() {
         Ok(_) => (),
         Err(_) => {
             debug!("already init color eyre");
-        },
+        }
     }
 
     debug!("log trace init successful");

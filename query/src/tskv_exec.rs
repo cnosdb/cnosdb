@@ -20,7 +20,10 @@ pub struct TskvExec {
 
 impl TskvExec {
     pub(crate) fn new(proj_schema: SchemaRef, filter: PredicateRef) -> Self {
-        Self { proj_schema, filter }
+        Self {
+            proj_schema,
+            filter,
+        }
     }
     pub fn filter(&self) -> PredicateRef {
         self.filter.clone()
@@ -49,18 +52,24 @@ impl ExecutionPlan for TskvExec {
         vec![]
     }
 
-    fn with_new_children(self: Arc<Self>,
-                         _: Vec<Arc<dyn ExecutionPlan>>)
-                         -> Result<Arc<dyn ExecutionPlan>> {
+    fn with_new_children(
+        self: Arc<Self>,
+        _: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
         Ok(self)
     }
 
-    fn execute(&self,
-               _partition: usize,
-               context: Arc<TaskContext>)
-               -> Result<SendableRecordBatchStream> {
+    fn execute(
+        &self,
+        _partition: usize,
+        context: Arc<TaskContext>,
+    ) -> Result<SendableRecordBatchStream> {
         let batch_size = context.session_config().batch_size;
-        Ok(Box::pin(TableScanStream::new(self.schema(), self.filter(), batch_size)))
+        Ok(Box::pin(TableScanStream::new(
+            self.schema(),
+            self.filter(),
+            batch_size,
+        )))
     }
 
     fn statistics(&self) -> Statistics {

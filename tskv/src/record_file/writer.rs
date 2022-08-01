@@ -26,29 +26,35 @@ impl Writer {
             Err(e) => {
                 error!("failed to open file path : {:?}, in case {:?}", path, e);
                 return None;
-            },
+            }
         };
-        Some(Writer { path: path.to_path_buf(), file: Mutex::new(file) })
+        Some(Writer {
+            path: path.to_path_buf(),
+            file: Mutex::new(file),
+        })
     }
 
     // Returns the POS of record in the file
-    pub async fn write_record(&mut self,
-                              data_version: u8,
-                              data_type: u8,
-                              data: &[u8])
-                              -> RecordFileResult<u64> {
-        let mut buf = Vec::<u8>::with_capacity(RECORD_MAGIC_NUMBER_LEN
-                                               + RECORD_DATA_SIZE_LEN
-                                               + RECORD_DATA_VERSION_LEN
-                                               + RECORD_DATA_TYPE_LEN
-                                               + data.len()
-                                               + RECORD_CRC32_NUMBER_LEN);
+    pub async fn write_record(
+        &mut self,
+        data_version: u8,
+        data_type: u8,
+        data: &[u8],
+    ) -> RecordFileResult<u64> {
+        let mut buf = Vec::<u8>::with_capacity(
+            RECORD_MAGIC_NUMBER_LEN
+                + RECORD_DATA_SIZE_LEN
+                + RECORD_DATA_VERSION_LEN
+                + RECORD_DATA_TYPE_LEN
+                + data.len()
+                + RECORD_CRC32_NUMBER_LEN,
+        );
 
         let data_len = match data.len().to_u32() {
             None => {
                 error!("failed to get data len, return 0");
                 0
-            },
+            }
             Some(v) => v,
         };
 
@@ -58,8 +64,11 @@ impl Writer {
         buf.append(&mut data_version.to_le_bytes().to_vec()); //data_version
         buf.append(&mut data_type.to_le_bytes().to_vec()); //data_type
         buf.append(&mut data.to_vec()); //data
-        buf.append(&mut crc32fast::hash(buf[RECORD_MAGIC_NUMBER_LEN..].borrow()).to_le_bytes()
-                                                                                .to_vec()); // crc32_number
+        buf.append(
+            &mut crc32fast::hash(buf[RECORD_MAGIC_NUMBER_LEN..].borrow())
+                .to_le_bytes()
+                .to_vec(),
+        ); // crc32_number
 
         // write file
         let mut p = 0;
@@ -69,7 +78,7 @@ impl Writer {
             None => {
                 error!("pos is illegal");
                 0
-            },
+            }
             Some(v) => v,
         };
         while p < buf.len() {
@@ -78,10 +87,11 @@ impl Writer {
                 write_len = buf.len() - p;
             }
 
-            match self.file
-                      .lock()
-                      .write_at(pos, &buf[p..p + write_len])
-                      .map_err(|err| RecordFileError::WriteFile { source: err })
+            match self
+                .file
+                .lock()
+                .write_at(pos, &buf[p..p + write_len])
+                .map_err(|err| RecordFileError::WriteFile { source: err })
             {
                 Ok(_) => {
                     p += write_len;
@@ -89,13 +99,13 @@ impl Writer {
                         None => {
                             error!("write len is illegal");
                             0
-                        },
+                        }
                         Some(v) => v,
                     };
-                },
+                }
                 Err(e) => {
                     return Err(e);
-                },
+                }
             }
         }
 
@@ -149,7 +159,9 @@ mod test {
     async fn test_reader_read_one() {
         let r = Reader::from("/tmp/test.log_file");
         let record = r.read_one(19).await.unwrap();
-        println!("{}, {}, {}, {:?}",
-                 record.pos, record.data_type, record.data_version, record.data);
+        println!(
+            "{}, {}, {}, {:?}",
+            record.pos, record.data_type, record.data_version, record.data
+        );
     }
 }

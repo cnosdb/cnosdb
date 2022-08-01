@@ -15,8 +15,7 @@ pub fn sort_tags(tags: &mut [Tag]) {
     tags.sort_by(|a, b| -> Ordering { a.key.partial_cmp(&b.key).unwrap() })
 }
 
-#[derive(Serialize, Deserialize)]
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Hash)]
 pub struct Tag {
     pub key: TagKey,
     pub value: TagValue,
@@ -28,25 +27,44 @@ impl Tag {
     }
 
     pub fn from_flatbuffers(tag: &fb_models::Tag) -> Result<Self> {
-        let key = tag.key().ok_or(Error::InvalidFlatbufferMessage { err: "Tag key cannot be empty".to_string() })?.to_vec();
-        let value = tag.value().ok_or(Error::InvalidFlatbufferMessage { err: "Tag value cannot be emptyt".to_string() })?.to_vec();
+        let key = tag
+            .key()
+            .ok_or(Error::InvalidFlatbufferMessage {
+                err: "Tag key cannot be empty".to_string(),
+            })?
+            .to_vec();
+        let value = tag
+            .value()
+            .ok_or(Error::InvalidFlatbufferMessage {
+                err: "Tag value cannot be emptyt".to_string(),
+            })?
+            .to_vec();
         Ok(Self { key, value })
     }
 
     pub fn check(&self) -> Result<()> {
         if self.key.is_empty() {
-            return Err(Error::InvalidTag { err: "Tag key cannot be empty".to_string() });
+            return Err(Error::InvalidTag {
+                err: "Tag key cannot be empty".to_string(),
+            });
         }
         if self.value.is_empty() {
-            return Err(Error::InvalidTag { err: "Tag value cannot be empty".to_string() });
+            return Err(Error::InvalidTag {
+                err: "Tag value cannot be empty".to_string(),
+            });
         }
         if self.key.len() > TAG_KEY_MAX_LEN {
-            return Err(Error::InvalidTag { err: format!("Tag key exceeds the TAG_KEY_MAX_LEN({})",
-                                                        TAG_KEY_MAX_LEN) });
+            return Err(Error::InvalidTag {
+                err: format!("Tag key exceeds the TAG_KEY_MAX_LEN({})", TAG_KEY_MAX_LEN),
+            });
         }
         if self.value.len() > TAG_VALUE_MAX_LEN {
-            return Err(Error::InvalidTag { err: format!("Tag value exceeds the TAG_VALUE_MAX_LEN({})",
-                                                        TAG_VALUE_MAX_LEN) });
+            return Err(Error::InvalidTag {
+                err: format!(
+                    "Tag value exceeds the TAG_VALUE_MAX_LEN({})",
+                    TAG_VALUE_MAX_LEN
+                ),
+            });
         }
         Ok(())
     }
@@ -65,7 +83,10 @@ pub trait TagFromParts<T1, T2> {
 
 impl TagFromParts<&str, &str> for Tag {
     fn from_parts(key: &str, value: &str) -> Self {
-        Tag { key: key.as_bytes().to_vec(), value: value.as_bytes().to_vec() }
+        Tag {
+            key: key.as_bytes().to_vec(),
+            value: value.as_bytes().to_vec(),
+        }
     }
 }
 

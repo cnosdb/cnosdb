@@ -30,14 +30,23 @@ pub struct IoTask {
     cb: OnceSender<Result<usize>>,
 }
 
-pub fn make_io_task(task_type: TaskType,
-                    ptr: *mut u8,
-                    size: usize,
-                    offset: u64,
-                    fd: Arc<File>,
-                    cb: OnceSender<Result<usize>>)
-                    -> IoTask {
-    IoTask { task_type, priority: 0, ptr, size, offset, fd, cb }
+pub fn make_io_task(
+    task_type: TaskType,
+    ptr: *mut u8,
+    size: usize,
+    offset: u64,
+    fd: Arc<File>,
+    cb: OnceSender<Result<usize>>,
+) -> IoTask {
+    IoTask {
+        task_type,
+        priority: 0,
+        ptr,
+        size,
+        offset,
+        fd,
+        cb,
+    }
 }
 
 #[derive(PartialEq)]
@@ -58,24 +67,28 @@ impl IoTask {
             match self.task_type {
                 TaskType::BackRead | TaskType::FrontRead => {
                     let buf = slice::from_raw_parts_mut(self.ptr, self.size);
-                    let ret =
-                        self.fd.read_at(self.offset, buf).map_err(|e| Error::IO { source: e });
+                    let ret = self
+                        .fd
+                        .read_at(self.offset, buf)
+                        .map_err(|e| Error::IO { source: e });
                     let _ = self.cb.send(ret);
-                },
+                }
                 TaskType::BackWrite | TaskType::FrontWrite | TaskType::Wal => {
                     let buf = slice::from_raw_parts(self.ptr, self.size);
-                    let ret =
-                        self.fd.write_at(self.offset, buf).map_err(|e| Error::IO { source: e });
+                    let ret = self
+                        .fd
+                        .write_at(self.offset, buf)
+                        .map_err(|e| Error::IO { source: e });
                     let _ = self.cb.send(ret);
-                },
+                }
             }
         }
     }
     pub fn is_pri_high(&self) -> bool {
         self.task_type == TaskType::FrontWrite
-        || self.task_type == TaskType::FrontRead
-        || self.task_type == TaskType::Wal
-        || self.priority > 0
+            || self.task_type == TaskType::FrontRead
+            || self.task_type == TaskType::Wal
+            || self.priority > 0
     }
 }
 
@@ -93,21 +106,23 @@ pub struct AsyncContext {
 
 impl AsyncContext {
     pub fn new(thread_num: usize) -> Self {
-        Self { read_queue: ArrayQueue::new(QUEUE_SIZE),
-               write_queue: ArrayQueue::new(QUEUE_SIZE),
-               high_op_queue: ArrayQueue::new(QUEUE_SIZE),
-               worker_count: AtomicUsize::new(thread_num),
-               total_count: thread_num,
-               thread_state: Mutex::new(vec![false; thread_num]),
-               // thread_pool: Mutex::new(spawn_in_pool(thread_num)),
-               thread_conv: Condvar::default(),
-               closed: AtomicBool::new(false) }
+        Self {
+            read_queue: ArrayQueue::new(QUEUE_SIZE),
+            write_queue: ArrayQueue::new(QUEUE_SIZE),
+            high_op_queue: ArrayQueue::new(QUEUE_SIZE),
+            worker_count: AtomicUsize::new(thread_num),
+            total_count: thread_num,
+            thread_state: Mutex::new(vec![false; thread_num]),
+            // thread_pool: Mutex::new(spawn_in_pool(thread_num)),
+            thread_conv: Condvar::default(),
+            closed: AtomicBool::new(false),
+        }
     }
     pub fn wait(&self, id: usize) {
         let mut state = self.thread_state.lock();
         if !self.high_op_queue.is_empty()
-           || !self.read_queue.is_empty()
-           || !self.write_queue.is_empty()
+            || !self.read_queue.is_empty()
+            || !self.write_queue.is_empty()
         {
             return;
         }

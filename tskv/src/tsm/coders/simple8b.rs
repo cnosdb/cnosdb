@@ -8,20 +8,22 @@ const S8B_BIT_SIZE: usize = 60;
 // maximum value that can be encoded.
 pub const MAX_VALUE: u64 = (1 << 60) - 1;
 
-const NUM_BITS: [[u8; 2]; 14] = [[60, 1],
-                                 [30, 2],
-                                 [20, 3],
-                                 [15, 4],
-                                 [12, 5],
-                                 [10, 6],
-                                 [8, 7],
-                                 [7, 8],
-                                 [6, 10],
-                                 [5, 12],
-                                 [4, 15],
-                                 [3, 20],
-                                 [2, 30],
-                                 [1, 60]];
+const NUM_BITS: [[u8; 2]; 14] = [
+    [60, 1],
+    [30, 2],
+    [20, 3],
+    [15, 4],
+    [12, 5],
+    [10, 6],
+    [8, 7],
+    [7, 8],
+    [6, 10],
+    [5, 12],
+    [4, 15],
+    [3, 20],
+    [2, 30],
+    [1, 60],
+];
 
 /// encode packs and binary encodes the provides slice of u64 values using
 /// simple8b into the provided vector.
@@ -31,7 +33,11 @@ pub fn encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send
         // try to pack a run of 240 or 120 1s
         let remain = src.len() - i;
         if remain >= 120 {
-            let a = if remain >= 240 { &src[i..i + 240] } else { &src[i..i + 120] };
+            let a = if remain >= 240 {
+                &src[i..i + 240]
+            } else {
+                &src[i..i + 120]
+            };
 
             // search for the longest sequence of 1s in a
             let k = a.iter().take_while(|x| **x == 1).count();
@@ -99,108 +105,108 @@ fn decode_value(v: u64, dst: &mut [u64]) -> usize {
                 *i = 1;
             }
             240
-        },
+        }
         1 => {
             for i in &mut dst[0..120] {
                 *i = 1
             }
             120
-        },
+        }
         2 => {
             for i in &mut dst[0..60] {
                 *i = v & 0x01;
                 v >>= 1
             }
             60
-        },
+        }
         3 => {
             for i in &mut dst[0..30] {
                 *i = v & 0x03;
                 v >>= 2
             }
             30
-        },
+        }
         4 => {
             for i in &mut dst[0..20] {
                 *i = v & 0x07;
                 v >>= 3
             }
             20
-        },
+        }
         5 => {
             for i in &mut dst[0..15] {
                 *i = v & 0x0f;
                 v >>= 4
             }
             15
-        },
+        }
         6 => {
             for i in &mut dst[0..12] {
                 *i = v & 0x1f;
                 v >>= 5
             }
             12
-        },
+        }
         7 => {
             for i in &mut dst[0..10] {
                 *i = v & 0x3f;
                 v >>= 6
             }
             10
-        },
+        }
         8 => {
             for i in &mut dst[0..8] {
                 *i = v & 0x7f;
                 v >>= 7
             }
             8
-        },
+        }
         9 => {
             for i in &mut dst[0..7] {
                 *i = v & 0xff;
                 v >>= 8
             }
             7
-        },
+        }
         10 => {
             for i in &mut dst[0..6] {
                 *i = v & 0x03ff;
                 v >>= 10
             }
             6
-        },
+        }
         11 => {
             for i in &mut dst[0..5] {
                 *i = v & 0x0fff;
                 v >>= 12
             }
             5
-        },
+        }
         12 => {
             dst[0] = v & 0x7fff;
             dst[1] = (v >> 15) & 0x7fff;
             dst[2] = (v >> 30) & 0x7fff;
             dst[3] = (v >> 45) & 0x7fff;
             4
-        },
+        }
         13 => {
             for i in &mut dst[0..3] {
                 *i = v & 0x000f_ffff;
                 v >>= 20
             }
             3
-        },
+        }
         14 => {
             for i in &mut dst[0..2] {
                 *i = v & 0x3fff_ffff;
                 v >>= 30
             }
             2
-        },
+        }
         15 => {
             dst[0] = v & 0x0fff_ffff_ffff_ffff;
             1
-        },
+        }
         _ => 0,
     }
 }
@@ -266,21 +272,68 @@ mod tests {
             input: Vec<u64>,
         }
 
-        let tests = vec![Test { name: String::from("1 bit"), input: bits(100, 1)() },
-                         Test { name: String::from("2 bit"), input: bits(100, 2)() },
-                         Test { name: String::from("3 bit"), input: bits(100, 3)() },
-                         Test { name: String::from("4 bit"), input: bits(100, 4)() },
-                         Test { name: String::from("5 bit"), input: bits(100, 5)() },
-                         Test { name: String::from("6 bit"), input: bits(100, 6)() },
-                         Test { name: String::from("7 bit"), input: bits(100, 7)() },
-                         Test { name: String::from("8 bit"), input: bits(100, 8)() },
-                         Test { name: String::from("10 bit"), input: bits(100, 10)() },
-                         Test { name: String::from("12 bit"), input: bits(100, 12)() },
-                         Test { name: String::from("15 bit"), input: bits(100, 15)() },
-                         Test { name: String::from("20 bit"), input: bits(100, 20)() },
-                         Test { name: String::from("30 bit"), input: bits(100, 30)() },
-                         Test { name: String::from("60 bit"), input: bits(100, 60)() },
-                         Test { name: String::from("240 ones"), input: ones(240)() },];
+        let tests = vec![
+            Test {
+                name: String::from("1 bit"),
+                input: bits(100, 1)(),
+            },
+            Test {
+                name: String::from("2 bit"),
+                input: bits(100, 2)(),
+            },
+            Test {
+                name: String::from("3 bit"),
+                input: bits(100, 3)(),
+            },
+            Test {
+                name: String::from("4 bit"),
+                input: bits(100, 4)(),
+            },
+            Test {
+                name: String::from("5 bit"),
+                input: bits(100, 5)(),
+            },
+            Test {
+                name: String::from("6 bit"),
+                input: bits(100, 6)(),
+            },
+            Test {
+                name: String::from("7 bit"),
+                input: bits(100, 7)(),
+            },
+            Test {
+                name: String::from("8 bit"),
+                input: bits(100, 8)(),
+            },
+            Test {
+                name: String::from("10 bit"),
+                input: bits(100, 10)(),
+            },
+            Test {
+                name: String::from("12 bit"),
+                input: bits(100, 12)(),
+            },
+            Test {
+                name: String::from("15 bit"),
+                input: bits(100, 15)(),
+            },
+            Test {
+                name: String::from("20 bit"),
+                input: bits(100, 20)(),
+            },
+            Test {
+                name: String::from("30 bit"),
+                input: bits(100, 30)(),
+            },
+            Test {
+                name: String::from("60 bit"),
+                input: bits(100, 60)(),
+            },
+            Test {
+                name: String::from("240 ones"),
+                input: ones(240)(),
+            },
+        ];
 
         for test in tests {
             let mut encoded = vec![];

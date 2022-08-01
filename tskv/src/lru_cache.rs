@@ -17,7 +17,14 @@ struct LRUList<T> {
 /// This is likely unstable; more investigation is needed into correct behavior!
 impl<T> LRUList<T> {
     fn new() -> LRUList<T> {
-        LRUList { head: LRUNode { data: None, next: None, prev: None }, count: 0 }
+        LRUList {
+            head: LRUNode {
+                data: None,
+                next: None,
+                prev: None,
+            },
+            count: 0,
+        }
     }
 
     /// Inserts new element at front (least recently used element)
@@ -25,9 +32,11 @@ impl<T> LRUList<T> {
         self.count += 1;
         // Not first element
         if self.head.next.is_some() {
-            let mut new = Box::new(LRUNode { data: Some(elem),
-                                             next: None,
-                                             prev: Some(&mut self.head as *mut LRUNode<T>) });
+            let mut new = Box::new(LRUNode {
+                data: Some(elem),
+                next: None,
+                prev: Some(&mut self.head as *mut LRUNode<T>),
+            });
             let newp = new.as_mut() as *mut LRUNode<T>;
 
             // Set up the node after the new one
@@ -39,9 +48,11 @@ impl<T> LRUList<T> {
             newp
         } else {
             // First node; the only node right now is an empty head node
-            let mut new = Box::new(LRUNode { data: Some(elem),
-                                             next: None,
-                                             prev: Some(&mut self.head as *mut LRUNode<T>) });
+            let mut new = Box::new(LRUNode {
+                data: Some(elem),
+                next: None,
+                prev: Some(&mut self.head as *mut LRUNode<T>),
+            });
             let newp = new.as_mut() as *mut LRUNode<T>;
 
             // Set tail
@@ -128,7 +139,11 @@ impl<T> LRUList<T> {
     }
 
     fn _testing_head_ref(&self) -> Option<&T> {
-        if let Some(ref first) = self.head.next { first.data.as_ref() } else { None }
+        if let Some(ref first) = self.head.next {
+            first.data.as_ref()
+        } else {
+            None
+        }
     }
 }
 
@@ -151,7 +166,12 @@ pub struct Cache<T> {
 impl<T> Cache<T> {
     pub fn new(capacity: usize) -> Cache<T> {
         assert!(capacity > 0);
-        Cache { list: LRUList::new(), map: HashMap::with_capacity(1024), cap: capacity, id: 0 }
+        Cache {
+            list: LRUList::new(),
+            map: HashMap::with_capacity(1024),
+            cap: capacity,
+            id: 0,
+        }
     }
 
     /// Returns an ID that is unique for this cache and that can be used to partition the cache
@@ -196,7 +216,7 @@ impl<T> Cache<T> {
             Some(&(ref elem, ref lru_handle)) => {
                 self.list.reinsert_front(*lru_handle);
                 Some(elem)
-            },
+            }
         }
     }
 
@@ -207,7 +227,7 @@ impl<T> Cache<T> {
             Some((elem, lru_handle)) => {
                 self.list.remove(lru_handle);
                 Some(elem)
-            },
+            }
         }
     }
 }
@@ -348,15 +368,17 @@ mod tests {
     fn test_blockcache_lru_reinsert_2() {
         let mut lru = LRUList::<usize>::new();
 
-        let handles = vec![lru.insert(0),
-                           lru.insert(1),
-                           lru.insert(2),
-                           lru.insert(3),
-                           lru.insert(4),
-                           lru.insert(5),
-                           lru.insert(6),
-                           lru.insert(7),
-                           lru.insert(8),];
+        let handles = vec![
+            lru.insert(0),
+            lru.insert(1),
+            lru.insert(2),
+            lru.insert(3),
+            lru.insert(4),
+            lru.insert(5),
+            lru.insert(6),
+            lru.insert(7),
+            lru.insert(8),
+        ];
 
         for (i, handle) in handles.into_iter().enumerate() {
             lru.reinsert_front(handle);

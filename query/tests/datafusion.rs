@@ -39,27 +39,43 @@ pub struct Table {}
 
 impl Table {
     fn test_columns() -> Vec<Column> {
-        vec![Column { name: "fa".to_string(), data_type: DataType::Int32 },
-             Column { name: "fb".to_string(), data_type: DataType::Utf8 },
-             Column { name: "fc".to_string(), data_type: DataType::Float32 },]
+        vec![
+            Column {
+                name: "fa".to_string(),
+                data_type: DataType::Int32,
+            },
+            Column {
+                name: "fb".to_string(),
+                data_type: DataType::Utf8,
+            },
+            Column {
+                name: "fc".to_string(),
+                data_type: DataType::Float32,
+            },
+        ]
     }
 
     fn test_data() -> Vec<ArrayRef> {
-        vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
-             Arc::new(StringArray::from(vec!["Apple",
-                                             "Blackberry",
-                                             "Coconut",
-                                             "Durian",
-                                             "Elderberry"])),
-             Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0])),]
+        vec![
+            Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
+            Arc::new(StringArray::from(vec![
+                "Apple",
+                "Blackberry",
+                "Coconut",
+                "Durian",
+                "Elderberry",
+            ])),
+            Arc::new(Float32Array::from(vec![1.0, 2.0, 3.0, 4.0, 5.0])),
+        ]
     }
 
     fn test_schema() -> SchemaRef {
-        Arc::new(Schema::new(Table::test_columns().iter()
-                                                  .map(|c| {
-                                                      Field::new(&c.name, c.data_type.clone(), true)
-                                                  })
-                                                  .collect()))
+        Arc::new(Schema::new(
+            Table::test_columns()
+                .iter()
+                .map(|c| Field::new(&c.name, c.data_type.clone(), true))
+                .collect(),
+        ))
     }
 }
 
@@ -81,22 +97,27 @@ impl TableProvider for Table {
     /// The table provider will be usually responsible of grouping
     /// the source data into partitions that can be efficiently
     /// parallelized or distributed.
-    async fn scan(&self,
-                  ctx: &SessionState,
-                  _projection: &Option<Vec<usize>>,
-                  filters: &[Expr],
-                  _limit: Option<usize>)
-                  -> Result<Arc<dyn ExecutionPlan>> {
-        let table_scan_exec =
-            TableScanExec { columns: Table::test_columns(), data: Arc::new(Table::test_data()) };
+    async fn scan(
+        &self,
+        ctx: &SessionState,
+        _projection: &Option<Vec<usize>>,
+        filters: &[Expr],
+        _limit: Option<usize>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let table_scan_exec = TableScanExec {
+            columns: Table::test_columns(),
+            data: Arc::new(Table::test_data()),
+        };
         let schema = Table::test_schema();
         let df_schema = schema.clone().to_dfschema_ref()?;
         // todo: sid, timerange
         if !filters.is_empty() {
-            let predicate = planner::create_physical_expr(&filters[0],
-                                                          df_schema.as_ref(),
-                                                          schema.as_ref(),
-                                                          &ctx.execution_props)?;
+            let predicate = planner::create_physical_expr(
+                &filters[0],
+                df_schema.as_ref(),
+                schema.as_ref(),
+                &ctx.execution_props,
+            )?;
             let filter = FilterExec::try_new(predicate, Arc::new(table_scan_exec))?;
             return Ok(Arc::new(filter));
         } else {
@@ -113,7 +134,11 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(data: Vec<RecordBatch>, schema: SchemaRef) -> Self {
-        Self { data, schema, index: 0 }
+        Self {
+            data,
+            schema,
+            index: 0,
+        }
     }
 }
 
@@ -122,17 +147,18 @@ type ArrowResult<T> = std::result::Result<T, ArrowError>;
 impl Stream for TableScanStream {
     type Item = ArrowResult<RecordBatch>;
 
-    fn poll_next(mut self: std::pin::Pin<&mut Self>,
-                 _cx: &mut std::task::Context<'_>)
-                 -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         std::task::Poll::Ready(if self.index < self.data.len() {
-                                   self.index += 1;
-                                   let batch = &self.data[self.index - 1];
+            self.index += 1;
+            let batch = &self.data[self.index - 1];
 
-                                   Some(Ok(batch.clone()))
-                               } else {
-                                   None
-                               })
+            Some(Ok(batch.clone()))
+        } else {
+            None
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -158,10 +184,12 @@ impl ExecutionPlan for TableScanExec {
     }
 
     fn schema(&self) -> SchemaRef {
-        Arc::new(Schema::new(self.columns
-                                 .iter()
-                                 .map(|c| Field::new(&c.name, c.data_type.clone(), true))
-                                 .collect()))
+        Arc::new(Schema::new(
+            self.columns
+                .iter()
+                .map(|c| Field::new(&c.name, c.data_type.clone(), true))
+                .collect(),
+        ))
     }
 
     fn output_partitioning(&self) -> Partitioning {
@@ -176,26 +204,33 @@ impl ExecutionPlan for TableScanExec {
         vec![]
     }
 
-    fn with_new_children(self: Arc<Self>,
-                         _children: Vec<Arc<dyn ExecutionPlan>>)
-                         -> Result<Arc<dyn ExecutionPlan>> {
-        Err(DataFusionError::Internal(format!("Children cannot be replacd in {:?}", self,)))
+    fn with_new_children(
+        self: Arc<Self>,
+        _children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        Err(DataFusionError::Internal(format!(
+            "Children cannot be replacd in {:?}",
+            self,
+        )))
     }
 
-    fn execute(&self,
-               _partition: usize,
-               _context: Arc<TaskContext>)
-               -> Result<SendableRecordBatchStream> {
+    fn execute(
+        &self,
+        _partition: usize,
+        _context: Arc<TaskContext>,
+    ) -> Result<SendableRecordBatchStream> {
         let batch = RecordBatch::try_new(self.schema(), self.data.to_vec())?;
 
         Ok(Box::pin(TableScanStream::new(vec![batch], self.schema())))
     }
 
     fn statistics(&self) -> Statistics {
-        Statistics { num_rows: None,
-                     total_byte_size: None,
-                     column_statistics: None,
-                     is_exact: false }
+        Statistics {
+            num_rows: None,
+            total_byte_size: None,
+            column_statistics: None,
+            is_exact: false,
+        }
     }
 }
 
@@ -226,25 +261,35 @@ impl ExecutionPlan for TableScanPlan {
         vec![]
     }
 
-    fn with_new_children(self: Arc<Self>,
-                         _children: Vec<Arc<dyn ExecutionPlan>>)
-                         -> Result<Arc<dyn ExecutionPlan>> {
-        Err(DataFusionError::Internal(format!("Children cannot be replaced in {:?}", self)))
+    fn with_new_children(
+        self: Arc<Self>,
+        _children: Vec<Arc<dyn ExecutionPlan>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        Err(DataFusionError::Internal(format!(
+            "Children cannot be replaced in {:?}",
+            self
+        )))
     }
 
-    fn execute(&self,
-               _partition: usize,
-               _context: Arc<TaskContext>)
-               -> Result<SendableRecordBatchStream> {
+    fn execute(
+        &self,
+        _partition: usize,
+        _context: Arc<TaskContext>,
+    ) -> Result<SendableRecordBatchStream> {
         let batch = RecordBatch::try_new(self.schema.clone(), self.data.to_vec())?;
-        Ok(Box::pin(TableScanStream::new(vec![batch], self.schema.clone())))
+        Ok(Box::pin(TableScanStream::new(
+            vec![batch],
+            self.schema.clone(),
+        )))
     }
 
     fn statistics(&self) -> Statistics {
-        Statistics { num_rows: None,
-                     total_byte_size: None,
-                     column_statistics: None,
-                     is_exact: false }
+        Statistics {
+            num_rows: None,
+            total_byte_size: None,
+            column_statistics: None,
+            is_exact: false,
+        }
     }
 }
 
@@ -274,32 +319,40 @@ impl UserDefinedLogicalNode for TableScanNode {
         todo!()
     }
 
-    fn from_template(&self,
-                     _exprs: &[Expr],
-                     _inputs: &[datafusion::logical_plan::LogicalPlan])
-                     -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
+    fn from_template(
+        &self,
+        _exprs: &[Expr],
+        _inputs: &[datafusion::logical_plan::LogicalPlan],
+    ) -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
         todo!()
     }
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         // default (safe) is all columns in the schema.
-        self.schema().fields().iter().map(|f| f.name().clone()).collect()
+        self.schema()
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect()
     }
 }
 
 pub struct TableScanPlanner {}
 
 impl ExtensionPlanner for TableScanPlanner {
-    fn plan_extension(&self,
-                      _planner: &dyn PhysicalPlanner,
-                      node: &dyn UserDefinedLogicalNode,
-                      _logical_inputs: &[&LogicalPlan],
-                      _physical_inputs: &[Arc<dyn ExecutionPlan>],
-                      _session_state: &SessionState)
-                      -> Result<Option<Arc<dyn ExecutionPlan>>> {
+    fn plan_extension(
+        &self,
+        _planner: &dyn PhysicalPlanner,
+        node: &dyn UserDefinedLogicalNode,
+        _logical_inputs: &[&LogicalPlan],
+        _physical_inputs: &[Arc<dyn ExecutionPlan>],
+        _session_state: &SessionState,
+    ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         dbg!(node);
-        Ok(Some(Arc::new(TableScanPlan { schema: Table::test_schema(),
-                                         data: Arc::new(Table::test_data()) })))
+        Ok(Some(Arc::new(TableScanPlan {
+            schema: Table::test_schema(),
+            data: Arc::new(Table::test_data()),
+        })))
     }
 }
 
@@ -320,15 +373,18 @@ async fn test_dataframe() {
     .build()
     .unwrap();
 
-    let dataframe = DataFrame::new(ctx.state, &logical_plan).select_columns(&["fa", "fb"]).unwrap();
+    let dataframe = DataFrame::new(ctx.state, &logical_plan)
+        .select_columns(&["fa", "fb"])
+        .unwrap();
 
     time::timeout(Duration::from_secs(10), async move {
         let result = dataframe.collect().await.unwrap();
         let record_batch = result.get(0).unwrap();
 
         dbg!(record_batch.columns());
-    }).await
-      .unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

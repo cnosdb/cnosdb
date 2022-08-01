@@ -30,9 +30,11 @@ impl Runtime {
     }
 
     pub fn add_task<F>(&self, index: usize, task: F) -> Result<()>
-        where F: Future<Output = ()> + Send + 'static
+    where
+        F: Future<Output = ()> + Send + 'static,
     {
-        self.queues[index].send(ArcTask::new(task, self.queues[index].clone()))
-                          .map_err(|_| Error::Send) //
+        self.queues[index]
+            .send(ArcTask::new(task, self.queues[index].clone()))
+            .map_err(|_| Error::Send) //
     }
 }

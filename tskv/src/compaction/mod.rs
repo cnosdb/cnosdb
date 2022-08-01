@@ -33,9 +33,10 @@ pub struct FlushReq {
 }
 
 impl FlushReq {
-    pub fn new(mems: Vec<(TseriesFamilyId, std::sync::Arc<RwLock<MemCache>>)>,
-               wait_req: u64)
-               -> Self {
+    pub fn new(
+        mems: Vec<(TseriesFamilyId, std::sync::Arc<RwLock<MemCache>>)>,
+        wait_req: u64,
+    ) -> Self {
         Self { mems, wait_req }
     }
 }

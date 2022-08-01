@@ -70,24 +70,38 @@ pub struct FieldInfo {
 
 impl FieldInfo {
     pub fn new(series_id: SeriesId, name: FieldName, value_type: ValueType) -> Self {
-        let mut fi = FieldInfo { id: 0, name, value_type, finished: true };
+        let mut fi = FieldInfo {
+            id: 0,
+            name,
+            value_type,
+            finished: true,
+        };
         fi.finish(series_id);
         fi
     }
 
     pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
-        Ok(Self { id: 0,
-                  name: field.name()
-                             .ok_or(Error::InvalidFlatbufferMessage { err: "".to_string() })?
-                             .to_vec(),
-                  value_type: field.type_().into(),
-                  finished: false })
+        Ok(Self {
+            id: 0,
+            name: field
+                .name()
+                .ok_or(Error::InvalidFlatbufferMessage {
+                    err: "".to_string(),
+                })?
+                .to_vec(),
+            value_type: field.type_().into(),
+            finished: false,
+        })
     }
 
     pub fn check(&self) -> Result<()> {
         if self.name.len() > FIELD_NAME_MAX_LEN {
-            return Err(Error::InvalidField { err: format!("TagKey exceeds the FIELD_NAME_MAX_LEN({})",
-                                                          FIELD_NAME_MAX_LEN) });
+            return Err(Error::InvalidField {
+                err: format!(
+                    "TagKey exceeds the FIELD_NAME_MAX_LEN({})",
+                    FIELD_NAME_MAX_LEN
+                ),
+            });
         }
         Ok(())
     }

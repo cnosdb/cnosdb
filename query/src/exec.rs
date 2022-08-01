@@ -32,7 +32,10 @@ pub enum ExecutorType {
 
 impl Executor {
     pub fn new(num_threads: usize) -> Self {
-        Self::new_with_config(ExecutorConfig { num_threads, query_partitions: num_threads })
+        Self::new_with_config(ExecutorConfig {
+            num_threads,
+            query_partitions: num_threads,
+        })
     }
 
     pub fn new_with_config(config: ExecutorConfig) -> Self {
@@ -40,7 +43,11 @@ impl Executor {
         let runtime_config = RuntimeConfig::new();
         let runtime = Arc::new(RuntimeEnv::new(runtime_config).expect("creating runtime"));
 
-        Self { query_exec, config, runtime }
+        Self {
+            query_exec,
+            config,
+            runtime,
+        }
     }
 
     pub fn new_execution_config(&self, executor_type: ExecutorType) -> IsiphoSessionCfg {
@@ -58,10 +65,11 @@ impl Executor {
             ExecutorType::Query => self.query_exec.clone(),
         }
     }
-    pub fn run(&self,
-               plan: Arc<dyn ExecutionPlan>,
-               context: Arc<TaskContext>)
-               -> Result<ExecutionResults> {
+    pub fn run(
+        &self,
+        plan: Arc<dyn ExecutionPlan>,
+        context: Arc<TaskContext>,
+    ) -> Result<ExecutionResults> {
         self.query_exec.schedule(plan, context)
     }
 }

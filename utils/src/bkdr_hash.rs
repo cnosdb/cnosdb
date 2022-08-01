@@ -9,15 +9,24 @@ pub struct BkdrHasher {
 
 impl BkdrHasher {
     pub fn new() -> Self {
-        Self { prefix: None, number: 0 }
+        Self {
+            prefix: None,
+            number: 0,
+        }
     }
 
     pub fn with_prefix(prefix: u64) -> Self {
-        Self { prefix: Some(prefix), number: 0 }
+        Self {
+            prefix: Some(prefix),
+            number: 0,
+        }
     }
 
     pub fn with_number(number: u64) -> Self {
-        Self { prefix: None, number }
+        Self {
+            prefix: None,
+            number,
+        }
     }
 
     pub fn hash_with(&mut self, bytes: &[u8]) -> &mut Self {

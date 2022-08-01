@@ -57,7 +57,10 @@ pub struct Page {
 
 impl Page {
     pub(super) fn new(size: usize, align: usize) -> Self {
-        Self { dirty: false, bytes: AlignedBuf::new(size, align) }
+        Self {
+            dirty: false,
+            bytes: AlignedBuf::new(size, align),
+        }
     }
 
     pub fn is_dirty(&self) -> bool {

@@ -27,36 +27,37 @@ impl FileCursor {
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let read = self.file.read_at(self.pos, buf)?;
-        self.seek(SeekFrom::Current(read.try_into().unwrap())).unwrap();
+        self.seek(SeekFrom::Current(read.try_into().unwrap()))
+            .unwrap();
         Ok(read)
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let size = self.file.write_at(self.pos, buf)?;
-        self.seek(SeekFrom::Current(buf.len().try_into().unwrap())).unwrap();
+        self.seek(SeekFrom::Current(buf.len().try_into().unwrap()))
+            .unwrap();
         Ok(size)
     }
 
     pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         self.pos = match pos {
-                       SeekFrom::Start(pos) => Some(pos),
-                       SeekFrom::End(delta) => {
-                           if delta >= 0 {
-                               self.len().checked_add(delta as u64)
-                           } else {
-                               self.len().checked_sub(-delta as u64)
-                           }
-                       },
-                       SeekFrom::Current(delta) => {
-                           if delta >= 0 {
-                               self.pos.checked_add(delta as u64)
-                           } else {
-                               self.pos.checked_sub(-delta as u64)
-                           }
-                       },
-                   }.ok_or_else(|| {
-                        Error::new(ErrorKind::InvalidInput, "underflow or overflow during seek")
-                    })?;
+            SeekFrom::Start(pos) => Some(pos),
+            SeekFrom::End(delta) => {
+                if delta >= 0 {
+                    self.len().checked_add(delta as u64)
+                } else {
+                    self.len().checked_sub(-delta as u64)
+                }
+            }
+            SeekFrom::Current(delta) => {
+                if delta >= 0 {
+                    self.pos.checked_add(delta as u64)
+                } else {
+                    self.pos.checked_sub(-delta as u64)
+                }
+            }
+        }
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "underflow or overflow during seek"))?;
         Ok(self.pos)
     }
 }

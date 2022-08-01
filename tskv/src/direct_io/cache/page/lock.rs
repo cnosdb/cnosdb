@@ -98,7 +98,10 @@ impl Lock {
     }
 
     fn cas(&self, old: StateInt, new: StateInt) -> StateInt {
-        match self.0.compare_exchange(old, new, Ordering::SeqCst, Ordering::SeqCst) {
+        match self
+            .0
+            .compare_exchange(old, new, Ordering::SeqCst, Ordering::SeqCst)
+        {
             Ok(old) => old,
             Err(old) => old,
         }

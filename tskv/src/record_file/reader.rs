@@ -33,16 +33,18 @@ impl Reader {
             Err(e) => {
                 error!("failed to open file path : {:?}, in case {:?}", path, e);
                 return None;
-            },
+            }
         };
         let mut buf = Vec::<u8>::new();
         buf.resize(READER_BUF_SIZE, 0);
-        Some(Reader { path: path.to_path_buf(),
-                      file: Mutex::new(file),
-                      buf,
-                      pos: 0,
-                      buf_len: 0,
-                      buf_use: 0 })
+        Some(Reader {
+            path: path.to_path_buf(),
+            file: Mutex::new(file),
+            buf,
+            pos: 0,
+            buf_len: 0,
+            buf_use: 0,
+        })
     }
 
     async fn set_pos(&mut self, pos: usize) -> RecordFileResult<()> {
@@ -50,7 +52,7 @@ impl Reader {
             None => {
                 error!("file len is  illegal");
                 0
-            },
+            }
             Some(v) => v,
         };
         if pos > len {
@@ -64,10 +66,10 @@ impl Reader {
                     Ordering::Greater => {
                         self.buf_use -= size;
                         Ok(())
-                    },
+                    }
                     _ => self.load_buf().await,
                 }
-            },
+            }
             Ordering::Less => {
                 let size = pos - self.pos;
                 self.pos = pos;
@@ -75,10 +77,10 @@ impl Reader {
                     Ordering::Greater => {
                         self.buf_use += size;
                         Ok(())
-                    },
+                    }
                     _ => self.load_buf().await,
                 }
-            },
+            }
             Ordering::Equal => Ok(()),
         }
     }
@@ -91,7 +93,7 @@ impl Reader {
                 Err(_) => {
                     error!("failed data try into");
                     return Err(RecordFileError::InvalidTryInto);
-                },
+                }
             };
             let magic_number = u32::from_le_bytes(data_bytes);
             if magic_number != MAGIC_NUMBER {
@@ -106,11 +108,14 @@ impl Reader {
     // Result<data_type, data_version, data>, if Result is err, it means EOF.
     #[async_recursion]
     pub async fn read_record(&mut self) -> RecordFileResult<Record> {
-        let (origin_pos, buf) = self.read_buf(RECORD_MAGIC_NUMBER_LEN
-                                              + RECORD_DATA_SIZE_LEN
-                                              + RECORD_DATA_VERSION_LEN
-                                              + RECORD_DATA_TYPE_LEN)
-                                    .await?;
+        let (origin_pos, buf) = self
+            .read_buf(
+                RECORD_MAGIC_NUMBER_LEN
+                    + RECORD_DATA_SIZE_LEN
+                    + RECORD_DATA_VERSION_LEN
+                    + RECORD_DATA_TYPE_LEN,
+            )
+            .await?;
 
         let mut p = 0;
         let magic_number =
@@ -135,7 +140,7 @@ impl Reader {
                 self.set_pos(origin_pos + 1).await?;
                 self.find_magic().await?;
                 return self.read_record().await;
-            },
+            }
         };
         let (_, crc32_number_buf) = self.read_buf(RECORD_CRC32_NUMBER_LEN).await?;
         let crc32_number = u32::from_le_bytes(crc32_number_buf.try_into().unwrap());
@@ -150,14 +155,20 @@ impl Reader {
             return self.read_record().await;
         }
 
-        Ok(Record { pos: origin_pos.to_u64().unwrap(), data_type, data_version, data })
+        Ok(Record {
+            pos: origin_pos.to_u64().unwrap(),
+            data_type,
+            data_version,
+            data,
+        })
     }
 
     async fn load_buf(&mut self) -> RecordFileResult<()> {
-        self.buf_len = self.file
-                           .lock()
-                           .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
-                           .map_err(|err| RecordFileError::ReadFile { source: err })?;
+        self.buf_len = self
+            .file
+            .lock()
+            .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
+            .map_err(|err| RecordFileError::ReadFile { source: err })?;
         self.buf_use = 0;
         Ok(())
     }
@@ -184,14 +195,15 @@ impl Reader {
     pub async fn read_one(&self, pos: usize) -> RecordFileResult<Record> {
         let mut head_buf = Vec::<u8>::new();
         let head_len = RECORD_MAGIC_NUMBER_LEN
-                       + RECORD_DATA_SIZE_LEN
-                       + RECORD_DATA_VERSION_LEN
-                       + RECORD_DATA_TYPE_LEN;
+            + RECORD_DATA_SIZE_LEN
+            + RECORD_DATA_VERSION_LEN
+            + RECORD_DATA_TYPE_LEN;
         head_buf.resize(head_len, 0);
-        let len = self.file
-                      .lock()
-                      .read_at(pos.to_u64().unwrap(), &mut head_buf)
-                      .map_err(|err| RecordFileError::ReadFile { source: err })?;
+        let len = self
+            .file
+            .lock()
+            .read_at(pos.to_u64().unwrap(), &mut head_buf)
+            .map_err(|err| RecordFileError::ReadFile { source: err })?;
         if len != head_len {
             return Err(RecordFileError::InvalidPos);
         }
@@ -214,16 +226,24 @@ impl Reader {
 
         let mut data = Vec::<u8>::new();
         data.resize(data_size.to_usize().unwrap(), 0);
-        let read_data_len =
-            self.file
-                .lock()
-                .read_at(pos.to_u64().unwrap() + head_len.to_u64().unwrap(), &mut data)
-                .map_err(|err| RecordFileError::ReadFile { source: err })?;
+        let read_data_len = self
+            .file
+            .lock()
+            .read_at(
+                pos.to_u64().unwrap() + head_len.to_u64().unwrap(),
+                &mut data,
+            )
+            .map_err(|err| RecordFileError::ReadFile { source: err })?;
         if read_data_len != data_size as usize {
             return Err(RecordFileError::InvalidPos);
         }
 
-        Ok(Record { pos: pos.to_u64().unwrap(), data_type, data_version, data })
+        Ok(Record {
+            pos: pos.to_u64().unwrap(),
+            data_type,
+            data_version,
+            data,
+        })
     }
 }
 
@@ -238,7 +258,9 @@ async fn test_reader() {
     let mut r = Reader::from("/tmp/test.log_file");
 
     while let Ok(record) = r.read_record().await {
-        println!("{}, {}, {}, {:?}",
-                 record.pos, record.data_type, record.data_version, record.data);
+        println!(
+            "{}, {}, {}, {:?}",
+            record.pos, record.data_type, record.data_version, record.data
+        );
     }
 }

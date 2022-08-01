@@ -11,7 +11,7 @@ use super::simple8b;
 enum Encoding {
     Uncompressed = 0,
     Simple8b = 1,
-    Rle      = 2,
+    Rle = 2,
 }
 
 /// encode encodes a vector of signed integers into a slice of bytes.
@@ -156,7 +156,7 @@ pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send
     match encoding {
         encoding if encoding == Encoding::Uncompressed as u8 => {
             decode_uncompressed(&src[1..], dst) // first byte not used
-        },
+        }
         encoding if encoding == Encoding::Rle as u8 => decode_rle(src, dst),
         encoding if encoding == Encoding::Simple8b as u8 => decode_simple8b(src, dst),
         _ => Err(From::from("invalid block encoding")),
@@ -292,21 +292,40 @@ mod tests {
             input: Vec<i64>,
         }
 
-        let tests = vec![Test { name: String::from("no delta positive"), input: vec![123; 8] },
-                         Test { name: String::from("no delta negative"),
-                                input: vec![-2398749823764923; 10000] },
-                         Test { name: String::from("no delta negative"),
-                                input: vec![-345632452354; 1000] },
-                         Test { name: String::from("delta positive 1"),
-                                input: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
-                         Test { name: String::from("delta positive 2000"),
-                                input: vec![100, 2100, 4100, 6100, 8100, 10100, 12100, 14100] },
-                         Test { name: String::from("delta negative"),
-                                input: vec![-350, -200, -50] },
-                         Test { name: String::from("delta mixed"),
-                                input: vec![-35000, -5000, 25000, 55000] },
-                         Test { name: String::from("delta descending"),
-                                input: vec![100, 50, 0, -50, -100, -150] },];
+        let tests = vec![
+            Test {
+                name: String::from("no delta positive"),
+                input: vec![123; 8],
+            },
+            Test {
+                name: String::from("no delta negative"),
+                input: vec![-2398749823764923; 10000],
+            },
+            Test {
+                name: String::from("no delta negative"),
+                input: vec![-345632452354; 1000],
+            },
+            Test {
+                name: String::from("delta positive 1"),
+                input: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            },
+            Test {
+                name: String::from("delta positive 2000"),
+                input: vec![100, 2100, 4100, 6100, 8100, 10100, 12100, 14100],
+            },
+            Test {
+                name: String::from("delta negative"),
+                input: vec![-350, -200, -50],
+            },
+            Test {
+                name: String::from("delta mixed"),
+                input: vec![-35000, -5000, 25000, 55000],
+            },
+            Test {
+                name: String::from("delta descending"),
+                input: vec![100, 50, 0, -50, -100, -150],
+            },
+        ];
 
         for test in tests {
             let mut dst = vec![];
@@ -331,12 +350,20 @@ mod tests {
             input: Vec<i64>,
         }
 
-        let tests =
-            vec![Test { name: String::from("positive"),
-                        input: vec![1, 11, 3124, 123543256, 2398567984273478] },
-                 Test { name: String::from("negative"), input: vec![-109290, -1234, -123, -12] },
-                 Test { name: String::from("mixed"),
-                        input: vec![-109290, -1234, -123, -12, 0, 0, 0, 1234, 44444, 4444444] },];
+        let tests = vec![
+            Test {
+                name: String::from("positive"),
+                input: vec![1, 11, 3124, 123543256, 2398567984273478],
+            },
+            Test {
+                name: String::from("negative"),
+                input: vec![-109290, -1234, -123, -12],
+            },
+            Test {
+                name: String::from("mixed"),
+                input: vec![-109290, -1234, -123, -12, 0, 0, 0, 1234, 44444, 4444444],
+            },
+        ];
 
         for test in tests {
             let mut dst = vec![];

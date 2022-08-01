@@ -23,11 +23,11 @@ pub struct TableSchema {
 
 impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<Field> =
-            self.fields
-                .iter()
-                .map(|(name, schema)| Field::new(name, schema.column_type.into(), true))
-                .collect();
+        let fields: Vec<Field> = self
+            .fields
+            .iter()
+            .map(|(name, schema)| Field::new(name, schema.column_type.into(), true))
+            .collect();
         Arc::new(Schema::new(fields))
     }
 }

@@ -22,9 +22,11 @@ struct InMemSeriesInfo {
 
 impl InMemSeriesInfo {
     fn with_series_info(series_info: &SeriesInfo, pos: usize) -> Self {
-        Self { id: series_info.series_id(),
-               pos,
-               field_infos: series_info.field_infos().iter().map(|f| f.into()).collect() }
+        Self {
+            id: series_info.series_id(),
+            pos,
+            field_infos: series_info.field_infos().iter().map(|f| f.into()).collect(),
+        }
     }
 }
 
@@ -35,7 +37,10 @@ struct InMemFieldInfo {
 
 impl From<&FieldInfo> for InMemFieldInfo {
     fn from(field_info: &FieldInfo) -> Self {
-        Self { id: field_info.field_id(), value_type: field_info.value_type() }
+        Self {
+            id: field_info.field_id(),
+            value_type: field_info.value_type(),
+        }
     }
 }
 
@@ -73,15 +78,18 @@ impl From<u8> for ForwardIndexAction {
 
 impl ForwardIndex {
     pub fn new(path: &String) -> ForwardIndex {
-        ForwardIndex { series_info_set: HashMap::new(),
-                       record_writer: record_file::Writer::new(Path::new(&path)).unwrap(),
-                       record_reader: record_file::Reader::new(Path::new(&path)).unwrap(),
-                       file_path: Path::new(&path).to_path_buf() }
+        ForwardIndex {
+            series_info_set: HashMap::new(),
+            record_writer: record_file::Writer::new(Path::new(&path)).unwrap(),
+            record_reader: record_file::Reader::new(Path::new(&path)).unwrap(),
+            file_path: Path::new(&path).to_path_buf(),
+        }
     }
 
-    pub async fn add_series_info_if_not_exists(&mut self,
-                                               mut series_info: SeriesInfo)
-                                               -> ForwardIndexResult<()> {
+    pub async fn add_series_info_if_not_exists(
+        &mut self,
+        mut series_info: SeriesInfo,
+    ) -> ForwardIndexResult<()> {
         // Generate series id
         series_info.finish();
         match self.series_info_set.entry(series_info.series_id()) {
@@ -108,17 +116,17 @@ impl ForwardIndex {
                     // series_info
                     if !flag {
                         // Read a series_info from the ForwardIndex file.
-                        let record =
-                            self.record_reader
-                                .read_one(match mem_series_info.pos.to_usize() {
-                                              None => {
-                                                  error!("failed convert series info pos to usize");
-                                                  0
-                                              },
-                                              Some(v) => v,
-                                          })
-                                .await
-                                .map_err(|err| ForwardIndexError::ReadFile { source: err })?;
+                        let record = self
+                            .record_reader
+                            .read_one(match mem_series_info.pos.to_usize() {
+                                None => {
+                                    error!("failed convert series info pos to usize");
+                                    0
+                                }
+                                Some(v) => v,
+                            })
+                            .await
+                            .map_err(|err| ForwardIndexError::ReadFile { source: err })?;
                         if record.data_type != ForwardIndexAction::AddSeriesInfo.u8_number() {
                             return Err(ForwardIndexError::Action);
                         }
@@ -129,12 +137,15 @@ impl ForwardIndex {
                         origin_series_info.push_field_info(field_info.clone());
 
                         // Write series_info at the end of ForwardIndex file.
-                        let pos = self.record_writer
-                                      .write_record(VERSION,
-                                                    ForwardIndexAction::AddSeriesInfo.u8_number(),
-                                                    &origin_series_info.encode())
-                                      .await
-                                      .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
+                        let pos = self
+                            .record_writer
+                            .write_record(
+                                VERSION,
+                                ForwardIndexAction::AddSeriesInfo.u8_number(),
+                                &origin_series_info.encode(),
+                            )
+                            .await
+                            .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
                         mem_series_info.pos = pos as usize;
 
                         // Put field_info in memory
@@ -142,18 +153,25 @@ impl ForwardIndex {
                         mem_series_info.field_infos.push(mem_field_info);
                     }
                 }
-            },
+            }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // None series_info here
                 let data = series_info.encode();
                 // Write series_info at the end of ForwardIndex file.
-                let pos =
-                    self.record_writer
-                        .write_record(VERSION, ForwardIndexAction::AddSeriesInfo.u8_number(), &data)
-                        .await
-                        .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
-                entry.insert(InMemSeriesInfo::with_series_info(&series_info, pos as usize));
-            },
+                let pos = self
+                    .record_writer
+                    .write_record(
+                        VERSION,
+                        ForwardIndexAction::AddSeriesInfo.u8_number(),
+                        &data,
+                    )
+                    .await
+                    .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
+                entry.insert(InMemSeriesInfo::with_series_info(
+                    &series_info,
+                    pos as usize,
+                ));
+            }
         }
 
         Ok(())
@@ -174,18 +192,20 @@ impl ForwardIndex {
         match self.series_info_set.entry(series_id) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 self.record_writer
-                    .write_record(VERSION,
-                                  ForwardIndexAction::DelSeriesInfo.u8_number(),
-                                  series_id.to_le_bytes().as_ref())
+                    .write_record(
+                        VERSION,
+                        ForwardIndexAction::DelSeriesInfo.u8_number(),
+                        series_id.to_le_bytes().as_ref(),
+                    )
                     .await
                     .map_err(|err| ForwardIndexError::WriteFile { source: err })?;
                 entry.remove();
                 Ok(())
-            },
+            }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 // TODO Err()?
                 Ok(())
-            },
+            }
         }
     }
 
@@ -208,7 +228,7 @@ impl ForwardIndex {
                 let series_info = SeriesInfo::decode(&record.data);
                 let series_info = InMemSeriesInfo::with_series_info(&series_info, 0);
                 self.series_info_set.insert(series_info.id, series_info);
-            },
+            }
 
             ForwardIndexAction::DelSeriesInfo => {
                 if record.data.len() != 8 {
@@ -220,14 +240,14 @@ impl ForwardIndex {
                     Err(_) => {
                         error!("failed handle record in case data try into");
                         return;
-                    },
+                    }
                 };
                 let series_id = u64::from_le_bytes(bytes);
                 self.series_info_set.remove(&series_id);
-            },
+            }
             ForwardIndexAction::Unknown => {
                 // TODO warning log
-            },
+            }
         };
     }
 }
@@ -245,6 +265,8 @@ pub struct ForwardIndexConfig {
 
 impl Default for ForwardIndexConfig {
     fn default() -> Self {
-        ForwardIndexConfig { path: GLOBAL_CONFIG.forward_index_path.clone() }
+        ForwardIndexConfig {
+            path: GLOBAL_CONFIG.forward_index_path.clone(),
+        }
     }
 }

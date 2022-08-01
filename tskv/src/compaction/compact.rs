@@ -58,7 +58,11 @@ impl Ord for CompactingBlockMeta {
 
 impl CompactingBlockMeta {
     pub fn new(readers_idx: usize, has_tombstone: bool, block_meta: BlockMeta) -> Self {
-        Self { readers_idx, has_tombstone, block_meta }
+        Self {
+            readers_idx,
+            has_tombstone,
+            block_meta,
+        }
     }
 }
 
@@ -67,8 +71,16 @@ impl CompactingBlockMeta {
 /// timestamp from two data blocks, pair from data block with lower
 /// priority will be discarded.
 enum CompactingBlock {
-    DataBlock { priority: usize, field_id: FieldId, data_block: DataBlock },
-    Raw { priority: usize, meta: BlockMeta, raw: Vec<u8> },
+    DataBlock {
+        priority: usize,
+        field_id: FieldId,
+        data_block: DataBlock,
+    },
+    Raw {
+        priority: usize,
+        meta: BlockMeta,
+        raw: Vec<u8>,
+    },
 }
 
 impl CompactingBlock {
@@ -76,15 +88,15 @@ impl CompactingBlock {
     /// into CompactingBlock::DataBlock (for CompactingBlock::Raw)
     fn rebuild_data_blocks(mut source: Vec<Self>) -> Result<Vec<DataBlock>> {
         source.sort_by_key(|k| match k {
-                  CompactingBlock::DataBlock { priority, .. } => *priority,
-                  CompactingBlock::Raw { priority, .. } => *priority,
-              });
+            CompactingBlock::DataBlock { priority, .. } => *priority,
+            CompactingBlock::Raw { priority, .. } => *priority,
+        });
         let mut res: Vec<DataBlock> = Vec::with_capacity(source.len());
         for cb in source.into_iter() {
             match cb {
                 CompactingBlock::DataBlock { data_block, .. } => {
                     res.push(data_block);
-                },
+                }
                 CompactingBlock::Raw { meta, raw, .. } => {
                     let data_block = tsm::decode_data_block(
                         &raw,
@@ -93,7 +105,7 @@ impl CompactingBlock {
                     )
                     .context(error::ReadTsmSnafu)?;
                     res.push(data_block);
-                },
+                }
             }
         }
 
@@ -124,16 +136,18 @@ struct CompactIterator {
 /// To reduce construction code
 impl Default for CompactIterator {
     fn default() -> Self {
-        Self { tsm_readers: Default::default(),
-               tsm_index_iters: Default::default(),
-               tmp_tsm_blks: Default::default(),
-               tmp_tsm_blk_tsm_reader_idx: Default::default(),
-               finished_readers: Default::default(),
-               finished_reader_cnt: Default::default(),
-               curr_fid: Default::default(),
-               last_fid: Default::default(),
-               merged_blocks: Default::default(),
-               max_datablock_values: Default::default() }
+        Self {
+            tsm_readers: Default::default(),
+            tsm_index_iters: Default::default(),
+            tmp_tsm_blks: Default::default(),
+            tmp_tsm_blk_tsm_reader_idx: Default::default(),
+            finished_readers: Default::default(),
+            finished_reader_cnt: Default::default(),
+            curr_fid: Default::default(),
+            last_fid: Default::default(),
+            merged_blocks: Default::default(),
+            max_datablock_values: Default::default(),
+        }
     }
 }
 
@@ -196,9 +210,11 @@ impl CompactIterator {
             for blk_meta in blk_iter.by_ref() {
                 let tsm_has_tombstone =
                     self.tsm_readers[self.tmp_tsm_blk_tsm_reader_idx[i]].has_tombstone();
-                sorted_blk_metas.push(CompactingBlockMeta::new(self.tmp_tsm_blk_tsm_reader_idx[i],
-                                                               tsm_has_tombstone,
-                                                               blk_meta));
+                sorted_blk_metas.push(CompactingBlockMeta::new(
+                    self.tmp_tsm_blk_tsm_reader_idx[i],
+                    tsm_has_tombstone,
+                    blk_meta,
+                ));
             }
         }
 
@@ -235,30 +251,37 @@ impl CompactIterator {
                     buf.resize(cbm.block_meta.size() as usize, 0);
                 }
                 if cbm.has_tombstone {
-                    let data_block =
-                        self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
-                                                         .context(error::ReadTsmSnafu)?;
-                    merging_blks.push(CompactingBlock::DataBlock { priority: cbm.readers_idx
-                                                                             + 1,
-                                                                   field_id,
-                                                                   data_block });
+                    let data_block = self.tsm_readers[cbm.readers_idx]
+                        .get_data_block(&cbm.block_meta)
+                        .context(error::ReadTsmSnafu)?;
+                    merging_blks.push(CompactingBlock::DataBlock {
+                        priority: cbm.readers_idx + 1,
+                        field_id,
+                        data_block,
+                    });
                 } else {
-                    let size = self.tsm_readers[cbm.readers_idx].get_raw_data(&cbm.block_meta,
-                                                                              &mut buf)
-                                                                .context(error::ReadTsmSnafu)?;
-                    merging_blks.push(CompactingBlock::Raw { priority: cbm.readers_idx + 1,
-                                                             meta: cbm.block_meta,
-                                                             raw: buf[..size].to_vec() });
+                    let size = self.tsm_readers[cbm.readers_idx]
+                        .get_raw_data(&cbm.block_meta, &mut buf)
+                        .context(error::ReadTsmSnafu)?;
+                    merging_blks.push(CompactingBlock::Raw {
+                        priority: cbm.readers_idx + 1,
+                        meta: cbm.block_meta,
+                        raw: buf[..size].to_vec(),
+                    });
                 }
-            } else if overlaps_tuples(merged_blk_time_range,
-                                      (cbm.block_meta.min_ts(), cbm.block_meta.max_ts()))
-            {
+            } else if overlaps_tuples(
+                merged_blk_time_range,
+                (cbm.block_meta.min_ts(), cbm.block_meta.max_ts()),
+            ) {
                 // 2.1
-                let data_block = self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
-                                                                  .context(error::ReadTsmSnafu)?;
-                merging_blks.push(CompactingBlock::DataBlock { priority: cbm.readers_idx + 1,
-                                                               field_id,
-                                                               data_block });
+                let data_block = self.tsm_readers[cbm.readers_idx]
+                    .get_data_block(&cbm.block_meta)
+                    .context(error::ReadTsmSnafu)?;
+                merging_blks.push(CompactingBlock::DataBlock {
+                    priority: cbm.readers_idx + 1,
+                    field_id,
+                    data_block,
+                });
 
                 merged_blk_time_range.0 = merged_blk_time_range.0.min(cbm.block_meta.min_ts());
                 merged_blk_time_range.1 = merged_blk_time_range.0.max(cbm.block_meta.max_ts());
@@ -281,15 +304,18 @@ impl CompactIterator {
 
                         for (i, data_block) in merged_data_blks.into_iter().enumerate() {
                             if data_block.len() < self.max_datablock_values as usize {
-                                merging_blks.push(CompactingBlock::DataBlock { priority: 0,
-                                                                               field_id,
-                                                                               data_block });
+                                merging_blks.push(CompactingBlock::DataBlock {
+                                    priority: 0,
+                                    field_id,
+                                    data_block,
+                                });
                                 break;
                             }
-                            self.merged_blocks
-                                .push_back(CompactingBlock::DataBlock { priority: 0,
-                                                                        field_id,
-                                                                        data_block });
+                            self.merged_blocks.push_back(CompactingBlock::DataBlock {
+                                priority: 0,
+                                field_id,
+                                data_block,
+                            });
                         }
                     }
 
@@ -304,33 +330,34 @@ impl CompactIterator {
                         merged_blk_time_range.1 =
                             merged_blk_time_range.0.max(cbm.block_meta.max_ts());
                         if cbm.has_tombstone {
-                            let data_block =
-                                self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
-                                                                 .context(error::ReadTsmSnafu)?;
-                            merging_blks.push(CompactingBlock::DataBlock { priority:
-                                                                           cbm.readers_idx
-                                                                           + 1,
-                                                                       field_id,
-                                                                       data_block });
+                            let data_block = self.tsm_readers[cbm.readers_idx]
+                                .get_data_block(&cbm.block_meta)
+                                .context(error::ReadTsmSnafu)?;
+                            merging_blks.push(CompactingBlock::DataBlock {
+                                priority: cbm.readers_idx + 1,
+                                field_id,
+                                data_block,
+                            });
                         } else {
-                            let size =
-                                self.tsm_readers[cbm.readers_idx].get_raw_data(&cbm.block_meta,
-                                                                               &mut buf)
-                                                                 .context(error::ReadTsmSnafu)?;
-                            merging_blks.push(CompactingBlock::Raw { priority: cbm.readers_idx
-                                                                               + 1,
-                                                                     meta: cbm.block_meta,
-                                                                     raw: buf[..size].to_vec() });
+                            let size = self.tsm_readers[cbm.readers_idx]
+                                .get_raw_data(&cbm.block_meta, &mut buf)
+                                .context(error::ReadTsmSnafu)?;
+                            merging_blks.push(CompactingBlock::Raw {
+                                priority: cbm.readers_idx + 1,
+                                meta: cbm.block_meta,
+                                raw: buf[..size].to_vec(),
+                            });
                         }
                     } else {
                         // cbm.block_meta.count is less than max_datablock_values
-                        let data_block =
-                            self.tsm_readers[cbm.readers_idx].get_data_block(&cbm.block_meta)
-                                                             .context(error::ReadTsmSnafu)?;
-                        merging_blks.push(CompactingBlock::DataBlock { priority: cbm.readers_idx
-                                                                                 + 1,
-                                                                       field_id,
-                                                                       data_block });
+                        let data_block = self.tsm_readers[cbm.readers_idx]
+                            .get_data_block(&cbm.block_meta)
+                            .context(error::ReadTsmSnafu)?;
+                        merging_blks.push(CompactingBlock::DataBlock {
+                            priority: cbm.readers_idx + 1,
+                            field_id,
+                            data_block,
+                        });
                     }
                 }
             }
@@ -342,8 +369,11 @@ impl CompactIterator {
                 DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
             for (i, data_block) in merged_data_blks.into_iter().enumerate() {
-                self.merged_blocks
-                    .push_back(CompactingBlock::DataBlock { priority: 0, field_id, data_block });
+                self.merged_blocks.push_back(CompactingBlock::DataBlock {
+                    priority: 0,
+                    field_id,
+                    data_block,
+                });
             }
         }
 
@@ -364,7 +394,10 @@ impl Iterator for CompactIterator {
             // For each tsm-file, get next index reader for current iteration field id
             self.next_field_id();
 
-            info!("selected blocks count: {} in iteration", self.tmp_tsm_blks.len());
+            info!(
+                "selected blocks count: {} in iteration",
+                self.tmp_tsm_blks.len()
+            );
             if self.tmp_tsm_blks.is_empty() {
                 info!("iteration field_id {:?} is finished", self.curr_fid);
                 self.curr_fid = None;
@@ -393,9 +426,10 @@ pub fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
     r1.0 <= r2.1 && r1.1 >= r2.0
 }
 
-pub fn run_compaction_job(request: CompactReq,
-                          kernel: Arc<GlobalContext>)
-                          -> Result<Vec<VersionEdit>> {
+pub fn run_compaction_job(
+    request: CompactReq,
+    kernel: Arc<GlobalContext>,
+) -> Result<Vec<VersionEdit>> {
     let version = request.version;
 
     if version.levels_info().is_empty() {
@@ -432,7 +466,9 @@ pub fn run_compaction_job(request: CompactReq,
     }
     if tsf_opt.is_none() {
         error!("Cannot get tseries_fam_opt");
-        return Err(Error::Compact { reason: "TseriesFamOpt is none".to_string() });
+        return Err(Error::Compact {
+            reason: "TseriesFamOpt is none".to_string(),
+        });
     }
     if tsm_index_iters.is_empty() {
         // Nothing to compact
@@ -440,21 +476,27 @@ pub fn run_compaction_job(request: CompactReq,
     }
 
     let tsm_readers_cnt = tsm_readers.len();
-    let iter = CompactIterator { tsm_readers,
-                                 tsm_index_iters,
-                                 finished_readers: vec![false; tsm_readers_cnt],
-                                 max_datablock_values: max_data_block_size,
-                                 ..Default::default() };
-    let tsm_dir = tsf_opt.expect("been checked").tsm_dir(tsf_id.expect("been checked"));
+    let iter = CompactIterator {
+        tsm_readers,
+        tsm_index_iters,
+        finished_readers: vec![false; tsm_readers_cnt],
+        max_datablock_values: max_data_block_size,
+        ..Default::default()
+    };
+    let tsm_dir = tsf_opt
+        .expect("been checked")
+        .tsm_dir(tsf_id.expect("been checked"));
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edits: Vec<VersionEdit> = Vec::new();
     for next_blk in iter {
         if let Ok(blk) = next_blk {
             info!("===============================");
             let write_ret = match blk {
-                CompactingBlock::DataBlock { field_id: fid, data_block: b, .. } => {
-                    tsm_writer.write_block(fid, &b)
-                },
+                CompactingBlock::DataBlock {
+                    field_id: fid,
+                    data_block: b,
+                    ..
+                } => tsm_writer.write_block(fid, &b),
                 CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
             };
             if let Err(e) = write_ret {
@@ -462,28 +504,32 @@ pub fn run_compaction_job(request: CompactReq,
                     tsm::WriteTsmError::IO { source } => {
                         // TODO handle this
                         error!("IO error when write tsm");
-                    },
+                    }
                     tsm::WriteTsmError::Encode { source } => {
                         // TODO handle this
                         error!("Encoding error when write tsm");
-                    },
+                    }
                     tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                         tsm_writer.write_index().context(error::WriteTsmSnafu)?;
                         tsm_writer.flush().context(error::WriteTsmSnafu)?;
-                        let cm = new_compact_meta(tsm_writer.sequence(),
-                                                  tsm_writer.size(),
-                                                  request.out_level);
+                        let cm = new_compact_meta(
+                            tsm_writer.sequence(),
+                            tsm_writer.size(),
+                            request.out_level,
+                        );
                         let mut ve = VersionEdit::new();
-                        ve.add_file(request.out_level,
-                                    request.tsf_id,
-                                    tsm_writer.sequence(),
-                                    0,
-                                    version.max_level_ts,
-                                    cm);
+                        ve.add_file(
+                            request.out_level,
+                            request.tsf_id,
+                            tsm_writer.sequence(),
+                            0,
+                            version.max_level_ts,
+                            cm,
+                        );
                         version_edits.push(ve);
                         tsm_writer =
                             tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
-                    },
+                    }
                 }
             }
         }
@@ -493,12 +539,14 @@ pub fn run_compaction_job(request: CompactReq,
     tsm_writer.flush().context(error::WriteTsmSnafu)?;
     let cm = new_compact_meta(tsm_writer.sequence(), tsm_writer.size(), request.out_level);
     let mut ve = VersionEdit::new();
-    ve.add_file(request.out_level,
-                request.tsf_id,
-                tsm_writer.sequence(),
-                0,
-                version.max_level_ts,
-                cm);
+    ve.add_file(
+        request.out_level,
+        request.tsf_id,
+        tsm_writer.sequence(),
+        0,
+        version.max_level_ts,
+        cm,
+    );
     for file in request.files.1 {
         ve.del_file(request.files.0, file.file_id(), file.is_delta());
     }
@@ -545,9 +593,10 @@ mod test {
         tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone},
     };
 
-    fn write_data_blocks_to_column_file(dir: impl AsRef<Path>,
-                                        data: Vec<HashMap<FieldId, Vec<DataBlock>>>)
-                                        -> (u64, Vec<Arc<ColumnFile>>) {
+    fn write_data_blocks_to_column_file(
+        dir: impl AsRef<Path>,
+        data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
+    ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -563,16 +612,19 @@ mod test {
             }
             writer.write_index().unwrap();
             writer.flush().unwrap();
-            cfs.push(Arc::new(ColumnFile::new(file_seq,
-                                              TimeRange::new(writer.min_ts(), writer.max_ts()),
-                                              writer.size(),
-                                              false)));
+            cfs.push(Arc::new(ColumnFile::new(
+                file_seq,
+                TimeRange::new(writer.min_ts(), writer.max_ts()),
+                writer.size(),
+                false,
+            )));
         }
         (file_seq + 1, cfs)
     }
 
-    fn read_data_block_from_column_file(path: impl AsRef<Path>)
-                                        -> HashMap<FieldId, Vec<DataBlock>> {
+    fn read_data_block_from_column_file(
+        path: impl AsRef<Path>,
+    ) -> HashMap<FieldId, Vec<DataBlock>> {
         let tsm_reader = TsmReader::open(path).unwrap();
         let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in tsm_reader.index_iterator() {
@@ -606,22 +658,40 @@ mod test {
     }
 
     fn get_tsf_opt(tsm_dir: &str) -> Arc<TseriesFamOpt> {
-        Arc::new(TseriesFamOpt { base_file_size: 16777216,
-                                 max_compact_size: 2147483648,
-                                 tsm_dir: tsm_dir.to_string(),
-                                 ..Default::default() })
+        Arc::new(TseriesFamOpt {
+            base_file_size: 16777216,
+            max_compact_size: 2147483648,
+            tsm_dir: tsm_dir.to_string(),
+            ..Default::default()
+        })
     }
 
-    fn prepare_compact_req_and_kernel(tsf_opt: Arc<TseriesFamOpt>,
-                                      next_file_id: u64,
-                                      files: Vec<Arc<ColumnFile>>)
-                                      -> (CompactReq, Arc<GlobalContext>) {
+    fn prepare_compact_req_and_kernel(
+        tsf_opt: Arc<TseriesFamOpt>,
+        next_file_id: u64,
+        files: Vec<Arc<ColumnFile>>,
+    ) -> (CompactReq, Arc<GlobalContext>) {
         let mut lv1_info = LevelInfo::init(1);
         lv1_info.tsf_opt = tsf_opt;
-        let level_infos =
-            vec![lv1_info, LevelInfo::init(2), LevelInfo::init(3), LevelInfo::init(4)];
-        let version = Arc::new(Version::new(1, 1, "version_1".to_string(), level_infos, 1000));
-        let compact_req = CompactReq { files: (1, files), version, tsf_id: 1, out_level: 2 };
+        let level_infos = vec![
+            lv1_info,
+            LevelInfo::init(2),
+            LevelInfo::init(3),
+            LevelInfo::init(4),
+        ];
+        let version = Arc::new(Version::new(
+            1,
+            1,
+            "version_1".to_string(),
+            level_infos,
+            1000,
+        ));
+        let compact_req = CompactReq {
+            files: (1, files),
+            version,
+            tsf_id: 1,
+            out_level: 2,
+        };
         let kernel = Arc::new(GlobalContext::new());
         kernel.set_file_id(next_file_id);
 
@@ -760,8 +830,11 @@ mod test {
                         val_vec.push(1_u64);
                     }
                 }
-                DataBlock::U64 { ts: ts_vec, val: val_vec }
-            },
+                DataBlock::U64 {
+                    ts: ts_vec,
+                    val: val_vec,
+                }
+            }
             ValueType::Integer => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
                 let mut val_vec: Vec<i64> = Vec::with_capacity(1000);
@@ -771,8 +844,11 @@ mod test {
                         val_vec.push(1_i64);
                     }
                 }
-                DataBlock::I64 { ts: ts_vec, val: val_vec }
-            },
+                DataBlock::I64 {
+                    ts: ts_vec,
+                    val: val_vec,
+                }
+            }
             ValueType::String => {
                 let word = b"1".to_vec();
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
@@ -783,8 +859,11 @@ mod test {
                         val_vec.push(word.clone());
                     }
                 }
-                DataBlock::Str { ts: ts_vec, val: val_vec }
-            },
+                DataBlock::Str {
+                    ts: ts_vec,
+                    val: val_vec,
+                }
+            }
             ValueType::Float => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
                 let mut val_vec: Vec<f64> = Vec::with_capacity(10000);
@@ -794,8 +873,11 @@ mod test {
                         val_vec.push(1.0);
                     }
                 }
-                DataBlock::F64 { ts: ts_vec, val: val_vec }
-            },
+                DataBlock::F64 {
+                    ts: ts_vec,
+                    val: val_vec,
+                }
+            }
             ValueType::Boolean => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
                 let mut val_vec: Vec<bool> = Vec::with_capacity(10000);
@@ -805,11 +887,14 @@ mod test {
                         val_vec.push(true);
                     }
                 }
-                DataBlock::Bool { ts: ts_vec, val: val_vec }
-            },
+                DataBlock::Bool {
+                    ts: ts_vec,
+                    val: val_vec,
+                }
+            }
             ValueType::Unknown => {
                 panic!("value type is Unknown")
-            },
+            }
         }
     }
 
@@ -909,16 +994,18 @@ mod test {
         for (tsm_sequence, args) in data_desc.iter() {
             let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
             for arg in args.iter() {
-                tsm_writer.write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
-                          .unwrap();
+                tsm_writer
+                    .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                    .unwrap();
             }
             tsm_writer.write_index().unwrap();
             tsm_writer.flush().unwrap();
-            column_files.push(Arc::new(ColumnFile::new(*tsm_sequence,
-                                                       TimeRange::new(tsm_writer.min_ts(),
-                                                                      tsm_writer.max_ts()),
-                                                       tsm_writer.size(),
-                                                       false)));
+            column_files.push(Arc::new(ColumnFile::new(
+                *tsm_sequence,
+                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
+                tsm_writer.size(),
+                false,
+            )));
         }
 
         let next_file_id = 4_u64;
@@ -1045,8 +1132,9 @@ mod test {
         for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
             let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
             for arg in tsm_desc.iter() {
-                tsm_writer.write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
-                          .unwrap();
+                tsm_writer
+                    .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                    .unwrap();
             }
             tsm_writer.write_index().unwrap();
             tsm_writer.flush().unwrap();
@@ -1058,11 +1146,12 @@ mod test {
             }
 
             tsm_tombstone.flush().unwrap();
-            column_files.push(Arc::new(ColumnFile::new(*tsm_sequence,
-                                                       TimeRange::new(tsm_writer.min_ts(),
-                                                                      tsm_writer.max_ts()),
-                                                       tsm_writer.size(),
-                                                       false)));
+            column_files.push(Arc::new(ColumnFile::new(
+                *tsm_sequence,
+                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
+                tsm_writer.size(),
+                false,
+            )));
         }
 
         let next_file_id = 4_u64;

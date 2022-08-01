@@ -23,19 +23,30 @@ pub const DEFAULT_SCHEMA: &str = "public";
 
 impl IsiphoSessionCfg {
     pub(super) fn new(exec: Arc<Scheduler>, runtime: Arc<RuntimeEnv>) -> Self {
-        let session_config =
-            SessionConfig::new().with_batch_size(SIZE).with_information_schema(true);
+        let session_config = SessionConfig::new()
+            .with_batch_size(SIZE)
+            .with_information_schema(true);
 
-        Self { exec, session_config, runtime, catalog: None }
+        Self {
+            exec,
+            session_config,
+            runtime,
+            catalog: None,
+        }
     }
 
     pub fn with_target_partitions(mut self, target_partitions: usize) -> Self {
-        self.session_config = self.session_config.with_target_partitions(target_partitions);
+        self.session_config = self
+            .session_config
+            .with_target_partitions(target_partitions);
         self
     }
 
     pub fn with_default_catalog(self, catalog: Arc<dyn CatalogProvider>) -> Self {
-        Self { catalog: Some(catalog), ..self }
+        Self {
+            catalog: Some(catalog),
+            ..self
+        }
     }
 
     pub fn build(self) -> IsiphoSessionCtx {
@@ -47,7 +58,10 @@ impl IsiphoSessionCfg {
             inner.register_catalog(DEFAULT_CATALOG, default_catalog);
         }
 
-        IsiphoSessionCtx { inner, exec: Some(self.exec) }
+        IsiphoSessionCtx {
+            inner,
+            exec: Some(self.exec),
+        }
     }
 }
 
@@ -60,8 +74,8 @@ pub struct IsiphoSessionCtx {
 impl fmt::Debug for IsiphoSessionCtx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IsiophoSessionCtx")
-         .field("inner", &"<DataFusion ExecutionContext>")
-         .finish()
+            .field("inner", &"<DataFusion ExecutionContext>")
+            .finish()
     }
 }
 

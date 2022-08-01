@@ -26,7 +26,7 @@ impl ApplicabilityVisitor<'_> {
             Volatility::Stable | Volatility::Volatile => {
                 *self.is_applicable = false;
                 Recursion::Stop(self)
-            },
+            }
         }
     }
 }
@@ -37,7 +37,7 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
             Expr::Column(logical_plan::Column { ref name, .. }) => {
                 *self.is_applicable &= self.col_names.contains(name);
                 Recursion::Stop(self) // leaf node anyway
-            },
+            }
             Expr::Literal(_)
             | Expr::Alias(..)
             | Expr::ScalarVariable(..)
@@ -73,7 +73,7 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
             | Expr::QualifiedWildcard { .. } => {
                 *self.is_applicable = false;
                 Recursion::Stop(self)
-            },
+            }
         };
         Ok(rec)
     }
@@ -86,6 +86,10 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
 /// was performed
 pub fn expr_applicable_for_cols(col_names: &[String], expr: &Expr) -> bool {
     let mut is_applicable = true;
-    expr.accept(ApplicabilityVisitor { col_names, is_applicable: &mut is_applicable }).unwrap();
+    expr.accept(ApplicabilityVisitor {
+        col_names,
+        is_applicable: &mut is_applicable,
+    })
+    .unwrap();
     is_applicable
 }

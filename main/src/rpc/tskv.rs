@@ -43,43 +43,53 @@ impl TskvService for TskvServiceImpl {
 
         let finished_data = fbb.finished_data();
 
-        Ok(Response::new(PingResponse { version: 1, body: finished_data.to_vec() }))
+        Ok(Response::new(PingResponse {
+            version: 1,
+            body: finished_data.to_vec(),
+        }))
     }
 
-    async fn add_series(&self,
-                        _request: Request<AddSeriesRpcRequest>)
-                        -> Result<Response<AddSeriesRpcResponse>, Status> {
+    async fn add_series(
+        &self,
+        _request: Request<AddSeriesRpcRequest>,
+    ) -> Result<Response<AddSeriesRpcResponse>, Status> {
         Err(Status::unimplemented("Not yet implemented"))
     }
 
-    async fn get_series_info(&self,
-                             _request: Request<GetSeriesInfoRpcRequest>)
-                             -> Result<Response<GetSeriesInfoRpcResponse>, Status> {
+    async fn get_series_info(
+        &self,
+        _request: Request<GetSeriesInfoRpcRequest>,
+    ) -> Result<Response<GetSeriesInfoRpcResponse>, Status> {
         Err(Status::unimplemented("Not yet implemented"))
     }
 
     type WriteRowsStream =
         Pin<Box<dyn Stream<Item = Result<WriteRowsRpcResponse, Status>> + Send + Sync + 'static>>;
 
-    async fn write_rows(&self,
-                        request: Request<Streaming<WriteRowsRpcRequest>>)
-                        -> Result<Response<Self::WriteRowsStream>, Status> {
+    async fn write_rows(
+        &self,
+        request: Request<Streaming<WriteRowsRpcRequest>>,
+    ) -> Result<Response<Self::WriteRowsStream>, Status> {
         let mut stream = request.into_inner();
         let (resp_sender, resp_receiver) = mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(_req) => {
-                        resp_sender.send(Ok(WriteRowsRpcResponse { version: 1, rows: vec![] }))
-                                   .await
-                                   .expect("successful");
-                    },
+                        resp_sender
+                            .send(Ok(WriteRowsRpcResponse {
+                                version: 1,
+                                rows: vec![],
+                            }))
+                            .await
+                            .expect("successful");
+                    }
                     Err(status) => {
                         match resp_sender.send(Err(status)).await {
                             Ok(_) => (),
                             Err(_err) => break, // response was droped
                         }
-                    },
+                    }
                 }
             }
             println!("stream ended");
@@ -93,9 +103,10 @@ impl TskvService for TskvServiceImpl {
     type WritePointsStream =
         Pin<Box<dyn Stream<Item = Result<WritePointsRpcResponse, Status>> + Send + Sync + 'static>>;
 
-    async fn write_points(&self,
-                          request: Request<Streaming<WritePointsRpcRequest>>)
-                          -> Result<Response<Self::WritePointsStream>, Status> {
+    async fn write_points(
+        &self,
+        request: Request<Streaming<WritePointsRpcRequest>>,
+    ) -> Result<Response<Self::WritePointsStream>, Status> {
         let mut stream = request.into_inner();
         let (resp_sender, resp_receiver) = mpsc::channel(128);
         let req_sender = self.sender.clone();
@@ -105,8 +116,9 @@ impl TskvService for TskvServiceImpl {
                 Ok(req) => {
                     // 1. send Request to handler
                     let (tx, rx) = oneshot::channel();
-                    let ret = req_sender.send(tskv::Task::WritePoints { req, tx })
-                                        .map_err(|err| tonic::Status::internal(err.to_string()));
+                    let ret = req_sender
+                        .send(tskv::Task::WritePoints { req, tx })
+                        .map_err(|err| tonic::Status::internal(err.to_string()));
 
                     // 2. if something wrong when sending Request
                     if let Err(err) = ret {
@@ -122,13 +134,13 @@ impl TskvService for TskvServiceImpl {
 
                     // 4. send Response out of this Stream
                     resp_sender.send(ret).await.expect("successful");
-                },
+                }
                 Err(status) => {
                     match resp_sender.send(Err(status)).await {
                         Ok(_) => (),
                         Err(_err) => break, // response was droped
                     }
-                },
+                }
             }
         }
         println!("stream ended");

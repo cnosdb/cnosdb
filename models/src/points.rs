@@ -13,12 +13,14 @@ pub struct FieldValue {
 
 impl FieldValue {
     pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
-        Ok(Self { field_id: 0,
-                  value_type: field.type_().into(),
-                  value: match field.value() {
-                      Some(v) => v.to_vec(),
-                      None => Vec::new(),
-                  } })
+        Ok(Self {
+            field_id: 0,
+            value_type: field.type_().into(),
+            value: match field.value() {
+                Some(v) => v.to_vec(),
+                None => Vec::new(),
+            },
+        })
     }
 
     pub fn field_id(&self) -> FieldId {
@@ -42,10 +44,18 @@ impl InMemPoint {
                     fields.push(FieldValue::from_flatbuffers(&f)?);
                 }
                 fields
-            },
-            None => return Err(Error::InvalidFlatbufferMessage { err: "Point fields cannot be empty".to_string() }),
+            }
+            None => {
+                return Err(Error::InvalidFlatbufferMessage {
+                    err: "Point fields cannot be empty".to_string(),
+                })
+            }
         };
-        Ok(Self { series_id: 0, timestamp: point.timestamp(), fields })
+        Ok(Self {
+            series_id: 0,
+            timestamp: point.timestamp(),
+            fields,
+        })
     }
 
     pub fn series_id(&self) -> SeriesId {
@@ -79,12 +89,20 @@ impl From<fb_models::Point<'_>> for InMemPoint {
                 let val_type = f.type_().into();
                 let val = f.value().unwrap().to_vec();
                 let fid = field_info::generate_field_id(&field_name, sid);
-                fields.push(FieldValue { field_id: fid, value_type: val_type, value: val });
+                fields.push(FieldValue {
+                    field_id: fid,
+                    value_type: val_type,
+                    value: val,
+                });
             }
         }
         let ts = p.timestamp();
 
-        Self { series_id: sid, timestamp: ts, fields }
+        Self {
+            series_id: sid,
+            timestamp: ts,
+            fields,
+        }
     }
 }
 
@@ -101,24 +119,37 @@ mod test_points {
         // build tag
         let tag_k = fb.create_vector("tag_k".as_bytes());
         let tag_v = fb.create_vector("tag_v".as_bytes());
-        let tag =
-            models::Tag::create(&mut fb, &models::TagArgs { key: Some(tag_k), value: Some(tag_v) });
+        let tag = models::Tag::create(
+            &mut fb,
+            &models::TagArgs {
+                key: Some(tag_k),
+                value: Some(tag_v),
+            },
+        );
         // build field
         let f_n = fb.create_vector("field_name".as_bytes());
         let f_v = fb.create_vector("field_value".as_bytes());
 
-        let field =
-            models::Field::create(&mut fb,
-                                  &models::FieldArgs { name: Some(f_n),
-                                                       type_:
-                                                           protos::models::FieldType::Integer,
-                                                       value: Some(f_v) });
+        let field = models::Field::create(
+            &mut fb,
+            &models::FieldArgs {
+                name: Some(f_n),
+                type_: protos::models::FieldType::Integer,
+                value: Some(f_v),
+            },
+        );
         // build series_info
         let fields = Some(fb.create_vector(&[field]));
         let tags = Some(fb.create_vector(&[tag]));
         // build point
-        let point =
-            models::Point::create(&mut fb, &models::PointArgs { tags, fields, timestamp: 1 });
+        let point = models::Point::create(
+            &mut fb,
+            &models::PointArgs {
+                tags,
+                fields,
+                timestamp: 1,
+            },
+        );
 
         fb.finish(point, None);
         let buf = fb.finished_data();

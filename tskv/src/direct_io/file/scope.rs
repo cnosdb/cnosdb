@@ -15,16 +15,19 @@ pub struct FileScope {
 }
 
 impl FileScope {
-    pub fn new(cache: &CacheHandle,
-               scope_map: &Arc<ScopeMap>,
-               file: StdFile,
-               id: FileId,
-               len: u64)
-               -> Result<ScopeHandle> {
-        let scope = Self { scope_map: Arc::downgrade(scope_map),
-                           id,
-                           file: Some(Arc::new(file)),
-                           len: len.into() };
+    pub fn new(
+        cache: &CacheHandle,
+        scope_map: &Arc<ScopeMap>,
+        file: StdFile,
+        id: FileId,
+        len: u64,
+    ) -> Result<ScopeHandle> {
+        let scope = Self {
+            scope_map: Arc::downgrade(scope_map),
+            id,
+            file: Some(Arc::new(file)),
+            len: len.into(),
+        };
 
         let scope = cache.new_scope(scope);
 
@@ -41,8 +44,11 @@ impl FileScope {
     pub fn page_span(&self, id: PageId, page_len: usize) -> (u64, usize) {
         let file_len = self.len();
         let pos = Self::page_pos(id, page_len);
-        let len =
-            if pos < file_len { cmp::min(file_len - pos, page_len as u64) as usize } else { 0 };
+        let len = if pos < file_len {
+            cmp::min(file_len - pos, page_len as u64) as usize
+        } else {
+            0
+        };
         (pos, len)
     }
 
@@ -133,12 +139,14 @@ pub fn sync_data(scope: &ScopeHandle, sync: FileSync) -> Result<()> {
 
 const BLOCK_ALIGN: usize = 512;
 
-fn read_all_at<F>(mut pos: u64,
-                  expected_len: usize,
-                  mut buf: &mut [u8],
-                  read_at: F)
-                  -> Result<usize>
-    where F: Fn(u64, &mut [u8]) -> Result<usize>
+fn read_all_at<F>(
+    mut pos: u64,
+    expected_len: usize,
+    mut buf: &mut [u8],
+    read_at: F,
+) -> Result<usize>
+where
+    F: Fn(u64, &mut [u8]) -> Result<usize>,
 {
     assert!(expected_len <= buf.len());
     assert_eq!(pos % BLOCK_ALIGN as u64, 0);
@@ -157,8 +165,8 @@ fn read_all_at<F>(mut pos: u64,
                 if n % BLOCK_ALIGN != 0 {
                     break;
                 }
-            },
-            Err(e) if e.kind() == ErrorKind::Interrupted => {},
+            }
+            Err(e) if e.kind() == ErrorKind::Interrupted => {}
             Err(e) => return Err(e),
         }
     }
@@ -166,7 +174,8 @@ fn read_all_at<F>(mut pos: u64,
 }
 
 fn write_all_at<F>(mut pos: u64, mut buf: &[u8], write_at: F) -> Result<()>
-    where F: Fn(u64, &[u8]) -> Result<usize>
+where
+    F: Fn(u64, &[u8]) -> Result<usize>,
 {
     assert_eq!(pos % BLOCK_ALIGN as u64, 0);
     assert_eq!(buf.len() % BLOCK_ALIGN, 0);
@@ -178,8 +187,8 @@ fn write_all_at<F>(mut pos: u64, mut buf: &[u8], write_at: F) -> Result<()>
                 let tmp = buf;
                 buf = &tmp[n..];
                 pos = pos.checked_add(n as u64).unwrap();
-            },
-            Err(e) if e.kind() == ErrorKind::Interrupted => {},
+            }
+            Err(e) if e.kind() == ErrorKind::Interrupted => {}
             Err(e) => return Err(e),
         }
     }

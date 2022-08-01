@@ -35,13 +35,19 @@ pub enum Error {
     Send,
 
     #[snafu(display("fails to receive from channel"))]
-    Receive { source: tokio::sync::oneshot::error::RecvError },
+    Receive {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
 
     #[snafu(display("invalid flatbuffers: {}", source))]
-    InvalidFlatbuffer { source: flatbuffers::InvalidFlatbuffer },
+    InvalidFlatbuffer {
+        source: flatbuffers::InvalidFlatbuffer,
+    },
 
     #[snafu(display("read record file block: {}", source))]
-    LogRecordErr { source: crate::record_file::RecordFileError },
+    LogRecordErr {
+        source: crate::record_file::RecordFileError,
+    },
 
     #[snafu(display("read record file block: {}", source))]
     Encode { source: bincode::Error },
@@ -50,7 +56,9 @@ pub enum Error {
     Decode { source: bincode::Error },
 
     #[snafu(display("Forward Index: : {}", source))]
-    ForwardIndexErr { source: crate::forward_index::ForwardIndexError },
+    ForwardIndexErr {
+        source: crate::forward_index::ForwardIndexError,
+    },
 
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,

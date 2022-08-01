@@ -32,7 +32,10 @@ impl FileId {
         let mut stat = MaybeUninit::<libc::stat>::zeroed();
         check_err(unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) })?;
         let stat = unsafe { stat.assume_init() };
-        let id = Self { dev: stat.st_dev, inode: stat.st_ino };
+        let id = Self {
+            dev: stat.st_dev,
+            inode: stat.st_ino,
+        };
         assert!(stat.st_size >= 0);
         let len = stat.st_size as u64;
         Ok((id, len))
@@ -41,26 +44,38 @@ impl FileId {
 
 pub fn read_at(file: &File, pos: u64, buf: &mut [u8]) -> Result<usize> {
     check_err_size(unsafe {
-        libc::pread(file.as_raw_fd(),
-                    buf.as_mut_ptr() as *mut _,
-                    buf.len() as _,
-                    pos as libc::off_t)
+        libc::pread(
+            file.as_raw_fd(),
+            buf.as_mut_ptr() as *mut _,
+            buf.len() as _,
+            pos as libc::off_t,
+        )
     })
 }
 
 pub fn write_at(file: &File, pos: u64, buf: &[u8]) -> Result<usize> {
     check_err_size(unsafe {
-        libc::pwrite(file.as_raw_fd(),
-                     buf.as_ptr() as *const _,
-                     buf.len() as libc::size_t,
-                     pos as libc::off_t)
+        libc::pwrite(
+            file.as_raw_fd(),
+            buf.as_ptr() as *const _,
+            buf.len() as libc::size_t,
+            pos as libc::off_t,
+        )
     })
 }
 
 pub(super) fn check_err(r: libc::c_int) -> Result<libc::c_int> {
-    if r == -1 { Err(Error::last_os_error()) } else { Ok(r) }
+    if r == -1 {
+        Err(Error::last_os_error())
+    } else {
+        Ok(r)
+    }
 }
 
 fn check_err_size(e: libc::ssize_t) -> Result<usize> {
-    if e == -1_isize { Err(Error::last_os_error()) } else { Ok(e as usize) }
+    if e == -1_isize {
+        Err(Error::last_os_error())
+    } else {
+        Ok(e as usize)
+    }
 }
