@@ -29,7 +29,7 @@ fn big_write(c: &mut Criterion) {
          b.iter(|| {
               let rt = Runtime::new().unwrap();
               let tskv = rt.block_on(get_tskv());
-              for i in 0..50 {
+              for _i in 0..50 {
                   let database = "db".to_string();
                   let mut fbb = flatbuffers::FlatBufferBuilder::new();
                   let points = models_helper::create_big_random_points(&mut fbb, 10);

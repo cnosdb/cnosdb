@@ -1,7 +1,5 @@
 use std::env;
 
-use tskv;
-
 const ARG_PRINT: &str = "print";
 const ARG_TSM: &str = "--tsm";
 

@@ -5,9 +5,8 @@ use datafusion::{
     common::DataFusionError,
     execution::{context::SessionState, runtime_env::RuntimeEnv},
     prelude::{SessionConfig, SessionContext},
+    scheduler::Scheduler,
 };
-use datafusion::scheduler::Scheduler;
-use futures::task::SpawnExt;
 
 pub type Result<T> = result::Result<T, DataFusionError>;
 

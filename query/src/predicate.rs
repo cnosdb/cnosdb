@@ -8,7 +8,6 @@ use datafusion::{
     error::DataFusionError,
     logical_expr::{utils::expr_to_columns, Expr, Operator},
     physical_expr::PhysicalExpr,
-    physical_plan::metrics::Time,
 };
 use logger::info;
 

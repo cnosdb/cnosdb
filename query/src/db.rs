@@ -1,7 +1,6 @@
-use std::{any::Any, sync::Arc};
-use datafusion::arrow::record_batch::RecordBatch;
+use std::sync::Arc;
 
-use datafusion::catalog::{catalog::CatalogProvider, schema::SchemaProvider};
+use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use parking_lot::RwLock;
 
@@ -47,7 +46,7 @@ impl Db {
             .with_default_catalog(Arc::clone(&self.catalog) as _)
             .build()
     }
-    pub async fn run_query(&mut self, query: &str) -> Option<Vec<RecordBatch>>{
+    pub async fn run_query(&mut self, query: &str) -> Option<Vec<RecordBatch>> {
         let ctx = self.new_query_context();
         let task = ctx.inner().task_ctx();
         let frame = ctx.inner().sql(query).await.unwrap();
@@ -66,7 +65,7 @@ mod tests {
     use chrono::Utc;
     use datafusion::{
         arrow::{
-            array::{ArrayRef, Float32Array, Int32Array, PrimitiveArray},
+            array::{ArrayRef, PrimitiveArray},
             datatypes::{
                 ArrowPrimitiveType, DataType, Field, Float64Type, Int32Type, Schema, SchemaRef,
             },
@@ -140,7 +139,7 @@ mod tests {
             let empty = EmptyExec::new(false, self.schema());
             return Ok(Arc::new(empty));
         }
-        fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
+        fn supports_filter_pushdown(&self, _filter: &Expr) -> Result<TableProviderFilterPushDown> {
             Ok(TableProviderFilterPushDown::Exact)
         }
     }

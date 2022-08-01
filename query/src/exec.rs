@@ -1,24 +1,23 @@
-use std::result;
-use std::sync::Arc;
-use datafusion::common::DataFusionError;
-use datafusion::execution::context::TaskContext;
+use std::{result, sync::Arc};
 
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
-use datafusion::physical_plan::ExecutionPlan;
-use datafusion::scheduler::{ExecutionResults, Scheduler};
-
-use crate::{
-    context::{IsiphoSessionCtx, IsiphoSessionCfg},
+use datafusion::{
+    common::DataFusionError,
+    execution::{
+        context::TaskContext,
+        runtime_env::{RuntimeConfig, RuntimeEnv},
+    },
+    physical_plan::ExecutionPlan,
+    scheduler::{ExecutionResults, Scheduler},
 };
-pub type Result<T> = result::Result<T, DataFusionError>;
 
+use crate::context::{IsiphoSessionCfg, IsiphoSessionCtx};
+pub type Result<T> = result::Result<T, DataFusionError>;
 
 #[derive(Debug, Clone)]
 pub struct ExecutorConfig {
     pub num_threads: usize,
     pub query_partitions: usize,
 }
-
 
 pub struct Executor {
     query_exec: Arc<Scheduler>,
@@ -45,7 +44,7 @@ impl Executor {
     }
 
     pub fn new_execution_config(&self, executor_type: ExecutorType) -> IsiphoSessionCfg {
-        let exec = self.executor(executor_type).clone();
+        let exec = self.executor(executor_type);
         IsiphoSessionCfg::new(exec, Arc::clone(&self.runtime))
             .with_target_partitions(self.config.query_partitions)
     }
@@ -59,11 +58,10 @@ impl Executor {
             ExecutorType::Query => self.query_exec.clone(),
         }
     }
-    pub fn run(
-        &self,
-        plan: Arc<dyn ExecutionPlan>,
-        context: Arc<TaskContext>,
-    ) -> Result<ExecutionResults> {
+    pub fn run(&self,
+               plan: Arc<dyn ExecutionPlan>,
+               context: Arc<TaskContext>)
+               -> Result<ExecutionResults> {
         self.query_exec.schedule(plan, context)
     }
 }
