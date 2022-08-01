@@ -537,11 +537,11 @@ mod tests {
             f64::from_bits(0x7ff8000000000001), /* Go representation of
                                                  * signalling NaN */
             45.324,
-            std::f64::NAN,
+            f64::NAN,
             2453.023,
             -1234.235312132,
-            std::f64::INFINITY,
-            std::f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
             9123419329123.1234,
             f64::from_bits(0x7ff0000000000002), // Prometheus stale NaN
             -19292929929292929292.22,

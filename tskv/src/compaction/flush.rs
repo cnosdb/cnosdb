@@ -215,7 +215,7 @@ fn build_block_set(
     ts_min: &mut i64,
 ) -> HashMap<FieldId, DataBlock> {
     let mut block_set = HashMap::new();
-    for (fid, entrys) in field_map {
+    for (fid, entries) in field_map {
         let size = match field_size.get(&fid) {
             None => {
                 error!("failed to get field size");
@@ -224,7 +224,7 @@ fn build_block_set(
             Some(v) => v,
         };
 
-        let entry = match entrys.first() {
+        let entry = match entries.first() {
             None => {
                 error!("failed to get mem entry");
                 continue;
@@ -232,7 +232,7 @@ fn build_block_set(
             Some(v) => v,
         };
         let mut block = DataBlock::new(*size, entry.field_type);
-        for entry in entrys.iter() {
+        for entry in entries.iter() {
             // get tsm ts range
             if entry.ts_max > *ts_max {
                 *ts_max = entry.ts_max;

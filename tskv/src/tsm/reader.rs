@@ -464,7 +464,7 @@ impl TsmReader {
         if let Some(tomb_ref) = &self.tombstone {
             let tomb = tomb_ref.lock();
             // TODO This costs too much
-            tomb.data_block_exlcude_tombstones(block_meta.field_id(), &mut blk);
+            tomb.data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
         }
 
         Ok(blk)
@@ -495,7 +495,7 @@ impl TsmReader {
         if let Some(tombstone) = self.tombstone.borrow() {
             let t = tombstone.lock();
             let tr = TimeRange::from((block_meta.min_ts(), block_meta.max_ts()));
-            return t.get_overlaped_time_ranges(block_meta.field_id(), &tr);
+            return t.get_overlapped_time_ranges(block_meta.field_id(), &tr);
         }
         None
     }

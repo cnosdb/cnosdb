@@ -15,7 +15,7 @@ static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
-// cli exmples is here
+// cli examples is here
 // https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
 #[derive(Debug, clap::Parser)]
 #[clap(name = "cnosdb")]

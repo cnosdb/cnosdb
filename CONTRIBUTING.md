@@ -1,4 +1,3 @@
-
 [English](./CONTRIBUTING_EN.md) | [中文](./CONTRIBUTING.md)
 
 # 贡献指南
@@ -45,7 +44,9 @@ CnosDB是一个由社区驱动的开源项目，对CnosDB的贡献应符合我�
 8. 打开PR开始合并请求
 
 ## Commit规范
+
 > 详细内容请参考：[Commit规范](https://www.conventionalcommits.org/en/v1.0.0/)
+
 ### 格式
 
 > Commit message 包含三个部分：header，body和footer，中间用空行隔开。
@@ -82,8 +83,8 @@ Header只有一行，包含三个字段：`type`（必需），`scope`（可选�
 - meta
 - query
 - docs
-- config 
-- tests 
+- config
+- tests
 - utils
 - \*
 
@@ -110,7 +111,9 @@ Closes #1234,#2345
 
 #### Revert
 
-> 除了 Header、Body 和 Footer 这 3 个部分，Commit Message 还有一种特殊情况：如果当前 commit 还原了先前的 commit，则应以 revert: 开头，后跟还原的 commit 的 Header。而且，在 Body 中必须写成 This reverts commit ，其中 hash 是要还原的 commit 的 SHA 标识。例如：
+> 除了 Header、Body 和 Footer 这 3 个部分，Commit Message 还有一种特殊情况：如果当前 commit 还原了先前的 commit，则应以
+> revert: 开头，后跟还原的 commit 的 Header。而且，在 Body 中必须写成 This reverts commit ，其中 hash 是要还原的 commit 的 SHA
+> 标识。例如：
 
 ```
 revert: feat(core): add 'Host' option

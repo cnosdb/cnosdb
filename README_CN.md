@@ -1,7 +1,7 @@
+<img alt="" src="docs/source/_static/img/cnosdb_logo_white.svg" width="360"/>
 
-<img src="docs/source/_static/img/cnosdb_logo_white.svg" width="360"/>
-
-<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
+<a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge"
+                                                                                src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9"/></a>
 ![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
 
 [English](./README.md) | 简体中文
@@ -43,7 +43,7 @@ CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序�
 
 入群前请查看[入群须知](./docs/guidelines/CnosDBWeChatUserGroupGuidelines.md)
 
-<img src="docs/source/_static/img/u.jpg" width="256"/>
+<img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
 
 ## 社区贡献指南
 

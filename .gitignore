@@ -9,3 +9,11 @@ Cargo.lock
 
 # OS
 .DS_Store
+
+# tmpfile
+trace.log.*
+tskv.log.*
+test_*.log
+_*.tsm
+_*.tombstone
+summary-00*

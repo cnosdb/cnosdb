@@ -134,7 +134,7 @@ mod test_points {
             &mut fb,
             &models::FieldArgs {
                 name: Some(f_n),
-                type_: protos::models::FieldType::Integer,
+                type_: models::FieldType::Integer,
                 value: Some(f_v),
             },
         );

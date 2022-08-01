@@ -39,7 +39,7 @@ impl ExecutionPlan for TskvExec {
         self.proj_schema.clone()
     }
 
-    fn output_partitioning(&self) -> datafusion::physical_plan::Partitioning {
+    fn output_partitioning(&self) -> Partitioning {
         // todo: get partition
         Partitioning::UnknownPartitioning(2)
     }

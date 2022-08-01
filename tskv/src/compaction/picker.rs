@@ -112,15 +112,15 @@ impl LevelCompatContext {
         });
         let base_level = self.base_level;
         if let Some((level, score)) = self.level_scores.first() {
-            if *score < 1.0 {
-                return None;
+            return if *score < 1.0 {
+                None
             } else if *level == 0 {
-                return Some((*level, base_level));
+                Some((*level, base_level))
             } else if *level + 1 == self.max_level {
-                return Some((*level, *level));
+                Some((*level, *level))
             } else {
-                return Some((*level, *level + 1));
-            }
+                Some((*level, *level + 1))
+            };
         }
         None
     }

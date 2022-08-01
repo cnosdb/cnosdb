@@ -32,4 +32,4 @@ pub enum ForwardIndexError {
     SeriesNotExists,
 }
 
-pub type ForwardIndexResult<T> = std::result::Result<T, ForwardIndexError>;
+pub type ForwardIndexResult<T> = Result<T, ForwardIndexError>;

@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, Once};
 
-
 use once_cell::sync::Lazy;
 pub use tracing::{debug, error, info, instrument, trace, warn};
 use tracing_appender::{non_blocking, non_blocking::WorkerGuard, rolling};

@@ -292,13 +292,13 @@ impl Summary {
     }
 }
 
-pub struct SummaryProcesser {
+pub struct SummaryProcessor {
     summary: Box<Summary>,
     cbs: Vec<Sender<Result<()>>>,
     edits: Vec<VersionEdit>,
 }
 
-impl SummaryProcesser {
+impl SummaryProcessor {
     pub fn new(summary: Box<Summary>) -> Self {
         Self {
             summary,

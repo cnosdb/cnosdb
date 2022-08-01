@@ -6,14 +6,14 @@
 
     1. Install rust and rustup following the instruments from this [page](https://www.rust-lang.org/tools/install).
 
-    2. Nightly version of rust is needed cause we use it to format code. To install
-    it:
+    2. Nightly version of rust is needed because we use it to format code. To install
+       it:
 
         ```shell
         rustup default nightly
         ```
 
-        or
+       or
 
         ```
         rustup toolchain install nightly
@@ -54,8 +54,8 @@
         ```
 
     * Fetch it from your package manager
-     On some OS, you can install `FlatBuffers` using its package manager 
-     instead of building it from source, for example:
+      On some OS, you can install `FlatBuffers` using its package manager
+      instead of building it from source, for example:
 
          ```shell
          # Arch Linux

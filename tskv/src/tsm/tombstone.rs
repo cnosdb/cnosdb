@@ -22,7 +22,7 @@ use crate::{
     Error, Result,
 };
 
-const TOMBSTONE_FILE_SUFFI: &str = ".tombstone";
+const TOMBSTONE_FILE_SUFFIX: &str = ".tombstone";
 const TOMBSTONE_MAGIC: u32 = 0x544F4D42;
 
 #[derive(Debug, Clone, Copy)]
@@ -238,7 +238,7 @@ impl TsmTombstone {
 
     /// Returns all tombstone `TimeRange`s that overlaps the given `TimeRange`.
     /// Returns None if there is nothing to return, or `TimeRange`s is empty.
-    pub fn get_overlaped_time_ranges(
+    pub fn get_overlapped_time_ranges(
         &self,
         field_id: FieldId,
         time_range: &TimeRange,
@@ -259,7 +259,7 @@ impl TsmTombstone {
         None
     }
 
-    pub fn data_block_exlcude_tombstones(&self, field_id: FieldId, data_block: &mut DataBlock) {
+    pub fn data_block_exclude_tombstones(&self, field_id: FieldId, data_block: &mut DataBlock) {
         if let Some(tr_tuple) = data_block.time_range() {
             let time_range: &TimeRange = &tr_tuple.into();
             if let Some(time_ranges) = self.tombstones.get(&field_id) {

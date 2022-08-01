@@ -36,7 +36,7 @@ impl Tag {
         let value = tag
             .value()
             .ok_or(Error::InvalidFlatbufferMessage {
-                err: "Tag value cannot be emptyt".to_string(),
+                err: "Tag value cannot be empty".to_string(),
             })?
             .to_vec();
         Ok(Self { key, value })

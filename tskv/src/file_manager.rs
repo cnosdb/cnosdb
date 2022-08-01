@@ -31,7 +31,7 @@ pub enum FileError {
 }
 
 pub struct FileManager {
-    file_system: Arc<direct_io::FileSystem>
+    file_system: Arc<direct_io::FileSystem>,
 }
 
 pub fn get_file_manager() -> &'static FileManager {
@@ -43,7 +43,7 @@ impl FileManager {
     fn new() -> Self {
         let fs_options = direct_io::Options::default();
         Self {
-            file_system: Arc::new(direct_io::FileSystem::new(&fs_options))
+            file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
         }
     }
 
@@ -84,7 +84,6 @@ impl FileManager {
             .sync_data(sync)
             .context(error::SyncFileSnafu)
     }
-
 }
 
 pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
@@ -145,10 +144,7 @@ mod test {
     use trace::info;
 
     use super::FileManager;
-    use crate::{
-        direct_io::{FileSync},
-        file_manager,
-    };
+    use crate::{direct_io::FileSync, file_manager};
 
     #[test]
     fn test_get_instance() {
