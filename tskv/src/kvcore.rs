@@ -28,7 +28,8 @@ use crate::{
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
     memcache::{DataType, MemCache},
     record_file::Reader,
-    summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
+    summary,
+    summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
     tseries_family::{TimeRange, Version},
     tsm::TsmTombstone,
     version_set,
@@ -289,7 +290,7 @@ impl TsKv {
             for point in points.iter() {
                 let p = InMemPoint::from(point);
                 // use sid to dispatch to tsfamily
-                // so if you change the colume name
+                // so if you change the column name
                 // please keep the series id
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
@@ -320,7 +321,7 @@ impl TsKv {
                 match x {
                     WalTask::Write { points, cb } => {
                         // write wal
-                        let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
+                        let ret = wal_manager.write(WalEntryType::Write, &points).await;
                         let send_ret = cb.send(ret);
                         match send_ret {
                             Ok(wal_result) => {}
@@ -367,11 +368,11 @@ impl TsKv {
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) {
         let f = async move {
-            let mut summary_processer = SummaryProcesser::new(Box::new(summary));
+            let mut summary_processor = summary::SummaryProcessor::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
                 debug!("Apply Summary task");
-                summary_processer.batch(x);
-                summary_processer.apply().await;
+                summary_processor.batch(x);
+                summary_processor.apply().await;
             }
         };
         tokio::spawn(f);
@@ -395,7 +396,7 @@ impl TsKv {
                         }
                         warn!("write points completed.");
                     }
-                    _ => panic!("unimplented."),
+                    _ => panic!("unimplemented."),
                 }
             }
         };
@@ -411,4 +412,3 @@ impl TsKv {
         Ok(None)
     }
 }
-

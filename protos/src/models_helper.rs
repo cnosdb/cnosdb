@@ -11,7 +11,7 @@ mod test {
     pub fn create_tags<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         tags: Vec<(&str, &str)>,
-    ) -> WIPOffset<flatbuffers::Vector<'a, ForwardsUOffset<models::Tag<'a>>>> {
+    ) -> WIPOffset<Vector<'a, ForwardsUOffset<Tag<'a>>>> {
         let mut vec = vec![];
         for (k, v) in tags.iter() {
             let k = fbb.create_vector(k.as_bytes());
@@ -26,8 +26,8 @@ mod test {
 
     pub fn create_fields<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-        fields: Vec<(&str, models::FieldType, &[u8])>,
-    ) -> WIPOffset<flatbuffers::Vector<'a, ForwardsUOffset<models::Field<'a>>>> {
+        fields: Vec<(&str, FieldType, &[u8])>,
+    ) -> WIPOffset<Vector<'a, ForwardsUOffset<Field<'a>>>> {
         let mut vec = vec![];
         for (name, ft, val) in fields.iter() {
             let name = fbb.create_vector(name.as_bytes());
@@ -44,9 +44,9 @@ mod test {
     pub fn create_point<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         timestamp: i64,
-        tags: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Tag>>>,
-        fields: WIPOffset<flatbuffers::Vector<ForwardsUOffset<models::Field>>>,
-    ) -> WIPOffset<models::Point<'a>> {
+        tags: WIPOffset<Vector<ForwardsUOffset<Tag>>>,
+        fields: WIPOffset<Vector<ForwardsUOffset<Field>>>,
+    ) -> WIPOffset<Point<'a>> {
         let mut point_builder = PointBuilder::new(fbb);
         point_builder.add_tags(tags);
         point_builder.add_fields(fields);
@@ -81,16 +81,16 @@ mod test {
             let fields = create_fields(
                 fbb,
                 vec![
-                    ("fa", models::FieldType::Integer, fav.as_slice()),
-                    ("fb", models::FieldType::Float, fbv.as_slice()),
+                    ("fa", FieldType::Integer, fav.as_slice()),
+                    ("fb", FieldType::Float, fbv.as_slice()),
                 ],
             );
             points.push(create_point(fbb, timestamp, tags, fields))
         }
         let points = fbb.create_vector(&points);
-        models::Points::create(
+        Points::create(
             fbb,
-            &models::PointsArgs {
+            &PointsArgs {
                 points: Some(points),
             },
         )
@@ -123,16 +123,16 @@ mod test {
             let fields = create_fields(
                 fbb,
                 vec![
-                    ("fa", models::FieldType::Integer, fav.as_slice()),
-                    ("fb", models::FieldType::Float, fbv.as_slice()),
+                    ("fa", FieldType::Integer, fav.as_slice()),
+                    ("fb", FieldType::Float, fbv.as_slice()),
                 ],
             );
             points.push(create_point(fbb, timestamp, tags, fields))
         }
         let points = fbb.create_vector(&points);
-        models::Points::create(
+        Points::create(
             fbb,
-            &models::PointsArgs {
+            &PointsArgs {
                 points: Some(points),
             },
         )
@@ -156,17 +156,17 @@ mod test {
             let fav = rand::random::<i64>().to_be_bytes();
             let fbv = rand::random::<f64>().to_be_bytes();
             for _ in 0..19999 {
-                fields.push(("field_integer", models::FieldType::Integer, fav.as_slice()));
-                fields.push(("field_float", models::FieldType::Float, fbv.as_slice()));
+                fields.push(("field_integer", FieldType::Integer, fav.as_slice()));
+                fields.push(("field_float", FieldType::Float, fbv.as_slice()));
             }
             let fields = create_fields(fbb, fields);
 
             points.push(create_point(fbb, timestamp, tags, fields));
         }
         let points = fbb.create_vector(&points);
-        models::Points::create(
+        Points::create(
             fbb,
-            &models::PointsArgs {
+            &PointsArgs {
                 points: Some(points),
             },
         )

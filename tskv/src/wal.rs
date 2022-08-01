@@ -35,7 +35,7 @@ const BLOCK_HEADER_SIZE: usize = 17;
 pub enum WalTask {
     Write {
         points: Arc<Vec<u8>>,
-        // (seq_no, writen_size)
+        // (seq_no, written_size)
         cb: oneshot::Sender<Result<(u64, usize)>>,
     },
 }
@@ -118,7 +118,7 @@ impl WalWriter {
         let min_sequence: u64;
         let max_sequence: u64;
         cursor.seek(SeekFrom::Start(0)).context(error::IOSnafu)?;
-        let readed = cursor.read(&mut header_buf[..]).context(error::IOSnafu)?;
+        let read = cursor.read(&mut header_buf[..]).context(error::IOSnafu)?;
 
         Ok(header_buf)
     }
@@ -219,11 +219,11 @@ impl WalWriter {
         seq += 1;
 
         // write & fsync succeed
-        let writen_size = (pos - self.size) as usize;
+        let written_size = (pos - self.size) as usize;
         self.size = pos;
         self.max_sequence = seq;
 
-        Ok((seq, writen_size))
+        Ok((seq, written_size))
     }
 
     pub async fn flush(&mut self) -> Result<()> {
@@ -738,7 +738,6 @@ mod test {
         let mut mgr = WalManager::new(wal_config);
 
         for _i in 0..10 {
-
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
 
             let entry = random_wal_entry_block(&mut fbb);

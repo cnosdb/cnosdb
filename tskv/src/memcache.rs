@@ -89,11 +89,11 @@ pub struct MemCache {
     pub flushing: bool,
     // if true,ready be pushed into immemcache
     immutable: bool,
-    // partiton id
+    // partition id
     tf_id: u32,
     // wal seq number
     pub seq_no: u64,
-    // max mem buffer size convert to immcache
+    // max mem buffer size convert to immemcache
     max_buf_size: u64,
     // block <field_id, buffer>
     // field_id contain the field type

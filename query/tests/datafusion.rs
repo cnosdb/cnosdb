@@ -119,9 +119,9 @@ impl TableProvider for Table {
                 &ctx.execution_props,
             )?;
             let filter = FilterExec::try_new(predicate, Arc::new(table_scan_exec))?;
-            return Ok(Arc::new(filter));
+            Ok(Arc::new(filter))
         } else {
-            return Ok(Arc::new(table_scan_exec));
+            Ok(Arc::new(table_scan_exec))
         }
     }
 }
@@ -142,7 +142,7 @@ impl TableScanStream {
     }
 }
 
-type ArrowResult<T> = std::result::Result<T, ArrowError>;
+type ArrowResult<T> = result::Result<T, ArrowError>;
 
 impl Stream for TableScanStream {
     type Item = ArrowResult<RecordBatch>;
@@ -209,7 +209,7 @@ impl ExecutionPlan for TableScanExec {
         _children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Err(DataFusionError::Internal(format!(
-            "Children cannot be replacd in {:?}",
+            "Children cannot be replaced in {:?}",
             self,
         )))
     }
@@ -315,18 +315,6 @@ impl UserDefinedLogicalNode for TableScanNode {
         todo!()
     }
 
-    fn fmt_for_explain(&self, _f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        todo!()
-    }
-
-    fn from_template(
-        &self,
-        _exprs: &[Expr],
-        _inputs: &[datafusion::logical_plan::LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
-        todo!()
-    }
-
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         // default (safe) is all columns in the schema.
         self.schema()
@@ -334,6 +322,18 @@ impl UserDefinedLogicalNode for TableScanNode {
             .iter()
             .map(|f| f.name().clone())
             .collect()
+    }
+
+    fn fmt_for_explain(&self, _f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        todo!()
+    }
+
+    fn from_template(
+        &self,
+        _exprs: &[Expr],
+        _inputs: &[LogicalPlan],
+    ) -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
+        todo!()
     }
 }
 

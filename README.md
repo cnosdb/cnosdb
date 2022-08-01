@@ -1,23 +1,27 @@
-
-<img src="docs/source/_static/img/cnosdb_logo_white.svg" width="360"/>
+<img src="docs/source/_static/img/cnosdb_logo_white.svg" width="360" alt=""/>
 
 <a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge" src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9" /></a>
 ![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
 
 English | [简体中文](./README_CN.md)
 
-CnosDB is An Open Source Distributed Time Series Database with high performance, high compression ratio and high usability.
+CnosDB is An Open Source Distributed Time Series Database with high performance, high compression ratio and high
+usability.
 
-CnosDB Isipho is a original new version of CnosDB which use Rust, [Apache Arrow](https://arrow.apache.org/) and [DataFusion](https://github.com/apache/arrow-datafusion) to build.
-
+CnosDB Isipho is an original new version of CnosDB which use Rust, [Apache Arrow](https://arrow.apache.org/)
+and [DataFusion](https://github.com/apache/arrow-datafusion) to build.
 
 ## Design Objectives of CnosDB Isipho
 
-To design and develop a high performance, high compression ratio, highly available, distributed cloud native time series database, which meets the following objectives.
+To design and develop a high performance, high compression ratio, highly available, distributed cloud native time series
+database, which meets the following objectives.
+
 ### Storage
 
-- Seperate storage and computation; theoretically uncapped support time series expansion; support horizontal/vertical scaling. 
-- Focus performance and cost balance; high performance io, Run-to-Completion scheduling model, support for hierarchical storage using object storage.
+- Separate storage and computation; theoretically uncapped support time series expansion; support horizontal/vertical
+  scaling.
+- Focus performance and cost balance; high performance io, Run-to-Completion scheduling model, support for hierarchical
+  storage using object storage.
 - Lossy compression with reduced precision at the user's option.
 
 ### Query
@@ -28,7 +32,8 @@ To design and develop a high performance, high compression ratio, highly availab
 
 ### Ecology
 
-- Design for multi-tenant-oriented, providing more configuration parameters, able to provide more flexible configuration of resources.
+- Design for multi-tenant-oriented, providing more configuration parameters, able to provide more flexible configuration
+  of resources.
 - CDC, WAL can provide subscription and distribution to other nodes, more flexible deploy and support.
 - Support Ecological compatibility with the K8s ecosystem, reducing shared memory.
 - Integration with other data ecosystems to support import/export of parquet files.
@@ -40,11 +45,12 @@ To design and develop a high performance, high compression ratio, highly availab
 
 ## Join the community
 
-All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR code below and add CC to join the group.
+All developers/users who love time series databases are welcome to participate in the CnosDB User Group. Scan the QR
+code below and add CC to join the group.
 
 Please check [Instructions for joining the group](./docs/guidelines/CnosDBWeChatUserGroupGuidelines.md) beforehand.
 
-<img src="docs/source/_static/img/u.jpg" width="300"/>
+<img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
 
 ## Contributing
 

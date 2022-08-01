@@ -36,4 +36,4 @@ pub enum RecordFileError {
     InvalidTryInto,
 }
 
-pub type RecordFileResult<T> = std::result::Result<T, RecordFileError>;
+pub type RecordFileResult<T> = Result<T, RecordFileError>;

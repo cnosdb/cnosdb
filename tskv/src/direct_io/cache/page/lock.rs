@@ -5,7 +5,7 @@ const UNLOCKED: StateInt = 0;
 const MIN_SHARED: StateInt = 1;
 const MAX_SHARED: StateInt = MIN_EXCLUSIVE - 1;
 const MIN_EXCLUSIVE: StateInt = MAX_EXCLUSIVE / 2 + 1;
-const MAX_EXCLUSIVE: StateInt = StateInt::max_value();
+const MAX_EXCLUSIVE: StateInt = StateInt::MAX;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LockState {

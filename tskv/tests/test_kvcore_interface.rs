@@ -3,18 +3,14 @@ mod tests {
     use std::sync::Arc;
 
     use chrono::Local;
-    
-    
+
     use models::SeriesInfo;
     use protos::{kv_service, models as fb_models, models_helper};
     use serial_test::serial;
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::{
-        error, kv_option,
-        kv_option::{WalConfig}, Task, TimeRange, TsKv,
-    };
+    use tskv::{error, kv_option, kv_option::WalConfig, Task, TimeRange, TsKv};
 
     async fn get_tskv() -> TsKv {
         let opt = kv_option::Options {

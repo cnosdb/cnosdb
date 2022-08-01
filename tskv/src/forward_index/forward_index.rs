@@ -45,7 +45,7 @@ impl From<&FieldInfo> for InMemFieldInfo {
 }
 
 pub struct ForwardIndex {
-    series_info_set: HashMap<models::SeriesId, InMemSeriesInfo>,
+    series_info_set: HashMap<SeriesId, InMemSeriesInfo>,
     record_writer: record_file::Writer,
     record_reader: record_file::Reader,
     file_path: PathBuf,
