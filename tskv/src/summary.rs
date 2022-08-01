@@ -315,8 +315,8 @@ impl Summary {
                             meta.is_delta = file.is_delta();
                             meta.file_size = file.size();
                             meta.level = files.level;
-                            meta.ts_min = file.range().max_ts;
-                            meta.ts_max = file.range().min_ts;
+                            meta.ts_min = file.range().min_ts;
+                            meta.ts_max = file.range().max_ts;
                             meta.tsf_id = files.tsf_id;
                             meta.high_seq = self.ctx.last_seq();
                             edit.add_file(
