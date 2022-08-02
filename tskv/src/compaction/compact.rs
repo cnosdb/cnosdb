@@ -156,9 +156,8 @@ impl CompactIterator {
     fn next_field_id(&mut self) {
         self.tmp_tsm_blks = Vec::with_capacity(self.tsm_index_iters.len());
         self.tmp_tsm_blk_tsm_reader_idx = Vec::with_capacity(self.tsm_index_iters.len());
-        let mut next_tsm_file_idx = 0_usize;
-        for (i, idx) in self.tsm_index_iters.iter_mut().enumerate() {
-            next_tsm_file_idx += 1;
+        for (next_tsm_file_idx, (i, idx)) in self.tsm_index_iters.iter_mut().enumerate().enumerate()
+        {
             if self.finished_readers[i] {
                 info!("file no.{} has been finished, continue.", i);
                 continue;
@@ -179,7 +178,7 @@ impl CompactIterator {
                 let blk_cnt = idx_meta.block_count();
 
                 self.tmp_tsm_blks.push(idx_meta.block_iterator());
-                self.tmp_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx - 1);
+                self.tmp_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx);
                 info!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
                       idx_meta.field_id(),
                       idx_meta.field_type(),
@@ -488,48 +487,45 @@ pub fn run_compaction_job(
         .tsm_dir(tsf_id.expect("been checked"));
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edits: Vec<VersionEdit> = Vec::new();
-    for next_blk in iter {
-        if let Ok(blk) = next_blk {
-            info!("===============================");
-            let write_ret = match blk {
-                CompactingBlock::DataBlock {
-                    field_id: fid,
-                    data_block: b,
-                    ..
-                } => tsm_writer.write_block(fid, &b),
-                CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
-            };
-            if let Err(e) = write_ret {
-                match e {
-                    tsm::WriteTsmError::IO { source } => {
-                        // TODO handle this
-                        error!("IO error when write tsm");
-                    }
-                    tsm::WriteTsmError::Encode { source } => {
-                        // TODO handle this
-                        error!("Encoding error when write tsm");
-                    }
-                    tsm::WriteTsmError::MaxFileSizeExceed { source } => {
-                        tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-                        tsm_writer.flush().context(error::WriteTsmSnafu)?;
-                        let cm = new_compact_meta(
-                            tsm_writer.sequence(),
-                            tsm_writer.size(),
-                            request.out_level,
-                        );
-                        let mut ve = VersionEdit::new();
-                        ve.add_file(
-                            request.out_level,
-                            request.tsf_id,
-                            tsm_writer.sequence(),
-                            0,
-                            version.max_level_ts,
-                            cm,
-                        );
-                        version_edits.push(ve);
-                        tsm_writer =
-                            tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
-                    }
+    for next_blk in iter.flatten() {
+        info!("===============================");
+        let write_ret = match next_blk {
+            CompactingBlock::DataBlock {
+                field_id: fid,
+                data_block: b,
+                ..
+            } => tsm_writer.write_block(fid, &b),
+            CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
+        };
+        if let Err(e) = write_ret {
+            match e {
+                tsm::WriteTsmError::IO { source } => {
+                    // TODO handle this
+                    error!("IO error when write tsm");
+                }
+                tsm::WriteTsmError::Encode { source } => {
+                    // TODO handle this
+                    error!("Encoding error when write tsm");
+                }
+                tsm::WriteTsmError::MaxFileSizeExceed { source } => {
+                    tsm_writer.write_index().context(error::WriteTsmSnafu)?;
+                    tsm_writer.flush().context(error::WriteTsmSnafu)?;
+                    let cm = new_compact_meta(
+                        tsm_writer.sequence(),
+                        tsm_writer.size(),
+                        request.out_level,
+                    );
+                    let mut ve = VersionEdit::new();
+                    ve.add_file(
+                        request.out_level,
+                        request.tsf_id,
+                        tsm_writer.sequence(),
+                        0,
+                        version.max_level_ts,
+                        cm,
+                    );
+                    version_edits.push(ve);
+                    tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                 }
             }
         }

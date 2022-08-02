@@ -263,7 +263,7 @@ impl Summary {
                 info.apply(&meta);
             }
             let mut lvls: Vec<LevelInfo> = levels.into_values().collect();
-            lvls.sort_by(|a,b| a.level.partial_cmp(&b.level).unwrap());
+            lvls.sort_by(|a, b| a.level.partial_cmp(&b.level).unwrap());
             let ver = Version::new(id, max_log, tsf_name, lvls, max_level_ts);
             versions.insert(id, Arc::new(RwLock::new(ver)));
         }
@@ -439,12 +439,12 @@ mod test {
     use tokio::sync::mpsc;
     use tracing::debug;
 
+    use crate::tseries_family::LevelInfo;
     use crate::{
         error, file_manager,
         kv_option::{DBOptions, TseriesFamOpt},
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };
-    use crate::tseries_family::LevelInfo;
 
     #[tokio::test]
     async fn test_summary_recover() {
@@ -632,9 +632,12 @@ mod test {
 
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-        assert_eq!(tsf.version().read().last_seq,1);
-        assert_eq!(tsf.version().read().levels_info[1].tsf_id,10);
-        assert_eq!(tsf.version().read().levels_info[1].files[0].is_delta(), false);
+        assert_eq!(tsf.version().read().last_seq, 1);
+        assert_eq!(tsf.version().read().levels_info[1].tsf_id, 10);
+        assert_eq!(
+            tsf.version().read().levels_info[1].files[0].is_delta(),
+            false
+        );
         assert_eq!(tsf.version().read().levels_info[1].files[0].file_id(), 15);
         assert_eq!(tsf.version().read().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 15);
