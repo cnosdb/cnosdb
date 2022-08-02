@@ -1,6 +1,6 @@
 use models::{FieldInfo, SeriesInfo, Tag, ValueType};
 
-use crate::forward_index::ForwardIndex;
+use crate::index::forward_index::ForwardIndex;
 
 #[tokio::test]
 async fn test_forward_index() {
