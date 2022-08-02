@@ -67,6 +67,12 @@ pub struct VersionEdit {
     pub max_level_ts: i64,
 }
 
+impl Default for VersionEdit {
+    fn default() -> Self {
+        VersionEdit::new()
+    }
+}
+
 impl VersionEdit {
     pub fn new() -> Self {
         Self {
@@ -91,6 +97,7 @@ impl VersionEdit {
     pub fn decode(buf: &[u8]) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn add_file(
         &mut self,
         level: u32,
@@ -408,7 +415,7 @@ impl SummaryProcessor {
         }
     }
 
-    pub fn summary(&self) -> &Box<Summary> {
+    pub fn summary(&self) -> &Summary {
         &self.summary
     }
 }
@@ -634,10 +641,7 @@ mod test {
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
         assert_eq!(tsf.version().read().last_seq, 1);
         assert_eq!(tsf.version().read().levels_info[1].tsf_id, 10);
-        assert_eq!(
-            tsf.version().read().levels_info[1].files[0].is_delta(),
-            false
-        );
+        assert!(!tsf.version().read().levels_info[1].files[0].is_delta());
         assert_eq!(tsf.version().read().levels_info[1].files[0].file_id(), 15);
         assert_eq!(tsf.version().read().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 15);
