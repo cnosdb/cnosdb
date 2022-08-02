@@ -21,7 +21,7 @@ pub fn make_summary_file(path: impl AsRef<Path>, number: u64) -> PathBuf {
 }
 
 pub fn make_summary_file_tmp(path: impl AsRef<Path>) -> PathBuf {
-    let p = format!("summary.tmp");
+    let p = "summary.tmp".to_string();
     path.as_ref().join(p)
 }
 
@@ -92,8 +92,8 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
             message: "tsm file name contains an invalid id".to_string(),
         });
     }
-    let start = file_name.find("_").unwrap_or(0_usize) + 1;
-    let end = file_name.find(".").unwrap_or(file_name.len());
+    let start = file_name.find('_').unwrap_or(0_usize) + 1;
+    let end = file_name.find('.').unwrap_or(file_name.len());
     let file_number = &file_name[start..end];
     file_number
         .parse::<u64>()

@@ -182,7 +182,8 @@ impl TsmTombstone {
 
     fn write_to(writer: &File, pos: u64, tombstone: &Tombstone) -> Result<usize> {
         let mut size = 0_usize;
-        let ret = writer
+
+        writer
             .write_at(pos, &tombstone.field_id.to_be_bytes()[..])
             .and_then(|s| {
                 size += s;
@@ -206,9 +207,7 @@ impl TsmTombstone {
                 // Write fail, recover writer offset
                 writer.set_len(pos);
                 Error::IO { source: e }
-            });
-
-        ret
+            })
     }
 
     pub fn flush(&self) -> Result<()> {
@@ -221,7 +220,7 @@ impl TsmTombstone {
 
     /// Returns all TimeRanges for a FieldId cloned from TsmTombstone.
     pub(crate) fn get_cloned_time_ranges(&self, field_id: FieldId) -> Option<Vec<TimeRange>> {
-        self.tombstones.get(&field_id).map(|f| f.clone())
+        self.tombstones.get(&field_id).cloned()
     }
 
     pub fn overlaps(&self, field_id: FieldId, time_range: &TimeRange) -> bool {

@@ -86,7 +86,7 @@ impl DataBlock {
     }
 
     pub fn time_range(&self) -> Option<(Timestamp, Timestamp)> {
-        if self.len() == 0 {
+        if self.is_empty() {
             return None;
         }
         let end = self.len();
@@ -259,7 +259,7 @@ impl DataBlock {
     /// Merges many `DataBlock`s into one `DataBlock`, sorted by timestamp,
     /// if many (timestamp, value) conflict with the same timestamp, use the last value.
     pub fn merge_blocks(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
-        if blocks.len() == 0 {
+        if blocks.is_empty() {
             return vec![];
         }
         if blocks.len() == 1 {
@@ -299,7 +299,7 @@ impl DataBlock {
                     }
                 }
                 None => {
-                    if blk.len() > 0 {
+                    if !blk.is_empty() {
                         res.push(blk);
                     }
                     return res;
@@ -340,7 +340,7 @@ impl DataBlock {
     /// Remove (ts, val) in this `DataBlock` where ts is greater equal than min_ts
     /// and ts is less equal than the max_ts
     pub fn exclude(&mut self, time_range: &TimeRange) {
-        if self.len() == 0 {
+        if self.is_empty() {
             return;
         }
         let TimeRange { min_ts, max_ts } = *time_range;
@@ -438,7 +438,7 @@ impl Display for DataBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataBlock::U64 { ts, val } => {
-                if ts.len() > 0 {
+                if !ts.is_empty() {
                     write!(
                         f,
                         "U64 {{ len: {}, min_ts: {}, max_ts: {} }}",
@@ -451,7 +451,7 @@ impl Display for DataBlock {
                 }
             }
             DataBlock::I64 { ts, val } => {
-                if ts.len() > 0 {
+                if !ts.is_empty() {
                     write!(
                         f,
                         "I64 {{ len: {}, min_ts: {}, max_ts: {} }}",
@@ -464,7 +464,7 @@ impl Display for DataBlock {
                 }
             }
             DataBlock::Str { ts, val } => {
-                if ts.len() > 0 {
+                if !ts.is_empty() {
                     write!(
                         f,
                         "Str {{ len: {}, min_ts: {}, max_ts: {} }}",
@@ -477,7 +477,7 @@ impl Display for DataBlock {
                 }
             }
             DataBlock::F64 { ts, val } => {
-                if ts.len() > 0 {
+                if !ts.is_empty() {
                     write!(
                         f,
                         "F64 {{ len: {}, min_ts: {}, max_ts: {} }}",
@@ -490,7 +490,7 @@ impl Display for DataBlock {
                 }
             }
             DataBlock::Bool { ts, val } => {
-                if ts.len() > 0 {
+                if !ts.is_empty() {
                     write!(
                         f,
                         "Bool {{ len: {}, min_ts: {}, max_ts: {} }}",
@@ -511,7 +511,7 @@ impl Display for DataBlock {
 }
 
 fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize) {
-    if v.len() == 0 {
+    if v.is_empty() {
         return;
     }
     if min_idx == max_idx {

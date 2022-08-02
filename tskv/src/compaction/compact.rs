@@ -722,7 +722,7 @@ mod test {
         ]);
 
         let dir = "/tmp/test/compaction";
-        let tsf_opt = get_tsf_opt(&dir);
+        let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(0);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
@@ -796,7 +796,7 @@ mod test {
         ]);
 
         let dir = "/tmp/test/compaction/2";
-        let tsf_opt = get_tsf_opt(&dir);
+        let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(0);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
@@ -980,7 +980,7 @@ mod test {
         );
 
         let dir = "/tmp/test/compaction/3";
-        let tsf_opt = get_tsf_opt(&dir);
+        let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(0);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1118,7 +1118,7 @@ mod test {
         );
 
         let dir = "/tmp/test/compaction/4";
-        let tsf_opt = get_tsf_opt(&dir);
+        let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(0);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();

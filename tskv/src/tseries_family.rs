@@ -469,7 +469,7 @@ impl TseriesFamily {
         let mut req_mem = vec![];
         for i in self.delta_immut_cache.iter() {
             let read_i = i.read();
-            if read_i.flushing == true {
+            if read_i.flushing {
                 continue;
             }
             req_mem.push((self.tf_id, i.clone()));
@@ -523,7 +523,7 @@ impl TseriesFamily {
         let mut req_mem = vec![];
         for i in self.immut_cache.iter() {
             let read_i = i.read();
-            if read_i.flushing == true {
+            if read_i.flushing {
                 continue;
             }
             req_mem.push((self.tf_id, i.clone()));
@@ -756,8 +756,7 @@ mod test {
         );
         let file = version.levels_info[1].files[0].clone();
 
-        let mut tombstone =
-            TsmTombstone::open_for_write("dev/db".to_string(), file.file_id).unwrap();
+        let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
         tombstone.add_range(&[0], 0, 0).unwrap();
         tombstone.flush().unwrap();
         tombstone.load().unwrap();
