@@ -89,6 +89,7 @@ mod tests {
         };
 
         tskv.write(request.clone()).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         let shared_write_batch = Arc::new(request.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)

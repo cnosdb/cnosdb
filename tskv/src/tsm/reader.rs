@@ -383,9 +383,9 @@ impl BlockMetaIterator {
         let min_pos = pos;
         self.block_meta_limit = 0;
         while pos < sli.len() {
+            self.block_meta_limit += 1;
             if max_ts < decode_be_i64(&sli[pos + 8..pos + 16]) {
                 // Last data block in time range
-                self.block_meta_limit += 1;
                 return;
             } else {
                 pos += BLOCK_META_SIZE;
