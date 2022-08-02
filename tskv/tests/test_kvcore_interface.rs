@@ -1,6 +1,7 @@
 mod tests {
 
     use std::sync::Arc;
+    use std::time::Duration;
 
     use chrono::Local;
 
@@ -137,6 +138,7 @@ mod tests {
         };
 
         tskv.write(request.clone()).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         let shared_write_batch = Arc::new(request.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
@@ -261,6 +263,7 @@ mod tests {
         };
 
         tskv.write(request).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
     }
 
     #[tokio::test]
