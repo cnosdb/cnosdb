@@ -166,7 +166,7 @@ pub fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) {
             points_cnt += blk.count() as usize;
             idx_points_cnt += blk.count() as usize;
         }
-        if buffer.len() > 0 {
+        if !buffer.is_empty() {
             buffer.truncate(buffer.len() - 1);
         }
         println!("============================================================");
@@ -588,32 +588,32 @@ pub fn decode_data_block(
         ValueType::Float => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            float::decode(&data, &mut val).context(DecodeSnafu)?;
+            float::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::F64 { ts, val })
         }
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            integer::decode(&data, &mut val).context(DecodeSnafu)?;
+            integer::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::I64 { ts, val })
         }
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            boolean::decode(&data, &mut val).context(DecodeSnafu)?;
+            boolean::decode(data, &mut val).context(DecodeSnafu)?;
 
             Ok(DataBlock::Bool { ts, val })
         }
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            string::decode(&data, &mut val).context(DecodeSnafu)?;
+            string::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::Str { ts, val })
         }
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            unsigned::decode(&data, &mut val).context(DecodeSnafu)?;
+            unsigned::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::U64 { ts, val })
         }
         _ => Err(ReadTsmError::Decode {

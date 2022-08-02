@@ -306,7 +306,7 @@ pub fn new_tsm_writer(
 pub fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
     let start = writer.pos();
     writer
-        .write(&TSM_MAGIC.to_be_bytes().as_ref())
+        .write(TSM_MAGIC.to_be_bytes().as_ref())
         .and_then(|_| writer.write(&VERSION.to_be_bytes()[..]))
         .context(IOSnafu)?;
 
@@ -323,7 +323,7 @@ fn write_raw_data_to(
     let mut size = 0_usize;
     let offset = writer.pos();
     writer
-        .write(&block)
+        .write(block)
         .map(|s| {
             size += s;
         })
@@ -351,7 +351,7 @@ fn write_block_to(
     field_id: FieldId,
     block: &DataBlock,
 ) -> WriteTsmResult<usize> {
-    if block.len() == 0 {
+    if block.is_empty() {
         return Ok(0);
     }
 
@@ -413,7 +413,7 @@ fn write_footer_to(
 ) -> WriteTsmResult<usize> {
     let start = writer.pos();
     writer
-        .write(&bloom_filter.bytes())
+        .write(bloom_filter.bytes())
         .and_then(|_| writer.write(&index_offset.to_be_bytes()[..]))
         .context(IOSnafu)?;
 
@@ -473,8 +473,8 @@ mod test {
         let index = IndexReader::open(file.clone()).unwrap();
         let mut data: HashMap<FieldId, DataBlock> = HashMap::new();
         for idx_meta in index.iter() {
-            let mut cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
-            while let Some(blk_ret) = cr.next() {
+            let cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
+            for blk_ret in cr {
                 let blk = blk_ret.unwrap();
                 data.insert(idx_meta.field_id(), blk);
             }
@@ -528,8 +528,8 @@ mod test {
             ts_2.push(i as i64);
             val_2.push(i as i64);
         }
-        let ts = ts_1.iter().chain(ts_2.iter()).map(|d| *d).collect();
-        let val = val_1.iter().chain(val_2.iter()).map(|d| *d).collect();
+        let ts = ts_1.iter().chain(ts_2.iter()).copied().collect();
+        let val = val_1.iter().chain(val_2.iter()).copied().collect();
 
         let dir = Path::new(TEST_PATH).join("1");
         if !file_manager::try_exists(&dir) {

@@ -120,7 +120,7 @@ impl VersionSet {
                 vec![],
                 i64::MIN,
             ))),
-            opt.clone(),
+            opt,
         );
         self.ts_families.insert(tf_id, tf);
         self.ts_families_names.insert(name.clone(), tf_id);
