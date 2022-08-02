@@ -6,7 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_files_dir = project_root_dir.join("proto");
 
     // src/generated/mod.rs
-    let generated_mod_rs_path = project_root_dir.join("src").join("generated").join("mod.rs");
+    let generated_mod_rs_path = project_root_dir
+        .join("src")
+        .join("generated")
+        .join("mod.rs");
     let mut generated_mod_rs_file = fs::File::create(&generated_mod_rs_path)?;
     generated_mod_rs_file.write_all(
         b"mod protobuf_generated;

@@ -1135,10 +1135,8 @@ mod test {
             tsm_writer.write_index().unwrap();
             tsm_writer.flush().unwrap();
             let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence).unwrap();
-            for tomb in tombstone_desc.iter() {
-                if let Some(t) = tomb {
-                    tsm_tombstone.add_range(&[t.0][..], t.1, t.2).unwrap();
-                }
+            for t in tombstone_desc.iter().flatten() {
+                tsm_tombstone.add_range(&[t.0][..], t.1, t.2).unwrap();
             }
 
             tsm_tombstone.flush().unwrap();
