@@ -332,29 +332,29 @@ impl UserDefinedLogicalNode for TableScanNode {
         &self,
         _exprs: &[Expr],
         _inputs: &[LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
+    ) -> Arc<dyn UserDefinedLogicalNode> {
         todo!()
     }
 }
 
-pub struct TableScanPlanner {}
-
-impl ExtensionPlanner for TableScanPlanner {
-    fn plan_extension(
-        &self,
-        _planner: &dyn PhysicalPlanner,
-        node: &dyn UserDefinedLogicalNode,
-        _logical_inputs: &[&LogicalPlan],
-        _physical_inputs: &[Arc<dyn ExecutionPlan>],
-        _session_state: &SessionState,
-    ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
-        dbg!(node);
-        Ok(Some(Arc::new(TableScanPlan {
-            schema: Table::test_schema(),
-            data: Arc::new(Table::test_data()),
-        })))
-    }
-}
+// pub struct TableScanPlanner {}
+//
+// impl ExtensionPlanner for TableScanPlanner {
+//     fn plan_extension(
+//         &self,
+//         _planner: &dyn PhysicalPlanner,
+//         node: &dyn UserDefinedLogicalNode,
+//         _logical_inputs: &[&LogicalPlan],
+//         _physical_inputs: &[Arc<dyn ExecutionPlan>],
+//         _session_state: &SessionState,
+//     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
+//         dbg!(node);
+//         Ok(Some(Arc::new(TableScanPlan {
+//             schema: Table::test_schema(),
+//             data: Arc::new(Table::test_data()),
+//         })))
+//     }
+// }
 
 #[tokio::test]
 async fn test_dataframe() {
