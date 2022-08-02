@@ -15,5 +15,6 @@ trace.log.*
 tskv.log.*
 test_*.log
 _*.tsm
+_*.delta
 _*.tombstone
 summary-00*
