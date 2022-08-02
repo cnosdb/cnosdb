@@ -57,7 +57,7 @@ pub enum Error {
 
     #[snafu(display("Forward Index: : {}", source))]
     ForwardIndexErr {
-        source: crate::forward_index::ForwardIndexError,
+        source: crate::index::ForwardIndexError,
     },
 
     #[snafu(display("error apply edits to summary"))]

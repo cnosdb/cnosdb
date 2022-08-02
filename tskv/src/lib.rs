@@ -10,7 +10,7 @@ mod direct_io;
 pub mod error;
 mod file_manager;
 mod file_utils;
-mod forward_index;
+mod index;
 pub mod kv_option;
 mod kvcore;
 mod lru_cache;

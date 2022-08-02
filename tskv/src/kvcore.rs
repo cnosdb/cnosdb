@@ -24,7 +24,7 @@ use crate::{
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
-    forward_index::ForwardIndex,
+    index::forward_index::ForwardIndex,
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
     memcache::{DataType, MemCache},
     record_file::Reader,

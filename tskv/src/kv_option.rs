@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 use config::GLOBAL_CONFIG;
 use serde::{Deserialize, Serialize};
 
-use crate::forward_index::ForwardIndexConfig;
+use crate::index::forward_index::ForwardIndexConfig;
 
 #[derive(Clone)]
 pub struct DBOptions {
