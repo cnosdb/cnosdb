@@ -78,7 +78,10 @@ impl Deref for FileCursor {
 
 #[cfg(test)]
 mod test {
+    use std::fs::OpenOptions;
     use std::io::{prelude::*, BufWriter};
+    use std::thread;
+    use std::time::SystemTime;
 
     use tempfile::NamedTempFile;
 
@@ -119,5 +122,58 @@ mod test {
             }
             assert_eq!(dst_d.read(buf).unwrap(), 0);
         }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_file() {
+        let fs = FileSystem::new(&Options::default());
+        let mut test_file0 = fs
+            .open_with(
+                "/tmp/direct_io/test_file_unit0",
+                OpenOptions::new().read(true).write(true).create(true),
+            )
+            .unwrap()
+            .into_cursor();
+
+        let mut test_file1 = fs
+            .open_with(
+                "/tmp/direct_io/test_file_unit1",
+                OpenOptions::new().read(true).write(true).create(true),
+            )
+            .unwrap()
+            .into_cursor();
+
+        let handle1 = thread::spawn(move || {
+            let mut buf: Vec<u8> = vec![];
+            while buf.len() < 1024 * 4 {
+                buf.push(rand::random::<u8>());
+            }
+
+            let now = SystemTime::now();
+            for _ in 0..6553600 {
+                test_file0.write(&buf).unwrap();
+            }
+            let elapsed = now.elapsed().unwrap().as_nanos();
+            println!("cost time 0:{:?} ",elapsed);
+        });
+
+        let handle2 = thread::spawn(move || {
+            let mut buf: Vec<u8> = vec![];
+            while buf.len() < 1024 * 4 {
+                buf.push(rand::random::<u8>());
+            }
+
+            let now = SystemTime::now();
+            for _ in 0..6553600 {
+                test_file1.write(&buf).unwrap();
+            }
+            let elapsed = now.elapsed().unwrap().as_nanos();
+            println!("cost time 1:{:?} ",elapsed);
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+        fs.sync_all(FileSync::Hard).unwrap();
     }
 }

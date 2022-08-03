@@ -6,7 +6,7 @@
 mod byte_utils;
 mod compaction;
 mod context;
-mod direct_io;
+pub mod direct_io;
 pub mod error;
 mod file_manager;
 mod file_utils;

@@ -52,3 +52,7 @@ parking_lot = { version = "0.12.1", features = ["nightly"]}
 [[bench]]
 name = "kvcore_bench"
 harness = false
+
+[[bench]]
+name = "direct_io_bench"
+harness = false
