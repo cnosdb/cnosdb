@@ -431,44 +431,26 @@ pub fn run_compaction_job(
 ) -> Result<Vec<VersionEdit>> {
     let version = request.version;
 
-    if version.levels_info().is_empty() {
-        return Ok(vec![]);
-    }
-
     // Buffers all tsm-files and it's indexes for this compaction
     let max_data_block_size = 1000; // TODO this const value is in module tsm
-    let mut tsf_opt: Option<Arc<TseriesFamOpt>> = None;
-    let mut tsf_id: Option<u32> = None;
+    let tsf_id = request.ts_family_id;
+    let tsf_opt = request.ts_family_opt;
     let mut tsm_files: Vec<PathBuf> = Vec::new();
     let mut tsm_readers = Vec::new();
     let mut tsm_index_iters = Vec::new();
-    for lvl in version.levels_info().iter() {
-        if lvl.level() != request.files.0 {
+    for col_file in request.files.iter() {
+        // Delta file is not compacted here
+        if col_file.is_delta() {
             continue;
         }
-        tsf_opt = Some(lvl.tsf_opt.clone());
-        tsf_id = Some(lvl.tsf_id);
-        for col_file in request.files.1.iter() {
-            // Delta file is not compacted here
-            if col_file.is_delta() {
-                continue;
-            }
-            let tsm_file = col_file.file_path(lvl.tsf_opt.clone(), lvl.tsf_id);
-            tsm_files.push(tsm_file.clone());
-            let tsm_reader = TsmReader::open(&tsm_file)?;
-            let idx_iter = tsm_reader.index_iterator().peekable();
-            tsm_readers.push(tsm_reader);
-            tsm_index_iters.push(idx_iter);
-        }
-        // There is only one level to compact.
-        break;
+        let tsm_file = col_file.file_path(tsf_opt.clone(), tsf_id);
+        tsm_files.push(tsm_file.clone());
+        let tsm_reader = TsmReader::open(&tsm_file)?;
+        let idx_iter = tsm_reader.index_iterator().peekable();
+        tsm_readers.push(tsm_reader);
+        tsm_index_iters.push(idx_iter);
     }
-    if tsf_opt.is_none() {
-        error!("Cannot get tseries_fam_opt");
-        return Err(Error::Compact {
-            reason: "TseriesFamOpt is none".to_string(),
-        });
-    }
+
     if tsm_index_iters.is_empty() {
         // Nothing to compact
         return Ok(vec![]);
@@ -482,9 +464,7 @@ pub fn run_compaction_job(
         max_datablock_values: max_data_block_size,
         ..Default::default()
     };
-    let tsm_dir = tsf_opt
-        .expect("been checked")
-        .tsm_dir(tsf_id.expect("been checked"));
+    let tsm_dir = tsf_opt.tsm_dir(tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edits: Vec<VersionEdit> = Vec::new();
     for next_blk in iter.flatten() {
@@ -516,14 +496,7 @@ pub fn run_compaction_job(
                         request.out_level,
                     );
                     let mut ve = VersionEdit::new();
-                    ve.add_file(
-                        request.out_level,
-                        request.tsf_id,
-                        tsm_writer.sequence(),
-                        0,
-                        version.max_level_ts,
-                        cm,
-                    );
+                    ve.add_file(cm, version.max_level_ts);
                     version_edits.push(ve);
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                 }
@@ -535,16 +508,9 @@ pub fn run_compaction_job(
     tsm_writer.flush().context(error::WriteTsmSnafu)?;
     let cm = new_compact_meta(tsm_writer.sequence(), tsm_writer.size(), request.out_level);
     let mut ve = VersionEdit::new();
-    ve.add_file(
-        request.out_level,
-        request.tsf_id,
-        tsm_writer.sequence(),
-        0,
-        version.max_level_ts,
-        cm,
-    );
-    for file in request.files.1 {
-        ve.del_file(request.files.0, file.file_id(), file.is_delta());
+    ve.add_file(cm, version.max_level_ts);
+    for file in request.files {
+        ve.del_file(file.level(), file.file_id(), file.is_delta());
     }
     version_edits.push(ve);
 
@@ -552,11 +518,11 @@ pub fn run_compaction_job(
 }
 
 fn new_compact_meta(file_id: u64, file_size: u64, level: LevelId) -> CompactMeta {
-    let mut cm = CompactMeta::new();
+    let mut cm = CompactMeta::default();
     cm.file_id = file_id;
     cm.file_size = file_size;
-    cm.ts_min = 0;
-    cm.ts_max = 0;
+    cm.min_ts = 0;
+    cm.max_ts = 0;
     cm.level = level;
     cm.high_seq = 0;
     cm.low_seq = 0;
@@ -610,6 +576,7 @@ mod test {
             writer.flush().unwrap();
             cfs.push(Arc::new(ColumnFile::new(
                 file_seq,
+                2,
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
                 writer.size(),
                 false,
@@ -618,7 +585,7 @@ mod test {
         (file_seq + 1, cfs)
     }
 
-    fn read_data_block_from_column_file(
+    fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
     ) -> HashMap<FieldId, Vec<DataBlock>> {
         let tsm_reader = TsmReader::open(path).unwrap();
@@ -635,7 +602,7 @@ mod test {
 
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
     fn check_column_file(path: impl AsRef<Path>, expected_data: HashMap<FieldId, Vec<DataBlock>>) {
-        let data = read_data_block_from_column_file(path);
+        let data = read_data_blocks_from_column_file(path);
         let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
         data_field_ids.sort_unstable();
         let mut expected_data_field_ids = expected_data.keys().copied().collect::<Vec<_>>();
@@ -655,8 +622,8 @@ mod test {
 
     fn get_tsf_opt(tsm_dir: &str) -> Arc<TseriesFamOpt> {
         Arc::new(TseriesFamOpt {
-            base_file_size: 16777216,
-            max_compact_size: 2147483648,
+            base_file_size: 16 * 1024 * 1024,         // 16 MiB: 16777216
+            max_compact_size: 2 * 1024 * 1024 * 1024, // 2 GiB: 2147483648
             tsm_dir: tsm_dir.to_string(),
             ..Default::default()
         })
@@ -667,25 +634,18 @@ mod test {
         next_file_id: u64,
         files: Vec<Arc<ColumnFile>>,
     ) -> (CompactReq, Arc<GlobalContext>) {
-        let mut lv1_info = LevelInfo::init(1);
-        lv1_info.tsf_opt = tsf_opt;
-        let level_infos = vec![
-            lv1_info,
-            LevelInfo::init(2),
-            LevelInfo::init(3),
-            LevelInfo::init(4),
-        ];
         let version = Arc::new(Version::new(
             1,
             1,
             "version_1".to_string(),
-            level_infos,
+            LevelInfo::init_levels_opt(tsf_opt.clone()),
             1000,
         ));
         let compact_req = CompactReq {
-            files: (1, files),
+            ts_family_opt: tsf_opt,
+            files,
             version,
-            tsf_id: 1,
+            ts_family_id: 1,
             out_level: 2,
         };
         let kernel = Arc::new(GlobalContext::new());
@@ -723,7 +683,7 @@ mod test {
 
         let dir = "/tmp/test/compaction";
         let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(0);
+        let dir = tsf_opt.tsm_dir(1);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
@@ -760,7 +720,7 @@ mod test {
 
         let dir = "/tmp/test/compaction/1";
         let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(0);
+        let dir = tsf_opt.tsm_dir(1);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
@@ -797,7 +757,7 @@ mod test {
 
         let dir = "/tmp/test/compaction/2";
         let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(0);
+        let dir = tsf_opt.tsm_dir(1);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
@@ -981,7 +941,7 @@ mod test {
 
         let dir = "/tmp/test/compaction/3";
         let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(0);
+        let dir = tsf_opt.tsm_dir(1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -998,6 +958,7 @@ mod test {
             tsm_writer.flush().unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
+                2,
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 false,
@@ -1018,7 +979,7 @@ mod test {
     fn test_compaction_4() {
         #[rustfmt::skip]
         let data_desc = [
-            // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
+            // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
             (1_u64, vec![
                 // 1, 1~2500
                 (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64),
@@ -1083,7 +1044,7 @@ mod test {
         #[rustfmt::skip]
         let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
             [
-                // 1, 3~2000,2101~4999,4502~6500
+                // 1, 1~6500
                 (1, vec![
                     generate_data_block(ValueType::Unsigned, vec![(3, 1002)]),
                     generate_data_block(ValueType::Unsigned, vec![(1003, 2002)]),
@@ -1093,7 +1054,7 @@ mod test {
                     generate_data_block(ValueType::Unsigned, vec![(5005, 6004)]),
                     generate_data_block(ValueType::Unsigned, vec![(6005, 6500)]),
                 ]),
-                // 2, 1~1000,1003~2500,2503~4000,4003~5000
+                // 2, 1~5000
                 (2, vec![
                     generate_data_block(ValueType::Integer, vec![(1, 1000)]),
                     generate_data_block(ValueType::Integer, vec![(1001, 2000)]),
@@ -1101,7 +1062,7 @@ mod test {
                     generate_data_block(ValueType::Integer, vec![(3003, 4000), (4003, 4004)]),
                     generate_data_block(ValueType::Integer, vec![(4005, 5000)]),
                 ]),
-                // 3, 1~1498,1501~3500
+                // 3, 1~3500
                 (3, vec![
                     generate_data_block(ValueType::Boolean, vec![(1, 1000)]),
                     generate_data_block(ValueType::Boolean, vec![(1001, 2000)]),
@@ -1119,7 +1080,7 @@ mod test {
 
         let dir = "/tmp/test/compaction/4";
         let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(0);
+        let dir = tsf_opt.tsm_dir(1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -1142,6 +1103,7 @@ mod test {
             tsm_tombstone.flush().unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
+                2,
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 false,

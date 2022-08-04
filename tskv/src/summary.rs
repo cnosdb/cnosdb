@@ -14,36 +14,55 @@ use crate::{
     file_utils,
     kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
     record_file::{Reader, Writer},
-    tseries_family::{LevelInfo, Version},
+    tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
-    LevelId,
+    LevelId, TseriesFamilyId,
 };
 
 const MAX_BATCH_SIZE: usize = 64;
-#[derive(Serialize, Deserialize, PartialEq, Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CompactMeta {
     pub file_id: u64,
     pub file_size: u64,
     pub tsf_id: u32,
-    pub ts_min: i64,
-    pub ts_max: i64,
     pub level: u32,
+    pub min_ts: i64,
+    pub max_ts: i64,
     pub high_seq: u64,
     pub low_seq: u64,
     pub is_delta: bool,
 }
-impl CompactMeta {
-    pub fn new() -> Self {
+
+impl Default for CompactMeta {
+    fn default() -> Self {
         Self {
             file_id: 0,
             file_size: 0,
             tsf_id: 0,
-            ts_min: i64::MAX,
-            ts_max: i64::MIN,
             level: 0,
+            min_ts: i64::MAX,
+            max_ts: i64::MIN,
             high_seq: u64::MIN,
             low_seq: u64::MIN,
             is_delta: false,
+        }
+    }
+}
+
+/// There are serial fields set with default value:
+/// - tsf_id
+/// - high_seq
+/// - low_seq
+impl From<&ColumnFile> for CompactMeta {
+    fn from(file: &ColumnFile) -> Self {
+        Self {
+            file_id: file.file_id(),
+            file_size: file.size(),
+            level: file.level(),
+            min_ts: file.time_range().min_ts,
+            max_ts: file.time_range().max_ts,
+            is_delta: file.is_delta(),
+            ..Default::default()
         }
     }
 }
@@ -56,6 +75,7 @@ pub struct VersionEdit {
     pub seq_no: u64,
     pub has_file_id: bool,
     pub file_id: u64,
+    pub max_level_ts: i64,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
 
@@ -63,8 +83,6 @@ pub struct VersionEdit {
     pub add_tsf: bool,
     pub tsf_id: u32,
     pub tsf_name: String,
-
-    pub max_level_ts: i64,
 }
 
 impl Default for VersionEdit {
@@ -97,24 +115,25 @@ impl VersionEdit {
     pub fn decode(buf: &[u8]) -> Result<Self> {
         bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
     }
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_file(
-        &mut self,
-        level: u32,
-        tsf_id: u32,
-        file_id: u64,
-        seq_no: u64,
-        max_level_ts: i64,
-        meta: CompactMeta,
-    ) {
-        self.has_file_id = true;
-        self.file_id = file_id;
+
+    pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
+        self.level = compact_meta.level;
         self.has_seq_no = true;
-        self.seq_no = seq_no;
-        self.level = level;
-        self.tsf_id = tsf_id;
+        self.seq_no = compact_meta.high_seq;
+        self.has_file_id = true;
+        self.file_id = compact_meta.file_id;
         self.max_level_ts = max_level_ts;
-        self.add_files.push(meta);
+        self.tsf_id = compact_meta.tsf_id;
+        self.add_files.push(compact_meta);
+    }
+
+    pub fn del_file(&mut self, level: LevelId, file_id: u64, is_delta: bool) {
+        self.del_files.push(CompactMeta {
+            file_id,
+            level,
+            is_delta,
+            ..Default::default()
+        });
     }
 
     pub fn add_tsfamily(&mut self, tsf_id: u32, tsf_name: String) {
@@ -126,14 +145,6 @@ impl VersionEdit {
     pub fn del_tsfamily(&mut self, tsf_if: u32) {
         self.del_tsf = true;
         self.tsf_id = tsf_if;
-    }
-
-    pub fn del_file(&mut self, level: LevelId, file_id: u64, is_delta: bool) {
-        let mut cm = CompactMeta::new();
-        cm.file_id = file_id;
-        cm.level = level;
-        cm.is_delta = is_delta;
-        self.del_files.push(cm);
     }
 
     pub fn set_log_seq(&mut self, file_id: u64) {
@@ -259,34 +270,29 @@ impl Summary {
                     files.insert(m.file_id, m);
                 }
             }
-            let mut levels = HashMap::new();
-            let test: CompactMeta = CompactMeta::default();
+            let mut levels = LevelInfo::init_levels();
             // according files map to recover levels_info;
-            levels.entry(0).or_insert_with(|| LevelInfo::init(0));
             for (fd, meta) in files {
-                let info = levels
-                    .entry(meta.level)
-                    .or_insert_with(|| LevelInfo::init(meta.level));
-                info.apply(&meta);
+                levels[meta.level as usize].push_compact_meta(&meta);
             }
-            let mut lvls: Vec<LevelInfo> = levels.into_values().collect();
-            lvls.sort_by(|a, b| a.level.partial_cmp(&b.level).unwrap());
-            let ver = Version::new(id, max_log, tsf_name, lvls, max_level_ts);
-            versions.insert(id, Arc::new(RwLock::new(ver)));
+            let ver = Version::new(id, max_log, tsf_name, levels, max_level_ts);
+            versions.insert(id, Arc::new(ver));
         }
         let vs = VersionSet::new(&tf_cfg, versions);
         Ok(vs.await)
     }
-    // apply version edit to summary file
-    // and write to memory struct
-    pub async fn apply_version_edit(&mut self, eds: &[VersionEdit]) -> Result<()> {
+
+    /// Applies version edit to summary file, and generates new version for TseriesFamily.
+    pub async fn apply_version_edit(&mut self, eds: Vec<VersionEdit>) -> Result<()> {
         self.write_summary(eds).await?;
         self.roll_summary_file().await?;
         Ok(())
     }
 
-    async fn write_summary(&mut self, eds: &[VersionEdit]) -> Result<()> {
-        for edit in eds {
+    async fn write_summary(&mut self, eds: Vec<VersionEdit>) -> Result<()> {
+        let mut tsf_version_edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
+        let mut tsf_min_seq: HashMap<TseriesFamilyId, u64> = HashMap::new();
+        for edit in eds.into_iter() {
             let buf = edit.encode()?;
             let _ = self
                 .writer
@@ -297,7 +303,26 @@ impl Summary {
                 .hard_sync()
                 .map_err(|e| Error::LogRecordErr { source: e })
                 .await?;
+
+            tsf_version_edits
+                .entry(edit.tsf_id)
+                .or_insert(Vec::new())
+                .push(edit.clone());
+            if edit.has_seq_no {
+                tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
+            }
         }
+        let mut version_set = self.version_set.write();
+        for (tsf_id, version_edits) in tsf_version_edits {
+            let min_seq = tsf_min_seq.get(&tsf_id);
+            if let Some(tsf) = version_set.get_mutable_tsfamily_by_tf_id(tsf_id) {
+                let new_version = tsf
+                    .version()
+                    .copy_apply_version_edits(version_edits.as_slice(), min_seq.copied());
+                tsf.new_version(new_version);
+            }
+        }
+
         Ok(())
     }
 
@@ -313,27 +338,14 @@ impl Summary {
                 }
                 for i in vs.ts_families().iter() {
                     let mut edit = VersionEdit::new();
-                    let version = i.1.version().read();
+                    let version = i.1.version();
                     let max_level_ts = version.max_level_ts;
                     for files in version.levels_info.iter() {
                         for file in files.files.iter() {
-                            let mut meta = CompactMeta::new();
-                            meta.file_id = file.file_id();
-                            meta.is_delta = file.is_delta();
-                            meta.file_size = file.size();
-                            meta.level = files.level;
-                            meta.ts_min = file.range().min_ts;
-                            meta.ts_max = file.range().max_ts;
+                            let mut meta = CompactMeta::from(file.as_ref());
                             meta.tsf_id = files.tsf_id;
                             meta.high_seq = self.ctx.last_seq();
-                            edit.add_file(
-                                files.level,
-                                files.tsf_id,
-                                file.file_id(),
-                                self.ctx.last_seq(),
-                                max_level_ts,
-                                meta,
-                            );
+                            edit.add_file(meta, max_level_ts);
                         }
                     }
                     edits.push(edit);
@@ -350,7 +362,7 @@ impl Summary {
                 };
             }
             self.writer = Writer::new(new_path).unwrap();
-            self.write_summary(&edits).await?;
+            self.write_summary(edits).await?;
             match rename(new_path, old_path) {
                 Ok(_) => (),
                 Err(e) => {
@@ -401,7 +413,7 @@ impl SummaryProcessor {
 
     pub async fn apply(&mut self) {
         let edits = std::mem::take(&mut self.edits);
-        match self.summary.apply_version_edit(&edits).await {
+        match self.summary.apply_version_edit(edits).await {
             Ok(()) => {
                 for cb in self.cbs.drain(..) {
                     let _ = cb.send(Ok(()));
@@ -467,7 +479,7 @@ mod test {
         let mut summary = Summary::new(&opt).await.unwrap();
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
-        summary.apply_version_edit(&[edit]).await.unwrap();
+        summary.apply_version_edit(vec![edit]).await.unwrap();
         let summary = Summary::recover(&opt).await.unwrap();
         assert_eq!(summary.ctx.max_tsf_id(), 100);
     }
@@ -490,7 +502,7 @@ mod test {
         );
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
-        summary.apply_version_edit(&[edit]).await.unwrap();
+        summary.apply_version_edit(vec![edit]).await.unwrap();
         let mut summary = Summary::recover(&opt).await.unwrap();
         assert_eq!(
             summary.version_set.read().tsf_num(),
@@ -498,7 +510,7 @@ mod test {
         );
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
-        summary.apply_version_edit(&[edit]).await.unwrap();
+        summary.apply_version_edit(vec![edit]).await.unwrap();
         let summary = Summary::recover(&opt).await.unwrap();
         assert_eq!(
             summary.version_set.read().tsf_num(),
@@ -566,7 +578,7 @@ mod test {
                 edits.push(edit.clone());
             }
         }
-        summary.apply_version_edit(&edits).await.unwrap();
+        summary.apply_version_edit(edits).await.unwrap();
         let summary = Summary::recover(&opt).await.unwrap();
 
         assert_eq!(summary.version_set.read().tsf_num(), 20);
@@ -587,63 +599,64 @@ mod test {
 
         let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
 
+        summary.version_set.write().add_tsfamily(
+            10,
+            "hello".to_string(),
+            0,
+            0,
+            Arc::new(TseriesFamOpt::default()),
+            summary_task_sender.clone(),
+        );
         let mut edits = vec![];
-        {
-            summary.version_set.write().add_tsfamily(
-                10,
-                "hello".to_string(),
+        let mut edit = VersionEdit::new();
+        edit.add_tsfamily(10, "hello".to_string());
+        edits.push(edit);
+
+        for _ in 0..100 {
+            summary.version_set.write().del_tsfamily(
                 0,
-                0,
-                Arc::new(TseriesFamOpt::default()),
+                "default0".to_string(),
                 summary_task_sender.clone(),
             );
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(10, "hello".to_string());
-            edits.push(edit.clone());
-
-            for _ in 0..100 {
-                summary.version_set.write().del_tsfamily(
-                    0,
-                    "default0".to_string(),
-                    summary_task_sender.clone(),
-                );
-                let mut edit = VersionEdit::new();
-                edit.del_tsfamily(0);
-                edits.push(edit.clone());
-            }
-
-            let vs = summary.version_set.read();
-            let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-
-            tsf.version().write().levels_info.push(LevelInfo::init(0));
-            tsf.version().write().levels_info.push(LevelInfo::init(1));
+            edit.del_tsfamily(0);
+            edits.push(edit);
+        }
+        {
+            let mut vs = summary.version_set.write();
+            let tsf = vs.get_mutable_tsfamily_by_tf_id(10).unwrap();
+            let mut version = tsf.version().copy_apply_version_edits(&edits, None);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new();
-            let mut meta = CompactMeta::new();
-            meta.file_id = 15;
-            meta.is_delta = false;
-            meta.file_size = 100;
-            meta.level = 1;
-            meta.ts_min = 1;
-            meta.ts_max = 1;
-            meta.tsf_id = 10;
-            meta.high_seq = 1;
-            tsf.version().write().levels_info[1].apply(&meta);
-
-            edit.add_file(1, 10, 15, 1, 1, meta);
-            edits.push(edit.clone());
+            let meta = CompactMeta {
+                file_id: 15,
+                is_delta: false,
+                file_size: 100,
+                level: 1,
+                min_ts: 1,
+                max_ts: 1,
+                tsf_id: 10,
+                high_seq: 1,
+                ..Default::default()
+            };
+            version.levels_info[1].push_compact_meta(&meta);
+            tsf.new_version(version);
+            edit.add_file(meta, 1);
+            edits.push(edit);
         }
-        summary.apply_version_edit(&edits).await.unwrap();
+
+        summary.apply_version_edit(edits).await.unwrap();
+
         let summary = Summary::recover(&opt).await.unwrap();
 
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-        assert_eq!(tsf.version().read().last_seq, 1);
-        assert_eq!(tsf.version().read().levels_info[1].tsf_id, 10);
-        assert!(!tsf.version().read().levels_info[1].files[0].is_delta());
-        assert_eq!(tsf.version().read().levels_info[1].files[0].file_id(), 15);
-        assert_eq!(tsf.version().read().levels_info[1].files[0].size(), 100);
+        assert_eq!(tsf.version().last_seq, 1);
+        assert_eq!(tsf.version().levels_info[1].tsf_id, 10);
+        assert!(!tsf.version().levels_info[1].files[0].is_delta());
+        assert_eq!(tsf.version().levels_info[1].files[0].file_id(), 15);
+        assert_eq!(tsf.version().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 15);
         assert_eq!(summary.ctx.max_tsf_id(), 10);
     }

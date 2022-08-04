@@ -1,7 +1,7 @@
 use std::{
     borrow::{Borrow, BorrowMut},
-    cmp::min,
-    collections::HashMap,
+    cmp::{max, min},
+    collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     rc::Rc,
@@ -20,32 +20,31 @@ use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::memcache::MemRaw;
 use crate::{
-    compaction::FlushReq,
+    compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
     error::{Error, Result},
     file_manager, file_utils,
     kv_option::{TseriesFamDesc, TseriesFamOpt},
-    memcache::{DataType, MemCache},
+    memcache::{DataType, MemCache, MemRaw},
     summary::{CompactMeta, VersionEdit},
     tsm::{ColumnReader, IndexReader, TsmReader, TsmTombstone},
-    ColumnFileId, TseriesFamilyId, VersionId,
+    ColumnFileId, LevelId, TseriesFamilyId,
 };
 
 lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeRange {
     pub min_ts: i64,
     pub max_ts: i64,
 }
 
 impl TimeRange {
-    pub fn new(max_ts: i64, min_ts: i64) -> Self {
-        Self { max_ts, min_ts }
+    pub fn new(min_ts: i64, max_ts: i64) -> Self {
+        Self { min_ts, max_ts }
     }
 
     #[inline(always)]
@@ -56,6 +55,12 @@ impl TimeRange {
     #[inline(always)]
     pub fn includes(&self, other: &TimeRange) -> bool {
         self.min_ts <= other.min_ts && self.max_ts >= other.max_ts
+    }
+
+    #[inline(always)]
+    pub fn merge(&mut self, other: &TimeRange) {
+        self.min_ts = self.min_ts.min(other.min_ts);
+        self.max_ts = self.max_ts.max(other.max_ts);
     }
 }
 
@@ -77,38 +82,49 @@ impl From<TimeRange> for (Timestamp, Timestamp) {
 #[derive(Debug)]
 pub struct ColumnFile {
     file_id: ColumnFileId,
-    being_compact: AtomicBool,
-    deleted: AtomicBool,
-    range: TimeRange, // file time range
-    size: u64,        // file size
-    field_id_bloom_filter: BloomFilter,
+    level: LevelId,
     is_delta: bool,
+    time_range: TimeRange,
+    size: u64,
+    field_id_bloom_filter: BloomFilter,
+    deleted: AtomicBool,
+    compacting: AtomicBool,
 }
 
 impl ColumnFile {
-    pub fn new(file_id: ColumnFileId, range: TimeRange, size: u64, is_delta: bool) -> Self {
+    pub fn new(
+        file_id: ColumnFileId,
+        level: LevelId,
+        time_range: TimeRange,
+        size: u64,
+        is_delta: bool,
+    ) -> Self {
         Self {
             file_id,
-            being_compact: AtomicBool::new(false),
-            deleted: AtomicBool::new(false),
-            range,
+            level,
+            is_delta,
+            time_range,
             size,
             field_id_bloom_filter: BloomFilter::new(512),
-            is_delta,
+            deleted: AtomicBool::new(false),
+            compacting: AtomicBool::new(false),
         }
     }
 
     pub fn file_id(&self) -> ColumnFileId {
         self.file_id
     }
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-    pub fn range(&self) -> &TimeRange {
-        &self.range
+    pub fn level(&self) -> LevelId {
+        self.level
     }
     pub fn is_delta(&self) -> bool {
         self.is_delta
+    }
+    pub fn time_range(&self) -> &TimeRange {
+        &self.time_range
+    }
+    pub fn size(&self) -> u64 {
+        self.size
     }
 
     pub fn file_path(&self, tsf_opt: Arc<TseriesFamOpt>, tf_id: u32) -> PathBuf {
@@ -138,7 +154,7 @@ impl ColumnFile {
     }
 
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
-        self.range.overlaps(time_range)
+        self.time_range.overlaps(time_range)
     }
 }
 
@@ -151,16 +167,28 @@ impl ColumnFile {
         self.deleted.store(true, Ordering::Release);
     }
 
-    pub fn mark_compaction(&self) {
-        self.being_compact.store(true, Ordering::Release);
+    pub fn is_compacting(&self) -> bool {
+        self.compacting.load(Ordering::Acquire)
     }
 
-    pub fn is_pending_compaction(&self) -> bool {
-        self.being_compact.load(Ordering::Acquire)
+    pub fn mark_compaction(&self) {
+        self.compacting.store(true, Ordering::Release);
     }
 
     pub fn contains_field_id(&self, field_id: FieldId) -> bool {
         self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+    }
+}
+
+impl From<&CompactMeta> for ColumnFile {
+    fn from(meta: &CompactMeta) -> Self {
+        Self::new(
+            meta.file_id,
+            meta.level,
+            TimeRange::new(meta.min_ts, meta.max_ts),
+            meta.file_size,
+            meta.is_delta,
+        )
     }
 }
 
@@ -172,43 +200,71 @@ pub struct LevelInfo {
     pub level: u32,
     pub cur_size: u64,
     pub max_size: u64,
-    pub ts_range: TimeRange,
+    pub time_range: TimeRange,
 }
 
 impl LevelInfo {
     pub fn init(level: u32) -> Self {
+        Self::init_opt(level, Arc::new(TseriesFamOpt::default()))
+    }
+
+    pub fn init_opt(level: u32, tsf_opt: Arc<TseriesFamOpt>) -> Self {
         Self {
             files: Vec::new(),
             tsf_id: 0,
-            tsf_opt: Arc::new(TseriesFamOpt::default()),
+            tsf_opt,
             level,
             cur_size: 0,
             max_size: 0,
-            ts_range: TimeRange {
-                max_ts: 0,
-                min_ts: 0,
+            time_range: TimeRange {
+                min_ts: Timestamp::MAX,
+                max_ts: Timestamp::MIN,
             },
         }
     }
 
-    pub fn apply(&mut self, delta: &CompactMeta) {
-        self.files.push(Arc::new(ColumnFile::new(
-            delta.file_id,
-            TimeRange::new(delta.ts_max, delta.ts_min),
-            delta.file_size,
-            delta.is_delta,
-        )));
-        self.tsf_id = delta.tsf_id;
-        self.cur_size += delta.file_size;
-        if self.ts_range.max_ts < delta.ts_max {
-            self.ts_range.max_ts = delta.ts_max;
-        }
-        if self.ts_range.min_ts > delta.ts_max {
-            self.ts_range.min_ts = delta.ts_min;
-        }
+    pub fn init_levels() -> [LevelInfo; 5] {
+        Self::init_levels_opt(Arc::new(TseriesFamOpt::default()))
     }
 
-    pub fn read_columnfile(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) {
+    pub fn init_levels_opt(tsf_opt: Arc<TseriesFamOpt>) -> [LevelInfo; 5] {
+        [
+            Self::init_opt(0, tsf_opt.clone()),
+            Self::init_opt(1, tsf_opt.clone()),
+            Self::init_opt(2, tsf_opt.clone()),
+            Self::init_opt(3, tsf_opt.clone()),
+            Self::init_opt(4, tsf_opt),
+        ]
+    }
+
+    pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
+        self.files.push(Arc::new(compact_meta.into()));
+        self.tsf_id = compact_meta.tsf_id;
+        self.cur_size += compact_meta.file_size;
+        self.time_range.max_ts = self.time_range.max_ts.max(compact_meta.max_ts);
+        self.time_range.min_ts = self.time_range.min_ts.min(compact_meta.min_ts);
+    }
+
+    pub fn push_column_file(&mut self, file: Arc<ColumnFile>) {
+        self.cur_size += file.size;
+        self.time_range.max_ts = self.time_range.max_ts.max(file.time_range.max_ts);
+        self.time_range.min_ts = self.time_range.min_ts.min(file.time_range.min_ts);
+        self.files.push(file);
+    }
+
+    /// Update time_range by a scan with files.
+    /// If files is empty, time_range will be (i64::MAX, i64::MIN).
+    pub(crate) fn update_time_range(&mut self) {
+        let mut min_ts = Timestamp::MAX;
+        let mut max_ts = Timestamp::MIN;
+        for f in self.files.iter() {
+            min_ts = min_ts.min(f.time_range.min_ts);
+            max_ts = max_ts.max(f.time_range.max_ts);
+        }
+        self.time_range = TimeRange::new(min_ts, max_ts);
+    }
+
+    pub fn read_column_file(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) {
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
                 continue;
@@ -238,35 +294,120 @@ impl LevelInfo {
 
 #[derive(Default)]
 pub struct Version {
-    pub id: VersionId,
+    pub ts_family_id: TseriesFamilyId,
+    pub ts_family_name: String,
+    /// The max seq_no of write batch in wal flushed to column file.
     pub last_seq: u64,
+    /// The max timestamp of write batch in wal flushed to column file.
     pub max_level_ts: i64,
-    pub name: String,
-    pub levels_info: Vec<LevelInfo>,
+    pub levels_info: [LevelInfo; 5],
 }
 
 impl Version {
     pub fn new(
-        id: VersionId,
+        id: TseriesFamilyId,
         last_seq: u64,
         name: String,
-        levels_info: Vec<LevelInfo>,
+        levels_info: [LevelInfo; 5],
         max_level_ts: i64,
     ) -> Self {
         Self {
-            id,
+            ts_family_id: id,
+            ts_family_name: name,
             last_seq,
-            name,
-            levels_info,
             max_level_ts,
+            levels_info,
         }
     }
 
-    pub fn get_name(&self) -> &str {
-        &self.name
+    /// Creates new Version using current Version and `VersionEdit`s.
+    pub fn copy_apply_version_edits(
+        &self,
+        version_edits: &[VersionEdit],
+        last_seq: Option<u64>,
+    ) -> Version {
+        let mut added_files: HashMap<LevelId, Vec<CompactMeta>> = HashMap::new();
+        let mut deleted_files: HashMap<LevelId, HashSet<ColumnFileId>> = HashMap::new();
+        for ve in version_edits {
+            if ve.has_file_id {
+                if !ve.add_files.is_empty() {
+                    ve.add_files.iter().for_each(|f| {
+                        added_files
+                            .entry(f.level)
+                            .or_insert(Vec::new())
+                            .push(f.clone());
+                    });
+                }
+                continue;
+            }
+            if !ve.del_files.is_empty() {
+                ve.del_files.iter().for_each(|f| {
+                    deleted_files
+                        .entry(f.level)
+                        .or_insert(HashSet::new())
+                        .insert(f.file_id);
+                });
+                continue;
+            }
+        }
+
+        let mut new_levels = LevelInfo::init_levels();
+        for level in self.levels_info.iter() {
+            for file in level.files.iter() {
+                if let Some(true) = deleted_files
+                    .get(&file.level)
+                    .map(|file_ids| file_ids.contains(&file.file_id))
+                {
+                    continue;
+                }
+                new_levels[level.level as usize].push_column_file(file.clone());
+            }
+            if let Some(files) = added_files.get(&level.level) {
+                for file in files.into_iter() {
+                    new_levels[level.level as usize].push_compact_meta(file);
+                }
+            }
+            added_files.remove(&level.level);
+            new_levels[level.level as usize].update_time_range();
+        }
+
+        let mut new_version = Self {
+            ts_family_id: self.ts_family_id,
+            ts_family_name: self.ts_family_name.clone(),
+            last_seq: last_seq.unwrap_or(self.last_seq),
+            max_level_ts: self.max_level_ts,
+            levels_info: new_levels,
+        };
+        new_version.update_max_level_ts();
+        new_version
     }
 
-    pub fn levels_info(&self) -> &Vec<LevelInfo> {
+    fn update_max_level_ts(&mut self) {
+        if self.levels_info.is_empty() {
+            return;
+        }
+        let mut max_ts = Timestamp::MIN;
+        for level in self.levels_info.iter() {
+            if level.files.is_empty() {
+                continue;
+            }
+            for file in level.files.iter() {
+                max_ts = file.time_range.max_ts.max(max_ts);
+            }
+        }
+
+        self.max_level_ts = max_ts;
+    }
+
+    pub fn tf_id(&self) -> TseriesFamilyId {
+        self.ts_family_id
+    }
+
+    pub fn tf_name(&self) -> &str {
+        &self.ts_family_name
+    }
+
+    pub fn levels_info(&self) -> &[LevelInfo; 5] {
         &self.levels_info
     }
 
@@ -284,27 +425,27 @@ pub struct CacheGroup {
 }
 
 pub struct SuperVersion {
-    pub id: u32,
+    pub ts_family_id: u32,
+    pub ts_family_opt: Arc<TseriesFamOpt>,
     pub caches: CacheGroup,
-    pub cur_version: Arc<RwLock<Version>>,
-    pub opt: Arc<TseriesFamOpt>,
-    pub version_id: u64,
+    pub version: Arc<Version>,
+    pub version_number: u64,
 }
 
 impl SuperVersion {
     pub fn new(
-        id: u32,
+        ts_family_id: u32,
+        ts_family_opt: Arc<TseriesFamOpt>,
         caches: CacheGroup,
-        cur_version: Arc<RwLock<Version>>,
-        opt: Arc<TseriesFamOpt>,
-        version_id: u64,
+        version: Arc<Version>,
+        version_number: u64,
     ) -> Self {
         Self {
-            id,
+            ts_family_id,
+            ts_family_opt,
             caches,
-            cur_version,
-            opt,
-            version_id,
+            version,
+            version_number,
         }
     }
 }
@@ -318,8 +459,9 @@ pub struct TseriesFamily {
     // todo: need to del RwLock in memcache
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
-    version: Arc<RwLock<Version>>,
+    version: Arc<Version>,
     opts: Arc<TseriesFamOpt>,
+    compact_picker: Arc<dyn Picker>,
     // min seq_no keep in the tsfam memcache
     seq_no: u64,
     immut_ts_min: i64,
@@ -332,12 +474,12 @@ impl TseriesFamily {
         tf_id: TseriesFamilyId,
         name: String,
         cache: MemCache,
-        version: Arc<RwLock<Version>>,
+        version: Arc<Version>,
         tsf_opt: Arc<TseriesFamOpt>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
-        let seq = version.read().last_seq;
-        let max_level_ts = version.read().max_level_ts;
+        let seq = version.last_seq;
+        let max_level_ts = version.max_level_ts;
         let delta_mm = Arc::new(RwLock::new(MemCache::new(
             tf_id,
             GLOBAL_CONFIG.max_memcache_size,
@@ -353,6 +495,7 @@ impl TseriesFamily {
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
                 tf_id,
+                tsf_opt.clone(),
                 CacheGroup {
                     delta_mut_cache: delta_mm,
                     delta_immut_cache: Default::default(),
@@ -360,12 +503,12 @@ impl TseriesFamily {
                     immut_cache: Default::default(),
                 },
                 version.clone(),
-                tsf_opt.clone(),
                 0,
             )),
             super_version_id: AtomicU64::new(0),
             version,
-            opts: tsf_opt,
+            opts: tsf_opt.clone(),
+            compact_picker: Arc::new(LevelCompactionPicker::new(tsf_opt.clone())),
             immut_ts_min: max_level_ts,
             mut_ts_max: i64::MIN,
         }
@@ -378,24 +521,33 @@ impl TseriesFamily {
             .write()
             .switch_to_immutable();
         self.immut_cache.push(self.mut_cache.clone());
-        self.new_super_version();
+        self.new_super_version(self.version.clone());
         self.mut_cache = cache;
     }
 
-    fn new_super_version(&mut self) {
+    fn new_super_version(&mut self, version: Arc<Version>) {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
+            self.opts.clone(),
             CacheGroup {
                 delta_mut_cache: self.delta_mut_cache.clone(),
                 delta_immut_cache: self.delta_immut_cache.clone(),
                 mut_cache: self.mut_cache.clone(),
                 immut_cache: self.immut_cache.clone(),
             },
-            self.version.clone(),
-            self.opts.clone(),
+            version.clone(),
             self.super_version_id.load(Ordering::SeqCst),
         ))
+    }
+
+    /// Set new Version into current TsFamily,
+    /// then create new SuperVersion, update seq_no
+    pub fn new_version(&mut self, new_version: Version) {
+        let version = Arc::new(new_version);
+        self.new_super_version(version.clone());
+        self.seq_no = version.last_seq;
+        self.version = version;
     }
 
     pub async fn switch_to_immutable(&mut self) {
@@ -412,7 +564,7 @@ impl TseriesFamily {
             self.seq_no,
             false,
         )));
-        self.new_super_version()
+        self.new_super_version(self.version.clone());
     }
 
     pub async fn switch_to_delta_immutable(&mut self) {
@@ -424,7 +576,7 @@ impl TseriesFamily {
             self.seq_no,
             true,
         )));
-        self.new_super_version()
+        self.new_super_version(self.version.clone());
     }
 
     async fn wrap_delta_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
@@ -444,7 +596,7 @@ impl TseriesFamily {
         self.delta_immut_cache = immut;
 
         if len != self.delta_immut_cache.len() {
-            self.new_super_version()
+            self.new_super_version(self.version.clone());
         }
 
         let mut req_mem = vec![];
@@ -485,11 +637,10 @@ impl TseriesFamily {
         self.immut_cache = imut;
 
         if len != self.immut_cache.len() {
-            self.new_super_version()
+            self.new_super_version(self.version.clone());
         }
 
         self.immut_ts_min = self.mut_ts_max;
-        self.version.write().max_level_ts = self.mut_ts_max;
         let mut req_mem = vec![];
         for i in self.immut_cache.iter() {
             let read_i = i.read();
@@ -575,6 +726,11 @@ impl TseriesFamily {
         }
     }
 
+    pub fn pick_compaction(&self) -> Option<CompactReq> {
+        self.compact_picker
+            .pick_compaction(self.tf_id, self.version.clone())
+    }
+
     pub fn tf_id(&self) -> TseriesFamilyId {
         self.tf_id
     }
@@ -595,8 +751,12 @@ impl TseriesFamily {
         &self.immut_cache
     }
 
-    pub fn version(&self) -> &Arc<RwLock<Version>> {
-        &self.version
+    pub fn version(&self) -> Arc<Version> {
+        self.version.clone()
+    }
+
+    pub fn super_version(&self) -> Arc<SuperVersion> {
+        self.super_version.clone()
     }
 
     pub fn imut_ts_min(&self) -> i64 {
@@ -608,22 +768,198 @@ impl TseriesFamily {
 mod test {
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-    use models::ValueType;
+    use models::{Timestamp, ValueType};
     use parking_lot::{Mutex, RwLock};
     use tokio::sync::mpsc;
+    use tokio::sync::mpsc::UnboundedReceiver;
     use trace::info;
 
     use crate::memcache::MemRaw;
+    use crate::summary::SummaryTask;
     use crate::{
         compaction::{run_flush_memtable_job, FlushReq},
         context::GlobalContext,
         file_manager,
         kv_option::TseriesFamOpt,
         memcache::MemCache,
+        summary::{CompactMeta, VersionEdit},
         tseries_family::{TimeRange, TseriesFamily, Version},
         tsm::TsmTombstone,
         version_set::VersionSet,
+        TseriesFamilyId,
     };
+
+    use super::{ColumnFile, LevelInfo};
+
+    #[test]
+    fn test_version_apply_version_edits_1() {
+        //! There is a Version with two levels:
+        //! - Lv.0: [ ]
+        //! - Lv.1: [ (3, 3001~3000) ]
+        //! - Lv.2: [ (1, 1~1000), (2, 1001~2000) ]
+        //! - Lv.3: [ ]
+        //! - Lv.4: [ ]
+        //!
+        //! Add (4, 3051~3150) into lv.1, and delete (3, 3001~3000).
+        //!
+        //! The new Version will like this:
+        //! - Lv.0: [ ]
+        //! - Lv.1: [ (3, 3051~3150) ]
+        //! - Lv.2: [ (1, 1~1000), (2, 1001~2000) ]
+        //! - Lv.3: [ ]
+        //! - Lv.4: [ ]
+        let tsf_opt = Arc::new(TseriesFamOpt::default());
+        #[rustfmt::skip]
+        let version = Version {
+            ts_family_id: 1, ts_family_name: "test".to_string(),
+            last_seq: 1, max_level_ts: 3100,
+            levels_info: [
+                LevelInfo::init(0),
+                LevelInfo {
+                    files: vec![
+                        Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false)),
+                    ],
+                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    level: 1, cur_size: 100, max_size: 1000,
+                    time_range: TimeRange::new(3001, 3100),
+                },
+                LevelInfo {
+                    files: vec![
+                        Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false)),
+                        Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false)),
+                    ],
+                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    level: 2, cur_size: 2000, max_size: 10000,
+                    time_range: TimeRange::new(1, 2000),
+                },
+                LevelInfo::init(3),
+                LevelInfo::init(4),
+            ],
+        };
+        let mut version_edits = Vec::new();
+        let mut ve = VersionEdit::new();
+        #[rustfmt::skip]
+        ve.add_file(
+            CompactMeta {
+                file_id: 4, file_size: 100, tsf_id: 1, level: 1,
+                min_ts: 3051, max_ts: 3150, high_seq: 2, low_seq: 2,
+                is_delta: false,
+            },
+            3100,
+        );
+        version_edits.push(ve);
+        let mut ve = VersionEdit::new();
+        ve.del_file(1, 3, false);
+        version_edits.push(ve);
+        let new_version = version.copy_apply_version_edits(&version_edits, Some(3));
+
+        assert_eq!(new_version.last_seq, 3);
+        assert_eq!(new_version.max_level_ts, 3150);
+
+        let lvl = new_version.levels_info.get(1).unwrap();
+        assert_eq!(lvl.time_range, TimeRange::new(3051, 3150));
+        assert_eq!(lvl.files.len(), 1);
+        let col_file = lvl.files.first().unwrap();
+        assert_eq!(col_file.time_range, TimeRange::new(3051, 3150));
+    }
+
+    #[test]
+    fn test_version_apply_version_edits_2() {
+        //! There is a Version with two levels:
+        //! - Lv.0: [ ]
+        //! - Lv.1: [ (3, 3001~3000), (4, 3051~3150) ]
+        //! - Lv.2: [ (1, 1~1000), (2, 1001~2000) ]
+        //! - Lv.3: [ ]
+        //! - Lv.4: [ ]
+        //!
+        //! 1. Compact [ (3, 3001~3000), (4, 3051~3150) ] into lv.2, and delete them.
+        //! 2. Compact [ (1, 1~1000), (2, 1001~2000) ] into lv.3, and delete them.
+        //!
+        //! The new Version will like this:
+        //! - Lv.0: [ ]
+        //! - Lv.1: [  ]
+        //! - Lv.2: [ (5, 3001~3150) ]
+        //! - Lv.3: [ (6, 1~2000) ]
+        //! - Lv.4: [ ]
+        let tsf_opt = Arc::new(TseriesFamOpt::default());
+        #[rustfmt::skip]
+        let version = Version {
+            ts_family_id: 1, ts_family_name: "test".to_string(),
+            last_seq: 1, max_level_ts: 3150,
+            levels_info: [
+                LevelInfo::init(0),
+                LevelInfo {
+                    files: vec![
+                        Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false)),
+                        Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false)),
+                    ],
+                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    level: 1, cur_size: 100, max_size: 1000,
+                    time_range: TimeRange::new(3001, 3150),
+                },
+                LevelInfo {
+                    files: vec![
+                        Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false)),
+                        Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false)),
+                    ],
+                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    level: 2, cur_size: 2000, max_size: 10000,
+                    time_range: TimeRange::new(1, 2000),
+                },
+                LevelInfo::init(3),
+                LevelInfo::init(4),
+            ],
+        };
+        let mut version_edits = Vec::new();
+        let mut ve = VersionEdit::new();
+        #[rustfmt::skip]
+        ve.add_file(
+            CompactMeta {
+                file_id: 5, file_size: 150, tsf_id: 1, level: 2,
+                min_ts: 3001, max_ts: 3150, high_seq: 2, low_seq: 2,
+                is_delta: false,
+            },
+            3150,
+        );
+        #[rustfmt::skip]
+        ve.add_file(
+            CompactMeta {
+                file_id: 6, file_size: 2000, tsf_id: 1, level: 3,
+                min_ts: 1, max_ts: 2000, high_seq: 2, low_seq: 2,
+                is_delta: false,
+            },
+            3150,
+        );
+        version_edits.push(ve);
+        let mut ve = VersionEdit::new();
+        ve.del_file(1, 3, false);
+        ve.del_file(1, 4, false);
+        ve.del_file(2, 1, false);
+        ve.del_file(2, 2, false);
+        version_edits.push(ve);
+        let new_version = version.copy_apply_version_edits(&version_edits, Some(3));
+
+        assert_eq!(new_version.last_seq, 3);
+        assert_eq!(new_version.max_level_ts, 3150);
+
+        let lvl = new_version.levels_info.get(1).unwrap();
+        assert_eq!(
+            lvl.time_range,
+            TimeRange::new(Timestamp::MAX, Timestamp::MIN)
+        );
+        assert_eq!(lvl.files.len(), 0);
+
+        let lvl = new_version.levels_info.get(2).unwrap();
+        assert_eq!(lvl.time_range, TimeRange::new(3001, 3150));
+        let col_file = lvl.files.last().unwrap();
+        assert_eq!(col_file.time_range, TimeRange::new(3001, 3150));
+
+        let lvl = new_version.levels_info.get(3).unwrap();
+        assert_eq!(lvl.time_range, TimeRange::new(1, 2000));
+        assert_eq!(lvl.files.len(), 1);
+        let col_file = lvl.files.last().unwrap();
+        assert_eq!(col_file.time_range, TimeRange::new(1, 2000));
+    }
 
     #[tokio::test]
     pub async fn test_tsf_delete() {
@@ -632,7 +968,13 @@ mod test {
             0,
             "db".to_string(),
             MemCache::new(0, 500, 0, false),
-            Arc::new(RwLock::new(Version::new(0, 0, "db".to_string(), vec![], 0))),
+            Arc::new(Version::new(
+                0,
+                0,
+                "db".to_string(),
+                LevelInfo::init_levels(),
+                0,
+            )),
             tcfg.clone(),
         );
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
@@ -660,6 +1002,32 @@ mod test {
             tsf.mut_cache.read().data_cache.get(&0).unwrap().cells.len(),
             0
         );
+    }
+
+    async fn update_ts_family_version(
+        version_set: Arc<RwLock<VersionSet>>,
+        ts_family_id: TseriesFamilyId,
+        mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
+    ) {
+        let mut version_edits: Vec<VersionEdit> = Vec::new();
+        let mut min_seq: u64 = 0;
+        while let Some(summary_task) = summary_task_receiver.recv().await {
+            for edit in summary_task.edits.into_iter() {
+                if edit.tsf_id == ts_family_id {
+                    version_edits.push(edit.clone());
+                    if edit.has_seq_no {
+                        min_seq = edit.seq_no;
+                    }
+                }
+            }
+        }
+        let mut version_set = version_set.write();
+        if let Some(ts_family) = version_set.get_mutable_tsfamily_by_tf_id(ts_family_id) {
+            let new_version = ts_family
+                .version()
+                .copy_apply_version_edits(version_edits.as_slice(), Some(min_seq));
+            ts_family.new_version(new_version);
+        }
     }
 
     #[tokio::test]
@@ -697,6 +1065,7 @@ mod test {
             ..Default::default()
         });
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         version_set.write().add_tsfamily(
             0,
             "test".to_string(),
@@ -713,14 +1082,17 @@ mod test {
             cfg_set,
             version_set.clone(),
             summary_task_sender,
+            compact_task_sender,
         )
         .await
         .unwrap();
 
+        update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
+
         let mut version_set = version_set.write();
         let tsf = version_set.get_tsfamily(0).unwrap();
-        let version = tsf.version().read();
-        version.levels_info[1].read_columnfile(
+        let version = tsf.version();
+        version.levels_info[1].read_column_file(
             0,
             0,
             &TimeRange {
@@ -735,7 +1107,7 @@ mod test {
         tombstone.flush().unwrap();
         tombstone.load().unwrap();
 
-        version.levels_info[1].read_columnfile(
+        version.levels_info[1].read_column_file(
             0,
             0,
             &TimeRange {

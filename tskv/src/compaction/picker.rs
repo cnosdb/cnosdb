@@ -7,50 +7,46 @@ use crate::{
     direct_io::File,
     error::Result,
     kv_option::TseriesFamOpt,
-    tseries_family::{ColumnFile, Version},
+    tseries_family::{ColumnFile, LevelInfo, Version},
     TseriesFamilyId,
 };
 
-pub struct LevelCompactionPicker {
-    tseries_fam_opts: HashMap<u32, Arc<TseriesFamOpt>>,
+pub trait Picker: Send + Sync {
+    fn pick_compaction(&self, tsf_id: TseriesFamilyId, version: Arc<Version>)
+        -> Option<CompactReq>;
 }
 
-impl LevelCompactionPicker {
-    pub fn new(tsries_fam_opts: HashMap<u32, Arc<TseriesFamOpt>>) -> Self {
-        Self {
-            tseries_fam_opts: tsries_fam_opts,
-        }
-    }
+pub struct LevelCompactionPicker {
+    ts_family_opt: Arc<TseriesFamOpt>,
+}
 
-    pub fn pick_compaction(
+impl Picker for LevelCompactionPicker {
+    fn pick_compaction(
         &self,
         tsf_id: TseriesFamilyId,
         version: Arc<Version>,
     ) -> Option<CompactReq> {
-        let opts = match self.tseries_fam_opts.get(&tsf_id).cloned() {
-            None => {
-                error!("failed to get TseriesFamOpt by tsf id {}", &tsf_id);
-                return None;
-            }
-            Some(v) => v,
-        };
+        let level_infos = version.levels_info();
+
         let mut ctx = LevelCompatContext::default();
-        ctx.cal_score(version.as_ref(), opts.as_ref());
+        ctx.cal_score(level_infos, self.ts_family_opt.as_ref());
         if let Some((start_level, out_lvl)) = ctx.pick_level() {
-            let input = ctx.pick_files(version.as_ref(), opts.as_ref(), start_level, out_lvl);
-            if let Some((lvl, mut files)) = input {
+            let input = ctx.pick_files(
+                level_infos,
+                self.ts_family_opt.as_ref(),
+                start_level,
+                out_lvl,
+            );
+            if let Some((level, mut files)) = input {
                 for file in files.iter_mut() {
                     file.mark_compaction();
                 }
                 let request = CompactReq {
-                    files: (lvl, files),
+                    ts_family_id: tsf_id,
+                    ts_family_opt: self.ts_family_opt.clone(),
+                    files,
                     version,
-                    tsf_id,
-                    out_level: out_lvl, /* target_file_size_base:
-                                         * opts.target_file_size_base,
-                                         * cf_options: opts,
-                                         * options: self.db_opts.
-                                         * clone(), */
+                    out_level: out_lvl,
                 };
                 return Some(request);
             }
@@ -58,6 +54,13 @@ impl LevelCompactionPicker {
         None
     }
 }
+
+impl LevelCompactionPicker {
+    pub fn new(ts_family_opt: Arc<TseriesFamOpt>) -> Self {
+        Self { ts_family_opt }
+    }
+}
+
 #[derive(Default)]
 struct LevelCompatContext {
     level_scores: Vec<(u32, f64)>,
@@ -66,11 +69,10 @@ struct LevelCompatContext {
 }
 
 impl LevelCompatContext {
-    fn cal_score(&mut self, version: &Version, opts: &TseriesFamOpt) {
-        let info = version.levels_info();
+    fn cal_score(&mut self, level_infos: &[LevelInfo; 5], opts: &TseriesFamOpt) {
         let mut level0_being_compact = false;
-        for t in &info[0].files {
-            if t.is_pending_compaction() {
+        for t in &level_infos[0].files {
+            if t.is_compacting() {
                 level0_being_compact = true;
                 break;
             }
@@ -79,16 +81,16 @@ impl LevelCompatContext {
         let base_level = 0;
 
         if !level0_being_compact {
-            let score = info[0].files.len() as f64 / opts.compact_trigger as f64;
+            let score = level_infos[0].files.len() as f64 / opts.compact_trigger as f64;
             self.level_scores.push((
                 0,
                 f64::max(
                     score,
-                    info[0].cur_size as f64 / info[base_level].max_size as f64,
+                    level_infos[0].cur_size as f64 / level_infos[base_level].max_size as f64,
                 ),
             ));
         }
-        for (l, item) in info.iter().enumerate() {
+        for (l, item) in level_infos.iter().enumerate() {
             let score = match item.cur_size.checked_div(item.max_size) {
                 None => {
                     error!("failed to get score by max size");
@@ -99,7 +101,7 @@ impl LevelCompatContext {
             self.level_scores.push((l as u32, score as f64));
         }
         self.base_level = 0;
-        self.max_level = info.len() as u32 - 1;
+        self.max_level = level_infos.len() as u32 - 1;
     }
 
     fn pick_level(&mut self) -> Option<(u32, u32)> {
@@ -127,13 +129,12 @@ impl LevelCompatContext {
 
     fn pick_files(
         &self,
-        version: &Version,
+        level_infos: &[LevelInfo; 5],
         opts: &TseriesFamOpt,
         level: u32,
         output_level: u32,
     ) -> Option<(u32, Vec<Arc<ColumnFile>>)> {
-        let infos = version.levels_info();
-        if level > (infos.len() - 1) as u32 {
+        if level > (level_infos.len() - 1) as u32 {
             return None;
         }
         let mut inputs = vec![];
@@ -141,15 +142,15 @@ impl LevelCompatContext {
         let mut ts_max = i64::MIN;
         let mut file_size = 0;
         let max_size = opts.level_file_size(output_level);
-        let lvl_info = &infos[level as usize];
+        let lvl_info = &level_infos[level as usize];
         for file in &lvl_info.files {
             file_size += file.size();
-            if ts_min > file.range().min_ts {
-                ts_min = file.range().min_ts;
+            if ts_min > file.time_range().min_ts {
+                ts_min = file.time_range().min_ts;
             }
 
-            if ts_max < file.range().max_ts {
-                ts_max = file.range().max_ts;
+            if ts_max < file.time_range().max_ts {
+                ts_max = file.time_range().max_ts;
             }
             inputs.push(file.clone());
             if file_size >= max_size {

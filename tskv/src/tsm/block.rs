@@ -256,8 +256,9 @@ impl DataBlock {
         }
     }
 
-    /// Merges many `DataBlock`s into one `DataBlock`, sorted by timestamp,
-    /// if many (timestamp, value) conflict with the same timestamp, use the last value.
+    /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
+    /// sorted by timestamp, if many (timestamp, value) conflict with the same
+    /// timestamp, use the last value.
     pub fn merge_blocks(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
         if blocks.is_empty() {
             return vec![];

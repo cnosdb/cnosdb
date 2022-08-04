@@ -385,7 +385,6 @@ impl BlockMetaIterator {
         while pos < sli.len() {
             self.block_meta_limit += 1;
             if max_ts < decode_be_i64(&sli[pos + 8..pos + 16]) {
-                // Last data block in time range
                 return;
             } else {
                 pos += BLOCK_META_SIZE;
@@ -580,7 +579,7 @@ pub fn decode_data_block(
     }
 
     // let crc_ts = &self.buf[..4];
-    let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES);
+    let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES as usize);
     timestamp::decode(&buf[4..val_off as usize], &mut ts).context(DecodeSnafu)?;
     // let crc_data = &self.buf[(val_offset - offset) as usize..4];
     let data = &buf[(val_off + 4) as usize..];
