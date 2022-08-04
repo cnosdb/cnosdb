@@ -95,9 +95,9 @@ pub enum WriteTsmError {
     MaxFileSizeExceed { source: MaxFileSizeExceedError },
 }
 
-impl Into<Error> for WriteTsmError {
-    fn into(self) -> Error {
-        Error::WriteTsm { source: self }
+impl From<WriteTsmError> for Error {
+    fn from(wtr: WriteTsmError) -> Self {
+        Error::WriteTsm { source: wtr }
     }
 }
 
@@ -120,31 +120,11 @@ impl IndexBuf {
         self.index_offset = index_offset;
     }
 
-    pub fn insert_block_meta(
-        &mut self,
-        field_id: FieldId,
-        field_type: ValueType,
-        min_ts: i64,
-        max_ts: i64,
-        count: u32,
-        offset: u64,
-        size: u64,
-        val_offset: u64,
-    ) {
-        let idx = self.buf.entry(field_id).or_insert(IndexEntry {
-            field_id,
-            field_type,
-            blocks: vec![],
-        });
-        idx.blocks.push(BlockEntry {
-            min_ts,
-            max_ts,
-            count,
-            offset,
-            size,
-            val_offset,
-        });
-        self.bloom_filter.insert(&field_id.to_be_bytes()[..]);
+    pub fn insert_block_meta(&mut self, ie: IndexEntry, be: BlockEntry) {
+        let fid = ie.field_id;
+        let idx = self.buf.entry(fid).or_insert(ie);
+        idx.blocks.push(be);
+        self.bloom_filter.insert(&fid.to_be_bytes()[..]);
     }
 
     pub fn write_to(&self, writer: &mut FileCursor) -> WriteTsmResult<usize> {
@@ -331,14 +311,19 @@ fn write_raw_data_to(
     let ts_block_len = block_meta.val_off() - block_meta.offset();
 
     index_buf.insert_block_meta(
-        block_meta.field_id(),
-        block_meta.field_type(),
-        block_meta.min_ts(),
-        block_meta.max_ts(),
-        block_meta.count(),
-        offset,
-        block.len() as u64,
-        offset + ts_block_len,
+        IndexEntry {
+            field_id: block_meta.field_id(),
+            field_type: block_meta.field_type(),
+            blocks: vec![],
+        },
+        BlockEntry {
+            min_ts: block_meta.min_ts(),
+            max_ts: block_meta.max_ts(),
+            count: block_meta.count(),
+            offset,
+            size: block.len() as u64,
+            val_offset: offset + ts_block_len,
+        },
     );
 
     Ok(size)
@@ -393,14 +378,19 @@ fn write_block_to(
         .context(IOSnafu)?;
 
     index_buf.insert_block_meta(
-        field_id,
-        block.field_type(),
-        block.ts()[0],
-        block.ts()[block.len() - 1],
-        block.len() as u32,
-        offset,
-        size as u64,
-        val_off,
+        IndexEntry {
+            field_id,
+            field_type: block.field_type(),
+            blocks: vec![],
+        },
+        BlockEntry {
+            min_ts: block.ts()[0],
+            max_ts: block.ts()[block.len() - 1],
+            count: block.len() as u32,
+            offset,
+            size: size as u64,
+            val_offset: val_off,
+        },
     );
 
     Ok(size)

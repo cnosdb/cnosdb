@@ -100,34 +100,36 @@ impl VersionSet {
         self.ts_families.get(&tf_id)
     }
 
+    // todo: Maybe TseriesFamily::new() should be refactored.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tsfamily(
         &mut self,
-        tf_id: u32,
-        name: String,
+        tsf_id: u32,
+        tsf_name: String,
         seq_no: u64,
         file_id: u64,
         opt: Arc<TseriesFamOpt>,
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) {
         let tf = TseriesFamily::new(
-            tf_id,
-            name.clone(),
-            MemCache::new(tf_id, GLOBAL_CONFIG.max_memcache_size, seq_no, false),
+            tsf_id,
+            tsf_name.clone(),
+            MemCache::new(tsf_id, GLOBAL_CONFIG.max_memcache_size, seq_no, false),
             Arc::new(RwLock::new(Version::new(
-                tf_id,
+                tsf_id,
                 file_id,
-                name.clone(),
+                tsf_name.clone(),
                 vec![],
                 i64::MIN,
             ))),
             opt,
         );
-        self.ts_families.insert(tf_id, tf);
-        self.ts_families_names.insert(name.clone(), tf_id);
-        let mut edits = vec![];
+        self.ts_families.insert(tsf_id, tf);
+        self.ts_families_names.insert(tsf_name.clone(), tsf_id);
+
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(tf_id, name);
-        edits.push(edit);
+        edit.add_tsfamily(tsf_id, tsf_name);
+        let edits = vec![edit];
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask {
             edits,
