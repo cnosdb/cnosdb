@@ -297,16 +297,13 @@ mod test {
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
-        assert_eq!(
-            true,
-            tombstone.overlaps(
-                0,
-                &TimeRange {
-                    max_ts: 0,
-                    min_ts: 0
-                }
-            )
-        );
+        assert!(tombstone.overlaps(
+            0,
+            &TimeRange {
+                max_ts: 0,
+                min_ts: 0
+            }
+        ));
     }
 
     #[test]
@@ -323,36 +320,27 @@ mod test {
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
-        assert_eq!(
-            true,
-            tombstone.overlaps(
-                1,
-                &TimeRange {
-                    max_ts: 2,
-                    min_ts: 99
-                }
-            )
-        );
-        assert_eq!(
-            true,
-            tombstone.overlaps(
-                2,
-                &TimeRange {
-                    max_ts: 2,
-                    min_ts: 99
-                }
-            )
-        );
-        assert_eq!(
-            false,
-            tombstone.overlaps(
-                3,
-                &TimeRange {
-                    max_ts: 101,
-                    min_ts: 103
-                }
-            )
-        );
+        assert!(tombstone.overlaps(
+            1,
+            &TimeRange {
+                max_ts: 2,
+                min_ts: 99
+            }
+        ));
+        assert!(tombstone.overlaps(
+            2,
+            &TimeRange {
+                max_ts: 2,
+                min_ts: 99
+            }
+        ));
+        assert!(!tombstone.overlaps(
+            3,
+            &TimeRange {
+                max_ts: 101,
+                min_ts: 103
+            }
+        ));
     }
 
     #[test]
@@ -377,35 +365,26 @@ mod test {
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
-        assert_eq!(
-            true,
-            tombstone.overlaps(
-                1,
-                &TimeRange {
-                    max_ts: 2,
-                    min_ts: 99
-                }
-            )
-        );
-        assert_eq!(
-            true,
-            tombstone.overlaps(
-                2,
-                &TimeRange {
-                    max_ts: 3,
-                    min_ts: 100
-                }
-            )
-        );
-        assert_eq!(
-            false,
-            tombstone.overlaps(
-                3,
-                &TimeRange {
-                    max_ts: 4,
-                    min_ts: 101
-                }
-            )
-        );
+        assert!(tombstone.overlaps(
+            1,
+            &TimeRange {
+                max_ts: 2,
+                min_ts: 99
+            }
+        ));
+        assert!(tombstone.overlaps(
+            2,
+            &TimeRange {
+                max_ts: 3,
+                min_ts: 100
+            }
+        ));
+        assert!(!tombstone.overlaps(
+            3,
+            &TimeRange {
+                max_ts: 4,
+                min_ts: 101
+            }
+        ));
     }
 }
