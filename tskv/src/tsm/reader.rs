@@ -40,9 +40,9 @@ pub enum ReadTsmError {
     Invalid { reason: String },
 }
 
-impl Into<Error> for ReadTsmError {
-    fn into(self) -> Error {
-        Error::ReadTsm { source: self }
+impl From<ReadTsmError> for Error {
+    fn from(rte: ReadTsmError) -> Self {
+        Error::ReadTsm { source: rte }
     }
 }
 
@@ -426,7 +426,7 @@ impl TsmReader {
         let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let tsm = Arc::new(file_manager::open_file(tsm_path)?);
         let tsm_idx = IndexReader::open(tsm.clone())?;
-        let tombstone_path = path.parent().unwrap_or(Path::new("/"));
+        let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tsm_tomb = match TsmTombstone::open_for_read(tombstone_path, tsm_id) {
             Ok(Some(mut tomb)) => {
                 tomb.load()?;
