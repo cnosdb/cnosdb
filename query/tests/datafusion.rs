@@ -17,8 +17,8 @@ use datafusion::{
     },
     physical_expr::{planner, PhysicalSortExpr},
     physical_plan::{
-        filter::FilterExec, planner::ExtensionPlanner, ExecutionPlan, Partitioning,
-        PhysicalPlanner, RecordBatchStream, SendableRecordBatchStream, Statistics,
+        filter::FilterExec, ExecutionPlan, Partitioning, RecordBatchStream,
+        SendableRecordBatchStream, Statistics,
     },
     prelude::*,
     scalar::ScalarValue,

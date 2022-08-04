@@ -80,6 +80,42 @@ impl MemEntry {
     }
 }
 
+pub struct MemRaw<'a> {
+    pub seq: u64,
+    pub ts: Timestamp,
+    pub field_id: FieldId,
+    pub field_type: ValueType,
+    pub val: &'a [u8],
+}
+
+impl MemRaw<'_> {
+    pub fn data(&self) -> DataType {
+        match self.field_type {
+            ValueType::Unsigned => {
+                let val = byte_utils::decode_be_u64(self.val);
+                DataType::U64(U64Cell { ts: self.ts, val })
+            }
+            ValueType::Integer => {
+                let val = byte_utils::decode_be_i64(self.val);
+                DataType::I64(I64Cell { ts: self.ts, val })
+            }
+            ValueType::Float => {
+                let val = byte_utils::decode_be_f64(self.val);
+                DataType::F64(F64Cell { ts: self.ts, val })
+            }
+            ValueType::String => {
+                let val = Vec::from(self.val);
+                DataType::Str(StrCell { ts: self.ts, val })
+            }
+            ValueType::Boolean => {
+                let val = byte_utils::decode_be_bool(self.val);
+                DataType::Bool(BoolCell { ts: self.ts, val })
+            }
+            _ => todo!(),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct MemCache {
@@ -120,51 +156,13 @@ impl MemCache {
         }
     }
 
-    pub fn insert_raw(
-        &mut self,
-        seq: u64,
-        field_id: FieldId,
-        ts: Timestamp,
-        field_type: ValueType,
-        buf: &[u8],
-    ) -> Result<()> {
-        self.seq_no = seq;
-        match field_type {
-            ValueType::Unsigned => {
-                let val = byte_utils::decode_be_u64(buf);
-                let data = DataType::U64(U64Cell { ts, val });
-                self.insert(field_id, data, ValueType::Unsigned);
-            }
-            ValueType::Integer => {
-                let val = byte_utils::decode_be_i64(buf);
-                let data = DataType::I64(I64Cell { ts, val });
-                self.insert(field_id, data, ValueType::Integer);
-            }
-            ValueType::Float => {
-                let val = byte_utils::decode_be_f64(buf);
-                let data = DataType::F64(F64Cell { ts, val });
-                self.insert(field_id, data, ValueType::Float);
-            }
-            ValueType::String => {
-                let val = Vec::from(buf);
-                let data = DataType::Str(StrCell { ts, val });
-                self.insert(field_id, data, ValueType::String);
-            }
-            ValueType::Boolean => {
-                let val = byte_utils::decode_be_bool(buf);
-                let data = DataType::Bool(BoolCell { ts, val });
-                self.insert(field_id, data, ValueType::Boolean)
-            }
-            _ => todo!(),
-        };
-        Ok(())
-    }
-
-    pub fn insert(&mut self, field_id: FieldId, val: DataType, value_type: ValueType) {
-        let ts = val.timestamp();
+    pub fn insert_raw(&mut self, raw: &mut MemRaw) -> Result<()> {
+        self.seq_no = raw.seq;
+        let data = raw.data();
+        let ts = data.timestamp();
         let item = self
             .data_cache
-            .entry(field_id)
+            .entry(raw.field_id)
             .or_insert_with(MemEntry::default);
         if item.ts_max < ts {
             item.ts_max = ts;
@@ -172,14 +170,11 @@ impl MemCache {
         if item.ts_min > ts {
             item.ts_min = ts
         }
-        item.field_type = value_type;
-        self.cache_size += size_of_val(&val) as u64;
-        item.cells.push(val);
+        item.field_type = raw.field_type;
+        self.cache_size += size_of_val(&data) as u64;
+        item.cells.push(data);
+        Ok(())
     }
-
-    // pub fn data_cache(&self) -> HashMap<u64, MemEntry> {
-    //     self.data_cache
-    // }
 
     pub fn switch_to_immutable(&mut self) {
         for data in self.data_cache.iter_mut() {

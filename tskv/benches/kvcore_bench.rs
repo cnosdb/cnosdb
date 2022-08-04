@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use parking_lot::Mutex;
-use protos::{kv_service::WritePointsRpcRequest, models_helper};
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
-use tskv::{kv_option::WalConfig, TsKv};
+
+use protos::{kv_service::WritePointsRpcRequest, models_helper};
+use tskv::{error, kv_option::WalConfig, TsKv};
 
 async fn get_tskv() -> TsKv {
     let opt = tskv::kv_option::Options {
@@ -23,9 +25,12 @@ fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
     rt.block_on(tskv.lock().write(request)).unwrap();
 }
 
-fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, points: &[u8]) {
+fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
     let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().insert_cache(1, points)).unwrap();
+    let ps = flatbuffers::root::<fb_models::Points>(buf)
+        .context(error::InvalidFlatbufferSnafu)
+        .unwrap();
+    rt.block_on(tskv.lock().insert_cache(1, &ps));
 }
 
 fn big_write(c: &mut Criterion) {

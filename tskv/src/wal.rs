@@ -14,6 +14,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::{debug, error, info, warn};
 use walkdir::IntoIter;
 
+use crate::memcache::MemRaw;
 use crate::{
     byte_utils,
     compaction::FlushReq,
@@ -393,11 +394,13 @@ impl WalManager {
                                             };
                                             // todo: change fbs timestamp to i64
                                             tsf.put_mutcache(
-                                                fid,
-                                                val,
-                                                dtype,
-                                                e.seq,
-                                                p.timestamp() as i64,
+                                                &mut MemRaw {
+                                                    seq: e.seq,
+                                                    ts: p.timestamp() as i64,
+                                                    field_id: fid,
+                                                    field_type: dtype,
+                                                    val,
+                                                },
                                                 flush_task_sender.clone(),
                                             )
                                             .await
