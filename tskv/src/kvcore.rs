@@ -4,6 +4,7 @@ use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
 use models::{FieldId, SeriesId, Timestamp};
 use parking_lot::{Mutex, RwLock};
+use protos::models::Points;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -18,6 +19,7 @@ use tokio::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::memcache::MemRaw;
 use crate::{
     compaction::{run_flush_memtable_job, FlushReq},
     context::GlobalContext,
@@ -141,32 +143,7 @@ impl TsKv {
             })
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
-
-        // write memcache
-        if let Some(points) = fb_points.points() {
-            let mut version_set = self.version_set.write();
-            for point in points.iter() {
-                let p = InMemPoint::from(point);
-                let sid = p.series_id();
-                if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fields().iter() {
-                        tsf.put_mutcache(
-                            f.field_id(),
-                            &f.value,
-                            f.value_type,
-                            seq,
-                            point.timestamp() as i64,
-                            self.flush_task_sender.clone(),
-                        )
-                        .await;
-                    }
-                } else {
-                    warn!("ts_family for sid {} not found.", sid);
-                }
-            }
-        }
-
-        // let _ = self.kvctx.shard_write(0, write_batch).await;
+        self.insert_cache(seq, &fb_points).await;
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -282,34 +259,31 @@ impl TsKv {
         Ok(())
     }
 
-    pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {
-        let ps =
-            flatbuffers::root::<fb_models::Points>(buf).context(error::InvalidFlatbufferSnafu)?;
+    pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
         if let Some(points) = ps.points() {
             let mut version_set = self.version_set.write();
             for point in points.iter() {
                 let p = InMemPoint::from(point);
-                // use sid to dispatch to tsfamily
-                // so if you change the column name
-                // please keep the series id
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
                     for f in p.fields().iter() {
                         tsf.put_mutcache(
-                            f.field_id(),
-                            &f.value,
-                            f.value_type,
-                            seq,
-                            point.timestamp() as i64,
+                            &mut MemRaw {
+                                seq,
+                                ts: point.timestamp() as i64,
+                                field_id: f.field_id(),
+                                field_type: f.value_type,
+                                val: &f.value,
+                            },
                             self.flush_task_sender.clone(),
                         )
                         .await
                     }
+                } else {
+                    warn!("ts_family for sid {} not found.", sid);
                 }
             }
         }
-
-        Ok(())
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {

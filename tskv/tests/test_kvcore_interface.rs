@@ -212,9 +212,11 @@ mod tests {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
-        let points = fbb.finished_data();
-
-        tskv.insert_cache(1, points).await.unwrap();
+        let buf = fbb.finished_data();
+        let ps = flatbuffers::root::<fb_models::Points>(buf)
+            .context(error::InvalidFlatbufferSnafu)
+            .unwrap();
+        tskv.insert_cache(1, &ps).await;
     }
 
     #[tokio::test]
