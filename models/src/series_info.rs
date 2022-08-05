@@ -172,8 +172,8 @@ impl SeriesInfo {
         &self.table
     }
 
-    pub fn field_infos(&self) -> &Vec<FieldInfo> {
-        &self.field_infos
+    pub fn field_infos(&mut self) -> &mut Vec<FieldInfo> {
+        &mut self.field_infos
     }
 
     pub fn push_field_info(&mut self, field_info: FieldInfo) {

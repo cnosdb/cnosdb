@@ -49,7 +49,7 @@ pub struct TsKv {
     version_set: Arc<RwLock<VersionSet>>,
 
     wal_sender: UnboundedSender<WalTask>,
-    forward_index: Arc<RwLock<db_index::DBIndex>>,
+    db_index: Arc<RwLock<db_index::DBIndex>>,
 
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
@@ -67,7 +67,7 @@ impl TsKv {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self {
             options: shared_options,
-            forward_index: Arc::new(RwLock::new(fidx)),
+            db_index: Arc::new(RwLock::new(fidx)),
             version_set,
             wal_sender,
             flush_task_sender,
@@ -126,7 +126,7 @@ impl TsKv {
         for point in fb_points.points().unwrap() {
             let mut info =
                 SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            self.forward_index
+            self.db_index
                 .write()
                 .add_series_if_not_exists(&mut info)
                 .await
@@ -220,13 +220,13 @@ impl TsKv {
         min: Timestamp,
         max: Timestamp,
     ) -> Result<()> {
-        let series_infos = self.forward_index.read().get_series_info_list(&sids);
+        let series_infos = self.db_index.read().get_series_info_list(&sids);
         let timerange = TimeRange {
             max_ts: max,
             min_ts: min,
         };
         let path = self.options.db.db_path.clone();
-        for series_info in series_infos {
+        for mut series_info in series_infos {
             let vs = self.version_set.read();
             if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
                 tsf.delete_cache(&TimeRange {

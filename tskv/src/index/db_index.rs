@@ -60,12 +60,6 @@ impl DBIndex {
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id.to_string());
 
-        println!(
-            "mydebug key: {}, {:#x?} hashid {:#x?}",
-            series_key.string(),
-            series_key.hash(),
-            hash_id
-        );
         // load index first from cache,or else from storage and than cache it!
         let mut keys: &mut Vec<SeriesKey> = &mut vec![];
         match self.series_cache.get_mut(&hash_id) {
@@ -91,8 +85,6 @@ impl DBIndex {
         for tag in series_key.tags() {
             let key = utils::encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
             self.storage.push(&key, &id.to_be_bytes().to_vec())?;
-
-            println!("mydebug push {}: {:#x?}", utils::to_str(&key), id);
         }
 
         keys.push(series_key);
@@ -125,21 +117,22 @@ impl DBIndex {
         }
 
         let mut need_store = false;
-        let mut check_fn = |field: &FieldInfo| -> IndexResult<()> {
+        let mut check_fn = |field: &mut FieldInfo| -> IndexResult<()> {
             match schema.iter().find(|item| field.eq(item)) {
                 Some(v) => {
                     if field.value_type() != v.value_type() {
                         return Err(IndexError::FieldType);
                     }
 
-                    //field.set_field_id(v.field_id());
+                    field.set_field_id(v.field_id());
                 }
                 None => {
+                    let field_id = utils::unite_id((schema.len() + 1) as u64, series_id);
+
+                    field.set_field_id(field_id);
+                    schema.push(field.clone());
+
                     need_store = true;
-                    let mut clone = field.clone();
-                    clone.set_field_id(utils::unite_id((schema.len() + 1) as u64, series_id));
-                    //field.set_field_id(clone.field_id());
-                    schema.push(clone);
                 }
             }
             Ok(())
@@ -152,7 +145,7 @@ impl DBIndex {
 
         //check tags
         for tag in info.tags() {
-            check_fn(&FieldInfo::from(tag))?
+            check_fn(&mut FieldInfo::from(tag))?
         }
 
         //if needed, store it
@@ -279,7 +272,6 @@ impl DBIndex {
         let key = utils::encode_inverted_index_key(tab, &tags[0].key, &tags[0].value);
         if let Some(data) = self.storage.get(&key)? {
             result = utils::decode_series_id_list(&data)?;
-            println!("mydebug 1 id list: {}: {:#x?}", utils::to_str(&key), result);
             if tags.len() == 1 {
                 return Ok(result);
             }
@@ -289,11 +281,6 @@ impl DBIndex {
             let key = utils::encode_inverted_index_key(tab, &tag.key, &tag.value);
             if let Some(data) = self.storage.get(&key)? {
                 let id_list = utils::decode_series_id_list(&data)?;
-                println!(
-                    "mydebug 2 id list: {}: {:#x?}",
-                    utils::to_str(&key),
-                    id_list
-                );
                 result = utils::and_u64(&result, &id_list);
             } else {
                 return Ok(vec![]);
