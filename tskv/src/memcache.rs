@@ -129,6 +129,8 @@ pub struct MemCache {
     tf_id: u32,
     // wal seq number
     pub seq_no: u64,
+    // wal seq number when the MemCache been built
+    min_seq_no: u64,
     // max mem buffer size convert to immemcache
     max_buf_size: u64,
     // block <field_id, buffer>
@@ -151,6 +153,7 @@ impl MemCache {
             max_buf_size: max_size,
             data_cache: cache,
             seq_no: seq,
+            min_seq_no: seq,
             cache_size: 0,
             is_delta,
         }
@@ -201,6 +204,10 @@ impl MemCache {
 
     pub fn tf_id(&self) -> u32 {
         self.tf_id
+    }
+
+    pub fn min_seq_no(&self) -> u64 {
+        self.min_seq_no
     }
 
     pub fn max_buf_size(&self) -> u64 {

@@ -291,7 +291,7 @@ impl WalManager {
 
     async fn roll_wal_file(&mut self) -> Result<()> {
         if self.current_file.size > SEGMENT_SIZE {
-            let id = self.current_file.id;
+            let id = self.current_file.id + 1;
             let max_sequence = self.current_file.max_sequence;
 
             self.current_file.flush().await?;

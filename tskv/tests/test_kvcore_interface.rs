@@ -116,7 +116,7 @@ mod tests {
         fields_id = fields_id[0..l].to_owned();
         tskv.read(
             sids,
-            &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+            &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id,
         )
         .await;
@@ -166,7 +166,7 @@ mod tests {
         fields_id = fields_id[0..l].to_owned();
         tskv.read(
             sids.clone(),
-            &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+            &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
         )
         .await;
@@ -174,7 +174,7 @@ mod tests {
         tskv.delete_series(sids.clone(), 1, 1).await.unwrap();
         tskv.read(
             sids.clone(),
-            &TimeRange::new(Local::now().timestamp_millis() + 100, 0),
+            &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
         )
         .await;

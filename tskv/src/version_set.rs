@@ -8,6 +8,7 @@ use parking_lot::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::error;
 
+use crate::tseries_family::LevelInfo;
 use crate::{
     kv_option::{TseriesFamDesc, TseriesFamOpt},
     memcache::MemCache,
@@ -21,15 +22,12 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
-    pub async fn new(
-        desc: &[Arc<TseriesFamDesc>],
-        vers_set: HashMap<u32, Arc<RwLock<Version>>>,
-    ) -> Self {
+    pub async fn new(desc: &[Arc<TseriesFamDesc>], vers_set: HashMap<u32, Arc<Version>>) -> Self {
         let mut ts_families = HashMap::new();
         let mut ts_families_names = HashMap::new();
         for (id, ver) in vers_set {
-            let name = ver.read().get_name().to_string();
-            let seq = ver.read().last_seq;
+            let name = ver.tf_name().to_string();
+            let seq = ver.last_seq;
             for item in desc.iter() {
                 if item.name == name {
                     let tf = TseriesFamily::new(
@@ -100,6 +98,13 @@ impl VersionSet {
         self.ts_families.get(&tf_id)
     }
 
+    pub fn get_mutable_tsfamily_by_tf_id(&mut self, tf_id: u32) -> Option<&mut TseriesFamily> {
+        if self.ts_families.is_empty() {
+            return None;
+        }
+        self.ts_families.get_mut(&tf_id)
+    }
+
     // todo: Maybe TseriesFamily::new() should be refactored.
     #[allow(clippy::too_many_arguments)]
     pub fn add_tsfamily(
@@ -115,13 +120,13 @@ impl VersionSet {
             tsf_id,
             tsf_name.clone(),
             MemCache::new(tsf_id, GLOBAL_CONFIG.max_memcache_size, seq_no, false),
-            Arc::new(RwLock::new(Version::new(
+            Arc::new(Version::new(
                 tsf_id,
                 file_id,
                 tsf_name.clone(),
-                vec![],
+                LevelInfo::init_levels(),
                 i64::MIN,
-            ))),
+            )),
             opt,
         );
         self.ts_families.insert(tsf_id, tf);

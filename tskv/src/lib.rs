@@ -36,7 +36,6 @@ use utils::BloomFilter;
 type ColumnFileId = u64;
 type TseriesFamilyId = u32;
 type LevelId = u32;
-type VersionId = u32;
 
 #[derive(Debug)]
 pub enum Task {

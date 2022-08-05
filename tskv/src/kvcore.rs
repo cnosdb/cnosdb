@@ -21,7 +21,7 @@ use trace::{debug, error, info, trace, warn};
 
 use crate::memcache::MemRaw;
 use crate::{
-    compaction::{run_flush_memtable_job, FlushReq},
+    compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
     error::{self, Result},
     file_manager::{self, FileManager},
@@ -32,12 +32,12 @@ use crate::{
     record_file::Reader,
     summary,
     summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
-    tseries_family::{TimeRange, Version},
+    tseries_family::{SuperVersion, TimeRange, Version},
     tsm::TsmTombstone,
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
-    Error, Task,
+    Error, Task, TseriesFamilyId,
 };
 
 pub struct Entry {
@@ -52,6 +52,7 @@ pub struct TsKv {
     db_index: Arc<RwLock<db_index::DBIndex>>,
 
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
+    compact_task_sender: UnboundedSender<TseriesFamilyId>,
     summary_task_sender: UnboundedSender<SummaryTask>,
 }
 
@@ -59,6 +60,7 @@ impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
+        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (version_set, summary) =
             Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
         let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
@@ -71,13 +73,21 @@ impl TsKv {
             version_set,
             wal_sender,
             flush_task_sender,
+            compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
         };
         core.run_wal_job(wal_receiver);
         core.run_flush_job(
             flush_task_receiver,
-            summary.global_context(),
-            summary.version_set(),
+            summary.global_context().clone(),
+            summary.version_set().clone(),
+            summary_task_sender.clone(),
+            compact_task_sender.clone(),
+        );
+        core.run_compact_job(
+            compact_task_receiver,
+            summary.global_context().clone(),
+            summary.version_set().clone(),
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
@@ -150,22 +160,30 @@ impl TsKv {
     }
 
     pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
-        let version_set = self.version_set.read();
-        if let Some(tsf) = version_set.get_tsfamily_immut(sid) {
+        let mut super_version: Option<Arc<SuperVersion>> = None;
+        {
+            let version_set = self.version_set.read();
+            if let Some(tsf) = version_set.get_tsfamily_immut(sid) {
+                super_version = Some(tsf.super_version());
+            } else {
+                warn!("ts_family with sid {} not found.", sid);
+            }
+        };
+        if let Some(sv) = super_version {
             // get data from memcache
-            if let Some(mem_entry) = tsf.cache().read().data_cache.get(&field_id) {
+            if let Some(mem_entry) = sv.caches.mut_cache.read().data_cache.get(&field_id) {
                 info!("memcache::{}::{}", sid.clone(), field_id);
                 mem_entry.read_cell(time_range);
             }
 
             // get data from delta_memcache
-            if let Some(mem_entry) = tsf.delta_cache().read().data_cache.get(&field_id) {
+            if let Some(mem_entry) = sv.caches.delta_mut_cache.read().data_cache.get(&field_id) {
                 info!("delta memcache::{}::{}", sid.clone(), field_id);
                 mem_entry.read_cell(time_range);
             }
 
             // get data from immut_delta_memcache
-            for mem_cache in tsf.delta_immut_cache().iter() {
+            for mem_cache in sv.caches.delta_immut_cache.iter() {
                 if mem_cache.read().flushed {
                     continue;
                 }
@@ -176,7 +194,7 @@ impl TsKv {
             }
 
             // get data from im_memcache
-            for mem_cache in tsf.im_cache().iter() {
+            for mem_cache in sv.caches.immut_cache.iter() {
                 if mem_cache.read().flushed {
                     continue;
                 }
@@ -187,22 +205,18 @@ impl TsKv {
             }
 
             // get data from levelinfo
-            for level_info in tsf.version().read().levels_info.iter() {
+            for level_info in sv.version.levels_info.iter() {
                 if level_info.level == 0 {
                     continue;
                 }
                 info!("levelinfo::{}::{}", sid.clone(), field_id);
-                level_info.read_columnfile(tsf.tf_id(), field_id, time_range);
+                level_info.read_column_file(sv.ts_family_id, field_id, time_range);
             }
 
             // get data from delta
-            let level_info = &tsf.version().read().levels_info;
-            if !level_info.is_empty() {
-                info!("delta::{}::{}", sid.clone(), field_id);
-                level_info[0].read_columnfile(tsf.tf_id(), field_id, time_range);
-            }
-        } else {
-            warn!("ts_family with sid {} not found.", sid);
+            let level_info = sv.version.levels_info();
+            info!("delta::{}::{}", sid.clone(), field_id);
+            level_info[0].read_column_file(sv.ts_family_id, field_id, time_range);
         }
     }
 
@@ -227,18 +241,24 @@ impl TsKv {
         };
         let path = self.options.db.db_path.clone();
         for mut series_info in series_infos {
-            let vs = self.version_set.read();
-            if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
-                tsf.delete_cache(&TimeRange {
-                    min_ts: min,
-                    max_ts: max,
-                })
-                .await;
-                let version = tsf.version().read();
-                for level in version.levels_info() {
-                    if level.ts_range.overlaps(&timerange) {
+            let mut super_version: Option<Arc<SuperVersion>> = None;
+            {
+                let vs = self.version_set.read();
+                if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
+                    tsf.delete_cache(&TimeRange {
+                        min_ts: min,
+                        max_ts: max,
+                    })
+                    .await;
+                    super_version = Some(tsf.super_version())
+                }
+            };
+
+            if let Some(sv) = super_version {
+                for level in sv.version.levels_info() {
+                    if level.time_range.overlaps(&timerange) {
                         for column_file in level.files.iter() {
-                            if column_file.range().overlaps(&timerange) {
+                            if column_file.time_range().overlaps(&timerange) {
                                 let field_ids: Vec<FieldId> = series_info
                                     .field_infos()
                                     .iter()
@@ -315,7 +335,8 @@ impl TsKv {
         mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
         ctx: Arc<GlobalContext>,
         version_set: Arc<RwLock<VersionSet>>,
-        sender: UnboundedSender<SummaryTask>,
+        summary_task_sender: UnboundedSender<SummaryTask>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) {
         let f = async move {
             while let Some(x) = receiver.recv().await {
@@ -324,7 +345,8 @@ impl TsKv {
                     ctx.clone(),
                     HashMap::new(),
                     version_set.clone(),
-                    sender.clone(),
+                    summary_task_sender.clone(),
+                    compact_task_sender.clone(),
                 )
                 .await
                 .unwrap();
@@ -332,6 +354,36 @@ impl TsKv {
         };
         tokio::spawn(f);
         warn!("Flush task handler started");
+    }
+
+    fn run_compact_job(
+        &self,
+        mut receiver: UnboundedReceiver<TseriesFamilyId>,
+        ctx: Arc<GlobalContext>,
+        version_set: Arc<RwLock<VersionSet>>,
+        summary_task_sender: UnboundedSender<SummaryTask>,
+    ) {
+        tokio::spawn(async move {
+            while let Some(ts_family_id) = receiver.recv().await {
+                if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
+                    if let Some(compact_req) = tsf.pick_compaction() {
+                        match compaction::run_compaction_job(compact_req, ctx.clone()) {
+                            Ok(version_edits) => {
+                                let (summary_tx, summary_rx) = oneshot::channel();
+                                let ret = summary_task_sender.send(SummaryTask {
+                                    edits: version_edits,
+                                    cb: summary_tx,
+                                });
+                                // TODO Handle summary result using summary_rx.
+                            }
+                            Err(e) => {
+                                error!("Compaction job failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
     fn run_summary_job(
