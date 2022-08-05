@@ -17,8 +17,8 @@ use datafusion::{
     },
     physical_expr::{planner, PhysicalSortExpr},
     physical_plan::{
-        filter::FilterExec, planner::ExtensionPlanner, ExecutionPlan, Partitioning,
-        PhysicalPlanner, RecordBatchStream, SendableRecordBatchStream, Statistics,
+        filter::FilterExec, ExecutionPlan, Partitioning, RecordBatchStream,
+        SendableRecordBatchStream, Statistics,
     },
     prelude::*,
     scalar::ScalarValue,
@@ -119,9 +119,9 @@ impl TableProvider for Table {
                 &ctx.execution_props,
             )?;
             let filter = FilterExec::try_new(predicate, Arc::new(table_scan_exec))?;
-            return Ok(Arc::new(filter));
+            Ok(Arc::new(filter))
         } else {
-            return Ok(Arc::new(table_scan_exec));
+            Ok(Arc::new(table_scan_exec))
         }
     }
 }
@@ -142,7 +142,7 @@ impl TableScanStream {
     }
 }
 
-type ArrowResult<T> = std::result::Result<T, ArrowError>;
+type ArrowResult<T> = result::Result<T, ArrowError>;
 
 impl Stream for TableScanStream {
     type Item = ArrowResult<RecordBatch>;
@@ -209,7 +209,7 @@ impl ExecutionPlan for TableScanExec {
         _children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Err(DataFusionError::Internal(format!(
-            "Children cannot be replacd in {:?}",
+            "Children cannot be replaced in {:?}",
             self,
         )))
     }
@@ -315,18 +315,6 @@ impl UserDefinedLogicalNode for TableScanNode {
         todo!()
     }
 
-    fn fmt_for_explain(&self, _f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        todo!()
-    }
-
-    fn from_template(
-        &self,
-        _exprs: &[Expr],
-        _inputs: &[datafusion::logical_plan::LogicalPlan],
-    ) -> Arc<dyn UserDefinedLogicalNode + Send + Sync> {
-        todo!()
-    }
-
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         // default (safe) is all columns in the schema.
         self.schema()
@@ -335,26 +323,38 @@ impl UserDefinedLogicalNode for TableScanNode {
             .map(|f| f.name().clone())
             .collect()
     }
-}
 
-pub struct TableScanPlanner {}
+    fn fmt_for_explain(&self, _f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        todo!()
+    }
 
-impl ExtensionPlanner for TableScanPlanner {
-    fn plan_extension(
+    fn from_template(
         &self,
-        _planner: &dyn PhysicalPlanner,
-        node: &dyn UserDefinedLogicalNode,
-        _logical_inputs: &[&LogicalPlan],
-        _physical_inputs: &[Arc<dyn ExecutionPlan>],
-        _session_state: &SessionState,
-    ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
-        dbg!(node);
-        Ok(Some(Arc::new(TableScanPlan {
-            schema: Table::test_schema(),
-            data: Arc::new(Table::test_data()),
-        })))
+        _exprs: &[Expr],
+        _inputs: &[LogicalPlan],
+    ) -> Arc<dyn UserDefinedLogicalNode> {
+        todo!()
     }
 }
+
+// pub struct TableScanPlanner {}
+//
+// impl ExtensionPlanner for TableScanPlanner {
+//     fn plan_extension(
+//         &self,
+//         _planner: &dyn PhysicalPlanner,
+//         node: &dyn UserDefinedLogicalNode,
+//         _logical_inputs: &[&LogicalPlan],
+//         _physical_inputs: &[Arc<dyn ExecutionPlan>],
+//         _session_state: &SessionState,
+//     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
+//         dbg!(node);
+//         Ok(Some(Arc::new(TableScanPlan {
+//             schema: Table::test_schema(),
+//             data: Arc::new(Table::test_data()),
+//         })))
+//     }
+// }
 
 #[tokio::test]
 async fn test_dataframe() {

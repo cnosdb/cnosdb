@@ -39,7 +39,7 @@ impl ExecutionPlan for TskvExec {
         self.proj_schema.clone()
     }
 
-    fn output_partitioning(&self) -> datafusion::physical_plan::Partitioning {
+    fn output_partitioning(&self) -> Partitioning {
         // todo: get partition
         Partitioning::UnknownPartitioning(2)
     }
@@ -64,7 +64,7 @@ impl ExecutionPlan for TskvExec {
         _partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let batch_size = context.session_config().batch_size;
+        let batch_size = context.session_config().batch_size();
         Ok(Box::pin(TableScanStream::new(
             self.schema(),
             self.filter(),

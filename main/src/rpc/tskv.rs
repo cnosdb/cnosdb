@@ -87,7 +87,7 @@ impl TskvService for TskvServiceImpl {
                     Err(status) => {
                         match resp_sender.send(Err(status)).await {
                             Ok(_) => (),
-                            Err(_err) => break, // response was droped
+                            Err(_err) => break, // response was dropped
                         }
                     }
                 }
@@ -118,7 +118,7 @@ impl TskvService for TskvServiceImpl {
                     let (tx, rx) = oneshot::channel();
                     let ret = req_sender
                         .send(tskv::Task::WritePoints { req, tx })
-                        .map_err(|err| tonic::Status::internal(err.to_string()));
+                        .map_err(|err| Status::internal(err.to_string()));
 
                     // 2. if something wrong when sending Request
                     if let Err(err) = ret {
@@ -128,8 +128,8 @@ impl TskvService for TskvServiceImpl {
                     // 3. receive Response from handler
                     let ret = match rx.await {
                         Ok(Ok(resp)) => Ok(resp),
-                        Ok(Err(err)) => Err(tonic::Status::internal(err.to_string())),
-                        Err(err) => Err(tonic::Status::internal(err.to_string())),
+                        Ok(Err(err)) => Err(Status::internal(err.to_string())),
+                        Err(err) => Err(Status::internal(err.to_string())),
                     };
 
                     // 4. send Response out of this Stream
@@ -138,7 +138,7 @@ impl TskvService for TskvServiceImpl {
                 Err(status) => {
                     match resp_sender.send(Err(status)).await {
                         Ok(_) => (),
-                        Err(_err) => break, // response was droped
+                        Err(_err) => break, // response was dropped
                     }
                 }
             }

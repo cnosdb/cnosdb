@@ -1,6 +1,6 @@
 ---
-name: Just a issue
-about: Just file a issue to us, no bugs, no new features, no offense :)
+name: Just an issue
+about: Just file an issue to us, no bugs, no new features, no offense :)
 title: ''
 labels: ''
 assignees: ''

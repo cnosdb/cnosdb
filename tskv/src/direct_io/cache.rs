@@ -177,6 +177,11 @@ struct DonorPage<T: Scope> {
     scope: Arc<ScopeShare<T>>,
 }
 
+struct PageData<T: Scope> {
+    donor_page: Option<DonorPage<T>>,
+    data: Box<RwLock<Page>>,
+}
+
 struct CacheInner<T: Scope> {
     options: Options,
     pages: PagePtr<T>,
@@ -288,7 +293,7 @@ impl<T: Scope> CacheInner<T> {
         }
     }
 
-    fn run_hand_cold(&mut self) -> (DonorPage<T>, Box<RwLock<Page>>) {
+    fn run_hand_cold(&mut self) -> PageData<T> {
         if self.resident_cold_page_count == 0 {
             self.run_hand_hot(true);
         }
@@ -371,7 +376,10 @@ impl<T: Scope> CacheInner<T> {
                             self.remove_page(page.ptr(), PageCountKind::Cold { resident: true });
                         }
 
-                        break (DonorPage { id, scope }, page_data);
+                        break PageData {
+                            donor_page: Some(DonorPage { id, scope }),
+                            data: page_data,
+                        };
                     }
                 }
                 _ => {}
@@ -379,21 +387,24 @@ impl<T: Scope> CacheInner<T> {
         }
     }
 
-    fn acquire_page_data(&mut self) -> Option<(Option<DonorPage<T>>, Box<RwLock<Page>>)> {
+    fn acquire_page_data(&mut self) -> Option<PageData<T>> {
         debug_assert!(self.resident_page_count() <= self.options.max_resident);
         debug_assert!(self.io_page_count <= self.resident_page_count());
         if self.resident_page_count() < self.options.max_resident {
             let page = Page::new(self.options.page_len, self.options.page_align);
-            return Some((None, Box::new(RwLock::new(page))));
+            return Some(PageData {
+                donor_page: None,
+                data: Box::new(RwLock::new(page)),
+            });
         } else if self.resident_page_count() == self.io_page_count {
             // All potential donor pages are locked in IO.
             // The operation must be retried.
             return None;
         }
-        let (donor_page, data) = self.run_hand_cold();
+        let pd = self.run_hand_cold();
         debug_assert!(self.resident_page_count() < self.options.max_resident);
         self.max_hand_cold_cost = cmp::max(self.max_hand_cold_cost, self.hand_cold_cost);
-        Some((Some(donor_page), data))
+        Some(pd)
     }
 
     fn resident_page_count(&self) -> usize {
@@ -703,15 +714,16 @@ impl<T: Scope> Cache<T> {
 
             // We first run HAND_cold for a free space.
 
-            let (data_page_id, data) = if let Some(v) = inner.acquire_page_data() {
+            //let (data_page_id, data)
+            let pd = if let Some(v) = inner.acquire_page_data() {
                 v
             } else {
                 continue;
             };
             let page = if let Some(page) = page {
-                inner.replace_page_data(page, data)
+                inner.replace_page_data(page, pd.data)
             } else {
-                inner.add_page_data(scope, id, data)
+                inner.add_page_data(scope, id, pd.data)
             };
 
             scope.page_map_w().refresh();
@@ -723,7 +735,7 @@ impl<T: Scope> Cache<T> {
             inner.hand_cold_cost = 0;
             inner.io_page_count += 1;
 
-            break (data_page_id, page, Some(page_io));
+            break (pd.donor_page, page, Some(page_io));
         };
 
         // Here it's guaranteed the page doesn't get dropped because PageIo.waiters is the deferred

@@ -20,6 +20,11 @@ pub fn make_summary_file(path: impl AsRef<Path>, number: u64) -> PathBuf {
     path.as_ref().join(p)
 }
 
+pub fn make_summary_file_tmp(path: impl AsRef<Path>) -> PathBuf {
+    let p = "summary.tmp".to_string();
+    path.as_ref().join(p)
+}
+
 pub fn check_summary_file_name(file_name: &str) -> bool {
     SUMMARY_FILE_NAME_PATTERN.is_match(file_name)
 }
@@ -36,11 +41,11 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
         .parse::<u64>()
         .map_err(|_| Error::InvalidFileName {
             file_name: file_name.to_string(),
-            message: "sumary file name contains an invalid id".to_string(),
+            message: "summary file name contains an invalid id".to_string(),
         })
 }
 
-// WAL (wrhte ahead log) file.
+// WAL (write ahead log) file.
 
 pub fn make_wal_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
     let p = format!("_{:06}.wal", sequence);
@@ -87,8 +92,8 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
             message: "tsm file name contains an invalid id".to_string(),
         });
     }
-    let start = file_name.find("_").unwrap_or(0_usize) + 1;
-    let end = file_name.find(".").unwrap_or(file_name.len());
+    let start = file_name.find('_').unwrap_or(0_usize) + 1;
+    let end = file_name.find('.').unwrap_or(file_name.len());
     let file_number = &file_name[start..end];
     file_number
         .parse::<u64>()
@@ -182,12 +187,12 @@ mod test {
     #[test]
     fn test_get_file_id() {
         let summary_file_name = "summary-000123";
-        let summary_file_id = file_utils::get_summary_file_id(summary_file_name).unwrap();
+        let summary_file_id = get_summary_file_id(summary_file_name).unwrap();
         dbg!(summary_file_id);
         assert_eq!(summary_file_id, 123);
 
         let wal_file_name = "_000123.wal";
-        let wal_file_id = file_utils::get_wal_file_id(wal_file_name).unwrap();
+        let wal_file_id = get_wal_file_id(wal_file_name).unwrap();
         dbg!(wal_file_id);
         assert_eq!(wal_file_id, 123);
     }

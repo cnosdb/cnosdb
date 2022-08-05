@@ -14,6 +14,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::{debug, error, info, warn};
 use walkdir::IntoIter;
 
+use crate::memcache::MemRaw;
 use crate::{
     byte_utils,
     compaction::FlushReq,
@@ -35,7 +36,7 @@ const BLOCK_HEADER_SIZE: usize = 17;
 pub enum WalTask {
     Write {
         points: Arc<Vec<u8>>,
-        // (seq_no, writen_size)
+        // (seq_no, written_size)
         cb: oneshot::Sender<Result<(u64, usize)>>,
     },
 }
@@ -118,7 +119,7 @@ impl WalWriter {
         let min_sequence: u64;
         let max_sequence: u64;
         cursor.seek(SeekFrom::Start(0)).context(error::IOSnafu)?;
-        let readed = cursor.read(&mut header_buf[..]).context(error::IOSnafu)?;
+        let read = cursor.read(&mut header_buf[..]).context(error::IOSnafu)?;
 
         Ok(header_buf)
     }
@@ -219,11 +220,11 @@ impl WalWriter {
         seq += 1;
 
         // write & fsync succeed
-        let writen_size = (pos - self.size) as usize;
+        let written_size = (pos - self.size) as usize;
         self.size = pos;
         self.max_sequence = seq;
 
-        Ok((seq, writen_size))
+        Ok((seq, written_size))
     }
 
     pub async fn flush(&mut self) -> Result<()> {
@@ -393,11 +394,13 @@ impl WalManager {
                                             };
                                             // todo: change fbs timestamp to i64
                                             tsf.put_mutcache(
-                                                fid,
-                                                val,
-                                                dtype,
-                                                e.seq,
-                                                p.timestamp() as i64,
+                                                &mut MemRaw {
+                                                    seq: e.seq,
+                                                    ts: p.timestamp() as i64,
+                                                    field_id: fid,
+                                                    field_type: dtype,
+                                                    val,
+                                                },
                                                 flush_task_sender.clone(),
                                             )
                                             .await
@@ -728,6 +731,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_read_and_write() {
         let wal_config = Arc::new(kv_option::WalConfig {
             dir: String::from(DIR),
@@ -736,7 +740,7 @@ mod test {
 
         let mut mgr = WalManager::new(wal_config);
 
-        for i in 0..10 {
+        for _i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
 
             let entry = random_wal_entry_block(&mut fbb);

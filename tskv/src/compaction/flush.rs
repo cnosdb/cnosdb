@@ -96,48 +96,40 @@ impl FlushTask {
             build_block_set(field_size_delta, field_map_delta, &mut ts_max, &mut ts_min);
         // build tsm file
         if !block_set_delta.is_empty() {
-            self.meta.file_id = kernel.file_id();
             kernel.file_id_next();
-            build_tsm_file_workflow(
-                &mut self.meta,
-                block_set_delta,
-                self.tsf_id,
-                &self.path_delta,
-                low_seq,
-                high_seq,
-                ts_max,
+            self.meta.file_id = kernel.file_id();
+            let tmp_meta = CompactMeta {
+                file_id: 0,
+                file_size: 0,
+                tsf_id: self.tsf_id,
                 ts_min,
-                0,
-                true,
-                edits,
-                version_set.clone(),
-                cf_opt.clone(),
-            )
-            .await
-            .expect("failed to build delta file");
+                ts_max,
+                level: 0,
+                high_seq,
+                low_seq,
+                is_delta: true,
+            };
+            update_meta(block_set_delta, &self.path_delta, &mut self.meta, &tmp_meta)?;
+            build_tsm_file_workflow(&mut self.meta, edits, version_set.clone(), cf_opt.clone())?;
         }
         (ts_min, ts_max) = (i64::MAX, i64::MIN);
         let block_set = build_block_set(field_size, field_map, &mut ts_max, &mut ts_min);
         if !block_set.is_empty() {
-            self.meta.file_id = kernel.file_id();
             kernel.file_id_next();
-            build_tsm_file_workflow(
-                &mut self.meta,
-                block_set,
-                self.tsf_id,
-                &self.path_tsm,
-                low_seq,
-                high_seq,
-                ts_max,
+            self.meta.file_id = kernel.file_id();
+            let tmp_meta = CompactMeta {
+                file_id: 0,
+                file_size: 0,
+                tsf_id: self.tsf_id,
                 ts_min,
-                1,
-                false,
-                edits,
-                version_set.clone(),
-                cf_opt,
-            )
-            .await
-            .expect("Failed to build tsm file");
+                ts_max,
+                level: 1,
+                high_seq,
+                low_seq,
+                is_delta: false,
+            };
+            update_meta(block_set, &self.path_tsm, &mut self.meta, &tmp_meta)?;
+            build_tsm_file_workflow(&mut self.meta, edits, version_set, cf_opt)?;
         }
         for i in mem_guard.iter_mut() {
             i.flushed = true;
@@ -146,62 +138,58 @@ impl FlushTask {
     }
 }
 
-async fn build_tsm_file_workflow(
-    meta: &mut CompactMeta,
+fn update_meta(
     block_set: HashMap<FieldId, DataBlock>,
-    tsf_id: u32,
     path: &str,
-    low_seq: u64,
-    high_seq: u64,
-    ts_max: i64,
-    ts_min: i64,
-    level: usize,
-    is_delta: bool,
-    edits: &mut Vec<VersionEdit>,
-    version_set: Arc<RwLock<VersionSet>>,
-    cf_opt: Arc<TseriesFamOpt>,
+    meta: &mut CompactMeta,
+    tmp_meta: &CompactMeta,
 ) -> Result<()> {
-    let (fname, fseq) = if is_delta {
+    let (fname, fseq) = if tmp_meta.is_delta {
         (make_delta_file_name(path, meta.file_id), meta.file_id)
     } else {
         (make_tsm_file_name(path, meta.file_id), meta.file_id)
     };
-    let file_size = build_tsm_file(fname, fseq, is_delta, block_set)?;
     // update meta
-    meta.tsf_id = tsf_id;
-    meta.low_seq = low_seq;
-    meta.high_seq = high_seq;
-    meta.ts_max = ts_max;
-    meta.ts_min = ts_min;
-    meta.level = level as u32;
-    meta.file_size = file_size;
-    meta.is_delta = is_delta;
-    let max_level_ts;
-    {
-        let version_s = version_set.read();
-        let tsf_immut = match version_s.get_tsfamily_by_tf_id(tsf_id) {
-            None => {
-                error!("failed get tsfamily by tsf id {}", tsf_id);
-                return Err(Error::InvalidTsfid { tf_id: tsf_id });
-            }
-            Some(v) => v,
-        };
-        let mut version = tsf_immut.version().write();
-        max_level_ts = version.max_level_ts;
-        while version.levels_info.len() <= level {
-            let i: u32 = version.levels_info.len() as u32;
-            version.levels_info.push(LevelInfo::init(i));
-            version.levels_info[i as usize].tsf_opt = cf_opt.clone()
+    meta.tsf_id = tmp_meta.tsf_id;
+    meta.low_seq = tmp_meta.low_seq;
+    meta.high_seq = tmp_meta.high_seq;
+    meta.ts_max = tmp_meta.ts_max;
+    meta.ts_min = tmp_meta.ts_min;
+    meta.level = tmp_meta.level;
+    meta.file_size = build_tsm_file(fname, fseq, tmp_meta.is_delta, block_set)?;
+    meta.is_delta = tmp_meta.is_delta;
+    Ok(())
+}
+
+fn build_tsm_file_workflow(
+    meta: &mut CompactMeta,
+    edits: &mut Vec<VersionEdit>,
+    version_set: Arc<RwLock<VersionSet>>,
+    cf_opt: Arc<TseriesFamOpt>,
+) -> Result<()> {
+    let version_s = version_set.read();
+    let tsf_immut = match version_s.get_tsfamily_by_tf_id(meta.tsf_id) {
+        None => {
+            error!("failed get tsfamily by tsf id {}", meta.tsf_id);
+            return Err(Error::InvalidTsfid { tf_id: meta.tsf_id });
         }
-        version.levels_info[level].apply(meta);
+        Some(v) => v,
+    };
+    let mut version = tsf_immut.version().write();
+    while version.levels_info.len() as u32 <= meta.level {
+        let i: u32 = version.levels_info.len() as u32;
+        version.levels_info.push(LevelInfo::init(i));
+        version.levels_info[i as usize].tsf_opt = cf_opt.clone()
     }
+    version.levels_info[meta.level as usize].apply(meta);
+
     let mut edit = VersionEdit::new();
     edit.add_file(
         meta.level,
-        tsf_id,
+        meta.tsf_id,
         meta.file_id,
-        high_seq,
-        max_level_ts,
+        meta.high_seq,
+        version.max_level_ts,
         meta.clone(),
     );
     edits.push(edit);
@@ -215,7 +203,7 @@ fn build_block_set(
     ts_min: &mut i64,
 ) -> HashMap<FieldId, DataBlock> {
     let mut block_set = HashMap::new();
-    for (fid, entrys) in field_map {
+    for (fid, entries) in field_map {
         let size = match field_size.get(&fid) {
             None => {
                 error!("failed to get field size");
@@ -224,7 +212,7 @@ fn build_block_set(
             Some(v) => v,
         };
 
-        let entry = match entrys.first() {
+        let entry = match entries.first() {
             None => {
                 error!("failed to get mem entry");
                 continue;
@@ -232,7 +220,7 @@ fn build_block_set(
             Some(v) => v,
         };
         let mut block = DataBlock::new(*size, entry.field_type);
-        for entry in entrys.iter() {
+        for entry in entries.iter() {
             // get tsm ts range
             if entry.ts_max > *ts_max {
                 *ts_max = entry.ts_max;
@@ -316,7 +304,7 @@ pub async fn run_flush_memtable_job(
         edits,
         cb: task_state_sender,
     };
-    if let Err(_) = summary_task_sender.send(task) {
+    if summary_task_sender.send(task).is_err() {
         error!("failed to send Summary task,the edits not be loaded!")
     }
     Ok(())

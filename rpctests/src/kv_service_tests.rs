@@ -75,7 +75,7 @@ mod test {
         loop {
             match resp_stream.message().await {
                 Ok(Some(item)) => {
-                    println!("\trecived: {:?}", item);
+                    println!("\treceived: {:?}", item);
                 }
                 Ok(None) => {
                     println!("\t stream finished.");

@@ -1,21 +1,17 @@
 mod tests {
 
     use std::sync::Arc;
+    use std::time::Duration;
 
     use chrono::Local;
-    use config::GLOBAL_CONFIG;
-    use lazy_static::lazy_static;
+
     use models::SeriesInfo;
     use protos::{kv_service, models as fb_models, models_helper};
     use serial_test::serial;
     use snafu::ResultExt;
-    use tokio::sync::{mpsc, oneshot::channel, OnceCell};
+    use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::{
-        error, kv_option,
-        kv_option::{TseriesFamOpt, WalConfig},
-        Summary, Task, TimeRange, TsKv,
-    };
+    use tskv::{error, kv_option, kv_option::WalConfig, Task, TimeRange, TsKv};
 
     async fn get_tskv() -> TsKv {
         let opt = kv_option::Options {
@@ -33,7 +29,7 @@ mod tests {
     #[serial]
     async fn test_kvcore_init() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+        let _tskv = get_tskv().await;
 
         dbg!("Ok");
     }
@@ -93,6 +89,7 @@ mod tests {
         };
 
         tskv.write(request.clone()).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         let shared_write_batch = Arc::new(request.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
@@ -142,6 +139,7 @@ mod tests {
         };
 
         tskv.write(request.clone()).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         let shared_write_batch = Arc::new(request.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
@@ -214,9 +212,11 @@ mod tests {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
-        let points = fbb.finished_data();
-
-        tskv.insert_cache(1, points).await.unwrap();
+        let buf = fbb.finished_data();
+        let ps = flatbuffers::root::<fb_models::Points>(buf)
+            .context(error::InvalidFlatbufferSnafu)
+            .unwrap();
+        tskv.insert_cache(1, &ps).await;
     }
 
     #[tokio::test]
@@ -266,6 +266,7 @@ mod tests {
         };
 
         tskv.write(request).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
     }
 
     #[tokio::test]

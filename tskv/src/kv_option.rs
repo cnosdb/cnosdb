@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 use config::GLOBAL_CONFIG;
 use serde::{Deserialize, Serialize};
 
-use crate::forward_index::ForwardIndexConfig;
+use crate::index::IndexConfig;
 
 #[derive(Clone)]
 pub struct DBOptions {
@@ -36,7 +36,7 @@ pub struct Options {
     pub wal: Arc<WalConfig>,
     // pub(crate) write_batch: WriteBatchConfig,
     pub compact_conf: Arc<CompactConfig>,
-    pub forward_index_conf: Arc<ForwardIndexConfig>,
+    pub index_conf: Arc<IndexConfig>,
     pub schema_store: Arc<SchemaStoreConfig>,
 }
 

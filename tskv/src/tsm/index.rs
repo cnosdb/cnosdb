@@ -114,11 +114,9 @@ impl IndexMeta {
             return (Timestamp::MIN, Timestamp::MIN);
         }
         let first_blk_beg = self.index_ref.offsets()[self.index_idx] as usize + INDEX_META_SIZE;
-        let min_ts =
-            byte_utils::decode_be_i64(&self.index_ref.data[first_blk_beg..first_blk_beg + 8]);
+        let min_ts = decode_be_i64(&self.index_ref.data[first_blk_beg..first_blk_beg + 8]);
         let last_blk_beg = first_blk_beg + BLOCK_META_SIZE * (self.block_count as usize - 1);
-        let max_ts =
-            byte_utils::decode_be_i64(&self.index_ref.data[last_blk_beg + 8..last_blk_beg + 16]);
+        let max_ts = decode_be_i64(&self.index_ref.data[last_blk_beg + 8..last_blk_beg + 16]);
         (min_ts, max_ts)
     }
 }
@@ -155,7 +153,7 @@ impl PartialOrd for BlockMeta {
 }
 
 impl Ord for BlockMeta {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         match self.field_id.cmp(&other.field_id) {
             cmp::Ordering::Equal => match self.min_ts.cmp(&other.min_ts) {
                 cmp::Ordering::Equal => self.max_ts.cmp(&other.max_ts),
@@ -174,8 +172,8 @@ impl BlockMeta {
         block_offset: usize,
     ) -> Self {
         let min_ts = decode_be_i64(&index.data()[block_offset..block_offset + 8]);
-        let max_ts = decode_be_i64(&&index.data()[block_offset + 8..block_offset + 16]);
-        let count = decode_be_u32(&&index.data()[block_offset + 16..block_offset + 20]);
+        let max_ts = decode_be_i64(&index.data()[block_offset + 8..block_offset + 16]);
+        let count = decode_be_u32(&index.data()[block_offset + 16..block_offset + 20]);
         Self {
             index_ref: index,
             field_id,

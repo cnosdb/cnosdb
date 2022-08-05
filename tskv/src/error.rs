@@ -55,10 +55,8 @@ pub enum Error {
     #[snafu(display("read record file block: {}", source))]
     Decode { source: bincode::Error },
 
-    #[snafu(display("Forward Index: : {}", source))]
-    ForwardIndexErr {
-        source: crate::forward_index::ForwardIndexError,
-    },
+    #[snafu(display("Index: : {}", source))]
+    ForwardIndexErr { source: crate::index::IndexError },
 
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,

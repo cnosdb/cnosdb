@@ -2,5 +2,6 @@
 # https://rust-lang.github.io/rust-clippy/master/index.html#disallowed_method
 disallowed-methods = []
 
-# max arguments 
-too-many-arguments-threshold=5
+# max arguments
+# self and 5 normal arguments
+too-many-arguments-threshold=6

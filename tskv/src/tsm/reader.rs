@@ -40,9 +40,9 @@ pub enum ReadTsmError {
     Invalid { reason: String },
 }
 
-impl Into<Error> for ReadTsmError {
-    fn into(self) -> Error {
-        Error::ReadTsm { source: self }
+impl From<ReadTsmError> for Error {
+    fn from(rte: ReadTsmError) -> Self {
+        Error::ReadTsm { source: rte }
     }
 }
 
@@ -166,7 +166,7 @@ pub fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) {
             points_cnt += blk.count() as usize;
             idx_points_cnt += blk.count() as usize;
         }
-        if buffer.len() > 0 {
+        if !buffer.is_empty() {
             buffer.truncate(buffer.len() - 1);
         }
         println!("============================================================");
@@ -383,9 +383,9 @@ impl BlockMetaIterator {
         let min_pos = pos;
         self.block_meta_limit = 0;
         while pos < sli.len() {
+            self.block_meta_limit += 1;
             if max_ts < decode_be_i64(&sli[pos + 8..pos + 16]) {
                 // Last data block in time range
-                self.block_meta_limit += 1;
                 return;
             } else {
                 pos += BLOCK_META_SIZE;
@@ -426,7 +426,7 @@ impl TsmReader {
         let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let tsm = Arc::new(file_manager::open_file(tsm_path)?);
         let tsm_idx = IndexReader::open(tsm.clone())?;
-        let tombstone_path = path.parent().unwrap_or(Path::new("/"));
+        let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tsm_tomb = match TsmTombstone::open_for_read(tombstone_path, tsm_id) {
             Ok(Some(mut tomb)) => {
                 tomb.load()?;
@@ -464,7 +464,7 @@ impl TsmReader {
         if let Some(tomb_ref) = &self.tombstone {
             let tomb = tomb_ref.lock();
             // TODO This costs too much
-            tomb.data_block_exlcude_tombstones(block_meta.field_id(), &mut blk);
+            tomb.data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
         }
 
         Ok(blk)
@@ -495,7 +495,7 @@ impl TsmReader {
         if let Some(tombstone) = self.tombstone.borrow() {
             let t = tombstone.lock();
             let tr = TimeRange::from((block_meta.min_ts(), block_meta.max_ts()));
-            return t.get_overlaped_time_ranges(block_meta.field_id(), &tr);
+            return t.get_overlapped_time_ranges(block_meta.field_id(), &tr);
         }
         None
     }
@@ -588,32 +588,32 @@ pub fn decode_data_block(
         ValueType::Float => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            float::decode(&data, &mut val).context(DecodeSnafu)?;
+            float::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::F64 { ts, val })
         }
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            integer::decode(&data, &mut val).context(DecodeSnafu)?;
+            integer::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::I64 { ts, val })
         }
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            boolean::decode(&data, &mut val).context(DecodeSnafu)?;
+            boolean::decode(data, &mut val).context(DecodeSnafu)?;
 
             Ok(DataBlock::Bool { ts, val })
         }
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            string::decode(&data, &mut val).context(DecodeSnafu)?;
+            string::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::Str { ts, val })
         }
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            unsigned::decode(&data, &mut val).context(DecodeSnafu)?;
+            unsigned::decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::U64 { ts, val })
         }
         _ => Err(ReadTsmError::Decode {

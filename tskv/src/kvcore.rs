@@ -4,6 +4,7 @@ use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
 use models::{FieldId, SeriesId, Timestamp};
 use parking_lot::{Mutex, RwLock};
+use protos::models::Points;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -18,18 +19,19 @@ use tokio::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::memcache::MemRaw;
 use crate::{
     compaction::{run_flush_memtable_job, FlushReq},
     context::GlobalContext,
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
-    forward_index::ForwardIndex,
+    index::db_index,
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
     memcache::{DataType, MemCache},
     record_file::Reader,
-    runtime::WorkerQueue,
-    summary::{Summary, SummaryProcesser, SummaryTask, VersionEdit},
+    summary,
+    summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
     tseries_family::{TimeRange, Version},
     tsm::TsmTombstone,
     version_set,
@@ -44,11 +46,10 @@ pub struct Entry {
 
 pub struct TsKv {
     options: Arc<Options>,
-    kvctx: Arc<KvContext>,
     version_set: Arc<RwLock<VersionSet>>,
 
     wal_sender: UnboundedSender<WalTask>,
-    forward_index: Arc<RwLock<ForwardIndex>>,
+    forward_index: Arc<RwLock<db_index::DBIndex>>,
 
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
@@ -57,19 +58,15 @@ pub struct TsKv {
 impl TsKv {
     pub async fn open(opt: Options) -> Result<Self> {
         let shared_options = Arc::new(opt);
-        let kvctx = Arc::new(KvContext::new(shared_options.clone()));
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (version_set, summary) =
             Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
-        let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
-        fidx.load_cache_file()
-            .await
-            .map_err(|err| Error::LogRecordErr { source: err })?;
+        let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
+
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self {
             options: shared_options,
-            kvctx,
             forward_index: Arc::new(RwLock::new(fidx)),
             version_set,
             wal_sender,
@@ -127,10 +124,11 @@ impl TsKv {
 
         // get or create forward index
         for point in fb_points.points().unwrap() {
-            let info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             self.forward_index
                 .write()
-                .add_series_info_if_not_exists(info)
+                .add_series_if_not_exists(&mut info)
                 .await
                 .context(error::ForwardIndexErrSnafu)?;
         }
@@ -144,32 +142,7 @@ impl TsKv {
             })
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
-
-        // write memcache
-        if let Some(points) = fb_points.points() {
-            let mut version_set = self.version_set.write();
-            for point in points.iter() {
-                let p = InMemPoint::from(point);
-                let sid = p.series_id();
-                if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fields().iter() {
-                        tsf.put_mutcache(
-                            f.field_id(),
-                            &f.value,
-                            f.value_type,
-                            seq,
-                            point.timestamp() as i64,
-                            self.flush_task_sender.clone(),
-                        )
-                        .await;
-                    }
-                } else {
-                    warn!("ts_family for sid {} not found.", sid);
-                }
-            }
-        }
-
-        // let _ = self.kvctx.shard_write(0, write_batch).await;
+        self.insert_cache(seq, &fb_points).await;
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -285,34 +258,31 @@ impl TsKv {
         Ok(())
     }
 
-    pub async fn insert_cache(&self, seq: u64, buf: &[u8]) -> Result<()> {
-        let ps =
-            flatbuffers::root::<fb_models::Points>(buf).context(error::InvalidFlatbufferSnafu)?;
+    pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
         if let Some(points) = ps.points() {
             let mut version_set = self.version_set.write();
             for point in points.iter() {
                 let p = InMemPoint::from(point);
-                // use sid to dispatch to tsfamily
-                // so if you change the colume name
-                // please keep the series id
                 let sid = p.series_id();
                 if let Some(tsf) = version_set.get_tsfamily(sid) {
                     for f in p.fields().iter() {
                         tsf.put_mutcache(
-                            f.field_id(),
-                            &f.value,
-                            f.value_type,
-                            seq,
-                            point.timestamp() as i64,
+                            &mut MemRaw {
+                                seq,
+                                ts: point.timestamp() as i64,
+                                field_id: f.field_id(),
+                                field_type: f.value_type,
+                                val: &f.value,
+                            },
                             self.flush_task_sender.clone(),
                         )
                         .await
                     }
+                } else {
+                    warn!("ts_family for sid {} not found.", sid);
                 }
             }
         }
-
-        Ok(())
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
@@ -324,7 +294,7 @@ impl TsKv {
                 match x {
                     WalTask::Write { points, cb } => {
                         // write wal
-                        let ret = wal_manager.write(wal::WalEntryType::Write, &points).await;
+                        let ret = wal_manager.write(WalEntryType::Write, &points).await;
                         let send_ret = cb.send(ret);
                         match send_ret {
                             Ok(wal_result) => {}
@@ -371,11 +341,11 @@ impl TsKv {
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) {
         let f = async move {
-            let mut summary_processer = SummaryProcesser::new(Box::new(summary));
+            let mut summary_processor = summary::SummaryProcessor::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
                 debug!("Apply Summary task");
-                summary_processer.batch(x);
-                summary_processer.apply().await;
+                summary_processor.batch(x);
+                summary_processor.apply().await;
             }
         };
         tokio::spawn(f);
@@ -399,7 +369,7 @@ impl TsKv {
                         }
                         warn!("write points completed.");
                     }
-                    _ => panic!("unimplented."),
+                    _ => panic!("unimplemented."),
                 }
             }
         };
@@ -412,60 +382,6 @@ impl TsKv {
         self.version_set.clone()
     }
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-        Ok(None)
-    }
-}
-
-#[allow(dead_code)]
-enum KvStatus {
-    Init,
-    Recover,
-    Runing,
-    Closed,
-}
-
-#[allow(dead_code)]
-pub(crate) struct KvContext {
-    front_handler: Arc<WorkerQueue>,
-    handler: Vec<JoinHandle<()>>,
-    status: KvStatus,
-}
-
-#[allow(dead_code)]
-impl KvContext {
-    pub fn new(opt: Arc<Options>) -> Self {
-        let front_work_queue = Arc::new(WorkerQueue::new(opt.db.front_cpu));
-        let worker_handle = Vec::with_capacity(opt.db.back_cpu);
-        Self {
-            front_handler: front_work_queue,
-            handler: worker_handle,
-            status: KvStatus::Init,
-        }
-    }
-
-    pub fn recover(&mut self) -> Result<()> {
-        // todo: index wal summary shardinfo recover here.
-        self.status = KvStatus::Recover;
-        Ok(())
-    }
-
-    pub async fn shard_write(
-        &self,
-        partion_id: usize,
-        mem: Arc<RwLock<MemCache>>,
-        entry: WritePointsRpcRequest,
-    ) -> Result<()> {
-        let (tx, rx) = oneshot::channel();
-        self.front_handler.add_task(partion_id, async move {
-            let ps = flatbuffers::root::<fb_models::Points>(&entry.points).unwrap();
-            let err = 0;
-            // todo
-            let _ = tx.send(err);
-        })?;
-        rx.await.unwrap();
-        Ok(())
-    }
-    pub async fn shard_query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
     }
 }

@@ -6,7 +6,7 @@ use super::*;
 #[tokio::test]
 async fn test_index_add_del() {
     let _ = fs::remove_dir_all("/tmp/index_test/db_test");
-    let mut index = index::DBIndex::from("/tmp/index_test/db_test");
+    let mut index = db_index::DBIndex::from("/tmp/index_test/db_test");
 
     let mut info1 = SeriesInfo::new(
         vec![Tag::new(b"host".to_vec(), b"h1".to_vec())],
@@ -33,7 +33,7 @@ async fn test_index_add_del() {
 #[tokio::test]
 async fn test_index_id_list() {
     let _ = fs::remove_dir_all("/tmp/index_test/db_test");
-    let mut index = index::DBIndex::from("/tmp/index_test/db_test");
+    let mut index = db_index::DBIndex::from("/tmp/index_test/db_test");
 
     let mut info1 = SeriesInfo::new(
         vec![
@@ -96,7 +96,7 @@ async fn test_index_id_list() {
 #[tokio::test]
 async fn test_field_type() {
     let _ = fs::remove_dir_all("/tmp/index_test/db_test");
-    let mut index = index::DBIndex::from("/tmp/index_test/db_test");
+    let mut index = db_index::DBIndex::from("/tmp/index_test/db_test");
 
     let mut info1 = SeriesInfo::new(
         vec![
