@@ -4,7 +4,7 @@ use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
-    FieldId, FieldName, SeriesId,
+    FieldId, FieldName, SeriesId, Tag,
 };
 
 const FIELD_NAME_MAX_LEN: usize = 512;
@@ -58,7 +58,7 @@ impl From<protos::models::FieldType> for ValueType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FieldInfo {
     id: FieldId,
     name: FieldName,
@@ -66,6 +66,27 @@ pub struct FieldInfo {
 
     /// True if method `finish(series_id)` has been called.
     finished: bool,
+}
+
+impl From<&Tag> for FieldInfo {
+    fn from(tag: &Tag) -> Self {
+        FieldInfo {
+            id: 0,
+            name: tag.key.clone(),
+            finished: false,
+            value_type: ValueType::Unknown,
+        }
+    }
+}
+
+impl PartialEq for FieldInfo {
+    fn eq(&self, other: &Self) -> bool {
+        if self.name == other.name {
+            return true;
+        }
+
+        return false;
+    }
 }
 
 impl FieldInfo {
@@ -111,6 +132,10 @@ impl FieldInfo {
         self.id = generate_field_id(&self.name, series_id);
     }
 
+    pub fn set_field_id(&mut self, id: FieldId) {
+        self.id = id;
+    }
+
     pub fn field_id(&self) -> FieldId {
         self.id
     }
@@ -121,6 +146,10 @@ impl FieldInfo {
 
     pub fn value_type(&self) -> ValueType {
         self.value_type
+    }
+
+    pub fn is_tag(&self) -> bool {
+        return self.value_type == ValueType::Unknown;
     }
 }
 

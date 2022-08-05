@@ -16,4 +16,7 @@ pub enum Error {
 
     #[snafu(display("Invalid flatbuffer message: {}", err))]
     InvalidFlatbufferMessage { err: String },
+
+    #[snafu(display("Invalid serde message: {}", err))]
+    InvalidSerdeMessage { err: String },
 }
