@@ -536,7 +536,7 @@ mod test {
     use std::{
         collections::HashMap,
         default,
-        path::Path,
+        path::{Path, PathBuf},
         sync::{
             atomic::{AtomicBool, AtomicU32, AtomicU64},
             Arc,
@@ -558,6 +558,7 @@ mod test {
     fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
+        tsf_opt: Arc<TseriesFamOpt>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -580,6 +581,7 @@ mod test {
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
                 writer.size(),
                 false,
+                tsf_opt.clone(),
             )));
         }
         (file_seq + 1, cfs)
@@ -625,7 +627,12 @@ mod test {
             base_file_size: 16 * 1024 * 1024,         // 16 MiB: 16777216
             max_compact_size: 2 * 1024 * 1024 * 1024, // 2 GiB: 2147483648
             tsm_dir: tsm_dir.to_string(),
-            ..Default::default()
+            max_level: 4,
+            level_ratio: 16_f64,
+            compact_trigger: 4,
+            delta_dir: "/tmp/test/compact_elta".to_string(),
+            max_memcache_size: 128 * 1024 * 1024,
+            max_immemcache_num: 4,
         })
     }
 
@@ -636,9 +643,10 @@ mod test {
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
-            1,
             "version_1".to_string(),
-            LevelInfo::init_levels_opt(tsf_opt.clone()),
+            tsf_opt.clone(),
+            1,
+            LevelInfo::init_levels(tsf_opt.clone()),
             1000,
         ));
         let compact_req = CompactReq {
@@ -685,7 +693,7 @@ mod test {
         let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
         run_compaction_job(compact_req, kernel).unwrap();
         check_column_file(dir.join("_000004.tsm"), expected_data);
@@ -722,7 +730,7 @@ mod test {
         let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
         run_compaction_job(compact_req, kernel).unwrap();
         check_column_file(dir.join("_000004.tsm"), expected_data);
@@ -759,7 +767,7 @@ mod test {
         let tsf_opt = get_tsf_opt(dir);
         let dir = tsf_opt.tsm_dir(1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data);
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
         run_compaction_job(compact_req, kernel).unwrap();
         check_column_file(dir.join("_000004.tsm"), expected_data);
@@ -962,6 +970,7 @@ mod test {
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 false,
+                tsf_opt.clone(),
             )));
         }
 
@@ -1107,6 +1116,7 @@ mod test {
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 false,
+                tsf_opt.clone(),
             )));
         }
 

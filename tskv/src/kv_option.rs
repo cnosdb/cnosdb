@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use std::{path::PathBuf, sync::Arc};
 
-use config::GLOBAL_CONFIG;
+use config::GlobalConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::index::forward_index::ForwardIndexConfig;
@@ -16,22 +16,23 @@ pub struct DBOptions {
     pub db_name: String,
 }
 
-impl Default for DBOptions {
-    fn default() -> Self {
+impl From<&GlobalConfig> for DBOptions {
+    fn from(config: &GlobalConfig) -> Self {
         Self {
-            front_cpu: GLOBAL_CONFIG.front_cpu,
-            back_cpu: GLOBAL_CONFIG.back_cpu,
-            max_summary_size: GLOBAL_CONFIG.max_memcache_size, // 128MB
-            create_if_missing: GLOBAL_CONFIG.create_if_missing,
-            db_path: GLOBAL_CONFIG.db_path.clone(),
-            db_name: GLOBAL_CONFIG.db_name.clone(),
+            front_cpu: config.front_cpu,
+            back_cpu: config.back_cpu,
+            max_summary_size: config.max_memcache_size, // 128MB
+            create_if_missing: config.create_if_missing,
+            db_path: config.db_path.clone(),
+            db_name: config.db_name.clone(),
         }
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Options {
     pub db: Arc<DBOptions>,
+    pub ts_family: Arc<TseriesFamOpt>,
     pub lrucache: Arc<CacheConfig>,
     pub wal: Arc<WalConfig>,
     // pub(crate) write_batch: WriteBatchConfig,
@@ -41,16 +42,42 @@ pub struct Options {
 }
 
 impl Options {
-    // todo:
-    pub fn from_env() -> Self {
+    // TODO
+    pub fn override_by_env(&mut self) -> Self {
         Self {
-            ..Default::default()
+            db: self.db.clone(),
+            ts_family: self.ts_family.clone(),
+            lrucache: self.lrucache.clone(),
+            wal: self.wal.clone(),
+            compact_conf: self.compact_conf.clone(),
+            forward_index_conf: self.forward_index_conf.clone(),
+            schema_store: self.schema_store.clone(),
+        }
+    }
+}
+
+impl From<&GlobalConfig> for Options {
+    fn from(config: &GlobalConfig) -> Self {
+        Self {
+            db: Arc::new(DBOptions::from(config)),
+            ts_family: Arc::new(TseriesFamOpt::from(config)),
+            lrucache: Arc::new(CacheConfig::from(config)),
+            wal: Arc::new(WalConfig::from(config)),
+            compact_conf: Arc::new(CompactConfig::from(config)),
+            forward_index_conf: Arc::new(ForwardIndexConfig::from(config)),
+            schema_store: Arc::new(SchemaStoreConfig::from(config)),
         }
     }
 }
 
 #[derive(Default, Clone)]
 pub struct CacheConfig {}
+
+impl From<&GlobalConfig> for CacheConfig {
+    fn from(_: &GlobalConfig) -> Self {
+        Self {}
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -60,12 +87,12 @@ pub struct WalConfig {
     pub sync: bool,
 }
 
-impl Default for WalConfig {
-    fn default() -> Self {
+impl From<&GlobalConfig> for WalConfig {
+    fn from(config: &GlobalConfig) -> Self {
         Self {
-            enabled: GLOBAL_CONFIG.enabled,
-            dir: GLOBAL_CONFIG.wal_config_dir.clone(),
-            sync: GLOBAL_CONFIG.sync,
+            enabled: config.enabled,
+            dir: config.wal_config_dir.clone(),
+            sync: config.sync,
         }
     }
 }
@@ -73,8 +100,20 @@ impl Default for WalConfig {
 #[allow(dead_code)]
 pub struct WriteBatchConfig {}
 
+impl From<&GlobalConfig> for WriteBatchConfig {
+    fn from(_: &GlobalConfig) -> Self {
+        Self {}
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct CompactConfig {}
+
+impl From<&GlobalConfig> for CompactConfig {
+    fn from(_: &GlobalConfig) -> Self {
+        Self {}
+    }
+}
 
 pub struct TimeRange {}
 
@@ -88,13 +127,14 @@ pub struct QueryOption {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TseriesFamOpt {
     pub max_level: u32,
-    // pub base_file_size: u64,
     pub level_ratio: f64,
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
     pub tsm_dir: String,
     pub delta_dir: String,
+    pub max_memcache_size: u64,
+    pub max_immemcache_num: u16,
 }
 
 impl TseriesFamOpt {
@@ -111,40 +151,25 @@ impl TseriesFamOpt {
     }
 }
 
-impl Default for TseriesFamOpt {
-    fn default() -> Self {
+impl From<&GlobalConfig> for TseriesFamOpt {
+    fn from(config: &GlobalConfig) -> Self {
         Self {
-            max_level: GLOBAL_CONFIG.max_level,
-            // base_file_size: 256 * 1024 * 1024,
-            level_ratio: GLOBAL_CONFIG.level_ratio,
-            base_file_size: GLOBAL_CONFIG.base_file_size,
-            compact_trigger: GLOBAL_CONFIG.compact_trigger,
-            max_compact_size: GLOBAL_CONFIG.max_compact_size,
-            tsm_dir: GLOBAL_CONFIG.tsm_dir.clone(),
-            delta_dir: GLOBAL_CONFIG.delta_dir.clone(),
+            max_level: config.max_level,
+            level_ratio: config.level_ratio,
+            base_file_size: config.base_file_size,
+            compact_trigger: config.compact_trigger,
+            max_compact_size: config.max_compact_size,
+            tsm_dir: config.tsm_dir.clone(),
+            delta_dir: config.delta_dir.clone(),
+            max_memcache_size: config.max_memcache_size,
+            max_immemcache_num: config.max_immemcache_num,
         }
     }
 }
 
 pub struct TseriesFamDesc {
     pub name: String,
-    pub opt: Arc<TseriesFamOpt>,
-}
-
-pub struct MemCacheOpt {
-    tf_id: u32,
-    max_size: u64,
-    seq_no: u64,
-}
-
-impl Default for MemCacheOpt {
-    fn default() -> Self {
-        Self {
-            tf_id: GLOBAL_CONFIG.tf_id,
-            max_size: GLOBAL_CONFIG.max_memcache_size,
-            seq_no: GLOBAL_CONFIG.seq_no,
-        }
-    }
+    pub tsf_opt: Arc<TseriesFamOpt>,
 }
 
 #[derive(Clone)]
@@ -152,10 +177,10 @@ pub struct SchemaStoreConfig {
     pub dir: String,
 }
 
-impl Default for SchemaStoreConfig {
-    fn default() -> Self {
+impl From<&GlobalConfig> for SchemaStoreConfig {
+    fn from(config: &GlobalConfig) -> Self {
         Self {
-            dir: GLOBAL_CONFIG.schema_store_config_dir.clone(),
+            dir: config.schema_store_config_dir.clone(),
         }
     }
 }

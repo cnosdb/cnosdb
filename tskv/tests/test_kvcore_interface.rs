@@ -5,24 +5,21 @@ mod tests {
 
     use chrono::Local;
 
+    use config::get_config;
     use models::SeriesInfo;
     use protos::{kv_service, models as fb_models, models_helper};
     use serial_test::serial;
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::{error, kv_option, kv_option::WalConfig, Task, TimeRange, TsKv};
+    use tskv::{error, kv_option, Task, TimeRange, TsKv};
 
     async fn get_tskv() -> TsKv {
-        let opt = kv_option::Options {
-            wal: Arc::new(WalConfig {
-                dir: String::from("/tmp/test/wal"),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let mut global_config = (*get_config("../config/config.toml")).clone();
+        global_config.wal_config_dir = "/tmp/test/wal".to_string();
+        let opt = kv_option::Options::from(&global_config);
 
-        TsKv::open(opt).await.unwrap()
+        TsKv::open(opt, global_config.tsfamily_num).await.unwrap()
     }
 
     #[tokio::test]

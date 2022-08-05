@@ -112,6 +112,14 @@ impl LevelCompatContext {
                 Ordering::Greater
             }
         });
+
+        println!("==========Debug(pick_level)1==========");
+        println!("Calculate level scores:");
+        for lvl_score in self.level_scores.iter() {
+            println!("Level-{} | {}", lvl_score.0, lvl_score.1);
+        }
+        println!("==========Debug(pick_level)2==========");
+
         let base_level = self.base_level;
         if let Some((level, score)) = self.level_scores.first() {
             return if *score < 1.0 {
