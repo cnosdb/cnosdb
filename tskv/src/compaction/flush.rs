@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use models::FieldId;
+use models::{FieldId, Timestamp};
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
 use snafu::{NoneError, ResultExt};
@@ -22,8 +22,8 @@ use crate::{
     kv_option::TseriesFamOpt,
     memcache::{MemCache, MemEntry},
     summary::{CompactMeta, SummaryTask, VersionEdit},
-    tseries_family::LevelInfo,
-    tsm::{DataBlock, TsmWriter},
+    tseries_family::{LevelInfo, Version},
+    tsm::{self, DataBlock, TsmWriter},
     version_set::VersionSet,
     TseriesFamilyId,
 };
@@ -32,34 +32,34 @@ pub struct FlushTask {
     mems: Vec<Arc<RwLock<MemCache>>>,
     meta: CompactMeta,
     tsf_id: TseriesFamilyId,
-    path_tsm: String,
-    path_delta: String,
+    path_tsm: PathBuf,
+    path_delta: PathBuf,
 }
 
 impl FlushTask {
     pub fn new(
         mems: Vec<Arc<RwLock<MemCache>>>,
         tsf_id: TseriesFamilyId,
-        path_tsm: String,
-        path_delta: String,
+        path_tsm: PathBuf,
+        path_delta: PathBuf,
     ) -> Self {
-        let meta = CompactMeta::new();
         Self {
             mems,
-            meta,
+            meta: CompactMeta::default(),
             tsf_id,
             path_tsm,
             path_delta,
         }
     }
+
     pub async fn run(
         &mut self,
-        version_set: Arc<RwLock<VersionSet>>,
+        version: Arc<Version>,
         kernel: Arc<GlobalContext>,
         edits: &mut Vec<VersionEdit>,
         cf_opt: Arc<TseriesFamOpt>,
     ) -> Result<()> {
-        let (mut ts_min, mut ts_max) = (i64::MAX, i64::MIN);
+        let (mut min_ts, mut max_ts) = (i64::MAX, i64::MIN);
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
         let mut field_map = HashMap::new();
         let mut field_map_delta = HashMap::new();
@@ -93,7 +93,7 @@ impl FlushTask {
             }
         }
         let block_set_delta =
-            build_block_set(field_size_delta, field_map_delta, &mut ts_max, &mut ts_min);
+            build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
         // build tsm file
         if !block_set_delta.is_empty() {
             kernel.file_id_next();
@@ -102,18 +102,24 @@ impl FlushTask {
                 file_id: 0,
                 file_size: 0,
                 tsf_id: self.tsf_id,
-                ts_min,
-                ts_max,
+                min_ts,
+                max_ts,
                 level: 0,
                 high_seq,
                 low_seq,
                 is_delta: true,
             };
-            update_meta(block_set_delta, &self.path_delta, &mut self.meta, &tmp_meta)?;
-            build_tsm_file_workflow(&mut self.meta, edits, version_set.clone(), cf_opt.clone())?;
+            update_meta(
+                block_set_delta,
+                tsm::MAX_BLOCK_VALUES,
+                &self.path_delta,
+                &mut self.meta,
+                &tmp_meta,
+            )?;
+            append_meta_to_version_edits(&self.meta, edits, version.max_level_ts);
         }
-        (ts_min, ts_max) = (i64::MAX, i64::MIN);
-        let block_set = build_block_set(field_size, field_map, &mut ts_max, &mut ts_min);
+        (min_ts, max_ts) = (i64::MAX, i64::MIN);
+        let block_set = build_block_set(field_size, field_map, &mut min_ts, &mut max_ts);
         if !block_set.is_empty() {
             kernel.file_id_next();
             self.meta.file_id = kernel.file_id();
@@ -121,15 +127,21 @@ impl FlushTask {
                 file_id: 0,
                 file_size: 0,
                 tsf_id: self.tsf_id,
-                ts_min,
-                ts_max,
+                min_ts,
+                max_ts,
                 level: 1,
                 high_seq,
                 low_seq,
                 is_delta: false,
             };
-            update_meta(block_set, &self.path_tsm, &mut self.meta, &tmp_meta)?;
-            build_tsm_file_workflow(&mut self.meta, edits, version_set, cf_opt)?;
+            update_meta(
+                block_set,
+                tsm::MAX_BLOCK_VALUES,
+                &self.path_tsm,
+                &mut self.meta,
+                &tmp_meta,
+            )?;
+            append_meta_to_version_edits(&self.meta, edits, version.max_level_ts);
         }
         for i in mem_guard.iter_mut() {
             i.flushed = true;
@@ -140,7 +152,8 @@ impl FlushTask {
 
 fn update_meta(
     block_set: HashMap<FieldId, DataBlock>,
-    path: &str,
+    max_block_size: u32,
+    path: &PathBuf,
     meta: &mut CompactMeta,
     tmp_meta: &CompactMeta,
 ) -> Result<()> {
@@ -153,54 +166,29 @@ fn update_meta(
     meta.tsf_id = tmp_meta.tsf_id;
     meta.low_seq = tmp_meta.low_seq;
     meta.high_seq = tmp_meta.high_seq;
-    meta.ts_max = tmp_meta.ts_max;
-    meta.ts_min = tmp_meta.ts_min;
+    meta.max_ts = tmp_meta.max_ts;
+    meta.min_ts = tmp_meta.min_ts;
     meta.level = tmp_meta.level;
-    meta.file_size = build_tsm_file(fname, fseq, tmp_meta.is_delta, block_set)?;
+    meta.file_size = build_tsm_file(fname, fseq, tmp_meta.is_delta, block_set, max_block_size)?;
     meta.is_delta = tmp_meta.is_delta;
     Ok(())
 }
 
-fn build_tsm_file_workflow(
-    meta: &mut CompactMeta,
+fn append_meta_to_version_edits(
+    meta: &CompactMeta,
     edits: &mut Vec<VersionEdit>,
-    version_set: Arc<RwLock<VersionSet>>,
-    cf_opt: Arc<TseriesFamOpt>,
-) -> Result<()> {
-    let version_s = version_set.read();
-    let tsf_immut = match version_s.get_tsfamily_by_tf_id(meta.tsf_id) {
-        None => {
-            error!("failed get tsfamily by tsf id {}", meta.tsf_id);
-            return Err(Error::InvalidTsfid { tf_id: meta.tsf_id });
-        }
-        Some(v) => v,
-    };
-    let mut version = tsf_immut.version().write();
-    while version.levels_info.len() as u32 <= meta.level {
-        let i: u32 = version.levels_info.len() as u32;
-        version.levels_info.push(LevelInfo::init(i));
-        version.levels_info[i as usize].tsf_opt = cf_opt.clone()
-    }
-    version.levels_info[meta.level as usize].apply(meta);
-
+    max_level_ts: Timestamp,
+) {
     let mut edit = VersionEdit::new();
-    edit.add_file(
-        meta.level,
-        meta.tsf_id,
-        meta.file_id,
-        meta.high_seq,
-        version.max_level_ts,
-        meta.clone(),
-    );
+    edit.add_file(meta.clone(), max_level_ts);
     edits.push(edit);
-    Ok(())
 }
 
 fn build_block_set(
     field_size: HashMap<&FieldId, usize>,
     field_map: HashMap<&FieldId, Vec<&MemEntry>>,
-    ts_max: &mut i64,
     ts_min: &mut i64,
+    ts_max: &mut i64,
 ) -> HashMap<FieldId, DataBlock> {
     let mut block_set = HashMap::new();
     for (fid, entries) in field_map {
@@ -240,13 +228,17 @@ fn build_tsm_file(
     tsm_sequence: u64,
     is_delta: bool,
     block_set: HashMap<FieldId, DataBlock>,
+    max_block_size: u32,
 ) -> Result<u64> {
     let file = file_manager::get_file_manager().create_file(tsm_path)?;
     let mut writer = TsmWriter::open(file.into_cursor(), tsm_sequence, is_delta, 0)?;
-    for (fid, blk) in block_set.iter() {
-        writer
-            .write_block(*fid, blk)
-            .context(error::WriteTsmSnafu)?;
+    for (fid, blk) in block_set.into_iter() {
+        let merged_blks = DataBlock::merge_blocks(vec![blk], max_block_size);
+        for merged_blk in merged_blks.iter() {
+            writer
+                .write_block(fid, merged_blk)
+                .context(error::WriteTsmSnafu)?;
+        }
     }
     writer.write_index().context(error::WriteTsmSnafu)?;
     writer.flush().context(error::WriteTsmSnafu)?;
@@ -259,8 +251,9 @@ pub async fn run_flush_memtable_job(
     tsf_config: HashMap<u32, Arc<TseriesFamOpt>>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
+    compact_task_sender: UnboundedSender<TseriesFamilyId>,
 ) -> Result<()> {
-    let mut mems = vec![];
+    let mut mems: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
     {
         let mut reqs = reqs.lock();
         info!("get flush request len {}", reqs.len());
@@ -269,34 +262,32 @@ pub async fn run_flush_memtable_job(
         }
         for req in reqs.iter() {
             for (tf, mem) in &req.mems {
-                while *tf >= mems.len() as u32 {
-                    mems.push(vec![]);
-                }
-                mems[(*tf) as usize].push(mem.clone());
+                let mem_vec = mems.entry(*tf).or_insert(Vec::new());
+                mem_vec.push(mem.clone());
             }
         }
         reqs.clear();
     }
     let mut edits: Vec<VersionEdit> = vec![];
-    for (i, memtables) in mems.iter().enumerate() {
-        if !memtables.is_empty() {
-            // todo: build path by vnode data
-            let idx = i as u32;
-            let cf_opt = tsf_config
-                .get(&idx)
-                .cloned()
-                .unwrap_or_else(|| Arc::new(TseriesFamOpt::default()));
+    for (tsf_id, memtables) in mems.iter() {
+        if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
+            if !memtables.is_empty() {
+                // todo: build path by vnode data
+                let cf_opt = tsf_config
+                    .get(&tsf_id)
+                    .cloned()
+                    .unwrap_or(Arc::new(TseriesFamOpt::default()));
 
-            let path_tsm = cf_opt.tsm_dir.clone() + &i.to_string();
-            let path_delta = cf_opt.delta_dir.clone() + &i.to_string();
-            let mut job = FlushTask::new(memtables.clone(), i as u32, path_tsm, path_delta);
-            job.run(
-                version_set.clone(),
-                kernel.clone(),
-                &mut edits,
-                cf_opt.clone(),
-            )
-            .await?;
+                let path_tsm = cf_opt.tsm_dir(*tsf_id);
+                let path_delta = cf_opt.delta_dir(*tsf_id);
+                let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
+                job.run(tsf.version(), kernel.clone(), &mut edits, cf_opt.clone())
+                    .await?;
+                match compact_task_sender.send(*tsf_id) {
+                    Err(e) => error!("{}", e),
+                    _ => {}
+                }
+            }
         }
     }
     let (task_state_sender, task_state_receiver) = oneshot::channel();

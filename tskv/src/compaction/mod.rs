@@ -2,12 +2,15 @@ mod compact;
 mod flush;
 mod picker;
 
+use std::sync::Arc;
+
 pub use compact::*;
 pub use flush::*;
 use parking_lot::RwLock;
 pub use picker::*;
 
 use crate::{
+    kv_option::TseriesFamOpt,
     memcache::MemCache,
     summary::VersionEdit,
     tseries_family::{ColumnFile, Version},
@@ -18,16 +21,18 @@ use crate::{
 pub trait CompactionEngine: Clone + Sync + Send {
     async fn apply(&mut self, edits: Vec<VersionEdit>) -> crate::error::Result<()>;
 }
+
 pub struct CompactReq {
-    files: (LevelId, Vec<std::sync::Arc<ColumnFile>>),
-    version: std::sync::Arc<Version>,
-    tsf_id: TseriesFamilyId,
+    ts_family_id: TseriesFamilyId,
+    ts_family_opt: Arc<TseriesFamOpt>,
+
+    files: Vec<Arc<ColumnFile>>,
+    version: Arc<Version>,
     out_level: LevelId,
 }
 
 #[derive(Debug)]
 pub struct FlushReq {
-    //(tsf id,memcache)
     pub mems: Vec<(TseriesFamilyId, std::sync::Arc<RwLock<MemCache>>)>,
     pub wait_req: u64,
 }

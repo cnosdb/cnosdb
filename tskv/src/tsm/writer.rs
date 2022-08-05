@@ -483,21 +483,10 @@ mod test {
     #[test]
     fn test_tsm_write_fast() {
         let dir = Path::new(TEST_PATH);
+        #[rustfmt::skip]
         let data: HashMap<FieldId, DataBlock> = HashMap::from([
-            (
-                1,
-                DataBlock::U64 {
-                    ts: vec![2, 3, 4],
-                    val: vec![12, 13, 15],
-                },
-            ),
-            (
-                2,
-                DataBlock::U64 {
-                    ts: vec![2, 3, 4],
-                    val: vec![101, 102, 103],
-                },
-            ),
+            (1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
+            (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] }),
         ]);
 
         write_to_tsm(&dir, "tsm_write_fast.tsm", &data);
@@ -529,21 +518,10 @@ mod test {
         let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
         let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
 
+        #[rustfmt::skip]
         let data = vec![
-            (
-                1,
-                DataBlock::I64 {
-                    ts: ts_1,
-                    val: val_1,
-                },
-            ),
-            (
-                1,
-                DataBlock::I64 {
-                    ts: ts_2,
-                    val: val_2,
-                },
-            ),
+            (1, DataBlock::I64 { ts: ts_1, val: val_1 }),
+            (1, DataBlock::I64 { ts: ts_2, val: val_2 }),
         ];
         for (fid, blk) in data.iter() {
             writer.write_block(*fid, blk).unwrap();
