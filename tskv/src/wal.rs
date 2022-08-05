@@ -320,11 +320,8 @@ impl WalManager {
         let wal_files = file_manager::list_file_names(&self.current_dir);
         for file_name in wal_files {
             let id = file_utils::get_wal_file_id(&file_name)?;
-            let tmp_walfile = WalWriter::open(
-                id,
-                self.current_dir.join(file_name),
-                Arc::new(kv_option::WalConfig::default()),
-            )?;
+            let tmp_walfile =
+                WalWriter::open(id, self.current_dir.join(file_name), self.config.clone())?;
             let mut reader = WalReader::new(tmp_walfile.file.into())?;
             if reader.max_sequence < min_log_seq {
                 continue;
@@ -508,6 +505,7 @@ mod test {
     use std::{borrow::BorrowMut, sync::Arc};
 
     use chrono::Utc;
+    use config::get_config;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use protos::{models as fb_models, models_helper};
@@ -515,11 +513,9 @@ mod test {
     use crate::{
         direct_io::{File, FileCursor, FileSync},
         file_manager::{self, list_file_names, FileManager},
-        kv_option,
+        kv_option::{self, WalConfig},
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
-
-    const DIR: &str = "/tmp/test_wal_1";
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
@@ -654,91 +650,14 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_write_entry() {
-        let wal_config = Arc::new(kv_option::WalConfig {
-            dir: String::from(DIR),
-            ..Default::default()
-        });
-
-        let mut mgr = WalManager::new(wal_config);
-
-        for i in 0..10 {
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-
-            let entry = random_wal_entry_block(&mut fbb);
-
-            let bytes = fbb.finished_data();
-            dbg!(bytes.len());
-
-            match entry.typ {
-                WalEntryType::Write => {
-                    let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
-                }
-                WalEntryType::Delete => {
-                    let de_block = flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::Delete, &entry.buf).await.unwrap();
-                }
-                WalEntryType::DeleteRange => {
-                    let de_block =
-                        flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::DeleteRange, &entry.buf)
-                        .await
-                        .unwrap();
-                }
-                _ => {}
-            };
-        }
-    }
-
-    #[test]
-    fn test_read_entry() {
-        let wal_config = Arc::new(kv_option::WalConfig {
-            dir: String::from("/tmp/test_wal"),
-            ..Default::default()
-        });
-
-        let mgr = WalManager::new(wal_config);
-
-        let wal_files = list_file_names("/tmp/test_wal");
-        for wal_file in wal_files {
-            let file = file_manager::get_file_manager()
-                .open_file(mgr.current_dir.join(wal_file))
-                .unwrap();
-            let cursor: FileCursor = file.into();
-
-            let mut reader = WalReader::new(cursor).unwrap();
-
-            while let Some(entry) = reader.next_wal_entry() {
-                dbg!(entry.typ, entry.seq, entry.crc, entry.len);
-                match entry.typ {
-                    WalEntryType::Write => {
-                        let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                    }
-                    WalEntryType::Delete => {
-                        let de_block =
-                            flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                    }
-                    WalEntryType::DeleteRange => {
-                        let de_block =
-                            flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf)
-                                .unwrap();
-                    }
-                    _ => panic!("Invalid WalEntry"),
-                };
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn test_read_and_write() {
-        let wal_config = Arc::new(kv_option::WalConfig {
-            dir: String::from(DIR),
-            ..Default::default()
-        });
+        let dir = "/tmp/test/wal/1".to_string();
+        let _ = std::fs::remove_dir(dir.clone()); // Ignore errors
+        let global_config = get_config("../config/config.toml");
+        let mut wal_config = WalConfig::from(global_config);
+        wal_config.dir = dir.clone();
 
-        let mut mgr = WalManager::new(wal_config);
+        let mut mgr = WalManager::new(Arc::new(wal_config));
 
         for _i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -768,7 +687,7 @@ mod test {
             };
         }
 
-        let wal_files = list_file_names(DIR);
+        let wal_files = list_file_names(dir);
         for wal_file in wal_files {
             let file = file_manager::get_file_manager()
                 .open_file(mgr.current_dir.join(wal_file))

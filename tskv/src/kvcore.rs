@@ -57,12 +57,17 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options) -> Result<Self> {
+    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
-        let (version_set, summary) =
-            Self::recover(shared_options.clone(), flush_task_sender.clone()).await;
+        let (version_set, summary) = Self::recover(
+            shared_options.clone(),
+            flush_task_sender.clone(),
+            ts_family_num,
+            shared_options.ts_family.clone(),
+        )
+        .await;
         let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
         fidx.load_cache_file()
             .await
@@ -100,6 +105,8 @@ impl TsKv {
     async fn recover(
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
+        ts_family_num: u32,
+        ts_family_opt: Arc<TseriesFamOpt>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         if !file_manager::try_exists(&opt.db.db_path) {
             std::fs::create_dir_all(&opt.db.db_path)
@@ -108,9 +115,13 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(&opt.db).await.unwrap()
+            Summary::recover(opt.db.clone(), ts_family_num, ts_family_opt)
+                .await
+                .unwrap()
         } else {
-            Summary::new(&opt.db).await.unwrap()
+            Summary::new(opt.db.clone(), ts_family_num, ts_family_opt)
+                .await
+                .unwrap()
         };
         let version_set = summary.version_set().clone();
         let wal_manager = WalManager::new(opt.wal.clone());

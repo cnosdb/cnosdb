@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use config::GLOBAL_CONFIG;
+use config::GlobalConfig;
 use models::{FieldId, FieldInfo, SeriesId, SeriesInfo, ValueType};
 use num_traits::ToPrimitive;
 use trace::error;
@@ -263,10 +263,10 @@ pub struct ForwardIndexConfig {
     pub path: String,
 }
 
-impl Default for ForwardIndexConfig {
-    fn default() -> Self {
-        ForwardIndexConfig {
-            path: GLOBAL_CONFIG.forward_index_path.clone(),
+impl From<&GlobalConfig> for ForwardIndexConfig {
+    fn from(config: &GlobalConfig) -> Self {
+        Self {
+            path: config.forward_index_path.clone(),
         }
     }
 }
