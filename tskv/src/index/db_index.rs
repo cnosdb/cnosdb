@@ -7,7 +7,7 @@ use std::path;
 use std::{collections::HashMap, sync::Arc};
 
 use super::*;
-use config::GLOBAL_CONFIG;
+use config::GlobalConfig;
 use models::{FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
@@ -18,10 +18,10 @@ pub struct IndexConfig {
     pub path: String,
 }
 
-impl Default for IndexConfig {
-    fn default() -> Self {
-        IndexConfig {
-            path: GLOBAL_CONFIG.forward_index_path.clone(),
+impl From<&GlobalConfig> for IndexConfig {
+    fn from(config: &GlobalConfig) -> Self {
+        Self {
+            path: config.index_path.clone(),
         }
     }
 }

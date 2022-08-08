@@ -46,6 +46,9 @@ struct Cli {
     /// the number of cores on the system
     memory: Option<usize>,
 
+    #[clap(global = true, default_value = "../config/config.toml")]
+    config: String,
+
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
@@ -73,14 +76,16 @@ enum SubCommand {
 /// ```
 fn main() -> Result<(), std::io::Error> {
     install_crash_handler();
-    let config = Cli::parse();
-    let runtime = init_runtime(config.cpu)?;
+    let cli = Cli::parse();
+    let runtime = init_runtime(cli.cpu)?;
     println!(
-        "params: host:{}, cpu:{:?}, memory:{:?}, sub:{:?}",
-        config.host, config.cpu, config.memory, config.subcmd
+        "params: host:{}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
+        cli.host, cli.cpu, cli.memory, cli.config, cli.subcmd
     );
+    let global_config = config::get_config(cli.config.as_str());
+    // TODO check global_config
     runtime.block_on(async move {
-        match &config.subcmd {
+        match &cli.subcmd {
             SubCommand::Debug { debug } => {
                 println!("Debug {}", debug);
             }
@@ -88,11 +93,12 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Tskv { debug } => {
                 println!("TSKV {}", debug);
 
-                let host = config.host.parse::<SocketAddr>().expect("Invalid host");
+                let host = cli.host.parse::<SocketAddr>().expect("Invalid host");
 
                 let (sender, receiver) = mpsc::unbounded_channel();
 
-                let tskv = tskv::TsKv::open(tskv::kv_option::Options::default())
+                let tskv_options = tskv::Options::from(global_config);
+                let tskv = tskv::TsKv::open(tskv_options, global_config.tsfamily_num)
                     .await
                     .unwrap();
                 tskv::TsKv::start(tskv, receiver);

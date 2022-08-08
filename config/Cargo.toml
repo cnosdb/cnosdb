@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 trace = {path = "../trace" }
 
-lazy_static = "1.4.0"
+once_cell = "1.10"
 serde = "1.0.138"
 toml = "0.5.9"

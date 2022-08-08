@@ -3,7 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use config::GLOBAL_CONFIG;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::error;
@@ -33,9 +32,9 @@ impl VersionSet {
                     let tf = TseriesFamily::new(
                         id,
                         name.clone(),
-                        MemCache::new(id, GLOBAL_CONFIG.max_memcache_size, seq, false),
+                        MemCache::new(id, item.tsf_opt.max_memcache_size, seq, false),
                         ver.clone(),
-                        item.opt.clone(),
+                        item.tsf_opt.clone(),
                     );
                     ts_families.insert(id, tf);
                     ts_families_names.insert(name.clone(), id);
@@ -61,7 +60,7 @@ impl VersionSet {
             Some(tf) => {
                 let mem = Arc::new(RwLock::new(MemCache::new(
                     tf_id,
-                    GLOBAL_CONFIG.max_memcache_size,
+                    tf.options().max_memcache_size,
                     seq,
                     false,
                 )));
@@ -119,12 +118,13 @@ impl VersionSet {
         let tf = TseriesFamily::new(
             tsf_id,
             tsf_name.clone(),
-            MemCache::new(tsf_id, GLOBAL_CONFIG.max_memcache_size, seq_no, false),
+            MemCache::new(tsf_id, opt.max_memcache_size, seq_no, false),
             Arc::new(Version::new(
                 tsf_id,
-                file_id,
                 tsf_name.clone(),
-                LevelInfo::init_levels(),
+                opt.clone(),
+                file_id,
+                LevelInfo::init_levels(opt.clone()),
                 i64::MIN,
             )),
             opt,

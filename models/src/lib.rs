@@ -1,5 +1,7 @@
+mod consistency_level;
 mod errors;
 mod field_info;
+mod node_info;
 mod points;
 mod series_info;
 mod tag;

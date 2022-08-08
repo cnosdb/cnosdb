@@ -273,11 +273,7 @@ pub async fn run_flush_memtable_job(
         if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
             if !memtables.is_empty() {
                 // todo: build path by vnode data
-                let cf_opt = tsf_config
-                    .get(&tsf_id)
-                    .cloned()
-                    .unwrap_or(Arc::new(TseriesFamOpt::default()));
-
+                let cf_opt = tsf.options();
                 let path_tsm = cf_opt.tsm_dir(*tsf_id);
                 let path_delta = cf_opt.delta_dir(*tsf_id);
                 let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);

@@ -1,10 +1,9 @@
 #[gloable-config]
-max_memcache_size = 134217728 # 128 * 1024 * 1024
-max_summary_size = 134217728 # 128 * 1024 * 1024
-max_immemcache_num =  4
+tsfamily_num = 1
 # DBOption
 front_cpu = 2
 back_cpu = 2
+max_summary_size = 134217728 # 128 * 1024 * 1024
 create_if_missing = false
 db_path = "dev/db"
 db_name =  "db"
@@ -20,12 +19,9 @@ compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
 tsm_dir = "db/tsm/"
 delta_dir = "db/delta/"
-#MemCacheOpt
-tf_id = 0
-seq_no = 0
+max_memcache_size = 134217728 # 128 * 1024 * 1024
+max_immemcache_num =  4
 #SchemaStoreConfig
 schema_store_config_dir = "dev/schema"
-#tsfamily num
-tsfamily_num = 1
 #forward index config
-forward_index_path = "/tmp/test/tskv.fidx"
+index_path = "/tmp/test/tskv.fidx"
