@@ -1,63 +1,248 @@
-use std::{cmp::Ordering, collections::HashMap, ops::Div, sync::Arc};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    ops::{Add, Div},
+    sync::{
+        atomic::{self, AtomicBool},
+        Arc,
+    },
+};
 
+use chrono::{
+    DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
+};
+use lazy_static::lazy_static;
+use models::Timestamp;
+use parking_lot::RwLock;
 use trace::error;
+use tracing::info;
 
 use crate::{
     compaction::CompactReq,
     direct_io::File,
     error::Result,
     kv_option::TseriesFamOpt,
-    tseries_family::{ColumnFile, LevelInfo, Version},
-    TseriesFamilyId,
+    tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
+    LevelId, TimeRange, TseriesFamilyId,
 };
 
 pub trait Picker: Send + Sync {
-    fn pick_compaction(&self, tsf_id: TseriesFamilyId, version: Arc<Version>)
-        -> Option<CompactReq>;
+    fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
 }
 
+/// Compaction picker for picking files in level
 pub struct LevelCompactionPicker {
-    ts_family_opt: Arc<TseriesFamOpt>,
+    picking: AtomicBool,
 }
 
 impl Picker for LevelCompactionPicker {
-    fn pick_compaction(
-        &self,
-        tsf_id: TseriesFamilyId,
-        version: Arc<Version>,
-    ) -> Option<CompactReq> {
+    fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq> {
+        //! 1. Get TseriesFamily's newest **version**(`Arc<Version>`)
+        //! 2. Get all level's score, pick LevelInfo with the max score.
+        //! 3. Get files(`Vec<Arc<ColumnFile>>`) from the picked level, sorted by min_ts(ascending)
+        //!    and size(ascending), pick ColumnFile until picking_files_size reaches
+        //!    max_compact_size, remove away the last picked files with overlapped time_range.
+        //! 4. Get files(`Vec<Arc<ColumnFile>>`) from level-0, sorted by min_ts(ascending)
+        //!    and size(ascending), pick ColumnFile until picking_files_size reaches
+        //!    max_compact_size.
+        //! 5. Build CompactReq using **version**, picked level and picked files.
+
         let level_infos = version.levels_info();
 
-        let mut ctx = LevelCompatContext::default();
-        ctx.cal_score(level_infos, self.ts_family_opt.as_ref());
-        if let Some((start_level, out_lvl)) = ctx.pick_level() {
-            let input = ctx.pick_files(
-                level_infos,
-                self.ts_family_opt.as_ref(),
-                start_level,
-                out_lvl,
-            );
-            if let Some((level, mut files)) = input {
-                for file in files.iter_mut() {
-                    file.mark_compaction();
-                }
-                let request = CompactReq {
-                    ts_family_id: tsf_id,
-                    ts_family_opt: self.ts_family_opt.clone(),
-                    files,
-                    version,
-                    out_level: out_lvl,
-                };
-                return Some(request);
-            }
+        // Pick a level to compact with level 0
+        let level_start: &LevelInfo;
+        let out_level;
+
+        if let Some((start_lvl, out_lvl)) = self.pick_level(level_infos) {
+            level_start = &level_infos[start_lvl as usize];
+            out_level = out_lvl;
+        } else {
+            return None;
         }
-        None
+        let max_compact_size = version.ts_family_opt.level_file_size(out_level);
+
+        // Pick selected level files.
+        let mut picking_files: Vec<Arc<ColumnFile>> = Vec::new();
+        let mut picking_files_size = 0_u64;
+        let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
+
+        if level_start.files.len() > 1 {
+            let mut files = level_start.files.clone();
+            files.sort_by(Self::compare_column_file);
+            (picking_files_size, picking_time_range) =
+                Self::pick_files(files, max_compact_size, &mut picking_files);
+        } else {
+            return None;
+        }
+
+        // Pick level 0 files.
+        let mut files = level_infos[0].files.clone();
+        files.sort_by(Self::compare_column_file);
+        for file in files.iter() {
+            if file.time_range().min_ts > picking_time_range.max_ts {
+                break;
+            }
+            if file.is_compacting() || !file.time_range().overlaps(&picking_time_range) {
+                continue;
+            }
+            picking_files_size += file.size();
+            if picking_files_size > max_compact_size {
+                break;
+            }
+            picking_files.push(file.clone());
+            file.mark_compaction();
+        }
+
+        println!("Picked column files:");
+        for f in picking_files.iter() {
+            println!(
+                "Level-{} | File-{} | {}-{}",
+                f.level(),
+                f.file_id(),
+                f.time_range().min_ts,
+                f.time_range().max_ts
+            );
+        }
+
+        Some(CompactReq {
+            ts_family_id: version.ts_family_id,
+            ts_family_opt: version.ts_family_opt.clone(),
+            files: picking_files,
+            version: version.clone(),
+            out_level,
+        })
     }
 }
 
 impl LevelCompactionPicker {
-    pub fn new(ts_family_opt: Arc<TseriesFamOpt>) -> Self {
-        Self { ts_family_opt }
+    pub fn new() -> LevelCompactionPicker {
+        Self {
+            picking: AtomicBool::new(false),
+        }
+    }
+
+    #[inline(always)]
+    fn level_weight(level: LevelId) -> f64 {
+        // TODO level_weight is a temporary method
+        match level {
+            0 => 0.9,
+            1 => 0.8,
+            2 => 0.5,
+            3 => 0.2,
+            4 => 0.1,
+            _ => 0.0,
+        }
+    }
+
+    fn compare_column_file(a: &Arc<ColumnFile>, b: &Arc<ColumnFile>) -> std::cmp::Ordering {
+        match a.time_range().min_ts.cmp(&b.time_range().min_ts) {
+            std::cmp::Ordering::Equal => a.size().cmp(&b.size()),
+            ord => return ord,
+        }
+    }
+
+    fn pick_level_1(
+        &self,
+        ts_family_opt: &TseriesFamOpt,
+        levels: &[LevelInfo],
+    ) -> Option<(LevelId, LevelId)> {
+        let mut ctx = LevelCompatContext::default();
+        ctx.cal_score(levels, &ts_family_opt);
+        ctx.pick_level()
+    }
+
+    fn pick_level(&self, levels: &[LevelInfo]) -> Option<(LevelId, LevelId)> {
+        //! - Level max_size (level closer to max_size
+        //!     has more possibility to run compact)
+        //! - Level running compactions (level running compaction
+        //!     has less possibility to run compact)
+        //! - Level weight (higher level that file is too large
+        //!     has less possibility to run compact)
+        //! - Level file_count (after all, level has more files
+        //!     has more possibility to run compact)
+
+        if levels.is_empty() {
+            return None;
+        }
+
+        // Level score context: Vec<(level, level_size, compacting_files in level, level_weight, level_score)>
+        let mut level_scores: Vec<(LevelId, u64, usize, f64, f64)> =
+            Vec::with_capacity(levels.len());
+        for lvl in levels.iter() {
+            if lvl.level == 0 || lvl.cur_size == 0 {
+                continue;
+            }
+            let mut compacting_files = 0_usize;
+            for file in lvl.files.iter() {
+                if file.is_compacting() {
+                    compacting_files += 1;
+                }
+            }
+            let level_weight = Self::level_weight(lvl.level);
+            let level_score = if compacting_files == 0 {
+                (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
+                    / (lvl.max_size as f64)
+            } else {
+                0.0
+            };
+            level_scores.push((
+                lvl.level,
+                lvl.cur_size,
+                compacting_files,
+                level_weight,
+                level_score,
+            ));
+        }
+
+        if level_scores.is_empty() {
+            return None;
+        }
+        level_scores.sort_by(|a, b| a.4.partial_cmp(&b.4).expect("a NaN score").reverse());
+
+        println!("Calculate level scores:");
+        for lvl_score in level_scores.iter() {
+            println!("Level-{} | {}", lvl_score.0, lvl_score.4);
+        }
+
+        level_scores.first().map(|lvl_score| {
+            if lvl_score.0 == 4 {
+                (lvl_score.0, lvl_score.0)
+            } else {
+                (lvl_score.0, lvl_score.0 + 1)
+            }
+        })
+    }
+
+    fn pick_files(
+        src_files: Vec<Arc<ColumnFile>>,
+        max_compact_size: u64,
+        dst_files: &mut Vec<Arc<ColumnFile>>,
+    ) -> (u64, TimeRange) {
+        let mut picking_file_size = 0_u64;
+        let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
+        let mut prev_non_overlaped_idx = 0_usize;
+        for (i, file) in src_files.iter().enumerate() {
+            // The first serial files may be in compaction
+            if file.is_compacting() {
+                continue;
+            }
+            if file.time_range().overlaps(&picking_time_range) {
+                picking_time_range.merge(file.time_range());
+            } else {
+                picking_time_range = *file.time_range();
+                prev_non_overlaped_idx = i;
+            }
+            picking_file_size += file.size() as u64;
+            if picking_file_size > max_compact_size && prev_non_overlaped_idx > 0 {
+                break;
+            }
+            dst_files.push(file.clone());
+            file.mark_compaction();
+        }
+
+        let mut picked_time_range = *src_files[0].time_range();
+        picked_time_range.merge(src_files[prev_non_overlaped_idx].time_range());
+        (picking_file_size, picked_time_range)
     }
 }
 
@@ -69,7 +254,7 @@ struct LevelCompatContext {
 }
 
 impl LevelCompatContext {
-    fn cal_score(&mut self, level_infos: &[LevelInfo; 5], opts: &TseriesFamOpt) {
+    fn cal_score(&mut self, level_infos: &[LevelInfo], opts: &TseriesFamOpt) {
         let mut level0_being_compact = false;
         for t in &level_infos[0].files {
             if t.is_compacting() {
@@ -166,5 +351,140 @@ impl LevelCompatContext {
             }
         }
         Some((level, inputs))
+    }
+}
+
+mod test {
+    use std::sync::Arc;
+
+    use crate::{
+        kv_option::TseriesFamOpt,
+        memcache::MemCache,
+        tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
+        TimeRange,
+    };
+
+    fn create_options(tsm_dir: &str) -> Arc<TseriesFamOpt> {
+        Arc::new(TseriesFamOpt {
+            base_file_size: 16 * 1024 * 1024,         // 16 MiB: 16777216
+            max_compact_size: 2 * 1024 * 1024 * 1024, // 2 GiB: 2147483648
+            tsm_dir: tsm_dir.to_string(),
+            max_level: 4,
+            level_ratio: 16_f64,
+            compact_trigger: 4,
+            delta_dir: "/tmp/test/picker_delta".to_string(),
+            max_memcache_size: 128 * 1024 * 1024,
+            max_immemcache_num: 4,
+        })
+    }
+
+    /// Returns a TseriesFamily by TseriesFamOpt and levels_sketch.
+    ///
+    /// All elements in levels_sketch is :
+    ///
+    /// - level
+    /// - Timestamp_Begin
+    /// - Timestamp_end
+    /// - Vec<(column_files_sketch)>, all elements in column_files_sketch is:
+    ///   - file_id
+    ///   - Timestamp_Begin
+    ///   - Timestamp_end
+    ///   - size
+    ///   - being_compact
+    fn create_tseries_family(
+        tsf_opt: Arc<TseriesFamOpt>,
+        levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)>,
+    ) -> TseriesFamily {
+        let mut level_infos = LevelInfo::init_levels(tsf_opt.clone());
+        let mut max_level_ts = 0_i64;
+        for lvl_desc in levels_sketch.iter() {
+            max_level_ts = max_level_ts.max(lvl_desc.2);
+            let mut col_files = Vec::new();
+            let mut cur_size = 0_u64;
+            for file_desc in lvl_desc.3.iter() {
+                cur_size += file_desc.3;
+                let col = ColumnFile::new(
+                    file_desc.0,
+                    lvl_desc.0,
+                    TimeRange::new(file_desc.1, file_desc.2),
+                    file_desc.3,
+                    lvl_desc.0 == 0,
+                    tsf_opt.clone(),
+                );
+                if file_desc.4 {
+                    col.mark_compaction();
+                }
+                col_files.push(Arc::new(col));
+            }
+            level_infos[lvl_desc.0 as usize] = LevelInfo {
+                files: col_files,
+                tsf_id: 0,
+                tsf_opt: tsf_opt.clone(),
+                level: lvl_desc.0,
+                cur_size,
+                max_size: tsf_opt.level_file_size(lvl_desc.0),
+                time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
+            };
+        }
+
+        let version = Arc::new(Version::new(
+            1,
+            "version_1".to_string(),
+            tsf_opt.clone(),
+            1,
+            level_infos,
+            1000,
+        ));
+
+        let tsf = TseriesFamily::new(
+            1,
+            "ts_family_1".to_string(),
+            MemCache::new(1, 1000, 1, false),
+            version,
+            tsf_opt,
+        );
+
+        tsf
+    }
+
+    #[test]
+    fn test_pick_1() {
+        //! There are Level 0-4, and Level 1 is now in compaction.
+        //! In this case, Level 2, and serial files in Level 0 will be picked,
+        //! and compact to Level 3.
+        let dir = "/tmp/test/pick/1";
+        let tsf_opt = create_options(dir);
+
+        #[rustfmt::skip]
+        let levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)> = vec![
+            // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
+            (0_u32, 1_i64, 1000_i64, vec![
+                (11_u64, 1_i64, 1000_i64, 1000_u64, false),
+                (12, 33010, 34000, 1000, false),
+            ]),
+            (1, 1, 1000, vec![
+                (7, 34001, 35000, 1000, false),
+                (8, 35001, 36000, 1000, false),
+                (9, 34501, 35500, 1000, true),
+                (10, 35001, 36000, 1000, true),
+            ]),
+            (2, 30001, 34000, vec![
+                (5, 30001, 32000, 2000, false),
+                (6, 32001, 34000, 2000, false),
+            ]),
+            (3, 20001, 30000, vec![
+                (3, 20001, 25000, 5000, false),
+                (4, 25001, 30000, 5000, false),
+            ]),
+            (4, 1, 20000, vec![
+                (1, 1, 10000, 10000, false),
+                (2, 10001, 20000, 10000, false),
+            ]),
+        ];
+
+        let tsf = create_tseries_family(tsf_opt, levels_sketch);
+        let compact_req = tsf.pick_compaction().unwrap();
+        assert_eq!(compact_req.out_level, 3);
+        assert_eq!(compact_req.files.len(), 3);
     }
 }
