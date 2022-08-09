@@ -1,9 +1,10 @@
 use snafu::Snafu;
 
 use crate::record_file;
+use sled;
 
 #[derive(Snafu, Debug)]
-pub enum ForwardIndexError {
+pub enum IndexError {
     #[snafu(display("Error with write record file: {}", source))]
     WriteFile {
         source: record_file::RecordFileError,
@@ -30,6 +31,20 @@ pub enum ForwardIndexError {
 
     #[snafu(display("Series not exists"))]
     SeriesNotExists,
+
+    #[snafu(display("Decode Series ID List"))]
+    DecodeSeriesIDList,
+
+    #[snafu(display("index storage error: {}", msg))]
+    IndexStroage { msg: String },
 }
 
-pub type ForwardIndexResult<T> = Result<T, ForwardIndexError>;
+impl From<sled::Error> for IndexError {
+    fn from(err: sled::Error) -> Self {
+        IndexError::IndexStroage {
+            msg: err.to_string(),
+        }
+    }
+}
+
+pub type IndexResult<T> = std::result::Result<T, IndexError>;

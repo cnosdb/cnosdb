@@ -31,7 +31,7 @@ pub struct GlobalConfig {
     // SchemaStoreConfig
     pub schema_store_config_dir: String,
     // ForwardIndex
-    pub forward_index_path: String,
+    pub index_path: String,
 }
 
 pub fn get_config(path: &str) -> &'static GlobalConfig {

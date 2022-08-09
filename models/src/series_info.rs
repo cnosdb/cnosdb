@@ -7,11 +7,86 @@ use crate::{
     tag, FieldId, FieldInfo, FieldName, SeriesId, Tag,
 };
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SeriesKey {
+    id: SeriesId,
+    tags: Vec<Tag>,
+    table: String,
+}
+
+impl SeriesKey {
+    pub fn id(&self) -> SeriesId {
+        self.id
+    }
+
+    pub fn set_id(&mut self, id: SeriesId) {
+        self.id = id;
+    }
+    pub fn tags(&self) -> &Vec<Tag> {
+        &self.tags
+    }
+
+    pub fn table(&self) -> &String {
+        &self.table
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
+
+    pub fn hash(&self) -> u64 {
+        let mut hasher = BkdrHasher::new();
+        hasher.hash_with(self.table.as_bytes());
+        for tag in &self.tags {
+            hasher.hash_with(&tag.key);
+            hasher.hash_with(&tag.value);
+        }
+
+        hasher.number()
+    }
+
+    pub fn decode(data: &[u8]) -> Result<SeriesKey> {
+        let key = bincode::deserialize(data);
+        match key {
+            Ok(key) => Ok(key),
+            Err(err) => Err(Error::InvalidSerdeMessage {
+                err: format!("Invalid serde message: {}", err.to_string()),
+            }),
+        }
+    }
+
+    pub fn string(&self) -> String {
+        let mut str = self.table.clone() + ".";
+        for tag in &self.tags {
+            str = str + &String::from_utf8(tag.key.to_vec()).unwrap() + "=";
+            str = str + &String::from_utf8(tag.value.to_vec()).unwrap() + ".";
+        }
+
+        return str;
+    }
+}
+
+impl PartialEq for SeriesKey {
+    fn eq(&self, other: &Self) -> bool {
+        if self.table != other.table {
+            return false;
+        }
+
+        if self.tags != other.tags {
+            return false;
+        }
+
+        return true;
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SeriesInfo {
     id: SeriesId,
     tags: Vec<Tag>,
     field_infos: Vec<FieldInfo>,
+
+    table: String,
 
     /// True if method `finish()` has been called.
     finished: bool,
@@ -23,6 +98,7 @@ impl SeriesInfo {
             id: 0,
             tags,
             field_infos,
+            table: "".to_string(),
             finished: true,
         };
         si.finish();
@@ -63,6 +139,7 @@ impl SeriesInfo {
             id: 0,
             tags,
             field_infos,
+            table: "".to_string(),
             finished: true,
         };
         info.finish();
@@ -91,8 +168,12 @@ impl SeriesInfo {
         &self.tags
     }
 
-    pub fn field_infos(&self) -> &Vec<FieldInfo> {
-        &self.field_infos
+    pub fn table(&self) -> &String {
+        &self.table
+    }
+
+    pub fn field_infos(&mut self) -> &mut Vec<FieldInfo> {
+        &mut self.field_infos
     }
 
     pub fn push_field_info(&mut self, field_info: FieldInfo) {
@@ -119,6 +200,16 @@ impl SeriesInfo {
 
     pub fn decode(data: &[u8]) -> SeriesInfo {
         bincode::deserialize(data).unwrap()
+    }
+}
+
+impl From<&SeriesInfo> for SeriesKey {
+    fn from(value: &SeriesInfo) -> Self {
+        SeriesKey {
+            id: 0,
+            tags: value.tags().to_vec(),
+            table: value.table().clone(),
+        }
     }
 }
 

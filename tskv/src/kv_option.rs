@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 use config::GlobalConfig;
 use serde::{Deserialize, Serialize};
 
-use crate::index::forward_index::ForwardIndexConfig;
+use crate::index::IndexConfig;
 
 #[derive(Clone)]
 pub struct DBOptions {
@@ -37,7 +37,7 @@ pub struct Options {
     pub wal: Arc<WalConfig>,
     // pub(crate) write_batch: WriteBatchConfig,
     pub compact_conf: Arc<CompactConfig>,
-    pub forward_index_conf: Arc<ForwardIndexConfig>,
+    pub index_conf: Arc<IndexConfig>,
     pub schema_store: Arc<SchemaStoreConfig>,
 }
 
@@ -50,7 +50,7 @@ impl Options {
             lrucache: self.lrucache.clone(),
             wal: self.wal.clone(),
             compact_conf: self.compact_conf.clone(),
-            forward_index_conf: self.forward_index_conf.clone(),
+            index_conf: self.index_conf.clone(),
             schema_store: self.schema_store.clone(),
         }
     }
@@ -64,7 +64,7 @@ impl From<&GlobalConfig> for Options {
             lrucache: Arc::new(CacheConfig::from(config)),
             wal: Arc::new(WalConfig::from(config)),
             compact_conf: Arc::new(CompactConfig::from(config)),
-            forward_index_conf: Arc::new(ForwardIndexConfig::from(config)),
+            index_conf: Arc::new(IndexConfig::from(config)),
             schema_store: Arc::new(SchemaStoreConfig::from(config)),
         }
     }

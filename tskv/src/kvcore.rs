@@ -26,7 +26,7 @@ use crate::{
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
-    index::forward_index::ForwardIndex,
+    index::db_index,
     kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
     memcache::{DataType, MemCache},
     record_file::Reader,
@@ -49,7 +49,7 @@ pub struct TsKv {
     version_set: Arc<RwLock<VersionSet>>,
 
     wal_sender: UnboundedSender<WalTask>,
-    forward_index: Arc<RwLock<ForwardIndex>>,
+    db_index: Arc<RwLock<db_index::DBIndex>>,
 
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
@@ -61,6 +61,7 @@ impl TsKv {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
+
         let (version_set, summary) = Self::recover(
             shared_options.clone(),
             flush_task_sender.clone(),
@@ -68,15 +69,13 @@ impl TsKv {
             shared_options.ts_family.clone(),
         )
         .await;
-        let mut fidx = ForwardIndex::new(&shared_options.forward_index_conf.path);
-        fidx.load_cache_file()
-            .await
-            .map_err(|err| Error::LogRecordErr { source: err })?;
+
+        let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self {
             options: shared_options,
-            forward_index: Arc::new(RwLock::new(fidx)),
+            db_index: Arc::new(RwLock::new(fidx)),
             version_set,
             wal_sender,
             flush_task_sender,
@@ -147,10 +146,11 @@ impl TsKv {
 
         // get or create forward index
         for point in fb_points.points().unwrap() {
-            let info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            self.forward_index
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            self.db_index
                 .write()
-                .add_series_info_if_not_exists(info)
+                .add_series_if_not_exists(&mut info)
                 .await
                 .context(error::ForwardIndexErrSnafu)?;
         }
@@ -246,13 +246,13 @@ impl TsKv {
         min: Timestamp,
         max: Timestamp,
     ) -> Result<()> {
-        let series_infos = self.forward_index.read().get_series_info_list(&sids);
+        let series_infos = self.db_index.read().get_series_info_list(&sids);
         let timerange = TimeRange {
             max_ts: max,
             min_ts: min,
         };
         let path = self.options.db.db_path.clone();
-        for series_info in series_infos {
+        for mut series_info in series_infos {
             let mut super_version: Option<Arc<SuperVersion>> = None;
             {
                 let vs = self.version_set.read();

@@ -9,7 +9,7 @@ mod tag;
 pub use errors::{Error, Result};
 pub use field_info::{generate_field_id, FieldInfo, ValueType};
 pub use points::*;
-pub use series_info::{generate_series_id, SeriesInfo};
+pub use series_info::{generate_series_id, SeriesInfo, SeriesKey};
 pub use tag::Tag;
 
 pub type ShardId = u64;
