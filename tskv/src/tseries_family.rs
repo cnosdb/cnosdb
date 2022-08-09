@@ -508,7 +508,7 @@ impl TseriesFamily {
             super_version_id: AtomicU64::new(0),
             version,
             opts: tsf_opt.clone(),
-            compact_picker: Arc::new(LevelCompactionPicker::new(tsf_opt.clone())),
+            compact_picker: Arc::new(LevelCompactionPicker::new()),
             immut_ts_min: max_level_ts,
             mut_ts_max: i64::MIN,
         }
@@ -727,8 +727,7 @@ impl TseriesFamily {
     }
 
     pub fn pick_compaction(&self) -> Option<CompactReq> {
-        self.compact_picker
-            .pick_compaction(self.tf_id, self.version.clone())
+        self.compact_picker.pick_compaction(self.version.clone())
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {

@@ -380,13 +380,16 @@ impl TsKv {
                 if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
                     if let Some(compact_req) = tsf.pick_compaction() {
                         match compaction::run_compaction_job(compact_req, ctx.clone()) {
-                            Ok(version_edits) => {
+                            Ok(Some(version_edit)) => {
                                 let (summary_tx, summary_rx) = oneshot::channel();
                                 let ret = summary_task_sender.send(SummaryTask {
-                                    edits: version_edits,
+                                    edits: vec![version_edit],
                                     cb: summary_tx,
                                 });
                                 // TODO Handle summary result using summary_rx.
+                            }
+                            Ok(None) => {
+                                info!("There is nothing to compact.");
                             }
                             Err(e) => {
                                 error!("Compaction job failed: {}", e);

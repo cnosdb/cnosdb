@@ -428,7 +428,7 @@ pub fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
 pub fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
-) -> Result<Vec<VersionEdit>> {
+) -> Result<Option<VersionEdit>> {
     let version = request.version;
 
     // Buffers all tsm-files and it's indexes for this compaction
@@ -453,7 +453,7 @@ pub fn run_compaction_job(
 
     if tsm_index_iters.is_empty() {
         // Nothing to compact
-        return Ok(vec![]);
+        return Ok(None);
     }
 
     let tsm_readers_cnt = tsm_readers.len();
@@ -466,7 +466,7 @@ pub fn run_compaction_job(
     };
     let tsm_dir = tsf_opt.tsm_dir(tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
-    let mut version_edits: Vec<VersionEdit> = Vec::new();
+    let mut version_edit = VersionEdit::new();
     for next_blk in iter.flatten() {
         info!("===============================");
         let write_ret = match next_blk {
@@ -490,14 +490,8 @@ pub fn run_compaction_job(
                 tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
                     tsm_writer.flush().context(error::WriteTsmSnafu)?;
-                    let cm = new_compact_meta(
-                        tsm_writer.sequence(),
-                        tsm_writer.size(),
-                        request.out_level,
-                    );
-                    let mut ve = VersionEdit::new();
-                    ve.add_file(cm, version.max_level_ts);
-                    version_edits.push(ve);
+                    let cm = new_compact_meta(&tsm_writer, request.out_level);
+                    version_edit.add_file(cm, version.max_level_ts);
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                 }
             }
@@ -506,23 +500,21 @@ pub fn run_compaction_job(
 
     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
     tsm_writer.flush().context(error::WriteTsmSnafu)?;
-    let cm = new_compact_meta(tsm_writer.sequence(), tsm_writer.size(), request.out_level);
-    let mut ve = VersionEdit::new();
-    ve.add_file(cm, version.max_level_ts);
+    let cm = new_compact_meta(&tsm_writer, request.out_level);
+    version_edit.add_file(cm, version.max_level_ts);
     for file in request.files {
-        ve.del_file(file.level(), file.file_id(), file.is_delta());
+        version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
-    version_edits.push(ve);
 
-    Ok(version_edits)
+    Ok(Some(version_edit))
 }
 
-fn new_compact_meta(file_id: u64, file_size: u64, level: LevelId) -> CompactMeta {
+fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
     let mut cm = CompactMeta::default();
-    cm.file_id = file_id;
-    cm.file_size = file_size;
-    cm.min_ts = 0;
-    cm.max_ts = 0;
+    cm.file_id = tsm_writer.sequence();
+    cm.file_size = tsm_writer.size();
+    cm.min_ts = tsm_writer.min_ts();
+    cm.max_ts = tsm_writer.max_ts();
     cm.level = level;
     cm.high_seq = 0;
     cm.low_seq = 0;
@@ -549,8 +541,9 @@ mod test {
     use crate::{
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
-        file_manager,
+        file_manager, file_utils,
         kv_option::TseriesFamOpt,
+        summary::VersionEdit,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
         tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone},
     };
@@ -602,8 +595,22 @@ mod test {
         data
     }
 
+    fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
+        if version_edit.has_file_id && !version_edit.add_files.is_empty() {
+            let file_id = version_edit.add_files.first().unwrap().file_id;
+            return file_utils::make_tsm_file_name(dir, file_id);
+        }
+
+        panic!("VersionEdit doesn't contain any add_files.");
+    }
+
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
-    fn check_column_file(path: impl AsRef<Path>, expected_data: HashMap<FieldId, Vec<DataBlock>>) {
+    fn check_column_file(
+        dir: impl AsRef<Path>,
+        version_edit: VersionEdit,
+        expected_data: HashMap<FieldId, Vec<DataBlock>>,
+    ) {
+        let path = get_result_file_path(dir, version_edit);
         let data = read_data_blocks_from_column_file(path);
         let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
         data_field_ids.sort_unstable();
@@ -695,8 +702,8 @@ mod test {
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
-        run_compaction_job(compact_req, kernel).unwrap();
-        check_column_file(dir.join("_000004.tsm"), expected_data);
+        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
+        check_column_file(dir, version_edit, expected_data);
     }
 
     #[test]
@@ -732,8 +739,8 @@ mod test {
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
-        run_compaction_job(compact_req, kernel).unwrap();
-        check_column_file(dir.join("_000004.tsm"), expected_data);
+        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
+        check_column_file(dir, version_edit, expected_data);
     }
 
     #[test]
@@ -769,8 +776,8 @@ mod test {
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
         let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
-        run_compaction_job(compact_req, kernel).unwrap();
-        check_column_file(dir.join("_000004.tsm"), expected_data);
+        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
+        check_column_file(dir, version_edit, expected_data);
     }
 
     /// Returns a generated `DataBlock` with default value and specified size, `DataBlock::ts`
@@ -979,9 +986,9 @@ mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(tsf_opt, next_file_id, column_files);
 
-        run_compaction_job(compact_req, kernel).unwrap();
+        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
 
-        check_column_file(dir.join("_000004.tsm"), expected_data);
+        check_column_file(dir, version_edit, expected_data);
     }
 
     #[test]
@@ -1125,8 +1132,8 @@ mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(tsf_opt, next_file_id, column_files);
 
-        run_compaction_job(compact_req, kernel).unwrap();
+        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
 
-        check_column_file(dir.join("_000004.tsm"), expected_data);
+        check_column_file(dir, version_edit, expected_data);
     }
 }
