@@ -6,6 +6,7 @@ use models::{FieldId, Timestamp, ValueType};
 use protos::models::FieldType;
 use trace::{error, info, warn};
 
+use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 
 #[allow(dead_code)]
@@ -62,12 +63,14 @@ impl Default for MemEntry {
 }
 
 impl MemEntry {
-    pub fn read_cell(&self, time_range: &TimeRange) {
-        for data in self.cells.iter() {
-            if data.timestamp() > time_range.min_ts && data.timestamp() < time_range.max_ts {
-                info!("{:?}", data.clone())
+    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
+        let mut data = DataBlock::new(0, self.field_type);
+        for datum in self.cells.iter() {
+            if datum.timestamp() >= time_range.min_ts && datum.timestamp() <= time_range.max_ts {
+                data.insert(datum);
             }
         }
+        return vec![data];
     }
 
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
