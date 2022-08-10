@@ -20,6 +20,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
+use crate::tsm::DataBlock;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
@@ -261,7 +262,13 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub fn read_column_file(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) {
+    pub fn read_column_file(
+        &self,
+        tf_id: u32,
+        field_id: FieldId,
+        time_range: &TimeRange,
+    ) -> Vec<DataBlock> {
+        let mut data = vec![];
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
                 continue;
@@ -270,18 +277,19 @@ impl LevelInfo {
             let tsm_reader = match TsmReader::open(file.file_path(self.tsf_opt.clone(), tf_id)) {
                 Ok(tr) => tr,
                 Err(e) => {
-                    error!("failed to load tombstone, in case {:?}", e);
-                    return;
+                    error!("failed to load tsm reader, in case {:?}", e);
+                    return vec![];
                 }
             };
             for idx in tsm_reader.index_iterator_opt(field_id) {
                 for blk in idx.block_iterator_opt(time_range) {
                     if let Ok(blk) = tsm_reader.get_data_block(&blk) {
-                        info!("{:?}", &blk);
+                        data.push(blk);
                     }
                 }
             }
         }
+        return data;
     }
 
     pub fn level(&self) -> u32 {

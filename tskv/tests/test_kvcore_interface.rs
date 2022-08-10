@@ -111,12 +111,12 @@ mod tests {
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
-        tskv.read(
+        let output = tskv.read(
             sids,
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id,
-        )
-        .await;
+        );
+        info!("{:#?}", output);
     }
 
     #[tokio::test]
@@ -165,16 +165,14 @@ mod tests {
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
-        )
-        .await;
+        );
         info!("delete delta data");
         tskv.delete_series(sids.clone(), 1, 1).await.unwrap();
         tskv.read(
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
-        )
-        .await;
+        );
     }
 
     #[tokio::test]

@@ -20,6 +20,7 @@ use tokio::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::memcache::MemRaw;
+use crate::tsm::DataBlock;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -171,7 +172,13 @@ impl TsKv {
         })
     }
 
-    pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
+    pub fn read_point(
+        &self,
+        sid: SeriesId,
+        time_range: &TimeRange,
+        field_id: FieldId,
+    ) -> Vec<DataBlock> {
+        let mut data = vec![];
         let mut super_version: Option<Arc<SuperVersion>> = None;
         {
             let version_set = self.version_set.read();
@@ -184,14 +191,12 @@ impl TsKv {
         if let Some(sv) = super_version {
             // get data from memcache
             if let Some(mem_entry) = sv.caches.mut_cache.read().data_cache.get(&field_id) {
-                info!("memcache::{}::{}", sid.clone(), field_id);
-                mem_entry.read_cell(time_range);
+                data.append(&mut mem_entry.read_cell(time_range));
             }
 
             // get data from delta_memcache
             if let Some(mem_entry) = sv.caches.delta_mut_cache.read().data_cache.get(&field_id) {
-                info!("delta memcache::{}::{}", sid.clone(), field_id);
-                mem_entry.read_cell(time_range);
+                data.append(&mut mem_entry.read_cell(time_range));
             }
 
             // get data from immut_delta_memcache
@@ -200,8 +205,7 @@ impl TsKv {
                     continue;
                 }
                 if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    info!("delta im_memcache::{}::{}", sid.clone(), field_id);
-                    mem_entry.read_cell(time_range);
+                    data.append(&mut mem_entry.read_cell(time_range));
                 }
             }
 
@@ -211,8 +215,7 @@ impl TsKv {
                     continue;
                 }
                 if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    info!("im_memcache::{}::{}", sid.clone(), field_id);
-                    mem_entry.read_cell(time_range);
+                    data.append(&mut mem_entry.read_cell(time_range));
                 }
             }
 
@@ -221,23 +224,43 @@ impl TsKv {
                 if level_info.level == 0 {
                     continue;
                 }
-                info!("levelinfo::{}::{}", sid.clone(), field_id);
-                level_info.read_column_file(sv.ts_family_id, field_id, time_range);
+                data.append(&mut level_info.read_column_file(sv.ts_family_id, field_id, time_range))
             }
 
             // get data from delta
             let level_info = sv.version.levels_info();
-            info!("delta::{}::{}", sid.clone(), field_id);
-            level_info[0].read_column_file(sv.ts_family_id, field_id, time_range);
+            data.append(&mut level_info[0].read_column_file(sv.ts_family_id, field_id, time_range))
         }
+        return data;
     }
 
-    pub async fn read(&self, sids: Vec<SeriesId>, time_range: &TimeRange, fields: Vec<FieldId>) {
+    pub fn read(
+        &self,
+        sids: Vec<SeriesId>,
+        time_range: &TimeRange,
+        fields: Vec<FieldId>,
+    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
+        // get data block
+        let mut ans = HashMap::new();
         for sid in sids {
+            let sid_entry = ans.entry(sid).or_insert(HashMap::new());
             for field_id in fields.iter() {
-                self.read_point(sid, time_range, *field_id).await;
+                let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
+                field_id_entry.append(&mut self.read_point(sid, time_range, *field_id));
             }
         }
+
+        // sort data block, max block size 1000
+        let mut final_ans = HashMap::new();
+        for i in ans {
+            let sid_entry = final_ans.entry(i.0).or_insert(HashMap::new());
+            for j in i.1 {
+                let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
+                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, 1000));
+            }
+        }
+
+        return final_ans;
     }
 
     pub async fn delete_series(
@@ -392,7 +415,7 @@ impl TsKv {
                                 info!("There is nothing to compact.");
                             }
                             Err(e) => {
-                                error!("Compaction job failed: {}", e);
+                                error!("Compaction job failed: {:?}", e);
                             }
                         }
                     }
