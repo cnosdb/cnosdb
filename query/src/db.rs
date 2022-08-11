@@ -3,9 +3,10 @@ use std::sync::Arc;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use parking_lot::RwLock;
+use tskv::engine::EngineRef;
 
 use crate::{
-    catalog::IsiphoCatalog,
+    catalog::UserCatalog,
     context::IsiphoSessionCtx,
     exec::{Executor, ExecutorType},
 };
@@ -28,15 +29,15 @@ impl DatabaseRule {
 pub struct Db {
     rule: RwLock<Arc<DatabaseRule>>,
     exec: Arc<Executor>,
-    catalog: Arc<IsiphoCatalog>,
+    catalog: Arc<UserCatalog>,
 }
 
-impl Default for Db {
-    fn default() -> Self {
+impl Db {
+    pub fn new(engine: EngineRef) -> Self {
         Self {
             rule: RwLock::new(Arc::new(DatabaseRule::new("default".to_string()))),
-            exec: Arc::new(Executor::new(1)),
-            catalog: Arc::new(IsiphoCatalog::new()),
+            exec: Arc::new(Executor::new(1)), //todo: add config
+            catalog: Arc::new(UserCatalog::new(engine)),
         }
     }
 }
@@ -85,6 +86,8 @@ mod tests {
     };
     use futures::TryStreamExt;
     use rand::{distributions::uniform::SampleUniform, thread_rng, Rng};
+    use config::get_config;
+    use tskv::{kv_option, TsKv};
 
     use crate::{catalog::IsiphoSchema, db::Db};
 
@@ -215,6 +218,14 @@ mod tests {
         Arc::new(MemTable::try_new(schema, make_batches()).unwrap())
     }
 
+    async fn get_tskv() -> TsKv {
+        let mut global_config = (*get_config("../config/config.toml")).clone();
+        global_config.wal_config_dir = "/tmp/test/wal".to_string();
+        let opt = kv_option::Options::from(&global_config);
+
+        TsKv::open(opt, global_config.tsfamily_num).await.unwrap()
+    }
+
     async fn run_query(db: Arc<Db>) {
         // 1    44882000
         // 2    23680000
@@ -222,12 +233,14 @@ mod tests {
         // 4    16241000
         // 5    16445000
 
+        let tskv = get_tskv().await;
+
         let scheduler = Scheduler::new(4);
         let ctx = db.new_query_context();
 
         // todo： init tables
         let table = Arc::new(Table {});
-        let schema = Arc::new(IsiphoSchema::new());
+        let schema = Arc::new(IsiphoSchema::new(Arc::new(tskv)));
         schema.register_table("table1".to_string(), table).unwrap();
         db.catalog
             .register_schema("public", schema.clone())
@@ -249,8 +262,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn query_exec() {
-        let db = Arc::new(Db::default());
+        let tskv = get_tskv().await;
+        let db = Arc::new(Db::new(Arc::new(tskv)));
         run_query(db).await;
     }
 
@@ -280,8 +295,10 @@ mod tests {
         println!("{}", scheduled);
     }
     #[tokio::test]
+    #[ignore]
     async fn basic_query() {
-        let db = Arc::new(Db::default());
+        let tskv = get_tskv().await;
+        let db = Arc::new(Db::new(Arc::new(tskv)));
         run_query1(db).await;
     }
 }

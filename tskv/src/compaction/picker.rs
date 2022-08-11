@@ -7,6 +7,7 @@ use std::{
         Arc,
     },
 };
+use std::fmt::Debug;
 
 use chrono::{
     DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
@@ -26,14 +27,16 @@ use crate::{
     LevelId, TimeRange, TseriesFamilyId,
 };
 
-pub trait Picker: Send + Sync {
+pub trait Picker: Send + Sync + Debug{
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
 }
 
 /// Compaction picker for picking files in level
+#[derive(Debug)]
 pub struct LevelCompactionPicker {
     picking: AtomicBool,
 }
+
 
 impl Picker for LevelCompactionPicker {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq> {

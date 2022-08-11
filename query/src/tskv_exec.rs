@@ -9,6 +9,7 @@ use datafusion::{
 };
 
 use crate::{predicate::PredicateRef, stream::TableScanStream};
+use tskv::engine::EngineRef;
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {
@@ -16,13 +17,15 @@ pub struct TskvExec {
     // db: CustomDataSource,
     proj_schema: SchemaRef,
     filter: PredicateRef,
+    engine: EngineRef,
 }
 
 impl TskvExec {
-    pub(crate) fn new(proj_schema: SchemaRef, filter: PredicateRef) -> Self {
+    pub(crate) fn new(proj_schema: SchemaRef, filter: PredicateRef,  engine: EngineRef) -> Self {
         Self {
             proj_schema,
             filter,
+            engine
         }
     }
     pub fn filter(&self) -> PredicateRef {
@@ -69,6 +72,7 @@ impl ExecutionPlan for TskvExec {
             self.schema(),
             self.filter(),
             batch_size,
+            self.engine.clone()
         )))
     }
 

@@ -40,11 +40,13 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
+use crate::engine::Engine;
 
 pub struct Entry {
     pub series_id: u64,
 }
 
+#[derive(Debug)]
 pub struct TsKv {
     options: Arc<Options>,
     version_set: Arc<RwLock<VersionSet>>,
@@ -58,7 +60,7 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self> {
+    pub async fn open(opt: Options, ts_family_num: u32) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
@@ -69,7 +71,7 @@ impl TsKv {
             ts_family_num,
             shared_options.ts_family.clone(),
         )
-        .await;
+            .await;
 
         let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -136,42 +138,6 @@ impl TsKv {
 
         (version_set.clone(), summary)
     }
-
-    pub async fn write(
-        &self,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
-        let shared_write_batch = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
-            .context(error::InvalidFlatbufferSnafu)?;
-
-        // get or create forward index
-        for point in fb_points.points().unwrap() {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            self.db_index
-                .write()
-                .add_series_if_not_exists(&mut info)
-                .await
-                .context(error::ForwardIndexErrSnafu)?;
-        }
-
-        // write wal
-        let (cb, rx) = oneshot::channel();
-        self.wal_sender
-            .send(WalTask::Write {
-                points: shared_write_batch.clone(),
-                cb,
-            })
-            .map_err(|err| Error::Send)?;
-        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
-        self.insert_cache(seq, &fb_points).await;
-        Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        })
-    }
-
     pub fn read_point(
         &self,
         sid: SeriesId,
@@ -233,86 +199,6 @@ impl TsKv {
         }
         return data;
     }
-
-    pub fn read(
-        &self,
-        sids: Vec<SeriesId>,
-        time_range: &TimeRange,
-        fields: Vec<FieldId>,
-    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
-        // get data block
-        let mut ans = HashMap::new();
-        for sid in sids {
-            let sid_entry = ans.entry(sid).or_insert(HashMap::new());
-            for field_id in fields.iter() {
-                let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
-                field_id_entry.append(&mut self.read_point(sid, time_range, *field_id));
-            }
-        }
-
-        // sort data block, max block size 1000
-        let mut final_ans = HashMap::new();
-        for i in ans {
-            let sid_entry = final_ans.entry(i.0).or_insert(HashMap::new());
-            for j in i.1 {
-                let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
-                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, 1000));
-            }
-        }
-
-        return final_ans;
-    }
-
-    pub async fn delete_series(
-        &self,
-        sids: Vec<SeriesId>,
-        min: Timestamp,
-        max: Timestamp,
-    ) -> Result<()> {
-        let series_infos = self.db_index.read().get_series_info_list(&sids);
-        let timerange = TimeRange {
-            max_ts: max,
-            min_ts: min,
-        };
-        let path = self.options.db.db_path.clone();
-        for mut series_info in series_infos {
-            let mut super_version: Option<Arc<SuperVersion>> = None;
-            {
-                let vs = self.version_set.read();
-                if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
-                    tsf.delete_cache(&TimeRange {
-                        min_ts: min,
-                        max_ts: max,
-                    })
-                    .await;
-                    super_version = Some(tsf.super_version())
-                }
-            };
-
-            if let Some(sv) = super_version {
-                for level in sv.version.levels_info() {
-                    if level.time_range.overlaps(&timerange) {
-                        for column_file in level.files.iter() {
-                            if column_file.time_range().overlaps(&timerange) {
-                                let field_ids: Vec<FieldId> = series_info
-                                    .field_infos()
-                                    .iter()
-                                    .map(|f| f.field_id())
-                                    .collect();
-                                let mut tombstone =
-                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
-                                tombstone.add_range(&field_ids, min, max)?;
-                                tombstone.flush()?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
         if let Some(points) = ps.points() {
             let mut version_set = self.version_set.write();
@@ -331,7 +217,7 @@ impl TsKv {
                             },
                             self.flush_task_sender.clone(),
                         )
-                        .await
+                            .await
                     }
                 } else {
                     warn!("ts_family for sid {} not found.", sid);
@@ -383,8 +269,8 @@ impl TsKv {
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
-                .await
-                .unwrap();
+                    .await
+                    .unwrap();
             }
         };
         tokio::spawn(f);
@@ -468,10 +354,123 @@ impl TsKv {
         warn!("job 'main' started.");
     }
 
-    pub fn version_set(&self) -> Arc<RwLock<VersionSet>> {
-        self.version_set.clone()
+    // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
+    //     Ok(None)
+    // }
+}
+#[async_trait::async_trait]
+impl Engine for TsKv {
+    async fn write(
+        &self,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse> {
+        let shared_write_batch = Arc::new(write_batch.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
+            .context(error::InvalidFlatbufferSnafu)?;
+
+        // get or create forward index
+        for point in fb_points.points().unwrap() {
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            self.db_index
+                .write()
+                .add_series_if_not_exists(&mut info)
+                .await
+                .context(error::ForwardIndexErrSnafu)?;
+        }
+
+        // write wal
+        let (cb, rx) = oneshot::channel();
+        self.wal_sender
+            .send(WalTask::Write {
+                points: shared_write_batch.clone(),
+                cb,
+            })
+            .map_err(|err| Error::Send)?;
+        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+        self.insert_cache(seq, &fb_points).await;
+        Ok(WritePointsRpcResponse {
+            version: 1,
+            points: vec![],
+        })
     }
-    pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-        Ok(None)
+
+    fn read(
+        &self,
+        sids: Vec<SeriesId>,
+        time_range: &TimeRange,
+        fields: Vec<FieldId>,
+    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
+        // get data block
+        let mut ans = HashMap::new();
+        for sid in sids {
+            let sid_entry = ans.entry(sid).or_insert(HashMap::new());
+            for field_id in fields.iter() {
+                let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
+                field_id_entry.append(&mut self.read_point(sid, time_range, *field_id));
+            }
+        }
+
+        // sort data block, max block size 1000
+        let mut final_ans = HashMap::new();
+        for i in ans {
+            let sid_entry = final_ans.entry(i.0).or_insert(HashMap::new());
+            for j in i.1 {
+                let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
+                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, 1000));
+            }
+        }
+
+        return final_ans;
+    }
+
+    async fn delete_series(
+        &self,
+        sids: Vec<SeriesId>,
+        min: Timestamp,
+        max: Timestamp,
+    ) -> Result<()> {
+        let series_infos = self.db_index.read().get_series_info_list(&sids);
+        let timerange = TimeRange {
+            max_ts: max,
+            min_ts: min,
+        };
+        let path = self.options.db.db_path.clone();
+        for mut series_info in series_infos {
+            let mut super_version: Option<Arc<SuperVersion>> = None;
+            {
+                let vs = self.version_set.read();
+                if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
+                    tsf.delete_cache(&TimeRange {
+                        min_ts: min,
+                        max_ts: max,
+                    })
+                    .await;
+                    super_version = Some(tsf.super_version())
+                }
+            };
+
+            if let Some(sv) = super_version {
+                for level in sv.version.levels_info() {
+                    if level.time_range.overlaps(&timerange) {
+                        for column_file in level.files.iter() {
+                            if column_file.time_range().overlaps(&timerange) {
+                                let field_ids: Vec<FieldId> = series_info
+                                    .field_infos()
+                                    .iter()
+                                    .map(|f| f.field_id())
+                                    .collect();
+                                let mut tombstone =
+                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
+                                tombstone.add_range(&field_ids, min, max)?;
+                                tombstone.flush()?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
