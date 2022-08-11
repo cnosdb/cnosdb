@@ -26,7 +26,13 @@ impl TableSchema {
         let fields: Vec<Field> = self
             .fields
             .iter()
-            .map(|(name, schema)| Field::new(name, schema.column_type.into(), true))
+            .map(|(name, schema)| {
+                let mut f = Field::new(name, schema.column_type.into(), true);
+                let mut map = BTreeMap::new();
+                map.insert("1".to_string(), schema.id.to_string());
+                f.set_metadata(Some(map));
+                f
+            })
             .collect();
         Arc::new(Schema::new(fields))
     }
