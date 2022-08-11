@@ -1,8 +1,9 @@
 use crate::error::Result;
+use crate::index::IndexResult;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
-use models::{FieldId, FieldInfo, SeriesId, Timestamp};
+use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp};
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -25,6 +26,7 @@ pub trait Engine: Send + Sync + Debug {
         min: Timestamp,
         max: Timestamp,
     ) -> Result<()>;
-
     fn get_table_schema(&self, tab: &String) -> Result<Option<Vec<FieldInfo>>>;
+    async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>>;
+    async fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>>;
 }

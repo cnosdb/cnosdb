@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thre
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use models::{FieldId, SeriesId, Timestamp};
+use models::{FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::{Mutex, RwLock};
 use protos::models::Points;
 use protos::{
@@ -20,6 +20,7 @@ use tokio::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::engine::Engine;
+use crate::index::IndexResult;
 use crate::memcache::MemRaw;
 use crate::tsm::DataBlock;
 use crate::{
@@ -138,6 +139,7 @@ impl TsKv {
 
         (version_set.clone(), summary)
     }
+
     pub fn read_point(
         &self,
         sid: SeriesId,
@@ -199,6 +201,7 @@ impl TsKv {
         }
         return data;
     }
+
     pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
         if let Some(points) = ps.points() {
             let mut version_set = self.version_set.write();
@@ -477,5 +480,13 @@ impl Engine for TsKv {
         let val = index.get_table_schema(tab).context(error::IndexErrSnafu)?;
 
         Ok(val)
+    }
+
+    async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
+        self.db_index.read().get_series_id_list(tab, tags).await
+    }
+
+    async fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        self.db_index.write().get_series_key(sid).await
     }
 }
