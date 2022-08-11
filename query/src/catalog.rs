@@ -6,20 +6,23 @@ use datafusion::{
     error::{DataFusionError, Result},
 };
 use parking_lot::RwLock;
+use tskv::engine::EngineRef;
 
-pub struct IsiphoCatalog {
+pub struct UserCatalog {
+    engine: EngineRef,
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
 }
 
-impl IsiphoCatalog {
-    pub fn new() -> Self {
+impl UserCatalog {
+    pub fn new(engine: EngineRef) -> Self {
         Self {
             schemas: RwLock::new(HashMap::new()),
+            engine,
         }
     }
 }
 
-impl CatalogProvider for IsiphoCatalog {
+impl CatalogProvider for UserCatalog {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -45,22 +48,23 @@ impl CatalogProvider for IsiphoCatalog {
 }
 
 pub struct IsiphoSchema {
+    engine: EngineRef,
     tables: RwLock<HashMap<String, Arc<dyn TableProvider>>>,
 }
 
 impl IsiphoSchema {
-    pub fn new() -> Self {
+    pub fn new(engine: EngineRef) -> Self {
         Self {
             tables: RwLock::new(HashMap::new()),
+            engine
         }
     }
 }
 
-impl Default for IsiphoSchema {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for IsiphoSchema {
+//     fn default() -> Self {
+//     }
+// }
 
 impl SchemaProvider for IsiphoSchema {
     fn as_any(&self) -> &dyn Any {

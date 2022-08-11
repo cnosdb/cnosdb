@@ -13,7 +13,7 @@ use models::{FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct IndexConfig {
     pub path: String,
 }
@@ -26,10 +26,11 @@ impl From<&GlobalConfig> for IndexConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct DBIndex {
     path: path::PathBuf,
 
-    storage: engine::IndexEngine,
+    storage: IndexEngine,
     series_cache: HashMap<u32, Vec<SeriesKey>>,
 
     table_schema: HashMap<String, Vec<FieldInfo>>,
@@ -44,7 +45,7 @@ impl From<&str> for DBIndex {
 impl DBIndex {
     pub fn new(path: &String) -> Self {
         Self {
-            storage: engine::IndexEngine::new(path),
+            storage: IndexEngine::new(path),
             series_cache: HashMap::new(),
             table_schema: HashMap::new(),
 

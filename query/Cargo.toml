@@ -8,6 +8,7 @@ protos = { path = "../protos" }
 trace  = { path = "../trace"  }
 tskv   = { path = "../tskv"   }
 models = { path = "../models" }
+config = { path = "../config" }
 
 datafusion = { version = "10.0.0", features = ["scheduler"] }
 tokio = { version = "1.17", features = ["full"] }

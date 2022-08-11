@@ -297,6 +297,7 @@ impl LevelInfo {
     }
 }
 
+#[derive(Debug)]
 pub struct Version {
     pub ts_family_id: TseriesFamilyId,
     pub ts_family_name: String,
@@ -425,6 +426,7 @@ impl Version {
     }
 }
 
+#[derive(Debug)]
 pub struct CacheGroup {
     pub delta_mut_cache: Arc<RwLock<MemCache>>,
     pub delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
@@ -432,6 +434,7 @@ pub struct CacheGroup {
     pub immut_cache: Vec<Arc<RwLock<MemCache>>>,
 }
 
+#[derive(Debug)]
 pub struct SuperVersion {
     pub ts_family_id: u32,
     pub ts_family_opt: Arc<TseriesFamOpt>,
@@ -458,6 +461,7 @@ impl SuperVersion {
     }
 }
 
+#[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
     delta_mut_cache: Arc<RwLock<MemCache>>,

@@ -3,6 +3,7 @@ use std::path;
 
 use sled;
 
+#[derive(Debug)]
 pub struct IndexEngine {
     db: sled::Db,
     dir: path::PathBuf,
