@@ -18,6 +18,7 @@ use tskv::index::utils::unite_id;
 use tskv::memcache::DataType as MDataType;
 use tskv::tsm::DataBlock;
 use tskv::TimeRange;
+use std::{time, thread};
 
 enum ArrayType {
     U64(Vec<u64>),
@@ -66,7 +67,7 @@ impl Stream for TableScanStream {
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
@@ -207,6 +208,8 @@ impl Stream for TableScanStream {
         };
 
         return if this.data.lock().is_empty() {
+            std::thread::sleep(time::Duration::from_millis(3000));
+            cx.waker().wake_by_ref();
             std::task::Poll::Pending
         } else if this.data.lock().len() <= this.index {
             std::task::Poll::Ready(None)

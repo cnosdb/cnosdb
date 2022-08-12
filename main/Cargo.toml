@@ -9,6 +9,10 @@ edition = "2021"
 config = { path = "../config" }
 protos = { path = "../protos" }
 tskv = { path = "../tskv" }
+query = {path = "../query"}
+trace  = { path = "../trace"  }
+datafusion = "10.0.0"
+
 async-stream = "0.3"
 backtrace = "0.3"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }

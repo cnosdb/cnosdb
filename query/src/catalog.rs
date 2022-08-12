@@ -42,6 +42,7 @@ impl CatalogProvider for UserCatalog {
     }
 
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
+        println!("lyt --- this is SchemaProvider::table {}", name);
         {
             let schemas = self.schemas.read();
             if let Some(v) = schemas.get(name) {
@@ -120,10 +121,11 @@ impl SchemaProvider for IsiphoSchema {
                     fields.insert(field.name.clone(), field);
                 }
                 let schema = TableSchema::new(name.to_owned(), fields);
+                let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
                 tables.insert(
                     name.to_owned(),
-                    Arc::new(ClusterTable::new(self.engine.clone(), schema)),
-                );
+                    table.clone(),);
+                return Some(table);
             }
         }
 
