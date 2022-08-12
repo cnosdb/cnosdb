@@ -1,22 +1,86 @@
+use core::time;
+
 use crate::{Error, Result};
 
 pub struct Parser {
+    default_time: i64,
     // TODO Some statistics here
 }
 
 impl Parser {
-    pub fn new() -> Parser {
-        Self {}
+    pub fn new(default_time: i64) -> Parser {
+        Self { default_time }
     }
 
     pub fn parse<'a>(&self, lines: &'a str) -> Result<Vec<Line<'a>>> {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0_usize;
-        while let Some((line, offset)) = next_line(lines, pos)? {
+        while let Some((line, offset)) = self.next_line(lines, pos)? {
             ret.push(line);
             pos += offset;
         }
         Ok(ret)
+    }
+
+    fn next_line<'a>(&self, buf: &'a str, position: usize) -> Result<Option<(Line<'a>, usize)>> {
+        if position > buf.len() {
+            return Ok(None);
+        }
+
+        let mut pos = position;
+        let measurement = if let Some(m) = next_measurement(&buf[pos..]) {
+            pos += m.1;
+            m.0
+        } else {
+            return Ok(None);
+        };
+        check_pos_valid(&buf, pos)?;
+
+        let tags = if let Some(t) = next_tag_set(&buf[pos..]) {
+            pos += t.1;
+            t.0
+        } else {
+            return Err(Error::Parse {
+                pos: pos,
+                content: String::from(buf),
+            });
+        };
+        check_pos_valid(&buf, pos)?;
+
+        let fields = if let Some(f) = next_field_set(&buf[pos..]) {
+            pos += f.1;
+            f.0
+        } else {
+            return Err(Error::Parse {
+                pos: pos,
+                content: String::from(buf),
+            });
+        };
+
+        let timestamp = if pos < buf.len() {
+            if let Some(t) = next_timestamp(&buf[pos..]) {
+                let timestamp = t.0.parse::<i64>().map_err(|e| Error::Parse {
+                    pos,
+                    content: format!("{}: '{}'", e.to_string(), buf),
+                })?;
+                pos += t.1;
+                timestamp
+            } else {
+                self.default_time
+            }
+        } else {
+            self.default_time
+        };
+
+        Ok(Some((
+            Line {
+                measurement,
+                tags,
+                fields,
+                timestamp,
+            },
+            pos + 1,
+        )))
     }
 }
 
@@ -25,61 +89,7 @@ pub struct Line<'a> {
     pub measurement: &'a str,
     pub tags: Vec<(&'a str, &'a str)>,
     pub fields: Vec<(&'a str, &'a str)>,
-    pub timestamp: Option<&'a str>,
-}
-
-fn next_line<'a>(buf: &'a str, position: usize) -> Result<Option<(Line<'a>, usize)>> {
-    if position > buf.len() {
-        return Ok(None);
-    }
-
-    let mut pos = position;
-    let measurement = if let Some(m) = next_measurement(&buf[pos..]) {
-        pos += m.1;
-        m.0
-    } else {
-        return Ok(None);
-    };
-    check_pos_valid(&buf, pos)?;
-
-    let tags = if let Some(t) = next_tag_set(&buf[pos..]) {
-        pos += t.1;
-        t.0
-    } else {
-        return Err(Error::Parse {
-            pos: pos,
-            content: String::from(buf),
-        });
-    };
-    check_pos_valid(&buf, pos)?;
-
-    let fields = if let Some(f) = next_field_set(&buf[pos..]) {
-        pos += f.1;
-        f.0
-    } else {
-        return Err(Error::Parse {
-            pos: pos,
-            content: String::from(buf),
-        });
-    };
-
-    let timestamp = if pos < buf.len() {
-        let timestamp = next_timestamp(&buf[pos..]);
-        pos += timestamp.unwrap().1;
-        timestamp.map(|t| t.0)
-    } else {
-        None
-    };
-
-    Ok(Some((
-        Line {
-            measurement,
-            tags,
-            fields,
-            timestamp,
-        },
-        pos + 1,
-    )))
+    pub timestamp: i64,
 }
 
 fn check_pos_valid(buf: &str, pos: usize) -> Result<()> {
@@ -94,19 +104,19 @@ fn check_pos_valid(buf: &str, pos: usize) -> Result<()> {
 
 fn next_measurement(buf: &str) -> Option<(&str, usize)> {
     let mut escaped = false;
-    let mut tok_measurement = false;
+    let mut exists_measurement = false;
     let (mut tok_begin, mut tok_end) = (0, buf.len());
     for (i, c) in buf.chars().enumerate() {
         // Measurement begin character
         if c == '\\' {
             escaped = true;
-            if !tok_measurement {
-                tok_measurement = true;
+            if !exists_measurement {
+                exists_measurement = true;
                 tok_begin = i;
             }
             continue;
         }
-        if tok_measurement {
+        if exists_measurement {
             // Measurement end character
             if c == ',' {
                 tok_end = i;
@@ -115,7 +125,7 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
         } else {
             // Measurement begin character
             if c.is_alphanumeric() {
-                tok_measurement = true;
+                exists_measurement = true;
                 tok_begin = i;
             }
         }
@@ -123,7 +133,7 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
             escaped = false;
         }
     }
-    if tok_measurement {
+    if exists_measurement {
         Some((&buf[tok_begin..tok_end], tok_end + 1))
     } else {
         None
@@ -136,7 +146,7 @@ fn is_tagset_character(c: char) -> bool {
 
 fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
     let mut escaped = false;
-    let mut exists_tagset = false;
+    let mut exists_tag_set = false;
     let mut tok_offsets = [0_usize; 3];
     let mut tok_end = 0_usize;
 
@@ -145,13 +155,13 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
         // TagSet begin character
         if !escaped && c == '\\' {
             escaped = true;
-            if !exists_tagset {
-                exists_tagset = true;
+            if !exists_tag_set {
+                exists_tag_set = true;
                 tok_offsets[0] = i;
             }
             continue;
         }
-        if exists_tagset {
+        if exists_tag_set {
             if !escaped && c == '=' {
                 tok_offsets[1] = i;
                 if buf.len() <= i + 1 {
@@ -178,7 +188,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
         } else {
             // TagSet begin character
             if is_tagset_character(c) {
-                exists_tagset = true;
+                exists_tag_set = true;
                 tok_offsets[0] = i;
             }
         }
@@ -186,7 +196,7 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
             escaped = false;
         }
     }
-    if exists_tagset {
+    if exists_tag_set {
         if tok_end == 0 {
             tok_end = buf.len()
         }
@@ -273,22 +283,24 @@ fn next_field_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
 }
 
 fn next_timestamp(buf: &str) -> Option<(&str, usize)> {
-    let mut tok_time = false;
+    let mut exists_timestamp = false;
     let (mut tok_begin, mut tok_end) = (0, buf.len());
     for (i, c) in buf.chars().enumerate() {
-        if tok_time {
-            if c == ' ' || c == '\n' || (!c.is_numeric() && c != '-') {
+        if exists_timestamp {
+            // Timestamp end character
+            if !c.is_numeric() {
                 tok_end = i;
                 break;
             }
         } else {
-            if c.is_numeric() {
+            // Timestamp begin character
+            if c == '-' || c.is_numeric() {
                 tok_begin = i;
-                tok_time = true;
+                exists_timestamp = true;
             }
         }
     }
-    if tok_time {
+    if exists_timestamp {
         Some((&buf[tok_begin..tok_end], tok_end + 1))
     } else {
         None
@@ -388,7 +400,7 @@ mod test {
             lines
         );
 
-        let parser = Parser::new();
+        let parser = Parser::new(-1);
         let data = parser.parse(lines).unwrap();
         assert_eq!(data.len(), 2);
 
@@ -399,7 +411,7 @@ mod test {
                 measurement: "ma",
                 tags: vec![("ta", "2\\\\"), ("tb", "1")],
                 fields: vec![("fa", "\"112\\\"3\""), ("fb", "2")],
-                timestamp: Some("1")
+                timestamp: 1
             }
         );
 
@@ -410,7 +422,7 @@ mod test {
                 measurement: "mb",
                 tags: vec![("tb", "2"), ("tc", "abc")],
                 fields: vec![("fa", "1.3"), ("fc", "0.9")],
-                timestamp: None
+                timestamp: -1
             }
         );
     }
