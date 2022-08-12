@@ -43,8 +43,7 @@ impl ExecutionPlan for TskvExec {
     }
 
     fn output_partitioning(&self) -> Partitioning {
-        // todo: get partition
-        Partitioning::UnknownPartitioning(2)
+        Partitioning::UnknownPartitioning(1)
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {

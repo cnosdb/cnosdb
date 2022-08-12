@@ -72,11 +72,6 @@ impl TableProvider for ClusterTable {
             .await;
     }
     fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
-        let cols = vec!["test".to_string()];
-        if expr_applicable_for_cols(&cols, filter) {
-            Ok(TableProviderFilterPushDown::Exact)
-        } else {
-            Ok(TableProviderFilterPushDown::Inexact)
-        }
+           Ok(TableProviderFilterPushDown::Inexact)
     }
 }
