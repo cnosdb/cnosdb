@@ -65,17 +65,13 @@ impl Picker for LevelCompactionPicker {
 
         // Pick selected level files.
         let mut picking_files: Vec<Arc<ColumnFile>> = Vec::new();
-        let mut picking_files_size = 0_u64;
-        let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
-
-        if level_start.files.len() > 1 {
+        let (mut picking_files_size, picking_time_range) = if level_start.files.len() > 1 {
             let mut files = level_start.files.clone();
             files.sort_by(Self::compare_column_file);
-            (picking_files_size, picking_time_range) =
-                Self::pick_files(files, max_compact_size, &mut picking_files);
+            Self::pick_files(files, max_compact_size, &mut picking_files)
         } else {
             return None;
-        }
+        };
 
         // Pick level 0 files.
         let mut files = level_infos[0].files.clone();

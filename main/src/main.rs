@@ -1,10 +1,12 @@
 use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand};
+use futures::join;
 use once_cell::sync::Lazy;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use tokio::{runtime::Runtime, sync::mpsc};
 
+mod http;
 mod rpc;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
@@ -38,6 +40,13 @@ struct Cli {
     )]
     host: String,
 
+    #[clap(
+        global = true,
+        env = "server_http_addr",
+        default_value = "127.0.0.1:31007"
+    )]
+    http_host: String,
+
     #[clap(short, long, global = true)]
     /// the number of cores on the system
     cpu: Option<usize>,
@@ -46,7 +55,7 @@ struct Cli {
     /// the number of cores on the system
     memory: Option<usize>,
 
-    #[clap(global = true, default_value = "../config/config.toml")]
+    #[clap(global = true, default_value = "./config/config.toml")]
     config: String,
 
     #[clap(subcommand)]
@@ -79,8 +88,8 @@ fn main() -> Result<(), std::io::Error> {
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
     println!(
-        "params: host:{}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
-        cli.host, cli.cpu, cli.memory, cli.config, cli.subcmd
+        "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
+        cli.host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
     );
     let global_config = config::get_config(cli.config.as_str());
     // TODO check global_config
@@ -93,7 +102,11 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Tskv { debug } => {
                 println!("TSKV {}", debug);
 
-                let host = cli.host.parse::<SocketAddr>().expect("Invalid host");
+                let grpc_host = cli.host.parse::<SocketAddr>().expect("Invalid grpc_host");
+                let http_host = cli
+                    .http_host
+                    .parse::<SocketAddr>()
+                    .expect("Invalid http_host");
 
                 let (sender, receiver) = mpsc::unbounded_channel();
 
@@ -103,17 +116,31 @@ fn main() -> Result<(), std::io::Error> {
                     .unwrap();
                 tskv::TsKv::start(tskv, receiver);
 
-                let tskv_impl = rpc::tskv::TskvServiceImpl { sender };
+                let tskv_impl = rpc::tskv::TskvServiceImpl {
+                    sender: sender.clone(),
+                };
 
                 let tskv_service = TskvServiceServer::new(tskv_impl);
 
-                let mut builder = tonic::transport::server::Server::builder();
-                let router = builder.add_service(tskv_service);
+                let mut grpc_builder = tonic::transport::server::Server::builder();
+                let grpc_router = grpc_builder.add_service(tskv_service);
 
-                if let Err(e) = router.serve(host).await {
-                    eprintln!("{}", e);
-                    std::process::exit(1)
-                }
+                let grpc = tokio::spawn(async move {
+                    if let Err(e) = grpc_router.serve(grpc_host).await {
+                        eprintln!("{}", e);
+                        std::process::exit(1)
+                    }
+                });
+
+                let http = tokio::spawn(async move {
+                    if let Err(e) = http::serve(http_host, sender).await {
+                        eprintln!("{}", e);
+                        std::process::exit(1)
+                    }
+                });
+                let (grpc_ret, http_ret) = join!(grpc, http);
+                grpc_ret.unwrap();
+                http_ret.unwrap();
             }
             SubCommand::Query {} => todo!(),
         }
