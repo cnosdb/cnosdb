@@ -15,6 +15,7 @@ use crate::{
     tseries_family::{TseriesFamily, Version},
 };
 
+#[derive(Debug)]
 pub struct VersionSet {
     ts_families: HashMap<u32, TseriesFamily>,
     ts_families_names: HashMap<String, u32>,

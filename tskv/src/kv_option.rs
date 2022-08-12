@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::index::IndexConfig;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DBOptions {
     pub front_cpu: usize,
     pub back_cpu: usize,
@@ -29,7 +29,7 @@ impl From<&GlobalConfig> for DBOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Options {
     pub db: Arc<DBOptions>,
     pub ts_family: Arc<TseriesFamOpt>,
@@ -70,7 +70,7 @@ impl From<&GlobalConfig> for Options {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct CacheConfig {}
 
 impl From<&GlobalConfig> for CacheConfig {
@@ -80,7 +80,7 @@ impl From<&GlobalConfig> for CacheConfig {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WalConfig {
     pub enabled: bool,
     pub dir: String,
@@ -106,7 +106,7 @@ impl From<&GlobalConfig> for WriteBatchConfig {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct CompactConfig {}
 
 impl From<&GlobalConfig> for CompactConfig {
@@ -172,7 +172,7 @@ pub struct TseriesFamDesc {
     pub tsf_opt: Arc<TseriesFamOpt>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SchemaStoreConfig {
     pub dir: String,
 }

@@ -12,6 +12,7 @@ mod tests {
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
+    use tskv::engine::Engine;
     use tskv::{error, kv_option, Task, TimeRange, TsKv};
 
     async fn get_tskv() -> TsKv {
@@ -111,12 +112,12 @@ mod tests {
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
-        tskv.read(
+        let output = tskv.read(
             sids,
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id,
-        )
-        .await;
+        );
+        info!("{:#?}", output);
     }
 
     #[tokio::test]
@@ -165,16 +166,14 @@ mod tests {
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
-        )
-        .await;
+        );
         info!("delete delta data");
         tskv.delete_series(sids.clone(), 1, 1).await.unwrap();
         tskv.read(
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
-        )
-        .await;
+        );
     }
 
     #[tokio::test]
@@ -200,21 +199,21 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_kvcore_insert_cache() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+    // #[tokio::test]
+    // #[serial]
+    // async fn test_kvcore_insert_cache() {
+    //     init_default_global_tracing("tskv_log", "tskv.log", "debug");
+    //     let tskv = get_tskv().await;
 
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
-        fbb.finish(points, None);
-        let buf = fbb.finished_data();
-        let ps = flatbuffers::root::<fb_models::Points>(buf)
-            .context(error::InvalidFlatbufferSnafu)
-            .unwrap();
-        tskv.insert_cache(1, &ps).await;
-    }
+    //     let mut fbb = flatbuffers::FlatBufferBuilder::new();
+    //     let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
+    //     fbb.finish(points, None);
+    //     let buf = fbb.finished_data();
+    //     let ps = flatbuffers::root::<fb_models::Points>(buf)
+    //         .context(error::InvalidFlatbufferSnafu)
+    //         .unwrap();
+    //     tskv.insert_cache(1, &ps).await;
+    // }
 
     #[tokio::test]
     #[ignore]

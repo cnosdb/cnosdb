@@ -3,6 +3,7 @@ use std::path;
 
 use sled;
 
+#[derive(Debug)]
 pub struct IndexEngine {
     db: sled::Db,
     dir: path::PathBuf,
@@ -73,7 +74,7 @@ impl IndexEngine {
         Ok(id)
     }
 
-    pub fn close(&self) {
+    pub fn flush(&self) {
         self.db.flush().unwrap();
     }
 }

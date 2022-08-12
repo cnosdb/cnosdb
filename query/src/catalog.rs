@@ -1,4 +1,8 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{
+    any::Any,
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use datafusion::{
     catalog::{catalog::CatalogProvider, schema::SchemaProvider},
@@ -6,20 +10,28 @@ use datafusion::{
     error::{DataFusionError, Result},
 };
 use parking_lot::RwLock;
+use tskv::engine::EngineRef;
 
-pub struct IsiphoCatalog {
+use crate::{
+    schema::{IsiphoFiled, TableSchema},
+    table::ClusterTable,
+};
+
+pub struct UserCatalog {
+    engine: EngineRef,
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
 }
 
-impl IsiphoCatalog {
-    pub fn new() -> Self {
+impl UserCatalog {
+    pub fn new(engine: EngineRef) -> Self {
         Self {
             schemas: RwLock::new(HashMap::new()),
+            engine,
         }
     }
 }
 
-impl CatalogProvider for IsiphoCatalog {
+impl CatalogProvider for UserCatalog {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -30,8 +42,23 @@ impl CatalogProvider for IsiphoCatalog {
     }
 
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
-        let schemas = self.schemas.read();
-        schemas.get(name).cloned()
+        println!("lyt --- this is SchemaProvider::table {}", name);
+        {
+            let schemas = self.schemas.read();
+            if let Some(v) = schemas.get(name) {
+                return Some(v.clone());
+            }
+        }
+
+        let mut schemas = self.schemas.write();
+        let v = schemas
+            .entry(name.to_owned())
+            .or_insert(Arc::new(IsiphoSchema::new(
+                name.to_owned(),
+                self.engine.clone(),
+            )));
+
+        Some(v.clone())
     }
 
     fn register_schema(
@@ -45,22 +72,25 @@ impl CatalogProvider for IsiphoCatalog {
 }
 
 pub struct IsiphoSchema {
+    db_name: String,
+    engine: EngineRef,
     tables: RwLock<HashMap<String, Arc<dyn TableProvider>>>,
 }
 
 impl IsiphoSchema {
-    pub fn new() -> Self {
+    pub fn new(db: String, engine: EngineRef) -> Self {
         Self {
+            db_name: db,
             tables: RwLock::new(HashMap::new()),
+            engine,
         }
     }
 }
 
-impl Default for IsiphoSchema {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// impl Default for IsiphoSchema {
+//     fn default() -> Self {
+//     }
+// }
 
 impl SchemaProvider for IsiphoSchema {
     fn as_any(&self) -> &dyn Any {
@@ -74,8 +104,32 @@ impl SchemaProvider for IsiphoSchema {
 
     fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
         println!("this is SchemaProvider::table {}", name);
-        let tables = self.tables.read();
-        tables.get(name).cloned()
+
+        {
+            let tables = self.tables.read();
+            if let Some(v) = tables.get(name) {
+                return Some(v.clone());
+            }
+        }
+
+        let mut tables = self.tables.write();
+        if let Ok(v) = self.engine.get_table_schema(&name.to_string()) {
+            if let Some(v) = v {
+                let mut fields = BTreeMap::new();
+                for item in v {
+                    let field = IsiphoFiled::from(&item);
+                    fields.insert(field.name.clone(), field);
+                }
+                let schema = TableSchema::new(name.to_owned(), fields);
+                let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
+                tables.insert(
+                    name.to_owned(),
+                    table.clone(),);
+                return Some(table);
+            }
+        }
+
+        None
     }
 
     fn register_table(

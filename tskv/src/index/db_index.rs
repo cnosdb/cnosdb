@@ -13,7 +13,7 @@ use models::{FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct IndexConfig {
     pub path: String,
 }
@@ -26,10 +26,11 @@ impl From<&GlobalConfig> for IndexConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct DBIndex {
     path: path::PathBuf,
 
-    storage: engine::IndexEngine,
+    storage: IndexEngine,
     series_cache: HashMap<u32, Vec<SeriesKey>>,
 
     table_schema: HashMap<String, Vec<FieldInfo>>,
@@ -44,7 +45,7 @@ impl From<&str> for DBIndex {
 impl DBIndex {
     pub fn new(path: &String) -> Self {
         Self {
-            storage: engine::IndexEngine::new(path),
+            storage: IndexEngine::new(path),
             series_cache: HashMap::new(),
             table_schema: HashMap::new(),
 
@@ -74,9 +75,17 @@ impl DBIndex {
             }
         }
 
+        let mut found = false;
+        let mut id = 0_u64;
         //if exist return series_id
         if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
-            return Ok(k.id());
+            id = k.id();
+            found = true;
+        }
+
+        if found {
+            self.check_field_type_or_else_add(id, info)?;
+            return Ok(id);
         }
 
         //if not exist add it!
@@ -124,15 +133,29 @@ impl DBIndex {
                         return Err(IndexError::FieldType);
                     }
 
-                    field.set_field_id(v.field_id());
+                    field.set_field_id(utils::unite_id(v.field_id(), series_id));
+                    println!(
+                        "=== exist sid {:02X}, fid {:02X}",
+                        series_id,
+                        field.field_id()
+                    );
                 }
                 None => {
-                    let field_id = utils::unite_id((schema.len() + 1) as u64, series_id);
-
-                    field.set_field_id(field_id);
-                    schema.push(field.clone());
-
                     need_store = true;
+
+                    let index = (schema.len() + 1) as u64;
+
+                    let mut clone = field.clone();
+                    clone.set_field_id(index);
+                    schema.push(clone);
+
+                    field.set_field_id(utils::unite_id(index, series_id));
+
+                    println!(
+                        "=== not exist sid {:02X}, fid {:02X}",
+                        series_id,
+                        field.field_id()
+                    );
                 }
             }
             Ok(())
@@ -158,7 +181,7 @@ impl DBIndex {
         Ok(())
     }
 
-    pub async fn get_table_schema(&mut self, tab: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema(&mut self, tab: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
         if let Some(fields) = self.table_schema.get(tab) {
             return Ok(Some(fields.to_vec()));
         }
@@ -184,8 +207,8 @@ impl DBIndex {
         Ok(())
     }
 
-    pub async fn close(&mut self) -> IndexResult<()> {
-        self.storage.close();
+    pub async fn flush(&mut self) -> IndexResult<()> {
+        self.storage.flush();
         Ok(())
     }
 
@@ -264,6 +287,10 @@ impl DBIndex {
                 } else {
                     break;
                 }
+            }
+
+            for id in &result {
+                println!("==== get_series_id_list {:02X}", id);
             }
 
             return Ok(result);

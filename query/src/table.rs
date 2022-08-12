@@ -9,6 +9,7 @@ use datafusion::{
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan},
 };
+use tskv::engine::EngineRef;
 
 use crate::{
     helper::expr_applicable_for_cols, predicate::Predicate, schema::TableSchema,
@@ -16,6 +17,7 @@ use crate::{
 };
 
 pub struct ClusterTable {
+    engine: EngineRef,
     schema: TableSchema,
 }
 
@@ -27,7 +29,16 @@ impl ClusterTable {
         schema: SchemaRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
-        Ok(Arc::new(TskvExec::new(proj_schema, predicate)))
+        Ok(Arc::new(TskvExec::new(
+            self.schema.name.clone(),
+            proj_schema,
+            predicate,
+            self.engine.clone(),
+        )))
+    }
+
+    pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
+        ClusterTable { engine, schema }
     }
 }
 
@@ -62,11 +73,6 @@ impl TableProvider for ClusterTable {
             .await;
     }
     fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
-        let cols = vec!["test".to_string()];
-        if expr_applicable_for_cols(&cols, filter) {
-            Ok(TableProviderFilterPushDown::Exact)
-        } else {
-            Ok(TableProviderFilterPushDown::Inexact)
-        }
+           Ok(TableProviderFilterPushDown::Inexact)
     }
 }

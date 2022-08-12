@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thre
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use models::{FieldId, SeriesId, Timestamp};
+use models::{FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::{Mutex, RwLock};
 use protos::models::Points;
 use protos::{
@@ -19,7 +19,10 @@ use tokio::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::engine::Engine;
+use crate::index::IndexResult;
 use crate::memcache::MemRaw;
+use crate::tsm::DataBlock;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -44,6 +47,7 @@ pub struct Entry {
     pub series_id: u64,
 }
 
+#[derive(Debug)]
 pub struct TsKv {
     options: Arc<Options>,
     version_set: Arc<RwLock<VersionSet>>,
@@ -57,7 +61,7 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self> {
+    pub async fn open(opt: Options, ts_family_num: u32) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
@@ -136,42 +140,13 @@ impl TsKv {
         (version_set.clone(), summary)
     }
 
-    pub async fn write(
+    pub fn read_point(
         &self,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
-        let shared_write_batch = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
-            .context(error::InvalidFlatbufferSnafu)?;
-
-        // get or create forward index
-        for point in fb_points.points().unwrap() {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            self.db_index
-                .write()
-                .add_series_if_not_exists(&mut info)
-                .await
-                .context(error::ForwardIndexErrSnafu)?;
-        }
-
-        // write wal
-        let (cb, rx) = oneshot::channel();
-        self.wal_sender
-            .send(WalTask::Write {
-                points: shared_write_batch.clone(),
-                cb,
-            })
-            .map_err(|err| Error::Send)?;
-        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
-        self.insert_cache(seq, &fb_points).await;
-        Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        })
-    }
-
-    pub async fn read_point(&self, sid: SeriesId, time_range: &TimeRange, field_id: FieldId) {
+        sid: SeriesId,
+        time_range: &TimeRange,
+        field_id: FieldId,
+    ) -> Vec<DataBlock> {
+        let mut data = vec![];
         let mut super_version: Option<Arc<SuperVersion>> = None;
         {
             let version_set = self.version_set.read();
@@ -184,14 +159,12 @@ impl TsKv {
         if let Some(sv) = super_version {
             // get data from memcache
             if let Some(mem_entry) = sv.caches.mut_cache.read().data_cache.get(&field_id) {
-                info!("memcache::{}::{}", sid.clone(), field_id);
-                mem_entry.read_cell(time_range);
+                data.append(&mut mem_entry.read_cell(time_range));
             }
 
             // get data from delta_memcache
             if let Some(mem_entry) = sv.caches.delta_mut_cache.read().data_cache.get(&field_id) {
-                info!("delta memcache::{}::{}", sid.clone(), field_id);
-                mem_entry.read_cell(time_range);
+                data.append(&mut mem_entry.read_cell(time_range));
             }
 
             // get data from immut_delta_memcache
@@ -200,8 +173,7 @@ impl TsKv {
                     continue;
                 }
                 if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    info!("delta im_memcache::{}::{}", sid.clone(), field_id);
-                    mem_entry.read_cell(time_range);
+                    data.append(&mut mem_entry.read_cell(time_range));
                 }
             }
 
@@ -211,8 +183,7 @@ impl TsKv {
                     continue;
                 }
                 if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    info!("im_memcache::{}::{}", sid.clone(), field_id);
-                    mem_entry.read_cell(time_range);
+                    data.append(&mut mem_entry.read_cell(time_range));
                 }
             }
 
@@ -221,98 +192,38 @@ impl TsKv {
                 if level_info.level == 0 {
                     continue;
                 }
-                info!("levelinfo::{}::{}", sid.clone(), field_id);
-                level_info.read_column_file(sv.ts_family_id, field_id, time_range);
+                data.append(&mut level_info.read_column_file(sv.ts_family_id, field_id, time_range))
             }
 
             // get data from delta
             let level_info = sv.version.levels_info();
-            info!("delta::{}::{}", sid.clone(), field_id);
-            level_info[0].read_column_file(sv.ts_family_id, field_id, time_range);
+            data.append(&mut level_info[0].read_column_file(sv.ts_family_id, field_id, time_range))
         }
+        return data;
     }
 
-    pub async fn read(&self, sids: Vec<SeriesId>, time_range: &TimeRange, fields: Vec<FieldId>) {
-        for sid in sids {
-            for field_id in fields.iter() {
-                self.read_point(sid, time_range, *field_id).await;
-            }
-        }
-    }
-
-    pub async fn delete_series(
-        &self,
-        sids: Vec<SeriesId>,
-        min: Timestamp,
-        max: Timestamp,
-    ) -> Result<()> {
-        let series_infos = self.db_index.read().get_series_info_list(&sids);
-        let timerange = TimeRange {
-            max_ts: max,
-            min_ts: min,
-        };
-        let path = self.options.db.db_path.clone();
-        for mut series_info in series_infos {
-            let mut super_version: Option<Arc<SuperVersion>> = None;
-            {
-                let vs = self.version_set.read();
-                if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
-                    tsf.delete_cache(&TimeRange {
-                        min_ts: min,
-                        max_ts: max,
-                    })
+    pub async fn insert_cache(&self, seq: u64, points: &Vec<InMemPoint>) {
+        let mut version_set = self.version_set.write();
+        for p in points.iter() {
+            let sid = p.series_id();
+            if let Some(tsf) = version_set.get_tsfamily(sid) {
+                for f in p.fields().iter() {
+                    tsf.put_mutcache(
+                        &mut MemRaw {
+                            seq,
+                            ts: p.timestamp as i64,
+                            field_id: f.field_id(),
+                            field_type: f.value_type,
+                            val: &f.value,
+                        },
+                        self.flush_task_sender.clone(),
+                    )
                     .await;
-                    super_version = Some(tsf.super_version())
-                }
-            };
 
-            if let Some(sv) = super_version {
-                for level in sv.version.levels_info() {
-                    if level.time_range.overlaps(&timerange) {
-                        for column_file in level.files.iter() {
-                            if column_file.time_range().overlaps(&timerange) {
-                                let field_ids: Vec<FieldId> = series_info
-                                    .field_infos()
-                                    .iter()
-                                    .map(|f| f.field_id())
-                                    .collect();
-                                let mut tombstone =
-                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
-                                tombstone.add_range(&field_ids, min, max)?;
-                                tombstone.flush()?;
-                            }
-                        }
-                    }
+                    println!("==== insert_cache sid {:02X} fid {:02X}", sid, f.field_id());
                 }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
-        if let Some(points) = ps.points() {
-            let mut version_set = self.version_set.write();
-            for point in points.iter() {
-                let p = InMemPoint::from(point);
-                let sid = p.series_id();
-                if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fields().iter() {
-                        tsf.put_mutcache(
-                            &mut MemRaw {
-                                seq,
-                                ts: point.timestamp() as i64,
-                                field_id: f.field_id(),
-                                field_type: f.value_type,
-                                val: &f.value,
-                            },
-                            self.flush_task_sender.clone(),
-                        )
-                        .await
-                    }
-                } else {
-                    warn!("ts_family for sid {} not found.", sid);
-                }
+            } else {
+                warn!("ts_family for sid {} not found.", sid);
             }
         }
     }
@@ -392,7 +303,7 @@ impl TsKv {
                                 info!("There is nothing to compact.");
                             }
                             Err(e) => {
-                                error!("Compaction job failed: {}", e);
+                                error!("Compaction job failed: {:?}", e);
                             }
                         }
                     }
@@ -445,10 +356,154 @@ impl TsKv {
         warn!("job 'main' started.");
     }
 
-    pub fn version_set(&self) -> Arc<RwLock<VersionSet>> {
-        self.version_set.clone()
+    // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
+    //     Ok(None)
+    // }
+}
+#[async_trait::async_trait]
+impl Engine for TsKv {
+    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
+        let shared_write_batch = Arc::new(write_batch.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
+            .context(error::InvalidFlatbufferSnafu)?;
+
+        let mut mem_points = Vec::<_>::with_capacity(fb_points.points().unwrap().len());
+        // get or create forward index
+        for point in fb_points.points().unwrap() {
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let sid = self
+                .db_index
+                .write()
+                .add_series_if_not_exists(&mut info)
+                .await
+                .context(error::IndexErrSnafu)?;
+
+            let mut point = InMemPoint::from(point);
+            point.series_id = sid;
+            let fields = info.field_infos();
+
+            for i in 0..fields.len() {
+                point.fields[i].field_id = fields[i].field_id();
+                println!(
+                    "==== write sid {:02X}  fid {:02X}",
+                    sid,
+                    fields[i].field_id()
+                );
+            }
+
+            println!("==================");
+            mem_points.push(point);
+        }
+
+        // write wal
+        let (cb, rx) = oneshot::channel();
+        self.wal_sender
+            .send(WalTask::Write {
+                points: shared_write_batch.clone(),
+                cb,
+            })
+            .map_err(|err| Error::Send)?;
+        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+        self.insert_cache(seq, &mem_points).await;
+        Ok(WritePointsRpcResponse {
+            version: 1,
+            points: vec![],
+        })
     }
-    pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-        Ok(None)
+
+    fn read(
+        &self,
+        sids: Vec<SeriesId>,
+        time_range: &TimeRange,
+        fields: Vec<FieldId>,
+    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
+        // get data block
+        let mut ans = HashMap::new();
+        for sid in sids {
+            let sid_entry = ans.entry(sid).or_insert(HashMap::new());
+            for field_id in fields.iter() {
+                let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
+                field_id_entry.append(&mut self.read_point(sid, time_range, *field_id));
+            }
+        }
+
+        // sort data block, max block size 1000
+        let mut final_ans = HashMap::new();
+        for i in ans {
+            let sid_entry = final_ans.entry(i.0).or_insert(HashMap::new());
+            for j in i.1 {
+                let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
+                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, 1000));
+            }
+        }
+
+        return final_ans;
+    }
+
+    async fn delete_series(
+        &self,
+        sids: Vec<SeriesId>,
+        min: Timestamp,
+        max: Timestamp,
+    ) -> Result<()> {
+        let series_infos = self.db_index.read().get_series_info_list(&sids);
+        let timerange = TimeRange {
+            max_ts: max,
+            min_ts: min,
+        };
+        let path = self.options.db.db_path.clone();
+        for mut series_info in series_infos {
+            let mut super_version: Option<Arc<SuperVersion>> = None;
+            {
+                let vs = self.version_set.read();
+                if let Some(tsf) = vs.get_tsfamily_immut(series_info.series_id()) {
+                    tsf.delete_cache(&TimeRange {
+                        min_ts: min,
+                        max_ts: max,
+                    })
+                    .await;
+                    super_version = Some(tsf.super_version())
+                }
+            };
+
+            if let Some(sv) = super_version {
+                for level in sv.version.levels_info() {
+                    if level.time_range.overlaps(&timerange) {
+                        for column_file in level.files.iter() {
+                            if column_file.time_range().overlaps(&timerange) {
+                                let field_ids: Vec<FieldId> = series_info
+                                    .field_infos()
+                                    .iter()
+                                    .map(|f| f.field_id())
+                                    .collect();
+                                let mut tombstone =
+                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
+                                tombstone.add_range(&field_ids, min, max)?;
+                                tombstone.flush()?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_table_schema(&self, tab: &String) -> Result<Option<Vec<FieldInfo>>> {
+        let mut index = self.db_index.write();
+
+        let val = index.get_table_schema(tab).context(error::IndexErrSnafu)?;
+
+        Ok(val)
+    }
+
+    async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
+        self.db_index.read().get_series_id_list(tab, tags).await
+    }
+
+    async fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        self.db_index.write().get_series_key(sid).await
     }
 }

@@ -2,7 +2,7 @@ extern crate core;
 
 mod catalog;
 mod context;
-mod db;
+pub mod db;
 mod exec;
 mod helper;
 pub mod predicate;

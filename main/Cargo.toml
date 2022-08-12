@@ -7,11 +7,14 @@ edition = "2021"
 
 [dependencies]
 config = { path = "../config" }
+line_protocol = { path = "../line_protocol" }
 protos = { path = "../protos" }
+query = {path = "../query"}
 trace  = { path = "../trace" }
 tskv = { path = "../tskv" }
-line_protocol = { path = "../line_protocol" }
+trace  = { path = "../trace"  }
 
+datafusion = "10.0.0"
 async-stream = "0.3"
 backtrace = "0.3"
 chrono = "0.4"

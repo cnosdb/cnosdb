@@ -56,7 +56,7 @@ pub enum Error {
     Decode { source: bincode::Error },
 
     #[snafu(display("Index: : {}", source))]
-    ForwardIndexErr { source: crate::index::IndexError },
+    IndexErr { source: crate::index::IndexError },
 
     #[snafu(display("error apply edits to summary"))]
     ErrApplyEdit,

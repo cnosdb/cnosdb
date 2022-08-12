@@ -10,7 +10,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef};
-use models::ValueType;
+use models::{FieldInfo, ValueType};
 use serde::{Deserialize, Serialize};
 
 pub type TableSchemaRef = Arc<TableSchema>;
@@ -26,21 +26,51 @@ impl TableSchema {
         let fields: Vec<Field> = self
             .fields
             .iter()
-            .map(|(name, schema)| Field::new(name, schema.column_type.into(), true))
+            .map(|(name, schema)| {
+                let mut f = Field::new(name, schema.column_type.into(), true);
+                let mut map = BTreeMap::new();
+                map.insert("1".to_string(), schema.id.to_string());
+                f.set_metadata(Some(map));
+                f
+            })
             .collect();
         Arc::new(Schema::new(fields))
+    }
+
+    pub fn new(name: String, fields: BTreeMap<String, IsiphoFiled>) -> Self {
+        Self { name, fields }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IsiphoFiled {
+    pub id: u64,
     pub name: String,
     pub column_type: ColumnType,
 }
 
 impl IsiphoFiled {
-    pub fn new(name: String, column_type: ColumnType) -> Self {
-        Self { name, column_type }
+    pub fn new(id: u64, name: String, column_type: ColumnType) -> Self {
+        Self {
+            id,
+            name,
+            column_type,
+        }
+    }
+}
+
+impl From<&FieldInfo> for IsiphoFiled {
+    fn from(info: &FieldInfo) -> Self {
+        let mut column = ColumnType::Field(info.value_type());
+        if info.is_tag() {
+            column = ColumnType::Tag;
+        }
+
+        IsiphoFiled::new(
+            info.field_id(),
+            String::from_utf8(info.name().to_vec()).unwrap(),
+            column,
+        )
     }
 }
 

@@ -9,20 +9,30 @@ use datafusion::{
 };
 
 use crate::{predicate::PredicateRef, stream::TableScanStream};
+use tskv::engine::EngineRef;
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
+    table_name: String,
     proj_schema: SchemaRef,
     filter: PredicateRef,
+    engine: EngineRef,
 }
 
 impl TskvExec {
-    pub(crate) fn new(proj_schema: SchemaRef, filter: PredicateRef) -> Self {
+    pub(crate) fn new(
+        table_name: String,
+        proj_schema: SchemaRef,
+        filter: PredicateRef,
+        engine: EngineRef,
+    ) -> Self {
         Self {
+            table_name,
             proj_schema,
             filter,
+            engine,
         }
     }
     pub fn filter(&self) -> PredicateRef {
@@ -40,8 +50,7 @@ impl ExecutionPlan for TskvExec {
     }
 
     fn output_partitioning(&self) -> Partitioning {
-        // todo: get partition
-        Partitioning::UnknownPartitioning(2)
+        Partitioning::UnknownPartitioning(1)
     }
 
     fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
@@ -66,9 +75,11 @@ impl ExecutionPlan for TskvExec {
     ) -> Result<SendableRecordBatchStream> {
         let batch_size = context.session_config().batch_size();
         Ok(Box::pin(TableScanStream::new(
+            self.table_name.clone(),
             self.schema(),
             self.filter(),
             batch_size,
+            self.engine.clone(),
         )))
     }
 

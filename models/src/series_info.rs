@@ -139,7 +139,7 @@ impl SeriesInfo {
             id: 0,
             tags,
             field_infos,
-            table: "".to_string(),
+            table: "test".to_string(),
             finished: true,
         };
         info.finish();

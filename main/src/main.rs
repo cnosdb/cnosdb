@@ -98,7 +98,7 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Debug { debug } => {
                 println!("Debug {}", debug);
             }
-            SubCommand::Run {} => todo!(),
+            SubCommand::Run {} => {}
             SubCommand::Tskv { debug } => {
                 println!("TSKV {}", debug);
 
@@ -211,5 +211,48 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
                     .build(),
             }
         }
+    }
+}
+
+mod test {
+    use config::get_config;
+    use datafusion::arrow::util::pretty::pretty_format_batches;
+    use protos::{kv_service, models_helper};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use trace::init_default_global_tracing;
+    use tskv::engine::Engine;
+    use tskv::{kv_option, TsKv};
+
+    #[tokio::test]
+    async fn test_query() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let mut global_config = (*get_config("../config/config.toml")).clone();
+        global_config.wal_config_dir = "/tmp/test/wal".to_string();
+        let opt = kv_option::Options::from(&global_config);
+
+        let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
+
+        let database = "db".to_string();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest {
+            version: 1,
+            database,
+            points,
+        };
+
+        tskv.write(request.clone()).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let query = query::db::Db::new(Arc::new(tskv));
+        let a = query
+            .run_query("select * from cnosdb.public.test")
+            .await
+            .unwrap();
+        let scheduled = pretty_format_batches(&a).unwrap().to_string();
+        println!("{}", scheduled);
     }
 }
