@@ -1,9 +1,16 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use once_cell::sync::Lazy;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use tokio::{runtime::Runtime, sync::mpsc};
+use config::get_config;
+use protos::{kv_service, models_helper};
+use trace::init_default_global_tracing;
+use tskv::{kv_option, TsKv};
+use tskv::engine::Engine;
 
 mod rpc;
 
@@ -185,4 +192,31 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn test_query() {
+    init_default_global_tracing("tskv_log", "tskv.log", "debug");
+    let mut global_config = (*get_config("../config/config.toml")).clone();
+    global_config.wal_config_dir = "/tmp/test/wal".to_string();
+    let opt = kv_option::Options::from(&global_config);
+
+    let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
+
+    let database = "db".to_string();
+    let mut fbb = flatbuffers::FlatBufferBuilder::new();
+    let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
+    fbb.finish(points, None);
+    let points = fbb.finished_data().to_vec();
+    let request = kv_service::WritePointsRpcRequest {
+        version: 1,
+        database,
+        points,
+    };
+
+    tskv.write(request.clone()).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    let mut query = query::db::Db::new(Arc::new(tskv));
+    query.run_query("select * from db").await;
 }
