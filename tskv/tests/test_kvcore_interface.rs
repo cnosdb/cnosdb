@@ -199,21 +199,21 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_kvcore_insert_cache() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+    // #[tokio::test]
+    // #[serial]
+    // async fn test_kvcore_insert_cache() {
+    //     init_default_global_tracing("tskv_log", "tskv.log", "debug");
+    //     let tskv = get_tskv().await;
 
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
-        fbb.finish(points, None);
-        let buf = fbb.finished_data();
-        let ps = flatbuffers::root::<fb_models::Points>(buf)
-            .context(error::InvalidFlatbufferSnafu)
-            .unwrap();
-        tskv.insert_cache(1, &ps).await;
-    }
+    //     let mut fbb = flatbuffers::FlatBufferBuilder::new();
+    //     let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
+    //     fbb.finish(points, None);
+    //     let buf = fbb.finished_data();
+    //     let ps = flatbuffers::root::<fb_models::Points>(buf)
+    //         .context(error::InvalidFlatbufferSnafu)
+    //         .unwrap();
+    //     tskv.insert_cache(1, &ps).await;
+    // }
 
     #[tokio::test]
     #[ignore]

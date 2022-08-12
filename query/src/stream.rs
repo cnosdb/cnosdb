@@ -1,5 +1,7 @@
 use crate::predicate::PredicateRef;
-use datafusion::arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array};
+use datafusion::arrow::array::{
+    ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array,
+};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
@@ -8,17 +10,17 @@ use datafusion::{
 use futures::executor::block_on;
 use futures::Stream;
 use models::{FieldId, SeriesId};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread::spawn;
-use parking_lot::Mutex;
+use std::{thread, time};
 use trace::error;
 use tskv::engine::EngineRef;
 use tskv::index::utils::unite_id;
 use tskv::memcache::DataType as MDataType;
 use tskv::tsm::DataBlock;
 use tskv::TimeRange;
-use std::{time, thread};
 
 enum ArrayType {
     U64(Vec<u64>),
@@ -78,16 +80,14 @@ impl Stream for TableScanStream {
             let proj_schema = this.proj_schema.clone();
             let data = this.data.clone();
             spawn(move || {
-                let sids_id: Vec<SeriesId> = match block_on(
-                    store_engine
-                        .get_series_id_list(&table_name, &vec![]),
-                ) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        error!("failed get sids");
-                        vec![]
-                    }
-                };
+                let sids_id: Vec<SeriesId> =
+                    match block_on(store_engine.get_series_id_list(&table_name, &vec![])) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            error!("failed get sids");
+                            vec![]
+                        }
+                    };
                 let mut fields_id = vec![];
                 for i in proj_schema.fields() {
                     for j in sids_id.iter() {

@@ -202,29 +202,28 @@ impl TsKv {
         return data;
     }
 
-    pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
-        if let Some(points) = ps.points() {
-            let mut version_set = self.version_set.write();
-            for point in points.iter() {
-                let p = InMemPoint::from(point);
-                let sid = p.series_id();
-                if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fields().iter() {
-                        tsf.put_mutcache(
-                            &mut MemRaw {
-                                seq,
-                                ts: point.timestamp() as i64,
-                                field_id: f.field_id(),
-                                field_type: f.value_type,
-                                val: &f.value,
-                            },
-                            self.flush_task_sender.clone(),
-                        )
-                        .await
-                    }
-                } else {
-                    warn!("ts_family for sid {} not found.", sid);
+    pub async fn insert_cache(&self, seq: u64, points: &Vec<InMemPoint>) {
+        let mut version_set = self.version_set.write();
+        for p in points.iter() {
+            let sid = p.series_id();
+            if let Some(tsf) = version_set.get_tsfamily(sid) {
+                for f in p.fields().iter() {
+                    tsf.put_mutcache(
+                        &mut MemRaw {
+                            seq,
+                            ts: p.timestamp as i64,
+                            field_id: f.field_id(),
+                            field_type: f.value_type,
+                            val: &f.value,
+                        },
+                        self.flush_task_sender.clone(),
+                    )
+                    .await;
+
+                    println!("==== insert_cache sid {:02X} fid {:02X}", sid, f.field_id());
                 }
+            } else {
+                warn!("ts_family for sid {} not found.", sid);
             }
         }
     }
@@ -368,15 +367,33 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
             .context(error::InvalidFlatbufferSnafu)?;
 
+        let mut mem_points = Vec::<_>::with_capacity(fb_points.points().unwrap().len());
         // get or create forward index
         for point in fb_points.points().unwrap() {
             let mut info =
                 SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            self.db_index
+            let sid = self
+                .db_index
                 .write()
                 .add_series_if_not_exists(&mut info)
                 .await
                 .context(error::IndexErrSnafu)?;
+
+            let mut point = InMemPoint::from(point);
+            point.series_id = sid;
+            let fields = info.field_infos();
+
+            for i in 0..fields.len() {
+                point.fields[i].field_id = fields[i].field_id();
+                println!(
+                    "==== write sid {:02X}  fid {:02X}",
+                    sid,
+                    fields[i].field_id()
+                );
+            }
+
+            println!("==================");
+            mem_points.push(point);
         }
 
         // write wal
@@ -388,7 +405,7 @@ impl Engine for TsKv {
             })
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
-        self.insert_cache(seq, &fb_points).await;
+        self.insert_cache(seq, &mem_points).await;
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],

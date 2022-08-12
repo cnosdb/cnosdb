@@ -94,7 +94,7 @@ pub fn or_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
             result.push(arr1[i]);
             i = i + 1;
         } else if (arr1[i] & LOW_40BIT_MASK) > (arr2[j] & LOW_40BIT_MASK) {
-            result.push(arr1[j]);
+            result.push(arr2[j]);
             j = j + 1;
         } else {
             result.push(arr1[i]);

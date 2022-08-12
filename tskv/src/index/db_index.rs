@@ -75,9 +75,17 @@ impl DBIndex {
             }
         }
 
+        let mut found = false;
+        let mut id = 0_u64;
         //if exist return series_id
         if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
-            return Ok(k.id());
+            id = k.id();
+            found = true;
+        }
+
+        if found {
+            self.check_field_type_or_else_add(id, info)?;
+            return Ok(id);
         }
 
         //if not exist add it!
@@ -126,6 +134,11 @@ impl DBIndex {
                     }
 
                     field.set_field_id(utils::unite_id(v.field_id(), series_id));
+                    println!(
+                        "=== exist sid {:02X}, fid {:02X}",
+                        series_id,
+                        field.field_id()
+                    );
                 }
                 None => {
                     need_store = true;
@@ -137,6 +150,12 @@ impl DBIndex {
                     schema.push(clone);
 
                     field.set_field_id(utils::unite_id(index, series_id));
+
+                    println!(
+                        "=== not exist sid {:02X}, fid {:02X}",
+                        series_id,
+                        field.field_id()
+                    );
                 }
             }
             Ok(())
@@ -268,6 +287,10 @@ impl DBIndex {
                 } else {
                     break;
                 }
+            }
+
+            for id in &result {
+                println!("==== get_series_id_list {:02X}", id);
             }
 
             return Ok(result);
