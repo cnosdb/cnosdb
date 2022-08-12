@@ -25,7 +25,7 @@ async fn test_index_add_del() {
     let key = index.get_series_key(id).await.unwrap();
     assert_eq!(key, None);
 
-    index.close().await.unwrap();
+    index.flush().await.unwrap();
 }
 
 #[tokio::test]
@@ -86,7 +86,7 @@ async fn test_index_id_list() {
         .unwrap();
     assert_eq!(vec![id1, id2, id3], list);
 
-    index.close().await.unwrap();
+    index.flush().await.unwrap();
 }
 
 #[tokio::test]
@@ -115,7 +115,7 @@ async fn test_field_type() {
     let id1 = index.add_series_if_not_exists(&mut info1).await.unwrap();
     let id2 = index.add_series_if_not_exists(&mut info2).await;
 
-    let schema = index.get_table_schema(&"".to_string()).await;
+    let schema = index.get_table_schema(&"".to_string());
 
-    index.close().await.unwrap();
+    index.flush().await.unwrap();
 }

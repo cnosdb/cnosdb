@@ -12,8 +12,8 @@ mod tests {
     use snafu::ResultExt;
     use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::{error, kv_option, Task, TimeRange, TsKv };
     use tskv::engine::Engine;
+    use tskv::{error, kv_option, Task, TimeRange, TsKv};
 
     async fn get_tskv() -> TsKv {
         let mut global_config = (*get_config("../config/config.toml")).clone();

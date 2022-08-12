@@ -29,7 +29,15 @@ impl ClusterTable {
         schema: SchemaRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
-        Ok(Arc::new(TskvExec::new(proj_schema, predicate, self.engine.clone())))
+        Ok(Arc::new(TskvExec::new(
+            proj_schema,
+            predicate,
+            self.engine.clone(),
+        )))
+    }
+
+    pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
+        ClusterTable { engine, schema }
     }
 }
 

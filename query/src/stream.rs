@@ -1,9 +1,9 @@
+use crate::predicate::PredicateRef;
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
 };
 use futures::Stream;
-use crate::predicate::PredicateRef;
 use tskv::engine::EngineRef;
 
 pub struct TableScanStream {
@@ -16,12 +16,17 @@ pub struct TableScanStream {
 }
 
 impl TableScanStream {
-    pub fn new(proj_schema: SchemaRef, filter: PredicateRef, batch_size: usize, store_engine: EngineRef) -> Self {
+    pub fn new(
+        proj_schema: SchemaRef,
+        filter: PredicateRef,
+        batch_size: usize,
+        store_engine: EngineRef,
+    ) -> Self {
         Self {
             proj_schema,
             filter,
             batch_size,
-            store_engine
+            store_engine,
         }
     }
 }
@@ -39,7 +44,7 @@ impl Stream for TableScanStream {
         //      2. get fieldid by proj_schema;
         //
         // read()
-        
+
         std::task::Poll::Ready(None)
     }
 

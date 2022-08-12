@@ -89,9 +89,7 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Debug { debug } => {
                 println!("Debug {}", debug);
             }
-            SubCommand::Run {} => {
-
-            },
+            SubCommand::Run {} => {}
             SubCommand::Tskv { debug } => {
                 println!("TSKV {}", debug);
 

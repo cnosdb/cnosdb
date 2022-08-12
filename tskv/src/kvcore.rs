@@ -19,6 +19,7 @@ use tokio::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::engine::Engine;
 use crate::memcache::MemRaw;
 use crate::tsm::DataBlock;
 use crate::{
@@ -40,7 +41,6 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
-use crate::engine::Engine;
 
 pub struct Entry {
     pub series_id: u64,
@@ -71,7 +71,7 @@ impl TsKv {
             ts_family_num,
             shared_options.ts_family.clone(),
         )
-            .await;
+        .await;
 
         let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -217,7 +217,7 @@ impl TsKv {
                             },
                             self.flush_task_sender.clone(),
                         )
-                            .await
+                        .await
                     }
                 } else {
                     warn!("ts_family for sid {} not found.", sid);
@@ -269,8 +269,8 @@ impl TsKv {
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
-                    .await
-                    .unwrap();
+                .await
+                .unwrap();
             }
         };
         tokio::spawn(f);
@@ -360,10 +360,7 @@ impl TsKv {
 }
 #[async_trait::async_trait]
 impl Engine for TsKv {
-    async fn write(
-        &self,
-        write_batch: WritePointsRpcRequest,
-    ) -> Result<WritePointsRpcResponse> {
+    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
         let shared_write_batch = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
             .context(error::InvalidFlatbufferSnafu)?;
@@ -376,7 +373,7 @@ impl Engine for TsKv {
                 .write()
                 .add_series_if_not_exists(&mut info)
                 .await
-                .context(error::ForwardIndexErrSnafu)?;
+                .context(error::IndexErrSnafu)?;
         }
 
         // write wal
@@ -472,5 +469,13 @@ impl Engine for TsKv {
         }
 
         Ok(())
+    }
+
+    fn get_table_schema(&self, tab: &String) -> Result<Option<Vec<FieldInfo>>> {
+        let mut index = self.db_index.write();
+
+        let val = index.get_table_schema(tab).context(error::IndexErrSnafu)?;
+
+        Ok(val)
     }
 }

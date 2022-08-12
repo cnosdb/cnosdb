@@ -125,15 +125,18 @@ impl DBIndex {
                         return Err(IndexError::FieldType);
                     }
 
-                    field.set_field_id(v.field_id());
+                    field.set_field_id(utils::unite_id(v.field_id(), series_id));
                 }
                 None => {
-                    let field_id = utils::unite_id((schema.len() + 1) as u64, series_id);
-
-                    field.set_field_id(field_id);
-                    schema.push(field.clone());
-
                     need_store = true;
+
+                    let index = (schema.len() + 1) as u64;
+
+                    let mut clone = field.clone();
+                    clone.set_field_id(index);
+                    schema.push(clone);
+
+                    field.set_field_id(utils::unite_id(index, series_id));
                 }
             }
             Ok(())
@@ -159,7 +162,7 @@ impl DBIndex {
         Ok(())
     }
 
-    pub async fn get_table_schema(&mut self, tab: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema(&mut self, tab: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
         if let Some(fields) = self.table_schema.get(tab) {
             return Ok(Some(fields.to_vec()));
         }
@@ -185,8 +188,8 @@ impl DBIndex {
         Ok(())
     }
 
-    pub async fn close(&mut self) -> IndexResult<()> {
-        self.storage.close();
+    pub async fn flush(&mut self) -> IndexResult<()> {
+        self.storage.flush();
         Ok(())
     }
 
