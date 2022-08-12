@@ -74,7 +74,7 @@ impl IndexEngine {
         Ok(id)
     }
 
-    pub fn close(&self) {
+    pub fn flush(&self) {
         self.db.flush().unwrap();
     }
 }

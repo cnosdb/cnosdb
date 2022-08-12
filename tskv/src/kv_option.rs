@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::index::IndexConfig;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct DBOptions {
     pub front_cpu: usize,
     pub back_cpu: usize,
@@ -80,7 +80,7 @@ impl From<&GlobalConfig> for CacheConfig {
 }
 
 #[allow(dead_code)]
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct WalConfig {
     pub enabled: bool,
     pub dir: String,

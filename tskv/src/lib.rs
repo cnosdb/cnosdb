@@ -7,6 +7,7 @@ mod byte_utils;
 mod compaction;
 mod context;
 mod direct_io;
+pub mod engine;
 pub mod error;
 mod file_manager;
 mod file_utils;
@@ -22,7 +23,6 @@ mod tseries_family;
 mod tsm;
 mod version_set;
 mod wal;
-pub mod engine;
 
 pub use error::{Error, Result};
 pub use kv_option::Options;

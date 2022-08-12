@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -7,7 +8,6 @@ use std::{
         Arc,
     },
 };
-use std::fmt::Debug;
 
 use chrono::{
     DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
@@ -27,7 +27,7 @@ use crate::{
     LevelId, TimeRange, TseriesFamilyId,
 };
 
-pub trait Picker: Send + Sync + Debug{
+pub trait Picker: Send + Sync + Debug {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq>;
 }
 
@@ -36,7 +36,6 @@ pub trait Picker: Send + Sync + Debug{
 pub struct LevelCompactionPicker {
     picking: AtomicBool,
 }
-
 
 impl Picker for LevelCompactionPicker {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq> {

@@ -66,6 +66,7 @@ mod tests {
 
     use async_trait::async_trait;
     use chrono::Utc;
+    use config::get_config;
     use datafusion::{
         arrow::{
             array::{ArrayRef, PrimitiveArray},
@@ -86,7 +87,6 @@ mod tests {
     };
     use futures::TryStreamExt;
     use rand::{distributions::uniform::SampleUniform, thread_rng, Rng};
-    use config::get_config;
     use tskv::{kv_option, TsKv};
 
     use crate::{catalog::IsiphoSchema, db::Db};
@@ -240,7 +240,7 @@ mod tests {
 
         // todo： init tables
         let table = Arc::new(Table {});
-        let schema = Arc::new(IsiphoSchema::new(Arc::new(tskv)));
+        let schema = Arc::new(IsiphoSchema::new("public".to_string(), Arc::new(tskv)));
         schema.register_table("table1".to_string(), table).unwrap();
         db.catalog
             .register_schema("public", schema.clone())
