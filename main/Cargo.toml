@@ -12,7 +12,6 @@ protos = { path = "../protos" }
 query = {path = "../query"}
 trace  = { path = "../trace" }
 tskv = { path = "../tskv" }
-trace  = { path = "../trace"  }
 
 datafusion = "10.0.0"
 async-stream = "0.3"
