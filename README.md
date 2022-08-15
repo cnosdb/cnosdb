@@ -59,7 +59,7 @@ Please check [Instructions for joining the group](./docs/guidelines/CnosDBWeChat
 
 ## Contact
 
-* [Home page(in progress)](https://cnosdb.com)
+* [Home page](https://cnosdb.com)
 
 * [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
 
