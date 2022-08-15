@@ -1,10 +1,12 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use clap::{Parser, Subcommand};
 use futures::join;
 use once_cell::sync::Lazy;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
+use query::db::Db;
 use tokio::{runtime::Runtime, sync::mpsc};
+use tskv::TsKv;
 
 mod http;
 mod rpc;
@@ -111,20 +113,20 @@ fn main() -> Result<(), std::io::Error> {
                 let (sender, receiver) = mpsc::unbounded_channel();
 
                 let tskv_options = tskv::Options::from(global_config);
-                let tskv = tskv::TsKv::open(tskv_options, global_config.tsfamily_num)
-                    .await
-                    .unwrap();
-                tskv::TsKv::start(tskv, receiver);
+                let tskv = Arc::new(
+                    TsKv::open(tskv_options, global_config.tsfamily_num)
+                        .await
+                        .unwrap(),
+                );
+                TsKv::start(tskv.clone(), receiver);
 
-                let tskv_impl = rpc::tskv::TskvServiceImpl {
+                let db = Arc::new(Db::new(tskv));
+
+                let tskv_grpc_service = TskvServiceServer::new(rpc::tskv::TskvServiceImpl {
                     sender: sender.clone(),
-                };
-
-                let tskv_service = TskvServiceServer::new(tskv_impl);
-
+                });
                 let mut grpc_builder = tonic::transport::server::Server::builder();
-                let grpc_router = grpc_builder.add_service(tskv_service);
-
+                let grpc_router = grpc_builder.add_service(tskv_grpc_service);
                 let grpc = tokio::spawn(async move {
                     if let Err(e) = grpc_router.serve(grpc_host).await {
                         eprintln!("{}", e);
@@ -133,11 +135,12 @@ fn main() -> Result<(), std::io::Error> {
                 });
 
                 let http = tokio::spawn(async move {
-                    if let Err(e) = http::serve(http_host, sender).await {
+                    if let Err(e) = http::serve(http_host, db, sender).await {
                         eprintln!("{}", e);
                         std::process::exit(1)
                     }
                 });
+
                 let (grpc_ret, http_ret) = join!(grpc, http);
                 grpc_ret.unwrap();
                 http_ret.unwrap();

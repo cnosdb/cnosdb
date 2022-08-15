@@ -1,5 +1,3 @@
-use core::time;
-
 use crate::{Error, Result};
 
 pub struct Parser {

@@ -122,9 +122,7 @@ impl SchemaProvider for IsiphoSchema {
                 }
                 let schema = TableSchema::new(name.to_owned(), fields);
                 let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
-                tables.insert(
-                    name.to_owned(),
-                    table.clone(),);
+                tables.insert(name.to_owned(), table.clone());
                 return Some(table);
             }
         }
