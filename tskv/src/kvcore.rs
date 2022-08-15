@@ -330,7 +330,7 @@ impl TsKv {
         warn!("Summary task handler started");
     }
 
-    pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
+    pub fn start(tskv: Arc<TsKv>, mut req_rx: UnboundedReceiver<Task>) {
         warn!("job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {

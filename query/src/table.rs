@@ -73,6 +73,6 @@ impl TableProvider for ClusterTable {
             .await;
     }
     fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
-           Ok(TableProviderFilterPushDown::Inexact)
+        Ok(TableProviderFilterPushDown::Inexact)
     }
 }
