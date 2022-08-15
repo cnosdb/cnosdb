@@ -52,7 +52,7 @@ CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序�
 
 ## 联系我们
 
-* [官方主页 (维护中)](https://www.cnosdb.com)
+* [官方主页](https://www.cnosdb.com)
 
 * [Stack Overflow](https://stackoverflow.com/questions/tagged/cnosdb)
 
