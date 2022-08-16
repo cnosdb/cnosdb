@@ -357,8 +357,16 @@ fn make_record_batch(
         debug!("schema_vec  {:?}", schema_vec);
         debug!("batch_array_vec {:?}", batch_array_vec);
         debug!("proj_schema {:?}", proj_schema);
-        let schema = Arc::new(Schema::new(schema_vec));
-        if let Ok(record_batch) = RecordBatch::try_new(schema.clone(), batch_array_vec) {
+        // let schema = Arc::new(Schema::new(schema_vec));
+        let mut cols = Vec::with_capacity(schema_vec.len());
+        for proj_field in proj_schema.fields(){
+            for (index, field) in schema_vec.iter().enumerate(){
+                if field.name() == proj_field.name(){
+                    cols.push(batch_array_vec[index].clone());
+                }
+            } 
+        }
+        if let Ok(record_batch) = RecordBatch::try_new(proj_schema.clone(), cols) {
             data.push(record_batch);
         } else {
             panic!("failed make record batch");
