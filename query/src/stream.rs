@@ -1,28 +1,25 @@
-use std::{thread, time};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::thread::spawn;
+use std::{thread, time};
 
-use datafusion::{
-    arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
-    physical_plan::RecordBatchStream,
-};
 use datafusion::arrow::array::{
     ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array,
 };
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
-use futures::executor::block_on;
+use datafusion::{
+    arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
+    physical_plan::RecordBatchStream,
+};
 use futures::Stream;
-use parking_lot::Mutex;
 
-use models::{FieldId, SeriesId};
+use models::SeriesId;
+use parking_lot::Mutex;
 use trace::{debug, error};
 use tskv::engine::EngineRef;
-use tskv::index::utils::{split_id, unite_id};
 use tskv::memcache::DataType as MDataType;
-use tskv::TimeRange;
 use tskv::tsm::DataBlock;
+use tskv::TimeRange;
 
 use crate::predicate::PredicateRef;
 use crate::schema::{FIELD_ID, TAG};
@@ -96,7 +93,7 @@ impl Stream for TableScanStream {
                     .await
                     .unwrap();
 
-                let fields = get_field_ids(proj_schema.clone(), &sids);
+                let fields = get_field_ids(proj_schema.clone());
                 debug!("sids {:?}, fields {:?}", sids, fields);
                 let block_map = store_engine.read(
                     sids,
@@ -139,20 +136,18 @@ impl RecordBatchStream for TableScanStream {
     }
 }
 
-fn get_field_ids(proj_schema: SchemaRef, sids: &Vec<u64>) -> Vec<u64> {
+fn get_field_ids(proj_schema: SchemaRef) -> Vec<u32> {
     let mut fields = vec![];
     for i in proj_schema.fields() {
-        for j in sids.iter() {
-            if let Some(meta_data) = i.metadata() {
-                if let Some(is_tag) = meta_data.get(TAG) {
-                    let tag: bool = FromStr::from_str(is_tag).unwrap();
-                    if tag {
-                        continue;
-                    }
+        if let Some(meta_data) = i.metadata() {
+            if let Some(is_tag) = meta_data.get(TAG) {
+                let tag: bool = FromStr::from_str(is_tag).unwrap();
+                if tag {
+                    continue;
                 }
-                if let Some(field_id) = meta_data.get(FIELD_ID) {
-                    fields.push(unite_id(field_id.parse::<FieldId>().unwrap(), *j));
-                }
+            }
+            if let Some(field_id) = meta_data.get(FIELD_ID) {
+                fields.push(u32::from_str(field_id).unwrap());
             }
         }
     }
@@ -160,9 +155,9 @@ fn get_field_ids(proj_schema: SchemaRef, sids: &Vec<u64>) -> Vec<u64> {
 }
 
 fn push_record_array(
-    field_id: FieldId,
+    field_id: u32,
     entry: &mut ArrayType,
-    field_array_index: &mut HashMap<FieldId, i32>,
+    field_array_index: &mut HashMap<u32, i32>,
     data_blocks: &Vec<DataBlock>,
     ts_array: &Vec<i64>,
     ts_array_index: usize,
@@ -195,7 +190,6 @@ fn push_record_array(
                 v.push(false);
             }
         }
-        *index += 1;
     } else if data_blocks[vec_index].ts()[block_index] == ts_array[ts_array_index] {
         match entry {
             ArrayType::U64(v) => {
@@ -231,19 +225,17 @@ fn push_record_array(
 }
 
 fn push_record_batch(
-    field_id: &FieldId,
+    fid: u32,
     array_type: ArrayType,
     batch_array_vec: &mut Vec<ArrayRef>,
     schema_vec: &mut Vec<Field>,
     proj_schema: SchemaRef,
 ) {
-    let (table_field_id, _) = split_id(*field_id);
-
     let mut field_name = "";
     for field in proj_schema.fields() {
         if let Some(field_id) = field.metadata().unwrap().get(FIELD_ID) {
             let id = u32::from_str(field_id).unwrap();
-            if id == table_field_id {
+            if id == fid {
                 field_name = field.name();
             }
         }
@@ -278,7 +270,7 @@ fn push_record_batch(
 }
 
 fn make_record_batch(
-    block_map: HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>>,
+    block_map: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>,
     store_engine: EngineRef,
     proj_schema: SchemaRef,
 ) -> Vec<RecordBatch> {
@@ -342,15 +334,12 @@ fn make_record_batch(
             }
         }
 
-        for i in field_array_map {
-            push_record_batch(
-                i.0,
-                i.1,
-                &mut batch_array_vec,
-                &mut schema_vec,
-                proj_schema.clone(),
-            );
-        }
+        make_field_col(
+            field_array_map,
+            proj_schema.clone(),
+            &mut batch_array_vec,
+            &mut schema_vec,
+        );
         debug!("ts vec  {:?}", ts_array);
         make_time_col(
             proj_schema.clone(),
@@ -372,12 +361,22 @@ fn make_record_batch(
         if let Ok(record_batch) = RecordBatch::try_new(schema.clone(), batch_array_vec) {
             data.push(record_batch);
         } else {
-            error!("failed make record batch");
+            panic!("failed make record batch");
         }
     }
     data
 }
 
+fn make_field_col(
+    field_array_map: HashMap<&u32, ArrayType>,
+    proj_schema: SchemaRef,
+    batch_array_vec: &mut Vec<ArrayRef>,
+    schema_vec: &mut Vec<Field>,
+) {
+    for i in field_array_map {
+        push_record_batch(*i.0, i.1, batch_array_vec, schema_vec, proj_schema.clone());
+    }
+}
 fn make_time_col(
     proj_schema: SchemaRef,
     ts_array: Vec<i64>,

@@ -20,6 +20,7 @@ use tokio::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::engine::Engine;
+use crate::index::utils::unite_id;
 use crate::index::IndexResult;
 use crate::memcache::MemRaw;
 use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
@@ -416,15 +417,16 @@ impl Engine for TsKv {
         &self,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<FieldId>,
-    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
+        fields: Vec<u32>,
+    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
         // get data block
         let mut ans = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert(HashMap::new());
             for field_id in fields.iter() {
                 let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
-                field_id_entry.append(&mut self.read_point(sid, time_range, *field_id));
+                let fid = unite_id((*field_id).into(), sid);
+                field_id_entry.append(&mut self.read_point(sid, time_range, fid));
             }
         }
 
