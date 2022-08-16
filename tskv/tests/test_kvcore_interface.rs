@@ -237,7 +237,7 @@ mod tests {
 
         wal_sender.send(Task::WritePoints { req, tx }).unwrap();
 
-        TsKv::start(tskv, wal_receiver);
+        TsKv::start(Arc::new(tskv), wal_receiver);
 
         match rx.await {
             Ok(Ok(_)) => info!("successful"),
