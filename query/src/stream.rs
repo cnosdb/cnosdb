@@ -1,17 +1,17 @@
+use std::{thread, time};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread::spawn;
-use std::{thread, time};
 
-use datafusion::arrow::array::{
-    ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array,
-};
-use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
 };
+use datafusion::arrow::array::{
+    ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array,
+};
+use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use futures::executor::block_on;
 use futures::Stream;
 use parking_lot::Mutex;
@@ -21,8 +21,8 @@ use trace::{debug, error};
 use tskv::engine::EngineRef;
 use tskv::index::utils::{split_id, unite_id};
 use tskv::memcache::DataType as MDataType;
-use tskv::tsm::DataBlock;
 use tskv::TimeRange;
+use tskv::tsm::DataBlock;
 
 use crate::predicate::PredicateRef;
 use crate::schema::{FIELD_ID, TAG};
@@ -97,8 +97,7 @@ impl Stream for TableScanStream {
                     .unwrap();
 
                 let fields = get_field_ids(proj_schema.clone(), &sids);
-                debug!("sids lyt-- {:?}", sids);
-                debug!("fields lyt-- {:?}", fields);
+                debug!("sids {:?}, fields {:?}", sids, fields);
                 let block_map = store_engine.read(
                     sids,
                     &TimeRange {
@@ -107,7 +106,7 @@ impl Stream for TableScanStream {
                     },
                     fields,
                 );
-                // debug!("this is a printf lyt---{:?}", block_map);
+                debug!("printf block map {:?}", block_map);
                 let mut batch =
                     make_record_batch(block_map, store_engine.clone(), proj_schema.clone());
                 data.lock().append(&mut batch);
@@ -123,7 +122,7 @@ impl Stream for TableScanStream {
         } else {
             let ans = this.data.lock()[this.index].clone();
             this.index += 1;
-            debug!("lyt -- input record batch {:?}", ans);
+            debug!("input record batch index:{:?}, ans {:?}", this.index, ans);
             std::task::Poll::Ready(Some(Ok(ans)))
         };
     }
@@ -300,7 +299,7 @@ fn make_record_batch(
         }
         ts_array.sort();
         ts_array.dedup();
-
+        let len = ts_array.len();
         //
         let mut ts_array_index: usize = 0;
         let mut field_array_map = HashMap::new();
@@ -342,11 +341,6 @@ fn make_record_batch(
                 flag = false;
             }
         }
-        //todo check projection need time field
-
-        // let ts_record_array = Int64Array::from(ts_array);
-        // batch_array_vec.push(Arc::new(ts_record_array));
-        // schema_vec.push(Field::new(TIME_FIELD, DataType::Int64, false));
 
         for i in field_array_map {
             push_record_batch(
@@ -357,32 +351,23 @@ fn make_record_batch(
                 proj_schema.clone(),
             );
         }
-        let res = store_engine.get_series_key(*series.0);
-        match res {
-            Ok(v) => {
-                if let Some(series_key) = v {
-                    let tags = series_key.tags();
-                    for i in tags {
-                        let mut tag_value_vec = vec![];
-                        for _ in 0..ts_array_index {
-                            tag_value_vec.push(String::from_utf8(i.value.clone()).unwrap());
-                        }
-                        let record_array = StringArray::from(tag_value_vec);
-                        batch_array_vec.push(Arc::new(record_array));
-                        schema_vec.push(Field::new(
-                            String::from_utf8(i.key.clone()).unwrap().as_str(),
-                            DataType::Utf8,
-                            false,
-                        ));
-                    }
-                }
-            }
-            Err(e) => {
-                error!("error : {:?}", e);
-            }
-        }
-        debug!("schema_vec  lyt-- {:?}", schema_vec);
-        debug!("proj_schema lyt-- {:?}", batch_array_vec);
+        debug!("ts vec  {:?}", ts_array);
+        make_time_col(
+            proj_schema.clone(),
+            ts_array,
+            &mut batch_array_vec,
+            &mut schema_vec,
+        );
+        make_tag_col(
+            store_engine.clone(),
+            *series.0,
+            len,
+            &mut batch_array_vec,
+            &mut schema_vec,
+        );
+        debug!("schema_vec  {:?}", schema_vec);
+        debug!("batch_array_vec {:?}", batch_array_vec);
+        debug!("proj_schema {:?}", proj_schema);
         let schema = Arc::new(Schema::new(schema_vec));
         if let Ok(record_batch) = RecordBatch::try_new(schema.clone(), batch_array_vec) {
             data.push(record_batch);
@@ -391,4 +376,53 @@ fn make_record_batch(
         }
     }
     data
+}
+
+fn make_time_col(
+    proj_schema: SchemaRef,
+    ts_array: Vec<i64>,
+    batch_array_vec: &mut Vec<ArrayRef>,
+    schema_vec: &mut Vec<Field>,
+) {
+    for field in proj_schema.fields() {
+        if field.name() == TIME_FIELD {
+            let ts_record_array = Int64Array::from(ts_array);
+            batch_array_vec.push(Arc::new(ts_record_array));
+            schema_vec.push(Field::new(TIME_FIELD, DataType::Int64, false));
+            break;
+        }
+    }
+}
+
+fn make_tag_col(
+    store_engine: EngineRef,
+    sid: SeriesId,
+    len: usize,
+    batch_array_vec: &mut Vec<ArrayRef>,
+    schema_vec: &mut Vec<Field>,
+) {
+    let res = store_engine.get_series_key(sid);
+    match res {
+        Ok(v) => {
+            if let Some(series_key) = v {
+                let tags = series_key.tags();
+                for i in tags {
+                    let mut tag_value_vec = vec![];
+                    for _ in 0..len {
+                        tag_value_vec.push(String::from_utf8(i.value.clone()).unwrap());
+                    }
+                    let record_array = StringArray::from(tag_value_vec);
+                    batch_array_vec.push(Arc::new(record_array));
+                    schema_vec.push(Field::new(
+                        String::from_utf8(i.key.clone()).unwrap().as_str(),
+                        DataType::Utf8,
+                        false,
+                    ));
+                }
+            }
+        }
+        Err(e) => {
+            error!("error : {:?}", e);
+        }
+    }
 }

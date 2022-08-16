@@ -87,11 +87,6 @@ impl IsiphoSchema {
     }
 }
 
-// impl Default for IsiphoSchema {
-//     fn default() -> Self {
-//     }
-// }
-
 impl SchemaProvider for IsiphoSchema {
     fn as_any(&self) -> &dyn Any {
         self
@@ -103,8 +98,6 @@ impl SchemaProvider for IsiphoSchema {
     }
 
     fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
-        println!("this is SchemaProvider::table {}", name);
-
         {
             let tables = self.tables.read();
             if let Some(v) = tables.get(name) {
