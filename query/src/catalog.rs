@@ -10,10 +10,11 @@ use datafusion::{
     error::{DataFusionError, Result},
 };
 use parking_lot::RwLock;
+
 use tskv::engine::EngineRef;
 
 use crate::{
-    schema::{IsiphoFiled, TableSchema},
+    schema::{TableFiled, TableSchema},
     table::ClusterTable,
 };
 
@@ -42,7 +43,6 @@ impl CatalogProvider for UserCatalog {
     }
 
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
-        println!("lyt --- this is SchemaProvider::table {}", name);
         {
             let schemas = self.schemas.read();
             if let Some(v) = schemas.get(name) {
@@ -117,7 +117,7 @@ impl SchemaProvider for IsiphoSchema {
             if let Some(v) = v {
                 let mut fields = BTreeMap::new();
                 for item in v {
-                    let field = IsiphoFiled::from(&item);
+                    let field = TableFiled::from(&item);
                     fields.insert(field.name.clone(), field);
                 }
                 let schema = TableSchema::new(name.to_owned(), fields);

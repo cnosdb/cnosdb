@@ -76,7 +76,7 @@ mod test {
                 ],
             );
 
-            let fav = rand::random::<f64>().to_be_bytes();
+            let fav = rand::random::<i64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
             let fields = create_fields(
                 fbb,

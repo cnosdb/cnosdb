@@ -28,5 +28,5 @@ pub trait Engine: Send + Sync + Debug {
     ) -> Result<()>;
     fn get_table_schema(&self, tab: &String) -> Result<Option<Vec<FieldInfo>>>;
     async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>>;
-    async fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>>;
+    fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>>;
 }

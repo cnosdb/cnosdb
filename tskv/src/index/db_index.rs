@@ -216,7 +216,7 @@ impl DBIndex {
         todo!()
     }
 
-    pub async fn get_series_key(&mut self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+    pub fn get_series_key(&mut self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         let (hash_id, _) = utils::split_id(sid);
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id.to_string());
 

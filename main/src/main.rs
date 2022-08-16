@@ -3,9 +3,10 @@ use std::{net::SocketAddr, sync::Arc};
 use clap::{Parser, Subcommand};
 use futures::join;
 use once_cell::sync::Lazy;
+use tokio::{runtime::Runtime, sync::mpsc};
+
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
-use tokio::{runtime::Runtime, sync::mpsc};
 use tskv::TsKv;
 
 mod http;
@@ -218,11 +219,13 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 }
 
 mod test {
-    use config::get_config;
-    use datafusion::arrow::util::pretty::pretty_format_batches;
-    use protos::{kv_service, models_helper};
     use std::sync::Arc;
     use std::time::Duration;
+
+    use datafusion::arrow::util::pretty::pretty_format_batches;
+
+    use config::get_config;
+    use protos::{kv_service, models_helper};
     use trace::init_default_global_tracing;
     use tskv::engine::Engine;
     use tskv::{kv_option, TsKv};
@@ -238,7 +241,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest {
@@ -251,11 +254,12 @@ mod test {
         tokio::time::sleep(Duration::from_secs(3)).await;
 
         let query = query::db::Db::new(Arc::new(tskv));
-        let a = query
-            .run_query("select * from cnosdb.public.test")
-            .await
-            .unwrap();
-        let scheduled = pretty_format_batches(&a).unwrap().to_string();
-        println!("{}", scheduled);
+        let res = query.run_query("select * from cnosdb.public.test").await;
+        if let Some(res) = res {
+            let scheduled = pretty_format_batches(&*res).unwrap().to_string();
+            println!("{}", scheduled);
+            return;
+        }
+        println!("find none row")
     }
 }

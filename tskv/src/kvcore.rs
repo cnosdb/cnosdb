@@ -22,7 +22,7 @@ use trace::{debug, error, info, trace, warn};
 use crate::engine::Engine;
 use crate::index::IndexResult;
 use crate::memcache::MemRaw;
-use crate::tsm::DataBlock;
+use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -434,7 +434,7 @@ impl Engine for TsKv {
             let sid_entry = final_ans.entry(i.0).or_insert(HashMap::new());
             for j in i.1 {
                 let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
-                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, 1000));
+                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, MAX_BLOCK_VALUES));
             }
         }
 
@@ -503,7 +503,7 @@ impl Engine for TsKv {
         self.db_index.read().get_series_id_list(tab, tags).await
     }
 
-    async fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
-        self.db_index.write().get_series_key(sid).await
+    fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        self.db_index.write().get_series_key(sid)
     }
 }
