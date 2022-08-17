@@ -74,7 +74,7 @@ async fn test_index_id_list() {
     let key2 = index.get_series_key(id2).unwrap().unwrap();
 
     let enc =
-        utils::encode_inverted_index_key(&"tab".to_string(), &"tag".as_bytes(), &"val".as_bytes());
+        utils::encode_inverted_index_key(&"tab".to_string(), "tag".as_bytes(), "val".as_bytes());
     assert_eq!(enc, "tab.tag=val".as_bytes());
 
     let tags = vec![

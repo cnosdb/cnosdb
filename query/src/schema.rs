@@ -10,12 +10,15 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef};
-use models::{FieldInfo, ValueType};
 use serde::{Deserialize, Serialize};
 
+use models::{FieldInfo, ValueType};
+
 pub type TableSchemaRef = Arc<TableSchema>;
+
 pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableSchema {
     pub db: String,
@@ -138,9 +141,6 @@ impl std::fmt::Display for ColumnType {
 
 impl ColumnType {
     pub fn is_tag(&self) -> bool {
-        match &self {
-            ColumnType::Tag => true,
-            _ => false,
-        }
+        matches!(self, ColumnType::Tag)
     }
 }

@@ -50,7 +50,7 @@ impl SeriesKey {
         match key {
             Ok(key) => Ok(key),
             Err(err) => Err(Error::InvalidSerdeMessage {
-                err: format!("Invalid serde message: {}", err.to_string()),
+                err: format!("Invalid serde message: {}", err),
             }),
         }
     }
@@ -62,7 +62,7 @@ impl SeriesKey {
             str = str + &String::from_utf8(tag.value.to_vec()).unwrap() + ".";
         }
 
-        return str;
+        str
     }
 }
 
@@ -76,7 +76,7 @@ impl PartialEq for SeriesKey {
             return false;
         }
 
-        return true;
+        true
     }
 }
 

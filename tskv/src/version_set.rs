@@ -26,7 +26,7 @@ impl VersionSet {
     pub async fn new(desc: &[Arc<TseriesFamDesc>], vers_set: HashMap<u32, Arc<Version>>) -> Self {
         let mut ts_families = HashMap::new();
         let mut ts_families_names = HashMap::new();
-        let mut max_id = 0 as u32;
+        let mut max_id = 0_u32;
         for (id, ver) in vers_set {
             let name = ver.tf_name().to_string();
             let seq = ver.last_seq;
@@ -115,18 +115,18 @@ impl VersionSet {
 
     pub fn get_tsfamily_by_name(&self, name: &String) -> Option<&TseriesFamily> {
         if let Some(v) = self.ts_families_names.get(name) {
-            return self.ts_families.get(&v);
+            return self.ts_families.get(v);
         }
 
-        return None;
+        None
     }
 
     pub fn get_mutable_tsfamily_by_name(&mut self, name: &String) -> Option<&mut TseriesFamily> {
         if let Some(v) = self.ts_families_names.get(name) {
-            return self.ts_families.get_mut(&v);
+            return self.ts_families.get_mut(v);
         }
 
-        return None;
+        None
     }
 
     // todo: Maybe TseriesFamily::new() should be refactored.

@@ -32,25 +32,25 @@ impl Parser {
         } else {
             return Ok(None);
         };
-        check_pos_valid(&buf, pos)?;
+        check_pos_valid(buf, pos)?;
 
         let tags = if let Some(t) = next_tag_set(&buf[pos..]) {
             pos += t.1;
             t.0
         } else {
             return Err(Error::Parse {
-                pos: pos,
+                pos,
                 content: String::from(buf),
             });
         };
-        check_pos_valid(&buf, pos)?;
+        check_pos_valid(buf, pos)?;
 
         let fields = if let Some(f) = next_field_set(&buf[pos..]) {
             pos += f.1;
             f.0
         } else {
             return Err(Error::Parse {
-                pos: pos,
+                pos,
                 content: String::from(buf),
             });
         };
@@ -59,7 +59,7 @@ impl Parser {
             if let Some(t) = next_timestamp(&buf[pos..]) {
                 let timestamp = t.0.parse::<i64>().map_err(|e| Error::Parse {
                     pos,
-                    content: format!("{}: '{}'", e.to_string(), buf),
+                    content: format!("{}: '{}'", e, buf),
                 })?;
                 pos += t.1;
                 timestamp
@@ -94,10 +94,10 @@ fn check_pos_valid(buf: &str, pos: usize) -> Result<()> {
     if pos < buf.len() {
         return Ok(());
     }
-    return Err(Error::Parse {
-        pos: pos,
+    Err(Error::Parse {
+        pos,
         content: String::from(buf),
-    });
+    })
 }
 
 fn next_measurement(buf: &str) -> Option<(&str, usize)> {

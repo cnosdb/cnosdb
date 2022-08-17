@@ -39,17 +39,17 @@ pub(crate) async fn write_line_protocol(
         let query_params = parse_query(query);
         database = query_params
             .get("database")
-            .unwrap_or_else(|| &"")
+            .unwrap_or(&"")
             .to_string();
     } else {
         return Err(Error::Syntax {
-            reason: format!("Need some request parameters."),
+            reason: "Need some request parameters.".to_string(),
         });
     }
 
     if database.is_empty() {
         return Err(Error::Syntax {
-            reason: format!("Request has no parameter 'database'."),
+            reason: "Request has no parameter 'database'.".to_string(),
         });
     }
 
@@ -78,7 +78,7 @@ pub(crate) async fn write_line_protocol(
 
     // Send Request to handler
     let (tx, rx) = oneshot::channel();
-    let _ = sender
+    sender
         .send(tskv::Task::WritePoints { req, tx })
         .context(ChannelSendSnafu)?;
 
@@ -101,17 +101,17 @@ pub(crate) async fn query_sql(req: Request<Body>, db: Arc<Db>) -> Result<Respons
         let query_params = parse_query(query);
         database = query_params
             .get("database")
-            .unwrap_or_else(|| &"")
+            .unwrap_or(&"")
             .to_string();
     } else {
         return Err(Error::Syntax {
-            reason: format!("Need some request parameters."),
+            reason: "Need some request parameters.".to_string(),
         });
     }
 
     if database.is_empty() {
         return Err(Error::Syntax {
-            reason: format!("Request has no parameter 'database'."),
+            reason: "Request has no parameter 'database'.".to_string(),
         });
     }
 

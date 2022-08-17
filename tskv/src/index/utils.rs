@@ -28,7 +28,7 @@ pub fn encode_inverted_index_key(tab: &String, tag_key: &[u8], tag_val: &[u8]) -
     buf.push(b'=');
     buf.put_slice(tag_val);
 
-    return buf;
+    buf
 }
 
 pub fn decode_series_id_list(data: &[u8]) -> IndexResult<Vec<u64>> {
@@ -52,7 +52,7 @@ pub fn encode_series_id_list(list: &Vec<u64>) -> Vec<u8> {
         data.put_u64(list[i]);
     }
 
-    return data;
+    data
 }
 
 pub fn and_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
@@ -71,17 +71,17 @@ pub fn and_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
         }
 
         if (arr1[i] & LOW_40BIT_MASK) < (arr2[j] & LOW_40BIT_MASK) {
-            i = i + 1;
+            i += 1;
         } else if (arr1[i] & LOW_40BIT_MASK) > (arr2[j] & LOW_40BIT_MASK) {
-            j = j + 1;
+            j += 1;
         } else {
             result.push(arr1[i]);
-            i = i + 1;
-            j = j + 1;
+            i += 1;
+            j += 1;
         }
     }
 
-    return result;
+    result
 }
 
 pub fn or_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
@@ -96,14 +96,14 @@ pub fn or_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
 
         if (arr1[i] & LOW_40BIT_MASK) < (arr2[j] & LOW_40BIT_MASK) {
             result.push(arr1[i]);
-            i = i + 1;
+            i += 1;
         } else if (arr1[i] & LOW_40BIT_MASK) > (arr2[j] & LOW_40BIT_MASK) {
             result.push(arr2[j]);
-            j = j + 1;
+            j += 1;
         } else {
             result.push(arr1[i]);
-            i = i + 1;
-            j = j + 1;
+            i += 1;
+            j += 1;
         }
     }
 
@@ -115,7 +115,7 @@ pub fn or_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
         result.extend_from_slice(&arr2[j..]);
     }
 
-    return result;
+    result
 }
 
 pub fn now_timestamp() -> u64 {

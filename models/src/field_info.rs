@@ -85,7 +85,7 @@ impl PartialEq for FieldInfo {
             return true;
         }
 
-        return false;
+        false
     }
 }
 
@@ -149,7 +149,7 @@ impl FieldInfo {
     }
 
     pub fn is_tag(&self) -> bool {
-        return self.value_type == ValueType::Unknown;
+        self.value_type == ValueType::Unknown
     }
 }
 
