@@ -7,6 +7,7 @@ use tokio::{runtime::Runtime, sync::mpsc};
 
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
+use trace::init_default_global_tracing;
 use tskv::TsKv;
 
 mod http;
@@ -87,6 +88,7 @@ enum SubCommand {
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
 fn main() -> Result<(), std::io::Error> {
+    init_default_global_tracing("tskv_log", "tskv.log", "debug");
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
