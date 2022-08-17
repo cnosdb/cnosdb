@@ -1,14 +1,7 @@
 use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thread::JoinHandle};
 
-use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use models::{FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::{Mutex, RwLock};
-use protos::models::Points;
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
 use snafu::ResultExt;
 use tokio::{
     runtime::Builder,
@@ -16,6 +9,14 @@ use tokio::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
+};
+
+use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use models::{FieldId, SeriesId, SeriesKey, Timestamp};
+use protos::models::Points;
+use protos::{
+    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
+    models as fb_models,
 };
 use trace::{debug, error, info, trace, warn};
 
@@ -337,16 +338,17 @@ impl TsKv {
             while let Some(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
-                        warn!("writing points.");
+                        debug!("writing points.");
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
                             }
                             Err(err) => {
+                                info!("write points error {:?}", err);
                                 let _ret = tx.send(Err(err));
                             }
                         }
-                        warn!("write points completed.");
+                        debug!("write points completed.");
                     }
                     _ => panic!("unimplemented."),
                 }
@@ -356,11 +358,8 @@ impl TsKv {
         tokio::spawn(f);
         warn!("job 'main' started.");
     }
-
-    // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
-    //     Ok(None)
-    // }
 }
+
 #[async_trait::async_trait]
 impl Engine for TsKv {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {

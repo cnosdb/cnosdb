@@ -69,7 +69,7 @@ impl TableProvider for ClusterTable {
             .create_physical_plan(projection, filter.clone(), self.schema())
             .await;
     }
-    fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
+    fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)
     }
 }
