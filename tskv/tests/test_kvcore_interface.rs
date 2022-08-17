@@ -99,7 +99,6 @@ mod tests {
             let mut info = SeriesInfo::from_flatbuffers(&point)
                 .context(error::InvalidModelSnafu)
                 .unwrap();
-            info.finish();
             sids.push(info.series_id());
             for field in info.field_infos().iter() {
                 fields_id.push(field.field_id());
@@ -113,6 +112,7 @@ mod tests {
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
         let output = tskv.read(
+            &request.database,
             sids,
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id,
@@ -149,7 +149,6 @@ mod tests {
             let mut info = SeriesInfo::from_flatbuffers(&point)
                 .context(error::InvalidModelSnafu)
                 .unwrap();
-            info.finish();
             sids.push(info.series_id());
             for field in info.field_infos().iter() {
                 fields_id.push(field.field_id());
@@ -163,13 +162,17 @@ mod tests {
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
         tskv.read(
+            &request.database,
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
         );
         info!("delete delta data");
-        tskv.delete_series(sids.clone(), 1, 1).await.unwrap();
+        tskv.delete_series(&request.database, sids.clone(), 1, 1)
+            .await
+            .unwrap();
         tskv.read(
+            &request.database,
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),

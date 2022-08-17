@@ -254,7 +254,7 @@ mod test {
         tokio::time::sleep(Duration::from_secs(3)).await;
 
         let query = query::db::Db::new(Arc::new(tskv));
-        let res = query.run_query("select * from cnosdb.public.test").await;
+        let res = query.run_query("select * from cnosdb.db.table").await;
         if let Some(res) = res {
             let scheduled = pretty_format_batches(&*res).unwrap().to_string();
             println!("{}", scheduled);

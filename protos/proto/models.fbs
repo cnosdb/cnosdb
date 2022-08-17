@@ -45,6 +45,8 @@ table Field {
 }
 
 table Point {
+    db: [ubyte];
+    table: [ubyte];
     tags: [Tag];
     fields: [Field];
     timestamp: int64;

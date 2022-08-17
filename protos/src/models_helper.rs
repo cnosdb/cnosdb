@@ -44,10 +44,14 @@ mod test {
     pub fn create_point<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         timestamp: i64,
+        db: WIPOffset<Vector<u8>>,
+        table: WIPOffset<Vector<u8>>,
         tags: WIPOffset<Vector<ForwardsUOffset<Tag>>>,
         fields: WIPOffset<Vector<ForwardsUOffset<Field>>>,
     ) -> WIPOffset<Point<'a>> {
         let mut point_builder = PointBuilder::new(fbb);
+        point_builder.add_db(db);
+        point_builder.add_table(table);
         point_builder.add_tags(tags);
         point_builder.add_fields(fields);
         point_builder.add_timestamp(timestamp);
@@ -85,7 +89,10 @@ mod test {
                     ("fb", FieldType::Float, fbv.as_slice()),
                 ],
             );
-            points.push(create_point(fbb, timestamp, tags, fields))
+
+            let db = fbb.create_vector("db".as_bytes());
+            let table = fbb.create_vector("table".as_bytes());
+            points.push(create_point(fbb, timestamp, db, table, tags, fields))
         }
         let points = fbb.create_vector(&points);
         Points::create(
@@ -127,7 +134,10 @@ mod test {
                     ("fb", FieldType::Float, fbv.as_slice()),
                 ],
             );
-            points.push(create_point(fbb, timestamp, tags, fields))
+
+            let db = fbb.create_vector("db".as_bytes());
+            let table = fbb.create_vector("table".as_bytes());
+            points.push(create_point(fbb, timestamp, db, table, tags, fields))
         }
         let points = fbb.create_vector(&points);
         Points::create(
@@ -161,7 +171,9 @@ mod test {
             }
             let fields = create_fields(fbb, fields);
 
-            points.push(create_point(fbb, timestamp, tags, fields));
+            let db = fbb.create_vector("db".as_bytes());
+            let table = fbb.create_vector("table".as_bytes());
+            points.push(create_point(fbb, timestamp, db, table, tags, fields));
         }
         let points = fbb.create_vector(&points);
         Points::create(

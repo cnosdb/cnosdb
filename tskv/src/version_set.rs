@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
 use parking_lot::RwLock;
@@ -17,6 +17,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct VersionSet {
+    tf_incr_id: AtomicU32,
     ts_families: HashMap<u32, TseriesFamily>,
     ts_families_names: HashMap<String, u32>,
 }
@@ -25,6 +26,7 @@ impl VersionSet {
     pub async fn new(desc: &[Arc<TseriesFamDesc>], vers_set: HashMap<u32, Arc<Version>>) -> Self {
         let mut ts_families = HashMap::new();
         let mut ts_families_names = HashMap::new();
+        let mut max_id = 0 as u32;
         for (id, ver) in vers_set {
             let name = ver.tf_name().to_string();
             let seq = ver.last_seq;
@@ -39,11 +41,16 @@ impl VersionSet {
                     );
                     ts_families.insert(id, tf);
                     ts_families_names.insert(name.clone(), id);
+
+                    if max_id < id {
+                        max_id = id;
+                    }
                 }
             }
         }
 
         Self {
+            tf_incr_id: AtomicU32::new(max_id + 1),
             ts_families,
             ts_families_names,
         }
@@ -51,6 +58,7 @@ impl VersionSet {
 
     pub fn new_default() -> Self {
         Self {
+            tf_incr_id: AtomicU32::new(1),
             ts_families: Default::default(),
             ts_families_names: Default::default(),
         }
@@ -105,6 +113,22 @@ impl VersionSet {
         self.ts_families.get_mut(&tf_id)
     }
 
+    pub fn get_tsfamily_by_name(&self, name: &String) -> Option<&TseriesFamily> {
+        if let Some(v) = self.ts_families_names.get(name) {
+            return self.ts_families.get(&v);
+        }
+
+        return None;
+    }
+
+    pub fn get_mutable_tsfamily_by_name(&mut self, name: &String) -> Option<&mut TseriesFamily> {
+        if let Some(v) = self.ts_families_names.get(name) {
+            return self.ts_families.get_mut(&v);
+        }
+
+        return None;
+    }
+
     // todo: Maybe TseriesFamily::new() should be refactored.
     #[allow(clippy::too_many_arguments)]
     pub fn add_tsfamily(
@@ -115,7 +139,12 @@ impl VersionSet {
         file_id: u64,
         opt: Arc<TseriesFamOpt>,
         summary_task_sender: UnboundedSender<SummaryTask>,
-    ) {
+    ) -> &mut TseriesFamily {
+        let mut tsf_id = tsf_id;
+        if tsf_id == 0 {
+            tsf_id = self.tf_incr_id.fetch_add(1, Ordering::SeqCst);
+        }
+
         let tf = TseriesFamily::new(
             tsf_id,
             tsf_name.clone(),
@@ -144,6 +173,8 @@ impl VersionSet {
         if let Err(e) = summary_task_sender.send(task) {
             error!("failed to send Summary task, {:?}", e);
         }
+
+        self.ts_families.get_mut(&tsf_id).unwrap()
     }
 
     pub fn del_tsfamily(

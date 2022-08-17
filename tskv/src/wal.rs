@@ -14,7 +14,10 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::{debug, error, info, warn};
 use walkdir::IntoIter;
 
-use crate::memcache::MemRaw;
+use engine::EngineRef;
+
+use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
+
 use crate::{
     byte_utils,
     compaction::FlushReq,
@@ -26,6 +29,7 @@ use crate::{
     memcache::MemCache,
     version_set::VersionSet,
 };
+use crate::{engine, memcache::MemRaw};
 
 const SEGMENT_HEADER_SIZE: usize = 32;
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
@@ -310,6 +314,7 @@ impl WalManager {
 
     pub async fn recover(
         &self,
+        engine: &impl engine::Engine,
         version_set: Arc<RwLock<VersionSet>>,
         global_context: Arc<GlobalContext>,
         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
@@ -326,88 +331,20 @@ impl WalManager {
             if reader.max_sequence < min_log_seq {
                 continue;
             }
-            let mut version_set = version_set.write();
+            let version_set = version_set.write();
             while let Some(e) = reader.next_wal_entry() {
                 if e.seq < min_log_seq {
                     continue;
                 }
                 match e.typ {
                     WalEntryType::Write => {
-                        let entry = flatbuffers::root::<fb_models::Points>(&e.buf)
-                            .context(error::InvalidFlatbufferSnafu)?;
-                        if let Some(points) = entry.points() {
-                            for p in points.iter() {
-                                let mut point_tags: Vec<models::Tag> = vec![];
-                                let sid = if let Some(tags) = p.tags() {
-                                    for t in tags.iter() {
-                                        let tag_key = if let Some(tag_key) = t.key() {
-                                            tag_key.to_vec()
-                                        } else {
-                                            continue;
-                                        };
-                                        let tag_value = if let Some(tag_value) = t.value() {
-                                            tag_value.to_vec()
-                                        } else {
-                                            vec![]
-                                        };
-                                        point_tags.push(models::Tag::new(tag_key, tag_value));
-                                    }
-                                    models::generate_series_id(&point_tags)
-                                } else {
-                                    // TODO error: no tags
-                                    0
-                                };
-                                if let Some(tsf) = version_set.get_tsfamily(sid) {
-                                    if let Some(fields) = p.fields() {
-                                        for f in fields.iter() {
-                                            let fid = if let Some(field_name) = f.name() {
-                                                models::generate_field_id(&field_name.to_vec(), sid)
-                                            } else {
-                                                // TODO error: no field name
-                                                0
-                                            };
-                                            let val = if let Some(value) = f.value() {
-                                                value
-                                            } else {
-                                                &[0_u8; 0][..]
-                                            };
-                                            let dtype = match f.type_() {
-                                                fb_models::FieldType::Float => {
-                                                    models::ValueType::Float
-                                                }
-                                                fb_models::FieldType::Integer => {
-                                                    models::ValueType::Integer
-                                                }
-                                                fb_models::FieldType::Unsigned => {
-                                                    models::ValueType::Unsigned
-                                                }
-                                                fb_models::FieldType::Boolean => {
-                                                    models::ValueType::Boolean
-                                                }
-                                                fb_models::FieldType::String => {
-                                                    models::ValueType::String
-                                                }
-                                                _ => models::ValueType::Unknown,
-                                            };
-                                            // todo: change fbs timestamp to i64
-                                            tsf.put_mutcache(
-                                                &mut MemRaw {
-                                                    seq: e.seq,
-                                                    ts: p.timestamp() as i64,
-                                                    field_id: fid,
-                                                    field_type: dtype,
-                                                    val,
-                                                },
-                                                flush_task_sender.clone(),
-                                            )
-                                            .await
-                                        }
-                                    }
-                                } else {
-                                    // TODO error: no tseries family
-                                }
-                            }
-                        }
+                        let req = WritePointsRpcRequest {
+                            version: 1,
+                            database: "".to_string(),
+                            points: e.buf,
+                        };
+
+                        engine.write_from_wal(req, e.seq).await.unwrap();
                     }
                     WalEntryType::Delete => {
                         // TODO delete a memcache entry

@@ -18,6 +18,7 @@ pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableSchema {
+    pub db: String,
     pub name: String,
     pub fields: BTreeMap<String, TableFiled>,
 }
@@ -39,8 +40,8 @@ impl TableSchema {
         Arc::new(Schema::new(fields))
     }
 
-    pub fn new(name: String, fields: BTreeMap<String, TableFiled>) -> Self {
-        Self { name, fields }
+    pub fn new(db: String, name: String, fields: BTreeMap<String, TableFiled>) -> Self {
+        Self { db, name, fields }
     }
 }
 

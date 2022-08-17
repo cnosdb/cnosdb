@@ -14,19 +14,36 @@ pub type EngineRef = Arc<dyn Engine>;
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse>;
+
+    async fn write_from_wal(
+        &self,
+        write_batch: WritePointsRpcRequest,
+        seq: u64,
+    ) -> Result<WritePointsRpcResponse>;
+
     fn read(
         &self,
+        db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
         fields: Vec<FieldId>,
     ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>>;
+
     async fn delete_series(
         &self,
+        db: &String,
         sids: Vec<SeriesId>,
         min: Timestamp,
         max: Timestamp,
     ) -> Result<()>;
-    fn get_table_schema(&self, tab: &String) -> Result<Option<Vec<FieldInfo>>>;
-    async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>>;
-    fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>>;
+
+    fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>>;
+
+    async fn get_series_id_list(
+        &self,
+        db: &String,
+        tab: &String,
+        tags: &Vec<Tag>,
+    ) -> IndexResult<Vec<u64>>;
+    fn get_series_key(&self, db: &String, sid: u64) -> IndexResult<Option<SeriesKey>>;
 }

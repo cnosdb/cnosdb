@@ -15,6 +15,7 @@ use tskv::engine::EngineRef;
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
+    db_name: String,
     table_name: String,
     proj_schema: SchemaRef,
     filter: PredicateRef,
@@ -23,12 +24,14 @@ pub struct TskvExec {
 
 impl TskvExec {
     pub(crate) fn new(
+        db_name: String,
         table_name: String,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         engine: EngineRef,
     ) -> Self {
         Self {
+            db_name,
             table_name,
             proj_schema,
             filter,
@@ -75,6 +78,7 @@ impl ExecutionPlan for TskvExec {
     ) -> Result<SendableRecordBatchStream> {
         let batch_size = context.session_config().batch_size();
         Ok(Box::pin(TableScanStream::new(
+            self.db_name.clone(),
             self.table_name.clone(),
             self.schema(),
             self.filter(),

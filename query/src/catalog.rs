@@ -106,14 +106,17 @@ impl SchemaProvider for IsiphoSchema {
         }
 
         let mut tables = self.tables.write();
-        if let Ok(v) = self.engine.get_table_schema(&name.to_string()) {
+        if let Ok(v) = self
+            .engine
+            .get_table_schema(&self.db_name, &name.to_string())
+        {
             if let Some(v) = v {
                 let mut fields = BTreeMap::new();
                 for item in v {
                     let field = TableFiled::from(&item);
                     fields.insert(field.name.clone(), field);
                 }
-                let schema = TableSchema::new(name.to_owned(), fields);
+                let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);
                 let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
                 tables.insert(name.to_owned(), table.clone());
                 return Some(table);

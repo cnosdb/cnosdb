@@ -65,7 +65,7 @@ pub(crate) async fn write_line_protocol(
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_millis())
         .context(ParseLineProtocolSnafu)?;
     debug!("Write request: {:?}", line_protocol_lines);
-    let points = parse_lines_to_points(&line_protocol_lines);
+    let points = parse_lines_to_points(&database, &line_protocol_lines);
 
     let req = WritePointsRpcRequest {
         version: 1,
@@ -134,7 +134,7 @@ pub(crate) async fn query_sql(req: Request<Body>, db: Arc<Db>) -> Result<Respons
     Ok(resp)
 }
 
-fn parse_lines_to_points(lines: &[Line]) -> Vec<u8> {
+fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::new();
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter() {
@@ -158,6 +158,8 @@ fn parse_lines_to_points(lines: &[Line]) -> Vec<u8> {
             fields.push(field_builder.finish());
         }
         let point_args = PointArgs {
+            db: Some(fbb.create_vector(db.as_bytes())),
+            table: Some(fbb.create_vector(line.measurement.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
             timestamp: line.timestamp,

@@ -30,6 +30,7 @@ impl ClusterTable {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
         Ok(Arc::new(TskvExec::new(
+            self.schema.db.clone(),
             self.schema.name.clone(),
             proj_schema,
             predicate,

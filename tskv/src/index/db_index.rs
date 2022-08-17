@@ -27,6 +27,27 @@ impl From<&GlobalConfig> for IndexConfig {
 }
 
 #[derive(Debug)]
+pub struct DbIndexSet {
+    path: String,
+    indexs: HashMap<String, DBIndex>,
+}
+
+impl DbIndexSet {
+    pub fn new(path: &String) -> Self {
+        Self {
+            path: path.clone(),
+            indexs: HashMap::new(),
+        }
+    }
+
+    pub fn get_db_index(&mut self, db: &String) -> &mut DBIndex {
+        self.indexs
+            .entry(db.clone())
+            .or_insert_with(|| DBIndex::new(&format!("{}/{}", &self.path, db)))
+    }
+}
+
+#[derive(Debug)]
 pub struct DBIndex {
     path: path::PathBuf,
 

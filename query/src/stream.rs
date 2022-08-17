@@ -1,17 +1,17 @@
-use std::{thread, time};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread::spawn;
+use std::{thread, time};
 
-use datafusion::{
-    arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
-    physical_plan::RecordBatchStream,
-};
 use datafusion::arrow::array::{
     ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array,
 };
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::{
+    arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
+    physical_plan::RecordBatchStream,
+};
 use futures::executor::block_on;
 use futures::Stream;
 use parking_lot::Mutex;
@@ -21,8 +21,8 @@ use trace::{debug, error};
 use tskv::engine::EngineRef;
 use tskv::index::utils::{split_id, unite_id};
 use tskv::memcache::DataType as MDataType;
-use tskv::TimeRange;
 use tskv::tsm::DataBlock;
+use tskv::TimeRange;
 
 use crate::predicate::PredicateRef;
 use crate::schema::{FIELD_ID, TAG};
@@ -38,6 +38,7 @@ enum ArrayType {
 }
 
 pub struct TableScanStream {
+    db_name: String,
     table_name: String,
     data: Arc<Mutex<Vec<RecordBatch>>>,
     index: usize,
@@ -50,6 +51,7 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(
+        db_name: String,
         table_name: String,
         proj_schema: SchemaRef,
         filter: PredicateRef,
@@ -57,6 +59,7 @@ impl TableScanStream {
         store_engine: EngineRef,
     ) -> Self {
         Self {
+            db_name,
             table_name,
             data: Arc::new(Mutex::new(vec![])),
             index: 0,
@@ -83,6 +86,7 @@ impl Stream for TableScanStream {
         if !this.status {
             this.status = true;
             let store_engine = this.store_engine.clone();
+            let db_name = this.db_name.clone();
             let table_name = this.table_name.clone();
             let proj_schema = this.proj_schema.clone();
             let data = this.data.clone();
@@ -92,13 +96,14 @@ impl Stream for TableScanStream {
             rt.block_on(async move {
                 //todo: for test, it will remove after predicate done
                 let sids = store_engine
-                    .get_series_id_list(&table_name, &vec![])
+                    .get_series_id_list(&db_name, &table_name, &vec![])
                     .await
                     .unwrap();
 
                 let fields = get_field_ids(proj_schema.clone(), &sids);
                 debug!("sids {:?}, fields {:?}", sids, fields);
                 let block_map = store_engine.read(
+                    &db_name,
                     sids,
                     &TimeRange {
                         min_ts: i64::MIN,
@@ -107,8 +112,12 @@ impl Stream for TableScanStream {
                     fields,
                 );
                 debug!("printf block map {:?}", block_map);
-                let mut batch =
-                    make_record_batch(block_map, store_engine.clone(), proj_schema.clone());
+                let mut batch = make_record_batch(
+                    block_map,
+                    &db_name,
+                    store_engine.clone(),
+                    proj_schema.clone(),
+                );
                 data.lock().append(&mut batch);
             });
         };
@@ -279,6 +288,7 @@ fn push_record_batch(
 
 fn make_record_batch(
     block_map: HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>>,
+    db_name: &String,
     store_engine: EngineRef,
     proj_schema: SchemaRef,
 ) -> Vec<RecordBatch> {
@@ -359,6 +369,7 @@ fn make_record_batch(
             &mut schema_vec,
         );
         make_tag_col(
+            db_name,
             store_engine.clone(),
             *series.0,
             len,
@@ -395,13 +406,14 @@ fn make_time_col(
 }
 
 fn make_tag_col(
+    db_name: &String,
     store_engine: EngineRef,
     sid: SeriesId,
     len: usize,
     batch_array_vec: &mut Vec<ArrayRef>,
     schema_vec: &mut Vec<Field>,
 ) {
-    let res = store_engine.get_series_key(sid);
+    let res = store_engine.get_series_key(db_name, sid);
     match res {
         Ok(v) => {
             if let Some(series_key) = v {
