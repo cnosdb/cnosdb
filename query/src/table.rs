@@ -11,10 +11,7 @@ use datafusion::{
 };
 use tskv::engine::EngineRef;
 
-use crate::{
-    helper::expr_applicable_for_cols, predicate::Predicate, schema::TableSchema,
-    tskv_exec::TskvExec,
-};
+use crate::{predicate::Predicate, schema::TableSchema, tskv_exec::TskvExec};
 
 pub struct ClusterTable {
     engine: EngineRef,

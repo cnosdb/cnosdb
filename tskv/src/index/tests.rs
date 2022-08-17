@@ -17,12 +17,12 @@ async fn test_index_add_del() {
     );
     let id = index.add_series_if_not_exists(&mut info1).await.unwrap();
 
-    let key = index.get_series_key(id).await.unwrap().unwrap();
+    let key = index.get_series_key(id).unwrap().unwrap();
     assert_eq!("", key.table());
     assert_eq!(info1.tags(), key.tags());
 
     index.del_series_info(id).await.unwrap();
-    let key = index.get_series_key(id).await.unwrap();
+    let key = index.get_series_key(id).unwrap();
     assert_eq!(key, None);
 
     index.flush().await.unwrap();
@@ -62,8 +62,8 @@ async fn test_index_id_list() {
     let id1 = index.add_series_if_not_exists(&mut info1).await.unwrap();
     let id2 = index.add_series_if_not_exists(&mut info2).await.unwrap();
     let id3 = index.add_series_if_not_exists(&mut info3).await.unwrap();
-    let key1 = index.get_series_key(id1).await.unwrap().unwrap();
-    let key2 = index.get_series_key(id2).await.unwrap().unwrap();
+    let key1 = index.get_series_key(id1).unwrap().unwrap();
+    let key2 = index.get_series_key(id2).unwrap().unwrap();
 
     let enc =
         utils::encode_inverted_index_key(&"tab".to_string(), &"tag".as_bytes(), &"val".as_bytes());
