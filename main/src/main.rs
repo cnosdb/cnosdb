@@ -7,6 +7,7 @@ use tokio::{runtime::Runtime, sync::mpsc};
 
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
+use trace::init_default_global_tracing;
 use tskv::TsKv;
 
 mod http;
@@ -87,6 +88,7 @@ enum SubCommand {
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
 fn main() -> Result<(), std::io::Error> {
+    init_default_global_tracing("tskv_log", "tskv.log", "debug");
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
@@ -241,7 +243,7 @@ mod test {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 200);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest {

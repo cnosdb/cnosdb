@@ -26,8 +26,8 @@ pub trait Engine: Send + Sync + Debug {
         db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<FieldId>,
-    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>>;
+        fields: Vec<u32>,
+    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>;
 
     async fn delete_series(
         &self,

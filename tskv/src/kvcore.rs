@@ -1,14 +1,7 @@
 use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thread::JoinHandle};
 
-use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use models::{FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::{Mutex, RwLock};
-use protos::models::Points;
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
 use snafu::ResultExt;
 use tokio::{
     runtime::Builder,
@@ -17,9 +10,18 @@ use tokio::{
         oneshot,
     },
 };
+
+use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use models::{FieldId, SeriesId, SeriesKey, Timestamp};
+use protos::models::Points;
+use protos::{
+    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
+    models as fb_models,
+};
 use trace::{debug, error, info, trace, warn};
 
 use crate::engine::Engine;
+use crate::index::utils::unite_id;
 use crate::index::IndexResult;
 use crate::memcache::MemRaw;
 use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
@@ -353,16 +355,17 @@ impl TsKv {
             while let Some(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
-                        warn!("writing points.");
+                        debug!("writing points.");
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
                             }
                             Err(err) => {
+                                info!("write points error {:?}", err);
                                 let _ret = tx.send(Err(err));
                             }
                         }
-                        warn!("write points completed.");
+                        debug!("write points completed.");
                     }
                     _ => panic!("unimplemented."),
                 }
@@ -458,15 +461,16 @@ impl Engine for TsKv {
         db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<FieldId>,
-    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
+        fields: Vec<u32>,
+    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
         // get data block
         let mut ans = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert(HashMap::new());
             for field_id in fields.iter() {
                 let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
-                field_id_entry.append(&mut self.read_point(db, time_range, *field_id));
+                let fid = unite_id((*field_id).into(), sid);
+                field_id_entry.append(&mut self.read_point(db, time_range, fid));
             }
         }
 

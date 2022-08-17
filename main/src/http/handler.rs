@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use chrono::Local;
+use datafusion::arrow::util::pretty::pretty_format_batches;
 use flatbuffers::FlatBufferBuilder;
 use futures::StreamExt;
 use hyper::{Body, Request, Response};
 use line_protocol::{line_protocol_to_lines, Line};
 use protos::kv_service::WritePointsRpcRequest;
-use protos::models::{self as fb_models, FieldBuilder, Point, PointArgs, TagBuilder};
+use protos::models::{
+    self as fb_models, FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder,
+};
 use query::db::Db;
 use snafu::ResultExt;
 use tokio::sync::mpsc::UnboundedSender;
@@ -125,11 +128,16 @@ pub(crate) async fn query_sql(req: Request<Body>, db: Arc<Db>) -> Result<Respons
     }
     let sql = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
 
-    let ret = db.run_query(&sql).await;
-    dbg!(&ret);
+    let record_batches = if let Some(rbs) = db.run_query(&sql).await {
+        rbs
+    } else {
+        Vec::new()
+    };
+
+    let resp_msg = format!("{}", pretty_format_batches(&record_batches).unwrap());
 
     let resp = http::Response::builder()
-        .body(Body::from("Write succeed."))
+        .body(Body::from(resp_msg))
         .unwrap();
     Ok(resp)
 }
@@ -166,7 +174,13 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
         };
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
-    let points = fbb.create_vector(&point_offsets);
+    let points_raw = fbb.create_vector(&point_offsets);
+    let points = Points::create(
+        &mut fbb,
+        &PointsArgs {
+            points: Some(points_raw),
+        },
+    );
     fbb.finish(points, None);
     fbb.finished_data().to_vec()
 }

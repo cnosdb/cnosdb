@@ -11,10 +11,7 @@ use datafusion::{
 };
 use tskv::engine::EngineRef;
 
-use crate::{
-    helper::expr_applicable_for_cols, predicate::Predicate, schema::TableSchema,
-    tskv_exec::TskvExec,
-};
+use crate::{predicate::Predicate, schema::TableSchema, tskv_exec::TskvExec};
 
 pub struct ClusterTable {
     engine: EngineRef,
@@ -73,7 +70,7 @@ impl TableProvider for ClusterTable {
             .create_physical_plan(projection, filter.clone(), self.schema())
             .await;
     }
-    fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
+    fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)
     }
 }
