@@ -41,9 +41,12 @@ impl DbIndexSet {
     }
 
     pub fn get_db_index(&mut self, db: &String) -> &mut DBIndex {
-        self.indexs
+        let index = self
+            .indexs
             .entry(db.clone())
-            .or_insert_with(|| DBIndex::new(&format!("{}/{}", &self.path, db)))
+            .or_insert_with(|| DBIndex::new(&format!("{}/{}", &self.path, db)));
+
+        return index;
     }
 }
 
@@ -155,11 +158,6 @@ impl DBIndex {
                     }
 
                     field.set_field_id(utils::unite_id(v.field_id(), series_id));
-                    println!(
-                        "=== exist sid {:02X}, fid {:02X}",
-                        series_id,
-                        field.field_id()
-                    );
                 }
                 None => {
                     need_store = true;
@@ -171,12 +169,6 @@ impl DBIndex {
                     schema.push(clone);
 
                     field.set_field_id(utils::unite_id(index, series_id));
-
-                    println!(
-                        "=== not exist sid {:02X}, fid {:02X}",
-                        series_id,
-                        field.field_id()
-                    );
                 }
             }
             Ok(())
@@ -308,10 +300,6 @@ impl DBIndex {
                 } else {
                     break;
                 }
-            }
-
-            for id in &result {
-                println!("==== get_series_id_list {:02X}", id);
             }
 
             return Ok(result);

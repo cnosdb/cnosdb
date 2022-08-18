@@ -68,8 +68,7 @@ message WriteRowsRpcResponse {
 
 message WritePointsRpcRequest {
   uint64 version = 1;
-  string database = 2;
-  bytes points = 3; // flatbuffers bytes ( models::Points )
+  bytes points = 2; // flatbuffers bytes ( models::Points )
 }
 
 message WritePointsRpcResponse {

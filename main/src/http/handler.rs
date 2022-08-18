@@ -70,11 +70,7 @@ pub(crate) async fn write_line_protocol(
     debug!("Write request: {:?}", line_protocol_lines);
     let points = parse_lines_to_points(&database, &line_protocol_lines);
 
-    let req = WritePointsRpcRequest {
-        version: 1,
-        database,
-        points,
-    };
+    let req = WritePointsRpcRequest { version: 1, points };
 
     // Send Request to handler
     let (tx, rx) = oneshot::channel();
@@ -174,10 +170,13 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
         };
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
+
+    let fbb_db = fbb.create_vector(db.as_bytes());
     let points_raw = fbb.create_vector(&point_offsets);
     let points = Points::create(
         &mut fbb,
         &PointsArgs {
+            database: Some(fbb_db),
             points: Some(points_raw),
         },
     );

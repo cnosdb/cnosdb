@@ -53,6 +53,7 @@ table Point {
 }
 
 table Points {
+    database: [ubyte];
     points: [Point];
 }
 

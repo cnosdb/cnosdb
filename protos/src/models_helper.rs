@@ -62,6 +62,7 @@ mod test {
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
+        let db = fbb.create_vector("db".as_bytes());
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         let mut points = vec![];
         for i in 0..num {
@@ -90,14 +91,22 @@ mod test {
                 ],
             );
 
-            let db = fbb.create_vector("db".as_bytes());
             let table = fbb.create_vector("table".as_bytes());
-            points.push(create_point(fbb, timestamp, db, table, tags, fields))
+            points.push(create_point(
+                fbb,
+                timestamp,
+                db.clone(),
+                table,
+                tags,
+                fields,
+            ))
         }
+
         let points = fbb.create_vector(&points);
         Points::create(
             fbb,
             &PointsArgs {
+                database: Some(db),
                 points: Some(points),
             },
         )
@@ -107,6 +116,7 @@ mod test {
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
+        let db = fbb.create_vector("db".as_bytes());
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         let mut points = vec![];
         for i in 0..num {
@@ -135,14 +145,21 @@ mod test {
                 ],
             );
 
-            let db = fbb.create_vector("db".as_bytes());
             let table = fbb.create_vector("table".as_bytes());
-            points.push(create_point(fbb, timestamp, db, table, tags, fields))
+            points.push(create_point(
+                fbb,
+                timestamp,
+                db.clone(),
+                table,
+                tags,
+                fields,
+            ))
         }
         let points = fbb.create_vector(&points);
         Points::create(
             fbb,
             &PointsArgs {
+                database: Some(db),
                 points: Some(points),
             },
         )
@@ -152,6 +169,7 @@ mod test {
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
+        let db = fbb.create_vector("db".as_bytes());
         let mut points = vec![];
         for _ in 0..num {
             let timestamp = Local::now().timestamp_millis();
@@ -171,14 +189,21 @@ mod test {
             }
             let fields = create_fields(fbb, fields);
 
-            let db = fbb.create_vector("db".as_bytes());
             let table = fbb.create_vector("table".as_bytes());
-            points.push(create_point(fbb, timestamp, db, table, tags, fields));
+            points.push(create_point(
+                fbb,
+                timestamp,
+                db.clone(),
+                table,
+                tags,
+                fields,
+            ));
         }
         let points = fbb.create_vector(&points);
         Points::create(
             fbb,
             &PointsArgs {
+                database: Some(db),
                 points: Some(points),
             },
         )

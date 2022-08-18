@@ -1112,10 +1112,12 @@ mod test {
         update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
 
         let mut version_set = version_set.write();
-        let tsf = version_set.get_tsfamily(0).unwrap();
+        let tsf = version_set
+            .get_mutable_tsfamily_by_name(&"test".to_string())
+            .unwrap();
         let version = tsf.version();
         version.levels_info[1].read_column_file(
-            0,
+            tsf.tf_id(),
             0,
             &TimeRange {
                 max_ts: 0,

@@ -241,16 +241,11 @@ mod test {
 
         let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
 
-        let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 200);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
+        let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         tskv.write(request.clone()).await.unwrap();
         tokio::time::sleep(Duration::from_secs(3)).await;

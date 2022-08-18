@@ -315,7 +315,6 @@ impl WalManager {
     pub async fn recover(
         &self,
         engine: &impl engine::Engine,
-        version_set: Arc<RwLock<VersionSet>>,
         global_context: Arc<GlobalContext>,
         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     ) -> Result<()> {
@@ -331,7 +330,7 @@ impl WalManager {
             if reader.max_sequence < min_log_seq {
                 continue;
             }
-            let version_set = version_set.write();
+
             while let Some(e) = reader.next_wal_entry() {
                 if e.seq < min_log_seq {
                     continue;
@@ -340,10 +339,8 @@ impl WalManager {
                     WalEntryType::Write => {
                         let req = WritePointsRpcRequest {
                             version: 1,
-                            database: "".to_string(),
                             points: e.buf,
                         };
-
                         engine.write_from_wal(req, e.seq).await.unwrap();
                     }
                     WalEntryType::Delete => {

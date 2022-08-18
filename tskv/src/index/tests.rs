@@ -20,7 +20,6 @@ async fn test_index_add_del() {
     let id = index.add_series_if_not_exists(&mut info1).await.unwrap();
 
     let key = index.get_series_key(id).unwrap().unwrap();
-    assert_eq!("", key.table());
     assert_eq!(info1.tags(), key.tags());
 
     index.del_series_info(id).await.unwrap();
@@ -73,9 +72,12 @@ async fn test_index_id_list() {
     let key1 = index.get_series_key(id1).unwrap().unwrap();
     let key2 = index.get_series_key(id2).unwrap().unwrap();
 
-    let enc =
-        utils::encode_inverted_index_key(&"tab".to_string(), &"tag".as_bytes(), &"val".as_bytes());
-    assert_eq!(enc, "tab.tag=val".as_bytes());
+    let enc = utils::encode_inverted_index_key(
+        &"table_test".to_string(),
+        &"tag".as_bytes(),
+        &"val".as_bytes(),
+    );
+    assert_eq!(enc, "table_test.tag=val".as_bytes());
 
     let tags = vec![
         Tag::new(b"loc".to_vec(), b"bj".to_vec()),
@@ -83,13 +85,13 @@ async fn test_index_id_list() {
     ];
 
     let list = index
-        .get_series_id_list(&"".to_string(), &tags)
+        .get_series_id_list(&"table_test".to_string(), &tags)
         .await
         .unwrap();
     assert_eq!(vec![id2], list);
 
     let list = index
-        .get_series_id_list(&"".to_string(), &tags[0..0].to_vec())
+        .get_series_id_list(&"table_test".to_string(), &tags[0..0].to_vec())
         .await
         .unwrap();
     assert_eq!(vec![id1, id2, id3], list);
@@ -127,7 +129,7 @@ async fn test_field_type() {
     let id1 = index.add_series_if_not_exists(&mut info1).await.unwrap();
     let id2 = index.add_series_if_not_exists(&mut info2).await;
 
-    let schema = index.get_table_schema(&"".to_string());
+    let schema = index.get_table_schema(&"table_test".to_string());
 
     index.flush().await.unwrap();
 }

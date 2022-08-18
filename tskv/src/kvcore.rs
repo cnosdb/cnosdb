@@ -1,6 +1,7 @@
 use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thread::JoinHandle};
 
 use futures::stream::SelectNextSome;
+use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 use tokio::{
@@ -91,7 +92,7 @@ impl TsKv {
             summary_task_sender: summary_task_sender.clone(),
         };
 
-        core.recover_wal();
+        core.recover_wal().await;
         core.run_wal_job(wal_receiver);
         core.run_flush_job(
             flush_task_receiver,
@@ -142,7 +143,6 @@ impl TsKv {
         wal_manager
             .recover(
                 self,
-                self.version_set.clone(),
                 self.global_ctx.clone(),
                 self.flush_task_sender.clone(),
             )
@@ -241,8 +241,6 @@ impl TsKv {
                     self.flush_task_sender.clone(),
                 )
                 .await;
-
-                println!("==== insert_cache sid {:02X} fid {:02X}", sid, f.field_id());
             }
         }
     }
@@ -380,20 +378,20 @@ impl TsKv {
         &self,
         write_batch: WritePointsRpcRequest,
         mut seq: u64,
+        from_wal: bool,
     ) -> Result<WritePointsRpcResponse> {
         let shared_write_batch = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let mut db_name = write_batch.database;
+        let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
+            .map_err(|err| Error::ErrCharacterSet)?;
+
         let mut mem_points = Vec::<_>::with_capacity(fb_points.points().unwrap().len());
         // get or create forward index
         for point in fb_points.points().unwrap() {
             let mut info =
                 SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            if db_name.len() == 0 {
-                db_name = info.db().clone();
-            }
             let sid = self
                 .index_set
                 .write()
@@ -408,19 +406,13 @@ impl TsKv {
 
             for i in 0..fields.len() {
                 point.fields[i].field_id = fields[i].field_id();
-                println!(
-                    "==== write sid {:02X}  fid {:02X}",
-                    sid,
-                    fields[i].field_id()
-                );
             }
 
-            println!("==================");
             mem_points.push(point);
         }
 
         // write wal
-        if seq == 0 {
+        if !from_wal {
             let (cb, rx) = oneshot::channel();
             self.wal_sender
                 .send(WalTask::Write {
@@ -433,6 +425,7 @@ impl TsKv {
         }
 
         self.insert_cache(&db_name, seq, &mem_points).await;
+
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -446,14 +439,14 @@ impl TsKv {
 #[async_trait::async_trait]
 impl Engine for TsKv {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
-        self.write_points(write_batch, 0).await
+        self.write_points(write_batch, 0, false).await
     }
     async fn write_from_wal(
         &self,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
-        self.write_points(write_batch, seq).await
+        self.write_points(write_batch, seq, true).await
     }
 
     fn read(

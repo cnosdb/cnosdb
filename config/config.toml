@@ -24,4 +24,4 @@ max_immemcache_num =  4
 #SchemaStoreConfig
 schema_store_config_dir = "dev/schema"
 #forward index config
-index_path = "dev/tskv.fidx"
+index_path = "dev/idx"
