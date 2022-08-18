@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use models::InMemPoint;
 use parking_lot::Mutex;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 
+use models::InMemPoint;
 use protos::{kv_service::WritePointsRpcRequest, models as fb_models, models_helper};
 use tskv::{engine::Engine, error, TsKv};
 
@@ -27,15 +27,13 @@ fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
     let ps = flatbuffers::root::<fb_models::Points>(buf)
         .context(error::InvalidFlatbufferSnafu)
         .unwrap();
-    if let Some(inmem_points) = ps.points().and_then(|points| {
-        Some(
-            points
-                .iter()
-                .map(|p| InMemPoint::from_flatbuffers(&p).unwrap())
-                .collect(),
-        )
+    if let Some(inmem_points) = ps.points().map(|points| {
+        points
+            .iter()
+            .map(|p| InMemPoint::from_flatbuffers(&p).unwrap())
+            .collect()
     }) {
-        rt.block_on(tskv.lock().insert_cache(1, &inmem_points));
+        rt.block_on(tskv.lock().insert_cache(&1.to_string(), 0, &inmem_points));
     }
 }
 

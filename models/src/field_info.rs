@@ -1,5 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
+use std::fmt::{write, Display, Formatter};
 use utils::BkdrHasher;
 
 use crate::{
@@ -17,6 +18,19 @@ pub enum ValueType {
     Unsigned,
     Boolean,
     String,
+}
+
+impl Display for ValueType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueType::Unknown => f.write_str("Unknown"),
+            ValueType::Float => f.write_str("Float"),
+            ValueType::Integer => f.write_str("Integer"),
+            ValueType::Unsigned => f.write_str("Unsigned"),
+            ValueType::Boolean => f.write_str("Boolean"),
+            ValueType::String => f.write_str("String"),
+        }
+    }
 }
 
 impl From<u8> for ValueType {
@@ -85,7 +99,7 @@ impl PartialEq for FieldInfo {
             return true;
         }
 
-        return false;
+        false
     }
 }
 
@@ -149,7 +163,7 @@ impl FieldInfo {
     }
 
     pub fn is_tag(&self) -> bool {
-        return self.value_type == ValueType::Unknown;
+        self.value_type == ValueType::Unknown
     }
 }
 

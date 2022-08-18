@@ -1,14 +1,11 @@
-use std::{fmt, result, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use datafusion::{
     catalog::catalog::CatalogProvider,
-    common::DataFusionError,
     execution::{context::SessionState, runtime_env::RuntimeEnv},
     prelude::{SessionConfig, SessionContext},
     scheduler::Scheduler,
 };
-
-pub type Result<T> = result::Result<T, DataFusionError>;
 
 #[derive(Clone)]
 pub struct IsiphoSessionCfg {
@@ -17,9 +14,12 @@ pub struct IsiphoSessionCfg {
     runtime: Arc<RuntimeEnv>,
     catalog: Option<Arc<dyn CatalogProvider>>,
 }
+
 const SIZE: usize = 1000;
-pub const DEFAULT_CATALOG: &str = "cnosdb";
+
+#[allow(dead_code)]
 pub const DEFAULT_SCHEMA: &str = "public";
+pub const DEFAULT_CATALOG: &str = "cnosdb";
 
 impl IsiphoSessionCfg {
     pub(super) fn new(exec: Arc<Scheduler>, runtime: Arc<RuntimeEnv>) -> Self {

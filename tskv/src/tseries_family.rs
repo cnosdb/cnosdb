@@ -289,7 +289,7 @@ impl LevelInfo {
                 }
             }
         }
-        return data;
+        data
     }
 
     pub fn level(&self) -> u32 {
@@ -371,7 +371,7 @@ impl Version {
                 new_levels[level.level as usize].push_column_file(file.clone());
             }
             if let Some(files) = added_files.get(&level.level) {
-                for file in files.into_iter() {
+                for file in files.iter() {
                     new_levels[level.level as usize].push_compact_meta(file);
                 }
             }
@@ -519,7 +519,7 @@ impl TseriesFamily {
             )),
             super_version_id: AtomicU64::new(0),
             version,
-            opts: tsf_opt.clone(),
+            opts: tsf_opt,
             compact_picker: Arc::new(LevelCompactionPicker::new()),
             immut_ts_min: max_level_ts,
             mut_ts_max: i64::MIN,
@@ -548,7 +548,7 @@ impl TseriesFamily {
                 mut_cache: self.mut_cache.clone(),
                 immut_cache: self.immut_cache.clone(),
             },
-            version.clone(),
+            version,
             self.super_version_id.load(Ordering::SeqCst),
         ))
     }
@@ -851,7 +851,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(3, tsf_opt.clone()),
-                LevelInfo::init(4, tsf_opt.clone()),
+                LevelInfo::init(4, tsf_opt),
             ],
         };
         let mut version_edits = Vec::new();
@@ -927,7 +927,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(3, tsf_opt.clone()),
-                LevelInfo::init(4, tsf_opt.clone()),
+                LevelInfo::init(4, tsf_opt),
             ],
         };
         let mut version_edits = Vec::new();

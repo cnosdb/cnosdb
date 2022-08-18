@@ -1,18 +1,16 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-
 use std::{thread, time};
 
 use datafusion::arrow::array::{
     ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray, UInt64Array,
 };
-use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::arrow::datatypes::{DataType, Field};
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
 };
-
 use futures::Stream;
 use parking_lot::Mutex;
 
@@ -165,6 +163,7 @@ fn get_field_ids(proj_schema: SchemaRef) -> Vec<u32> {
     fields
 }
 
+#[allow(clippy::comparison_chain)]
 fn push_record_array(
     field_id: u32,
     entry: &mut ArrayType,
@@ -189,7 +188,7 @@ fn push_record_array(
     );
     debug!("block:{:?}, ts_array:{:?}", block_index, ts_array_index);
     let len = data_blocks[vec_index].ts().len();
-    while (block_index < len) {
+    while block_index < len {
         if data_blocks[vec_index].ts()[block_index] > ts_array[ts_array_index] {
             match entry {
                 ArrayType::U64(v) => {

@@ -96,15 +96,15 @@ impl TsKv {
         core.run_wal_job(wal_receiver);
         core.run_flush_job(
             flush_task_receiver,
-            summary.global_context().clone(),
-            summary.version_set().clone(),
+            summary.global_context(),
+            summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
         );
         core.run_compact_job(
             compact_task_receiver,
-            summary.global_context().clone(),
-            summary.version_set().clone(),
+            summary.global_context(),
+            summary.version_set(),
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
@@ -132,9 +132,9 @@ impl TsKv {
                 .await
                 .unwrap()
         };
-        let version_set = summary.version_set().clone();
+        let version_set = summary.version_set();
 
-        (version_set.clone(), summary)
+        (version_set, summary)
     }
 
     async fn recover_wal(&self) {
@@ -209,7 +209,7 @@ impl TsKv {
             let level_info = sv.version.levels_info();
             data.append(&mut level_info[0].read_column_file(sv.ts_family_id, field_id, time_range))
         }
-        return data;
+        data
     }
 
     pub async fn insert_cache(&self, db: &String, seq: u64, points: &Vec<InMemPoint>) {
@@ -477,7 +477,7 @@ impl Engine for TsKv {
             }
         }
 
-        return final_ans;
+        final_ans
     }
 
     //todo...

@@ -135,7 +135,7 @@ impl LevelCompactionPicker {
     fn compare_column_file(a: &Arc<ColumnFile>, b: &Arc<ColumnFile>) -> std::cmp::Ordering {
         match a.time_range().min_ts.cmp(&b.time_range().min_ts) {
             std::cmp::Ordering::Equal => a.size().cmp(&b.size()),
-            ord => return ord,
+            ord => ord,
         }
     }
 
@@ -145,7 +145,7 @@ impl LevelCompactionPicker {
         levels: &[LevelInfo],
     ) -> Option<(LevelId, LevelId)> {
         let mut ctx = LevelCompatContext::default();
-        ctx.cal_score(levels, &ts_family_opt);
+        ctx.cal_score(levels, ts_family_opt);
         ctx.pick_level()
     }
 
@@ -434,15 +434,13 @@ mod test {
             1000,
         ));
 
-        let tsf = TseriesFamily::new(
+        TseriesFamily::new(
             1,
             "ts_family_1".to_string(),
             MemCache::new(1, 1000, 1, false),
             version,
             tsf_opt,
-        );
-
-        tsf
+        )
     }
 
     #[test]
