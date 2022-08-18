@@ -23,7 +23,8 @@ use crate::http::{parse_query, ChannelSendSnafu, Error, HyperSnafu, ParseLinePro
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^\d+([IiUu]?|(.\d*))$").unwrap();
     static ref STRING_PATTERN: Regex = Regex::new("^\".*\"$").unwrap();
-    static ref BOOLEAN_PATTERN: Regex = Regex::new("([tf]|(true)|(false)").unwrap();
+    static ref TRUE_PATTERN: Regex = Regex::new("(t|(true)").unwrap();
+    static ref FALSE_PATTERN: Regex = Regex::new("(f|(false)").unwrap();
 }
 
 pub(crate) async fn route(
@@ -74,7 +75,7 @@ pub(crate) async fn write_line_protocol(
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_millis())
         .context(ParseLineProtocolSnafu)?;
     debug!("Write request: {:?}", line_protocol_lines);
-    let points = parse_lines_to_points(&db, &line_protocol_lines);
+    let points = parse_lines_to_points(&db, &line_protocol_lines)?;
 
     let req = WritePointsRpcRequest { version: 1, points };
 
@@ -146,7 +147,7 @@ pub(crate) async fn query_sql(
     Ok(resp)
 }
 
-fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
+fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> {
     let mut fbb = FlatBufferBuilder::new();
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter() {
@@ -162,27 +163,70 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
         let mut fields = Vec::new();
         for (k, v) in line.fields.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
-            let fbv = fbb.create_vector(v.as_bytes());
-            let mut field_builder = FieldBuilder::new(&mut fbb);
-            field_builder.add_name(fbk);
-            if NUMBER_PATTERN.is_match(v) {
+            let (fbv_type, fbv) = if NUMBER_PATTERN.is_match(v) {
                 if v.ends_with("i") || v.ends_with("I") {
-                    field_builder.add_type_(fb_models::FieldType::Integer);
+                    (
+                        fb_models::FieldType::Integer,
+                        fbb.create_vector(
+                            &v[..v.len() - 1]
+                                .parse::<i64>()
+                                .map_err(|e| Error::Syntax {
+                                    reason: format!("Value '{}' is not valid i64", v),
+                                })?
+                                .to_be_bytes(),
+                        ),
+                    )
                 } else if v.ends_with("u") || v.ends_with("U") {
-                    field_builder.add_type_(fb_models::FieldType::Unsigned);
+                    (
+                        fb_models::FieldType::Unsigned,
+                        fbb.create_vector(
+                            &v[..v.len() - 1]
+                                .parse::<u64>()
+                                .map_err(|e| Error::Syntax {
+                                    reason: format!("Value '{}' is not valid u64", v),
+                                })?
+                                .to_be_bytes(),
+                        ),
+                    )
                 } else {
-                    field_builder.add_type_(fb_models::FieldType::Float);
+                    (
+                        fb_models::FieldType::Float,
+                        fbb.create_vector(
+                            &v[..]
+                                .parse::<f64>()
+                                .map_err(|e| Error::Syntax {
+                                    reason: format!("Value '{}' is not valid f64", v),
+                                })?
+                                .to_be_bytes(),
+                        ),
+                    )
                 }
             } else if STRING_PATTERN.is_match(v) {
-                field_builder.add_type_(fb_models::FieldType::String);
+                (
+                    fb_models::FieldType::String,
+                    fbb.create_vector(v.as_bytes()),
+                )
             } else {
                 let vl = v.to_lowercase();
-                if BOOLEAN_PATTERN.is_match(&vl) {
-                    field_builder.add_type_(fb_models::FieldType::Boolean);
+                if TRUE_PATTERN.is_match(&vl) {
+                    (
+                        fb_models::FieldType::Boolean,
+                        fbb.create_vector(&[1_u8][..]),
+                    )
+                } else if FALSE_PATTERN.is_match(&vl) {
+                    (
+                        fb_models::FieldType::Boolean,
+                        fbb.create_vector(&[0_u8][..]),
+                    )
                 } else {
-                    field_builder.add_type_(fb_models::FieldType::Unknown);
+                    (
+                        fb_models::FieldType::Unknown,
+                        fbb.create_vector(v.as_bytes()),
+                    )
                 }
-            }
+            };
+            let mut field_builder = FieldBuilder::new(&mut fbb);
+            field_builder.add_name(fbk);
             field_builder.add_value(fbv);
             fields.push(field_builder.finish());
         }
@@ -206,7 +250,7 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
         },
     );
     fbb.finish(points, None);
-    fbb.finished_data().to_vec()
+    Ok(fbb.finished_data().to_vec())
 }
 
 fn message_404(req: Request<Body>) -> Result<Response<Body>, Error> {
