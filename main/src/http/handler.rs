@@ -5,18 +5,26 @@ use datafusion::arrow::util::pretty::pretty_format_batches;
 use flatbuffers::FlatBufferBuilder;
 use futures::StreamExt;
 use hyper::{Body, Request, Response};
+use lazy_static::lazy_static;
 use line_protocol::{line_protocol_to_lines, Line};
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models::{
     self as fb_models, FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder,
 };
 use query::db::Db;
+use regex::Regex;
 use snafu::ResultExt;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use trace::debug;
 
 use crate::http::{parse_query, ChannelSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+
+lazy_static! {
+    static ref NUMBER_PATTERN: Regex = Regex::new(r"^\d+([IiUu]?|(.\d*))$").unwrap();
+    static ref STRING_PATTERN: Regex = Regex::new("^\".*\"$").unwrap();
+    static ref BOOLEAN_PATTERN: Regex = Regex::new("([tf]|(true)|(false)").unwrap();
+}
 
 pub(crate) async fn route(
     req: Request<Body>,
@@ -34,22 +42,19 @@ pub(crate) async fn write_line_protocol(
     req: Request<Body>,
     sender: UnboundedSender<tskv::Task>,
 ) -> Result<Response<Body>, Error> {
-    let database: String;
+    let db: String;
     if let Some(query) = req.uri().query() {
         let query_params = parse_query(query);
-        database = query_params
-            .get("database")
-            .unwrap_or(&"")
-            .to_string();
+        db = query_params.get("db").unwrap_or(&"").to_string();
     } else {
         return Err(Error::Syntax {
             reason: "Need some request parameters.".to_string(),
         });
     }
 
-    if database.is_empty() {
+    if db.is_empty() {
         return Err(Error::Syntax {
-            reason: "Request has no parameter 'database'.".to_string(),
+            reason: "Request has no parameter 'db'.".to_string(),
         });
     }
 
@@ -59,20 +64,21 @@ pub(crate) async fn write_line_protocol(
     while let Some(chunk) = body.next().await {
         let chunk = chunk.context(HyperSnafu)?;
         len += chunk.len();
-        if len > 102400 {
-            return Err(Error::BodyOversize { size: 102400 });
-        }
+        // if len > 102400 {
+        //     return Err(Error::BodyOversize { size: 102400 });
+        // }
         buffer.extend_from_slice(chunk.as_ref());
     }
+    println!("Body size: {}", &len);
     let lines = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_millis())
         .context(ParseLineProtocolSnafu)?;
     debug!("Write request: {:?}", line_protocol_lines);
-    let points = parse_lines_to_points(&database, &line_protocol_lines);
+    let points = parse_lines_to_points(&db, &line_protocol_lines);
 
     let req = WritePointsRpcRequest {
         version: 1,
-        database,
+        database: db,
         points,
     };
 
@@ -90,28 +96,29 @@ pub(crate) async fn write_line_protocol(
     };
 
     let resp = http::Response::builder()
+        .status(204)
         .body(Body::from("Write succeed."))
         .unwrap();
     Ok(resp)
 }
 
-pub(crate) async fn query_sql(req: Request<Body>, db: Arc<Db>) -> Result<Response<Body>, Error> {
-    let database: String;
+pub(crate) async fn query_sql(
+    req: Request<Body>,
+    database: Arc<Db>,
+) -> Result<Response<Body>, Error> {
+    let db: String;
     if let Some(query) = req.uri().query() {
         let query_params = parse_query(query);
-        database = query_params
-            .get("database")
-            .unwrap_or(&"")
-            .to_string();
+        db = query_params.get("db").unwrap_or(&"").to_string();
     } else {
         return Err(Error::Syntax {
             reason: "Need some request parameters.".to_string(),
         });
     }
 
-    if database.is_empty() {
+    if db.is_empty() {
         return Err(Error::Syntax {
-            reason: "Request has no parameter 'database'.".to_string(),
+            reason: "Request has no parameter 'db'.".to_string(),
         });
     }
 
@@ -121,14 +128,15 @@ pub(crate) async fn query_sql(req: Request<Body>, db: Arc<Db>) -> Result<Respons
     while let Some(chunk) = body.next().await {
         let chunk = chunk.context(HyperSnafu)?;
         len += chunk.len();
-        if len > 102400 {
-            return Err(Error::BodyOversize { size: 102400 });
-        }
+        // if len > 102400 {
+        //     return Err(Error::BodyOversize { size: 102400 });
+        // }
         buffer.extend_from_slice(chunk.as_ref());
     }
+    println!("Body size: {}", &len);
     let sql = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
 
-    let record_batches = if let Some(rbs) = db.run_query(&sql).await {
+    let record_batches = if let Some(rbs) = database.run_query(&sql).await {
         rbs
     } else {
         Vec::new()
@@ -161,7 +169,24 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Vec<u8> {
             let fbv = fbb.create_vector(v.as_bytes());
             let mut field_builder = FieldBuilder::new(&mut fbb);
             field_builder.add_name(fbk);
-            field_builder.add_type_(fb_models::FieldType::Float);
+            if NUMBER_PATTERN.is_match(v) {
+                if v.ends_with("i") || v.ends_with("I") {
+                    field_builder.add_type_(fb_models::FieldType::Integer);
+                } else if v.ends_with("u") || v.ends_with("U") {
+                    field_builder.add_type_(fb_models::FieldType::Unsigned);
+                } else {
+                    field_builder.add_type_(fb_models::FieldType::Float);
+                }
+            } else if STRING_PATTERN.is_match(v) {
+                field_builder.add_type_(fb_models::FieldType::String);
+            } else {
+                let vl = v.to_lowercase();
+                if BOOLEAN_PATTERN.is_match(&vl) {
+                    field_builder.add_type_(fb_models::FieldType::Boolean);
+                } else {
+                    field_builder.add_type_(fb_models::FieldType::Unknown);
+                }
+            }
             field_builder.add_value(fbv);
             fields.push(field_builder.finish());
         }
@@ -190,4 +215,19 @@ fn message_404(req: Request<Body>) -> Result<Response<Body>, Error> {
         .status(404)
         .body(Body::from(format!("URI not found: {}", req.uri().path())))
         .unwrap())
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_parse() {
+        let number_strings = ["0.1", "1.99999", "99999999i", "999I", "1U", "1u"];
+        let non_number_strings = ["\"0.1\"", "1.99.99.9", ".50", "999B", "1.0I", "1.1U"];
+        for s in number_strings {
+            println!("{} is number? {}", s, super::NUMBER_PATTERN.is_match(s));
+        }
+        for s in non_number_strings {
+            println!("{} is number? {}", s, super::NUMBER_PATTERN.is_match(s));
+        }
+    }
 }

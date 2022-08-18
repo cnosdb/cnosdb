@@ -1,5 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use utils::BkdrHasher;
 
 use crate::{
@@ -88,6 +89,38 @@ pub struct SeriesInfo {
 
     db: String,
     table: String,
+}
+
+impl Display for SeriesInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut tags = String::new();
+        if !self.tags.is_empty() {
+            for t in self.tags.iter() {
+                tags.push_str(&String::from_utf8(t.key.clone()).unwrap());
+                tags.push_str("=");
+                tags.push_str(&String::from_utf8(t.value.clone()).unwrap());
+                tags.push_str(",");
+            }
+            tags.truncate(tags.len() - 1);
+        }
+
+        let mut field_infos = String::new();
+        if !self.field_infos.is_empty() {
+            for t in self.field_infos.iter() {
+                field_infos.push_str(&String::from_utf8(t.name().clone()).unwrap());
+                field_infos.push_str("_t_");
+                field_infos.push_str(&format!("{}", t.value_type()));
+                field_infos.push_str(",");
+            }
+            field_infos.truncate(tags.len() - 1);
+        }
+
+        write!(
+            f,
+            "SeriesInfo: {{id: {}, tags: [{}], field_infos: [{}], table: {}}}",
+            self.id, tags, field_infos, self.table
+        )
+    }
 }
 
 impl SeriesInfo {
