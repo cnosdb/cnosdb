@@ -14,7 +14,7 @@ use std::{
 use config::get_config;
 use crossbeam::channel::internal::SelectHandle;
 use lazy_static::lazy_static;
-use models::{FieldId, Timestamp, ValueType};
+use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
@@ -684,25 +684,24 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
-    // version_set when we insert each point
-    pub async fn put_mutcache(
+    pub async fn put_points(
         &mut self,
-        raw: &mut MemRaw<'_>,
+        seq: u64,
+        points: &Vec<InMemPoint>,
         sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     ) {
-        if self.immut_ts_min == i64::MIN {
-            self.immut_ts_min = raw.ts;
-        }
-        if raw.ts >= self.immut_ts_min {
-            if raw.ts > self.mut_ts_max {
-                self.mut_ts_max = raw.ts;
+        for p in points.iter() {
+            let sid = p.series_id();
+            for f in p.fields().iter() {
+                self.put_mutcache(&mut MemRaw {
+                    seq,
+                    ts: p.timestamp,
+                    field_id: f.field_id(),
+                    field_type: f.value_type,
+                    val: &f.value,
+                })
+                .await;
             }
-            let mut mem = self.super_version.caches.mut_cache.write();
-            let _ = mem.insert_raw(raw);
-        } else {
-            let mut delta_mem = self.super_version.caches.delta_mut_cache.write();
-            let _ = delta_mem.insert_raw(raw);
         }
 
         if self.super_version.caches.mut_cache.read().is_full() {
@@ -715,6 +714,24 @@ impl TseriesFamily {
 
         if self.super_version.caches.delta_mut_cache.read().is_full() {
             self.wrap_delta_flush_req(sender.clone()).await;
+        }
+    }
+
+    // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
+    // version_set when we insert each point
+    pub async fn put_mutcache(&mut self, raw: &mut MemRaw<'_>) {
+        if self.immut_ts_min == i64::MIN {
+            self.immut_ts_min = raw.ts;
+        }
+        if raw.ts >= self.immut_ts_min {
+            if raw.ts > self.mut_ts_max {
+                self.mut_ts_max = raw.ts;
+            }
+            let mut mem = self.super_version.caches.mut_cache.write();
+            let _ = mem.insert_raw(raw);
+        } else {
+            let mut delta_mem = self.super_version.caches.delta_mut_cache.write();
+            let _ = delta_mem.insert_raw(raw);
         }
     }
 
@@ -999,17 +1016,14 @@ mod test {
             )),
             tcfg.clone(),
         );
-        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
-        tsf.put_mutcache(
-            &mut MemRaw {
-                seq: 0,
-                ts: 0,
-                field_id: 0,
-                field_type: ValueType::Integer,
-                val: 10_i32.to_be_bytes().as_slice(),
-            },
-            flush_task_sender,
-        )
+
+        tsf.put_mutcache(&mut MemRaw {
+            seq: 0,
+            ts: 0,
+            field_id: 0,
+            field_type: ValueType::Integer,
+            val: 10_i32.to_be_bytes().as_slice(),
+        })
         .await;
         assert_eq!(
             tsf.mut_cache.read().data_cache.get(&0).unwrap().cells.len(),

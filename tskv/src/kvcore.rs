@@ -226,23 +226,8 @@ impl TsKv {
             ),
         };
 
-        for p in points.iter() {
-            let sid = p.series_id();
-
-            for f in p.fields().iter() {
-                tsf.put_mutcache(
-                    &mut MemRaw {
-                        seq,
-                        ts: p.timestamp as i64,
-                        field_id: f.field_id(),
-                        field_type: f.value_type,
-                        val: &f.value,
-                    },
-                    self.flush_task_sender.clone(),
-                )
-                .await;
-            }
-        }
+        tsf.put_points(seq, points, self.flush_task_sender.clone())
+            .await;
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
@@ -374,14 +359,8 @@ impl TsKv {
         warn!("job 'main' started.");
     }
 
-    async fn write_points(
-        &self,
-        write_batch: WritePointsRpcRequest,
-        mut seq: u64,
-        from_wal: bool,
-    ) -> Result<WritePointsRpcResponse> {
-        let shared_write_batch = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
+    async fn build_mem_points(&self, points: Arc<Vec<u8>>) -> Result<(String, Vec<InMemPoint>)> {
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
@@ -411,25 +390,7 @@ impl TsKv {
             mem_points.push(point);
         }
 
-        // write wal
-        if !from_wal {
-            let (cb, rx) = oneshot::channel();
-            self.wal_sender
-                .send(WalTask::Write {
-                    points: shared_write_batch.clone(),
-                    cb,
-                })
-                .map_err(|err| Error::Send)?;
-            let (tmp, _) = rx.await.context(error::ReceiveSnafu)??;
-            seq = tmp;
-        }
-
-        self.insert_cache(&db_name, seq, &mem_points).await;
-
-        Ok(WritePointsRpcResponse {
-            version: 1,
-            points: vec![],
-        })
+        return Ok((db_name, mem_points));
     }
 
     // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
@@ -439,14 +400,37 @@ impl TsKv {
 #[async_trait::async_trait]
 impl Engine for TsKv {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
-        self.write_points(write_batch, 0, false).await
+        let points = Arc::new(write_batch.points);
+        let (db_name, mem_points) = self.build_mem_points(points.clone()).await?;
+
+        let (cb, rx) = oneshot::channel();
+        self.wal_sender
+            .send(WalTask::Write { cb, points })
+            .map_err(|err| Error::Send)?;
+        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+
+        self.insert_cache(&db_name, seq, &mem_points).await;
+
+        Ok(WritePointsRpcResponse {
+            version: 1,
+            points: vec![],
+        })
     }
+
     async fn write_from_wal(
         &self,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
-        self.write_points(write_batch, seq, true).await
+        let points = Arc::new(write_batch.points);
+        let (db_name, mem_points) = self.build_mem_points(points.clone()).await?;
+
+        self.insert_cache(&db_name, seq, &mem_points).await;
+
+        Ok(WritePointsRpcResponse {
+            version: 1,
+            points: vec![],
+        })
     }
 
     fn read(
