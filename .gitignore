@@ -2,6 +2,7 @@
 /.idea/
 /.vscode/
 /dev/
+/query/dev
 
 # Cargo
 **/target
