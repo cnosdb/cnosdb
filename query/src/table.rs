@@ -11,7 +11,10 @@ use datafusion::{
 };
 use tskv::engine::EngineRef;
 
-use crate::{predicate::Predicate, schema::TableSchema, tskv_exec::TskvExec};
+use crate::{
+    helper::expr_applicable_for_cols, predicate::Predicate, schema::TableSchema,
+    tskv_exec::TskvExec,
+};
 
 pub struct ClusterTable {
     engine: EngineRef,
@@ -63,8 +66,10 @@ impl TableProvider for ClusterTable {
         let filter = Arc::new(
             Predicate::default()
                 .set_limit(limit)
+                .extract_pushed_down_domains(filters, &self.schema)
                 .pushdown_exprs(filters),
         );
+
         return self
             .create_physical_plan(projection, filter.clone(), self.schema())
             .await;

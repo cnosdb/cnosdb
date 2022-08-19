@@ -1,3 +1,7 @@
+mod domain;
+
+pub use domain::RowExpressionToDomainsVisitor;
+
 use std::result;
 
 use datafusion::{

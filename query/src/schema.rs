@@ -44,7 +44,7 @@ impl TableSchema {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TableFiled {
     pub id: u64,
     pub name: String,
@@ -106,7 +106,7 @@ impl TryFrom<ArrowDataType> for ColumnType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ColumnType {
     Tag,
     Time,

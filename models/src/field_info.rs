@@ -9,7 +9,7 @@ use crate::{
 
 const FIELD_NAME_MAX_LEN: usize = 512;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
 pub enum ValueType {
     Unknown,
     Float,
