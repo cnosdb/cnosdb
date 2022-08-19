@@ -19,4 +19,11 @@ pub enum Error {
 
     #[snafu(display("Invalid serde message: {}", err))]
     InvalidSerdeMessage { err: String },
+
+    #[snafu(display(
+        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+    code and we would welcome that you file an bug report in our issue tracker",
+        err
+    ))]
+    Internal { err: String },
 }
