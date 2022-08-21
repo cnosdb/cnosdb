@@ -40,6 +40,7 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
+use futures::FutureExt;
 
 pub struct Entry {
     pub series_id: u64,
@@ -58,7 +59,7 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self> {
+    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self, Error> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
@@ -69,7 +70,7 @@ impl TsKv {
             ts_family_num,
             shared_options.ts_family.clone(),
         )
-        .await;
+            .await?;
 
         let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -83,22 +84,25 @@ impl TsKv {
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
         };
-        core.run_wal_job(wal_receiver);
-        core.run_flush_job(
+        let wal = tokio::spawn(run_wal_job(core.options.wal.clone(), wal_receiver));
+        let flush = tokio::spawn(run_flush_job(
             flush_task_receiver,
             summary.global_context().clone(),
             summary.version_set().clone(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
-        );
-        core.run_compact_job(
+        ));
+        let compact = tokio::spawn(run_compact_job(
             compact_task_receiver,
             summary.global_context().clone(),
             summary.version_set().clone(),
             summary_task_sender.clone(),
-        );
-        core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
+        ));
 
+        let summary = tokio::spawn(run_summary_job(summary, summary_task_receiver, summary_task_sender));
+        if let Err(e) = tokio::try_join!(wal, flush, compact, summary) {
+            return Err(Error::Compact { reason: e.to_string()})
+        }
         Ok(core)
     }
 
@@ -107,11 +111,13 @@ impl TsKv {
         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
         ts_family_num: u32,
         ts_family_opt: Arc<TseriesFamOpt>,
-    ) -> (Arc<RwLock<VersionSet>>, Summary) {
+    ) -> Result<(Arc<RwLock<VersionSet>>, Summary), Error> {
         if !file_manager::try_exists(&opt.db.db_path) {
             std::fs::create_dir_all(&opt.db.db_path)
-                .context(error::IOSnafu)
-                .unwrap();
+                .context(error::IOSnafu).map_err(|e|{
+                Err(Error::OpenFile {source: std::io::Error::from(e)})
+            });
+                //.unwrap();
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
@@ -134,7 +140,7 @@ impl TsKv {
             .await
             .unwrap();
 
-        (version_set.clone(), summary)
+        Ok((version_set.clone(), summary))
     }
 
     pub async fn write(
@@ -284,7 +290,7 @@ impl TsKv {
                         min_ts: min,
                         max_ts: max,
                     })
-                    .await;
+                        .await;
                     super_version = Some(tsf.super_version())
                 }
             };
@@ -331,115 +337,13 @@ impl TsKv {
                             },
                             self.flush_task_sender.clone(),
                         )
-                        .await
+                            .await
                     }
                 } else {
                     warn!("ts_family for sid {} not found.", sid);
                 }
             }
         }
-    }
-
-    fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
-        warn!("job 'WAL' starting.");
-        let wal_opt = self.options.wal.clone();
-        let mut wal_manager = WalManager::new(wal_opt);
-        let f = async move {
-            while let Some(x) = receiver.recv().await {
-                match x {
-                    WalTask::Write { points, cb } => {
-                        // write wal
-                        let ret = wal_manager.write(WalEntryType::Write, &points).await;
-                        let send_ret = cb.send(ret);
-                        match send_ret {
-                            Ok(wal_result) => {}
-                            Err(err) => {
-                                warn!("send WAL write result failed.")
-                            }
-                        }
-                    }
-                }
-            }
-        };
-        tokio::spawn(f);
-        warn!("job 'WAL' started.");
-    }
-
-    fn run_flush_job(
-        &self,
-        mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
-        ctx: Arc<GlobalContext>,
-        version_set: Arc<RwLock<VersionSet>>,
-        summary_task_sender: UnboundedSender<SummaryTask>,
-        compact_task_sender: UnboundedSender<TseriesFamilyId>,
-    ) {
-        let f = async move {
-            while let Some(x) = receiver.recv().await {
-                run_flush_memtable_job(
-                    x.clone(),
-                    ctx.clone(),
-                    HashMap::new(),
-                    version_set.clone(),
-                    summary_task_sender.clone(),
-                    compact_task_sender.clone(),
-                )
-                .await
-                .unwrap();
-            }
-        };
-        tokio::spawn(f);
-        warn!("Flush task handler started");
-    }
-
-    fn run_compact_job(
-        &self,
-        mut receiver: UnboundedReceiver<TseriesFamilyId>,
-        ctx: Arc<GlobalContext>,
-        version_set: Arc<RwLock<VersionSet>>,
-        summary_task_sender: UnboundedSender<SummaryTask>,
-    ) {
-        tokio::spawn(async move {
-            while let Some(ts_family_id) = receiver.recv().await {
-                if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
-                    if let Some(compact_req) = tsf.pick_compaction() {
-                        match compaction::run_compaction_job(compact_req, ctx.clone()) {
-                            Ok(Some(version_edit)) => {
-                                let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret = summary_task_sender.send(SummaryTask {
-                                    edits: vec![version_edit],
-                                    cb: summary_tx,
-                                });
-                                // TODO Handle summary result using summary_rx.
-                            }
-                            Ok(None) => {
-                                info!("There is nothing to compact.");
-                            }
-                            Err(e) => {
-                                error!("Compaction job failed: {:?}", e);
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    fn run_summary_job(
-        &self,
-        summary: Summary,
-        mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
-        summary_task_sender: UnboundedSender<SummaryTask>,
-    ) {
-        let f = async move {
-            let mut summary_processor = summary::SummaryProcessor::new(Box::new(summary));
-            while let Some(x) = summary_task_receiver.recv().await {
-                debug!("Apply Summary task");
-                summary_processor.batch(x);
-                summary_processor.apply().await;
-            }
-        };
-        tokio::spawn(f);
-        warn!("Summary task handler started");
     }
 
     pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
@@ -474,4 +378,87 @@ impl TsKv {
     pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
         Ok(None)
     }
+}
+
+
+async fn run_wal_job(wal_opt: Arc<WalConfig>, mut receiver: UnboundedReceiver<WalTask>) -> Result<()> {
+    warn!("job 'WAL' starting.");
+    let mut wal_manager = WalManager::new(wal_opt);
+    while let Some(x) = receiver.recv().await {
+        match x {
+            WalTask::Write { points, cb } => {
+                // write wal
+                wal_manager.write(WalEntryType::Write, &points).await?;
+            }
+        }
+    }
+    warn!("job 'WAL' started.");
+    Ok(())
+}
+
+async fn run_flush_job(
+    mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
+    ctx: Arc<GlobalContext>,
+    version_set: Arc<RwLock<VersionSet>>,
+    summary_task_sender: UnboundedSender<SummaryTask>,
+    compact_task_sender: UnboundedSender<TseriesFamilyId>,
+) -> Result<()> {
+    while let Some(x) = receiver.recv().await {
+        run_flush_memtable_job(
+            x.clone(),
+            ctx.clone(),
+            HashMap::new(),
+            version_set.clone(),
+            summary_task_sender.clone(),
+            compact_task_sender.clone(),
+        ).await?;
+    }
+    warn!("Flush task handler started");
+    Ok(())
+}
+
+async fn run_compact_job(
+    mut receiver: UnboundedReceiver<TseriesFamilyId>,
+    ctx: Arc<GlobalContext>,
+    version_set: Arc<RwLock<VersionSet>>,
+    summary_task_sender: UnboundedSender<SummaryTask>,
+) -> Result<()> {
+    while let Some(ts_family_id) = receiver.recv().await {
+        if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
+            if let Some(compact_req) = tsf.pick_compaction() {
+                match compaction::run_compaction_job(compact_req, ctx.clone()) {
+                    Ok(Some(version_edit)) => {
+                        let (summary_tx, summary_rx) = oneshot::channel();
+                        let ret = summary_task_sender.send(SummaryTask {
+                            edits: vec![version_edit],
+                            cb: summary_tx,
+                        });
+                        // TODO Handle summary result using summary_rx.
+                    }
+                    Ok(None) => {
+                        info!("There is nothing to compact.");
+                    }
+                    Err(e) => {
+                        error!("Compaction job failed: {:?}", e);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn run_summary_job(
+    summary: Summary,
+    mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
+    summary_task_sender: UnboundedSender<SummaryTask>,
+) -> Result<()> {
+    let mut summary_processor = summary::SummaryProcessor::new(Box::new(summary));
+    while let Some(x) = summary_task_receiver.recv().await {
+        debug!("Apply Summary task");
+        summary_processor.batch(x);
+        summary_processor.apply().await;
+    }
+    warn!("Summary task handler started");
+    Ok(())
 }
