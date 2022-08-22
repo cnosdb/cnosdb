@@ -45,12 +45,15 @@ table Field {
 }
 
 table Point {
+    db: [ubyte];
+    table: [ubyte];
     tags: [Tag];
     fields: [Field];
     timestamp: int64;
 }
 
 table Points {
+    database: [ubyte];
     points: [Point];
 }
 

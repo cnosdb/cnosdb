@@ -17,11 +17,11 @@ level_ratio = 16
 base_file_size = 16777216 # 16 * 1024 * 1024
 compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
-tsm_dir = "db/tsm/"
-delta_dir = "db/delta/"
+tsm_dir = "dev/tsm/"
+delta_dir = "dev/delta/"
 max_memcache_size = 134217728 # 128 * 1024 * 1024
 max_immemcache_num =  4
 #SchemaStoreConfig
 schema_store_config_dir = "dev/schema"
 #forward index config
-index_path = "/tmp/test/tskv.fidx"
+index_path = "dev/idx"

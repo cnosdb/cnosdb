@@ -1,14 +1,8 @@
 use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thread::JoinHandle};
 
-use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use futures::stream::SelectNextSome;
-use models::{FieldId, SeriesId, SeriesKey, Timestamp};
+use libc::printf;
 use parking_lot::{Mutex, RwLock};
-use protos::models::Points;
-use protos::{
-    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
-    models as fb_models,
-};
 use snafu::ResultExt;
 use tokio::{
     runtime::Builder,
@@ -17,12 +11,21 @@ use tokio::{
         oneshot,
     },
 };
+
+use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use models::{FieldId, SeriesId, SeriesKey, Timestamp};
+use protos::models::Points;
+use protos::{
+    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
+    models as fb_models,
+};
 use trace::{debug, error, info, trace, warn};
 
 use crate::engine::Engine;
+use crate::index::utils::unite_id;
 use crate::index::IndexResult;
 use crate::memcache::MemRaw;
-use crate::tsm::DataBlock;
+use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -50,10 +53,11 @@ pub struct Entry {
 #[derive(Debug)]
 pub struct TsKv {
     options: Arc<Options>,
+    global_ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
 
     wal_sender: UnboundedSender<WalTask>,
-    db_index: Arc<RwLock<db_index::DBIndex>>,
+    index_set: Arc<RwLock<db_index::DbIndexSet>>,
 
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
@@ -66,38 +70,41 @@ impl TsKv {
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
-        let (version_set, summary) = Self::recover(
+        let (version_set, summary) = Self::recover_summary(
             shared_options.clone(),
-            flush_task_sender.clone(),
             ts_family_num,
             shared_options.ts_family.clone(),
         )
         .await;
 
-        let fidx = db_index::DBIndex::new(&shared_options.index_conf.path);
+        let wal_cfg = shared_options.wal.clone();
+        let index_set = db_index::DbIndexSet::new(&shared_options.index_conf.path);
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self {
-            options: shared_options,
-            db_index: Arc::new(RwLock::new(fidx)),
             version_set,
+            global_ctx: summary.global_context(),
             wal_sender,
             flush_task_sender,
+            options: shared_options,
+            index_set: Arc::new(RwLock::new(index_set)),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
         };
+
+        core.recover_wal().await;
         core.run_wal_job(wal_receiver);
         core.run_flush_job(
             flush_task_receiver,
-            summary.global_context().clone(),
-            summary.version_set().clone(),
+            summary.global_context(),
+            summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
         );
         core.run_compact_job(
             compact_task_receiver,
-            summary.global_context().clone(),
-            summary.version_set().clone(),
+            summary.global_context(),
+            summary.version_set(),
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
@@ -105,9 +112,8 @@ impl TsKv {
         Ok(core)
     }
 
-    async fn recover(
+    async fn recover_summary(
         opt: Arc<Options>,
-        flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
         ts_family_num: u32,
         ts_family_opt: Arc<TseriesFamOpt>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
@@ -126,23 +132,27 @@ impl TsKv {
                 .await
                 .unwrap()
         };
-        let version_set = summary.version_set().clone();
-        let wal_manager = WalManager::new(opt.wal.clone());
+        let version_set = summary.version_set();
+
+        (version_set, summary)
+    }
+
+    async fn recover_wal(&self) {
+        let wal_manager = WalManager::new(self.options.wal.clone());
+
         wal_manager
             .recover(
-                version_set.clone(),
-                summary.global_context().clone(),
-                flush_task_sender,
+                self,
+                self.global_ctx.clone(),
+                self.flush_task_sender.clone(),
             )
             .await
             .unwrap();
-
-        (version_set.clone(), summary)
     }
 
     pub fn read_point(
         &self,
-        sid: SeriesId,
+        db: &String,
         time_range: &TimeRange,
         field_id: FieldId,
     ) -> Vec<DataBlock> {
@@ -150,10 +160,10 @@ impl TsKv {
         let mut super_version: Option<Arc<SuperVersion>> = None;
         {
             let version_set = self.version_set.read();
-            if let Some(tsf) = version_set.get_tsfamily_immut(sid) {
+            if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
                 super_version = Some(tsf.super_version());
             } else {
-                warn!("ts_family with sid {} not found.", sid);
+                warn!("ts_family with db name{} not found.", db);
             }
         };
         if let Some(sv) = super_version {
@@ -199,34 +209,25 @@ impl TsKv {
             let level_info = sv.version.levels_info();
             data.append(&mut level_info[0].read_column_file(sv.ts_family_id, field_id, time_range))
         }
-        return data;
+        data
     }
 
-    pub async fn insert_cache(&self, seq: u64, ps: &Points<'_>) {
-        if let Some(points) = ps.points() {
-            let mut version_set = self.version_set.write();
-            for point in points.iter() {
-                let p = InMemPoint::from(point);
-                let sid = p.series_id();
-                if let Some(tsf) = version_set.get_tsfamily(sid) {
-                    for f in p.fields().iter() {
-                        tsf.put_mutcache(
-                            &mut MemRaw {
-                                seq,
-                                ts: point.timestamp() as i64,
-                                field_id: f.field_id(),
-                                field_type: f.value_type,
-                                val: &f.value,
-                            },
-                            self.flush_task_sender.clone(),
-                        )
-                        .await
-                    }
-                } else {
-                    warn!("ts_family for sid {} not found.", sid);
-                }
-            }
-        }
+    pub async fn insert_cache(&self, db: &String, seq: u64, points: &Vec<InMemPoint>) {
+        let mut version_set = self.version_set.write();
+        let tsf = match version_set.get_mutable_tsfamily_by_name(db) {
+            Some(v) => v,
+            None => version_set.add_tsfamily(
+                0,
+                db.clone(),
+                seq,
+                self.global_ctx.file_id_next(),
+                self.options.ts_family.clone(),
+                self.summary_task_sender.clone(),
+            ),
+        };
+
+        tsf.put_points(seq, points, self.flush_task_sender.clone())
+            .await;
     }
 
     fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
@@ -331,22 +332,23 @@ impl TsKv {
         warn!("Summary task handler started");
     }
 
-    pub fn start(tskv: TsKv, mut req_rx: UnboundedReceiver<Task>) {
+    pub fn start(tskv: Arc<TsKv>, mut req_rx: UnboundedReceiver<Task>) {
         warn!("job 'main' starting.");
         let f = async move {
             while let Some(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
-                        warn!("writing points.");
+                        debug!("writing points.");
                         match tskv.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
                             }
                             Err(err) => {
+                                info!("write points error {:?}", err);
                                 let _ret = tx.send(Err(err));
                             }
                         }
-                        warn!("write points completed.");
+                        debug!("write points completed.");
                     }
                     _ => panic!("unimplemented."),
                 }
@@ -357,6 +359,40 @@ impl TsKv {
         warn!("job 'main' started.");
     }
 
+    async fn build_mem_points(&self, points: Arc<Vec<u8>>) -> Result<(String, Vec<InMemPoint>)> {
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
+            .context(error::InvalidFlatbufferSnafu)?;
+
+        let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
+            .map_err(|err| Error::ErrCharacterSet)?;
+
+        let mut mem_points = Vec::<_>::with_capacity(fb_points.points().unwrap().len());
+        // get or create forward index
+        for point in fb_points.points().unwrap() {
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let sid = self
+                .index_set
+                .write()
+                .get_db_index(&db_name)
+                .add_series_if_not_exists(&mut info)
+                .await
+                .context(error::IndexErrSnafu)?;
+
+            let mut point = InMemPoint::from(point);
+            point.series_id = sid;
+            let fields = info.field_infos();
+
+            for i in 0..fields.len() {
+                point.fields[i].field_id = fields[i].field_id();
+            }
+
+            mem_points.push(point);
+        }
+
+        return Ok((db_name, mem_points));
+    }
+
     // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
     //     Ok(None)
     // }
@@ -364,31 +400,33 @@ impl TsKv {
 #[async_trait::async_trait]
 impl Engine for TsKv {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
-        let shared_write_batch = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
-            .context(error::InvalidFlatbufferSnafu)?;
+        let points = Arc::new(write_batch.points);
+        let (db_name, mem_points) = self.build_mem_points(points.clone()).await?;
 
-        // get or create forward index
-        for point in fb_points.points().unwrap() {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            self.db_index
-                .write()
-                .add_series_if_not_exists(&mut info)
-                .await
-                .context(error::IndexErrSnafu)?;
-        }
-
-        // write wal
         let (cb, rx) = oneshot::channel();
         self.wal_sender
-            .send(WalTask::Write {
-                points: shared_write_batch.clone(),
-                cb,
-            })
+            .send(WalTask::Write { cb, points })
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
-        self.insert_cache(seq, &fb_points).await;
+
+        self.insert_cache(&db_name, seq, &mem_points).await;
+
+        Ok(WritePointsRpcResponse {
+            version: 1,
+            points: vec![],
+        })
+    }
+
+    async fn write_from_wal(
+        &self,
+        write_batch: WritePointsRpcRequest,
+        seq: u64,
+    ) -> Result<WritePointsRpcResponse> {
+        let points = Arc::new(write_batch.points);
+        let (db_name, mem_points) = self.build_mem_points(points.clone()).await?;
+
+        self.insert_cache(&db_name, seq, &mem_points).await;
+
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -397,17 +435,19 @@ impl Engine for TsKv {
 
     fn read(
         &self,
+        db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<FieldId>,
-    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
+        fields: Vec<u32>,
+    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
         // get data block
         let mut ans = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert(HashMap::new());
             for field_id in fields.iter() {
                 let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
-                field_id_entry.append(&mut self.read_point(sid, time_range, *field_id));
+                let fid = unite_id((*field_id).into(), sid);
+                field_id_entry.append(&mut self.read_point(db, time_range, fid));
             }
         }
 
@@ -417,20 +457,26 @@ impl Engine for TsKv {
             let sid_entry = final_ans.entry(i.0).or_insert(HashMap::new());
             for j in i.1 {
                 let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
-                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, 1000));
+                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, MAX_BLOCK_VALUES));
             }
         }
 
-        return final_ans;
+        final_ans
     }
 
+    //todo...
     async fn delete_series(
         &self,
+        db: &String,
         sids: Vec<SeriesId>,
         min: Timestamp,
         max: Timestamp,
     ) -> Result<()> {
-        let series_infos = self.db_index.read().get_series_info_list(&sids);
+        let series_infos = self
+            .index_set
+            .write()
+            .get_db_index(db)
+            .get_series_info_list(&sids);
         let timerange = TimeRange {
             max_ts: max,
             min_ts: min,
@@ -474,19 +520,31 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn get_table_schema(&self, tab: &String) -> Result<Option<Vec<FieldInfo>>> {
-        let mut index = self.db_index.write();
-
-        let val = index.get_table_schema(tab).context(error::IndexErrSnafu)?;
+    fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>> {
+        let val = self
+            .index_set
+            .write()
+            .get_db_index(db)
+            .get_table_schema(tab)
+            .context(error::IndexErrSnafu)?;
 
         Ok(val)
     }
 
-    async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
-        self.db_index.read().get_series_id_list(tab, tags).await
+    async fn get_series_id_list(
+        &self,
+        db: &String,
+        tab: &String,
+        tags: &Vec<Tag>,
+    ) -> IndexResult<Vec<u64>> {
+        self.index_set
+            .write()
+            .get_db_index(db)
+            .get_series_id_list(tab, tags)
+            .await
     }
 
-    async fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
-        self.db_index.write().get_series_key(sid).await
+    fn get_series_key(&self, db: &String, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        self.index_set.write().get_db_index(db).get_series_key(sid)
     }
 }

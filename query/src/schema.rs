@@ -10,15 +10,20 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef};
-use models::{FieldInfo, ValueType};
 use serde::{Deserialize, Serialize};
+
+use models::{FieldInfo, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
+pub const FIELD_ID: &str = "_field_id";
+pub const TAG: &str = "_tag";
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableSchema {
+    pub db: String,
     pub name: String,
-    pub fields: BTreeMap<String, IsiphoFiled>,
+    pub fields: BTreeMap<String, TableFiled>,
 }
 
 impl TableSchema {
@@ -29,7 +34,8 @@ impl TableSchema {
             .map(|(name, schema)| {
                 let mut f = Field::new(name, schema.column_type.into(), true);
                 let mut map = BTreeMap::new();
-                map.insert("1".to_string(), schema.id.to_string());
+                map.insert(FIELD_ID.to_string(), schema.id.to_string());
+                map.insert(TAG.to_string(), schema.column_type.is_tag().to_string());
                 f.set_metadata(Some(map));
                 f
             })
@@ -37,19 +43,19 @@ impl TableSchema {
         Arc::new(Schema::new(fields))
     }
 
-    pub fn new(name: String, fields: BTreeMap<String, IsiphoFiled>) -> Self {
-        Self { name, fields }
+    pub fn new(db: String, name: String, fields: BTreeMap<String, TableFiled>) -> Self {
+        Self { db, name, fields }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IsiphoFiled {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TableFiled {
     pub id: u64,
     pub name: String,
     pub column_type: ColumnType,
 }
 
-impl IsiphoFiled {
+impl TableFiled {
     pub fn new(id: u64, name: String, column_type: ColumnType) -> Self {
         Self {
             id,
@@ -59,14 +65,14 @@ impl IsiphoFiled {
     }
 }
 
-impl From<&FieldInfo> for IsiphoFiled {
+impl From<&FieldInfo> for TableFiled {
     fn from(info: &FieldInfo) -> Self {
         let mut column = ColumnType::Field(info.value_type());
         if info.is_tag() {
             column = ColumnType::Tag;
         }
 
-        IsiphoFiled::new(
+        TableFiled::new(
             info.field_id(),
             String::from_utf8(info.name().to_vec()).unwrap(),
             column,
@@ -104,7 +110,7 @@ impl TryFrom<ArrowDataType> for ColumnType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ColumnType {
     Tag,
     Time,
@@ -130,5 +136,11 @@ impl std::fmt::Display for ColumnType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = self.as_str();
         write!(f, "{}", s)
+    }
+}
+
+impl ColumnType {
+    pub fn is_tag(&self) -> bool {
+        matches!(self, ColumnType::Tag)
     }
 }

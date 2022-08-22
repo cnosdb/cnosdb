@@ -57,7 +57,7 @@ impl Default for MemEntry {
             ts_min: i64::MAX,
             ts_max: i64::MIN,
             field_type: ValueType::Unknown,
-            cells: Vec::new(),
+            cells: Vec::with_capacity(256),
         }
     }
 }
@@ -174,7 +174,7 @@ impl MemCache {
             item.ts_max = ts;
         }
         if item.ts_min > ts {
-            item.ts_min = ts
+            item.ts_min = ts;
         }
         item.field_type = raw.field_type;
         self.cache_size += size_of_val(&data) as u64;

@@ -55,13 +55,9 @@ mod test {
                 let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
-                tx.send(WritePointsRpcRequest {
-                    version: 1,
-                    database: "database".to_string(),
-                    points,
-                })
-                .await
-                .unwrap();
+                tx.send(WritePointsRpcRequest { version: 1, points })
+                    .await
+                    .unwrap();
             }
         });
         let req_stream = ReceiverStream::from(rx);

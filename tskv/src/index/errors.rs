@@ -47,4 +47,4 @@ impl From<sled::Error> for IndexError {
     }
 }
 
-pub type IndexResult<T> = std::result::Result<T, IndexError>;
+pub type IndexResult<T> = Result<T, IndexError>;

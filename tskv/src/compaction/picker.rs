@@ -65,17 +65,13 @@ impl Picker for LevelCompactionPicker {
 
         // Pick selected level files.
         let mut picking_files: Vec<Arc<ColumnFile>> = Vec::new();
-        let mut picking_files_size = 0_u64;
-        let mut picking_time_range = TimeRange::from((Timestamp::MAX, Timestamp::MIN));
-
-        if level_start.files.len() > 1 {
+        let (mut picking_files_size, picking_time_range) = if level_start.files.len() > 1 {
             let mut files = level_start.files.clone();
             files.sort_by(Self::compare_column_file);
-            (picking_files_size, picking_time_range) =
-                Self::pick_files(files, max_compact_size, &mut picking_files);
+            Self::pick_files(files, max_compact_size, &mut picking_files)
         } else {
             return None;
-        }
+        };
 
         // Pick level 0 files.
         let mut files = level_infos[0].files.clone();
@@ -139,7 +135,7 @@ impl LevelCompactionPicker {
     fn compare_column_file(a: &Arc<ColumnFile>, b: &Arc<ColumnFile>) -> std::cmp::Ordering {
         match a.time_range().min_ts.cmp(&b.time_range().min_ts) {
             std::cmp::Ordering::Equal => a.size().cmp(&b.size()),
-            ord => return ord,
+            ord => ord,
         }
     }
 
@@ -149,7 +145,7 @@ impl LevelCompactionPicker {
         levels: &[LevelInfo],
     ) -> Option<(LevelId, LevelId)> {
         let mut ctx = LevelCompatContext::default();
-        ctx.cal_score(levels, &ts_family_opt);
+        ctx.cal_score(levels, ts_family_opt);
         ctx.pick_level()
     }
 
@@ -438,15 +434,13 @@ mod test {
             1000,
         ));
 
-        let tsf = TseriesFamily::new(
+        TseriesFamily::new(
             1,
             "ts_family_1".to_string(),
             MemCache::new(1, 1000, 1, false),
             version,
             tsf_opt,
-        );
-
-        tsf
+        )
     }
 
     #[test]

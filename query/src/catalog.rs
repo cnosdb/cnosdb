@@ -10,10 +10,11 @@ use datafusion::{
     error::{DataFusionError, Result},
 };
 use parking_lot::RwLock;
+
 use tskv::engine::EngineRef;
 
 use crate::{
-    schema::{IsiphoFiled, TableSchema},
+    schema::{TableFiled, TableSchema},
     table::ClusterTable,
 };
 
@@ -52,10 +53,7 @@ impl CatalogProvider for UserCatalog {
         let mut schemas = self.schemas.write();
         let v = schemas
             .entry(name.to_owned())
-            .or_insert(Arc::new(IsiphoSchema::new(
-                name.to_owned(),
-                self.engine.clone(),
-            )));
+            .or_insert_with(|| Arc::new(IsiphoSchema::new(name.to_owned(), self.engine.clone())));
 
         Some(v.clone())
     }
@@ -86,11 +84,6 @@ impl IsiphoSchema {
     }
 }
 
-// impl Default for IsiphoSchema {
-//     fn default() -> Self {
-//     }
-// }
-
 impl SchemaProvider for IsiphoSchema {
     fn as_any(&self) -> &dyn Any {
         self
@@ -102,8 +95,6 @@ impl SchemaProvider for IsiphoSchema {
     }
 
     fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
-        println!("this is SchemaProvider::table {}", name);
-
         {
             let tables = self.tables.read();
             if let Some(v) = tables.get(name) {
@@ -112,19 +103,19 @@ impl SchemaProvider for IsiphoSchema {
         }
 
         let mut tables = self.tables.write();
-        if let Ok(v) = self.engine.get_table_schema(&name.to_string()) {
-            if let Some(v) = v {
-                let mut fields = BTreeMap::new();
-                for item in v {
-                    let field = IsiphoFiled::from(&item);
-                    fields.insert(field.name.clone(), field);
-                }
-                let schema = TableSchema::new(name.to_owned(), fields);
-                tables.insert(
-                    name.to_owned(),
-                    Arc::new(ClusterTable::new(self.engine.clone(), schema)),
-                );
+        if let Ok(Some(v)) = self
+            .engine
+            .get_table_schema(&self.db_name, &name.to_string())
+        {
+            let mut fields = BTreeMap::new();
+            for item in v {
+                let field = TableFiled::from(&item);
+                fields.insert(field.name.clone(), field);
             }
+            let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);
+            let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
+            tables.insert(name.to_owned(), table.clone());
+            return Some(table);
         }
 
         None

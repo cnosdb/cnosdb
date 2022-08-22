@@ -30,6 +30,7 @@ impl ClusterTable {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
         Ok(Arc::new(TskvExec::new(
+            self.schema.db.clone(),
             self.schema.name.clone(),
             proj_schema,
             predicate,
@@ -66,13 +67,15 @@ impl TableProvider for ClusterTable {
         let filter = Arc::new(
             Predicate::default()
                 .set_limit(limit)
+                .extract_pushed_down_domains(filters, &self.schema)
                 .pushdown_exprs(filters),
         );
+
         return self
             .create_physical_plan(projection, filter.clone(), self.schema())
             .await;
     }
-    fn supports_filter_pushdown(&self, filter: &Expr) -> Result<TableProviderFilterPushDown> {
-           Ok(TableProviderFilterPushDown::Inexact)
+    fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
+        Ok(TableProviderFilterPushDown::Inexact)
     }
 }
