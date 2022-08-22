@@ -27,6 +27,30 @@ impl From<&GlobalConfig> for IndexConfig {
 }
 
 #[derive(Debug)]
+pub struct DbIndexSet {
+    path: String,
+    indexs: HashMap<String, DBIndex>,
+}
+
+impl DbIndexSet {
+    pub fn new(path: &String) -> Self {
+        Self {
+            path: path.clone(),
+            indexs: HashMap::new(),
+        }
+    }
+
+    pub fn get_db_index(&mut self, db: &String) -> &mut DBIndex {
+        let index = self
+            .indexs
+            .entry(db.clone())
+            .or_insert_with(|| DBIndex::new(&format!("{}/{}", &self.path, db)));
+
+        return index;
+    }
+}
+
+#[derive(Debug)]
 pub struct DBIndex {
     path: path::PathBuf,
 
@@ -59,7 +83,7 @@ impl DBIndex {
     ) -> errors::IndexResult<u64> {
         let mut series_key = SeriesKey::from(info.borrow());
         let (hash_id, _) = utils::split_id(series_key.hash());
-        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id.to_string());
+        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
         // load index first from cache,or else from storage and than cache it!
         let mut keys: &mut Vec<SeriesKey> = &mut vec![];
@@ -75,9 +99,17 @@ impl DBIndex {
             }
         }
 
+        let mut found = false;
+        let mut id = 0_u64;
         //if exist return series_id
         if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
-            return Ok(k.id());
+            id = k.id();
+            found = true;
+        }
+
+        if found {
+            self.check_field_type_or_else_add(id, info)?;
+            return Ok(id);
         }
 
         //if not exist add it!
@@ -85,7 +117,7 @@ impl DBIndex {
         series_key.set_id(id);
         for tag in series_key.tags() {
             let key = utils::encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
-            self.storage.push(&key, &id.to_be_bytes().to_vec())?;
+            self.storage.push(&key, id.to_be_bytes().as_ref())?;
         }
 
         keys.push(series_key);
@@ -156,7 +188,7 @@ impl DBIndex {
         if need_store {
             let data = bincode::serialize(schema).unwrap();
             let key = format!("{}{}", TABLE_SCHEMA_PREFIX, info.table());
-            let data = self.storage.set(key.as_bytes(), &data)?;
+            self.storage.set(key.as_bytes(), &data)?;
         }
 
         Ok(())
@@ -197,9 +229,9 @@ impl DBIndex {
         todo!()
     }
 
-    pub async fn get_series_key(&mut self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+    pub fn get_series_key(&mut self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         let (hash_id, _) = utils::split_id(sid);
-        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id.to_string());
+        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
         // load index first from cache,or else from storage and than cache it!
         let mut keys: &mut Vec<SeriesKey> = &mut vec![];
@@ -223,7 +255,7 @@ impl DBIndex {
         let (hash_id, _) = utils::split_id(sid);
         self.series_cache.remove(&hash_id);
 
-        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id.to_string());
+        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
         if let Some(data) = self.storage.get(stroage_key.as_bytes())? {
             if let Ok(keys) = bincode::deserialize::<Vec<SeriesKey>>(&data) {
                 if let Some(key) = keys.iter().find(|key| key.id() == sid) {
@@ -253,7 +285,7 @@ impl DBIndex {
 
     pub async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
-        if tags.len() == 0 {
+        if tags.is_empty() {
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
             loop {
                 if let Some(kv) = it.next() {

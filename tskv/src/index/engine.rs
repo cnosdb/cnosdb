@@ -1,3 +1,4 @@
+use std::fs;
 use std::io;
 use std::path;
 
@@ -11,18 +12,20 @@ pub struct IndexEngine {
 
 impl IndexEngine {
     pub fn new(path: &String) -> IndexEngine {
+        let dir = path::Path::new(&path).to_path_buf();
+        fs::create_dir_all(&dir);
+
         let config = sled::Config::new()
             .path(path)
             .cache_capacity(128 * 1024 * 1024)
             .mode(sled::Mode::HighThroughput);
 
-        let db = config.open().expect(&format!("open db{} failed!", &path));
+        let db = config
+            .open()
+            .unwrap_or_else(|_| panic!("open db {} failed!", &path));
         db.set_merge_operator(concatenate_merge);
 
-        Self {
-            db,
-            dir: path::Path::new(&path).to_path_buf(),
-        }
+        Self { db, dir }
     }
 
     pub fn set(&self, key: &[u8], value: &[u8]) -> Result<(), sled::Error> {
@@ -53,7 +56,7 @@ impl IndexEngine {
     }
 
     pub fn prefix(&self, key: &[u8]) -> sled::Iter {
-        return self.db.scan_prefix(key);
+        self.db.scan_prefix(key)
     }
 
     pub fn exist(&self, key: &[u8]) -> Result<bool, sled::Error> {
@@ -63,7 +66,7 @@ impl IndexEngine {
     }
 
     pub fn batch(&self, batch: sled::Batch) -> Result<(), sled::Error> {
-        let res = self.db.apply_batch(batch)?;
+        self.db.apply_batch(batch)?;
 
         Ok(())
     }
@@ -85,7 +88,9 @@ fn concatenate_merge(
     merged_bytes: &[u8],      // the new bytes being merged in
 ) -> Option<Vec<u8>> {
     // set the new value, return None to delete
-    let mut ret = old_value.map(|ov| ov.to_vec()).unwrap_or_else(|| vec![]);
+    let mut ret = old_value
+        .map(|ov| ov.to_vec())
+        .unwrap_or_else(std::vec::Vec::new);
 
     ret.extend_from_slice(merged_bytes);
 

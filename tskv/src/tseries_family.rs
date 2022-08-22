@@ -14,7 +14,7 @@ use std::{
 use config::get_config;
 use crossbeam::channel::internal::SelectHandle;
 use lazy_static::lazy_static;
-use models::{FieldId, Timestamp, ValueType};
+use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
@@ -289,7 +289,7 @@ impl LevelInfo {
                 }
             }
         }
-        return data;
+        data
     }
 
     pub fn level(&self) -> u32 {
@@ -371,7 +371,7 @@ impl Version {
                 new_levels[level.level as usize].push_column_file(file.clone());
             }
             if let Some(files) = added_files.get(&level.level) {
-                for file in files.into_iter() {
+                for file in files.iter() {
                     new_levels[level.level as usize].push_compact_meta(file);
                 }
             }
@@ -519,7 +519,7 @@ impl TseriesFamily {
             )),
             super_version_id: AtomicU64::new(0),
             version,
-            opts: tsf_opt.clone(),
+            opts: tsf_opt,
             compact_picker: Arc::new(LevelCompactionPicker::new()),
             immut_ts_min: max_level_ts,
             mut_ts_max: i64::MIN,
@@ -548,7 +548,7 @@ impl TseriesFamily {
                 mut_cache: self.mut_cache.clone(),
                 immut_cache: self.immut_cache.clone(),
             },
-            version.clone(),
+            version,
             self.super_version_id.load(Ordering::SeqCst),
         ))
     }
@@ -684,25 +684,24 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
-    // version_set when we insert each point
-    pub async fn put_mutcache(
+    pub async fn put_points(
         &mut self,
-        raw: &mut MemRaw<'_>,
+        seq: u64,
+        points: &Vec<InMemPoint>,
         sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     ) {
-        if self.immut_ts_min == i64::MIN {
-            self.immut_ts_min = raw.ts;
-        }
-        if raw.ts >= self.immut_ts_min {
-            if raw.ts > self.mut_ts_max {
-                self.mut_ts_max = raw.ts;
+        for p in points.iter() {
+            let sid = p.series_id();
+            for f in p.fields().iter() {
+                self.put_mutcache(&mut MemRaw {
+                    seq,
+                    ts: p.timestamp,
+                    field_id: f.field_id(),
+                    field_type: f.value_type,
+                    val: &f.value,
+                })
+                .await;
             }
-            let mut mem = self.super_version.caches.mut_cache.write();
-            let _ = mem.insert_raw(raw);
-        } else {
-            let mut delta_mem = self.super_version.caches.delta_mut_cache.write();
-            let _ = delta_mem.insert_raw(raw);
         }
 
         if self.super_version.caches.mut_cache.read().is_full() {
@@ -715,6 +714,24 @@ impl TseriesFamily {
 
         if self.super_version.caches.delta_mut_cache.read().is_full() {
             self.wrap_delta_flush_req(sender.clone()).await;
+        }
+    }
+
+    // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
+    // version_set when we insert each point
+    pub async fn put_mutcache(&mut self, raw: &mut MemRaw<'_>) {
+        if self.immut_ts_min == i64::MIN {
+            self.immut_ts_min = raw.ts;
+        }
+        if raw.ts >= self.immut_ts_min {
+            if raw.ts > self.mut_ts_max {
+                self.mut_ts_max = raw.ts;
+            }
+            let mut mem = self.super_version.caches.mut_cache.write();
+            let _ = mem.insert_raw(raw);
+        } else {
+            let mut delta_mem = self.super_version.caches.delta_mut_cache.write();
+            let _ = delta_mem.insert_raw(raw);
         }
     }
 
@@ -851,7 +868,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(3, tsf_opt.clone()),
-                LevelInfo::init(4, tsf_opt.clone()),
+                LevelInfo::init(4, tsf_opt),
             ],
         };
         let mut version_edits = Vec::new();
@@ -927,7 +944,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(3, tsf_opt.clone()),
-                LevelInfo::init(4, tsf_opt.clone()),
+                LevelInfo::init(4, tsf_opt),
             ],
         };
         let mut version_edits = Vec::new();
@@ -999,17 +1016,14 @@ mod test {
             )),
             tcfg.clone(),
         );
-        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
-        tsf.put_mutcache(
-            &mut MemRaw {
-                seq: 0,
-                ts: 0,
-                field_id: 0,
-                field_type: ValueType::Integer,
-                val: 10_i32.to_be_bytes().as_slice(),
-            },
-            flush_task_sender,
-        )
+
+        tsf.put_mutcache(&mut MemRaw {
+            seq: 0,
+            ts: 0,
+            field_id: 0,
+            field_type: ValueType::Integer,
+            val: 10_i32.to_be_bytes().as_slice(),
+        })
         .await;
         assert_eq!(
             tsf.mut_cache.read().data_cache.get(&0).unwrap().cells.len(),
@@ -1112,10 +1126,12 @@ mod test {
         update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
 
         let mut version_set = version_set.write();
-        let tsf = version_set.get_tsfamily(0).unwrap();
+        let tsf = version_set
+            .get_mutable_tsfamily_by_name(&"test".to_string())
+            .unwrap();
         let version = tsf.version();
         version.levels_info[1].read_column_file(
-            0,
+            tsf.tf_id(),
             0,
             &TimeRange {
                 max_ts: 0,

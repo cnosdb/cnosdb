@@ -81,4 +81,7 @@ pub enum Error {
 
     #[snafu(display("invalid tseries id : {}", tf_id))]
     InvalidTsfid { tf_id: u32 },
+
+    #[snafu(display("character set error"))]
+    ErrCharacterSet,
 }

@@ -2,15 +2,16 @@
 
 members = [
     "config",
+    "coordinator",
+    "line_protocol",
     "main",
-    "protos",
-    "tskv",
-    "trace",
-    "rpctests",
-    "utils",
     "models",
+    "protos",
     "query",
-    "coordinator"
+    "rpctests",
+    "trace",
+    "tskv",
+    "utils",
 ]
 
 default-members = ["main"]

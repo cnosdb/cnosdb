@@ -49,7 +49,7 @@ impl Db {
             .with_default_catalog(Arc::clone(&self.catalog) as _)
             .build()
     }
-    pub async fn run_query(&mut self, query: &str) -> Option<Vec<RecordBatch>> {
+    pub async fn run_query(&self, query: &str) -> Option<Vec<RecordBatch>> {
         let ctx = self.new_query_context();
         let task = ctx.inner().task_ctx();
         let frame = ctx.inner().sql(query).await.unwrap();

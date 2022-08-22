@@ -1,5 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 use utils::BkdrHasher;
 
 use crate::{
@@ -50,7 +51,7 @@ impl SeriesKey {
         match key {
             Ok(key) => Ok(key),
             Err(err) => Err(Error::InvalidSerdeMessage {
-                err: format!("Invalid serde message: {}", err.to_string()),
+                err: format!("Invalid serde message: {}", err),
             }),
         }
     }
@@ -62,7 +63,7 @@ impl SeriesKey {
             str = str + &String::from_utf8(tag.value.to_vec()).unwrap() + ".";
         }
 
-        return str;
+        str
     }
 }
 
@@ -76,7 +77,7 @@ impl PartialEq for SeriesKey {
             return false;
         }
 
-        return true;
+        true
     }
 }
 
@@ -86,22 +87,53 @@ pub struct SeriesInfo {
     tags: Vec<Tag>,
     field_infos: Vec<FieldInfo>,
 
+    db: String,
     table: String,
+}
 
-    /// True if method `finish()` has been called.
-    finished: bool,
+impl Display for SeriesInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut tags = String::new();
+        if !self.tags.is_empty() {
+            for t in self.tags.iter() {
+                tags.push_str(&String::from_utf8(t.key.clone()).unwrap());
+                tags.push_str("=");
+                tags.push_str(&String::from_utf8(t.value.clone()).unwrap());
+                tags.push_str(",");
+            }
+            tags.truncate(tags.len() - 1);
+        }
+
+        let mut field_infos = String::new();
+        if !self.field_infos.is_empty() {
+            for t in self.field_infos.iter() {
+                field_infos.push_str(&String::from_utf8(t.name().clone()).unwrap());
+                field_infos.push_str("_t_");
+                field_infos.push_str(&format!("{}", t.value_type()));
+                field_infos.push_str(",");
+            }
+            field_infos.truncate(tags.len() - 1);
+        }
+
+        write!(
+            f,
+            "SeriesInfo: {{id: {}, tags: [{}], field_infos: [{}], table: {}}}",
+            self.id, tags, field_infos, self.table
+        )
+    }
 }
 
 impl SeriesInfo {
-    pub fn new(tags: Vec<Tag>, field_infos: Vec<FieldInfo>) -> Self {
+    pub fn new(db: String, table: String, tags: Vec<Tag>, field_infos: Vec<FieldInfo>) -> Self {
         let mut si = Self {
             id: 0,
+            db,
+            table,
             tags,
             field_infos,
-            table: "".to_string(),
-            finished: true,
         };
-        si.finish();
+
+        si.sort_tags();
         si
     }
 
@@ -135,29 +167,47 @@ impl SeriesInfo {
             }
         };
 
+        let db = match point.db() {
+            Some(db) => {
+                String::from_utf8(db.to_vec()).map_err(|err| Error::InvalidFlatbufferMessage {
+                    err: err.to_string(),
+                })?
+            }
+
+            None => {
+                return Err(Error::InvalidFlatbufferMessage {
+                    err: "Point db name cannot be empty".to_string(),
+                })
+            }
+        };
+
+        let table = match point.table() {
+            Some(table) => String::from_utf8(table.to_vec()).map_err(|err| {
+                Error::InvalidFlatbufferMessage {
+                    err: err.to_string(),
+                }
+            })?,
+
+            None => {
+                return Err(Error::InvalidFlatbufferMessage {
+                    err: "Point table name cannot be empty".to_string(),
+                })
+            }
+        };
+
         let mut info = Self {
             id: 0,
+            db,
+            table,
             tags,
             field_infos,
-            table: "".to_string(),
-            finished: true,
         };
-        info.finish();
+        info.sort_tags();
         Ok(info)
     }
 
     pub fn sort_tags(&mut self) {
         tag::sort_tags(&mut self.tags);
-    }
-
-    pub fn finish(&mut self) {
-        self.sort_tags();
-        self.id = generate_series_id(&self.tags);
-
-        // Reset field id
-        for field_info in &mut self.field_infos {
-            field_info.finish(self.id);
-        }
     }
 
     pub fn series_id(&self) -> SeriesId {
@@ -170,6 +220,10 @@ impl SeriesInfo {
 
     pub fn table(&self) -> &String {
         &self.table
+    }
+
+    pub fn db(&self) -> &String {
+        &self.db
     }
 
     pub fn field_infos(&mut self) -> &mut Vec<FieldInfo> {
@@ -231,6 +285,8 @@ mod tests_series_info {
     #[test]
     fn test_series_info_encode_and_decode() {
         let info = SeriesInfo::new(
+            "db_test".to_string(),
+            "tab_test".to_string(),
             vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
             vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)],
         );
@@ -266,12 +322,16 @@ mod tests_series_info {
             },
         );
         // build series_info
+        let db = Some(fb.create_vector("test_db".as_bytes()));
+        let table = Some(fb.create_vector("test_tab".as_bytes()));
         let fields = Some(fb.create_vector(&[field]));
         let tags = Some(fb.create_vector(&[tag]));
         // build point
         let point = models::Point::create(
             &mut fb,
             &models::PointArgs {
+                db,
+                table,
                 tags,
                 fields,
                 timestamp: 1,

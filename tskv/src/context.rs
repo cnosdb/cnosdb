@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
 };
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct GlobalContext {
     file_id: AtomicU64,
     mem_seq: AtomicU64,

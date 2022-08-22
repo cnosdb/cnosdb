@@ -7,11 +7,20 @@ edition = "2021"
 
 [dependencies]
 config = { path = "../config" }
+line_protocol = { path = "../line_protocol" }
 protos = { path = "../protos" }
+query = {path = "../query"}
+trace  = { path = "../trace" }
 tskv = { path = "../tskv" }
+
+datafusion = "10.0.0"
 async-stream = "0.3"
 backtrace = "0.3"
+chrono = "0.4"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
+http = "0.2"
+hyper = "0.14"
+lazy_static = "1.4"
 libc = { version = "0.2" }
 log = "0.4"
 num_cpus = "1.13.0"
@@ -20,9 +29,14 @@ flatbuffers = "2.1"
 once_cell = { version = "1.4.0", features = ["parking_lot"] }
 parking_lot = "0.12"
 prost = "0.10"
+regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+snafu = "0.7"
 tokio = { version = "1.13", features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tokio-util = { version = "0.7.0" }
 tonic = "0.7"
+
+[dev-dependencies]
+reqwest = "0.11"
