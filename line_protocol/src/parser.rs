@@ -25,6 +25,7 @@ impl Parser {
             return Ok(None);
         }
 
+        let start_pos = position;
         let mut pos = position;
         let measurement = if let Some(m) = next_measurement(&buf[pos..]) {
             pos += m.1;
@@ -77,7 +78,7 @@ impl Parser {
                 fields,
                 timestamp,
             },
-            pos + 1,
+            pos - start_pos,
         )))
     }
 }
@@ -307,6 +308,8 @@ fn next_timestamp(buf: &str) -> Option<(&str, usize)> {
 
 #[cfg(test)]
 mod test {
+    use std::{fs::File, io::Read};
+
     use crate::parser::{
         next_field_set, next_measurement, next_tag_set, next_timestamp, Line, Parser,
     };
@@ -423,5 +426,20 @@ mod test {
                 timestamp: -1
             }
         );
+    }
+
+    #[test]
+    #[ignore]
+    fn test_generated_data() {
+        let mut lp_file = File::open("/tmp/cnosdb-data").unwrap();
+        let mut lp_lines = String::new();
+        lp_file.read_to_string(&mut lp_lines).unwrap();
+
+        let parser = Parser::new(0);
+        let lines = parser.parse(&lp_lines).unwrap();
+
+        for l in lines {
+            println!("{:?}", l);
+        }
     }
 }
