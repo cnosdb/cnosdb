@@ -59,7 +59,7 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self, Error> {
+    pub async fn open(opt: Options, ts_family_num: u32) -> Result<Self> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
@@ -100,8 +100,20 @@ impl TsKv {
         ));
 
         let summary = tokio::spawn(run_summary_job(summary, summary_task_receiver, summary_task_sender));
-        if let Err(e) = tokio::try_join!(wal, flush, compact, summary) {
-            return Err(Error::Compact { reason: e.to_string()})
+
+        if let Ok((wal_ret, flush_ret, compact_ret, summary_ret)) = tokio::try_join!(wal, flush, compact, summary) {
+            if wal_ret.is_err() {
+                return Err(wal_ret.unwrap_err());
+            }
+            if flush_ret.is_err() {
+                return Err(flush_ret.unwrap_err());
+            }
+            if compact_ret.is_err() {
+                return Err(compact_ret.unwrap_err());
+            }
+            if summary_ret.is_err() {
+                return Err(summary_ret.unwrap_err());
+            }
         }
         Ok(core)
     }
@@ -111,23 +123,18 @@ impl TsKv {
         flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
         ts_family_num: u32,
         ts_family_opt: Arc<TseriesFamOpt>,
-    ) -> Result<(Arc<RwLock<VersionSet>>, Summary), Error> {
+    ) -> Result<(Arc<RwLock<VersionSet>>, Summary)> {
         if !file_manager::try_exists(&opt.db.db_path) {
             std::fs::create_dir_all(&opt.db.db_path)
-                .context(error::IOSnafu).map_err(|e|{
-                Err(Error::OpenFile {source: std::io::Error::from(e)})
-            });
-                //.unwrap();
+                .context(error::IOSnafu)?;
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
             Summary::recover(opt.db.clone(), ts_family_num, ts_family_opt)
-                .await
-                .unwrap()
+                .await?
         } else {
             Summary::new(opt.db.clone(), ts_family_num, ts_family_opt)
-                .await
-                .unwrap()
+                .await?
         };
         let version_set = summary.version_set().clone();
         let wal_manager = WalManager::new(opt.wal.clone());
@@ -137,8 +144,7 @@ impl TsKv {
                 summary.global_context().clone(),
                 flush_task_sender,
             )
-            .await
-            .unwrap();
+            .await?;
 
         Ok((version_set.clone(), summary))
     }
