@@ -37,7 +37,6 @@ pub struct Options {
     pub wal: Arc<WalConfig>,
     // pub(crate) write_batch: WriteBatchConfig,
     pub compact_conf: Arc<CompactConfig>,
-    pub index_conf: Arc<IndexConfig>,
     pub schema_store: Arc<SchemaStoreConfig>,
 }
 
@@ -50,7 +49,6 @@ impl Options {
             lrucache: self.lrucache.clone(),
             wal: self.wal.clone(),
             compact_conf: self.compact_conf.clone(),
-            index_conf: self.index_conf.clone(),
             schema_store: self.schema_store.clone(),
         }
     }
@@ -64,7 +62,6 @@ impl From<&GlobalConfig> for Options {
             lrucache: Arc::new(CacheConfig::from(config)),
             wal: Arc::new(WalConfig::from(config)),
             compact_conf: Arc::new(CompactConfig::from(config)),
-            index_conf: Arc::new(IndexConfig::from(config)),
             schema_store: Arc::new(SchemaStoreConfig::from(config)),
         }
     }
@@ -133,6 +130,7 @@ pub struct TseriesFamOpt {
     pub max_compact_size: u64,
     pub tsm_dir: String,
     pub delta_dir: String,
+    pub index_path: String,
     pub max_memcache_size: u64,
     pub max_immemcache_num: u16,
 }
@@ -161,6 +159,7 @@ impl From<&GlobalConfig> for TseriesFamOpt {
             max_compact_size: config.max_compact_size,
             tsm_dir: config.tsm_dir.clone(),
             delta_dir: config.delta_dir.clone(),
+            index_path: config.index_path.clone(),
             max_memcache_size: config.max_memcache_size,
             max_immemcache_num: config.max_immemcache_num,
         }

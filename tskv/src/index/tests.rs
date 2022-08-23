@@ -17,7 +17,7 @@ async fn test_index_add_del() {
             FieldInfo::new(0, b"mem".to_vec(), ValueType::Float),
         ],
     );
-    let id = index.add_series_if_not_exists(&mut info1).await.unwrap();
+    let id = index.add_series_if_not_exists(&mut info1).unwrap();
 
     let key = index.get_series_key(id).unwrap().unwrap();
     assert_eq!(info1.tags(), key.tags());
@@ -66,9 +66,11 @@ async fn test_index_id_list() {
         ],
         vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Float)],
     );
-    let id1 = index.add_series_if_not_exists(&mut info1).await.unwrap();
-    let id2 = index.add_series_if_not_exists(&mut info2).await.unwrap();
-    let id3 = index.add_series_if_not_exists(&mut info3).await.unwrap();
+
+    let id1 = index.add_series_if_not_exists(&mut info1).unwrap();
+    let id2 = index.add_series_if_not_exists(&mut info2).unwrap();
+    let id3 = index.add_series_if_not_exists(&mut info3).unwrap();
+
     let key1 = index.get_series_key(id1).unwrap().unwrap();
     let key2 = index.get_series_key(id2).unwrap().unwrap();
 
@@ -126,8 +128,8 @@ async fn test_field_type() {
         ],
         vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Unsigned)],
     );
-    let id1 = index.add_series_if_not_exists(&mut info1).await.unwrap();
-    let id2 = index.add_series_if_not_exists(&mut info2).await;
+    let id1 = index.add_series_if_not_exists(&mut info1).unwrap();
+    let id2 = index.add_series_if_not_exists(&mut info2);
 
     let schema = index.get_table_schema(&"table_test".to_string());
 
