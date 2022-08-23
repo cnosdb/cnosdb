@@ -91,16 +91,20 @@ impl Picker for LevelCompactionPicker {
             file.mark_compaction();
         }
 
-        println!("Picked column files:");
+        let mut log_buf = "Picker: Picked column files:\n".to_string();
         for f in picking_files.iter() {
-            println!(
-                "Level-{} | File-{} | {}-{}",
-                f.level(),
-                f.file_id(),
-                f.time_range().min_ts,
-                f.time_range().max_ts
+            log_buf.push_str(
+                format!(
+                    "Level-{} | File-{} | {}-{}\n",
+                    f.level(),
+                    f.file_id(),
+                    f.time_range().min_ts,
+                    f.time_range().max_ts
+                )
+                .as_str(),
             );
         }
+        info!(log_buf);
 
         Some(CompactReq {
             ts_family_id: version.ts_family_id,
@@ -197,10 +201,11 @@ impl LevelCompactionPicker {
         }
         level_scores.sort_by(|a, b| a.4.partial_cmp(&b.4).expect("a NaN score").reverse());
 
-        println!("Calculate level scores:");
+        let mut log_buf = "Picker: Calculate level scores:\n".to_string();
         for lvl_score in level_scores.iter() {
-            println!("Level-{} | {}", lvl_score.0, lvl_score.4);
+            log_buf.push_str(format!("Level-{} | {}\n", lvl_score.0, lvl_score.4).as_str());
         }
+        info!(log_buf);
 
         level_scores.first().map(|lvl_score| {
             if lvl_score.0 == 4 {
