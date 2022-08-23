@@ -1068,14 +1068,34 @@ mod test {
 
     #[tokio::test]
     pub async fn test_read_with_tomb() {
-        let dir = PathBuf::from("db/tsm/test/0".to_string());
+        let dir = "/tmp/test/ts_family/0";
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let global_config = get_config("../config/config.toml");
+        let mut ts_family_opt = TseriesFamOpt::from(global_config);
+        ts_family_opt.tsm_dir = dir.to_string();
+        let ts_family_opt = Arc::new(ts_family_opt);
 
-        let dir = PathBuf::from("dev/db".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
+        let kernel = Arc::new(GlobalContext::new());
+        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new_default()));
+        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
+
+        let ts_family_name = "test".to_string();
+        let ts_family_id = version_set
+            .write()
+            .add_tsfamily(
+                ts_family_name.clone(),
+                0,
+                0,
+                ts_family_opt.clone(),
+                summary_task_sender.clone(),
+            )
+            .tf_id();
+        let ts_family_tsm_dir = ts_family_opt.tsm_dir(ts_family_id);
+        if !file_manager::try_exists(&ts_family_tsm_dir) {
+            std::fs::create_dir_all(&ts_family_tsm_dir).unwrap();
         }
 
         let mut mem = MemCache::new(0, 1000, 0, false);
@@ -1087,35 +1107,15 @@ mod test {
             val: 10_i64.to_be_bytes().as_slice(),
         })
         .unwrap();
-        let mem = Arc::new(RwLock::new(mem));
-        let req_mem = vec![(0, mem)];
+
         let flush_seq = Arc::new(Mutex::new(vec![FlushReq {
-            mems: req_mem,
+            mems: vec![(ts_family_id, Arc::new(RwLock::new(mem)))],
             wait_req: 0,
         }]));
-
-        let kernel = Arc::new(GlobalContext::new());
-        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new_default()));
-        let global_config = get_config("../config/config.toml");
-        let mut cfg = TseriesFamOpt::from(global_config);
-        cfg.tsm_dir = "db/tsm/test".to_string();
-        let cfg = Arc::new(cfg);
-        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
-        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
-        version_set.write().add_tsfamily(
-            0,
-            "test".to_string(),
-            0,
-            0,
-            cfg.clone(),
-            summary_task_sender.clone(),
-        );
-        let mut cfg_set = HashMap::new();
-        cfg_set.insert(0, cfg.clone());
         run_flush_memtable_job(
             flush_seq,
             kernel,
-            cfg_set,
+            HashMap::from([(ts_family_id, ts_family_opt.clone())]),
             version_set.clone(),
             summary_task_sender,
             compact_task_sender,
@@ -1123,30 +1123,30 @@ mod test {
         .await
         .unwrap();
 
-        update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
+        update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
 
-        let mut version_set = version_set.write();
-        let tsf = version_set
-            .get_mutable_tsfamily_by_name(&"test".to_string())
-            .unwrap();
-        let version = tsf.version();
+        let version = {
+            let mut vs = version_set.write();
+            let tsf = vs.get_mutable_tsfamily_by_name(&ts_family_name).unwrap();
+            tsf.version()
+        };
         version.levels_info[1].read_column_file(
-            tsf.tf_id(),
+            ts_family_id,
             0,
             &TimeRange {
                 max_ts: 0,
                 min_ts: 0,
             },
         );
-        let file = version.levels_info[1].files[0].clone();
 
-        let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
+        let file = version.levels_info[1].files[0].clone();
+        let mut tombstone = TsmTombstone::open_for_write(&ts_family_tsm_dir, file.file_id).unwrap();
         tombstone.add_range(&[0], 0, 0).unwrap();
         tombstone.flush().unwrap();
         tombstone.load().unwrap();
 
         version.levels_info[1].read_column_file(
-            0,
+            ts_family_id,
             0,
             &TimeRange {
                 max_ts: 0,

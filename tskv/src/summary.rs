@@ -597,7 +597,6 @@ mod test {
         let mut edits = vec![];
         for i in 0..40 {
             summary.version_set.write().add_tsfamily(
-                i,
                 format!("hello{}", i),
                 0,
                 0,
@@ -648,7 +647,6 @@ mod test {
         let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
 
         summary.version_set.write().add_tsfamily(
-            10,
             "hello".to_string(),
             0,
             0,

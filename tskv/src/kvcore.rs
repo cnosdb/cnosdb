@@ -217,7 +217,6 @@ impl TsKv {
         let tsf = match version_set.get_mutable_tsfamily_by_name(db) {
             Some(v) => v,
             None => version_set.add_tsfamily(
-                0,
                 db.clone(),
                 seq,
                 self.global_ctx.file_id_next(),
