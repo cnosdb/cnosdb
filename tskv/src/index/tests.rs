@@ -66,9 +66,11 @@ async fn test_index_id_list() {
         ],
         vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Float)],
     );
+
     let id1 = index.add_series_if_not_exists(&mut info1).unwrap();
     let id2 = index.add_series_if_not_exists(&mut info2).unwrap();
     let id3 = index.add_series_if_not_exists(&mut info3).unwrap();
+
     let key1 = index.get_series_key(id1).unwrap().unwrap();
     let key2 = index.get_series_key(id2).unwrap().unwrap();
 

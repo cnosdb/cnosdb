@@ -21,6 +21,9 @@ use protos::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::engine::Engine;
+
+use crate::database;
 use crate::index::utils::unite_id;
 use crate::index::IndexResult;
 use crate::memcache::MemRaw;
@@ -44,7 +47,6 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
-use crate::{database, engine::Engine};
 
 pub struct Entry {
     pub series_id: u64,
@@ -77,6 +79,7 @@ impl TsKv {
         .await;
 
         let wal_cfg = shared_options.wal.clone();
+
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let core = Self {
@@ -528,6 +531,7 @@ impl Engine for TsKv {
 
     async fn get_series_id_list(
         &self,
+
         name: &String,
         tab: &String,
         tags: &Vec<Tag>,

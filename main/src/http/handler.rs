@@ -33,10 +33,31 @@ pub(crate) async fn route(
     sender: UnboundedSender<tskv::Task>,
 ) -> Result<Response<Body>, Error> {
     match req.uri().path() {
+        "/ping" => ping(req).await,
         "/write/line_protocol" => write_line_protocol(req, sender).await,
-        "/query/sql" => query_sql(req, db).await,
+        "/query" => query(req, db).await,
         _ => message_404(req),
     }
+}
+
+pub(crate) async fn ping(req: Request<Body>) -> Result<Response<Body>, Error> {
+    let mut verbose: Option<&str> = None;
+    if let Some(query) = req.uri().query() {
+        let query_params = parse_query(query);
+        verbose = query_params.get("verbose").copied();
+    }
+
+    let resp = match verbose {
+        Some(v) if !v.is_empty() && v != "0" || v != "false" => http::Response::builder()
+            .body(Body::from(format!("{{ \"version\" = {} }}", "0.0.1")))
+            .unwrap(),
+        _ => http::Response::builder()
+            .status(204)
+            .body(Body::empty())
+            .unwrap(),
+    };
+
+    Ok(resp)
 }
 
 pub(crate) async fn write_line_protocol(
@@ -94,15 +115,12 @@ pub(crate) async fn write_line_protocol(
 
     let resp = http::Response::builder()
         .status(204)
-        .body(Body::from("Write succeed."))
+        .body(Body::empty())
         .unwrap();
     Ok(resp)
 }
 
-pub(crate) async fn query_sql(
-    req: Request<Body>,
-    database: Arc<Db>,
-) -> Result<Response<Body>, Error> {
+pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Response<Body>, Error> {
     let db: String;
     if let Some(query) = req.uri().query() {
         let query_params = parse_query(query);
@@ -171,7 +189,11 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> 
                             &v[..v.len() - 1]
                                 .parse::<i64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!("Value '{}' is not valid i64", v),
+                                    reason: format!(
+                                        "Value '{}' is not valid i64: {}",
+                                        v,
+                                        e.to_string()
+                                    ),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -183,7 +205,11 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> 
                             &v[..v.len() - 1]
                                 .parse::<u64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!("Value '{}' is not valid u64", v),
+                                    reason: format!(
+                                        "Value '{}' is not valid u64: {}",
+                                        v,
+                                        e.to_string()
+                                    ),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -195,7 +221,11 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> 
                             &v[..]
                                 .parse::<f64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!("Value '{}' is not valid f64", v),
+                                    reason: format!(
+                                        "Value '{}' is not valid f64: {}",
+                                        v,
+                                        e.to_string()
+                                    ),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -227,6 +257,7 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> 
             };
             let mut field_builder = FieldBuilder::new(&mut fbb);
             field_builder.add_name(fbk);
+            field_builder.add_type_(fbv_type);
             field_builder.add_value(fbv);
             fields.push(field_builder.finish());
         }
@@ -253,7 +284,7 @@ fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> 
     Ok(fbb.finished_data().to_vec())
 }
 
-fn message_404(req: Request<Body>) -> Result<Response<Body>, Error> {
+pub(crate) fn message_404(req: Request<Body>) -> Result<Response<Body>, Error> {
     Ok(Response::builder()
         .status(404)
         .body(Body::from(format!("URI not found: {}", req.uri().path())))

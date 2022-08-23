@@ -1071,91 +1071,91 @@ mod test {
         }
     }
 
-    // #[tokio::test]
-    // pub async fn test_read_with_tomb() {
-    //     let dir = PathBuf::from("db/tsm/test/0".to_string());
-    //     if !file_manager::try_exists(&dir) {
-    //         std::fs::create_dir_all(&dir).unwrap();
-    //     }
+    #[tokio::test]
+    pub async fn test_read_with_tomb() {
+        let dir = PathBuf::from("db/tsm/test/0".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
 
-    //     let dir = PathBuf::from("dev/db".to_string());
-    //     if !file_manager::try_exists(&dir) {
-    //         std::fs::create_dir_all(&dir).unwrap();
-    //     }
+        let dir = PathBuf::from("dev/db".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
 
-    //     let mut mem = MemCache::new(0, 1000, 0, false);
-    //     mem.insert_raw(&mut MemRaw {
-    //         seq: 0,
-    //         ts: 0,
-    //         field_id: 0,
-    //         field_type: ValueType::Integer,
-    //         val: 10_i64.to_be_bytes().as_slice(),
-    //     })
-    //     .unwrap();
-    //     let mem = Arc::new(RwLock::new(mem));
-    //     let req_mem = vec![(0, mem)];
-    //     let flush_seq = Arc::new(Mutex::new(vec![FlushReq {
-    //         mems: req_mem,
-    //         wait_req: 0,
-    //     }]));
+        let mut mem = MemCache::new(0, 1000, 0, false);
+        mem.insert_raw(&mut MemRaw {
+            seq: 0,
+            ts: 0,
+            field_id: 0,
+            field_type: ValueType::Integer,
+            val: 10_i64.to_be_bytes().as_slice(),
+        })
+        .unwrap();
+        let mem = Arc::new(RwLock::new(mem));
+        let req_mem = vec![(0, mem)];
+        let flush_seq = Arc::new(Mutex::new(vec![FlushReq {
+            mems: req_mem,
+            wait_req: 0,
+        }]));
 
-    //     let kernel = Arc::new(GlobalContext::new());
-    //     let global_config = get_config("../config/config.toml");
-    //     let mut cfg = TseriesFamOpt::from(global_config);
-    //     cfg.tsm_dir = "db/tsm/test".to_string();
-    //     let cfg = Arc::new(cfg);
-    //     let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
-    //     let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
+        let kernel = Arc::new(GlobalContext::new());
+        let global_config = get_config("../config/config.toml");
+        let mut cfg = TseriesFamOpt::from(global_config);
+        cfg.tsm_dir = "db/tsm/test".to_string();
+        let cfg = Arc::new(cfg);
+        let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
-    //     let version_set: Arc<RwLock<VersionSet>> =
-    //         Arc::new(RwLock::new(VersionSet::new(cfg.clone(), HashMap::new())));
-    //     version_set.write().create_db(&"test".to_string());
-    //     let db = version_set.write().get_db(&"test".to_string()).unwrap();
+        let version_set: Arc<RwLock<VersionSet>> =
+            Arc::new(RwLock::new(VersionSet::new(cfg.clone(), HashMap::new())));
+        version_set.write().create_db(&"test".to_string());
+        let db = version_set.write().get_db(&"test".to_string()).unwrap();
 
-    //     let mut db = db.write();
-    //     db.add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
-    //     let mut cfg_set = HashMap::new();
-    //     cfg_set.insert(0, cfg.clone());
-    //     run_flush_memtable_job(
-    //         flush_seq,
-    //         kernel,
-    //         cfg_set,
-    //         version_set.clone(),
-    //         summary_task_sender,
-    //         compact_task_sender,
-    //     )
-    //     .await
-    //     .unwrap();
+        let mut db = db.write();
+        db.add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
+        let mut cfg_set = HashMap::new();
+        cfg_set.insert(0, cfg.clone());
+        run_flush_memtable_job(
+            flush_seq,
+            kernel,
+            cfg_set,
+            version_set.clone(),
+            summary_task_sender,
+            compact_task_sender,
+        )
+        .await
+        .unwrap();
 
-    //     update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
+        update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
 
-    //     let version_set = version_set.write();
-    //     let tsf = version_set
-    //         .get_tsfamily_by_name(&"test".to_string())
-    //         .unwrap();
-    //     let version = tsf.write().version();
-    //     version.levels_info[1].read_column_file(
-    //         tsf.write().tf_id(),
-    //         0,
-    //         &TimeRange {
-    //             max_ts: 0,
-    //             min_ts: 0,
-    //         },
-    //     );
-    //     let file = version.levels_info[1].files[0].clone();
+        let version_set = version_set.write();
+        let tsf = version_set
+            .get_tsfamily_by_name(&"test".to_string())
+            .unwrap();
+        let version = tsf.write().version();
+        version.levels_info[1].read_column_file(
+            tsf.write().tf_id(),
+            0,
+            &TimeRange {
+                max_ts: 0,
+                min_ts: 0,
+            },
+        );
+        let file = version.levels_info[1].files[0].clone();
 
-    //     let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
-    //     tombstone.add_range(&[0], 0, 0).unwrap();
-    //     tombstone.flush().unwrap();
-    //     tombstone.load().unwrap();
+        let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
+        tombstone.add_range(&[0], 0, 0).unwrap();
+        tombstone.flush().unwrap();
+        tombstone.load().unwrap();
 
-    //     version.levels_info[1].read_column_file(
-    //         0,
-    //         0,
-    //         &TimeRange {
-    //             max_ts: 0,
-    //             min_ts: 0,
-    //         },
-    //     );
-    // }
+        version.levels_info[1].read_column_file(
+            0,
+            0,
+            &TimeRange {
+                max_ts: 0,
+                min_ts: 0,
+            },
+        );
+    }
 }

@@ -635,6 +635,7 @@ mod test {
         let db = summary.version_set.write().create_db(&"test".to_string());
         db.write()
             .add_tsfamily(10, 0, 0, tsf_opt.clone(), summary_task_sender.clone());
+
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(10, "hello".to_string());
