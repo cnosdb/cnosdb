@@ -41,10 +41,17 @@ impl DbIndexSet {
     }
 
     pub fn get_db_index(&mut self, db: &String) -> &mut DBIndex {
+        let dir = path::Path::new(&self.path)
+            .to_path_buf()
+            .join(db)
+            .to_str()
+            .unwrap()
+            .to_string();
+
         let index = self
             .indexs
             .entry(db.clone())
-            .or_insert_with(|| DBIndex::new(&format!("{}/{}", &self.path, db)));
+            .or_insert_with(|| DBIndex::new(&dir));
 
         return index;
     }
@@ -77,10 +84,7 @@ impl DBIndex {
         }
     }
 
-    pub async fn add_series_if_not_exists(
-        &mut self,
-        info: &mut SeriesInfo,
-    ) -> errors::IndexResult<u64> {
+    pub fn add_series_if_not_exists(&mut self, info: &mut SeriesInfo) -> errors::IndexResult<u64> {
         let mut series_key = SeriesKey::from(info.borrow());
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);

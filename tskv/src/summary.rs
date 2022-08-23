@@ -301,8 +301,8 @@ impl Summary {
             );
             versions.insert(id, Arc::new(ver));
         }
-        let vs = VersionSet::new(&tf_cfg, versions);
-        Ok(vs.await)
+        let vs = VersionSet::new(ts_family_opt.clone(), versions);
+        Ok(vs)
     }
 
     /// Applies version edit to summary file, and generates new version for TseriesFamily.
@@ -335,14 +335,15 @@ impl Summary {
                 tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
             }
         }
-        let mut version_set = self.version_set.write();
+        let version_set = self.version_set.write();
         for (tsf_id, version_edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
-            if let Some(tsf) = version_set.get_mutable_tsfamily_by_tf_id(tsf_id) {
+            if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id) {
                 let new_version = tsf
+                    .read()
                     .version()
                     .copy_apply_version_edits(version_edits.as_slice(), min_seq.copied());
-                tsf.new_version(new_version);
+                tsf.write().new_version(new_version);
             }
         }
 
@@ -352,28 +353,19 @@ impl Summary {
     async fn roll_summary_file(&mut self) -> Result<()> {
         if self.writer.file_size() >= self.db_opt.max_summary_size {
             let mut edits = vec![];
+            let mut files = vec![];
             {
                 let vs = self.version_set.read();
-                for i in vs.ts_families_names().iter() {
-                    let mut edit = VersionEdit::new();
-                    edit.add_tsfamily(*i.1, i.0.clone());
-                    edits.push(edit);
+                let dbs = vs.get_all_db();
+                for (name, db) in dbs {
+                    let (mut tsf, mut tmp_files) = db.read().version_edit(self.ctx.last_seq());
+                    edits.append(&mut tsf);
+                    files.append(&mut tmp_files);
                 }
-                for i in vs.ts_families().iter() {
-                    let mut edit = VersionEdit::new();
-                    let version = i.1.version();
-                    let max_level_ts = version.max_level_ts;
-                    for files in version.levels_info.iter() {
-                        for file in files.files.iter() {
-                            let mut meta = CompactMeta::from(file.as_ref());
-                            meta.tsf_id = files.tsf_id;
-                            meta.high_seq = self.ctx.last_seq();
-                            edit.add_file(meta, max_level_ts);
-                        }
-                    }
-                    edits.push(edit);
-                }
+
+                edits.append(&mut files);
             }
+
             let new_path = &file_utils::make_summary_file_tmp(self.db_opt.db_path.clone());
             let old_path = &self.writer.path().clone();
             if try_exists(new_path) {
@@ -510,6 +502,7 @@ mod test {
         let summary = Summary::recover(opt.clone(), global_config.tsfamily_num, tsf_opt.clone())
             .await
             .unwrap();
+
         assert_eq!(summary.ctx.max_tsf_id(), 100);
     }
 
@@ -595,26 +588,18 @@ mod test {
         let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
 
         let mut edits = vec![];
-        for i in 0..40 {
-            summary.version_set.write().add_tsfamily(
-                i,
-                format!("hello{}", i),
-                0,
-                0,
-                tsf_opt.clone(),
-                summary_task_sender.clone(),
-            );
+        let db = summary.version_set.write().create_db(&"test".to_string());
+        for i in 1..41 {
+            db.write()
+                .add_tsfamily(i, 0, 0, tsf_opt.clone(), summary_task_sender.clone());
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(i, "hello".to_string());
+            edit.add_tsfamily(i, "test".to_string());
             edits.push(edit.clone());
         }
-        for _ in 0..100 {
+
+        for _ in 1..101 {
             for i in 1..21 {
-                summary.version_set.write().del_tsfamily(
-                    i,
-                    format!("hello{}", i),
-                    summary_task_sender.clone(),
-                );
+                db.write().del_tsfamily(i, summary_task_sender.clone());
                 let mut edit = VersionEdit::new();
                 edit.del_tsfamily(i);
                 edits.push(edit.clone());
@@ -647,33 +632,25 @@ mod test {
 
         let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
 
-        summary.version_set.write().add_tsfamily(
-            10,
-            "hello".to_string(),
-            0,
-            0,
-            tsf_opt.clone(),
-            summary_task_sender.clone(),
-        );
+        let db = summary.version_set.write().create_db(&"test".to_string());
+        db.write()
+            .add_tsfamily(10, 0, 0, tsf_opt.clone(), summary_task_sender.clone());
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(10, "hello".to_string());
         edits.push(edit);
 
         for _ in 0..100 {
-            summary.version_set.write().del_tsfamily(
-                0,
-                "default0".to_string(),
-                summary_task_sender.clone(),
-            );
+            db.write().del_tsfamily(0, summary_task_sender.clone());
             let mut edit = VersionEdit::new();
             edit.del_tsfamily(0);
             edits.push(edit);
         }
+
         {
-            let mut vs = summary.version_set.write();
-            let tsf = vs.get_mutable_tsfamily_by_tf_id(10).unwrap();
-            let mut version = tsf.version().copy_apply_version_edits(&edits, None);
+            let vs = summary.version_set.write();
+            let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
+            let mut version = tsf.read().version().copy_apply_version_edits(&edits, None);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new();
@@ -689,7 +666,7 @@ mod test {
                 ..Default::default()
             };
             version.levels_info[1].push_compact_meta(&meta);
-            tsf.new_version(version);
+            tsf.write().new_version(version);
             edit.add_file(meta, 1);
             edits.push(edit);
         }
@@ -702,11 +679,11 @@ mod test {
 
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-        assert_eq!(tsf.version().last_seq, 1);
-        assert_eq!(tsf.version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.version().levels_info[1].files[0].is_delta());
-        assert_eq!(tsf.version().levels_info[1].files[0].file_id(), 15);
-        assert_eq!(tsf.version().levels_info[1].files[0].size(), 100);
+        assert_eq!(tsf.read().version().last_seq, 1);
+        assert_eq!(tsf.read().version().levels_info[1].tsf_id, 10);
+        assert!(!tsf.read().version().levels_info[1].files[0].is_delta());
+        assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
+        assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 15);
         assert_eq!(summary.ctx.max_tsf_id(), 10);
     }

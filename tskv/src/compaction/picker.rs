@@ -371,6 +371,7 @@ mod test {
             level_ratio: 16_f64,
             compact_trigger: 4,
             delta_dir: "/tmp/test/picker_delta".to_string(),
+            index_path: "/tmp/test/index_dir".to_string(),
             max_memcache_size: 128 * 1024 * 1024,
             max_immemcache_num: 4,
         })
