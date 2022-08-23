@@ -62,6 +62,11 @@ impl FileManager {
     }
 
     pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
+        if let Some(p) = path.as_ref().parent() {
+            if !try_exists(p) {
+                std::fs::create_dir_all(p).context(error::IOSnafu)?;
+            }
+        }
         self.file_system.create(path).context(error::OpenFileSnafu)
     }
 

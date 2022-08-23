@@ -429,6 +429,11 @@ pub fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<VersionEdit>> {
+    info!(
+        "Running compaction job on ts_family: {} and files: {:?}",
+        request.ts_family_id, request.files
+    );
+
     let version = request.version;
 
     // Buffers all tsm-files and it's indexes for this compaction
@@ -467,6 +472,7 @@ pub fn run_compaction_job(
     let tsm_dir = tsf_opt.tsm_dir(tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
     let mut version_edit = VersionEdit::new();
+    version_edit.tsf_id = tsf_id;
     for next_blk in iter.flatten() {
         info!("===============================");
         let write_ret = match next_blk {
