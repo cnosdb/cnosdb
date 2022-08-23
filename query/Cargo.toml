@@ -19,11 +19,13 @@ pin-project = "1.0"
 tokio-util = { version = "0.7.0" }
 async-trait = "0.1"
 rand = "0.8"
-chrono = "0.4"
+chrono = "0.4.22"
 crossbeam = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 snafu = "0.7"
 sled = "0.34"
+paste = "1.0"
+sqlparser = "0.18.0"
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]
 version = "0.2"
