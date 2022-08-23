@@ -133,17 +133,13 @@ impl VersionSet {
     #[allow(clippy::too_many_arguments)]
     pub fn add_tsfamily(
         &mut self,
-        tsf_id: u32,
         tsf_name: String,
         seq_no: u64,
         file_id: u64,
         opt: Arc<TseriesFamOpt>,
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) -> &mut TseriesFamily {
-        let mut tsf_id = tsf_id;
-        if tsf_id == 0 {
-            tsf_id = self.tf_incr_id.fetch_add(1, Ordering::SeqCst);
-        }
+        let tsf_id = self.tf_incr_id.fetch_add(1, Ordering::SeqCst);
 
         let tf = TseriesFamily::new(
             tsf_id,
