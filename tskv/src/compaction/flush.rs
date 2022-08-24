@@ -268,6 +268,7 @@ pub async fn run_flush_memtable_job(
         }
         reqs.clear();
     }
+
     let mut edits: Vec<VersionEdit> = vec![];
     for (tsf_id, memtables) in mems.iter() {
         if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
@@ -276,6 +277,7 @@ pub async fn run_flush_memtable_job(
                 let cf_opt = tsf.read().options();
                 let path_tsm = cf_opt.tsm_dir(*tsf_id);
                 let path_delta = cf_opt.delta_dir(*tsf_id);
+
                 let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
                 job.run(
                     tsf.read().version(),
@@ -284,6 +286,7 @@ pub async fn run_flush_memtable_job(
                     cf_opt.clone(),
                 )
                 .await?;
+
                 match compact_task_sender.send(*tsf_id) {
                     Err(e) => error!("{}", e),
                     _ => {}
@@ -291,11 +294,13 @@ pub async fn run_flush_memtable_job(
             }
         }
     }
+
     let (task_state_sender, task_state_receiver) = oneshot::channel();
     let task = SummaryTask {
         edits,
         cb: task_state_sender,
     };
+
     if summary_task_sender.send(task).is_err() {
         error!("failed to send Summary task,the edits not be loaded!")
     }

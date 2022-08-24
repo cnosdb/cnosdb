@@ -30,16 +30,9 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(name: &String, index_dir: &String) -> Self {
-        let dir = path::Path::new(index_dir)
-            .to_path_buf()
-            .join(name)
-            .to_str()
-            .unwrap()
-            .to_string();
-
+    pub fn new(name: &String, path: &String) -> Self {
         Self {
-            index: Arc::new(RwLock::new(db_index::DBIndex::new(&dir))),
+            index: db_index::index_manger(path).write().get_db_index(&name),
             name: name.to_string(),
             ts_families: HashMap::new(),
         }

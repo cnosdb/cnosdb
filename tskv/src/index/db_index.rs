@@ -1,5 +1,7 @@
 use bytes::BufMut;
 use chrono::format::format;
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 use std::borrow::Borrow;
 use std::mem::size_of;
 use std::ops::Index;
@@ -26,13 +28,18 @@ impl From<&GlobalConfig> for IndexConfig {
     }
 }
 
-#[derive(Debug)]
-pub struct DbIndexSet {
-    path: String,
-    indexs: HashMap<String, DBIndex>,
+pub fn index_manger(path: &String) -> &'static Arc<RwLock<DbIndexMgr>> {
+    static INSTANCE: OnceCell<Arc<RwLock<DbIndexMgr>>> = OnceCell::new();
+    INSTANCE.get_or_init(|| Arc::new(RwLock::new(DbIndexMgr::new(path))))
 }
 
-impl DbIndexSet {
+#[derive(Debug)]
+pub struct DbIndexMgr {
+    path: String,
+    indexs: HashMap<String, Arc<RwLock<DBIndex>>>,
+}
+
+impl DbIndexMgr {
     pub fn new(path: &String) -> Self {
         Self {
             path: path.clone(),
@@ -40,7 +47,7 @@ impl DbIndexSet {
         }
     }
 
-    pub fn get_db_index(&mut self, db: &String) -> &mut DBIndex {
+    pub fn get_db_index(&mut self, db: &String) -> Arc<RwLock<DBIndex>> {
         let dir = path::Path::new(&self.path)
             .to_path_buf()
             .join(db)
@@ -51,9 +58,9 @@ impl DbIndexSet {
         let index = self
             .indexs
             .entry(db.clone())
-            .or_insert_with(|| DBIndex::new(&dir));
+            .or_insert_with(|| Arc::new(RwLock::new(DBIndex::new(&dir))));
 
-        return index;
+        return index.clone();
     }
 }
 

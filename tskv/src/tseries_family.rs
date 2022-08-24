@@ -1112,10 +1112,12 @@ mod test {
         version_set.write().create_db(&"test".to_string());
         let db = version_set.write().get_db(&"test".to_string()).unwrap();
 
-        let mut db = db.write();
-        db.add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
+        db.write()
+            .add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
+
         let mut cfg_set = HashMap::new();
         cfg_set.insert(0, cfg.clone());
+
         run_flush_memtable_job(
             flush_seq,
             kernel,
