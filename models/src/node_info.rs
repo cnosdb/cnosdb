@@ -1,5 +1,6 @@
 use crate::Timestamp;
 
+#[allow(dead_code)]
 pub struct Vnode {
     ///  same with time series family name
     name: String,
@@ -7,6 +8,7 @@ pub struct Vnode {
     ip: String,
 }
 
+#[allow(dead_code)]
 pub struct Node {
     node_id: String,
     ip: String,
@@ -16,12 +18,14 @@ pub struct Node {
     last_updated: Timestamp,
 }
 
+#[allow(dead_code)]
 pub enum NodeStatus {
     Healthy,
     Broken,
     Unreachable,
 }
 
+#[allow(dead_code)]
 pub struct Location {
     ///  aws / huawei / google / local
     provider: String,
@@ -29,6 +33,7 @@ pub struct Location {
     az: String,
 }
 
+#[allow(dead_code)]
 pub struct Flavor {
     memory: f64, // M
     cpu: f64,    // core

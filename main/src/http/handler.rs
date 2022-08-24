@@ -86,9 +86,9 @@ pub(crate) async fn write_line_protocol(
     while let Some(chunk) = body.next().await {
         let chunk = chunk.context(HyperSnafu)?;
         len += chunk.len();
-        // if len > 102400 {
-        //     return Err(Error::BodyOversize { size: 102400 });
-        // }
+        if len > 5 * 1024 * 1024 {
+            return Err(Error::BodyOversize { size: 102400 });
+        }
         buffer.extend_from_slice(chunk.as_ref());
     }
     let lines = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
@@ -142,9 +142,9 @@ pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Respo
     while let Some(chunk) = body.next().await {
         let chunk = chunk.context(HyperSnafu)?;
         len += chunk.len();
-        // if len > 102400 {
-        //     return Err(Error::BodyOversize { size: 102400 });
-        // }
+        if len > 5 * 1024 * 1024 {
+            return Err(Error::BodyOversize { size: 102400 });
+        }
         buffer.extend_from_slice(chunk.as_ref());
     }
     let sql = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;

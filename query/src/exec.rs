@@ -56,6 +56,7 @@ impl Executor {
             .with_target_partitions(self.config.query_partitions)
     }
 
+    #[allow(dead_code)]
     pub fn new_context(&self, executor_type: ExecutorType) -> IsiphoSessionCtx {
         self.new_execution_config(executor_type).build()
     }

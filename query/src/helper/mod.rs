@@ -88,6 +88,8 @@ impl ExpressionVisitor for ApplicabilityVisitor<'_> {
 /// - the table provider can filter the table partition values with this expression
 /// - the expression can be marked as `TableProviderFilterPushDown::Exact` once this filtering
 /// was performed
+
+#[allow(dead_code)]
 pub fn expr_applicable_for_cols(col_names: &[String], expr: &Expr) -> bool {
     let mut is_applicable = true;
     expr.accept(ApplicabilityVisitor {

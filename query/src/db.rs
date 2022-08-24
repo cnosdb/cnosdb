@@ -26,6 +26,7 @@ impl DatabaseRule {
     }
 }
 
+#[allow(dead_code)]
 pub struct Db {
     rule: RwLock<Arc<DatabaseRule>>,
     exec: Arc<Executor>,
