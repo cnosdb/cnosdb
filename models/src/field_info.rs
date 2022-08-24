@@ -1,6 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
-use std::fmt::{write, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use utils::BkdrHasher;
 
 use crate::{

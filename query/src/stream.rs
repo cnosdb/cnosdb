@@ -34,6 +34,7 @@ enum ArrayType {
     Bool(Vec<bool>),
 }
 
+#[allow(dead_code)]
 pub struct TableScanStream {
     db_name: String,
     table_name: String,

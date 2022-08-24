@@ -65,6 +65,7 @@ impl IsiphoSessionCfg {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct IsiphoSessionCtx {
     inner: SessionContext,
@@ -85,6 +86,7 @@ impl IsiphoSessionCtx {
     }
 
     // for test
+    #[allow(dead_code)]
     pub fn set_cxt(&mut self, ctx: SessionContext) {
         self.inner = ctx
     }

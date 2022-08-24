@@ -130,7 +130,7 @@ impl Database {
     pub fn build_mem_points(
         &self,
         points: flatbuffers::Vector<flatbuffers::ForwardsUOffset<Point>>,
-    ) -> Result<(Vec<InMemPoint>)> {
+    ) -> Result<Vec<InMemPoint>> {
         let mut mem_points = Vec::<_>::with_capacity(points.len());
 
         // get or create forward index
@@ -154,7 +154,7 @@ impl Database {
             mem_points.push(point);
         }
 
-        return Ok((mem_points));
+        return Ok(mem_points);
     }
 
     pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {

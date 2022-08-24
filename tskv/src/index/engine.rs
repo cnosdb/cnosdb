@@ -13,7 +13,7 @@ pub struct IndexEngine {
 impl IndexEngine {
     pub fn new(path: &String) -> IndexEngine {
         let dir = path::Path::new(&path).to_path_buf();
-        fs::create_dir_all(&dir);
+        let _ = fs::create_dir_all(&dir);
 
         let config = sled::Config::new()
             .path(path)
