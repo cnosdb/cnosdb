@@ -266,6 +266,7 @@ impl TsKv {
         tokio::spawn(async move {
             while let Some(ts_family_id) = receiver.recv().await {
                 if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
+                    info!("Starting compaction on ts_family {}", ts_family_id);
                     if let Some(compact_req) = tsf.read().pick_compaction() {
                         match compaction::run_compaction_job(compact_req, ctx.clone()) {
                             Ok(Some(version_edit)) => {

@@ -21,10 +21,10 @@ use trace::debug;
 use crate::http::{parse_query, ChannelSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
 
 lazy_static! {
-    static ref NUMBER_PATTERN: Regex = Regex::new(r"^\d+([IiUu]?|(.\d*))$").unwrap();
+    static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
     static ref STRING_PATTERN: Regex = Regex::new("^\".*\"$").unwrap();
-    static ref TRUE_PATTERN: Regex = Regex::new("(t|(true)").unwrap();
-    static ref FALSE_PATTERN: Regex = Regex::new("(f|(false)").unwrap();
+    static ref TRUE_PATTERN: Regex = Regex::new("^(t|(true))$").unwrap();
+    static ref FALSE_PATTERN: Regex = Regex::new("^(f|(false))$").unwrap();
 }
 
 pub(crate) async fn route(
@@ -91,7 +91,6 @@ pub(crate) async fn write_line_protocol(
         // }
         buffer.extend_from_slice(chunk.as_ref());
     }
-    println!("Body size: {}", &len);
     let lines = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
     let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_millis())
         .context(ParseLineProtocolSnafu)?;
@@ -148,8 +147,8 @@ pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Respo
         // }
         buffer.extend_from_slice(chunk.as_ref());
     }
-    println!("Body size: {}", &len);
     let sql = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
+    debug!("Query request: {}", &sql);
 
     let record_batches = if let Some(rbs) = database.run_query(&sql).await {
         rbs
@@ -165,7 +164,7 @@ pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Respo
     Ok(resp)
 }
 
-fn parse_lines_to_points(db: &String, lines: &[Line]) -> Result<Vec<u8>, Error> {
+fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
     let mut fbb = FlatBufferBuilder::new();
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter() {
@@ -293,6 +292,12 @@ pub(crate) fn message_404(req: Request<Body>) -> Result<Response<Body>, Error> {
 
 #[cfg(test)]
 mod test {
+    use std::{fs::File, io::Read};
+
+    use line_protocol::Parser;
+
+    use crate::http::handler::parse_lines_to_points;
+
     #[test]
     fn test_parse() {
         let number_strings = ["0.1", "1.99999", "99999999i", "999I", "1U", "1u"];
@@ -302,6 +307,36 @@ mod test {
         }
         for s in non_number_strings {
             println!("{} is number? {}", s, super::NUMBER_PATTERN.is_match(s));
+        }
+
+        let bolean_strings = ["t", "f", "true", "false"];
+        let non_bolean_strings = ["t1", "f_", "@true", "false@"];
+        for s in bolean_strings {
+            println!("{} is true? {}", s, super::TRUE_PATTERN.is_match(s));
+            println!("{} is false? {}", s, super::FALSE_PATTERN.is_match(s));
+        }
+        for s in non_bolean_strings {
+            println!("{} is true? {}", s, super::TRUE_PATTERN.is_match(s));
+            println!("{} is false? {}", s, super::FALSE_PATTERN.is_match(s));
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_generated_data_to_points() {
+        let mut lp_file = File::open("/tmp/cnosdb-data").unwrap();
+        let mut lp_lines = String::new();
+        lp_file.read_to_string(&mut lp_lines).unwrap();
+
+        let lines: Vec<&str> = lp_lines.split("\n").collect();
+        println!("Received line-protocol lines: {}", lines.len());
+
+        let parser = Parser::new(0);
+        for line in lines {
+            println!("Parsing: {}", line);
+            let parsed_lines = parser.parse(&line).unwrap();
+            let points = parse_lines_to_points("test", &parsed_lines);
+            // println!("{:?}", points);
         }
     }
 }
