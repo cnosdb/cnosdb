@@ -10,6 +10,7 @@ tskv = { path = "../tskv" }
 models = { path = "../models" }
 config = { path = "../config" }
 
+criterion = { version = "0.3.5", features = ["async_tokio"] }
 datafusion = { version = "10.0.0", features = ["scheduler"] }
 tokio = { version = "1.17", features = ["full"] }
 futures = { version = "0.3" }
@@ -29,3 +30,11 @@ version = "0.2"
 
 [dev-dependencies]
 flatbuffers = "2.1"
+
+[[bench]]
+harness = false
+name = "aggregate_function"
+
+[[bench]]
+harness = false
+name = "scalar_function"
