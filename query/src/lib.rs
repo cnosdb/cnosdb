@@ -4,6 +4,8 @@ mod catalog;
 mod context;
 pub mod db;
 mod exec;
+pub mod extension;
+mod function;
 mod helper;
 pub mod predicate;
 pub mod schema;
