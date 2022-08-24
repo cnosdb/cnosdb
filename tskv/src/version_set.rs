@@ -21,14 +21,11 @@ use crate::{
 pub struct VersionSet {
     ts_opt: Arc<TseriesFamOpt>,
 
-    incr_id: AtomicU32, // todo: will delete in cluster version
-
     dbs: HashMap<String, Arc<RwLock<database::Database>>>,
 }
 
 impl VersionSet {
     pub fn new(opt: Arc<TseriesFamOpt>, ver_set: HashMap<u32, Arc<Version>>) -> Self {
-        let mut max_id = 0_u32;
         let mut dbs = HashMap::new();
 
         for (id, ver) in ver_set {
@@ -40,17 +37,9 @@ impl VersionSet {
             });
 
             db.write().open_tsfamily(ver.clone());
-
-            if max_id < ver.tf_id() {
-                max_id = id;
-            }
         }
 
-        Self {
-            dbs,
-            ts_opt: opt,
-            incr_id: AtomicU32::new(max_id + 1),
-        }
+        Self { dbs, ts_opt: opt }
     }
 
     pub fn create_db(&mut self, name: &String) -> Arc<RwLock<database::Database>> {

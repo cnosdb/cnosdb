@@ -71,12 +71,8 @@ impl TsKv {
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
-        let (version_set, summary) = Self::recover_summary(
-            shared_options.clone(),
-            ts_family_num,
-            shared_options.ts_family.clone(),
-        )
-        .await;
+        let (version_set, summary) =
+            Self::recover_summary(shared_options.clone(), shared_options.ts_family.clone()).await;
 
         let wal_cfg = shared_options.wal.clone();
 
@@ -114,7 +110,6 @@ impl TsKv {
 
     async fn recover_summary(
         opt: Arc<Options>,
-        ts_family_num: u32,
         ts_family_opt: Arc<TseriesFamOpt>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         if !file_manager::try_exists(&opt.db.db_path) {
@@ -124,13 +119,11 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(opt.db.clone(), ts_family_num, ts_family_opt)
+            Summary::recover(opt.db.clone(), ts_family_opt)
                 .await
                 .unwrap()
         } else {
-            Summary::new(opt.db.clone(), ts_family_num, ts_family_opt)
-                .await
-                .unwrap()
+            Summary::new(opt.db.clone(), ts_family_opt).await.unwrap()
         };
         let version_set = summary.version_set();
 
