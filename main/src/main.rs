@@ -5,6 +5,7 @@ use futures::join;
 use once_cell::sync::Lazy;
 use tokio::{runtime::Runtime, sync::mpsc};
 
+use crossbeam::channel;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
 use trace::init_default_global_tracing;
@@ -88,7 +89,7 @@ enum SubCommand {
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
 fn main() -> Result<(), std::io::Error> {
-    init_default_global_tracing("tskv_log", "tskv.log", "debug");
+    init_default_global_tracing("tskv_log", "tskv.log", "error");
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
@@ -113,7 +114,8 @@ fn main() -> Result<(), std::io::Error> {
                     .parse::<SocketAddr>()
                     .expect("Invalid http_host");
 
-                let (sender, receiver) = mpsc::unbounded_channel();
+                //let (sender, receiver) = mpsc::unbounded_channel();
+                let (sender, receiver) = channel::unbounded();
 
                 let tskv_options = tskv::Options::from(global_config);
                 let tskv = Arc::new(
@@ -121,7 +123,10 @@ fn main() -> Result<(), std::io::Error> {
                         .await
                         .unwrap(),
                 );
-                TsKv::start(tskv.clone(), receiver);
+
+                for i in 0..10 {
+                    TsKv::start(tskv.clone(), receiver.clone());
+                }
 
                 let db = Arc::new(Db::new(tskv));
 

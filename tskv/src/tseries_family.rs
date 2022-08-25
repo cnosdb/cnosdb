@@ -12,7 +12,6 @@ use std::{
 };
 
 use config::get_config;
-use crossbeam::channel::internal::SelectHandle;
 use lazy_static::lazy_static;
 use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};

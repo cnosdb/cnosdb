@@ -12,6 +12,8 @@ use tokio::{
     },
 };
 
+use crossbeam::channel;
+
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use models::{FieldId, SeriesId, SeriesKey, Timestamp};
 use protos::models::Points;
@@ -308,10 +310,10 @@ impl TsKv {
         warn!("Summary task handler started");
     }
 
-    pub fn start(tskv: Arc<TsKv>, mut req_rx: UnboundedReceiver<Task>) {
+    pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {
         warn!("job 'main' starting.");
         let f = async move {
-            while let Some(command) = req_rx.recv().await {
+            while let Ok(command) = req_rx.recv() {
                 match command {
                     Task::WritePoints { req, tx } => {
                         debug!("writing points.");

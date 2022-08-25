@@ -13,6 +13,8 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot::error::RecvError;
 use trace::info;
 
+use crossbeam::channel;
+
 use crate::http::handler::route;
 
 mod handler;
@@ -38,6 +40,11 @@ pub enum Error {
     #[snafu(display("Error receiving from channel receiver: {}", source))]
     ChannelReceive { source: RecvError },
 
+    #[snafu(display("Error sending to channel receiver: {}", source))]
+    CrossbeamSend {
+        source: channel::SendError<tskv::Task>,
+    },
+
     #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
 
@@ -48,7 +55,7 @@ pub enum Error {
 pub async fn serve(
     addr: SocketAddr,
     db: Arc<Db>,
-    sender: UnboundedSender<tskv::Task>,
+    sender: channel::Sender<tskv::Task>,
 ) -> Result<(), Error> {
     let make_service = make_service_fn(move |conn: &AddrStream| {
         let db = db.clone();

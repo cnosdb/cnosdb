@@ -10,9 +10,9 @@ protos = { path = "../protos", features = ["test"] }
 trace  = { path = "../trace" }
 utils  = { path = "../utils"  }
 
+crossbeam = "0.8"
 chrono = "0.4"
 core_affinity = "0.5.10"
-crossbeam = "0.8"
 futures = { version = "0.3", features = ["std", "thread-pool"] }
 flatbuffers = "2.1"
 lazy_static = "1.4"
