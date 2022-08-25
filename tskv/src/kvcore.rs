@@ -161,13 +161,13 @@ impl TsKv {
         };
         if let Some(sv) = super_version {
             // get data from memcache
-            if let Some(mem_entry) = sv.caches.mut_cache.read().data_cache.get(&field_id) {
-                data.append(&mut mem_entry.read_cell(time_range));
+            if let Some(mem_entry) = sv.caches.mut_cache.read().get(&field_id) {
+                data.append(&mut mem_entry.read().read_cell(time_range));
             }
 
             // get data from delta_memcache
-            if let Some(mem_entry) = sv.caches.delta_mut_cache.read().data_cache.get(&field_id) {
-                data.append(&mut mem_entry.read_cell(time_range));
+            if let Some(mem_entry) = sv.caches.delta_mut_cache.read().get(&field_id) {
+                data.append(&mut mem_entry.read().read_cell(time_range));
             }
 
             // get data from immut_delta_memcache
@@ -175,8 +175,8 @@ impl TsKv {
                 if mem_cache.read().flushed {
                     continue;
                 }
-                if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    data.append(&mut mem_entry.read_cell(time_range));
+                if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+                    data.append(&mut mem_entry.read().read_cell(time_range));
                 }
             }
 
@@ -185,8 +185,8 @@ impl TsKv {
                 if mem_cache.read().flushed {
                     continue;
                 }
-                if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    data.append(&mut mem_entry.read_cell(time_range));
+                if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+                    data.append(&mut mem_entry.read().read_cell(time_range));
                 }
             }
 
@@ -351,8 +351,7 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mut db = db.write();
-        let mem_points = db.build_mem_points(fb_points.points().unwrap())?;
+        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
 
         let (cb, rx) = oneshot::channel();
         self.wal_sender
@@ -360,9 +359,9 @@ impl Engine for TsKv {
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
 
-        let tsf = match db.get_tsfamily_random() {
+        let tsf = match db.read().get_tsfamily_random() {
             Some(v) => v,
-            None => db.add_tsfamily(
+            None => db.write().add_tsfamily(
                 0,
                 seq,
                 self.global_ctx.file_id_next(),
@@ -371,8 +370,9 @@ impl Engine for TsKv {
             ),
         };
 
+        tsf.read().put_points(seq, &mem_points).await;
         tsf.write()
-            .put_points(seq, &mem_points, self.flush_task_sender.clone())
+            .check_to_flush(self.flush_task_sender.clone())
             .await;
 
         Ok(WritePointsRpcResponse {
@@ -394,12 +394,11 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mut db = db.write();
-        let mem_points = db.build_mem_points(fb_points.points().unwrap())?;
+        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
 
-        let tsf = match db.get_tsfamily_random() {
+        let tsf = match db.read().get_tsfamily_random() {
             Some(v) => v,
-            None => db.add_tsfamily(
+            None => db.write().add_tsfamily(
                 0,
                 seq,
                 self.global_ctx.file_id_next(),
@@ -408,8 +407,9 @@ impl Engine for TsKv {
             ),
         };
 
+        tsf.read().put_points(seq, &mem_points).await;
         tsf.write()
-            .put_points(seq, &mem_points, self.flush_task_sender.clone())
+            .check_to_flush(self.flush_task_sender.clone())
             .await;
 
         return Ok(WritePointsRpcResponse {

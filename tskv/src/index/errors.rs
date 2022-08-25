@@ -29,6 +29,9 @@ pub enum IndexError {
     #[snafu(display("Unrecognized FieldType"))]
     FieldType,
 
+    #[snafu(display("Not Found Field"))]
+    NotFoundField,
+
     #[snafu(display("Series not exists"))]
     SeriesNotExists,
 

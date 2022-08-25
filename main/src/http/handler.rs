@@ -335,7 +335,7 @@ mod test {
         for line in lines {
             println!("Parsing: {}", line);
             let parsed_lines = parser.parse(&line).unwrap();
-            let points = parse_lines_to_points("test", &parsed_lines);
+            let _ = parse_lines_to_points("test", &parsed_lines);
             // println!("{:?}", points);
         }
     }

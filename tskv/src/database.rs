@@ -137,11 +137,7 @@ impl Database {
         for point in points {
             let mut info =
                 SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-            let sid = self
-                .index
-                .write()
-                .add_series_if_not_exists(&mut info)
-                .context(error::IndexErrSnafu)?;
+            let sid = self.build_index_and_check_type(&mut info)?;
 
             let mut point = InMemPoint::from(point);
             point.series_id = sid;
@@ -155,6 +151,20 @@ impl Database {
         }
 
         return Ok(mem_points);
+    }
+
+    fn build_index_and_check_type(&self, info: &mut SeriesInfo) -> Result<u64> {
+        if let Some(id) = self.index.read().get_from_cache(info) {
+            return Ok(id);
+        }
+
+        let id = self
+            .index
+            .write()
+            .add_series_if_not_exists(info)
+            .context(error::IndexErrSnafu)?;
+
+        return Ok(id);
     }
 
     pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
