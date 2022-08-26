@@ -1,13 +1,11 @@
 use std::fmt;
-use sqlparser::ast::{
-    ColumnDef, SqlOption, Statement as SqlStatement,
-};
+use sqlparser::ast::Statement;
 
 /// Statement representations
 #[derive(Debug, PartialEq)]
 pub enum ExtStatement {
     /// ANSI SQL AST node
-    Standard(Box<SqlStatement>),
+    SqlStatement(Box<Statement>),
 
     CreateTable(CreateTable),
     CreateDatabase(CreateDatabase),
@@ -21,7 +19,7 @@ pub enum ExtStatement {
     ShowDatabases,
     ShowTables,
 
-    //todo:  insert/update/alert
+    //todo:  insert/update/alter
 
 }
 
