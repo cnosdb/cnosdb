@@ -721,9 +721,6 @@ impl TseriesFamily {
     // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
     // version_set when we insert each point
     pub async fn put_mutcache(&self, raw: &mut MemRaw<'_>) {
-        self.immut_ts_min
-            .compare_and_swap(i64::MIN, raw.ts, Ordering::Relaxed);
-
         if raw.ts >= self.immut_ts_min.load(Ordering::Relaxed) {
             if raw.ts > self.mut_ts_max.load(Ordering::Relaxed) {
                 self.mut_ts_max.store(raw.ts, Ordering::Relaxed);
@@ -737,24 +734,12 @@ impl TseriesFamily {
     }
 
     pub async fn delete_cache(&self, time_range: &TimeRange) {
-        todo!()
-        // for i in self.mut_cache.write().data_cache.iter_mut() {
-        //     if i.1.overlap(time_range) {
-        //         i.1.delete_data_cell(time_range);
-        //     }
-        // }
-        // for i in self.delta_mut_cache.write().data_cache.iter_mut() {
-        //     if i.1.overlap(time_range) {
-        //         i.1.delete_data_cell(time_range);
-        //     }
-        // }
-        // for memcache in self.immut_cache.iter() {
-        //     for i in memcache.write().data_cache.iter_mut() {
-        //         if i.1.overlap(time_range) {
-        //             i.1.delete_data_cell(time_range);
-        //         }
-        //     }
-        // }
+        self.mut_cache.read().delete_data(time_range);
+        self.delta_mut_cache.read().delete_data(time_range);
+
+        for memcache in self.immut_cache.iter() {
+            memcache.read().delete_data(time_range);
+        }
     }
 
     pub fn pick_compaction(&self) -> Option<CompactReq> {
@@ -791,10 +776,6 @@ impl TseriesFamily {
 
     pub fn options(&self) -> Arc<TseriesFamOpt> {
         self.opts.clone()
-    }
-
-    pub fn imut_ts_min(&self) -> i64 {
-        self.immut_ts_min.load(Ordering::Relaxed)
     }
 }
 
@@ -1107,13 +1088,9 @@ mod test {
         db.write()
             .add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
 
-        let mut cfg_set = HashMap::new();
-        cfg_set.insert(0, cfg.clone());
-
         run_flush_memtable_job(
             flush_seq,
             kernel,
-            cfg_set,
             version_set.clone(),
             summary_task_sender,
             compact_task_sender,

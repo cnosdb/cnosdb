@@ -245,7 +245,6 @@ fn build_tsm_file(
 pub async fn run_flush_memtable_job(
     reqs: Arc<Mutex<Vec<FlushReq>>>,
     kernel: Arc<GlobalContext>,
-    tsf_config: HashMap<u32, Arc<TseriesFamOpt>>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
@@ -269,25 +268,27 @@ pub async fn run_flush_memtable_job(
     let mut edits: Vec<VersionEdit> = vec![];
     for (tsf_id, memtables) in mems.iter() {
         if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
-            if !memtables.is_empty() {
-                // todo: build path by vnode data
-                let cf_opt = tsf.read().options();
-                let path_tsm = cf_opt.tsm_dir(*tsf_id);
-                let path_delta = cf_opt.delta_dir(*tsf_id);
+            if memtables.is_empty() {
+                continue;
+            }
 
-                let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
-                job.run(
-                    tsf.read().version(),
-                    kernel.clone(),
-                    &mut edits,
-                    cf_opt.clone(),
-                )
-                .await?;
+            // todo: build path by vnode data
+            let cf_opt = tsf.read().options();
+            let path_tsm = cf_opt.tsm_dir(*tsf_id);
+            let path_delta = cf_opt.delta_dir(*tsf_id);
 
-                match compact_task_sender.send(*tsf_id) {
-                    Err(e) => error!("{}", e),
-                    _ => {}
-                }
+            let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
+            job.run(
+                tsf.read().version(),
+                kernel.clone(),
+                &mut edits,
+                cf_opt.clone(),
+            )
+            .await?;
+
+            match compact_task_sender.send(*tsf_id) {
+                Err(e) => error!("{}", e),
+                _ => {}
             }
         }
     }

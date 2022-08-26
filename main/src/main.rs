@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use clap::{Parser, Subcommand};
 use futures::join;
 use once_cell::sync::Lazy;
-use tokio::{runtime::Runtime, sync::mpsc};
+use tokio::runtime::Runtime;
 
 use crossbeam::channel;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
@@ -89,7 +89,7 @@ enum SubCommand {
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
 fn main() -> Result<(), std::io::Error> {
-    init_default_global_tracing("tskv_log", "tskv.log", "error");
+    init_default_global_tracing("tskv_log", "tskv.log", "debug");
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
@@ -124,7 +124,7 @@ fn main() -> Result<(), std::io::Error> {
                         .unwrap(),
                 );
 
-                for i in 0..10 {
+                for _ in 0..1 {
                     TsKv::start(tskv.clone(), receiver.clone());
                 }
 

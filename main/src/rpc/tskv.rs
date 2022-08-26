@@ -10,7 +10,7 @@ use protos::{
     models::{PingBody, PingBodyBuilder},
 };
 use tokio::sync::{
-    mpsc::{self, UnboundedSender},
+    mpsc::{self},
     oneshot,
 };
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};

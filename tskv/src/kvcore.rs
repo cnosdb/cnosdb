@@ -4,13 +4,8 @@ use futures::stream::SelectNextSome;
 use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
-use tokio::{
-    runtime::Builder,
-    sync::{
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
-};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::{runtime::Builder, sync::oneshot};
 
 use crossbeam::channel;
 
@@ -245,7 +240,6 @@ impl TsKv {
                 run_flush_memtable_job(
                     x.clone(),
                     ctx.clone(),
-                    HashMap::new(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),

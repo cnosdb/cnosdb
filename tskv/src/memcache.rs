@@ -134,13 +134,17 @@ impl MemEntry {
             });
     }
 
-    pub fn overlap(&self, time_range: &TimeRange) -> bool {
-        !(self.ts_min > time_range.max_ts && self.ts_max < time_range.min_ts)
-    }
-
     pub fn delete_data_cell(&mut self, time_range: &TimeRange) {
+        if !self.overlap(time_range) {
+            return;
+        }
+
         self.cells
             .retain(|x| x.timestamp() < time_range.min_ts || x.timestamp() > time_range.max_ts);
+    }
+
+    pub fn overlap(&self, time_range: &TimeRange) -> bool {
+        !(self.ts_min > time_range.max_ts && self.ts_max < time_range.min_ts)
     }
 }
 
@@ -225,6 +229,12 @@ impl MemCache {
         return true;
     }
 
+    pub fn delete_data(&self, time_range: &TimeRange) {
+        for part in self.partions.iter() {
+            part.read().delete_data(time_range);
+        }
+    }
+
     pub fn copy_data(
         &self,
         data_map: &mut HashMap<u64, Vec<Arc<RwLock<MemEntry>>>>,
@@ -307,6 +317,12 @@ impl MemTable {
             *sum += entry.read().cells.len();
             let item = data_map.entry(*field_id).or_insert(vec![]);
             item.push(entry.clone());
+        }
+    }
+
+    pub fn delete_data(&self, time_range: &TimeRange) {
+        for (_, entry) in &self.fields {
+            entry.write().delete_data_cell(time_range);
         }
     }
 

@@ -14,15 +14,12 @@ use protos::models::{
 use query::db::Db;
 use regex::Regex;
 use snafu::ResultExt;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use trace::debug;
 
 use crossbeam::channel;
 
-use crate::http::{
-    parse_query, ChannelSendSnafu, CrossbeamSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu,
-};
+use crate::http::{parse_query, CrossbeamSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
 
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
