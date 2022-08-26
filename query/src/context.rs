@@ -6,6 +6,9 @@ use datafusion::{
     prelude::{SessionConfig, SessionContext},
     scheduler::Scheduler,
 };
+use trace::warn;
+
+use crate::extension::datafusion::expr::{self, func_manager::DFSessionContextFuncAdapter};
 
 #[derive(Clone)]
 pub struct IsiphoSessionCfg {
@@ -52,7 +55,13 @@ impl IsiphoSessionCfg {
     pub fn build(self) -> IsiphoSessionCtx {
         let state = SessionState::with_config_rt(self.session_config, self.runtime);
 
-        let inner = SessionContext::with_state(state);
+        let mut inner = SessionContext::with_state(state);
+        // temporary(database level): wrap SessionContext into function meta manager
+        let mut func_manager = DFSessionContextFuncAdapter::new(&mut inner);
+        // temporary(database level): register function to function meta manager
+        if let Err(e) = expr::load_all_functions(&mut func_manager) {
+            warn!("Failed to load consdb's built-in function. err: {}", e);
+        };
 
         if let Some(default_catalog) = self.catalog {
             inner.register_catalog(DEFAULT_CATALOG, default_catalog);
