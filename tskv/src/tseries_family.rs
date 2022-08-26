@@ -261,12 +261,7 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub fn read_column_file(
-        &self,
-        tf_id: u32,
-        field_id: FieldId,
-        time_range: &TimeRange,
-    ) -> Vec<DataBlock> {
+    pub fn read_column_file(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) -> Vec<DataBlock> {
         let mut data = vec![];
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
@@ -328,31 +323,21 @@ impl Version {
     }
 
     /// Creates new Version using current Version and `VersionEdit`s.
-    pub fn copy_apply_version_edits(
-        &self,
-        version_edits: &[VersionEdit],
-        last_seq: Option<u64>,
-    ) -> Version {
+    pub fn copy_apply_version_edits(&self, version_edits: &[VersionEdit], last_seq: Option<u64>) -> Version {
         let mut added_files: HashMap<LevelId, Vec<CompactMeta>> = HashMap::new();
         let mut deleted_files: HashMap<LevelId, HashSet<ColumnFileId>> = HashMap::new();
         for ve in version_edits {
             if ve.has_file_id {
                 if !ve.add_files.is_empty() {
                     ve.add_files.iter().for_each(|f| {
-                        added_files
-                            .entry(f.level)
-                            .or_insert(Vec::new())
-                            .push(f.clone());
+                        added_files.entry(f.level).or_insert(Vec::new()).push(f.clone());
                     });
                 }
                 continue;
             }
             if !ve.del_files.is_empty() {
                 ve.del_files.iter().for_each(|f| {
-                    deleted_files
-                        .entry(f.level)
-                        .or_insert(HashSet::new())
-                        .insert(f.file_id);
+                    deleted_files.entry(f.level).or_insert(HashSet::new()).insert(f.file_id);
                 });
                 continue;
             }
@@ -495,12 +480,7 @@ impl TseriesFamily {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
         let max_level_ts = version.max_level_ts;
-        let delta_mm = Arc::new(RwLock::new(MemCache::new(
-            tf_id,
-            tsf_opt.max_memcache_size,
-            seq,
-            true,
-        )));
+        let delta_mm = Arc::new(RwLock::new(MemCache::new(tf_id, tsf_opt.max_memcache_size, seq, true)));
         Self {
             tf_id,
             seq_no: seq,
@@ -530,11 +510,7 @@ impl TseriesFamily {
     }
 
     pub async fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
-        self.super_version
-            .caches
-            .mut_cache
-            .write()
-            .switch_to_immutable();
+        self.super_version.caches.mut_cache.write().switch_to_immutable();
         self.immut_cache.push(self.mut_cache.clone());
         self.new_super_version(self.version.clone());
         self.mut_cache = cache;
@@ -566,11 +542,7 @@ impl TseriesFamily {
     }
 
     pub async fn switch_to_immutable(&mut self) {
-        self.super_version
-            .caches
-            .mut_cache
-            .write()
-            .switch_to_immutable();
+        self.super_version.caches.mut_cache.write().switch_to_immutable();
 
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
@@ -632,13 +604,8 @@ impl TseriesFamily {
             mems: req_mem,
             wait_req: 0,
         });
-        info!(
-            "delta flush_req send,now req queue len : {}",
-            FLUSH_REQ.lock().len()
-        );
-        sender
-            .send(FLUSH_REQ.clone())
-            .expect("error send flush req to kvcore");
+        info!("delta flush_req send,now req queue len : {}", FLUSH_REQ.lock().len());
+        sender.send(FLUSH_REQ.clone()).expect("error send flush req to kvcore");
     }
 
     async fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
@@ -679,13 +646,8 @@ impl TseriesFamily {
             mems: req_mem,
             wait_req: 0,
         });
-        info!(
-            "flush_req send,now req queue len : {}",
-            FLUSH_REQ.lock().len()
-        );
-        sender
-            .send(FLUSH_REQ.clone())
-            .expect("error send flush req to kvcore");
+        info!("flush_req send,now req queue len : {}", FLUSH_REQ.lock().len());
+        sender.send(FLUSH_REQ.clone()).expect("error send flush req to kvcore");
     }
 
     pub async fn put_points(&self, seq: u64, points: &Vec<InMemPoint>) {
@@ -790,7 +752,6 @@ mod test {
     use tokio::sync::mpsc::UnboundedReceiver;
     use trace::info;
 
-    use crate::memcache::MemRaw;
     use crate::summary::SummaryTask;
     use crate::{
         compaction::{run_flush_memtable_job, FlushReq},
@@ -963,10 +924,7 @@ mod test {
         assert_eq!(new_version.max_level_ts, 3150);
 
         let lvl = new_version.levels_info.get(1).unwrap();
-        assert_eq!(
-            lvl.time_range,
-            TimeRange::new(Timestamp::MAX, Timestamp::MIN)
-        );
+        assert_eq!(lvl.time_range, TimeRange::new(Timestamp::MAX, Timestamp::MIN));
         assert_eq!(lvl.files.len(), 0);
 
         let lvl = new_version.levels_info.get(2).unwrap();
@@ -1009,11 +967,7 @@ mod test {
         })
         .await;
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
-        tsf.delete_cache(&TimeRange {
-            max_ts: 0,
-            min_ts: 0,
-        })
-        .await;
+        tsf.delete_cache(&TimeRange { max_ts: 0, min_ts: 0 }).await;
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 0);
     }
 
@@ -1080,8 +1034,7 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
-        let version_set: Arc<RwLock<VersionSet>> =
-            Arc::new(RwLock::new(VersionSet::new(cfg.clone(), HashMap::new())));
+        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new(cfg.clone(), HashMap::new())));
         version_set.write().create_db(&"test".to_string());
         let db = version_set.write().get_db(&"test".to_string()).unwrap();
 
@@ -1101,18 +1054,9 @@ mod test {
         update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
 
         let version_set = version_set.write();
-        let tsf = version_set
-            .get_tsfamily_by_name(&"test".to_string())
-            .unwrap();
+        let tsf = version_set.get_tsfamily_by_name(&"test".to_string()).unwrap();
         let version = tsf.write().version();
-        version.levels_info[1].read_column_file(
-            tsf.write().tf_id(),
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1].read_column_file(tsf.write().tf_id(), 0, &TimeRange { max_ts: 0, min_ts: 0 });
         let file = version.levels_info[1].files[0].clone();
 
         let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
@@ -1120,13 +1064,6 @@ mod test {
         tombstone.flush().unwrap();
         tombstone.load().unwrap();
 
-        version.levels_info[1].read_column_file(
-            0,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1].read_column_file(0, 0, &TimeRange { max_ts: 0, min_ts: 0 });
     }
 }

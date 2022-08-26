@@ -84,11 +84,14 @@ impl PartialEq for SeriesKey {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SeriesInfo {
     id: SeriesId,
+
     tags: Vec<Tag>,
     field_infos: Vec<FieldInfo>,
-
     db: String,
     table: String,
+
+    field_fill: Vec<FieldInfo>,
+    schema_id: u32,
 }
 
 impl Display for SeriesInfo {
@@ -131,6 +134,9 @@ impl SeriesInfo {
             table,
             tags,
             field_infos,
+
+            schema_id: 0,
+            field_fill: vec![],
         };
 
         si.sort_tags();
@@ -168,11 +174,8 @@ impl SeriesInfo {
         };
 
         let db = match point.db() {
-            Some(db) => {
-                String::from_utf8(db.to_vec()).map_err(|err| Error::InvalidFlatbufferMessage {
-                    err: err.to_string(),
-                })?
-            }
+            Some(db) => String::from_utf8(db.to_vec())
+                .map_err(|err| Error::InvalidFlatbufferMessage { err: err.to_string() })?,
 
             None => {
                 return Err(Error::InvalidFlatbufferMessage {
@@ -182,11 +185,8 @@ impl SeriesInfo {
         };
 
         let table = match point.table() {
-            Some(table) => String::from_utf8(table.to_vec()).map_err(|err| {
-                Error::InvalidFlatbufferMessage {
-                    err: err.to_string(),
-                }
-            })?,
+            Some(table) => String::from_utf8(table.to_vec())
+                .map_err(|err| Error::InvalidFlatbufferMessage { err: err.to_string() })?,
 
             None => {
                 return Err(Error::InvalidFlatbufferMessage {
@@ -201,6 +201,9 @@ impl SeriesInfo {
             table,
             tags,
             field_infos,
+
+            schema_id: 0,
+            field_fill: vec![],
         };
         info.sort_tags();
         Ok(info)
@@ -224,6 +227,14 @@ impl SeriesInfo {
 
     pub fn db(&self) -> &String {
         &self.db
+    }
+
+    pub fn get_schema_id(&self) -> u32 {
+        return self.schema_id;
+    }
+
+    pub fn set_schema_id(&mut self, id: u32) {
+        self.schema_id = id;
     }
 
     pub fn field_infos(&mut self) -> &mut Vec<FieldInfo> {

@@ -48,8 +48,7 @@ impl Database {
             ver.clone(),
             opt,
         );
-        self.ts_families
-            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
+        self.ts_families.insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
     pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
@@ -135,8 +134,7 @@ impl Database {
 
         // get or create forward index
         for point in points {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             let sid = self.build_index_and_check_type(&mut info)?;
 
             let mut point = InMemPoint::from(point);

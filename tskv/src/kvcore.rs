@@ -9,7 +9,7 @@ use tokio::{runtime::Builder, sync::oneshot};
 
 use crossbeam::channel;
 
-use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use ::models::{utils::unite_id, FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use models::{FieldId, SeriesId, SeriesKey, Timestamp};
 use protos::models::Points;
 use protos::{
@@ -21,9 +21,7 @@ use trace::{debug, error, info, trace, warn};
 use crate::engine::Engine;
 
 use crate::database;
-use crate::index::utils::unite_id;
 use crate::index::IndexResult;
-use crate::memcache::MemRaw;
 use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
@@ -116,9 +114,7 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(opt.db.clone(), ts_family_opt)
-                .await
-                .unwrap()
+            Summary::recover(opt.db.clone(), ts_family_opt).await.unwrap()
         } else {
             Summary::new(opt.db.clone(), ts_family_opt).await.unwrap()
         };
@@ -131,21 +127,12 @@ impl TsKv {
         let wal_manager = WalManager::new(self.options.wal.clone());
 
         wal_manager
-            .recover(
-                self,
-                self.global_ctx.clone(),
-                self.flush_task_sender.clone(),
-            )
+            .recover(self, self.global_ctx.clone(), self.flush_task_sender.clone())
             .await
             .unwrap();
     }
 
-    pub fn read_point(
-        &self,
-        db: &String,
-        time_range: &TimeRange,
-        field_id: FieldId,
-    ) -> Vec<DataBlock> {
+    pub fn read_point(&self, db: &String, time_range: &TimeRange, field_id: FieldId) -> Vec<DataBlock> {
         let mut data = vec![];
         let mut super_version: Option<Arc<SuperVersion>> = None;
         {
@@ -340,11 +327,10 @@ impl TsKv {
 impl Engine for TsKv {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
         let points = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
-            .context(error::InvalidFlatbufferSnafu)?;
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points).context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
-            .map_err(|err| Error::ErrCharacterSet)?;
+        let db_name =
+            String::from_utf8(fb_points.database().unwrap().to_vec()).map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
         let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
@@ -367,9 +353,7 @@ impl Engine for TsKv {
         };
 
         tsf.read().put_points(seq, &mem_points).await;
-        tsf.write()
-            .check_to_flush(self.flush_task_sender.clone())
-            .await;
+        tsf.write().check_to_flush(self.flush_task_sender.clone()).await;
 
         Ok(WritePointsRpcResponse {
             version: 1,
@@ -377,17 +361,12 @@ impl Engine for TsKv {
         })
     }
 
-    async fn write_from_wal(
-        &self,
-        write_batch: WritePointsRpcRequest,
-        seq: u64,
-    ) -> Result<WritePointsRpcResponse> {
+    async fn write_from_wal(&self, write_batch: WritePointsRpcRequest, seq: u64) -> Result<WritePointsRpcResponse> {
         let points = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
-            .context(error::InvalidFlatbufferSnafu)?;
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points).context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
-            .map_err(|err| Error::ErrCharacterSet)?;
+        let db_name =
+            String::from_utf8(fb_points.database().unwrap().to_vec()).map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
         let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
@@ -404,9 +383,7 @@ impl Engine for TsKv {
         };
 
         tsf.read().put_points(seq, &mem_points).await;
-        tsf.write()
-            .check_to_flush(self.flush_task_sender.clone())
-            .await;
+        tsf.write().check_to_flush(self.flush_task_sender.clone()).await;
 
         return Ok(WritePointsRpcResponse {
             version: 1,
@@ -446,13 +423,7 @@ impl Engine for TsKv {
     }
 
     //todo...
-    async fn delete_series(
-        &self,
-        name: &String,
-        sids: Vec<SeriesId>,
-        min: Timestamp,
-        max: Timestamp,
-    ) -> Result<()> {
+    async fn delete_series(&self, name: &String, sids: Vec<SeriesId>, min: Timestamp, max: Timestamp) -> Result<()> {
         let vs = self.version_set.read();
         let db = vs.get_db(name);
         if let None = db {
@@ -486,13 +457,9 @@ impl Engine for TsKv {
                     if level.time_range.overlaps(&timerange) {
                         for column_file in level.files.iter() {
                             if column_file.time_range().overlaps(&timerange) {
-                                let field_ids: Vec<FieldId> = series_info
-                                    .field_infos()
-                                    .iter()
-                                    .map(|f| f.field_id())
-                                    .collect();
-                                let mut tombstone =
-                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
+                                let field_ids: Vec<FieldId> =
+                                    series_info.field_infos().iter().map(|f| f.field_id()).collect();
+                                let mut tombstone = TsmTombstone::open_for_write(&path, column_file.file_id())?;
                                 tombstone.add_range(&field_ids, min, max)?;
                                 tombstone.flush()?;
                             }
@@ -519,20 +486,9 @@ impl Engine for TsKv {
         Ok(None)
     }
 
-    async fn get_series_id_list(
-        &self,
-
-        name: &String,
-        tab: &String,
-        tags: &Vec<Tag>,
-    ) -> IndexResult<Vec<u64>> {
+    async fn get_series_id_list(&self, name: &String, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
         if let Some(db) = self.version_set.read().get_db(name) {
-            return db
-                .read()
-                .get_index()
-                .write()
-                .get_series_id_list(tab, tags)
-                .await;
+            return db.read().get_index().write().get_series_id_list(tab, tags).await;
         }
 
         Ok(vec![])
