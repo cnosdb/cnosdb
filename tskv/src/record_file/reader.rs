@@ -27,7 +27,8 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(path: &Path) -> Option<Self> {
+    pub fn new(path: impl AsRef<Path>) -> Option<Self> {
+        let path = path.as_ref();
         let file = match open_file(path) {
             Ok(v) => v,
             Err(e) => {

@@ -14,7 +14,7 @@ use crate::{
     error::{Error, Result},
     file_utils,
     kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
-    record_file::{Reader, Writer},
+    record_file::{Reader, Writer, RecordFileError},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
     LevelId, TseriesFamilyId,
@@ -389,6 +389,78 @@ impl Summary {
     pub fn global_context(&self) -> Arc<GlobalContext> {
         self.ctx.clone()
     }
+}
+
+pub fn print_summary_statistics(path: impl AsRef<Path>) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async move {
+        let mut reader = Reader::new(&path).unwrap();
+        println!("============================================================");
+        let mut i = 0_usize;
+        loop {
+            match reader.read_record().await {
+                Ok(record) => {
+                    let ve = VersionEdit::decode(&record.data).unwrap();
+                    println!("VersionEdit #{}", i);
+                    println!("------------------------------------------------------------");
+                    i += 1;
+                    if ve.add_tsf {
+                        println!("  Add ts_family: {}", ve.tsf_id);
+                        println!("------------------------------------------------------------");
+                    }
+                    if ve.del_tsf {
+                        println!("  Delete ts_family: {}", ve.tsf_id);
+                        println!("------------------------------------------------------------");
+                    }
+                    if ve.has_seq_no {
+                        println!("  Presist sequence: {}", ve.seq_no);
+                        println!("------------------------------------------------------------");
+                    }
+                    if ve.has_file_id {
+                        if ve.add_files.is_empty() && ve.del_files.is_empty() {
+                            println!("  Add file: None. Delete file: None.");
+                        }
+                        if !ve.add_files.is_empty() {
+                            let mut buffer = String::new();
+                            ve.add_files.iter().for_each(|f| {
+                                buffer.push_str(
+                                    format!(
+                                        "{} (level: {}, {} B), ",
+                                        f.file_id, f.level, f.file_size
+                                    )
+                                        .as_str(),
+                                )
+                            });
+                            if !buffer.is_empty() {
+                                buffer.truncate(buffer.len() - 2);
+                            }
+                            println!("  Add file:[ {} ]", buffer);
+                        }
+                        if !ve.del_files.is_empty() {
+                            let mut buffer = String::new();
+                            ve.del_files.iter().for_each(|f| {
+                                buffer.push_str(
+                                    format!("{} (level: {}), ", f.file_id, f.level).as_str(),
+                                )
+                            });
+                            if !buffer.is_empty() {
+                                buffer.truncate(buffer.len() - 2);
+                            }
+                            println!("  Delete file:[ {} ]", buffer);
+                        }
+                    }
+                }
+                Err(err) => match err {
+                    RecordFileError::Eof => break,
+                    _ => panic!("Errors when read summary file: {}", err),
+                },
+            }
+            println!("============================================================");
+        }
+    });
 }
 
 pub struct SummaryProcessor {
