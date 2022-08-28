@@ -96,8 +96,7 @@ impl FlushTask {
             build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
         // build tsm file
         if !block_set_delta.is_empty() {
-            kernel.file_id_next();
-            self.meta.file_id = kernel.file_id();
+            self.meta.file_id = kernel.file_id_next();
             let tmp_meta = CompactMeta {
                 file_id: 0,
                 file_size: 0,
@@ -121,8 +120,7 @@ impl FlushTask {
         (min_ts, max_ts) = (i64::MAX, i64::MIN);
         let block_set = build_block_set(field_size, field_map, &mut min_ts, &mut max_ts);
         if !block_set.is_empty() {
-            kernel.file_id_next();
-            self.meta.file_id = kernel.file_id();
+            self.meta.file_id = kernel.file_id_next();
             let tmp_meta = CompactMeta {
                 file_id: 0,
                 file_size: 0,

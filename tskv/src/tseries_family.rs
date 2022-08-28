@@ -208,13 +208,14 @@ pub struct LevelInfo {
 
 impl LevelInfo {
     pub fn init(level: u32, tsf_opt: Arc<TseriesFamOpt>) -> Self {
+        let max_size = tsf_opt.level_file_size(level);
         Self {
             files: Vec::new(),
             tsf_id: 0,
             tsf_opt,
             level,
             cur_size: 0,
-            max_size: 0,
+            max_size,
             time_range: TimeRange {
                 min_ts: Timestamp::MAX,
                 max_ts: Timestamp::MIN,
@@ -331,31 +332,24 @@ impl Version {
     /// Creates new Version using current Version and `VersionEdit`s.
     pub fn copy_apply_version_edits(
         &self,
-        version_edits: &[VersionEdit],
+        version_edits: Vec<VersionEdit>,
         last_seq: Option<u64>,
     ) -> Version {
         let mut added_files: HashMap<LevelId, Vec<CompactMeta>> = HashMap::new();
         let mut deleted_files: HashMap<LevelId, HashSet<ColumnFileId>> = HashMap::new();
         for ve in version_edits {
-            if ve.has_file_id {
-                if !ve.add_files.is_empty() {
-                    ve.add_files.iter().for_each(|f| {
-                        added_files
-                            .entry(f.level)
-                            .or_insert(Vec::new())
-                            .push(f.clone());
-                    });
-                }
-                continue;
+            if !ve.add_files.is_empty() {
+                ve.add_files.into_iter().for_each(|f| {
+                    added_files.entry(f.level).or_insert(Vec::new()).push(f);
+                });
             }
             if !ve.del_files.is_empty() {
-                ve.del_files.iter().for_each(|f| {
+                ve.del_files.into_iter().for_each(|f| {
                     deleted_files
                         .entry(f.level)
                         .or_insert(HashSet::new())
                         .insert(f.file_id);
                 });
-                continue;
             }
         }
 
@@ -890,7 +884,7 @@ mod test {
         let mut ve = VersionEdit::new();
         ve.del_file(1, 3, false);
         version_edits.push(ve);
-        let new_version = version.copy_apply_version_edits(&version_edits, Some(3));
+        let new_version = version.copy_apply_version_edits(version_edits, Some(3));
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -978,7 +972,7 @@ mod test {
         ve.del_file(2, 1, false);
         ve.del_file(2, 2, false);
         version_edits.push(ve);
-        let new_version = version.copy_apply_version_edits(&version_edits, Some(3));
+        let new_version = version.copy_apply_version_edits(version_edits, Some(3));
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1066,7 +1060,7 @@ mod test {
             let mut ts_family = ts_family.write();
             let new_version = ts_family
                 .version()
-                .copy_apply_version_edits(version_edits.as_slice(), Some(min_seq));
+                .copy_apply_version_edits(version_edits, Some(min_seq));
             ts_family.new_version(new_version);
         }
     }

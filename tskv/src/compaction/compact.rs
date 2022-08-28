@@ -9,7 +9,7 @@ use std::{
 use evmap::new;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
-use trace::{error, info};
+use trace::{debug, error, info};
 
 use crate::{
     compaction::CompactReq,
@@ -159,7 +159,7 @@ impl CompactIterator {
         for (next_tsm_file_idx, (i, idx)) in self.tsm_index_iters.iter_mut().enumerate().enumerate()
         {
             if self.finished_readers[i] {
-                info!("file no.{} has been finished, continue.", i);
+                debug!("file no.{} has been finished, continue.", i);
                 continue;
             }
             if let Some(idx_meta) = idx.peek() {
@@ -179,14 +179,14 @@ impl CompactIterator {
 
                 self.tmp_tsm_blks.push(idx_meta.block_iterator());
                 self.tmp_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx);
-                info!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
+                debug!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
                       idx_meta.field_id(),
                       idx_meta.field_type(),
                       idx_meta.block_count(),
                       idx_meta.time_range());
             } else {
                 // This tsm-file has been finished
-                info!("file no.{} is finished.", i);
+                debug!("file no.{} is finished.", i);
                 self.finished_readers[i] = true;
                 self.finished_reader_cnt += 1;
             }
@@ -388,17 +388,17 @@ impl Iterator for CompactIterator {
             return Some(Ok(blk));
         }
         loop {
-            info!("------------------------------");
+            debug!("------------------------------");
 
             // For each tsm-file, get next index reader for current iteration field id
             self.next_field_id();
 
-            info!(
+            debug!(
                 "selected blocks count: {} in iteration",
                 self.tmp_tsm_blks.len()
             );
             if self.tmp_tsm_blks.is_empty() {
-                info!("iteration field_id {:?} is finished", self.curr_fid);
+                debug!("iteration field_id {:?} is finished", self.curr_fid);
                 self.curr_fid = None;
                 break;
             }
@@ -430,8 +430,22 @@ pub fn run_compaction_job(
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<VersionEdit>> {
     info!(
-        "Running compaction job on ts_family: {} and files: {:?}",
-        request.ts_family_id, request.files
+        "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
+        request.ts_family_id,
+        request
+            .files
+            .iter()
+            .map(|f| {
+                format!(
+                    "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                    f.level(),
+                    f.file_id(),
+                    f.time_range().min_ts,
+                    f.time_range().max_ts
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
     );
 
     let version = request.version;
@@ -444,10 +458,6 @@ pub fn run_compaction_job(
     let mut tsm_readers = Vec::new();
     let mut tsm_index_iters = Vec::new();
     for col_file in request.files.iter() {
-        // Delta file is not compacted here
-        if col_file.is_delta() {
-            continue;
-        }
         let tsm_file = col_file.file_path(tsf_opt.clone(), tsf_id);
         tsm_files.push(tsm_file.clone());
         let tsm_reader = TsmReader::open(&tsm_file)?;
@@ -471,10 +481,11 @@ pub fn run_compaction_job(
     };
     let tsm_dir = tsf_opt.tsm_dir(tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
+    info!("Compaction: File {} been created.", tsm_writer.sequence());
     let mut version_edit = VersionEdit::new();
     version_edit.tsf_id = tsf_id;
     for next_blk in iter.flatten() {
-        info!("===============================");
+        debug!("===============================");
         let write_ret = match next_blk {
             CompactingBlock::DataBlock {
                 field_id: fid,
@@ -496,9 +507,16 @@ pub fn run_compaction_job(
                 tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
                     tsm_writer.flush().context(error::WriteTsmSnafu)?;
+                    info!(
+                        "Compaction: File: {} write finished (level: {}, {} B).",
+                        tsm_writer.sequence(),
+                        request.out_level,
+                        tsm_writer.size()
+                    );
                     let cm = new_compact_meta(&tsm_writer, request.out_level);
                     version_edit.add_file(cm, version.max_level_ts);
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
+                    info!("Compaction: File {} been created.", tsm_writer.sequence());
                 }
             }
         }
@@ -506,11 +524,22 @@ pub fn run_compaction_job(
 
     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
     tsm_writer.flush().context(error::WriteTsmSnafu)?;
+    info!(
+        "Compaction: File: {} write finished (level: {}, {} B).",
+        tsm_writer.sequence(),
+        request.out_level,
+        tsm_writer.size()
+    );
     let cm = new_compact_meta(&tsm_writer, request.out_level);
     version_edit.add_file(cm, version.max_level_ts);
     for file in request.files {
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
+
+    info!(
+        "Compaction: Compact finished, version edits: {:?}",
+        version_edit
+    );
 
     Ok(Some(version_edit))
 }
@@ -679,7 +708,7 @@ mod test {
     #[test]
     fn test_compaction_fast() {
         #[rustfmt::skip]
-        let data = vec![
+            let data = vec![
             HashMap::from([
                 (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
                 (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
@@ -697,7 +726,7 @@ mod test {
             ]),
         ];
         #[rustfmt::skip]
-        let expected_data = HashMap::from([
+            let expected_data = HashMap::from([
             (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
             (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
             (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
@@ -716,7 +745,7 @@ mod test {
     #[test]
     fn test_compaction_1() {
         #[rustfmt::skip]
-        let data = vec![
+            let data = vec![
             HashMap::from([
                 (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
                 (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
@@ -734,7 +763,7 @@ mod test {
             ]),
         ];
         #[rustfmt::skip]
-        let expected_data = HashMap::from([
+            let expected_data = HashMap::from([
             (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
             (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
             (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
@@ -753,7 +782,7 @@ mod test {
     #[test]
     fn test_compaction_2() {
         #[rustfmt::skip]
-        let data = vec![
+            let data = vec![
             HashMap::from([
                 (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }]),
                 (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }]),
@@ -771,7 +800,7 @@ mod test {
             ]),
         ];
         #[rustfmt::skip]
-        let expected_data = HashMap::from([
+            let expected_data = HashMap::from([
             (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
             (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
             (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
@@ -879,7 +908,7 @@ mod test {
     #[test]
     fn test_compaction_3() {
         #[rustfmt::skip]
-        let data_desc = [
+            let data_desc = [
             // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
             (1_u64, vec![
                 // 1, 1~2500
@@ -925,7 +954,7 @@ mod test {
             ]),
         ];
         #[rustfmt::skip]
-        let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
+            let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
             [
                 // 1, 1~6500
                 (1, vec![
@@ -1001,7 +1030,7 @@ mod test {
     #[test]
     fn test_compaction_4() {
         #[rustfmt::skip]
-        let data_desc = [
+            let data_desc = [
             // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
             (1_u64, vec![
                 // 1, 1~2500
