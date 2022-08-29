@@ -3,8 +3,9 @@ use std::{net::SocketAddr, sync::Arc};
 use clap::{Parser, Subcommand};
 use futures::join;
 use once_cell::sync::Lazy;
-use tokio::{runtime::Runtime, sync::mpsc};
+use tokio::runtime::Runtime;
 
+use crossbeam::channel;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
 use trace::init_default_global_tracing;
@@ -113,7 +114,8 @@ fn main() -> Result<(), std::io::Error> {
                     .parse::<SocketAddr>()
                     .expect("Invalid http_host");
 
-                let (sender, receiver) = mpsc::unbounded_channel();
+                //let (sender, receiver) = mpsc::unbounded_channel();
+                let (sender, receiver) = channel::unbounded();
 
                 let tskv_options = tskv::Options::from(global_config);
                 let tskv = Arc::new(
@@ -121,7 +123,10 @@ fn main() -> Result<(), std::io::Error> {
                         .await
                         .unwrap(),
                 );
-                TsKv::start(tskv.clone(), receiver);
+
+                for _ in 0..1 {
+                    TsKv::start(tskv.clone(), receiver.clone());
+                }
 
                 let db = Arc::new(Db::new(tskv));
 

@@ -4,13 +4,10 @@ use futures::stream::SelectNextSome;
 use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
-use tokio::{
-    runtime::Builder,
-    sync::{
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
-};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::{runtime::Builder, sync::oneshot};
+
+use crossbeam::channel;
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use models::{FieldId, SeriesId, SeriesKey, Timestamp};
@@ -161,13 +158,13 @@ impl TsKv {
         };
         if let Some(sv) = super_version {
             // get data from memcache
-            if let Some(mem_entry) = sv.caches.mut_cache.read().data_cache.get(&field_id) {
-                data.append(&mut mem_entry.read_cell(time_range));
+            if let Some(mem_entry) = sv.caches.mut_cache.read().get(&field_id) {
+                data.append(&mut mem_entry.read().read_cell(time_range));
             }
 
             // get data from delta_memcache
-            if let Some(mem_entry) = sv.caches.delta_mut_cache.read().data_cache.get(&field_id) {
-                data.append(&mut mem_entry.read_cell(time_range));
+            if let Some(mem_entry) = sv.caches.delta_mut_cache.read().get(&field_id) {
+                data.append(&mut mem_entry.read().read_cell(time_range));
             }
 
             // get data from immut_delta_memcache
@@ -175,8 +172,8 @@ impl TsKv {
                 if mem_cache.read().flushed {
                     continue;
                 }
-                if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    data.append(&mut mem_entry.read_cell(time_range));
+                if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+                    data.append(&mut mem_entry.read().read_cell(time_range));
                 }
             }
 
@@ -185,8 +182,8 @@ impl TsKv {
                 if mem_cache.read().flushed {
                     continue;
                 }
-                if let Some(mem_entry) = mem_cache.read().data_cache.get(&field_id) {
-                    data.append(&mut mem_entry.read_cell(time_range));
+                if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+                    data.append(&mut mem_entry.read().read_cell(time_range));
                 }
             }
 
@@ -243,7 +240,6 @@ impl TsKv {
                 run_flush_memtable_job(
                     x.clone(),
                     ctx.clone(),
-                    HashMap::new(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
@@ -308,10 +304,10 @@ impl TsKv {
         warn!("Summary task handler started");
     }
 
-    pub fn start(tskv: Arc<TsKv>, mut req_rx: UnboundedReceiver<Task>) {
+    pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {
         warn!("job 'main' starting.");
         let f = async move {
-            while let Some(command) = req_rx.recv().await {
+            while let Ok(command) = req_rx.recv() {
                 match command {
                     Task::WritePoints { req, tx } => {
                         debug!("writing points.");
@@ -351,8 +347,7 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mut db = db.write();
-        let mem_points = db.build_mem_points(fb_points.points().unwrap())?;
+        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
 
         let (cb, rx) = oneshot::channel();
         self.wal_sender
@@ -360,9 +355,10 @@ impl Engine for TsKv {
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
 
-        let tsf = match db.get_tsfamily_random() {
+        let opt_tsf = db.read().get_tsfamily_random();
+        let tsf = match opt_tsf {
             Some(v) => v,
-            None => db.add_tsfamily(
+            None => db.write().add_tsfamily(
                 0,
                 seq,
                 self.global_ctx.file_id_next(),
@@ -371,8 +367,9 @@ impl Engine for TsKv {
             ),
         };
 
+        tsf.read().put_points(seq, &mem_points).await;
         tsf.write()
-            .put_points(seq, &mem_points, self.flush_task_sender.clone())
+            .check_to_flush(self.flush_task_sender.clone())
             .await;
 
         Ok(WritePointsRpcResponse {
@@ -394,12 +391,12 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mut db = db.write();
-        let mem_points = db.build_mem_points(fb_points.points().unwrap())?;
+        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
 
-        let tsf = match db.get_tsfamily_random() {
+        let opt_tsf = db.read().get_tsfamily_random();
+        let tsf = match opt_tsf {
             Some(v) => v,
-            None => db.add_tsfamily(
+            None => db.write().add_tsfamily(
                 0,
                 seq,
                 self.global_ctx.file_id_next(),
@@ -408,8 +405,9 @@ impl Engine for TsKv {
             ),
         };
 
+        tsf.read().put_points(seq, &mem_points).await;
         tsf.write()
-            .put_points(seq, &mem_points, self.flush_task_sender.clone())
+            .check_to_flush(self.flush_task_sender.clone())
             .await;
 
         return Ok(WritePointsRpcResponse {

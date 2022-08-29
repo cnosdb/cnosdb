@@ -9,9 +9,10 @@ use hyper::Server as HyperServer;
 use query::db::Db;
 use snafu::{ResultExt, Snafu};
 use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot::error::RecvError;
 use trace::info;
+
+use crossbeam::channel;
 
 use crate::http::handler::route;
 
@@ -38,6 +39,11 @@ pub enum Error {
     #[snafu(display("Error receiving from channel receiver: {}", source))]
     ChannelReceive { source: RecvError },
 
+    #[snafu(display("Error sending to channel receiver: {}", source))]
+    CrossbeamSend {
+        source: channel::SendError<tskv::Task>,
+    },
+
     #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
 
@@ -48,7 +54,7 @@ pub enum Error {
 pub async fn serve(
     addr: SocketAddr,
     db: Arc<Db>,
-    sender: UnboundedSender<tskv::Task>,
+    sender: channel::Sender<tskv::Task>,
 ) -> Result<(), Error> {
     let make_service = make_service_fn(move |conn: &AddrStream| {
         let db = db.clone();
@@ -99,9 +105,10 @@ mod test {
     use std::{net::SocketAddr, sync::Arc};
 
     use config::get_config;
+    use crossbeam::channel;
     use protos::kv_service::WritePointsRpcResponse;
     use query::db::Db;
-    use tokio::{spawn, sync::mpsc};
+    use tokio::spawn;
     use trace::init_default_global_tracing;
     use tskv::{Options, Task, TsKv};
 
@@ -126,11 +133,11 @@ mod test {
 
         let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
         let db = Arc::new(Db::new(Arc::new(tskv)));
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        let server_join_handle = spawn(async move { serve(http_host, db, sender).await });
+        let (sender, receiver) = channel::unbounded();
+        let server_join_handle = spawn(async move { serve(http_host, db, sender) });
 
         spawn(async move {
-            while let Some(task) = receiver.recv().await {
+            while let Ok(task) = receiver.recv() {
                 match task {
                     Task::WritePoints { req, tx } => {
                         println!("{:?}", req);
@@ -164,6 +171,6 @@ mod test {
         //     }));
         // }
 
-        server_join_handle.await.unwrap().unwrap();
+        server_join_handle.await.unwrap().await.unwrap();
     }
 }

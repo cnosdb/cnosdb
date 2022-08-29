@@ -10,14 +10,16 @@ use protos::{
     models::{PingBody, PingBodyBuilder},
 };
 use tokio::sync::{
-    mpsc::{self, UnboundedSender},
+    mpsc::{self},
     oneshot,
 };
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
+use crossbeam::channel;
+
 pub struct TskvServiceImpl {
-    pub sender: UnboundedSender<tskv::Task>,
+    pub sender: channel::Sender<tskv::Task>,
 }
 
 #[tonic::async_trait]

@@ -91,6 +91,23 @@ impl DBIndex {
         }
     }
 
+    pub fn get_from_cache(&self, info: &mut SeriesInfo) -> Option<u64> {
+        let series_key = SeriesKey::from(info.borrow());
+        let (hash_id, _) = utils::split_id(series_key.hash());
+        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
+
+        if let Some(keys) = self.series_cache.get(&hash_id) {
+            if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
+                let id = k.id();
+                if let Ok(()) = self.chech_field_type_from_cache(id, info) {
+                    return Some(id);
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn add_series_if_not_exists(&mut self, info: &mut SeriesInfo) -> errors::IndexResult<u64> {
         let mut series_key = SeriesKey::from(info.borrow());
         let (hash_id, _) = utils::split_id(series_key.hash());
@@ -138,6 +155,43 @@ impl DBIndex {
         self.check_field_type_or_else_add(id, info)?;
 
         Ok(id)
+    }
+
+    fn chech_field_type_from_cache(
+        &self,
+        series_id: u64,
+        info: &mut SeriesInfo,
+    ) -> IndexResult<()> {
+        if let Some(schema) = self.table_schema.get(info.table()) {
+            for field in info.field_infos() {
+                if let Some(v) = schema.iter().find(|item| field.eq(item)) {
+                    if field.value_type() == v.value_type() {
+                        field.set_field_id(utils::unite_id(v.field_id(), series_id));
+                    } else {
+                        return Err(IndexError::FieldType);
+                    }
+                } else {
+                    return Err(IndexError::NotFoundField);
+                }
+            }
+
+            for tag in info.tags() {
+                let mut field = FieldInfo::from(tag);
+                if let Some(v) = schema.iter().find(|item| field.eq(item)) {
+                    if field.value_type() == v.value_type() {
+                        field.set_field_id(utils::unite_id(v.field_id(), series_id));
+                    } else {
+                        return Err(IndexError::FieldType);
+                    }
+                } else {
+                    return Err(IndexError::NotFoundField);
+                }
+            }
+
+            Ok(())
+        } else {
+            return Err(IndexError::NotFoundField);
+        }
     }
 
     fn check_field_type_or_else_add(

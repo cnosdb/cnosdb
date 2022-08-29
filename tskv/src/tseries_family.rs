@@ -6,13 +6,12 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc,
     },
 };
 
 use config::get_config;
-use crossbeam::channel::internal::SelectHandle;
 use lazy_static::lazy_static;
 use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
@@ -480,8 +479,8 @@ pub struct TseriesFamily {
     compact_picker: Arc<dyn Picker>,
     // min seq_no keep in the tsfam memcache
     seq_no: u64,
-    immut_ts_min: i64,
-    mut_ts_max: i64,
+    immut_ts_min: AtomicI64,
+    mut_ts_max: AtomicI64,
 }
 
 // todo: cal ref count
@@ -525,8 +524,8 @@ impl TseriesFamily {
             version,
             opts: tsf_opt,
             compact_picker: Arc::new(LevelCompactionPicker::new()),
-            immut_ts_min: max_level_ts,
-            mut_ts_max: i64::MIN,
+            immut_ts_min: AtomicI64::new(max_level_ts),
+            mut_ts_max: AtomicI64::new(i64::MIN),
         }
     }
 
@@ -596,7 +595,7 @@ impl TseriesFamily {
     }
 
     async fn wrap_delta_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
-        if self.delta_mut_cache.read().data_cache.is_empty() {
+        if self.delta_mut_cache.read().is_empty() {
             return;
         }
 
@@ -656,7 +655,8 @@ impl TseriesFamily {
             self.new_super_version(self.version.clone());
         }
 
-        self.immut_ts_min = self.mut_ts_max;
+        self.immut_ts_min
+            .store(self.mut_ts_max.load(Ordering::Relaxed), Ordering::Relaxed);
         let mut req_mem = vec![];
         for i in self.immut_cache.iter() {
             let read_i = i.read();
@@ -688,12 +688,7 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    pub async fn put_points(
-        &mut self,
-        seq: u64,
-        points: &Vec<InMemPoint>,
-        sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
-    ) {
+    pub async fn put_points(&self, seq: u64, points: &Vec<InMemPoint>) {
         for p in points.iter() {
             let sid = p.series_id();
             for f in p.fields().iter() {
@@ -707,7 +702,9 @@ impl TseriesFamily {
                 .await;
             }
         }
+    }
 
+    pub async fn check_to_flush(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable().await;
@@ -723,39 +720,25 @@ impl TseriesFamily {
 
     // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
     // version_set when we insert each point
-    pub async fn put_mutcache(&mut self, raw: &mut MemRaw<'_>) {
-        if self.immut_ts_min == i64::MIN {
-            self.immut_ts_min = raw.ts;
-        }
-        if raw.ts >= self.immut_ts_min {
-            if raw.ts > self.mut_ts_max {
-                self.mut_ts_max = raw.ts;
+    pub async fn put_mutcache(&self, raw: &mut MemRaw<'_>) {
+        if raw.ts >= self.immut_ts_min.load(Ordering::Relaxed) {
+            if raw.ts > self.mut_ts_max.load(Ordering::Relaxed) {
+                self.mut_ts_max.store(raw.ts, Ordering::Relaxed);
             }
-            let mut mem = self.super_version.caches.mut_cache.write();
+            let mem = self.super_version.caches.mut_cache.write();
             let _ = mem.insert_raw(raw);
         } else {
-            let mut delta_mem = self.super_version.caches.delta_mut_cache.write();
+            let delta_mem = self.super_version.caches.delta_mut_cache.write();
             let _ = delta_mem.insert_raw(raw);
         }
     }
 
     pub async fn delete_cache(&self, time_range: &TimeRange) {
-        for i in self.mut_cache.write().data_cache.iter_mut() {
-            if i.1.overlap(time_range) {
-                i.1.delete_data_cell(time_range);
-            }
-        }
-        for i in self.delta_mut_cache.write().data_cache.iter_mut() {
-            if i.1.overlap(time_range) {
-                i.1.delete_data_cell(time_range);
-            }
-        }
+        self.mut_cache.read().delete_data(time_range);
+        self.delta_mut_cache.read().delete_data(time_range);
+
         for memcache in self.immut_cache.iter() {
-            for i in memcache.write().data_cache.iter_mut() {
-                if i.1.overlap(time_range) {
-                    i.1.delete_data_cell(time_range);
-                }
-            }
+            memcache.read().delete_data(time_range);
         }
     }
 
@@ -793,10 +776,6 @@ impl TseriesFamily {
 
     pub fn options(&self) -> Arc<TseriesFamOpt> {
         self.opts.clone()
-    }
-
-    pub fn imut_ts_min(&self) -> i64 {
-        self.immut_ts_min
     }
 }
 
@@ -1006,7 +985,7 @@ mod test {
     pub async fn test_tsf_delete() {
         let global_config = get_config("../config/config.toml");
         let tcfg = Arc::new(TseriesFamOpt::from(global_config));
-        let mut tsf = TseriesFamily::new(
+        let tsf = TseriesFamily::new(
             0,
             "db".to_string(),
             MemCache::new(0, 500, 0, false),
@@ -1029,19 +1008,13 @@ mod test {
             val: 10_i32.to_be_bytes().as_slice(),
         })
         .await;
-        assert_eq!(
-            tsf.mut_cache.read().data_cache.get(&0).unwrap().cells.len(),
-            1
-        );
+        assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
         tsf.delete_cache(&TimeRange {
             max_ts: 0,
             min_ts: 0,
         })
         .await;
-        assert_eq!(
-            tsf.mut_cache.read().data_cache.get(&0).unwrap().cells.len(),
-            0
-        );
+        assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 0);
     }
 
     async fn update_ts_family_version(
@@ -1083,7 +1056,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let mut mem = MemCache::new(0, 1000, 0, false);
+        let mem = MemCache::new(0, 1000, 0, false);
         mem.insert_raw(&mut MemRaw {
             seq: 0,
             ts: 0,
@@ -1115,13 +1088,9 @@ mod test {
         db.write()
             .add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
 
-        let mut cfg_set = HashMap::new();
-        cfg_set.insert(0, cfg.clone());
-
         run_flush_memtable_job(
             flush_seq,
             kernel,
-            cfg_set,
             version_set.clone(),
             summary_task_sender,
             compact_task_sender,

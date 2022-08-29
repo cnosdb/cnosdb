@@ -59,39 +59,33 @@ impl FlushTask {
         edits: &mut Vec<VersionEdit>,
         cf_opt: Arc<TseriesFamOpt>,
     ) -> Result<()> {
-        let (mut min_ts, mut max_ts) = (i64::MAX, i64::MIN);
+        let mut mem_guard = vec![];
+        for i in self.mems.iter() {
+            mem_guard.push(i.write());
+        }
+
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
         let mut field_map = HashMap::new();
         let mut field_map_delta = HashMap::new();
         let mut field_size = HashMap::new();
         let mut field_size_delta = HashMap::new();
-        let mut mem_guard = vec![];
-        for i in self.mems.iter() {
-            mem_guard.push(i.write());
-        }
         for mem in mem_guard.iter() {
-            let data = &mem.data_cache;
             // get req seq_no range
-            if mem.seq_no > high_seq {
-                high_seq = mem.seq_no;
+            if mem.seq_no() > high_seq {
+                high_seq = mem.seq_no();
             }
-            if mem.seq_no < low_seq {
-                low_seq = mem.seq_no;
+            if mem.seq_no() < low_seq {
+                low_seq = mem.seq_no();
             }
-            for (field_id, entry) in data {
-                if mem.is_delta {
-                    let sum = field_size_delta.entry(field_id).or_insert(0_usize);
-                    *sum += entry.cells.len();
-                    let item = field_map_delta.entry(field_id).or_insert(vec![]);
-                    item.push(entry);
-                } else {
-                    let sum = field_size.entry(field_id).or_insert(0_usize);
-                    *sum += entry.cells.len();
-                    let item = field_map.entry(field_id).or_insert(vec![]);
-                    item.push(entry);
-                }
+
+            if mem.is_delta {
+                mem.copy_data(&mut field_map_delta, &mut field_size_delta);
+            } else {
+                mem.copy_data(&mut field_map, &mut field_size);
             }
         }
+
+        let (mut min_ts, mut max_ts) = (i64::MAX, i64::MIN);
         let block_set_delta =
             build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
         // build tsm file
@@ -185,8 +179,8 @@ fn append_meta_to_version_edits(
 }
 
 fn build_block_set(
-    field_size: HashMap<&FieldId, usize>,
-    field_map: HashMap<&FieldId, Vec<&MemEntry>>,
+    field_size: HashMap<FieldId, usize>,
+    field_map: HashMap<FieldId, Vec<Arc<RwLock<MemEntry>>>>,
     ts_min: &mut i64,
     ts_max: &mut i64,
 ) -> HashMap<FieldId, DataBlock> {
@@ -207,8 +201,11 @@ fn build_block_set(
             }
             Some(v) => v,
         };
-        let mut block = DataBlock::new(*size, entry.field_type);
+
+        let mut block = DataBlock::new(*size, entry.read().field_type);
+
         for entry in entries.iter() {
+            let entry = entry.read();
             // get tsm ts range
             if entry.ts_max > *ts_max {
                 *ts_max = entry.ts_max;
@@ -218,7 +215,7 @@ fn build_block_set(
             }
             block.batch_insert(&entry.cells);
         }
-        block_set.insert(*fid, block);
+        block_set.insert(fid, block);
     }
     block_set
 }
@@ -248,7 +245,6 @@ fn build_tsm_file(
 pub async fn run_flush_memtable_job(
     reqs: Arc<Mutex<Vec<FlushReq>>>,
     kernel: Arc<GlobalContext>,
-    tsf_config: HashMap<u32, Arc<TseriesFamOpt>>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
@@ -272,25 +268,27 @@ pub async fn run_flush_memtable_job(
     let mut edits: Vec<VersionEdit> = vec![];
     for (tsf_id, memtables) in mems.iter() {
         if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
-            if !memtables.is_empty() {
-                // todo: build path by vnode data
-                let cf_opt = tsf.read().options();
-                let path_tsm = cf_opt.tsm_dir(*tsf_id);
-                let path_delta = cf_opt.delta_dir(*tsf_id);
+            if memtables.is_empty() {
+                continue;
+            }
 
-                let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
-                job.run(
-                    tsf.read().version(),
-                    kernel.clone(),
-                    &mut edits,
-                    cf_opt.clone(),
-                )
-                .await?;
+            // todo: build path by vnode data
+            let cf_opt = tsf.read().options();
+            let path_tsm = cf_opt.tsm_dir(*tsf_id);
+            let path_delta = cf_opt.delta_dir(*tsf_id);
 
-                match compact_task_sender.send(*tsf_id) {
-                    Err(e) => error!("{}", e),
-                    _ => {}
-                }
+            let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
+            job.run(
+                tsf.read().version(),
+                kernel.clone(),
+                &mut edits,
+                cf_opt.clone(),
+            )
+            .await?;
+
+            match compact_task_sender.send(*tsf_id) {
+                Err(e) => error!("{}", e),
+                _ => {}
             }
         }
     }

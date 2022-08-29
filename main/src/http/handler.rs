@@ -14,11 +14,12 @@ use protos::models::{
 use query::db::Db;
 use regex::Regex;
 use snafu::ResultExt;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use trace::debug;
 
-use crate::http::{parse_query, ChannelSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+use crossbeam::channel;
+
+use crate::http::{parse_query, CrossbeamSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
 
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
@@ -30,7 +31,7 @@ lazy_static! {
 pub(crate) async fn route(
     req: Request<Body>,
     db: Arc<Db>,
-    sender: UnboundedSender<tskv::Task>,
+    sender: channel::Sender<tskv::Task>,
 ) -> Result<Response<Body>, Error> {
     match req.uri().path() {
         "/ping" => ping(req).await,
@@ -62,7 +63,7 @@ pub(crate) async fn ping(req: Request<Body>) -> Result<Response<Body>, Error> {
 
 pub(crate) async fn write_line_protocol(
     req: Request<Body>,
-    sender: UnboundedSender<tskv::Task>,
+    sender: channel::Sender<tskv::Task>,
 ) -> Result<Response<Body>, Error> {
     let db: String;
     if let Some(query) = req.uri().query() {
@@ -103,7 +104,7 @@ pub(crate) async fn write_line_protocol(
     let (tx, rx) = oneshot::channel();
     sender
         .send(tskv::Task::WritePoints { req, tx })
-        .context(ChannelSendSnafu)?;
+        .context(CrossbeamSendSnafu)?; //CrossbeamSendSnafu  ChannelSendSnafu
 
     // Receive Response from handler
     let _ = match rx.await {
@@ -335,7 +336,7 @@ mod test {
         for line in lines {
             println!("Parsing: {}", line);
             let parsed_lines = parser.parse(&line).unwrap();
-            let points = parse_lines_to_points("test", &parsed_lines);
+            let _ = parse_lines_to_points("test", &parsed_lines);
             // println!("{:?}", points);
         }
     }
