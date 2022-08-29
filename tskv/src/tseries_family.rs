@@ -1110,7 +1110,7 @@ mod test {
         let file = version.levels_info[1].files[0].clone();
 
         let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
-        tombstone.add_range(&[0], 0, 0).unwrap();
+        tombstone.add_range(&[0], &TimeRange::new(0, 0)).unwrap();
         tombstone.flush().unwrap();
         tombstone.load().unwrap();
 

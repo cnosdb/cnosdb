@@ -27,7 +27,7 @@ Example #2:
 ```rust
 fn main() {
     #[rustfmt::skip]
-        let got = vec![
+    let got = vec![
         0x00, 0x05, 0x01, 0x00,
         0xff,
         0x00,

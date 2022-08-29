@@ -17,7 +17,7 @@ mod test {
         global_config.wal_config_dir = "/tmp/test/wal".to_string();
         let opt = kv_option::Options::from(&global_config);
 
-        let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
+        let tskv = TsKv::open(opt).await.unwrap();
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 200);

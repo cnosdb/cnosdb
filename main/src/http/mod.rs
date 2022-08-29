@@ -131,7 +131,7 @@ mod test {
             .expect("Invalid host");
         let opt = Options::from(global_config);
 
-        let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
+        let tskv = TsKv::open(opt).await.unwrap();
         let db = Arc::new(Db::new(Arc::new(tskv)));
         let (sender, receiver) = channel::unbounded();
         let server_join_handle = spawn(async move { serve(http_host, db, sender) });
