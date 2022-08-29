@@ -252,6 +252,10 @@ impl Summary {
         }
 
         let mut versions = HashMap::new();
+        let mut has_seq_no = false;
+        let mut seq_no = 0_u64;
+        let mut has_file_id = false;
+        let mut file_id = 0_u64;
         for (id, eds) in edits {
             let tsf_name = tf_names.get(&id).unwrap().to_owned();
             // let cf_opts = cf_options.remove(cf_name).unwrap_or_default();
@@ -261,10 +265,12 @@ impl Summary {
             let mut max_level_ts = i64::MIN;
             for e in eds {
                 if e.has_seq_no {
-                    ctx.set_last_seq(e.seq_no);
+                    has_seq_no = true;
+                    seq_no = e.seq_no;
                 }
                 if e.has_file_id {
-                    ctx.set_file_id(e.file_id);
+                    has_file_id = true;
+                    file_id = e.file_id;
                 }
                 max_log = std::cmp::max(max_log, e.seq_no);
                 max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
@@ -289,6 +295,13 @@ impl Summary {
                 max_level_ts,
             );
             versions.insert(id, Arc::new(ver));
+        }
+
+        if has_seq_no {
+            ctx.set_last_seq(seq_no + 1);
+        }
+        if has_file_id {
+            ctx.set_file_id(file_id + 1);
         }
 
         let vs = VersionSet::new(ts_family_opt.clone(), versions);
@@ -332,7 +345,7 @@ impl Summary {
                 let new_version = tsf
                     .read()
                     .version()
-                    .copy_apply_version_edits(version_edits.as_slice(), min_seq.copied());
+                    .copy_apply_version_edits(version_edits, min_seq.copied());
                 tsf.write().new_version(new_version);
             }
         }
@@ -700,7 +713,10 @@ mod test {
         {
             let vs = summary.version_set.write();
             let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-            let mut version = tsf.read().version().copy_apply_version_edits(&edits, None);
+            let mut version = tsf
+                .read()
+                .version()
+                .copy_apply_version_edits(edits.clone(), None);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new();
@@ -732,7 +748,7 @@ mod test {
         assert!(!tsf.read().version().levels_info[1].files[0].is_delta());
         assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
         assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
-        assert_eq!(summary.ctx.file_id(), 15);
+        assert_eq!(summary.ctx.file_id(), 16);
 
         let _ = fs::remove_dir_all("./dev/");
     }
