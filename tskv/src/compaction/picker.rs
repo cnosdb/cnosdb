@@ -496,7 +496,7 @@ mod test {
         let tsf_opt = create_options(dir);
 
         #[rustfmt::skip]
-            let levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)> = vec![
+        let levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)> = vec![
             // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
             (0_u32, 1_i64, 1000_i64, vec![
                 (11_u64, 1_i64, 1000_i64, 1000_u64, false),

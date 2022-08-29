@@ -1,23 +1,27 @@
+use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::Path;
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
+use config::get_config;
 use futures::TryFutureExt;
 use libc::write;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
+use trace::{debug, error, info};
 
-use crate::Options;
 use crate::{
     context::GlobalContext,
     error::{Error, Result},
+    file_manager::try_exists,
     file_utils,
     kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
-    record_file::{Reader, Writer, RecordFileError},
+    record_file::{Reader, RecordFileError, Writer},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
-    LevelId, TseriesFamilyId,
+    LevelId, Options, TseriesFamilyId,
 };
 
 const MAX_BATCH_SIZE: usize = 64;
@@ -32,6 +36,30 @@ pub struct CompactMeta {
     pub high_seq: u64,
     pub low_seq: u64,
     pub is_delta: bool,
+}
+
+impl CompactMeta {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        file_id: u64,
+        file_size: u64,
+        tsf_id: u32,
+        level: u32,
+        min_ts: i64,
+        max_ts: i64,
+        is_delta: bool,
+    ) -> Self {
+        Self {
+            file_id,
+            file_size,
+            tsf_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta,
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for CompactMeta {
@@ -156,11 +184,12 @@ impl VersionEdit {
     }
 }
 
-use crate::file_manager::try_exists;
-use config::get_config;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use trace::{debug, info};
-use tracing::log::error;
+impl Display for VersionEdit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "level: {}, seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
+               self.level, self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
+    }
+}
 
 #[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
@@ -444,7 +473,7 @@ pub fn print_summary_statistics(path: impl AsRef<Path>) {
                                         "{} (level: {}, {} B), ",
                                         f.file_id, f.level, f.file_size
                                     )
-                                        .as_str(),
+                                    .as_str(),
                                 )
                             });
                             if !buffer.is_empty() {

@@ -63,7 +63,7 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options, ts_family_num: u32) -> Result<TsKv> {
+    pub async fn open(opt: Options) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
@@ -495,7 +495,7 @@ impl Engine for TsKv {
                                     .collect();
                                 let mut tombstone =
                                     TsmTombstone::open_for_write(&path, column_file.file_id())?;
-                                tombstone.add_range(&field_ids, min, max)?;
+                                tombstone.add_range(&field_ids, &TimeRange::new(min, max))?;
                                 tombstone.flush()?;
                             }
                         }

@@ -118,11 +118,7 @@ fn main() -> Result<(), std::io::Error> {
                 let (sender, receiver) = channel::unbounded();
 
                 let tskv_options = tskv::Options::from(global_config);
-                let tskv = Arc::new(
-                    TsKv::open(tskv_options, global_config.tsfamily_num)
-                        .await
-                        .unwrap(),
-                );
+                let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
 
                 for _ in 0..1 {
                     TsKv::start(tskv.clone(), receiver.clone());

@@ -676,7 +676,7 @@ mod test {
         writer.flush().unwrap();
 
         let mut tombstone = TsmTombstone::with_path(&tombstone_file).unwrap();
-        tombstone.add_range(&[1], 2, 4).unwrap();
+        tombstone.add_range(&[1], &TimeRange::new(2, 4)).unwrap();
         tombstone.flush().unwrap();
 
         (tsm_file, tombstone_file)
