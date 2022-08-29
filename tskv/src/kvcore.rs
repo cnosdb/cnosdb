@@ -355,7 +355,8 @@ impl Engine for TsKv {
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
 
-        let tsf = match db.read().get_tsfamily_random() {
+        let opt_tsf = db.read().get_tsfamily_random();
+        let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
                 0,
@@ -392,7 +393,8 @@ impl Engine for TsKv {
         let db = self.version_set.write().create_db(&db_name);
         let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
 
-        let tsf = match db.read().get_tsfamily_random() {
+        let opt_tsf = db.read().get_tsfamily_random();
+        let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
                 0,
