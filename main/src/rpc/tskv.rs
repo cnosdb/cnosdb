@@ -16,7 +16,7 @@ use tokio::sync::{
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
-use crossbeam::channel;
+use async_channel as channel;
 
 pub struct TskvServiceImpl {
     pub sender: channel::Sender<tskv::Task>,
@@ -120,6 +120,7 @@ impl TskvService for TskvServiceImpl {
                     let (tx, rx) = oneshot::channel();
                     let ret = req_sender
                         .send(tskv::Task::WritePoints { req, tx })
+                        .await
                         .map_err(|err| Status::internal(err.to_string()));
 
                     // 2. if something wrong when sending Request

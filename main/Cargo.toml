@@ -13,7 +13,7 @@ query = {path = "../query"}
 trace  = { path = "../trace" }
 tskv = { path = "../tskv" }
 
-crossbeam = "0.8"
+async-channel = "1.7.1"
 datafusion = "10.0.0"
 async-stream = "0.3"
 backtrace = "0.3"

@@ -17,9 +17,8 @@ use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::debug;
 
-use crossbeam::channel;
-
-use crate::http::{parse_query, CrossbeamSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+use crate::http::{parse_query, AsyncChanSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+use async_channel as channel;
 
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
@@ -104,7 +103,8 @@ pub(crate) async fn write_line_protocol(
     let (tx, rx) = oneshot::channel();
     sender
         .send(tskv::Task::WritePoints { req, tx })
-        .context(CrossbeamSendSnafu)?; //CrossbeamSendSnafu  ChannelSendSnafu
+        .await
+        .context(AsyncChanSendSnafu)?;
 
     // Receive Response from handler
     let _ = match rx.await {

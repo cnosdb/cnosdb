@@ -5,7 +5,8 @@ use futures::join;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 
-use crossbeam::channel;
+use async_channel as channel;
+
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
 use trace::init_default_global_tracing;
@@ -118,6 +119,7 @@ fn main() -> Result<(), std::io::Error> {
                 let (sender, receiver) = channel::unbounded();
 
                 let tskv_options = tskv::Options::from(global_config);
+
                 let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
 
                 for _ in 0..1 {
