@@ -20,7 +20,7 @@ mod tests {
         global_config.wal_config_dir = "/tmp/test/wal".to_string();
         let opt = kv_option::Options::from(&global_config);
 
-        TsKv::open(opt, global_config.tsfamily_num).await.unwrap()
+        TsKv::open(opt).await.unwrap()
     }
 
     #[tokio::test]

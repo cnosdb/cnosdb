@@ -17,9 +17,8 @@ use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::debug;
 
-use async_channel as channel;
-
 use crate::http::{parse_query, AsyncChanSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+use async_channel as channel;
 
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();

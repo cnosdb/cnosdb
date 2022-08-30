@@ -278,7 +278,11 @@ pub fn new_tsm_writer(
     is_delta: bool,
     max_size: u64,
 ) -> Result<TsmWriter> {
-    let tsm_path = file_utils::make_tsm_file_name(dir, tsm_sequence);
+    let tsm_path = if is_delta {
+        file_utils::make_delta_file_name(dir, tsm_sequence)
+    } else {
+        file_utils::make_tsm_file_name(dir, tsm_sequence)
+    };
     let tsm_cursor = file_manager::create_file(&tsm_path)?.into_cursor();
     TsmWriter::open(tsm_cursor, tsm_sequence, is_delta, max_size)
 }

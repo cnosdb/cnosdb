@@ -1,23 +1,27 @@
+use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::Path;
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
+use config::get_config;
 use futures::TryFutureExt;
 use libc::write;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
+use trace::{debug, error, info};
 
-use crate::Options;
 use crate::{
     context::GlobalContext,
     error::{Error, Result},
+    file_manager::try_exists,
     file_utils,
     kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
-    record_file::{Reader, Writer},
+    record_file::{Reader, RecordFileError, Writer},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
-    LevelId, TseriesFamilyId,
+    LevelId, Options, TseriesFamilyId,
 };
 
 const MAX_BATCH_SIZE: usize = 64;
@@ -32,6 +36,30 @@ pub struct CompactMeta {
     pub high_seq: u64,
     pub low_seq: u64,
     pub is_delta: bool,
+}
+
+impl CompactMeta {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        file_id: u64,
+        file_size: u64,
+        tsf_id: u32,
+        level: u32,
+        min_ts: i64,
+        max_ts: i64,
+        is_delta: bool,
+    ) -> Self {
+        Self {
+            file_id,
+            file_size,
+            tsf_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta,
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for CompactMeta {
@@ -156,11 +184,12 @@ impl VersionEdit {
     }
 }
 
-use crate::file_manager::try_exists;
-use config::get_config;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use trace::{debug, info};
-use tracing::log::error;
+impl Display for VersionEdit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "level: {}, seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
+               self.level, self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
+    }
+}
 
 #[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u8)]
@@ -252,6 +281,10 @@ impl Summary {
         }
 
         let mut versions = HashMap::new();
+        let mut has_seq_no = false;
+        let mut seq_no = 0_u64;
+        let mut has_file_id = false;
+        let mut file_id = 0_u64;
         for (id, eds) in edits {
             let tsf_name = tf_names.get(&id).unwrap().to_owned();
             // let cf_opts = cf_options.remove(cf_name).unwrap_or_default();
@@ -261,10 +294,12 @@ impl Summary {
             let mut max_level_ts = i64::MIN;
             for e in eds {
                 if e.has_seq_no {
-                    ctx.set_last_seq(e.seq_no);
+                    has_seq_no = true;
+                    seq_no = e.seq_no;
                 }
                 if e.has_file_id {
-                    ctx.set_file_id(e.file_id);
+                    has_file_id = true;
+                    file_id = e.file_id;
                 }
                 max_log = std::cmp::max(max_log, e.seq_no);
                 max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
@@ -289,6 +324,13 @@ impl Summary {
                 max_level_ts,
             );
             versions.insert(id, Arc::new(ver));
+        }
+
+        if has_seq_no {
+            ctx.set_last_seq(seq_no + 1);
+        }
+        if has_file_id {
+            ctx.set_file_id(file_id + 1);
         }
 
         let vs = VersionSet::new(ts_family_opt.clone(), versions);
@@ -332,7 +374,7 @@ impl Summary {
                 let new_version = tsf
                     .read()
                     .version()
-                    .copy_apply_version_edits(version_edits.as_slice(), min_seq.copied());
+                    .copy_apply_version_edits(version_edits, min_seq.copied());
                 tsf.write().new_version(new_version);
             }
         }
@@ -389,6 +431,78 @@ impl Summary {
     pub fn global_context(&self) -> Arc<GlobalContext> {
         self.ctx.clone()
     }
+}
+
+pub fn print_summary_statistics(path: impl AsRef<Path>) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async move {
+        let mut reader = Reader::new(&path).unwrap();
+        println!("============================================================");
+        let mut i = 0_usize;
+        loop {
+            match reader.read_record().await {
+                Ok(record) => {
+                    let ve = VersionEdit::decode(&record.data).unwrap();
+                    println!("VersionEdit #{}", i);
+                    println!("------------------------------------------------------------");
+                    i += 1;
+                    if ve.add_tsf {
+                        println!("  Add ts_family: {}", ve.tsf_id);
+                        println!("------------------------------------------------------------");
+                    }
+                    if ve.del_tsf {
+                        println!("  Delete ts_family: {}", ve.tsf_id);
+                        println!("------------------------------------------------------------");
+                    }
+                    if ve.has_seq_no {
+                        println!("  Presist sequence: {}", ve.seq_no);
+                        println!("------------------------------------------------------------");
+                    }
+                    if ve.has_file_id {
+                        if ve.add_files.is_empty() && ve.del_files.is_empty() {
+                            println!("  Add file: None. Delete file: None.");
+                        }
+                        if !ve.add_files.is_empty() {
+                            let mut buffer = String::new();
+                            ve.add_files.iter().for_each(|f| {
+                                buffer.push_str(
+                                    format!(
+                                        "{} (level: {}, {} B), ",
+                                        f.file_id, f.level, f.file_size
+                                    )
+                                    .as_str(),
+                                )
+                            });
+                            if !buffer.is_empty() {
+                                buffer.truncate(buffer.len() - 2);
+                            }
+                            println!("  Add file:[ {} ]", buffer);
+                        }
+                        if !ve.del_files.is_empty() {
+                            let mut buffer = String::new();
+                            ve.del_files.iter().for_each(|f| {
+                                buffer.push_str(
+                                    format!("{} (level: {}), ", f.file_id, f.level).as_str(),
+                                )
+                            });
+                            if !buffer.is_empty() {
+                                buffer.truncate(buffer.len() - 2);
+                            }
+                            println!("  Delete file:[ {} ]", buffer);
+                        }
+                    }
+                }
+                Err(err) => match err {
+                    RecordFileError::Eof => break,
+                    _ => panic!("Errors when read summary file: {}", err),
+                },
+            }
+            println!("============================================================");
+        }
+    });
 }
 
 pub struct SummaryProcessor {
@@ -628,7 +742,10 @@ mod test {
         {
             let vs = summary.version_set.write();
             let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
-            let mut version = tsf.read().version().copy_apply_version_edits(&edits, None);
+            let mut version = tsf
+                .read()
+                .version()
+                .copy_apply_version_edits(edits.clone(), None);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new();
@@ -660,7 +777,7 @@ mod test {
         assert!(!tsf.read().version().levels_info[1].files[0].is_delta());
         assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
         assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
-        assert_eq!(summary.ctx.file_id(), 15);
+        assert_eq!(summary.ctx.file_id(), 16);
 
         let _ = fs::remove_dir_all("./dev/");
     }
