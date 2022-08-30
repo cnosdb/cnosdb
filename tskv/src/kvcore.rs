@@ -7,7 +7,7 @@ use snafu::ResultExt;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::{runtime::Builder, sync::oneshot};
 
-use crossbeam::channel;
+use async_channel as channel;
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use models::{FieldId, SeriesId, SeriesKey, Timestamp};
@@ -307,7 +307,7 @@ impl TsKv {
     pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {
         warn!("job 'main' starting.");
         let f = async move {
-            while let Ok(command) = req_rx.recv() {
+            while let Ok(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
                         debug!("writing points.");

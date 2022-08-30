@@ -12,7 +12,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError;
 use trace::info;
 
-use crossbeam::channel;
+use async_channel as channel;
 
 use crate::http::handler::route;
 
@@ -40,7 +40,7 @@ pub enum Error {
     ChannelReceive { source: RecvError },
 
     #[snafu(display("Error sending to channel receiver: {}", source))]
-    CrossbeamSend {
+    AsyncChanSend {
         source: channel::SendError<tskv::Task>,
     },
 
@@ -104,8 +104,8 @@ fn parse_query(query: &str) -> HashMap<&str, &str> {
 mod test {
     use std::{net::SocketAddr, sync::Arc};
 
+    use async_channel as channel;
     use config::get_config;
-    use crossbeam::channel;
     use protos::kv_service::WritePointsRpcResponse;
     use query::db::Db;
     use tokio::spawn;
@@ -137,7 +137,7 @@ mod test {
         let server_join_handle = spawn(async move { serve(http_host, db, sender) });
 
         spawn(async move {
-            while let Ok(task) = receiver.recv() {
+            while let Ok(task) = receiver.recv().await {
                 match task {
                     Task::WritePoints { req, tx } => {
                         println!("{:?}", req);

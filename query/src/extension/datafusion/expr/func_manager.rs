@@ -20,9 +20,7 @@ impl<'a> DFSessionContextFuncAdapter<'a> {
 impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
     fn register_udf(&mut self, udf: ScalarUDF) -> Result<()> {
         if self.ctx.udf(udf.name.as_str()).is_err() {
-            return Err(Error::Exists {
-                name: udf.name,
-            });
+            return Err(Error::Exists { name: udf.name });
         }
 
         self.ctx.register_udf(udf);
@@ -31,9 +29,7 @@ impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
 
     fn register_udaf(&mut self, udaf: AggregateUDF) -> Result<()> {
         if self.ctx.udaf(udaf.name.as_str()).is_err() {
-            return Err(Error::Exists {
-                name: udaf.name,
-            });
+            return Err(Error::Exists { name: udaf.name });
         }
 
         self.ctx.register_udaf(udaf);

@@ -5,7 +5,7 @@ use futures::join;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 
-use crossbeam::channel;
+use async_channel as channel;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
 use trace::init_default_global_tracing;
