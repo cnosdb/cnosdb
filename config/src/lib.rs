@@ -5,33 +5,60 @@ use trace::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub application: ApplicationConfig,
-    pub wal: WalConfig,
-    pub summary: SummaryConfig,
-    pub cache: CacheConfig,
     pub storage: StorageConfig,
-    pub schema_store: SchemaStoreConfig,
+    pub wal: WalConfig,
+    pub cache: CacheConfig,
 }
 
 impl Config {
     pub fn override_by_env(&mut self) {
-        self.application.override_by_env();
         self.storage.override_by_env();
-        self.cache.override_by_env();
         self.wal.override_by_env();
-        self.schema_store.override_by_env();
+        self.cache.override_by_env();
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApplicationConfig {
+pub struct StorageConfig {
     pub path: String,
+    pub max_summary_size: u64,
+    pub max_level: u32,
+    pub base_file_size: u64,
+    pub compact_trigger: u32,
+    pub max_compact_size: u64,
+    pub dio_max_resident: u64,
+    pub dio_max_non_resident: u64,
+    pub dio_page_len_scale: u64,
 }
 
-impl ApplicationConfig {
+impl StorageConfig {
     pub fn override_by_env(&mut self) {
         if let Ok(path) = std::env::var("CNOSDB_APPLICATION_PATH") {
             self.path = path;
+        }
+        if let Ok(size) = std::env::var("CNOSDB_SUMMARY_MAX_SUMMARY_SIZE") {
+            self.max_summary_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
+            self.max_level = size.parse::<u32>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
+            self.base_file_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER") {
+            self.compact_trigger = size.parse::<u32>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
+            self.max_compact_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_RESIDENT") {
+            self.dio_max_resident = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_NON_RESIDENT") {
+            self.dio_max_non_resident = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_PAGE_LEN_SCALE") {
+            self.dio_page_len_scale = size.parse::<u64>().unwrap();
         }
     }
 }
@@ -58,19 +85,6 @@ impl WalConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SummaryConfig {
-    pub max_summary_size: u64,
-}
-
-impl SummaryConfig {
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("CNOSDB_SUMMARY_MAX_SUMMARY_SIZE") {
-            self.max_summary_size = size.parse::<u64>().unwrap();
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {
     pub max_buffer_size: u64,
     pub max_immutable_number: u16,
@@ -83,44 +97,6 @@ impl CacheConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
             self.max_immutable_number = size.parse::<u16>().unwrap();
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StorageConfig {
-    pub max_level: u32,
-    pub base_file_size: u64,
-    pub compact_trigger: u32,
-    pub max_compact_size: u64,
-}
-
-impl StorageConfig {
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
-            self.max_level = size.parse::<u32>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
-            self.base_file_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER") {
-            self.compact_trigger = size.parse::<u32>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
-            self.max_compact_size = size.parse::<u64>().unwrap();
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaStoreConfig {
-    pub config_dir: String,
-}
-
-impl SchemaStoreConfig {
-    pub fn override_by_env(&mut self) {
-        if let Ok(config_dir) = std::env::var("CNOSDB_SCHEMA_CONFIG_DIR") {
-            self.config_dir = config_dir;
         }
     }
 }
@@ -157,28 +133,25 @@ pub fn get_config(path: &str) -> Config {
 #[test]
 fn test() {
     let config_str = r#"
-[application]
+[storage]
 path = 'dev/db'
+max_summary_size = 134217728 # 128 * 1024 * 1024
+max_level = 4
+base_file_size = 16777216 # 16 * 1024 * 1024
+compact_trigger = 4
+max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
+dio_max_resident = 1024
+dio_max_non_resident = 1024
+dio_page_len_scale = 1
 
 [wal]
 enabled = true
 path = 'dev/wal'
 sync = true
 
-[summary]
-max_summary_size = 134217728 # 128 * 1024 * 1024
 [cache]
 max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
-
-[storage]
-max_level = 4
-base_file_size = 16777216     # 16 * 1024 * 1024
-compact_trigger = 4
-max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
-
-[schema_store]
-config_dir = 'dev/schema'
 "#;
 
     let config: Config = toml::from_str(&config_str).unwrap();

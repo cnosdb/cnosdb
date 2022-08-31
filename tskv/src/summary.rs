@@ -17,7 +17,7 @@ use crate::{
     error::{Error, Result},
     file_manager::try_exists,
     file_utils,
-    kv_option::{Options, StorageOptions, SummaryOptions},
+    kv_option::{Options, StorageOptions},
     record_file::{Reader, RecordFileError, Writer},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
@@ -210,7 +210,7 @@ impl Summary {
     pub async fn new(opt: Arc<Options>) -> Result<Self> {
         let db = VersionEdit::new();
         let mut w =
-            Writer::new(&file_utils::make_summary_file(opt.summary.summary_dir(), 0)).unwrap();
+            Writer::new(&file_utils::make_summary_file(opt.storage.summary_dir(), 0)).unwrap();
         let buf = db.encode()?;
         let _ = w
             .write_record(1, EditType::SummaryEdit.into(), &buf)
@@ -230,7 +230,7 @@ impl Summary {
     }
 
     pub async fn recover(opt: Arc<Options>) -> Result<Self> {
-        let summary_path = opt.summary.summary_dir();
+        let summary_path = opt.storage.summary_dir();
         let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(Reader::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap());
@@ -379,7 +379,7 @@ impl Summary {
     }
 
     async fn roll_summary_file(&mut self) -> Result<()> {
-        if self.writer.file_size() >= self.opt.summary.max_summary_size {
+        if self.writer.file_size() >= self.opt.storage.max_summary_size {
             let mut edits = vec![];
             let mut files = vec![];
             {
@@ -394,7 +394,7 @@ impl Summary {
                 edits.append(&mut files);
             }
 
-            let new_path = &file_utils::make_summary_file_tmp(self.opt.summary.summary_dir());
+            let new_path = &file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
             let old_path = &self.writer.path().clone();
             if try_exists(new_path) {
                 match remove_file(new_path) {
@@ -577,7 +577,7 @@ mod test {
     use crate::tseries_family::LevelInfo;
     use crate::{
         error, file_manager,
-        kv_option::{Options, SummaryOptions},
+        kv_option::{Options, StorageOptions},
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };
 
@@ -587,7 +587,7 @@ mod test {
         let _ = fs::remove_dir_all(&base_dir);
 
         let mut config = get_config("../config/config.toml");
-        config.application.path = base_dir.clone();
+        config.storage.path = base_dir.clone();
         let opt = Arc::new(Options::from(&config));
 
         let _ = fs::remove_dir_all(&base_dir);
@@ -611,7 +611,7 @@ mod test {
     }
 
     async fn test_summary_recover(opt: Arc<Options>) {
-        let summary_dir = opt.summary.summary_dir();
+        let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
@@ -625,7 +625,7 @@ mod test {
     }
 
     async fn test_tsf_num_recover(opt: Arc<Options>) {
-        let summary_dir = opt.summary.summary_dir();
+        let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
@@ -666,7 +666,7 @@ mod test {
     // tips : we can use a small max_summary_size
     async fn test_recover_summary_with_roll_0(opt: Arc<Options>) {
         let database = "test".to_string();
-        let summary_dir = opt.summary.summary_dir();
+        let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
@@ -703,7 +703,7 @@ mod test {
 
     async fn test_recover_summary_with_roll_1(opt: Arc<Options>) {
         let database = "test".to_string();
-        let summary_dir = opt.summary.summary_dir();
+        let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)

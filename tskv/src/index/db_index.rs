@@ -24,7 +24,7 @@ pub struct IndexConfig {
 impl From<&Config> for IndexConfig {
     fn from(config: &Config) -> Self {
         Self {
-            path: config.application.path.clone(),
+            path: config.storage.path.clone(),
         }
     }
 }
