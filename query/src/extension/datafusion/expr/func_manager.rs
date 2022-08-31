@@ -4,8 +4,7 @@ use datafusion::logical_expr::AggregateUDF;
 use datafusion::logical_plan::FunctionRegistry;
 use datafusion::{logical_expr::ScalarUDF, prelude::SessionContext};
 use snafu::ResultExt;
-
-use crate::function::*;
+use spi::query::function::*;
 
 pub struct DFSessionContextFuncAdapter<'a> {
     ctx: &'a mut SessionContext,

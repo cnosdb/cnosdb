@@ -6,10 +6,8 @@ use datafusion::{
     logical_plan::create_udaf,
     physical_plan::expressions::AvgAccumulator,
 };
-
-use crate::function::FunctionMetadataManager;
-
-use crate::function::*;
+use spi::query::function::FunctionMetadataManager;
+use spi::query::function::Result;
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<AggregateUDF> {
     let udf = new();

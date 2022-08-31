@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod example;
 
-use crate::function::*;
+use spi::query::function::{FunctionMetadataManager, Result};
 
 pub fn register_udfs(_func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...
@@ -12,9 +12,7 @@ pub fn register_udfs(_func_manager: &mut dyn FunctionMetadataManager) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use crate::function::{
-        simple_func_manager::SimpleFunctionMetadataManager, FunctionMetadataManager,
-    };
+    use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 
     use super::example;
 

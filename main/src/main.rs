@@ -8,7 +8,6 @@ use tokio::runtime::Runtime;
 use async_channel as channel;
 
 use protos::kv_service::tskv_service_server::TskvServiceServer;
-use query::db::Db;
 use trace::init_default_global_tracing;
 use tskv::TsKv;
 
@@ -126,7 +125,8 @@ fn main() -> Result<(), std::io::Error> {
                     TsKv::start(tskv.clone(), receiver.clone());
                 }
 
-                let db = Arc::new(Db::new(tskv));
+                let db =
+                    Arc::new(server::instance::make_cnosdbms(tskv).expect("Failed to build dbms."));
 
                 let tskv_grpc_service = TskvServiceServer::new(rpc::tskv::TskvServiceImpl {
                     sender: sender.clone(),
