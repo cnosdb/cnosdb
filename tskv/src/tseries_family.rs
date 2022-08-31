@@ -1070,7 +1070,7 @@ mod test {
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
         let mut global_config = get_config("../config/config.toml");
-        global_config.application.path = base_dir;
+        global_config.storage.path = base_dir;
         let opt = Arc::new(Options::from(&global_config));
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();

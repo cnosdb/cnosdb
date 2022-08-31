@@ -669,7 +669,7 @@ mod test {
     fn create_options(base_dir: String) -> Arc<Options> {
         let dir = "../config/config.toml";
         let mut config = config::get_config(dir);
-        config.application.path = base_dir.to_string();
+        config.storage.path = base_dir.to_string();
         let opt = Options::from(&config);
         Arc::new(opt)
     }

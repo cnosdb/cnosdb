@@ -105,7 +105,7 @@ impl TsKv {
     }
 
     async fn recover_summary(opt: Arc<Options>) -> (Arc<RwLock<VersionSet>>, Summary) {
-        let summary_dir = opt.summary.summary_dir();
+        let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
