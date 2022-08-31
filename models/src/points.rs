@@ -1,8 +1,6 @@
 use protos::models as fb_models;
 
-use crate::{
-    field_info, generate_series_id, Error, FieldId, Result, SeriesId, Tag, Timestamp, ValueType,
-};
+use crate::{Error, FieldId, Result, SeriesId, Tag, Timestamp, ValueType};
 
 #[derive(Debug)]
 pub struct FieldValue {
@@ -81,16 +79,12 @@ impl From<fb_models::Point<'_>> for InMemPoint {
             }
         }
 
-        let sid = generate_series_id(&tags);
-
         for fit in p.fields().into_iter() {
             for f in fit.into_iter() {
-                let field_name = f.name().unwrap().to_vec();
                 let val_type = f.type_().into();
                 let val = f.value().unwrap().to_vec();
-                let fid = field_info::generate_field_id(&field_name, sid);
                 fields.push(FieldValue {
-                    field_id: fid,
+                    field_id: 0,
                     value_type: val_type,
                     value: val,
                 });
@@ -99,7 +93,7 @@ impl From<fb_models::Point<'_>> for InMemPoint {
         let ts = p.timestamp();
 
         Self {
-            series_id: sid,
+            series_id: 0,
             timestamp: ts,
             fields,
         }

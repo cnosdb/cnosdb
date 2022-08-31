@@ -1,10 +1,15 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     path,
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
-use crate::error::{self, Result};
+use crate::{
+    error::{self, Result},
+    memcache::{RowData, RowGroup},
+    TimeRange,
+};
+use models::utils::split_id;
 use parking_lot::RwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
@@ -44,7 +49,7 @@ impl Database {
         let tf = TseriesFamily::new(
             ver.tf_id(),
             ver.tf_name().to_string(),
-            MemCache::new(ver.tf_id(), opt.max_memcache_size, ver.last_seq, false),
+            MemCache::new(ver.tf_id(), opt.max_memcache_size, ver.last_seq),
             ver.clone(),
             opt,
         );
@@ -54,12 +59,7 @@ impl Database {
     pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
         if let Some(tf) = self.ts_families.get(&tf_id) {
             let mut tf = tf.write();
-            let mem = Arc::new(RwLock::new(MemCache::new(
-                tf_id,
-                tf.options().max_memcache_size,
-                seq,
-                false,
-            )));
+            let mem = Arc::new(RwLock::new(MemCache::new(tf_id, tf.options().max_memcache_size, seq)));
             tf.switch_memcache(mem).await;
         }
     }
@@ -86,7 +86,7 @@ impl Database {
         let tf = TseriesFamily::new(
             tsf_id,
             self.name.clone(),
-            MemCache::new(tsf_id, opt.max_memcache_size, seq_no, false),
+            MemCache::new(tsf_id, opt.max_memcache_size, seq_no),
             ver,
             opt,
         );
@@ -126,29 +126,54 @@ impl Database {
         }
     }
 
-    pub fn build_mem_points(
+    pub fn build_write_group(
         &self,
         points: flatbuffers::Vector<flatbuffers::ForwardsUOffset<Point>>,
-    ) -> Result<Vec<InMemPoint>> {
-        let mut mem_points = Vec::<_>::with_capacity(points.len());
-
-        // get or create forward index
+    ) -> Result<HashMap<(u64, u32), RowGroup>> {
+        // (series id, schema id) -> RowGroup
+        let mut map = HashMap::new();
         for point in points {
             let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
             let sid = self.build_index_and_check_type(&mut info)?;
 
-            let mut point = InMemPoint::from(point);
-            point.series_id = sid;
+            let row = RowData::from(point);
+            let mut all_fileds = BTreeMap::new();
             let fields = info.field_infos();
-
-            for i in 0..fields.len() {
-                point.fields[i].field_id = fields[i].field_id();
+            for (i, f) in row.fields.into_iter().enumerate() {
+                all_fileds.insert(fields[i].field_id(), f);
             }
 
-            mem_points.push(point);
+            let fields = info.field_fill();
+            for i in 0..fields.len() {
+                all_fileds.insert(fields[i].field_id(), None);
+            }
+
+            let ts = row.ts;
+            let schema_id = info.get_schema_id();
+            let mut schema = Vec::with_capacity(all_fileds.len());
+            let mut all_row = Vec::with_capacity(all_fileds.len());
+            for (k, v) in all_fileds {
+                let (fid, _) = split_id(k);
+
+                all_row.push(v);
+                schema.push(fid);
+            }
+
+            let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
+                schema_id,
+                schema,
+                rows: vec![],
+                range: TimeRange {
+                    min_ts: i64::MAX,
+                    max_ts: i64::MIN,
+                },
+            });
+
+            entry.range.merge(&TimeRange { min_ts: ts, max_ts: ts });
+            entry.rows.push(RowData { ts, fields: all_row });
         }
 
-        return Ok(mem_points);
+        return Ok(map);
     }
 
     fn build_index_and_check_type(&self, info: &mut SeriesInfo) -> Result<u64> {

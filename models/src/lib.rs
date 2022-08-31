@@ -11,9 +11,9 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 pub use errors::{Error, Result};
-pub use field_info::{generate_field_id, FieldInfo, ValueType};
+pub use field_info::{FieldInfo, ValueType};
 pub use points::*;
-pub use series_info::{generate_series_id, SeriesInfo, SeriesKey};
+pub use series_info::{SeriesInfo, SeriesKey};
 pub use tag::Tag;
 
 pub type ShardId = u64;

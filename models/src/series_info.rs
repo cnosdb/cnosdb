@@ -241,8 +241,16 @@ impl SeriesInfo {
         &mut self.field_infos
     }
 
+    pub fn field_fill(&mut self) -> &mut Vec<FieldInfo> {
+        &mut self.field_fill
+    }
+
     pub fn push_field_info(&mut self, field_info: FieldInfo) {
         self.field_infos.push(field_info)
+    }
+
+    pub fn push_field_fill(&mut self, field_info: FieldInfo) {
+        self.field_fill.push(field_info)
     }
 
     pub fn field_info_with_id(&self, field_id: FieldId) -> Vec<&FieldInfo> {
@@ -276,15 +284,6 @@ impl From<&SeriesInfo> for SeriesKey {
             table: value.table().clone(),
         }
     }
-}
-
-pub fn generate_series_id(tags: &[Tag]) -> SeriesId {
-    let mut hasher = BkdrHasher::new();
-    for tag in tags {
-        hasher.hash_with(&tag.key);
-        hasher.hash_with(&tag.value);
-    }
-    hasher.number()
 }
 
 #[cfg(test)]

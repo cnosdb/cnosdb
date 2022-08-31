@@ -12,6 +12,9 @@ use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
+use protos::models as fb_models;
+
+#[derive(Debug, Clone)]
 pub enum FieldVal {
     Float(f64),
     Integer(i64),
@@ -22,7 +25,7 @@ pub enum FieldVal {
 
 impl FieldVal {
     pub fn value_type(&self) -> ValueType {
-        match *self {
+        match self {
             FieldVal::Float(..) => ValueType::Float,
             FieldVal::Integer(..) => ValueType::Integer,
             FieldVal::Unsigned(..) => ValueType::Unsigned,
@@ -32,43 +35,86 @@ impl FieldVal {
     }
 
     pub fn data_value(&self, ts: i64) -> DataType {
-        match *self {
-            FieldVal::Float(val) => DataType::U64(U64Cell { ts, val }),
-            FieldVal::Integer(val) => DataType::I64(I64Cell { ts, val }),
-            FieldVal::Unsigned(val) => DataType::F64(F64Cell { ts, val }),
-            FieldVal::Boolean(val) => DataType::Str(StrCell { ts, val }),
-            FieldVal::Bytes(val) => DataType::Bool(BoolCell { ts, val: val.clone() }),
+        match self {
+            FieldVal::Float(val) => DataType::F64(F64Cell { ts, val: *val }),
+            FieldVal::Integer(val) => DataType::I64(I64Cell { ts, val: *val }),
+            FieldVal::Unsigned(val) => DataType::U64(U64Cell { ts, val: *val }),
+            FieldVal::Boolean(val) => DataType::Bool(BoolCell { ts, val: *val }),
+            FieldVal::Bytes(val) => DataType::Str(StrCell { ts, val: val.clone() }),
+        }
+    }
+
+    pub fn new(val: Vec<u8>, vtype: ValueType) -> FieldVal {
+        match vtype {
+            ValueType::Unsigned => {
+                let val = byte_utils::decode_be_u64(&val);
+                FieldVal::Unsigned(val)
+            }
+            ValueType::Integer => {
+                let val = byte_utils::decode_be_i64(&val);
+                FieldVal::Integer(val)
+            }
+            ValueType::Float => {
+                let val = byte_utils::decode_be_f64(&val);
+                FieldVal::Float(val)
+            }
+            ValueType::Boolean => {
+                let val = byte_utils::decode_be_bool(&val);
+                FieldVal::Boolean(val)
+            }
+            ValueType::String => {
+                //let val = Vec::from(val);
+                FieldVal::Bytes(val)
+            }
+            _ => todo!(),
         }
     }
 }
+
+#[derive(Debug)]
 pub struct RowData {
-    pub ts: u64,
-    pub fields: Vec<FieldVal>,
+    pub ts: i64,
+    pub fields: Vec<Option<FieldVal>>,
 }
 
+impl From<fb_models::Point<'_>> for RowData {
+    fn from(p: fb_models::Point<'_>) -> Self {
+        let mut fields = Vec::new();
+
+        for fit in p.fields().into_iter() {
+            for f in fit.into_iter() {
+                let vtype = f.type_().into();
+                let val = f.value().unwrap().to_vec();
+                fields.push(Some(FieldVal::new(val, vtype)));
+            }
+        }
+
+        let ts = p.timestamp();
+        Self { ts, fields }
+    }
+}
+
+#[derive(Debug)]
 pub struct RowGroup {
     pub schema_id: u32,
     pub schema: Vec<u32>,
+    pub range: TimeRange,
     pub rows: Vec<RowData>,
 }
 
+#[derive(Debug)]
 pub struct SeriesData {
     pub range: TimeRange,
     pub groups: Vec<RowGroup>,
 }
 
 impl SeriesData {
-    pub fn write(&mut self, group: &mut RowGroup, range: &TimeRange) {
-        if range.min_ts < self.range.min_ts {
-            self.range.min_ts = range.min_ts;
-        }
-
-        if range.max_ts > self.range.max_ts {
-            self.range.max_ts = range.max_ts;
-        }
+    pub fn write(&mut self, mut group: RowGroup) {
+        self.range.merge(&group.range);
 
         for item in self.groups.iter_mut() {
             if item.schema_id == group.schema_id {
+                item.range.merge(&group.range);
                 item.rows.append(&mut group.rows);
                 return;
             }
@@ -77,17 +123,17 @@ impl SeriesData {
         self.groups.push(group);
     }
 
-    pub fn delete_data(&self, range: &TimeRange) {
+    pub fn delete_data(&mut self, range: &TimeRange) {
         if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
             return;
         }
 
         for item in self.groups.iter_mut() {
-            item.rows.retain(|&row| row.ts < range.min_ts || row.ts > range.max_ts);
+            item.rows.retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
         }
     }
 
-    pub fn read_entry(&self, field_id: &u64) -> Option<Arc<RwLock<MemEntry>>> {
+    pub fn read_entry(&self, field_id: u32) -> Option<Arc<RwLock<MemEntry>>> {
         let mut entry = MemEntry {
             ts_min: self.range.min_ts,
             ts_max: self.range.max_ts,
@@ -108,8 +154,12 @@ impl SeriesData {
             }
 
             for row in group.rows.iter() {
-                entry.field_type = row.fields[index].value_type();
-                entry.cells.push(row.fields[index].data_value(row.ts));
+                if let Some(field) = row.fields.get(index) {
+                    if let Some(field) = field {
+                        entry.field_type = field.value_type();
+                        entry.cells.push(field.data_value(row.ts));
+                    }
+                }
             }
         }
 
@@ -120,7 +170,10 @@ impl SeriesData {
 impl Default for SeriesData {
     fn default() -> Self {
         Self {
-            range: (i64::MAX, i64::MIN),
+            range: TimeRange {
+                min_ts: i64::MAX,
+                max_ts: i64::MIN,
+            },
             groups: Vec::with_capacity(4),
         }
     }
@@ -129,6 +182,9 @@ impl Default for SeriesData {
 #[derive(Debug)]
 pub struct MemCache {
     tf_id: u32,
+
+    pub flushed: bool,
+    pub flushing: bool,
 
     max_size: u64,
     min_seq_no: u64,
@@ -142,7 +198,8 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn new(tf_id: u32, max_size: u64, seq: u64, parts: u32) -> Self {
+    pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
+        let parts = 16;
         let mut partions = Vec::with_capacity(parts);
         for _i in 0..parts {
             partions.push(RwLock::new(HashMap::new()));
@@ -154,6 +211,9 @@ impl MemCache {
             max_size,
             min_seq_no: seq,
 
+            flushed: false,
+            flushing: false,
+
             part_count: parts as usize,
 
             seq_no: AtomicU64::new(seq),
@@ -161,7 +221,7 @@ impl MemCache {
         }
     }
 
-    pub fn write_group(&self, sid: u64, seq: u64, range: &TimeRange, group: &mut RowGroup) {
+    pub fn write_group(&self, sid: u64, seq: u64, group: RowGroup) {
         self.seq_no.store(seq, Ordering::Relaxed);
         self.cache_size.fetch_add(size_of_val(&group) as u64, Ordering::Relaxed);
 
@@ -172,11 +232,11 @@ impl MemCache {
             .or_insert_with(|| Arc::new(RwLock::new(SeriesData::default())))
             .clone();
 
-        entry.write().write(group, range);
+        entry.write().write(group);
     }
 
     pub fn get(&self, field_id: &u64) -> Option<Arc<RwLock<MemEntry>>> {
-        let (field_id, sid) = utils::split_id(field_id);
+        let (field_id, sid) = utils::split_id(*field_id);
 
         let index = (sid as usize) % self.part_count;
         let part = self.partions[index].read();
@@ -201,7 +261,7 @@ impl MemCache {
         for part in self.partions.iter() {
             let part = part.read();
             for (_, item) in part.iter() {
-                item.read().delete_data(range);
+                item.write().delete_data(range);
             }
         }
     }
@@ -246,6 +306,18 @@ pub struct MemEntry {
     pub ts_max: i64,
     pub field_type: ValueType,
     pub cells: Vec<DataType>,
+}
+
+impl MemEntry {
+    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
+        let mut data = DataBlock::new(0, self.field_type);
+        for datum in self.cells.iter() {
+            if datum.timestamp() >= time_range.min_ts && datum.timestamp() <= time_range.max_ts {
+                data.insert(datum);
+            }
+        }
+        return vec![data];
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy)]

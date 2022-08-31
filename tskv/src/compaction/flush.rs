@@ -78,16 +78,11 @@ impl FlushTask {
                 low_seq = mem.seq_no();
             }
 
-            if mem.is_delta {
-                mem.copy_data(&mut field_map_delta, &mut field_size_delta);
-            } else {
-                mem.copy_data(&mut field_map, &mut field_size);
-            }
+            mem.copy_data(&mut field_map, &mut field_size);
         }
 
         let (mut min_ts, mut max_ts) = (i64::MAX, i64::MIN);
-        let block_set_delta =
-            build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
+        let block_set_delta = build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
         // build tsm file
         if !block_set_delta.is_empty() {
             kernel.file_id_next();
@@ -168,11 +163,7 @@ fn update_meta(
     Ok(())
 }
 
-fn append_meta_to_version_edits(
-    meta: &CompactMeta,
-    edits: &mut Vec<VersionEdit>,
-    max_level_ts: Timestamp,
-) {
+fn append_meta_to_version_edits(meta: &CompactMeta, edits: &mut Vec<VersionEdit>, max_level_ts: Timestamp) {
     let mut edit = VersionEdit::new();
     edit.add_file(meta.clone(), max_level_ts);
     edits.push(edit);
@@ -232,9 +223,7 @@ fn build_tsm_file(
     for (fid, blk) in block_set.into_iter() {
         let merged_blks = DataBlock::merge_blocks(vec![blk], max_block_size);
         for merged_blk in merged_blks.iter() {
-            writer
-                .write_block(fid, merged_blk)
-                .context(error::WriteTsmSnafu)?;
+            writer.write_block(fid, merged_blk).context(error::WriteTsmSnafu)?;
         }
     }
     writer.write_index().context(error::WriteTsmSnafu)?;
@@ -278,13 +267,8 @@ pub async fn run_flush_memtable_job(
             let path_delta = cf_opt.delta_dir(*tsf_id);
 
             let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
-            job.run(
-                tsf.read().version(),
-                kernel.clone(),
-                &mut edits,
-                cf_opt.clone(),
-            )
-            .await?;
+            job.run(tsf.read().version(), kernel.clone(), &mut edits, cf_opt.clone())
+                .await?;
 
             match compact_task_sender.send(*tsf_id) {
                 Err(e) => error!("{}", e),

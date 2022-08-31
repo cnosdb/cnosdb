@@ -1,7 +1,6 @@
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
@@ -77,9 +76,6 @@ pub struct FieldInfo {
     id: FieldId,
     name: FieldName,
     value_type: ValueType,
-
-    /// True if method `finish(series_id)` has been called.
-    finished: bool,
 }
 
 impl From<&Tag> for FieldInfo {
@@ -87,7 +83,6 @@ impl From<&Tag> for FieldInfo {
         FieldInfo {
             id: 0,
             name: tag.key.clone(),
-            finished: false,
             value_type: ValueType::Unknown,
         }
     }
@@ -104,15 +99,8 @@ impl PartialEq for FieldInfo {
 }
 
 impl FieldInfo {
-    pub fn new(series_id: SeriesId, name: FieldName, value_type: ValueType) -> Self {
-        let mut fi = FieldInfo {
-            id: 0,
-            name,
-            value_type,
-            finished: true,
-        };
-        fi.finish(series_id);
-        fi
+    pub fn new(id: SeriesId, name: FieldName, value_type: ValueType) -> Self {
+        Self { id, name, value_type }
     }
 
     pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
@@ -120,30 +108,19 @@ impl FieldInfo {
             id: 0,
             name: field
                 .name()
-                .ok_or(Error::InvalidFlatbufferMessage {
-                    err: "".to_string(),
-                })?
+                .ok_or(Error::InvalidFlatbufferMessage { err: "".to_string() })?
                 .to_vec(),
             value_type: field.type_().into(),
-            finished: false,
         })
     }
 
     pub fn check(&self) -> Result<()> {
         if self.name.len() > FIELD_NAME_MAX_LEN {
             return Err(Error::InvalidField {
-                err: format!(
-                    "TagKey exceeds the FIELD_NAME_MAX_LEN({})",
-                    FIELD_NAME_MAX_LEN
-                ),
+                err: format!("TagKey exceeds the FIELD_NAME_MAX_LEN({})", FIELD_NAME_MAX_LEN),
             });
         }
         Ok(())
-    }
-
-    pub fn finish(&mut self, series_id: SeriesId) {
-        self.finished = true;
-        self.id = generate_field_id(&self.name, series_id);
     }
 
     pub fn set_field_id(&mut self, id: FieldId) {
@@ -165,12 +142,6 @@ impl FieldInfo {
     pub fn is_tag(&self) -> bool {
         self.value_type == ValueType::Unknown
     }
-}
-
-pub fn generate_field_id(name: &FieldName, sid: SeriesId) -> FieldId {
-    let mut hash = BkdrHasher::with_number(sid);
-    hash.hash_with(name.as_slice());
-    hash.number()
 }
 
 /// Split a 16 byte FieldId to 8 byte SeriesId and 8 byte FieldHash

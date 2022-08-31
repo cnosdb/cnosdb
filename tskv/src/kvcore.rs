@@ -333,7 +333,7 @@ impl Engine for TsKv {
             String::from_utf8(fb_points.database().unwrap().to_vec()).map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
+        let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
         let (cb, rx) = oneshot::channel();
         self.wal_sender
@@ -341,7 +341,8 @@ impl Engine for TsKv {
             .map_err(|err| Error::Send)?;
         let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
 
-        let tsf = match db.read().get_tsfamily_random() {
+        let tfs = db.read().get_tsfamily_random();
+        let tsf = match tfs {
             Some(v) => v,
             None => db.write().add_tsfamily(
                 0,
@@ -352,7 +353,7 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, &mem_points).await;
+        tsf.read().put_points(seq, write_group).await;
         tsf.write().check_to_flush(self.flush_task_sender.clone()).await;
 
         Ok(WritePointsRpcResponse {
@@ -369,9 +370,10 @@ impl Engine for TsKv {
             String::from_utf8(fb_points.database().unwrap().to_vec()).map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
+        let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
-        let tsf = match db.read().get_tsfamily_random() {
+        let tfs = db.read().get_tsfamily_random();
+        let tsf = match tfs {
             Some(v) => v,
             None => db.write().add_tsfamily(
                 0,
@@ -382,7 +384,7 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, &mem_points).await;
+        tsf.read().put_points(seq, write_group).await;
         tsf.write().check_to_flush(self.flush_task_sender.clone()).await;
 
         return Ok(WritePointsRpcResponse {

@@ -252,6 +252,17 @@ impl DBIndex {
             check_fn(&mut FieldInfo::from(tag))?
         }
 
+        for it in schema.iter() {
+            match info.field_infos().iter().find(|item| it.eq(item)) {
+                Some(v) => {}
+                None => {
+                    if !it.is_tag() {
+                        info.push_field_fill(it.clone())
+                    }
+                }
+            }
+        }
+
         //schema changed store it
         if schema_change {
             let data = bincode::serialize(schema).unwrap();
@@ -283,15 +294,15 @@ impl DBIndex {
         Ok(None)
     }
 
-    pub async fn table_schema_id(&self, tab: &String) -> u32 {
+    pub fn table_schema_id(&self, tab: &String) -> u32 {
         if let Some(v) = self.schema_id.get(tab) {
-            return v;
+            return *v;
         }
 
         return 1;
     }
 
-    pub async fn incr_schema_id(&mut self, tab: &String) -> u32 {
+    pub fn incr_schema_id(&mut self, tab: &String) -> u32 {
         let v = self.schema_id.entry(tab.clone()).or_insert(1);
 
         *v = *v + 1;

@@ -9,9 +9,7 @@ use std::{
     },
 };
 
-use chrono::{
-    DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
-};
+use chrono::{DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use lazy_static::lazy_static;
 use models::Timestamp;
 use parking_lot::RwLock;
@@ -143,11 +141,7 @@ impl LevelCompactionPicker {
         }
     }
 
-    fn pick_level_1(
-        &self,
-        ts_family_opt: &TseriesFamOpt,
-        levels: &[LevelInfo],
-    ) -> Option<(LevelId, LevelId)> {
+    fn pick_level_1(&self, ts_family_opt: &TseriesFamOpt, levels: &[LevelInfo]) -> Option<(LevelId, LevelId)> {
         let mut ctx = LevelCompatContext::default();
         ctx.cal_score(levels, ts_family_opt);
         ctx.pick_level()
@@ -168,8 +162,7 @@ impl LevelCompactionPicker {
         }
 
         // Level score context: Vec<(level, level_size, compacting_files in level, level_weight, level_score)>
-        let mut level_scores: Vec<(LevelId, u64, usize, f64, f64)> =
-            Vec::with_capacity(levels.len());
+        let mut level_scores: Vec<(LevelId, u64, usize, f64, f64)> = Vec::with_capacity(levels.len());
         for lvl in levels.iter() {
             if lvl.level == 0 || lvl.cur_size == 0 {
                 continue;
@@ -182,18 +175,11 @@ impl LevelCompactionPicker {
             }
             let level_weight = Self::level_weight(lvl.level);
             let level_score = if compacting_files == 0 {
-                (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
-                    / (lvl.max_size as f64)
+                (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64 / (lvl.max_size as f64)
             } else {
                 0.0
             };
-            level_scores.push((
-                lvl.level,
-                lvl.cur_size,
-                compacting_files,
-                level_weight,
-                level_score,
-            ));
+            level_scores.push((lvl.level, lvl.cur_size, compacting_files, level_weight, level_score));
         }
 
         if level_scores.is_empty() {
@@ -293,13 +279,8 @@ impl LevelCompatContext {
     }
 
     fn pick_level(&mut self) -> Option<(u32, u32)> {
-        self.level_scores.sort_by(|a, b| {
-            if a.1 > b.1 {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        });
+        self.level_scores
+            .sort_by(|a, b| if a.1 > b.1 { Ordering::Less } else { Ordering::Greater });
 
         println!("==========Debug(pick_level)1==========");
         println!("Calculate level scores:");
@@ -443,7 +424,7 @@ mod test {
         TseriesFamily::new(
             1,
             "ts_family_1".to_string(),
-            MemCache::new(1, 1000, 1, false),
+            MemCache::new(1, 1000, 1),
             version,
             tsf_opt,
         )
