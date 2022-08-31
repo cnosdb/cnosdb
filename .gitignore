@@ -2,7 +2,7 @@
 /.idea/
 /.vscode/
 /dev/
-/query/dev
+/query_server/query/dev
 /main/dev
 /main/tskv_log
 

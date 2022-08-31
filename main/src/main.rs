@@ -104,7 +104,9 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Debug { debug } => {
                 println!("Debug {}", debug);
             }
-            SubCommand::Run {} => {}
+            SubCommand::Run {
+
+            } => {}
             SubCommand::Tskv { debug } => {
                 println!("TSKV {}", debug);
 
@@ -151,7 +153,9 @@ fn main() -> Result<(), std::io::Error> {
                 grpc_ret.unwrap();
                 http_ret.unwrap();
             }
-            SubCommand::Query {} => todo!(),
+            SubCommand::Query {
+               // cargo run -- tskv --cpu 1 --memory 64 debug
+            } => todo!(),
         }
     });
     Ok(())

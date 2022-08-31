@@ -3,19 +3,18 @@
 members = [
     "config",
     "coordinator",
-    "line_protocol",
+    "common/line_protocol",
     "main",
-    "models",
-    "protos",
-    "query",
-    "server",
-    "rpctests",
-    "trace",
+    "common/models",
+    "common/protos",
+    "query_server/query",
+    "query_server/server",
+    "e2e_test",
+    "common/trace",
     "tskv",
-    "utils",
-    "spi",
-    "deps/datafusion",
-    "catalog",
+    "common/utils",
+    "query_server/spi",
+    "common/datafusion_dep"
 ]
 
 default-members = ["main"]
