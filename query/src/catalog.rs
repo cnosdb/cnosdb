@@ -18,6 +18,8 @@ use crate::{
     table::ClusterTable,
 };
 
+pub type CatalogRef = Arc<dyn CatalogProvider>;
+
 pub struct UserCatalog {
     engine: EngineRef,
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
@@ -29,6 +31,10 @@ impl UserCatalog {
             schemas: RwLock::new(HashMap::new()),
             engine,
         }
+    }
+    pub fn deregister_schema(&self, name: &str) -> Result<Option<Arc<dyn SchemaProvider>>> {
+        let mut db = self.schemas.write();
+        Ok(db.remove(name))
     }
 }
 
@@ -53,7 +59,7 @@ impl CatalogProvider for UserCatalog {
         let mut schemas = self.schemas.write();
         let v = schemas
             .entry(name.to_owned())
-            .or_insert_with(|| Arc::new(IsiphoSchema::new(name.to_owned(), self.engine.clone())));
+            .or_insert_with(|| Arc::new(DatabaseSchema::new(name.to_owned(), self.engine.clone())));
 
         Some(v.clone())
     }
@@ -68,13 +74,13 @@ impl CatalogProvider for UserCatalog {
     }
 }
 
-pub struct IsiphoSchema {
+pub struct DatabaseSchema {
     db_name: String,
     engine: EngineRef,
     tables: RwLock<HashMap<String, Arc<dyn TableProvider>>>,
 }
 
-impl IsiphoSchema {
+impl DatabaseSchema {
     pub fn new(db: String, engine: EngineRef) -> Self {
         Self {
             db_name: db,
@@ -84,7 +90,7 @@ impl IsiphoSchema {
     }
 }
 
-impl SchemaProvider for IsiphoSchema {
+impl SchemaProvider for DatabaseSchema {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -127,6 +133,7 @@ impl SchemaProvider for IsiphoSchema {
         table: Arc<dyn TableProvider>,
     ) -> Result<Option<Arc<dyn TableProvider>>> {
         if self.table_exist(name.as_str()) {
+            //todo: use crate::error::Error
             return Err(DataFusionError::Execution(format!(
                 "The table {} already exists",
                 name

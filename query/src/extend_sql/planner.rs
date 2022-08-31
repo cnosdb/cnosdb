@@ -1,9 +1,9 @@
+use crate::error::Error::DFPlanError;
+use crate::error::Result;
+use crate::extend_sql::ast::{DropObject, ExtStatement, ObjectType};
 use datafusion::logical_plan::LogicalPlan as DFPlan;
 use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use sqlparser::ast::Statement;
-use crate::extend_sql::ast::{DropObject, ExtStatement, ObjectType};
-use crate::error::Result;
-use crate::error::Error::DFPlanError;
 
 #[derive(Debug)]
 pub enum Plan {
@@ -14,7 +14,7 @@ pub enum Plan {
 }
 
 #[derive(Debug)]
-pub struct QueryPlan{
+pub struct QueryPlan {
     df_plan: DFPlan,
 }
 
@@ -28,14 +28,13 @@ pub struct DropPlan {
     pub obj_type: ObjectType,
 }
 
-
 /// CnosDB SQL query planner
 #[derive(Debug)]
-pub struct SqlPlaner<S: ContextProvider>  {
+pub struct SqlPlaner<S: ContextProvider> {
     schema_provider: S,
 }
 
-impl<S: ContextProvider> SqlPlaner<S>  {
+impl<S: ContextProvider> SqlPlaner<S> {
     /// Create a new query planner
     pub fn new(schema_provider: S) -> Self {
         SqlPlaner { schema_provider }
@@ -44,15 +43,11 @@ impl<S: ContextProvider> SqlPlaner<S>  {
     /// Generate a logical plan from an  Extent SQL statement
     pub fn statement_to_plan(&self, statement: ExtStatement) -> Result<Plan> {
         match statement {
-            ExtStatement::SqlStatement(stmt) =>{
-                self.df_sql_to_plan(*stmt)
-            },
+            ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateTable(_) => todo!(),
             ExtStatement::CreateDatabase(_) => todo!(),
             ExtStatement::CreateUser(_) => todo!(),
-            ExtStatement::Drop(s) => {
-                self.drop_object_to_plan(s)
-            },
+            ExtStatement::Drop(s) => self.drop_object_to_plan(s),
             ExtStatement::DropUser(_) => todo!(),
             ExtStatement::DescribeTable(_) => todo!(),
             ExtStatement::DescribeDatabase(_) => todo!(),
@@ -61,14 +56,14 @@ impl<S: ContextProvider> SqlPlaner<S>  {
         }
     }
 
-    fn df_sql_to_plan(&self, stmt: Statement) -> Result<Plan>{
-        match stmt{
-            Statement::Query(_) =>{
+    fn df_sql_to_plan(&self, stmt: Statement) -> Result<Plan> {
+        match stmt {
+            Statement::Query(_) => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
-                let df_plan = df_planner.sql_statement_to_plan(stmt).map_err(|_| DFPlanError)?;
-                Ok(Plan::Query(QueryPlan{
-                    df_plan
-                }))
+                let df_plan = df_planner
+                    .sql_statement_to_plan(stmt)
+                    .map_err(|_| DFPlanError)?;
+                Ok(Plan::Query(QueryPlan { df_plan }))
             }
             _ => {
                 unimplemented!()
@@ -85,29 +80,23 @@ impl<S: ContextProvider> SqlPlaner<S>  {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
-    use std::any::Any;
-    use std::sync::Arc;
+    use crate::extend_sql::parser::ExtParser;
+    use crate::extend_sql::planner::SqlPlaner;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+    use datafusion::error::Result;
     use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
-    use crate::extend_sql::parser::ExtParser;
-    use crate::extend_sql::planner::{Plan, SqlPlaner};
-    use datafusion::error::Result;
+    use std::any::Any;
+    use std::sync::Arc;
 
     #[derive(Debug)]
     struct MockContext {}
 
     impl ContextProvider for MockContext {
-        fn get_table_provider(
-            &self,
-            name: TableReference,
-        ) -> Result<Arc<dyn TableSource>> {
+        fn get_table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>> {
             let schema = match name.table() {
                 "test_tb" => Ok(Schema::new(vec![
                     Field::new("field_int", DataType::Int32, false),
@@ -115,7 +104,7 @@ mod tests {
                 ])),
                 _ => {
                     unimplemented!("use test_tb for test")
-                },
+                }
             };
             match schema {
                 Ok(tb) => Ok(Arc::new(TestTable::new(Arc::new(tb)))),
@@ -155,24 +144,28 @@ mod tests {
         }
     }
     #[test]
-    fn test_select(){
+    fn test_select() {
         let sql = "select * from test_tb";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
-        let test = MockContext{};
+        let test = MockContext {};
         let planner = SqlPlaner::new(test);
-        let plan = planner.statement_to_plan(statements.pop_back().unwrap()).unwrap();
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
         println!("{:?}", plan);
     }
 
     #[test]
-    fn test_drop(){
+    fn test_drop() {
         let sql = "drop table if exists test_tb";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
-        let test = MockContext{};
+        let test = MockContext {};
         let planner = SqlPlaner::new(test);
-        let plan = planner.statement_to_plan(statements.pop_back().unwrap()).unwrap();
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
         println!("{:?}", plan);
     }
 }

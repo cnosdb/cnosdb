@@ -10,7 +10,7 @@ use datafusion::{
     scheduler::{ExecutionResults, Scheduler},
 };
 
-use crate::context::{IsiphoSessionCfg, IsiphoSessionCtx};
+use crate::context::IsiphoSessionCfg;
 pub type Result<T> = result::Result<T, DataFusionError>;
 
 #[derive(Debug, Clone)]
@@ -50,15 +50,9 @@ impl Executor {
         }
     }
 
-    pub fn new_execution_config(&self, executor_type: ExecutorType) -> IsiphoSessionCfg {
-        let exec = self.executor(executor_type);
-        IsiphoSessionCfg::new(exec, Arc::clone(&self.runtime))
+    pub fn new_execution_config(&self) -> IsiphoSessionCfg {
+        IsiphoSessionCfg::new(Arc::clone(&self.runtime))
             .with_target_partitions(self.config.query_partitions)
-    }
-
-    #[allow(dead_code)]
-    pub fn new_context(&self, executor_type: ExecutorType) -> IsiphoSessionCtx {
-        self.new_execution_config(executor_type).build()
     }
 
     fn executor(&self, executor_type: ExecutorType) -> Arc<Scheduler> {

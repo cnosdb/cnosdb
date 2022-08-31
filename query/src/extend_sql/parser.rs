@@ -1,19 +1,16 @@
 use std::collections::VecDeque;
 
 use sqlparser::{
-    ast::{ColumnOption, ColumnOptionDef, Ident, TableConstraint},
-    dialect::{Dialect, GenericDialect, keywords::Keyword},
-    parser::{IsOptional::Mandatory, Parser, ParserError},
+    dialect::{keywords::Keyword, Dialect, GenericDialect},
+    parser::{Parser, ParserError},
     tokenizer::{Token, Tokenizer},
 };
 
-use trace::{debug};
+use trace::debug;
 
-use crate::extend_sql::ast::{DescribeObject, DropObject, ExtStatement, ObjectType};
+use crate::extend_sql::ast::{DropObject, ExtStatement, ObjectType};
 
 pub type Result<T, E = ParserError> = std::result::Result<T, E>;
-
-
 
 // Use `Parser::expected` instead, if possible
 macro_rules! parser_err {
@@ -49,7 +46,10 @@ impl<'a> ExtParser<'a> {
         ExtParser::parse_sql_with_dialect(sql, dialect)
     }
     /// Parse a SQL statement and produce a set of statements
-    pub fn parse_sql_with_dialect(sql: &str, dialect: &dyn Dialect) -> Result<VecDeque<ExtStatement>> {
+    pub fn parse_sql_with_dialect(
+        sql: &str,
+        dialect: &dyn Dialect,
+    ) -> Result<VecDeque<ExtStatement>> {
         let mut parser = ExtParser::new_with_dialect(sql, dialect)?;
         let mut stmts = VecDeque::new();
         let mut expecting_statement_delimiter = false;
@@ -76,45 +76,38 @@ impl<'a> ExtParser<'a> {
         Ok(stmts)
     }
 
-
     /// Parse a new expression
     fn parse_statement(&mut self) -> Result<ExtStatement> {
         match self.parser.peek_token() {
-            Token::Word(w) => {
-                match w.keyword {
-                    Keyword::DROP => {
-                        self.parser.next_token();
-                        self.parse_drop()
-                    }
-                    Keyword::DESCRIBE | Keyword::DESC => {
-                        self.parser.next_token();
-                        self.parse_describe()
-                    }
-
-                    Keyword::SHOW => {
-                        self.parser.next_token();
-                        self.parse_show()
-                    }
-                    Keyword::ALTER => {
-                        self.parser.next_token();
-                        self.parse_alter()
-                    }
-                    Keyword::CREATE => {
-                        self.parser.next_token();
-                        self.parse_create()
-                    }
-                    _ => {
-                        Ok(ExtStatement::SqlStatement(Box::new(
-                            self.parser.parse_statement()?,
-                        )))
-                    }
+            Token::Word(w) => match w.keyword {
+                Keyword::DROP => {
+                    self.parser.next_token();
+                    self.parse_drop()
                 }
-            }
-            _ => {
-                Ok(ExtStatement::SqlStatement(Box::new(
+                Keyword::DESCRIBE | Keyword::DESC => {
+                    self.parser.next_token();
+                    self.parse_describe()
+                }
+
+                Keyword::SHOW => {
+                    self.parser.next_token();
+                    self.parse_show()
+                }
+                Keyword::ALTER => {
+                    self.parser.next_token();
+                    self.parse_alter()
+                }
+                Keyword::CREATE => {
+                    self.parser.next_token();
+                    self.parse_create()
+                }
+                _ => Ok(ExtStatement::SqlStatement(Box::new(
                     self.parser.parse_statement()?,
-                )))
-            }
+                ))),
+            },
+            _ => Ok(ExtStatement::SqlStatement(Box::new(
+                self.parser.parse_statement()?,
+            ))),
         }
     }
     // Report unexpected token
@@ -139,7 +132,7 @@ impl<'a> ExtParser<'a> {
     }
 
     /// Parse a SQL ALTER statement
-    pub fn parse_alter(&mut self) ->Result<ExtStatement> {
+    pub fn parse_alter(&mut self) -> Result<ExtStatement> {
         todo!()
     }
 
@@ -177,12 +170,11 @@ impl<'a> ExtParser<'a> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+
     use crate::extend_sql::ast::{DropObject, ExtStatement};
     use crate::extend_sql::parser::ExtParser;
-    use super::Result;
     #[test]
     fn test_drop() {
         let sql = "drop table test_tb";
@@ -190,10 +182,10 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match &statements[0] {
             ExtStatement::Drop(DropObject {
-                                   object_name,
-                                   if_exist,
-                                   obj_type
-                               }) => {
+                object_name,
+                if_exist,
+                obj_type,
+            }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
                 assert_eq!(obj_type.to_string(), "TABLE".to_string());
@@ -206,10 +198,10 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match &statements[0] {
             ExtStatement::Drop(DropObject {
-                                    object_name,
-                                   if_exist,
-                                   obj_type,
-                               }) => {
+                object_name,
+                if_exist,
+                obj_type,
+            }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
                 assert_eq!(obj_type.to_string(), "TABLE".to_string());
@@ -222,10 +214,10 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match &statements[0] {
             ExtStatement::Drop(DropObject {
-                                   object_name,
-                                   if_exist,
-                                   obj_type,
-                               }) => {
+                object_name,
+                if_exist,
+                obj_type,
+            }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
                 assert_eq!(obj_type.to_string(), "DATABASE".to_string());
@@ -238,10 +230,10 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match &statements[0] {
             ExtStatement::Drop(DropObject {
-                                   object_name,
-                                   if_exist,
-                                   obj_type,
-                                       }) => {
+                object_name,
+                if_exist,
+                obj_type,
+            }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
                 assert_eq!(obj_type.to_string(), "DATABASE".to_string());
