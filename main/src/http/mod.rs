@@ -6,8 +6,9 @@ use std::sync::Arc;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Server as HyperServer;
-use query::db::Db;
 use snafu::{ResultExt, Snafu};
+use spi::server::dbms::DatabaseManagerSystem;
+use spi::server::ServerError;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError;
 use trace::info;
@@ -44,6 +45,9 @@ pub enum Error {
         source: channel::SendError<tskv::Task>,
     },
 
+    #[snafu(display("Error executiong query: {}", source))]
+    Query { source: ServerError },
+
     #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
 
@@ -53,7 +57,7 @@ pub enum Error {
 
 pub async fn serve(
     addr: SocketAddr,
-    db: Arc<Db>,
+    db: Arc<dyn DatabaseManagerSystem + Send + Sync>,
     sender: channel::Sender<tskv::Task>,
 ) -> Result<(), Error> {
     let make_service = make_service_fn(move |conn: &AddrStream| {
@@ -107,7 +111,6 @@ mod test {
     use async_channel as channel;
     use config::get_config;
     use protos::kv_service::WritePointsRpcResponse;
-    use query::db::Db;
     use tokio::spawn;
     use trace::init_default_global_tracing;
     use tskv::{Options, Task, TsKv};
@@ -132,7 +135,10 @@ mod test {
         let opt = Options::from(global_config);
 
         let tskv = TsKv::open(opt).await.unwrap();
-        let db = Arc::new(Db::new(Arc::new(tskv)));
+        // let db = Arc::new(Db::new(Arc::new(tskv)));
+        let db = Arc::new(
+            server::instance::make_cnosdbms(Arc::new(tskv)).expect("Failed to build dbms."),
+        );
         let (sender, receiver) = channel::unbounded();
         let server_join_handle = spawn(async move { serve(http_host, db, sender) });
 

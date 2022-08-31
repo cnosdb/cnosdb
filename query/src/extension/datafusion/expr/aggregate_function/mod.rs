@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod example;
 
-use crate::function::*;
+use spi::query::function::FunctionMetadataManager;
+use spi::query::function::Result;
 
 pub fn register_udafs(_func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...

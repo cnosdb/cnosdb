@@ -1,5 +1,12 @@
 use snafu::Snafu;
 
+#[macro_export]
+macro_rules! define_result {
+    ($t:ty) => {
+        pub type Result<T> = std::result::Result<T, $t>;
+    };
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Snafu)]

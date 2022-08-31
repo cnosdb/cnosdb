@@ -8,10 +8,14 @@ members = [
     "models",
     "protos",
     "query",
+    "server",
     "rpctests",
     "trace",
     "tskv",
     "utils",
+    "spi",
+    "deps/datafusion",
+    "catalog",
 ]
 
 default-members = ["main"]

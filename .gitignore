@@ -3,6 +3,8 @@
 /.vscode/
 /dev/
 /query/dev
+/main/dev
+/main/tskv_log
 
 # Cargo
 **/target

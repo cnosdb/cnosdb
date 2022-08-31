@@ -12,6 +12,8 @@ protos = { path = "../protos" }
 query = {path = "../query"}
 trace  = { path = "../trace" }
 tskv = { path = "../tskv" }
+server = { path = "../server" }
+spi = { path = "../spi" }
 
 async-channel = "1.7.1"
 datafusion = "10.0.0"
