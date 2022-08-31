@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 pub use picker::*;
 
 use crate::{
-    kv_option::TseriesFamOpt,
+    kv_option::StorageOptions,
     memcache::MemCache,
     summary::VersionEdit,
     tseries_family::{ColumnFile, Version},
@@ -24,7 +24,8 @@ pub trait CompactionEngine: Clone + Sync + Send {
 
 pub struct CompactReq {
     ts_family_id: TseriesFamilyId,
-    ts_family_opt: Arc<TseriesFamOpt>,
+    database: String,
+    storage_opt: Arc<StorageOptions>,
 
     files: Vec<Arc<ColumnFile>>,
     version: Arc<Version>,

@@ -118,7 +118,7 @@ fn main() -> Result<(), std::io::Error> {
                 //let (sender, receiver) = mpsc::unbounded_channel();
                 let (sender, receiver) = channel::unbounded();
 
-                let tskv_options = tskv::Options::from(global_config);
+                let tskv_options = tskv::Options::from(&global_config);
 
                 let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
 

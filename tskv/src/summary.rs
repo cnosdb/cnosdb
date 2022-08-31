@@ -17,11 +17,11 @@ use crate::{
     error::{Error, Result},
     file_manager::try_exists,
     file_utils,
-    kv_option::{DBOptions, TseriesFamDesc, TseriesFamOpt},
+    kv_option::{Options, StorageOptions, SummaryOptions},
     record_file::{Reader, RecordFileError, Writer},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
-    LevelId, Options, TseriesFamilyId,
+    LevelId, TseriesFamilyId,
 };
 
 const MAX_BATCH_SIZE: usize = 64;
@@ -171,9 +171,9 @@ impl VersionEdit {
         self.tsf_id = tsf_id;
     }
 
-    pub fn del_tsfamily(&mut self, tsf_if: u32) {
+    pub fn del_tsfamily(&mut self, tsf_id: u32) {
         self.del_tsf = true;
-        self.tsf_id = tsf_if;
+        self.tsf_id = tsf_id;
     }
 
     pub fn set_log_seq(&mut self, file_id: u64) {
@@ -202,14 +202,15 @@ pub struct Summary {
     version_set: Arc<RwLock<VersionSet>>,
     ctx: Arc<GlobalContext>,
     writer: Writer,
-    db_opt: Arc<DBOptions>,
+    opt: Arc<Options>,
 }
 
 impl Summary {
     // create a new summary file
-    pub async fn new(db_opt: Arc<DBOptions>, ts_family_opt: Arc<TseriesFamOpt>) -> Result<Self> {
+    pub async fn new(opt: Arc<Options>) -> Result<Self> {
         let db = VersionEdit::new();
-        let mut w = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0)).unwrap();
+        let mut w =
+            Writer::new(&file_utils::make_summary_file(opt.summary.summary_dir(), 0)).unwrap();
         let buf = db.encode()?;
         let _ = w
             .write_record(1, EditType::SummaryEdit.into(), &buf)
@@ -221,45 +222,40 @@ impl Summary {
 
         Ok(Self {
             file_no: 0,
-            version_set: Arc::new(RwLock::new(VersionSet::new(
-                ts_family_opt.clone(),
-                HashMap::new(),
-            ))),
+            version_set: Arc::new(RwLock::new(VersionSet::new(opt.clone(), HashMap::new()))),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
-            db_opt: db_opt.clone(),
+            opt,
         })
     }
 
-    pub async fn recover(
-        db_opt: Arc<DBOptions>,
-        ts_family_opt: Arc<TseriesFamOpt>,
-    ) -> Result<Self> {
-        let writer = Writer::new(&file_utils::make_summary_file(&db_opt.db_path, 0)).unwrap();
+    pub async fn recover(opt: Arc<Options>) -> Result<Self> {
+        let summary_path = opt.summary.summary_dir();
+        let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
         let ctx = Arc::new(GlobalContext::default());
-        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&db_opt.db_path, 0)).unwrap());
-        let vs = Self::recover_version(rd, &ctx, ts_family_opt).await?;
+        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap());
+        let vs = Self::recover_version(rd, &ctx, opt.clone()).await?;
 
         Ok(Self {
             file_no: 0,
             version_set: Arc::new(RwLock::new(vs)),
             ctx,
             writer,
-            db_opt: db_opt.clone(),
+            opt,
         })
     }
 
     // recover from summary file
     pub async fn recover_version(
-        mut rd: Box<Reader>,
+        mut reader: Box<Reader>,
         ctx: &GlobalContext,
-        ts_family_opt: Arc<TseriesFamOpt>,
+        opt: Arc<Options>,
     ) -> Result<VersionSet> {
         let mut edits: HashMap<u32, Vec<VersionEdit>> = HashMap::default();
-        let mut tf_names: HashMap<u32, String> = HashMap::default();
+        let mut databases: HashMap<u32, String> = HashMap::default();
 
         loop {
-            let res = rd
+            let res = reader
                 .read_record()
                 .await
                 .map_err(|e| Error::LogRecordErr { source: (e) });
@@ -268,10 +264,10 @@ impl Summary {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.add_tsf {
                         edits.insert(ed.tsf_id, vec![]);
-                        tf_names.insert(ed.tsf_id, ed.tsf_name.clone());
+                        databases.insert(ed.tsf_id, ed.tsf_name.clone());
                     } else if ed.del_tsf {
                         edits.remove(&ed.tsf_id);
-                        tf_names.remove(&ed.tsf_id);
+                        databases.remove(&ed.tsf_id);
                     } else if let Some(data) = edits.get_mut(&ed.tsf_id) {
                         data.push(ed);
                     }
@@ -286,7 +282,7 @@ impl Summary {
         let mut has_file_id = false;
         let mut file_id = 0_u64;
         for (id, eds) in edits {
-            let tsf_name = tf_names.get(&id).unwrap().to_owned();
+            let database = databases.get(&id).unwrap().to_owned();
             // let cf_opts = cf_options.remove(cf_name).unwrap_or_default();
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
@@ -310,15 +306,15 @@ impl Summary {
                     files.insert(m.file_id, m);
                 }
             }
-            let mut levels = LevelInfo::init_levels(ts_family_opt.clone());
+            let mut levels = LevelInfo::init_levels(database.clone(), opt.storage.clone());
             // according files map to recover levels_info;
             for (fd, meta) in files {
                 levels[meta.level as usize].push_compact_meta(&meta);
             }
             let ver = Version::new(
                 id,
-                tsf_name,
-                ts_family_opt.clone(),
+                database,
+                opt.storage.clone(),
                 max_log,
                 levels,
                 max_level_ts,
@@ -333,7 +329,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(ts_family_opt.clone(), versions);
+        let vs = VersionSet::new(opt.clone(), versions);
         Ok(vs)
     }
 
@@ -383,7 +379,7 @@ impl Summary {
     }
 
     async fn roll_summary_file(&mut self) -> Result<()> {
-        if self.writer.file_size() >= self.db_opt.max_summary_size {
+        if self.writer.file_size() >= self.opt.summary.max_summary_size {
             let mut edits = vec![];
             let mut files = vec![];
             {
@@ -398,7 +394,7 @@ impl Summary {
                 edits.append(&mut files);
             }
 
-            let new_path = &file_utils::make_summary_file_tmp(self.db_opt.db_path.clone());
+            let new_path = &file_utils::make_summary_file_tmp(self.opt.summary.summary_dir());
             let old_path = &self.writer.path().clone();
             if try_exists(new_path) {
                 match remove_file(new_path) {
@@ -581,71 +577,73 @@ mod test {
     use crate::tseries_family::LevelInfo;
     use crate::{
         error, file_manager,
-        kv_option::{DBOptions, TseriesFamOpt},
+        kv_option::{Options, SummaryOptions},
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };
 
     #[tokio::test]
     async fn test_summary() {
-        let _ = fs::remove_dir_all("./dev/");
-        test_summary_recover().await;
-        test_tsf_num_recover().await;
+        let base_dir = "/tmp/test/summary/1".to_string();
+        let _ = fs::remove_dir_all(&base_dir);
+
+        let mut config = get_config("../config/config.toml");
+        config.application.path = base_dir.clone();
+        let opt = Arc::new(Options::from(&config));
+
+        let _ = fs::remove_dir_all(&base_dir);
+        println!("Running test: test_summary_recover");
+        test_summary_recover(opt.clone()).await;
+
+        let _ = fs::remove_dir_all(&base_dir);
+        println!("Running test: test_tsf_num_recover");
+        test_tsf_num_recover(opt.clone()).await;
+
+        println!("Running test: test_version_edit");
         test_version_edit();
 
-        test_recover_summary_with_roll_0().await;
-        test_recover_summary_with_roll_1().await;
+        let _ = fs::remove_dir_all(&base_dir);
+        println!("Running test: test_recover_summary_with_roll_0");
+        test_recover_summary_with_roll_0(opt.clone()).await;
+
+        let _ = fs::remove_dir_all(&base_dir);
+        println!("Running test: test_recover_summary_with_roll_1");
+        test_recover_summary_with_roll_1(opt).await;
     }
 
-    async fn test_summary_recover() {
-        let global_config = get_config("../config/config.toml");
-        let opt = DBOptions::from(global_config);
-        let opt = Arc::new(opt);
-        let tsf_opt = Arc::new(TseriesFamOpt::from(global_config));
-
-        if !file_manager::try_exists(&opt.db_path) {
-            std::fs::create_dir_all(&opt.db_path)
+    async fn test_summary_recover(opt: Arc<Options>) {
+        let summary_dir = opt.summary.summary_dir();
+        if !file_manager::try_exists(&summary_dir) {
+            std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), tsf_opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone()).await.unwrap();
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone(), tsf_opt.clone())
-            .await
-            .unwrap();
-
-        let _ = fs::remove_dir_all("./dev/");
+        let summary = Summary::recover(opt.clone()).await.unwrap();
     }
 
-    async fn test_tsf_num_recover() {
-        let global_config = get_config("../config/config.toml");
-        let opt = DBOptions::from(global_config);
-        let opt = Arc::new(opt);
-        let tsf_opt = Arc::new(TseriesFamOpt::from(global_config));
-
-        if !file_manager::try_exists(&opt.db_path) {
-            std::fs::create_dir_all(&opt.db_path)
+    async fn test_tsf_num_recover(opt: Arc<Options>) {
+        let summary_dir = opt.summary.summary_dir();
+        if !file_manager::try_exists(&summary_dir) {
+            std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), tsf_opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone()).await.unwrap();
 
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let mut summary = Summary::recover(opt.clone(), tsf_opt.clone())
-            .await
-            .unwrap();
+        let mut summary = Summary::recover(opt.clone()).await.unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
 
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt, tsf_opt).await.unwrap();
+        let summary = Summary::recover(opt.clone()).await.unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
-
-        let _ = fs::remove_dir_all("./dev/");
     }
 
     fn test_version_edit() {
@@ -666,28 +664,25 @@ mod test {
     }
 
     // tips : we can use a small max_summary_size
-    async fn test_recover_summary_with_roll_0() {
-        let global_config = get_config("../config/config.toml");
-        let opt = DBOptions::from(global_config);
-        let opt = Arc::new(opt);
-        let tsf_opt = Arc::new(TseriesFamOpt::from(global_config));
-
-        if !file_manager::try_exists(&opt.db_path) {
-            std::fs::create_dir_all(&opt.db_path)
+    async fn test_recover_summary_with_roll_0(opt: Arc<Options>) {
+        let database = "test".to_string();
+        let summary_dir = opt.summary.summary_dir();
+        if !file_manager::try_exists(&summary_dir) {
+            std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), tsf_opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone()).await.unwrap();
 
         let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
 
         let mut edits = vec![];
-        let db = summary.version_set.write().create_db(&"test".to_string());
+        let db = summary.version_set.write().create_db(&database);
         for i in 0..40 {
             db.write()
-                .add_tsfamily(i, 0, 0, tsf_opt.clone(), summary_task_sender.clone());
+                .add_tsfamily(i, 0, 0, summary_task_sender.clone());
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(i, "test".to_string());
+            edit.add_tsfamily(i, database.clone());
             edits.push(edit.clone());
         }
 
@@ -701,31 +696,26 @@ mod test {
         }
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt, tsf_opt).await.unwrap();
+        let summary = Summary::recover(opt.clone()).await.unwrap();
 
         assert_eq!(summary.version_set.read().tsf_num(), 20);
-
-        let _ = fs::remove_dir_all("./dev/");
     }
 
-    async fn test_recover_summary_with_roll_1() {
-        let global_config = get_config("../config/config.toml");
-        let opt = DBOptions::from(global_config);
-        let opt = Arc::new(opt);
-        let tsf_opt = Arc::new(TseriesFamOpt::from(global_config));
-
-        if !file_manager::try_exists(&opt.db_path) {
-            std::fs::create_dir_all(&opt.db_path)
+    async fn test_recover_summary_with_roll_1(opt: Arc<Options>) {
+        let database = "test".to_string();
+        let summary_dir = opt.summary.summary_dir();
+        if !file_manager::try_exists(&summary_dir) {
+            std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone(), tsf_opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone()).await.unwrap();
 
         let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
 
-        let db = summary.version_set.write().create_db(&"test".to_string());
+        let db = summary.version_set.write().create_db(&database);
         db.write()
-            .add_tsfamily(10, 0, 0, tsf_opt.clone(), summary_task_sender.clone());
+            .add_tsfamily(10, 0, 0, summary_task_sender.clone());
 
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
@@ -768,7 +758,7 @@ mod test {
 
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt, tsf_opt).await.unwrap();
+        let summary = Summary::recover(opt.clone()).await.unwrap();
 
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
@@ -778,7 +768,5 @@ mod test {
         assert_eq!(tsf.read().version().levels_info[1].files[0].file_id(), 15);
         assert_eq!(tsf.read().version().levels_info[1].files[0].size(), 100);
         assert_eq!(summary.ctx.file_id(), 16);
-
-        let _ = fs::remove_dir_all("./dev/");
     }
 }

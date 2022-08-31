@@ -129,7 +129,7 @@ mod test {
         let http_host = "127.0.0.1:8003"
             .parse::<SocketAddr>()
             .expect("Invalid host");
-        let opt = Options::from(global_config);
+        let opt = Options::from(&global_config);
 
         let tskv = TsKv::open(opt).await.unwrap();
         let db = Arc::new(Db::new(Arc::new(tskv)));

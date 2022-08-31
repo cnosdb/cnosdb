@@ -32,7 +32,7 @@ use crate::{
     file_manager::{self, FileManager},
     file_utils,
     index::db_index,
-    kv_option::{DBOptions, Options, QueryOption, TseriesFamDesc, TseriesFamOpt, WalConfig},
+    kv_option::Options,
     memcache::{DataType, MemCache},
     record_file::Reader,
     summary,
@@ -68,8 +68,7 @@ impl TsKv {
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
-        let (version_set, summary) =
-            Self::recover_summary(shared_options.clone(), shared_options.ts_family.clone()).await;
+        let (version_set, summary) = Self::recover_summary(shared_options.clone()).await;
 
         let wal_cfg = shared_options.wal.clone();
 
@@ -105,22 +104,18 @@ impl TsKv {
         Ok(core)
     }
 
-    async fn recover_summary(
-        opt: Arc<Options>,
-        ts_family_opt: Arc<TseriesFamOpt>,
-    ) -> (Arc<RwLock<VersionSet>>, Summary) {
-        if !file_manager::try_exists(&opt.db.db_path) {
-            std::fs::create_dir_all(&opt.db.db_path)
+    async fn recover_summary(opt: Arc<Options>) -> (Arc<RwLock<VersionSet>>, Summary) {
+        let summary_dir = opt.summary.summary_dir();
+        if !file_manager::try_exists(&summary_dir) {
+            std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let summary_file = file_utils::make_summary_file(&opt.db.db_path, 0);
+        let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(opt.db.clone(), ts_family_opt)
-                .await
-                .unwrap()
+            Summary::recover(opt.clone()).await.unwrap()
         } else {
-            Summary::new(opt.db.clone(), ts_family_opt).await.unwrap()
+            Summary::new(opt.clone()).await.unwrap()
         };
         let version_set = summary.version_set();
 
@@ -277,7 +272,7 @@ impl TsKv {
                                 info!("There is nothing to compact.");
                             }
                             Err(e) => {
-                                error!("Compaction job failed: {:?}", e);
+                                error!("Compaction job failed: {}", e);
                             }
                         }
                     }
@@ -316,7 +311,7 @@ impl TsKv {
                                 let _ret = tx.send(Ok(resp));
                             }
                             Err(err) => {
-                                info!("write points error {:?}", err);
+                                info!("write points error {}", err);
                                 let _ret = tx.send(Err(err));
                             }
                         }
@@ -362,7 +357,6 @@ impl Engine for TsKv {
                 0,
                 seq,
                 self.global_ctx.file_id_next(),
-                self.options.ts_family.clone(),
                 self.summary_task_sender.clone(),
             ),
         };
@@ -400,7 +394,6 @@ impl Engine for TsKv {
                 0,
                 seq,
                 self.global_ctx.file_id_next(),
-                self.options.ts_family.clone(),
                 self.summary_task_sender.clone(),
             ),
         };
@@ -468,7 +461,7 @@ impl Engine for TsKv {
             max_ts: max,
             min_ts: min,
         };
-        let path = self.options.db.db_path.clone();
+        let path = self.options.storage.path.clone();
         for mut series_info in series_infos {
             let mut super_version: Option<Arc<SuperVersion>> = None;
             {
@@ -523,7 +516,6 @@ impl Engine for TsKv {
 
     async fn get_series_id_list(
         &self,
-
         name: &String,
         tab: &String,
         tags: &Vec<Tag>,
