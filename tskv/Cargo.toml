@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 config = { path = "../config" }
-models = { path = "../models" }
-protos = { path = "../protos", features = ["test"] }
-trace  = { path = "../trace" }
-utils  = { path = "../utils"  }
+models = { path = "../common/models" }
+protos = { path = "../common/protos", features = ["test"] }
+trace = { path = "../common/trace" }
+utils = { path = "../common/utils" }
 
 
 async-channel = "1.7.1"
@@ -49,7 +49,7 @@ sled = "0.34.7"
 criterion = { version = "0.3.5", features = ["async_tokio"] }
 rand = "0.8"
 tempfile = "3"
-parking_lot = { version = "0.12.1", features = ["nightly"]}
+parking_lot = { version = "0.12.1", features = ["nightly"] }
 
 [[bench]]
 name = "kvcore_bench"

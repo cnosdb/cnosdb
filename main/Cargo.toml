@@ -7,16 +7,17 @@ edition = "2021"
 
 [dependencies]
 config = { path = "../config" }
-line_protocol = { path = "../line_protocol" }
-protos = { path = "../protos" }
-query = {path = "../query"}
-trace  = { path = "../trace" }
+line_protocol = { path = "../common/line_protocol" }
+protos = { path = "../common/protos" }
+query = { path = "../query_server/query" }
+trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
-server = { path = "../server" }
-spi = { path = "../spi" }
+server = { path = "../query_server/server" }
+spi = { path = "../query_server/spi" }
 
 async-channel = "1.7.1"
-datafusion = "10.0.0"
+#datafusion = { version = "10.0.0", features = ["scheduler"] }
+datafusion = { path = "../common/datafusion_dep" }
 async-stream = "0.3"
 backtrace = "0.3"
 chrono = "0.4"
