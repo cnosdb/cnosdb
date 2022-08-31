@@ -7,7 +7,7 @@ use datafusion::{
     prelude::create_udf,
 };
 
-use crate::function::*;
+use spi::query::function::{FunctionMetadataManager, Result};
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
     let udf = new();

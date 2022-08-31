@@ -1,0 +1,21 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use datafusion::{
+    logical_plan::LogicalPlan,
+    physical_plan::{planner::ExtensionPlanner, ExecutionPlan},
+};
+
+use super::{session::IsiphoSessionCtx, Result};
+
+#[async_trait]
+pub trait PhysicalPlanner {
+    /// Given a `LogicalPlan`, create an `ExecutionPlan` suitable for execution
+    async fn create_physical_plan(
+        &self,
+        logical_plan: &LogicalPlan,
+        session_state: &IsiphoSessionCtx,
+    ) -> Result<Arc<dyn ExecutionPlan>>;
+
+    fn inject_physical_transform_rule(&mut self, rule: Arc<dyn ExtensionPlanner + Send + Sync>);
+}

@@ -1,8 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
-
-use super::*;
+use spi::query::function::*;
 
 #[derive(Debug, Default)]
 pub struct SimpleFunctionMetadataManager {

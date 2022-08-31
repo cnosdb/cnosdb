@@ -1,0 +1,14 @@
+[package]
+name = "catalog"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spi = { path = "../spi" }
+datafusion = { path = "../deps/datafusion"}
+tskv = { path = "../tskv" }
+query = { path = "../query" }
+
+parking_lot = "0.12"
