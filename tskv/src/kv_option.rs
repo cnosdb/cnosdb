@@ -1,185 +1,165 @@
 #![allow(dead_code)]
+
 use std::{path::PathBuf, sync::Arc};
 
-use config::GlobalConfig;
+use config::Config;
 use serde::{Deserialize, Serialize};
 
-use crate::index::IndexConfig;
-
-#[derive(Debug, Clone)]
-pub struct DBOptions {
-    pub front_cpu: usize,
-    pub back_cpu: usize,
-    pub max_summary_size: u64,
-    pub create_if_missing: bool,
-    pub db_path: String,
-    pub db_name: String,
-}
-
-impl From<&GlobalConfig> for DBOptions {
-    fn from(config: &GlobalConfig) -> Self {
-        Self {
-            front_cpu: config.front_cpu,
-            back_cpu: config.back_cpu,
-            max_summary_size: config.max_memcache_size, // 128MB
-            create_if_missing: config.create_if_missing,
-            db_path: config.db_path.clone(),
-            db_name: config.db_name.clone(),
-        }
-    }
-}
+use crate::{index::IndexConfig, summary};
 
 #[derive(Debug, Clone)]
 pub struct Options {
-    pub db: Arc<DBOptions>,
-    pub ts_family: Arc<TseriesFamOpt>,
-    pub lrucache: Arc<CacheConfig>,
-    pub wal: Arc<WalConfig>,
-    // pub(crate) write_batch: WriteBatchConfig,
-    pub compact_conf: Arc<CompactConfig>,
-    pub schema_store: Arc<SchemaStoreConfig>,
+    pub application: Arc<ApplicationOptions>,
+    pub wal: Arc<WalOptions>,
+    pub summary: Arc<SummaryOptions>,
+    pub storage: Arc<StorageOptions>,
+    pub cache: Arc<CacheOptions>,
+    pub schema_store: Arc<SchemaStoreOptions>,
 }
 
-impl Options {
-    // TODO
-    pub fn override_by_env(&mut self) -> Self {
+impl From<&Config> for Options {
+    fn from(config: &Config) -> Self {
+        let application = ApplicationOptions::from(config);
+        let mut summary = SummaryOptions::from(config);
+        summary.path = application.path.clone();
+        let mut storage = StorageOptions::from(config);
+        storage.path = application.path.clone();
         Self {
-            db: self.db.clone(),
-            ts_family: self.ts_family.clone(),
-            lrucache: self.lrucache.clone(),
-            wal: self.wal.clone(),
-            compact_conf: self.compact_conf.clone(),
-            schema_store: self.schema_store.clone(),
+            application: Arc::new(application),
+            wal: Arc::new(WalOptions::from(config)),
+            summary: Arc::new(summary),
+            storage: Arc::new(storage),
+            cache: Arc::new(CacheOptions::from(config)),
+            schema_store: Arc::new(SchemaStoreOptions::from(config)),
         }
     }
 }
 
-impl From<&GlobalConfig> for Options {
-    fn from(config: &GlobalConfig) -> Self {
-        Self {
-            db: Arc::new(DBOptions::from(config)),
-            ts_family: Arc::new(TseriesFamOpt::from(config)),
-            lrucache: Arc::new(CacheConfig::from(config)),
-            wal: Arc::new(WalConfig::from(config)),
-            compact_conf: Arc::new(CompactConfig::from(config)),
-            schema_store: Arc::new(SchemaStoreConfig::from(config)),
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct CacheConfig {}
-
-impl From<&GlobalConfig> for CacheConfig {
-    fn from(_: &GlobalConfig) -> Self {
-        Self {}
-    }
-}
-
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct WalConfig {
+pub struct ApplicationOptions {
+    pub path: PathBuf,
+}
+
+const SUMMARY_PATH: &str = "summary";
+const TSM_PATH: &str = "tsm";
+const DELTA_PATH: &str = "delta";
+const INDEX_PATH: &str = "index";
+
+impl From<&Config> for ApplicationOptions {
+    fn from(config: &Config) -> Self {
+        Self {
+            path: PathBuf::from(config.application.path.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WalOptions {
     pub enabled: bool,
-    pub dir: String,
+    pub path: PathBuf,
     pub sync: bool,
 }
 
-impl From<&GlobalConfig> for WalConfig {
-    fn from(config: &GlobalConfig) -> Self {
+impl From<&Config> for WalOptions {
+    fn from(config: &Config) -> Self {
         Self {
-            enabled: config.enabled,
-            dir: config.wal_config_dir.clone(),
-            sync: config.sync,
+            enabled: config.wal.enabled,
+            path: PathBuf::from(config.wal.path.clone()),
+            sync: config.wal.sync,
         }
     }
 }
 
-#[allow(dead_code)]
-pub struct WriteBatchConfig {}
+#[derive(Debug, Clone)]
+pub struct SummaryOptions {
+    pub max_summary_size: u64,
+    pub path: PathBuf,
+}
 
-impl From<&GlobalConfig> for WriteBatchConfig {
-    fn from(_: &GlobalConfig) -> Self {
-        Self {}
+impl SummaryOptions {
+    pub fn summary_dir(&self) -> PathBuf {
+        self.path.join(SUMMARY_PATH)
     }
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct CompactConfig {}
-
-impl From<&GlobalConfig> for CompactConfig {
-    fn from(_: &GlobalConfig) -> Self {
-        Self {}
+impl From<&Config> for SummaryOptions {
+    fn from(config: &Config) -> Self {
+        Self {
+            max_summary_size: config.summary.max_summary_size,
+            path: PathBuf::new(),
+        }
     }
 }
 
-pub struct TimeRange {}
+#[derive(Debug, Clone)]
+pub struct CacheOptions {
+    pub max_buffer_size: u64,
+    pub max_immutable_number: u16,
+}
 
-pub struct QueryOption {
-    timerange: TimeRange,
-    db: String,
-    table: String,
-    series_id: u64,
+impl From<&Config> for CacheOptions {
+    fn from(config: &Config) -> Self {
+        Self {
+            max_buffer_size: config.cache.max_buffer_size,
+            max_immutable_number: config.cache.max_immutable_number,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TseriesFamOpt {
+pub struct StorageOptions {
     pub max_level: u32,
-    pub level_ratio: f64,
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
-    pub tsm_dir: String,
-    pub delta_dir: String,
-    pub index_path: String,
-    pub max_memcache_size: u64,
-    pub max_immemcache_num: u16,
+    pub path: PathBuf,
 }
 
-impl TseriesFamOpt {
+impl StorageOptions {
     pub fn level_file_size(&self, lvl: u32) -> u64 {
         self.base_file_size * lvl as u64 * self.compact_trigger as u64
     }
 
-    pub fn tsm_dir(&self, tsf_id: u32) -> PathBuf {
-        PathBuf::from(self.tsm_dir.clone()).join(tsf_id.to_string())
+    pub fn index_dir(&self) -> PathBuf {
+        self.path.join(DELTA_PATH)
     }
 
-    pub fn delta_dir(&self, tsf_id: u32) -> PathBuf {
-        PathBuf::from(self.delta_dir.clone()).join(tsf_id.to_string())
+    pub fn tsm_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
+        self.path
+            .join(database)
+            .join(TSM_PATH)
+            .join(ts_family_id.to_string())
+    }
+
+    pub fn delta_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
+        self.path
+            .join(database)
+            .join(DELTA_PATH)
+            .join(ts_family_id.to_string())
     }
 }
 
-impl From<&GlobalConfig> for TseriesFamOpt {
-    fn from(config: &GlobalConfig) -> Self {
+impl From<&Config> for StorageOptions {
+    fn from(config: &Config) -> Self {
         Self {
-            max_level: config.max_level,
-            level_ratio: config.level_ratio,
-            base_file_size: config.base_file_size,
-            compact_trigger: config.compact_trigger,
-            max_compact_size: config.max_compact_size,
-            tsm_dir: config.tsm_dir.clone(),
-            delta_dir: config.delta_dir.clone(),
-            index_path: config.index_path.clone(),
-            max_memcache_size: config.max_memcache_size,
-            max_immemcache_num: config.max_immemcache_num,
+            max_level: config.storage.max_level,
+            base_file_size: config.storage.base_file_size,
+            compact_trigger: config.storage.compact_trigger,
+            max_compact_size: config.storage.max_compact_size,
+            path: PathBuf::new(),
         }
     }
 }
 
-pub struct TseriesFamDesc {
-    pub name: String,
-    pub tsf_opt: Arc<TseriesFamOpt>,
-}
-
 #[derive(Debug, Clone)]
-pub struct SchemaStoreConfig {
-    pub dir: String,
+pub struct SchemaStoreOptions {
+    pub config_dir: PathBuf,
 }
 
-impl From<&GlobalConfig> for SchemaStoreConfig {
-    fn from(config: &GlobalConfig) -> Self {
+impl From<&Config> for SchemaStoreOptions {
+    fn from(config: &Config) -> Self {
         Self {
-            dir: config.schema_store_config_dir.clone(),
+            config_dir: PathBuf::from(config.schema_store.config_dir.clone()),
         }
     }
 }

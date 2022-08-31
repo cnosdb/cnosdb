@@ -655,8 +655,6 @@ mod test {
             tombstone_file.to_str().unwrap()
         );
 
-        let file_write = get_file_manager().create_file(&tsm_file).unwrap();
-
         #[rustfmt::skip]
         let ori_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15] }]
@@ -666,7 +664,7 @@ mod test {
                 DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
             ]),
         ]);
-        let mut writer = TsmWriter::open(file_write.into_cursor(), 1, false, 0).unwrap();
+        let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).unwrap();
         for (fid, blks) in ori_data.iter() {
             for blk in blks.iter() {
                 writer.write_block(*fid, blk).unwrap();

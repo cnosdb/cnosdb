@@ -19,16 +19,15 @@ use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::tsm::DataBlock;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
     error::{Error, Result},
     file_manager, file_utils,
-    kv_option::{TseriesFamDesc, TseriesFamOpt},
+    kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache, MemRaw},
     summary::{CompactMeta, VersionEdit},
-    tsm::{ColumnReader, IndexReader, TsmReader, TsmTombstone},
+    tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
     ColumnFileId, LevelId, TseriesFamilyId,
 };
 
@@ -90,17 +89,18 @@ pub struct ColumnFile {
     deleted: AtomicBool,
     compacting: AtomicBool,
 
-    ts_family_opt: Arc<TseriesFamOpt>,
+    path: PathBuf,
 }
 
 impl ColumnFile {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         file_id: ColumnFileId,
         level: LevelId,
         time_range: TimeRange,
         size: u64,
         is_delta: bool,
-        ts_family_opt: Arc<TseriesFamOpt>,
+        path: impl AsRef<Path>,
     ) -> Self {
         Self {
             file_id,
@@ -111,60 +111,43 @@ impl ColumnFile {
             field_id_bloom_filter: BloomFilter::new(512),
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
-            ts_family_opt,
+            path: path.as_ref().into(),
         }
     }
 
-    pub fn with_compact_data(meta: &CompactMeta, ts_family_opt: Arc<TseriesFamOpt>) -> Self {
+    pub fn with_compact_data(meta: &CompactMeta, path: impl AsRef<Path>) -> Self {
         Self::new(
             meta.file_id,
             meta.level,
             TimeRange::new(meta.min_ts, meta.max_ts),
             meta.file_size,
             meta.is_delta,
-            ts_family_opt,
+            path,
         )
     }
 
     pub fn file_id(&self) -> ColumnFileId {
         self.file_id
     }
+
     pub fn level(&self) -> LevelId {
         self.level
     }
+
     pub fn is_delta(&self) -> bool {
         self.is_delta
     }
+
     pub fn time_range(&self) -> &TimeRange {
         &self.time_range
     }
+
     pub fn size(&self) -> u64 {
         self.size
     }
 
-    pub fn file_path(&self, tsf_opt: Arc<TseriesFamOpt>, tf_id: u32) -> PathBuf {
-        if self.is_delta {
-            file_utils::make_delta_file_name(tsf_opt.delta_dir(tf_id), self.file_id)
-        } else {
-            file_utils::make_tsm_file_name(tsf_opt.tsm_dir(tf_id), self.file_id)
-        }
-    }
-
-    pub fn file_reader(&self, tf_id: u32) -> Result<(FileCursor, u64), Error> {
-        let fs = if self.is_delta {
-            let file_name = format!("_{:06}.delta", self.file_id());
-            file_manager::open_file(self.ts_family_opt.delta_dir(tf_id).join(file_name))
-        } else {
-            let file_name = format!("_{:06}.tsm", self.file_id());
-            file_manager::open_file(self.ts_family_opt.tsm_dir(tf_id).join(file_name))
-        };
-        match fs {
-            Ok(v) => {
-                let len = v.len();
-                Ok((v.into_cursor(), len))
-            }
-            Err(err) => Err(err),
-        }
+    pub fn file_path(&self) -> PathBuf {
+        self.path.clone()
     }
 
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
@@ -197,8 +180,9 @@ impl ColumnFile {
 #[derive(Debug)]
 pub struct LevelInfo {
     pub files: Vec<Arc<ColumnFile>>,
+    pub database: String,
     pub tsf_id: u32,
-    pub tsf_opt: Arc<TseriesFamOpt>,
+    pub storage_opt: Arc<StorageOptions>,
     pub level: u32,
     pub cur_size: u64,
     pub max_size: u64,
@@ -206,12 +190,13 @@ pub struct LevelInfo {
 }
 
 impl LevelInfo {
-    pub fn init(level: u32, tsf_opt: Arc<TseriesFamOpt>) -> Self {
-        let max_size = tsf_opt.level_file_size(level);
+    pub fn init(database: String, level: u32, storage_opt: Arc<StorageOptions>) -> Self {
+        let max_size = storage_opt.level_file_size(level);
         Self {
             files: Vec::new(),
+            database,
             tsf_id: 0,
-            tsf_opt,
+            storage_opt,
             level,
             cur_size: 0,
             max_size,
@@ -222,20 +207,20 @@ impl LevelInfo {
         }
     }
 
-    pub fn init_levels(tsf_opt: Arc<TseriesFamOpt>) -> [LevelInfo; 5] {
+    pub fn init_levels(database: String, storage_opt: Arc<StorageOptions>) -> [LevelInfo; 5] {
         [
-            Self::init(0, tsf_opt.clone()),
-            Self::init(1, tsf_opt.clone()),
-            Self::init(2, tsf_opt.clone()),
-            Self::init(3, tsf_opt.clone()),
-            Self::init(4, tsf_opt),
+            Self::init(database.clone(), 0, storage_opt.clone()),
+            Self::init(database.clone(), 1, storage_opt.clone()),
+            Self::init(database.clone(), 2, storage_opt.clone()),
+            Self::init(database.clone(), 3, storage_opt.clone()),
+            Self::init(database, 4, storage_opt),
         ]
     }
 
     pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
-            self.tsf_opt.clone(),
+            self.storage_opt.tsm_dir(&self.database, self.tsf_id),
         )));
         self.tsf_id = compact_meta.tsf_id;
         self.cur_size += compact_meta.file_size;
@@ -274,7 +259,7 @@ impl LevelInfo {
                 continue;
             }
 
-            let tsm_reader = match TsmReader::open(file.file_path(self.tsf_opt.clone(), tf_id)) {
+            let tsm_reader = match TsmReader::open(file.file_path()) {
                 Ok(tr) => tr,
                 Err(e) => {
                     error!("failed to load tsm reader, in case {:?}", e);
@@ -300,8 +285,8 @@ impl LevelInfo {
 #[derive(Debug)]
 pub struct Version {
     pub ts_family_id: TseriesFamilyId,
-    pub ts_family_name: String,
-    pub ts_family_opt: Arc<TseriesFamOpt>,
+    pub database: String,
+    pub storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
     pub last_seq: u64,
     /// The max timestamp of write batch in wal flushed to column file.
@@ -312,16 +297,16 @@ pub struct Version {
 impl Version {
     pub fn new(
         ts_family_id: TseriesFamilyId,
-        ts_family_name: String,
-        ts_family_opt: Arc<TseriesFamOpt>,
+        database: String,
+        storage_opt: Arc<StorageOptions>,
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
     ) -> Self {
         Self {
             ts_family_id,
-            ts_family_name,
-            ts_family_opt,
+            database,
+            storage_opt,
             last_seq,
             max_level_ts,
             levels_info,
@@ -352,13 +337,15 @@ impl Version {
             }
         }
 
-        let mut new_levels = LevelInfo::init_levels(self.ts_family_opt.clone());
+        let mut new_levels =
+            LevelInfo::init_levels(self.database.clone(), self.storage_opt.clone());
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if let Some(true) = deleted_files
                     .get(&file.level)
                     .map(|file_ids| file_ids.contains(&file.file_id))
                 {
+                    file.mark_removed();
                     continue;
                 }
                 new_levels[level.level as usize].push_column_file(file.clone());
@@ -374,8 +361,8 @@ impl Version {
 
         let mut new_version = Self {
             ts_family_id: self.ts_family_id,
-            ts_family_name: self.ts_family_name.clone(),
-            ts_family_opt: self.ts_family_opt.clone(),
+            database: self.database.clone(),
+            storage_opt: self.storage_opt.clone(),
             last_seq: last_seq.unwrap_or(self.last_seq),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
@@ -405,16 +392,16 @@ impl Version {
         self.ts_family_id
     }
 
-    pub fn tf_name(&self) -> &str {
-        &self.ts_family_name
+    pub fn database(&self) -> &str {
+        &self.database
     }
 
     pub fn levels_info(&self) -> &[LevelInfo; 5] {
         &self.levels_info
     }
 
-    pub fn ts_family_opt(&self) -> Arc<TseriesFamOpt> {
-        self.ts_family_opt.clone()
+    pub fn storage_opt(&self) -> Arc<StorageOptions> {
+        self.storage_opt.clone()
     }
 
     // todo:
@@ -434,7 +421,7 @@ pub struct CacheGroup {
 #[derive(Debug)]
 pub struct SuperVersion {
     pub ts_family_id: u32,
-    pub ts_family_opt: Arc<TseriesFamOpt>,
+    pub storage_opt: Arc<StorageOptions>,
     pub caches: CacheGroup,
     pub version: Arc<Version>,
     pub version_number: u64,
@@ -443,14 +430,14 @@ pub struct SuperVersion {
 impl SuperVersion {
     pub fn new(
         ts_family_id: u32,
-        ts_family_opt: Arc<TseriesFamOpt>,
+        storage_opt: Arc<StorageOptions>,
         caches: CacheGroup,
         version: Arc<Version>,
         version_number: u64,
     ) -> Self {
         Self {
             ts_family_id,
-            ts_family_opt,
+            storage_opt,
             caches,
             version,
             version_number,
@@ -461,6 +448,7 @@ impl SuperVersion {
 #[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
+    database: String,
     delta_mut_cache: Arc<RwLock<MemCache>>,
     delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
     mut_cache: Arc<RwLock<MemCache>>,
@@ -469,7 +457,8 @@ pub struct TseriesFamily {
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
-    opts: Arc<TseriesFamOpt>,
+    cache_opt: Arc<CacheOptions>,
+    storage_opt: Arc<StorageOptions>,
     compact_picker: Arc<dyn Picker>,
     // min seq_no keep in the tsfam memcache
     seq_no: u64,
@@ -481,22 +470,24 @@ pub struct TseriesFamily {
 impl TseriesFamily {
     pub fn new(
         tf_id: TseriesFamilyId,
-        name: String,
+        database: String,
         cache: MemCache,
         version: Arc<Version>,
-        tsf_opt: Arc<TseriesFamOpt>,
+        cache_opt: Arc<CacheOptions>,
+        storage_opt: Arc<StorageOptions>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
         let max_level_ts = version.max_level_ts;
         let delta_mm = Arc::new(RwLock::new(MemCache::new(
             tf_id,
-            tsf_opt.max_memcache_size,
+            cache_opt.max_buffer_size,
             seq,
             true,
         )));
         Self {
             tf_id,
+            database,
             seq_no: seq,
             delta_mut_cache: delta_mm.clone(),
             delta_immut_cache: Default::default(),
@@ -504,7 +495,7 @@ impl TseriesFamily {
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
                 tf_id,
-                tsf_opt.clone(),
+                storage_opt.clone(),
                 CacheGroup {
                     delta_mut_cache: delta_mm,
                     delta_immut_cache: Default::default(),
@@ -516,7 +507,8 @@ impl TseriesFamily {
             )),
             super_version_id: AtomicU64::new(0),
             version,
-            opts: tsf_opt,
+            cache_opt,
+            storage_opt,
             compact_picker: Arc::new(LevelCompactionPicker::new()),
             immut_ts_min: AtomicI64::new(max_level_ts),
             mut_ts_max: AtomicI64::new(i64::MIN),
@@ -538,7 +530,7 @@ impl TseriesFamily {
         self.super_version_id.fetch_add(1, Ordering::SeqCst);
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
-            self.opts.clone(),
+            self.storage_opt.clone(),
             CacheGroup {
                 delta_mut_cache: self.delta_mut_cache.clone(),
                 delta_immut_cache: self.delta_immut_cache.clone(),
@@ -569,7 +561,7 @@ impl TseriesFamily {
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
-            self.opts.max_memcache_size,
+            self.cache_opt.max_buffer_size,
             self.seq_no,
             false,
         )));
@@ -581,7 +573,7 @@ impl TseriesFamily {
         self.delta_immut_cache.push(self.delta_mut_cache.clone());
         self.delta_mut_cache = Arc::new(RwLock::new(MemCache::new(
             self.tf_id,
-            self.opts.max_memcache_size,
+            self.cache_opt.max_buffer_size,
             self.seq_no,
             true,
         )));
@@ -660,7 +652,7 @@ impl TseriesFamily {
             req_mem.push((self.tf_id, i.clone()));
         }
 
-        if req_mem.len() < self.opts.max_immemcache_num as usize {
+        if req_mem.len() < self.cache_opt.max_immutable_number as usize {
             return;
         }
 
@@ -702,7 +694,7 @@ impl TseriesFamily {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable().await;
-            if self.immut_cache.len() >= self.opts.max_immemcache_num as usize {
+            if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
                 self.wrap_flush_req(sender.clone()).await;
             }
         }
@@ -744,6 +736,10 @@ impl TseriesFamily {
         self.tf_id
     }
 
+    pub fn database(&self) -> String {
+        self.database.clone()
+    }
+
     pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
         &self.mut_cache
     }
@@ -768,8 +764,8 @@ impl TseriesFamily {
         self.version.clone()
     }
 
-    pub fn options(&self) -> Arc<TseriesFamOpt> {
-        self.opts.clone()
+    pub fn storage_opt(&self) -> Arc<StorageOptions> {
+        self.storage_opt.clone()
     }
 }
 
@@ -784,13 +780,14 @@ mod test {
     use tokio::sync::mpsc::UnboundedReceiver;
     use trace::info;
 
+    use crate::file_utils::{self, make_tsm_file_name};
     use crate::memcache::MemRaw;
     use crate::summary::SummaryTask;
     use crate::{
         compaction::{run_flush_memtable_job, FlushReq},
         context::GlobalContext,
         file_manager,
-        kv_option::TseriesFamOpt,
+        kv_option::Options,
         memcache::MemCache,
         summary::{CompactMeta, VersionEdit},
         tseries_family::{TimeRange, TseriesFamily, Version},
@@ -819,33 +816,38 @@ mod test {
         //! - Lv.3: [ ]
         //! - Lv.4: [ ]
         let global_config = get_config("../config/config.toml");
-        let tsf_opt = Arc::new(TseriesFamOpt::from(global_config));
+        let opt = Arc::new(Options::from(&global_config));
+        let database = "test".to_string();
+        let ts_family_id = 1;
+        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
         let version = Version {
-            ts_family_id: 1, ts_family_name: "test".to_string(),
-            ts_family_opt: tsf_opt.clone(),
+            ts_family_id, database: database.clone(),
+            storage_opt: opt.storage.clone(),
             last_seq: 1, max_level_ts: 3100,
             levels_info: [
-                LevelInfo::init(0, tsf_opt.clone()),
+                LevelInfo::init(database.clone(), 0, opt.storage.clone()),
                 LevelInfo {
                     files: vec![
-                        Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, tsf_opt.clone())),
+                        Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
                     ],
-                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    database: database.clone(),
+                    tsf_id: 1, storage_opt: opt.storage.clone(),
                     level: 1, cur_size: 100, max_size: 1000,
                     time_range: TimeRange::new(3001, 3100),
                 },
                 LevelInfo {
                     files: vec![
-                        Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, tsf_opt.clone())),
-                        Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, tsf_opt.clone())),
+                        Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
+                        Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
                     ],
-                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    database: database.clone(),
+                    tsf_id: 1, storage_opt: opt.storage.clone(),
                     level: 2, cur_size: 2000, max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(3, tsf_opt.clone()),
-                LevelInfo::init(4, tsf_opt),
+                LevelInfo::init(database.clone(), 3, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 4, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
@@ -894,34 +896,39 @@ mod test {
         //! - Lv.3: [ (6, 1~2000) ]
         //! - Lv.4: [ ]
         let global_config = get_config("../config/config.toml");
-        let tsf_opt = Arc::new(TseriesFamOpt::from(global_config));
+        let opt = Arc::new(Options::from(&global_config));
+        let database = "test".to_string();
+        let ts_family_id = 1;
+        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
         let version = Version {
-            ts_family_id: 1, ts_family_name: "test".to_string(),
-            ts_family_opt: tsf_opt.clone(),
+            ts_family_id: 1, database: database.clone(),
+            storage_opt: opt.storage.clone(),
             last_seq: 1, max_level_ts: 3150,
             levels_info: [
-                LevelInfo::init(0, tsf_opt.clone()),
+                LevelInfo::init(database.clone(), 0, opt.storage.clone()),
                 LevelInfo {
                     files: vec![
-                        Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, tsf_opt.clone())),
-                        Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, tsf_opt.clone())),
+                        Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
+                        Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file_name(&tsm_dir, 4))),
                     ],
-                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    database: database.clone(),
+                    tsf_id: 1, storage_opt: opt.storage.clone(),
                     level: 1, cur_size: 100, max_size: 1000,
                     time_range: TimeRange::new(3001, 3150),
                 },
                 LevelInfo {
                     files: vec![
-                        Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, tsf_opt.clone())),
-                        Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, tsf_opt.clone())),
+                        Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
+                        Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
                     ],
-                    tsf_id: 1, tsf_opt: tsf_opt.clone(),
+                    database: database.clone(),
+                    tsf_id: 1, storage_opt: opt.storage.clone(),
                     level: 2, cur_size: 2000, max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
-                LevelInfo::init(3, tsf_opt.clone()),
-                LevelInfo::init(4, tsf_opt),
+                LevelInfo::init(database.clone(), 3, opt.storage.clone()),
+                LevelInfo::init(database.clone(), 4, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
@@ -978,20 +985,22 @@ mod test {
     #[tokio::test]
     pub async fn test_tsf_delete() {
         let global_config = get_config("../config/config.toml");
-        let tcfg = Arc::new(TseriesFamOpt::from(global_config));
+        let opt = Arc::new(Options::from(&global_config));
+        let database = "db".to_string();
         let tsf = TseriesFamily::new(
             0,
-            "db".to_string(),
+            database.clone(),
             MemCache::new(0, 500, 0, false),
             Arc::new(Version::new(
                 0,
-                "db".to_string(),
-                tcfg.clone(),
+                database.clone(),
+                opt.storage.clone(),
                 0,
-                LevelInfo::init_levels(tcfg.clone()),
+                LevelInfo::init_levels(database.clone(), opt.storage.clone()),
                 0,
             )),
-            tcfg.clone(),
+            opt.cache.clone(),
+            opt.storage.clone(),
         );
 
         tsf.put_mutcache(&mut MemRaw {
@@ -1011,6 +1020,7 @@ mod test {
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 0);
     }
 
+    // Util function for testing with summary modification.
     async fn update_ts_family_version(
         version_set: Arc<RwLock<VersionSet>>,
         ts_family_id: TseriesFamilyId,
@@ -1040,16 +1050,6 @@ mod test {
 
     #[tokio::test]
     pub async fn test_read_with_tomb() {
-        let dir = PathBuf::from("db/tsm/test/0".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
-
-        let dir = PathBuf::from("dev/db".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
-
         let mem = MemCache::new(0, 1000, 0, false);
         mem.insert_raw(&mut MemRaw {
             seq: 0,
@@ -1066,21 +1066,25 @@ mod test {
             wait_req: 0,
         }]));
 
+        let base_dir = "/tmp/test/ts_family/test_read_with_tomb".to_string();
+        let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
-        let global_config = get_config("../config/config.toml");
-        let mut cfg = TseriesFamOpt::from(global_config);
-        cfg.tsm_dir = "db/tsm/test".to_string();
-        let cfg = Arc::new(cfg);
+        let mut global_config = get_config("../config/config.toml");
+        global_config.application.path = base_dir;
+        let opt = Arc::new(Options::from(&global_config));
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
         let version_set: Arc<RwLock<VersionSet>> =
-            Arc::new(RwLock::new(VersionSet::new(cfg.clone(), HashMap::new())));
-        version_set.write().create_db(&"test".to_string());
-        let db = version_set.write().get_db(&"test".to_string()).unwrap();
+            Arc::new(RwLock::new(VersionSet::new(opt.clone(), HashMap::new())));
+        version_set.write().create_db(&database);
+        let db = version_set.write().get_db(&database).unwrap();
 
-        db.write()
-            .add_tsfamily(0, 0, 0, cfg.clone(), summary_task_sender.clone());
+        let ts_family_id = db
+            .write()
+            .add_tsfamily(0, 0, 0, summary_task_sender.clone())
+            .read()
+            .tf_id();
 
         run_flush_memtable_job(
             flush_seq,
@@ -1092,15 +1096,13 @@ mod test {
         .await
         .unwrap();
 
-        update_ts_family_version(version_set.clone(), 0, summary_task_receiver).await;
+        update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
 
         let version_set = version_set.write();
-        let tsf = version_set
-            .get_tsfamily_by_name(&"test".to_string())
-            .unwrap();
+        let tsf = version_set.get_tsfamily_by_name(&database).unwrap();
         let version = tsf.write().version();
         version.levels_info[1].read_column_file(
-            tsf.write().tf_id(),
+            ts_family_id,
             0,
             &TimeRange {
                 max_ts: 0,
@@ -1109,7 +1111,8 @@ mod test {
         );
         let file = version.levels_info[1].files[0].clone();
 
-        let mut tombstone = TsmTombstone::open_for_write("dev/db", file.file_id).unwrap();
+        let dir = opt.storage.tsm_dir(&database, ts_family_id);
+        let mut tombstone = TsmTombstone::open_for_write(dir, file.file_id).unwrap();
         tombstone.add_range(&[0], &TimeRange::new(0, 0)).unwrap();
         tombstone.flush().unwrap();
         tombstone.load().unwrap();

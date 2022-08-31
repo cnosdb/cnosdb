@@ -220,8 +220,8 @@ mod tests {
     }
 
     async fn get_tskv() -> TsKv {
-        let mut global_config = (*get_config("../config/config.toml")).clone();
-        global_config.wal_config_dir = "/tmp/test/wal".to_string();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.wal.path = "/tmp/test/wal".to_string();
         let opt = kv_option::Options::from(&global_config);
 
         TsKv::open(opt).await.unwrap()

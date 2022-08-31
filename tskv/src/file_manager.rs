@@ -17,14 +17,23 @@ use crate::{
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
-    #[snafu(display("Unable to open file: {}", source))]
-    UnableToOpenFile { source: std::io::Error },
+    #[snafu(display("Unable to open file '{}': {}", path.display(), source))]
+    UnableToOpenFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
-    #[snafu(display("Unable to write file: {}", source))]
-    UnableToWriteBytes { source: std::io::Error },
+    #[snafu(display("Unable to write file '{}': {}", path.display(), source))]
+    UnableToWriteBytes {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
-    #[snafu(display("Unable to sync file: {}", source))]
-    UnableToSyncFile { source: std::io::Error },
+    #[snafu(display("Unable to sync file '{}': {}", path.display(), source))]
+    UnableToSyncFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
     #[snafu(display("async file system stopped"))]
     Cancel,
@@ -53,12 +62,16 @@ impl FileManager {
         options: &fs::OpenOptions,
     ) -> Result<direct_io::File> {
         self.file_system
-            .open_with(path, options)
-            .context(error::OpenFileSnafu)
+            .open_with(&path, options)
+            .context(error::OpenFileSnafu {
+                path: path.as_ref(),
+            })
     }
 
     pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
-        self.file_system.open(path).context(error::OpenFileSnafu)
+        self.file_system.open(&path).context(error::OpenFileSnafu {
+            path: path.as_ref(),
+        })
     }
 
     pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
@@ -67,7 +80,11 @@ impl FileManager {
                 std::fs::create_dir_all(p).context(error::IOSnafu)?;
             }
         }
-        self.file_system.create(path).context(error::OpenFileSnafu)
+        self.file_system
+            .create(&path)
+            .context(error::OpenFileSnafu {
+                path: path.as_ref(),
+            })
     }
 
     pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {

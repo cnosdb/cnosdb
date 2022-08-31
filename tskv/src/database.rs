@@ -1,10 +1,13 @@
 use std::{
     collections::HashMap,
-    path,
+    path::{self, Path},
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
-use crate::error::{self, Result};
+use crate::{
+    error::{self, Result},
+    TseriesFamilyId,
+};
 use parking_lot::RwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
@@ -16,7 +19,7 @@ use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 use crate::tseries_family::LevelInfo;
 use crate::{
     index::db_index,
-    kv_option::{TseriesFamDesc, TseriesFamOpt},
+    kv_option::Options,
     memcache::MemCache,
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{TseriesFamily, Version},
@@ -27,26 +30,36 @@ pub struct Database {
     name: String,
     index: Arc<RwLock<db_index::DBIndex>>,
     ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
+    opt: Arc<Options>,
 }
 
 impl Database {
-    pub fn new(name: &String, path: &String) -> Self {
+    pub fn new(name: &String, opt: Arc<Options>) -> Self {
         Self {
-            index: db_index::index_manger(path).write().get_db_index(&name),
+            index: db_index::index_manger(opt.storage.index_dir())
+                .write()
+                .get_db_index(&name),
             name: name.to_string(),
             ts_families: HashMap::new(),
+            opt,
         }
     }
 
     pub fn open_tsfamily(&mut self, ver: Arc<Version>) {
-        let opt = ver.ts_family_opt();
+        let opt = ver.storage_opt();
 
         let tf = TseriesFamily::new(
             ver.tf_id(),
-            ver.tf_name().to_string(),
-            MemCache::new(ver.tf_id(), opt.max_memcache_size, ver.last_seq, false),
+            ver.database().to_string(),
+            MemCache::new(
+                ver.tf_id(),
+                self.opt.cache.max_buffer_size,
+                ver.last_seq,
+                false,
+            ),
             ver.clone(),
-            opt,
+            self.opt.cache.clone(),
+            self.opt.storage.clone(),
         );
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
@@ -57,7 +70,7 @@ impl Database {
             let mut tf = tf.write();
             let mem = Arc::new(RwLock::new(MemCache::new(
                 tf_id,
-                tf.options().max_memcache_size,
+                self.opt.cache.max_buffer_size,
                 seq,
                 false,
             )));
@@ -72,24 +85,24 @@ impl Database {
         tsf_id: u32,
         seq_no: u64,
         file_id: u64,
-        opt: Arc<TseriesFamOpt>,
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) -> Arc<RwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
             self.name.clone(),
-            opt.clone(),
+            self.opt.storage.clone(),
             file_id,
-            LevelInfo::init_levels(opt.clone()),
+            LevelInfo::init_levels(self.name.clone(), self.opt.storage.clone()),
             i64::MIN,
         ));
 
         let tf = TseriesFamily::new(
             tsf_id,
             self.name.clone(),
-            MemCache::new(tsf_id, opt.max_memcache_size, seq_no, false),
+            MemCache::new(tsf_id, self.opt.cache.max_buffer_size, seq_no, false),
             ver,
-            opt,
+            self.opt.cache.clone(),
+            self.opt.storage.clone(),
         );
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());

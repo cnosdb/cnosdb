@@ -1,16 +1,17 @@
-use bytes::BufMut;
-use chrono::format::format;
-use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
 use std::borrow::Borrow;
 use std::mem::size_of;
 use std::ops::Index;
-use std::path;
+use std::path::{self, Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
 
-use super::*;
-use config::GlobalConfig;
+use bytes::BufMut;
+use chrono::format::format;
+use config::Config;
 use models::{FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
+
+use super::{errors, utils, IndexEngine, IndexError, IndexResult};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
@@ -20,45 +21,38 @@ pub struct IndexConfig {
     pub path: String,
 }
 
-impl From<&GlobalConfig> for IndexConfig {
-    fn from(config: &GlobalConfig) -> Self {
+impl From<&Config> for IndexConfig {
+    fn from(config: &Config) -> Self {
         Self {
-            path: config.index_path.clone(),
+            path: config.application.path.clone(),
         }
     }
 }
 
-pub fn index_manger(path: &String) -> &'static Arc<RwLock<DbIndexMgr>> {
+pub fn index_manger(path: impl AsRef<Path>) -> &'static Arc<RwLock<DbIndexMgr>> {
     static INSTANCE: OnceCell<Arc<RwLock<DbIndexMgr>>> = OnceCell::new();
     INSTANCE.get_or_init(|| Arc::new(RwLock::new(DbIndexMgr::new(path))))
 }
 
 #[derive(Debug)]
 pub struct DbIndexMgr {
-    path: String,
+    base_path: PathBuf,
     indexs: HashMap<String, Arc<RwLock<DBIndex>>>,
 }
 
 impl DbIndexMgr {
-    pub fn new(path: &String) -> Self {
+    pub fn new(index_base_path: impl AsRef<Path>) -> Self {
         Self {
-            path: path.clone(),
+            base_path: index_base_path.as_ref().into(),
             indexs: HashMap::new(),
         }
     }
 
     pub fn get_db_index(&mut self, db: &String) -> Arc<RwLock<DBIndex>> {
-        let dir = path::Path::new(&self.path)
-            .to_path_buf()
-            .join(db)
-            .to_str()
-            .unwrap()
-            .to_string();
-
         let index = self
             .indexs
             .entry(db.clone())
-            .or_insert_with(|| Arc::new(RwLock::new(DBIndex::new(&dir))));
+            .or_insert_with(|| Arc::new(RwLock::new(DBIndex::new(self.base_path.join(db)))));
 
         return index.clone();
     }
@@ -66,7 +60,7 @@ impl DbIndexMgr {
 
 #[derive(Debug)]
 pub struct DBIndex {
-    path: path::PathBuf,
+    path: PathBuf,
 
     storage: IndexEngine,
     series_cache: HashMap<u32, Vec<SeriesKey>>,
@@ -81,13 +75,14 @@ impl From<&str> for DBIndex {
 }
 
 impl DBIndex {
-    pub fn new(path: &String) -> Self {
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
         Self {
             storage: IndexEngine::new(path),
             series_cache: HashMap::new(),
             table_schema: HashMap::new(),
 
-            path: path::Path::new(&path).to_path_buf(),
+            path: path.into(),
         }
     }
 

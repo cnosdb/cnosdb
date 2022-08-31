@@ -7,58 +7,54 @@ use parking_lot::RwLock;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::error;
 
-use crate::tseries_family::LevelInfo;
 use crate::{
-    database,
+    database::Database,
+    error::Result,
     index::db_index,
-    kv_option::{TseriesFamDesc, TseriesFamOpt},
+    kv_option::StorageOptions,
     memcache::MemCache,
     summary::{SummaryTask, VersionEdit},
-    tseries_family::{TseriesFamily, Version},
+    tseries_family::{LevelInfo, TseriesFamily, Version},
+    Options,
 };
 
 #[derive(Debug)]
 pub struct VersionSet {
-    ts_opt: Arc<TseriesFamOpt>,
+    opt: Arc<Options>,
 
-    dbs: HashMap<String, Arc<RwLock<database::Database>>>,
+    dbs: HashMap<String, Arc<RwLock<Database>>>,
 }
 
 impl VersionSet {
-    pub fn new(opt: Arc<TseriesFamOpt>, ver_set: HashMap<u32, Arc<Version>>) -> Self {
+    pub fn new(opt: Arc<Options>, ver_set: HashMap<u32, Arc<Version>>) -> Self {
         let mut dbs = HashMap::new();
 
         for (id, ver) in ver_set {
-            let name = ver.tf_name().to_string();
+            let name = ver.database().to_string();
             let seq = ver.last_seq;
 
-            let db = dbs.entry(name.clone()).or_insert_with(|| {
-                Arc::new(RwLock::new(database::Database::new(&name, &opt.index_path)))
-            });
+            let db = dbs
+                .entry(name.clone())
+                .or_insert_with(|| Arc::new(RwLock::new(Database::new(&name, opt.clone()))));
 
-            db.write().open_tsfamily(ver.clone());
+            db.write().open_tsfamily(ver);
         }
 
-        Self { dbs, ts_opt: opt }
+        Self { dbs, opt }
     }
 
-    pub fn create_db(&mut self, name: &String) -> Arc<RwLock<database::Database>> {
+    pub fn create_db(&mut self, name: &String) -> Arc<RwLock<Database>> {
         self.dbs
             .entry(name.clone())
-            .or_insert_with(|| {
-                Arc::new(RwLock::new(database::Database::new(
-                    name,
-                    &self.ts_opt.index_path,
-                )))
-            })
+            .or_insert_with(|| Arc::new(RwLock::new(Database::new(name, self.opt.clone()))))
             .clone()
     }
 
-    pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<database::Database>>> {
+    pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
         return &self.dbs;
     }
 
-    pub fn get_db(&self, name: &String) -> Option<Arc<RwLock<database::Database>>> {
+    pub fn get_db(&self, name: &String) -> Option<Arc<RwLock<Database>>> {
         if let Some(v) = self.dbs.get(name) {
             return Some(v.clone());
         }

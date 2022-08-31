@@ -19,7 +19,7 @@ use crate::{
     error::{self, Error, Result},
     file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
-    kv_option::TseriesFamOpt,
+    kv_option::Options,
     memcache::{MemCache, MemEntry},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
@@ -241,9 +241,12 @@ pub async fn run_flush_memtable_job(
             }
 
             // todo: build path by vnode data
-            let ts_family_opt = tsf.read().options();
-            let path_tsm = ts_family_opt.tsm_dir(*tsf_id);
-            let path_delta = ts_family_opt.delta_dir(*tsf_id);
+            let tsf_rlock = tsf.read();
+            let storage_opt = tsf_rlock.storage_opt();
+            let database = tsf_rlock.database();
+            let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
+            let path_delta = storage_opt.delta_dir(&database, *tsf_id);
+            drop(tsf_rlock);
 
             let mut job = FlushTask::new(
                 memtables.clone(),
@@ -286,7 +289,7 @@ mod test {
     use crate::{
         compaction::FlushReq,
         context::GlobalContext,
-        kv_option::TseriesFamOpt,
+        kv_option::Options,
         memcache::{MemCache, MemRaw},
         tseries_family::FLUSH_REQ,
         version_set::VersionSet,
