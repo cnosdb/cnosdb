@@ -8,7 +8,6 @@ mod error;
 mod exec;
 mod execution;
 pub mod extension;
-pub mod factory;
 pub mod function;
 mod helper;
 pub mod metadata;

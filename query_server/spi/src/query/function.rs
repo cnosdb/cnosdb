@@ -21,7 +21,7 @@ pub enum Error {
     #[snafu(display("Udf not exists, name:{}.", name))]
     NotExists { name: String },
 }
-
+pub type FuncMetaManagerRef = Arc<dyn FunctionMetadataManager + Send + Sync>;
 pub trait FunctionMetadataManager {
     fn register_udf(&mut self, udf: ScalarUDF) -> Result<()>;
 
