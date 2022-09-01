@@ -89,4 +89,7 @@ pub enum Error {
 
     #[snafu(display("character set error"))]
     ErrCharacterSet,
+
+    #[snafu(display("panics in thread: {}", reason))]
+    ThreadJoin { reason: String },
 }

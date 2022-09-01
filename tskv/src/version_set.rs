@@ -50,6 +50,10 @@ impl VersionSet {
             .clone()
     }
 
+    pub fn delete_db(&mut self, name: &String) -> Option<Arc<RwLock<Database>>> {
+        self.dbs.remove(name)
+    }
+
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
         return &self.dbs;
     }

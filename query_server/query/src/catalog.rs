@@ -139,6 +139,11 @@ impl SchemaProvider for IsiphoSchema {
 
     fn deregister_table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
         let mut tables = self.tables.write();
+
+        self.engine
+            .drop_table(&self.db_name, &name)
+            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
         Ok(tables.remove(name))
     }
 

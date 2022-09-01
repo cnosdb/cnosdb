@@ -51,8 +51,16 @@ impl StorageOptions {
         self.path.join(SUMMARY_PATH)
     }
 
-    pub fn index_dir(&self) -> PathBuf {
+    pub fn index_base_dir(&self) -> PathBuf {
         self.path.join(INDEX_PATH)
+    }
+
+    pub fn index_dir(&self, database: &str) -> PathBuf {
+        self.path.join(INDEX_PATH).join(database)
+    }
+
+    pub fn database_dir(&self, database: &str) -> PathBuf {
+        self.path.join(database)
     }
 
     pub fn tsm_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {

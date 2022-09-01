@@ -36,7 +36,7 @@ pub struct Database {
 impl Database {
     pub fn new(name: &String, opt: Arc<Options>) -> Self {
         Self {
-            index: db_index::index_manger(opt.storage.index_dir())
+            index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
                 .get_db_index(&name),
             name: name.to_string(),
@@ -220,8 +220,15 @@ impl Database {
         &self.ts_families
     }
 
-    pub fn get_index(&self) -> &Arc<RwLock<db_index::DBIndex>> {
-        return &self.index;
+    pub fn for_each_ts_family<F>(&self, func: F)
+    where
+        F: FnMut((&TseriesFamilyId, &Arc<RwLock<TseriesFamily>>)),
+    {
+        self.ts_families.iter().for_each(func);
+    }
+
+    pub fn get_index(&self) -> Arc<RwLock<db_index::DBIndex>> {
+        return self.index.clone();
     }
 
     // todo: will delete in cluster version

@@ -1,6 +1,8 @@
-use std::{collections::HashMap, io::Result as IoResultExt, sync, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, panic, sync::Arc};
 
+use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
+use futures::FutureExt;
 use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
@@ -141,59 +143,67 @@ impl TsKv {
         time_range: &TimeRange,
         field_id: FieldId,
     ) -> Vec<DataBlock> {
-        let mut data = vec![];
-        let mut super_version: Option<Arc<SuperVersion>> = None;
-        {
+        let version = {
             let version_set = self.version_set.read();
             if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
-                super_version = Some(tsf.read().super_version());
+                tsf.read().super_version()
             } else {
-                warn!("ts_family with db name{} not found.", db);
+                warn!("ts_family with db name '{}' not found.", db);
+                return vec![];
             }
         };
-        if let Some(sv) = super_version {
-            // get data from memcache
-            if let Some(mem_entry) = sv.caches.mut_cache.read().get(&field_id) {
-                data.append(&mut mem_entry.read().read_cell(time_range));
-            }
 
-            // get data from delta_memcache
-            if let Some(mem_entry) = sv.caches.delta_mut_cache.read().get(&field_id) {
-                data.append(&mut mem_entry.read().read_cell(time_range));
-            }
-
-            // get data from immut_delta_memcache
-            for mem_cache in sv.caches.delta_immut_cache.iter() {
-                if mem_cache.read().flushed {
-                    continue;
-                }
-                if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                    data.append(&mut mem_entry.read().read_cell(time_range));
-                }
-            }
-
-            // get data from im_memcache
-            for mem_cache in sv.caches.immut_cache.iter() {
-                if mem_cache.read().flushed {
-                    continue;
-                }
-                if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                    data.append(&mut mem_entry.read().read_cell(time_range));
-                }
-            }
-
-            // get data from levelinfo
-            for level_info in sv.version.levels_info.iter() {
-                if level_info.level == 0 {
-                    continue;
-                }
-                data.append(&mut level_info.read_column_file(sv.ts_family_id, field_id, time_range))
-            }
-
-            // get data from delta
-            let level_info = sv.version.levels_info();
-            data.append(&mut level_info[0].read_column_file(sv.ts_family_id, field_id, time_range))
+        let mut data = vec![];
+        // get data from memcache
+        if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
+            data.append(&mut mem_entry.read().read_cell(time_range));
         }
+
+        // get data from delta_memcache
+        if let Some(mem_entry) = version.caches.delta_mut_cache.read().get(&field_id) {
+            data.append(&mut mem_entry.read().read_cell(time_range));
+        }
+
+        // get data from immut_delta_memcache
+        for mem_cache in version.caches.delta_immut_cache.iter() {
+            if mem_cache.read().flushed {
+                continue;
+            }
+            if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+                data.append(&mut mem_entry.read().read_cell(time_range));
+            }
+        }
+
+        // get data from im_memcache
+        for mem_cache in version.caches.immut_cache.iter() {
+            if mem_cache.read().flushed {
+                continue;
+            }
+            if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+                data.append(&mut mem_entry.read().read_cell(time_range));
+            }
+        }
+
+        // get data from levelinfo
+        for level_info in version.version.levels_info.iter() {
+            if level_info.level == 0 {
+                continue;
+            }
+            data.append(&mut level_info.read_column_file(
+                version.ts_family_id,
+                field_id,
+                time_range,
+            ));
+        }
+
+        // get data from delta
+        let level_info = version.version.levels_info();
+        data.append(&mut level_info[0].read_column_file(
+            version.ts_family_id,
+            field_id,
+            time_range,
+        ));
+
         data
     }
 
@@ -329,6 +339,35 @@ impl TsKv {
     // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
     //     Ok(None)
     // }
+
+    // Compact TSM files in database into bigger TSM files.
+    pub async fn compact(&self, database: &String) {
+        if let Some(db) = self.version_set.read().get_db(&database) {
+            // TODO: stop current and prevent next flush and compaction.
+
+            for (ts_family_id, ts_family) in db.read().ts_families() {
+                if let Some(compact_req) = ts_family.read().pick_compaction() {
+                    match compaction::run_compaction_job(compact_req, self.global_ctx.clone()) {
+                        Ok(Some(version_edit)) => {
+                            let (summary_tx, summary_rx) = oneshot::channel();
+                            let ret = self.summary_task_sender.send(SummaryTask {
+                                edits: vec![version_edit],
+                                cb: summary_tx,
+                            });
+
+                            let _ = summary_rx.await;
+                        }
+                        Ok(None) => {
+                            info!("There is nothing to compact.");
+                        }
+                        Err(e) => {
+                            error!("Compaction job failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -440,60 +479,106 @@ impl Engine for TsKv {
         final_ans
     }
 
-    //todo...
-    async fn delete_series(
-        &self,
-        name: &String,
-        sids: Vec<SeriesId>,
-        min: Timestamp,
-        max: Timestamp,
-    ) -> Result<()> {
-        let vs = self.version_set.read();
-        let db = vs.get_db(name);
-        if let None = db {
-            return Ok(());
+    fn drop_database(&self, database: &str) -> Result<()> {
+        let database = database.to_string();
+
+        if let Some(db) = self.version_set.write().delete_db(&database) {
+            let mut db_wlock = db.write();
+            let ts_family_ids: Vec<TseriesFamilyId> = db_wlock
+                .ts_families()
+                .iter()
+                .map(|(tsf_id, tsf)| *tsf_id)
+                .collect();
+            for ts_family_id in ts_family_ids {
+                db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
+            }
         }
-        let db = db.unwrap();
 
-        let series_infos = db.read().get_index().write().get_series_info_list(&sids);
+        let idx_dir = self.options.storage.index_dir(&database);
+        let db_dir = self.options.storage.database_dir(&database);
+        match std::fs::remove_dir_all(idx_dir) {
+            Ok(_) => {}
+            Err(_) => {}
+        }
+        match std::fs::remove_dir_all(db_dir) {
+            Ok(_) => {}
+            Err(_) => {}
+        }
 
-        let timerange = TimeRange {
-            max_ts: max,
-            min_ts: min,
-        };
-        let path = self.options.storage.path.clone();
-        for mut series_info in series_infos {
-            let mut super_version: Option<Arc<SuperVersion>> = None;
-            {
-                if let Some(tsf) = db.read().get_tsfamily_random() {
-                    tsf.write()
-                        .delete_cache(&TimeRange {
-                            min_ts: min,
-                            max_ts: max,
-                        })
-                        .await;
-                    super_version = Some(tsf.read().super_version())
-                }
+        Ok(())
+    }
+
+    fn drop_table(&self, database: &str, table: &str) -> Result<()> {
+        let database = database.to_string();
+        let table = table.to_string();
+
+        // TODO Create global DropTable flag for droping the same table at the same time.
+        let (cb, rx) = oneshot::channel();
+        let options = self.options.clone();
+        let version_set = self.version_set.clone();
+        tokio::spawn(async move {
+            info!("Executing drop table: {}.{}", &database, &table);
+            delete_table(options, version_set, database, table, cb).await;
+        });
+        let recv_ret =
+            match std::thread::spawn(|| rx.blocking_recv().context(error::ReceiveSnafu)).join() {
+                Ok(ret) => ret,
+                Err(e) => panic::resume_unwind(e),
             };
 
-            if let Some(sv) = super_version {
-                for level in sv.version.levels_info() {
-                    if level.time_range.overlaps(&timerange) {
-                        for column_file in level.files.iter() {
-                            if column_file.time_range().overlaps(&timerange) {
-                                let field_ids: Vec<FieldId> = series_info
-                                    .field_infos()
-                                    .iter()
-                                    .map(|f| f.field_id())
-                                    .collect();
-                                let mut tombstone =
-                                    TsmTombstone::open_for_write(&path, column_file.file_id())?;
-                                tombstone.add_range(&field_ids, &TimeRange::new(min, max))?;
-                                tombstone.flush()?;
-                            }
-                        }
-                    }
+        // TODO Release global DropTable flag.
+
+        recv_ret?
+    }
+
+    fn delete_series(
+        &self,
+        database: &String,
+        series_ids: &[SeriesId],
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+    ) -> Result<()> {
+        let storage_field_ids: Vec<u64> = series_ids
+            .iter()
+            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
+            .collect();
+
+        if let Some(db) = self.version_set.read().get_db(database) {
+            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+                // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
+
+                ts_family
+                    .write()
+                    .delete_cache(&storage_field_ids, &time_range);
+
+                let version = ts_family.read().super_version();
+                let tsm_path = self
+                    .options
+                    .storage
+                    .tsm_dir(database.as_str(), *ts_family_id);
+                let delta_path = self
+                    .options
+                    .storage
+                    .delta_dir(database.as_str(), *ts_family_id);
+                for column_file in version
+                    .version
+                    .levels_info()
+                    .iter()
+                    .filter(|level| level.time_range.overlaps(&time_range))
+                    .flat_map(|level| {
+                        level.files.iter().filter(|f| {
+                            f.time_range().overlaps(&time_range)
+                                && f.contains_any_field_id(&storage_field_ids)
+                        })
+                    })
+                {
+                    let mut tombstone =
+                        TsmTombstone::open_for_write(&tsm_path, column_file.file_id())?;
+                    tombstone.add_range(&storage_field_ids, time_range)?;
+                    tombstone.flush()?;
                 }
+
+                // TODO Start next flush or compaction.
             }
         }
 
@@ -538,5 +623,267 @@ impl Engine for TsKv {
         }
 
         Ok(None)
+    }
+}
+
+async fn delete_table(
+    options: Arc<Options>,
+    version_set: Arc<RwLock<VersionSet>>,
+    database: String,
+    table: String,
+    cb: oneshot::Sender<Result<()>>,
+) {
+    if let Some(db) = version_set.read().get_db(&database) {
+        let index = db.read().get_index();
+        let sids = match index
+            .read()
+            .get_series_id_list(&table, &vec![])
+            .await
+            .context(error::IndexErrSnafu)
+        {
+            Ok(x) => x,
+            Err(e) => {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        };
+
+        let mut index_wlock = index.write();
+
+        info!(
+            "Drop table: deleting index in table: {}.{}",
+            &database, &table
+        );
+        let field_infos = match index_wlock
+            .get_table_schema(&table)
+            .context(error::IndexErrSnafu)
+        {
+            Ok(x) => x,
+            Err(e) => {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        };
+        if let Err(e) = index_wlock
+            .del_table_schema(&table)
+            .await
+            .context(error::IndexErrSnafu)
+        {
+            cb.send(Err(e)).expect("send to oneshot receiver");
+            return;
+        }
+        for sid in sids.iter() {
+            if let Err(e) = index_wlock
+                .del_series_info(*sid)
+                .await
+                .context(error::IndexErrSnafu)
+            {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        }
+
+        drop(index_wlock);
+
+        info!(
+            "Drop table: delete series in table: {}.{}",
+            &database, &table
+        );
+        if let Some(fields) = field_infos {
+            let fids: Vec<u64> = fields.iter().map(|f| f.field_id()).collect();
+            if let Err(e) = delete_series(
+                options,
+                version_set.clone(),
+                &database,
+                &sids,
+                &fids,
+                &TimeRange {
+                    min_ts: Timestamp::MIN,
+                    max_ts: Timestamp::MAX,
+                },
+            ) {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        }
+    }
+    cb.send(Ok(())).expect("send to oneshot receiver");
+}
+
+fn delete_series(
+    options: Arc<Options>,
+    version_set: Arc<RwLock<VersionSet>>,
+    database: &String,
+    series_ids: &[SeriesId],
+    field_ids: &[FieldId],
+    time_range: &TimeRange,
+) -> Result<()> {
+    let storage_field_ids: Vec<u64> = series_ids
+        .iter()
+        .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
+        .collect();
+
+    if let Some(db) = version_set.read().get_db(database) {
+        for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+            // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
+
+            ts_family
+                .write()
+                .delete_cache(&storage_field_ids, &time_range);
+
+            let version = ts_family.read().super_version();
+            let tsm_path = options.storage.tsm_dir(database.as_str(), *ts_family_id);
+            let delta_path = options.storage.delta_dir(database.as_str(), *ts_family_id);
+            for column_file in version
+                .version
+                .levels_info()
+                .iter()
+                .filter(|level| level.time_range.overlaps(&time_range))
+                .flat_map(|level| {
+                    level.files.iter().filter(|f| {
+                        f.time_range().overlaps(&time_range)
+                            && f.contains_any_field_id(&storage_field_ids)
+                    })
+                })
+            {
+                let mut tombstone = TsmTombstone::open_for_write(&tsm_path, column_file.file_id())?;
+                tombstone.add_range(&storage_field_ids, time_range)?;
+                tombstone.flush()?;
+            }
+
+            // TODO Start next flush or compaction.
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+
+    use config::get_config;
+    use flatbuffers::{FlatBufferBuilder, WIPOffset};
+    use models::{InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
+    use protos::{models::Points, models_helper};
+
+    use crate::{engine::Engine, error, index::utils, tsm::DataBlock, Options, TimeRange, TsKv};
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_compact() {
+        trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
+        let config = get_config("/tmp/test/config/config.toml");
+        let opt = Options::from(&config);
+        let tskv = TsKv::open(opt).await.unwrap();
+        tskv.compact(&"public".to_string()).await;
+    }
+
+    async fn prepare(tskv: &TsKv, database: &String, table: &String, time_range: &TimeRange) {
+        let mut fbb = FlatBufferBuilder::new();
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 10);
+        fbb.finish(points, None);
+        let points_data = fbb.finished_data();
+
+        let write_batch = protos::kv_service::WritePointsRpcRequest {
+            version: 1,
+            points: points_data.to_vec(),
+        };
+        tskv.write(write_batch).await.unwrap();
+
+        {
+            let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
+            let series_ids = tskv
+                .get_series_id_list(database, table, &vec![])
+                .await
+                .unwrap();
+
+            let field_ids: Vec<u32> = table_schema.iter().map(|f| f.field_id() as u32).collect();
+            let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
+                tskv.read(database, series_ids.clone(), time_range, field_ids.clone());
+            println!("Result items: {}", result.len());
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_drop_table() {
+        let base_dir = "/tmp/test/tskv/drop_table".to_string();
+        let _ = std::fs::remove_dir_all(&base_dir);
+        trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async move {
+            let mut config = get_config("../config/config.toml").clone();
+            config.storage.path = base_dir;
+            // TODO Add test case for `max_buffer_size = 0`.
+            // config.cache.max_buffer_size = 0;
+            let opt = Options::from(&config);
+            let tskv = TsKv::open(opt).await.unwrap();
+
+            let database = "db".to_string();
+            let table = "table".to_string();
+            let time_range = TimeRange::new(i64::MIN, i64::MAX);
+
+            prepare(&tskv, &database, &table, &time_range).await;
+
+            tskv.drop_table(&database, &table).unwrap();
+
+            {
+                let table_schema = tskv.get_table_schema(&database, &table).unwrap();
+                assert!(table_schema.is_none());
+
+                let series_ids = tskv
+                    .get_series_id_list(&database, &table, &vec![])
+                    .await
+                    .unwrap();
+                // Fixme: series_ids for table seems not to be cleared after droping the table.
+                assert!(series_ids.is_empty());
+            }
+        });
+    }
+
+    #[test]
+    fn test_drop_database() {
+        let base_dir = "/tmp/test/tskv/drop_database".to_string();
+        let _ = std::fs::remove_dir_all(&base_dir);
+        trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async move {
+            let mut config = get_config("../config/config.toml").clone();
+            config.storage.path = base_dir;
+            // TODO Add test case for `max_buffer_size = 0`.
+            // config.cache.max_buffer_size = 0;
+            let opt = Options::from(&config);
+            let tskv = TsKv::open(opt).await.unwrap();
+
+            let database = "db".to_string();
+            let table = "table".to_string();
+            let time_range = TimeRange::new(i64::MIN, i64::MAX);
+
+            prepare(&tskv, &database, &table, &time_range).await;
+
+            tskv.drop_database(&database).unwrap();
+
+            {
+                let table_schema = tskv.get_table_schema(&database, &table).unwrap();
+                assert!(table_schema.is_none());
+
+                let series_ids = tskv
+                    .get_series_id_list(&database, &table, &vec![])
+                    .await
+                    .unwrap();
+                assert!(series_ids.is_empty());
+            }
+        });
     }
 }

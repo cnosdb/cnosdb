@@ -5,7 +5,7 @@ use std::{
 };
 
 use models::{FieldId, Timestamp, ValueType};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 
 use super::{
@@ -416,7 +416,7 @@ impl Iterator for BlockMetaIterator {
 pub struct TsmReader {
     reader: Arc<File>,
     index_reader: Arc<IndexReader>,
-    tombstone: Option<Arc<Mutex<TsmTombstone>>>,
+    tombstone: Arc<RwLock<TsmTombstone>>,
 }
 
 impl TsmReader {
@@ -426,18 +426,11 @@ impl TsmReader {
         let tsm = Arc::new(file_manager::open_file(tsm_path)?);
         let tsm_idx = IndexReader::open(tsm.clone())?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
-        let tsm_tomb = match TsmTombstone::open_for_read(tombstone_path, tsm_id) {
-            Ok(Some(mut tomb)) => {
-                tomb.load()?;
-                Some(Arc::new(Mutex::new(tomb)))
-            }
-            Ok(None) => None,
-            Err(e) => None,
-        };
+        let tombstone = TsmTombstone::new(tombstone_path, tsm_id)?;
         Ok(Self {
             reader: tsm,
             index_reader: Arc::new(tsm_idx),
-            tombstone: tsm_tomb,
+            tombstone: Arc::new(RwLock::new(tombstone)),
         })
     }
 
@@ -460,12 +453,9 @@ impl TsmReader {
             block_meta.offset(),
             block_meta.val_off(),
         )?;
-        if let Some(tomb_ref) = &self.tombstone {
-            let tomb = tomb_ref.lock();
-            // TODO This costs too much
-            tomb.data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
-        }
-
+        self.tombstone
+            .read()
+            .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
         Ok(blk)
     }
 
@@ -482,7 +472,7 @@ impl TsmReader {
     }
 
     pub fn has_tombstone(&self) -> bool {
-        self.tombstone.is_some()
+        !self.tombstone.read().is_empty()
     }
 
     /// Returns all tombstone `TimeRange`s for a `BlockMeta`.
@@ -491,12 +481,10 @@ impl TsmReader {
         &self,
         block_meta: &BlockMeta,
     ) -> Option<Vec<TimeRange>> {
-        if let Some(tombstone) = self.tombstone.borrow() {
-            let t = tombstone.lock();
-            let tr = TimeRange::from((block_meta.min_ts(), block_meta.max_ts()));
-            return t.get_overlapped_time_ranges(block_meta.field_id(), &tr);
-        }
-        None
+        return self.tombstone.read().get_overlapped_time_ranges(
+            block_meta.field_id(),
+            &TimeRange::from((block_meta.min_ts(), block_meta.max_ts())),
+        );
     }
 
     /// Returns all TimeRanges for a FieldId cloned from TsmTombstone.
@@ -504,14 +492,7 @@ impl TsmReader {
         &self,
         field_id: FieldId,
     ) -> Option<Vec<TimeRange>> {
-        if let Some(tombstone) = self.tombstone.borrow() {
-            let ranges = {
-                let t = tombstone.lock();
-                t.get_cloned_time_ranges(field_id)
-            };
-            return ranges;
-        }
-        None
+        self.tombstone.read().get_cloned_time_ranges(field_id)
     }
 }
 

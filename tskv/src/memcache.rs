@@ -213,8 +213,12 @@ impl MemCache {
         Ok(())
     }
 
+    fn get_partition(&self, id: &u64) -> usize {
+        (*id as usize) % self.partions.len()
+    }
+
     pub fn get(&self, id: &u64) -> Option<Arc<RwLock<MemEntry>>> {
-        let index = (*id as usize) % self.partions.len();
+        let index = self.get_partition(id);
 
         self.partions[index].read().read_entry(*id)
     }
@@ -229,9 +233,10 @@ impl MemCache {
         return true;
     }
 
-    pub fn delete_data(&self, time_range: &TimeRange) {
-        for part in self.partions.iter() {
-            part.read().delete_data(time_range);
+    pub fn delete_data(&self, field_ids: &[FieldId], time_range: &TimeRange) {
+        for id in field_ids {
+            let index = self.get_partition(id);
+            self.partions[index].read().delete_data(id, time_range);
         }
     }
 
@@ -320,8 +325,8 @@ impl MemTable {
         }
     }
 
-    pub fn delete_data(&self, time_range: &TimeRange) {
-        for (_, entry) in &self.fields {
+    pub fn delete_data(&self, id: &u64, time_range: &TimeRange) {
+        if let Some(entry) = self.fields.get(id) {
             entry.write().delete_data_cell(time_range);
         }
     }
