@@ -2,14 +2,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::scheduler::Scheduler;
-use query::factory::TemporaryCatalogManager;
 use query::{
     dispatcher::manager::SimpleQueryDispatcherBuilder,
     function::simple_func_manager::SimpleFunctionMetadataManager,
     sql::optimizer::CascadeOptimizerBuilder,
 };
 use spi::{
-    catalog::factory::CatalogManager,
     query::{dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory},
     server::dbms::DatabaseManagerSystem,
     server::BuildSnafu,
@@ -19,6 +17,7 @@ use spi::{
 };
 
 use query::extension::expr::load_all_functions;
+use query::metadata::LocalCatalogMeta;
 use query::sql::parser_impl::DefaultParser;
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
@@ -43,11 +42,10 @@ impl DatabaseManagerSystem for Cnosdbms {
     }
 }
 
-pub fn make_cnosdbms(tskv_client: EngineRef) -> Result<Cnosdbms> {
-    // TODO refactor catalog
-    let catalog_manager = Arc::new(TemporaryCatalogManager::new(tskv_client.clone()));
-    // TODO init metadata
-    catalog_manager.init();
+pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
+    // todo: add query config
+    // for now only support local mode
+    let meta = Arc::new(LocalCatalogMeta::new_with_default(engine));
 
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
@@ -60,8 +58,7 @@ pub fn make_cnosdbms(tskv_client: EngineRef) -> Result<Cnosdbms> {
     let scheduler = Arc::new(Scheduler::new(num_cpus::get() * 2));
 
     let simple_query_dispatcher = SimpleQueryDispatcherBuilder::default()
-        .with_catalog_manager(catalog_manager)
-        .with_function_manager(Arc::new(function_manager))
+        .with_metadata(meta)
         .with_session_factory(session_factory)
         .with_parser(parser)
         .with_optimizer(optimizer)

@@ -1,21 +1,15 @@
 use std::sync::Arc;
 
 use datafusion::scheduler::Scheduler;
-use spi::{
-    catalog::factory::CatalogManager,
-    query::{
-        execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef},
-        logical_planner::Plan,
-        optimizer::Optimizer,
-    },
+use spi::query::{
+    execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef},
+    logical_planner::Plan,
+    optimizer::Optimizer,
 };
 
 use super::query::SqlQueryExecution;
 
 pub struct SqlQueryExecutionFactory {
-    catalog_manager: Arc<dyn CatalogManager + Send + Sync>,
-    // TODO access control
-    // cnosdb optimizer
     optimizer: Arc<dyn Optimizer + Send + Sync>,
     // TODO 需要封装 scheduler
     scheduler: Arc<Scheduler>,
@@ -23,15 +17,10 @@ pub struct SqlQueryExecutionFactory {
 
 impl SqlQueryExecutionFactory {
     #[inline(always)]
-    pub fn new(
-        optimizer: Arc<dyn Optimizer + Send + Sync>,
-        scheduler: Arc<Scheduler>,
-        catalog_manager: Arc<dyn CatalogManager + Send + Sync>,
-    ) -> Self {
+    pub fn new(optimizer: Arc<dyn Optimizer + Send + Sync>, scheduler: Arc<Scheduler>) -> Self {
         Self {
             optimizer,
             scheduler,
-            catalog_manager,
         }
     }
 }

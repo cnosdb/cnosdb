@@ -17,6 +17,7 @@ use crate::{
     schema::{TableFiled, TableSchema},
     table::ClusterTable,
 };
+pub type CatalogRef = Arc<dyn CatalogProvider>;
 
 pub struct UserCatalog {
     engine: EngineRef,
