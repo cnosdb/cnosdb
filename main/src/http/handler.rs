@@ -11,12 +11,15 @@ use protos::kv_service::WritePointsRpcRequest;
 use protos::models::{
     self as fb_models, FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder,
 };
-use query::db::Db;
 use regex::Regex;
 use snafu::ResultExt;
+use spi::server::dbms::DatabaseManagerSystem;
+use spi::service::protocol::{Context, Query};
+use std::ops::DerefMut;
 use tokio::sync::oneshot;
 use trace::debug;
 
+use super::QuerySnafu;
 use crate::http::{parse_query, AsyncChanSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
 use async_channel as channel;
 
@@ -29,7 +32,7 @@ lazy_static! {
 
 pub(crate) async fn route(
     req: Request<Body>,
-    db: Arc<Db>,
+    db: Arc<dyn DatabaseManagerSystem + Send + Sync>,
     sender: channel::Sender<tskv::Task>,
 ) -> Result<Response<Body>, Error> {
     match req.uri().path() {
@@ -120,7 +123,10 @@ pub(crate) async fn write_line_protocol(
     Ok(resp)
 }
 
-pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Response<Body>, Error> {
+pub(crate) async fn query(
+    req: Request<Body>,
+    database: Arc<dyn DatabaseManagerSystem + Send + Sync>,
+) -> Result<Response<Body>, Error> {
     let db: String;
     if let Some(query) = req.uri().query() {
         let query_params = parse_query(query);
@@ -151,13 +157,16 @@ pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Respo
     let sql = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
     debug!("Query request: {}", &sql);
 
-    let record_batches = if let Some(rbs) = database.run_query(&sql).await {
-        rbs
-    } else {
-        Vec::new()
-    };
+    let mut actual = vec![];
+    let query = Query::new(Context::default(), sql);
+    let mut result = database.execute(&query).await.context(QuerySnafu)?;
+    for stmt_result in result.result().iter_mut() {
+        while let Some(batch) = stmt_result.next().await {
+            actual.push(batch.unwrap());
+        }
+    }
 
-    let resp_msg = format!("{}", pretty_format_batches(&record_batches).unwrap());
+    let resp_msg = format!("{}", pretty_format_batches(actual.deref_mut()).unwrap());
 
     let resp = http::Response::builder()
         .body(Body::from(resp_msg))
