@@ -29,12 +29,16 @@ pub trait Engine: Send + Sync + Debug {
         fields: Vec<u32>,
     ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>;
 
-    async fn delete_series(
+    fn drop_database(&self, database: &str) -> Result<()>;
+
+    fn drop_table(&self, database: &str, table: &str) -> Result<()>;
+
+    fn delete_series(
         &self,
         db: &String,
-        sids: Vec<SeriesId>,
-        min: Timestamp,
-        max: Timestamp,
+        sids: &[SeriesId],
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
     ) -> Result<()>;
 
     fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>>;

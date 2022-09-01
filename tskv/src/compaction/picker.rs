@@ -119,7 +119,7 @@ impl Picker for LevelCompactionPicker {
                 break;
             }
             picking_files.push(file.clone());
-            file.mark_compaction();
+            file.mark_compacting();
         }
 
         if picking_files.len() <= 1 {
@@ -279,7 +279,7 @@ impl LevelCompactionPicker {
                 break;
             }
             dst_files.push(file.clone());
-            file.mark_compaction();
+            file.mark_compacting();
         }
 
         let mut picked_time_range = *src_files[0].time_range();
@@ -452,7 +452,7 @@ mod test {
                     make_tsm_file_name(&tsm_dir, file_desc.0),
                 );
                 if file_desc.4 {
-                    col.mark_compaction();
+                    col.mark_compacting();
                 }
                 col_files.push(Arc::new(col));
             }

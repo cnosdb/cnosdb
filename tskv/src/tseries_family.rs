@@ -23,7 +23,8 @@ use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
     error::{Error, Result},
-    file_manager, file_utils,
+    file_manager,
+    file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache, MemRaw},
     summary::{CompactMeta, VersionEdit},
@@ -153,6 +154,19 @@ impl ColumnFile {
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
         self.time_range.overlaps(time_range)
     }
+
+    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
+        self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+    }
+
+    pub fn contains_any_field_id(&self, field_ids: &[FieldId]) -> bool {
+        for field_id in field_ids {
+            if self.field_id_bloom_filter.contains(&field_id.to_be_bytes()) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl ColumnFile {
@@ -160,7 +174,7 @@ impl ColumnFile {
         self.deleted.load(Ordering::Acquire)
     }
 
-    pub fn mark_removed(&self) {
+    pub fn mark_deleted(&self) {
         self.deleted.store(true, Ordering::Release);
     }
 
@@ -168,12 +182,26 @@ impl ColumnFile {
         self.compacting.load(Ordering::Acquire)
     }
 
-    pub fn mark_compaction(&self) {
+    pub fn mark_compacting(&self) {
         self.compacting.store(true, Ordering::Release);
     }
+}
 
-    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
-        self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+impl Drop for ColumnFile {
+    fn drop(&mut self) {
+        debug!("Removing file {}", self.file_id);
+        if self.is_deleted() {
+            let path = self.file_path();
+            if let Err(e) = std::fs::remove_file(&path) {
+                error!(
+                    "Error when removing file {} at '{}': {}",
+                    self.file_id,
+                    path.display(),
+                    e.to_string()
+                );
+            }
+            info!("Removed file {} at '{}", self.file_id, path.display());
+        }
     }
 }
 
@@ -218,9 +246,16 @@ impl LevelInfo {
     }
 
     pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
+        let file_path = if compact_meta.is_delta {
+            let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
+            make_delta_file_name(base_dir, compact_meta.file_id)
+        } else {
+            let base_dir = self.storage_opt.tsm_dir(&self.database, self.tsf_id);
+            make_tsm_file_name(base_dir, compact_meta.file_id)
+        };
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
-            self.storage_opt.tsm_dir(&self.database, self.tsf_id),
+            file_path,
         )));
         self.tsf_id = compact_meta.tsf_id;
         self.cur_size += compact_meta.file_size;
@@ -345,7 +380,7 @@ impl Version {
                     .get(&file.level)
                     .map(|file_ids| file_ids.contains(&file.file_id))
                 {
-                    file.mark_removed();
+                    file.mark_deleted();
                     continue;
                 }
                 new_levels[level.level as usize].push_column_file(file.clone());
@@ -402,6 +437,23 @@ impl Version {
 
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
+    }
+
+    pub fn column_files(
+        &self,
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+    ) -> Vec<Arc<ColumnFile>> {
+        self.levels_info
+            .iter()
+            .filter(|level| level.time_range.overlaps(&time_range))
+            .flat_map(|level| {
+                level.files.iter().filter(|f| {
+                    f.time_range().overlaps(&time_range) && f.contains_any_field_id(&field_ids)
+                })
+            })
+            .map(|f| f.clone())
+            .collect()
     }
 
     // todo:
@@ -719,12 +771,14 @@ impl TseriesFamily {
         }
     }
 
-    pub async fn delete_cache(&self, time_range: &TimeRange) {
-        self.mut_cache.read().delete_data(time_range);
-        self.delta_mut_cache.read().delete_data(time_range);
+    pub fn delete_cache(&self, field_ids: &[FieldId], time_range: &TimeRange) {
+        self.mut_cache.read().delete_data(field_ids, time_range);
+        self.delta_mut_cache
+            .read()
+            .delete_data(field_ids, time_range);
 
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_data(time_range);
+            memcache.read().delete_data(field_ids, time_range);
         }
     }
 
@@ -1012,11 +1066,13 @@ mod test {
         })
         .await;
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
-        tsf.delete_cache(&TimeRange {
-            max_ts: 0,
-            min_ts: 0,
-        })
-        .await;
+        tsf.delete_cache(
+            &[0],
+            &TimeRange {
+                max_ts: 0,
+                min_ts: 0,
+            },
+        );
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 0);
     }
 

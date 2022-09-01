@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use snafu::{self, Snafu};
 
 use crate::file_manager;
@@ -14,8 +16,9 @@ pub enum RecordFileError {
         source: std::io::Error,
     },
 
-    #[snafu(display("Error with open file : {}", source))]
+    #[snafu(display("Error with open file '{}': {}", path.display(), source))]
     OpenFile {
+        path: PathBuf,
         source: file_manager::FileError,
     },
 
