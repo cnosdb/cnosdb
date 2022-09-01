@@ -1,4 +1,4 @@
-use config::GlobalConfig;
+use config::Config;
 use snafu::ResultExt;
 use spi::{server::dbms::DBMSRef, service::ServiceRef};
 
@@ -32,7 +32,7 @@ impl Server {
 }
 
 pub struct Builder {
-    config: GlobalConfig,
+    config: Config,
     // service
     services: Vec<ServiceRef>,
     // todo node manager
@@ -42,7 +42,7 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn new(config: GlobalConfig) -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
             config,
             services: Default::default(),
