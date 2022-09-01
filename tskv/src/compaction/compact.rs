@@ -9,7 +9,7 @@ use std::{
 use evmap::new;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
-use trace::{error, info};
+use trace::{debug, error, info, trace};
 
 use crate::{
     compaction::CompactReq,
@@ -18,7 +18,7 @@ use crate::{
     error::{self, Result},
     file_manager::{self, get_file_manager},
     file_utils,
-    kv_option::TseriesFamOpt,
+    kv_option::Options,
     memcache::DataType,
     summary::{CompactMeta, VersionEdit},
     tseries_family::{ColumnFile, TimeRange},
@@ -159,7 +159,7 @@ impl CompactIterator {
         for (next_tsm_file_idx, (i, idx)) in self.tsm_index_iters.iter_mut().enumerate().enumerate()
         {
             if self.finished_readers[i] {
-                info!("file no.{} has been finished, continue.", i);
+                trace!("file no.{} has been finished, continue.", i);
                 continue;
             }
             if let Some(idx_meta) = idx.peek() {
@@ -179,14 +179,14 @@ impl CompactIterator {
 
                 self.tmp_tsm_blks.push(idx_meta.block_iterator());
                 self.tmp_tsm_blk_tsm_reader_idx.push(next_tsm_file_idx);
-                info!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
+                trace!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
                       idx_meta.field_id(),
                       idx_meta.field_type(),
                       idx_meta.block_count(),
                       idx_meta.time_range());
             } else {
                 // This tsm-file has been finished
-                info!("file no.{} is finished.", i);
+                trace!("file no.{} is finished.", i);
                 self.finished_readers[i] = true;
                 self.finished_reader_cnt += 1;
             }
@@ -388,17 +388,17 @@ impl Iterator for CompactIterator {
             return Some(Ok(blk));
         }
         loop {
-            info!("------------------------------");
+            trace!("------------------------------");
 
             // For each tsm-file, get next index reader for current iteration field id
             self.next_field_id();
 
-            info!(
+            trace!(
                 "selected blocks count: {} in iteration",
                 self.tmp_tsm_blks.len()
             );
             if self.tmp_tsm_blks.is_empty() {
-                info!("iteration field_id {:?} is finished", self.curr_fid);
+                trace!("iteration field_id {:?} is finished", self.curr_fid);
                 self.curr_fid = None;
                 break;
             }
@@ -430,8 +430,22 @@ pub fn run_compaction_job(
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<VersionEdit>> {
     info!(
-        "Running compaction job on ts_family: {} and files: {:?}",
-        request.ts_family_id, request.files
+        "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
+        request.ts_family_id,
+        request
+            .files
+            .iter()
+            .map(|f| {
+                format!(
+                    "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                    f.level(),
+                    f.file_id(),
+                    f.time_range().min_ts,
+                    f.time_range().max_ts
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
     );
 
     let version = request.version;
@@ -439,18 +453,14 @@ pub fn run_compaction_job(
     // Buffers all tsm-files and it's indexes for this compaction
     let max_data_block_size = 1000; // TODO this const value is in module tsm
     let tsf_id = request.ts_family_id;
-    let tsf_opt = request.ts_family_opt;
+    let storage_opt = request.storage_opt;
     let mut tsm_files: Vec<PathBuf> = Vec::new();
     let mut tsm_readers = Vec::new();
     let mut tsm_index_iters = Vec::new();
     for col_file in request.files.iter() {
-        // Delta file is not compacted here
-        if col_file.is_delta() {
-            continue;
-        }
-        let tsm_file = col_file.file_path(tsf_opt.clone(), tsf_id);
-        tsm_files.push(tsm_file.clone());
+        let tsm_file = col_file.file_path();
         let tsm_reader = TsmReader::open(&tsm_file)?;
+        tsm_files.push(tsm_file);
         let idx_iter = tsm_reader.index_iterator().peekable();
         tsm_readers.push(tsm_reader);
         tsm_index_iters.push(idx_iter);
@@ -469,12 +479,13 @@ pub fn run_compaction_job(
         max_datablock_values: max_data_block_size,
         ..Default::default()
     };
-    let tsm_dir = tsf_opt.tsm_dir(tsf_id);
+    let tsm_dir = storage_opt.tsm_dir(&request.database, tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
+    info!("Compaction: File {} been created.", tsm_writer.sequence());
     let mut version_edit = VersionEdit::new();
     version_edit.tsf_id = tsf_id;
     for next_blk in iter.flatten() {
-        info!("===============================");
+        trace!("===============================");
         let write_ret = match next_blk {
             CompactingBlock::DataBlock {
                 field_id: fid,
@@ -496,9 +507,16 @@ pub fn run_compaction_job(
                 tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
                     tsm_writer.flush().context(error::WriteTsmSnafu)?;
+                    info!(
+                        "Compaction: File: {} write finished (level: {}, {} B).",
+                        tsm_writer.sequence(),
+                        request.out_level,
+                        tsm_writer.size()
+                    );
                     let cm = new_compact_meta(&tsm_writer, request.out_level);
                     version_edit.add_file(cm, version.max_level_ts);
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
+                    info!("Compaction: File {} been created.", tsm_writer.sequence());
                 }
             }
         }
@@ -506,11 +524,22 @@ pub fn run_compaction_job(
 
     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
     tsm_writer.flush().context(error::WriteTsmSnafu)?;
+    info!(
+        "Compaction: File: {} write finished (level: {}, {} B).",
+        tsm_writer.sequence(),
+        request.out_level,
+        tsm_writer.size()
+    );
     let cm = new_compact_meta(&tsm_writer, request.out_level);
     version_edit.add_file(cm, version.max_level_ts);
     for file in request.files {
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
+
+    info!(
+        "Compaction: Compact finished, version edits: {:?}",
+        version_edit
+    );
 
     Ok(Some(version_edit))
 }
@@ -548,16 +577,18 @@ mod test {
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
         file_manager, file_utils,
-        kv_option::TseriesFamOpt,
+        kv_option::Options,
         summary::VersionEdit,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
         tsm::{self, DataBlock, Tombstone, TsmReader, TsmTombstone},
+        TseriesFamilyId,
     };
 
     fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
-        tsf_opt: Arc<TseriesFamOpt>,
+        tsf_id: TseriesFamilyId,
+        tsf_opt: Arc<Options>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -580,7 +611,7 @@ mod test {
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
                 writer.size(),
                 false,
-                tsf_opt.clone(),
+                writer.path(),
             )));
         }
         (file_seq + 1, cfs)
@@ -635,39 +666,34 @@ mod test {
         }
     }
 
-    fn get_tsf_opt(tsm_dir: &str) -> Arc<TseriesFamOpt> {
-        Arc::new(TseriesFamOpt {
-            base_file_size: 16 * 1024 * 1024,         // 16 MiB: 16777216
-            max_compact_size: 2 * 1024 * 1024 * 1024, // 2 GiB: 2147483648
-            tsm_dir: tsm_dir.to_string(),
-            max_level: 4,
-            level_ratio: 16_f64,
-            compact_trigger: 4,
-            delta_dir: "/tmp/test/compact_elta".to_string(),
-            index_path: "/tmp/test/index_dir".to_string(),
-            max_memcache_size: 128 * 1024 * 1024,
-            max_immemcache_num: 4,
-        })
+    fn create_options(base_dir: String) -> Arc<Options> {
+        let dir = "../config/config.toml";
+        let mut config = config::get_config(dir);
+        config.storage.path = base_dir.to_string();
+        let opt = Options::from(&config);
+        Arc::new(opt)
     }
 
     fn prepare_compact_req_and_kernel(
-        tsf_opt: Arc<TseriesFamOpt>,
+        database: String,
+        opt: Arc<Options>,
         next_file_id: u64,
         files: Vec<Arc<ColumnFile>>,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
             "version_1".to_string(),
-            tsf_opt.clone(),
+            opt.storage.clone(),
             1,
-            LevelInfo::init_levels(tsf_opt.clone()),
+            LevelInfo::init_levels(database.clone(), opt.storage.clone()),
             1000,
         ));
         let compact_req = CompactReq {
-            ts_family_opt: tsf_opt,
+            ts_family_id: 1,
+            database,
+            storage_opt: opt.storage.clone(),
             files,
             version,
-            ts_family_id: 1,
             out_level: 2,
         };
         let kernel = Arc::new(GlobalContext::new());
@@ -704,11 +730,13 @@ mod test {
         ]);
 
         let dir = "/tmp/test/compaction";
-        let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(1);
+        let database = "dba".to_string();
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
-        let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 1, opt.clone());
+        let (compact_req, kernel) =
+            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
         let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
         check_column_file(dir, version_edit, expected_data);
     }
@@ -741,11 +769,13 @@ mod test {
         ]);
 
         let dir = "/tmp/test/compaction/1";
-        let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(1);
+        let database = "dba".to_string();
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
-        let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 1, opt.clone());
+        let (compact_req, kernel) =
+            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
         let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
         check_column_file(dir, version_edit, expected_data);
     }
@@ -778,11 +808,13 @@ mod test {
         ]);
 
         let dir = "/tmp/test/compaction/2";
-        let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(1);
+        let database = "dba".to_string();
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, tsf_opt.clone());
-        let (compact_req, kernel) = prepare_compact_req_and_kernel(tsf_opt, next_file_id, files);
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 1, opt.clone());
+        let (compact_req, kernel) =
+            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
         let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
         check_column_file(dir, version_edit, expected_data);
     }
@@ -962,8 +994,9 @@ mod test {
         );
 
         let dir = "/tmp/test/compaction/3";
-        let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(1);
+        let database = "dba".to_string();
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -984,14 +1017,14 @@ mod test {
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 false,
-                tsf_opt.clone(),
+                tsm_writer.path(),
             )));
         }
 
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(tsf_opt, next_file_id, column_files);
+            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
         let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
 
@@ -1102,8 +1135,9 @@ mod test {
         );
 
         let dir = "/tmp/test/compaction/4";
-        let tsf_opt = get_tsf_opt(dir);
-        let dir = tsf_opt.tsm_dir(1);
+        let database = "dba".to_string();
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -1120,7 +1154,9 @@ mod test {
             tsm_writer.flush().unwrap();
             let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence).unwrap();
             for t in tombstone_desc.iter().flatten() {
-                tsm_tombstone.add_range(&[t.0][..], t.1, t.2).unwrap();
+                tsm_tombstone
+                    .add_range(&[t.0][..], &TimeRange::new(t.1, t.2))
+                    .unwrap();
             }
 
             tsm_tombstone.flush().unwrap();
@@ -1130,14 +1166,14 @@ mod test {
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 false,
-                tsf_opt.clone(),
+                tsm_writer.path(),
             )));
         }
 
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(tsf_opt, next_file_id, column_files);
+            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
         let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
 

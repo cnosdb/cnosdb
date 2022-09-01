@@ -148,27 +148,18 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub fn add_range(
-        &mut self,
-        field_ids: &[FieldId],
-        min: Timestamp,
-        max: Timestamp,
-    ) -> Result<()> {
-        let time_range = TimeRange {
-            min_ts: min,
-            max_ts: max,
-        };
+    pub fn add_range(&mut self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         for field_id in field_ids.iter() {
             let tomb = Tombstone {
                 field_id: *field_id,
-                time_range,
+                time_range: *time_range,
             };
             Self::write_to(&self.tomb_accessor, self.tomb_size, &tomb).map(|s| {
                 self.tomb_size += s as u64;
                 self.tombstones
                     .entry(*field_id)
                     .or_insert(Vec::new())
-                    .push(time_range);
+                    .push(*time_range);
             })?;
         }
         Ok(())
@@ -293,7 +284,7 @@ mod test {
 
         let mut tombstone = TsmTombstone::with_path(&path).unwrap();
         // tsm_tombstone.load().unwrap();
-        tombstone.add_range(&[0], 0, 0).unwrap();
+        tombstone.add_range(&[0], &TimeRange::new(0, 0)).unwrap();
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
@@ -316,7 +307,9 @@ mod test {
 
         let mut tombstone = TsmTombstone::with_path(&path).unwrap();
         // tsm_tombstone.load().unwrap();
-        tombstone.add_range(&[1, 2, 3], 1, 100).unwrap();
+        tombstone
+            .add_range(&[1, 2, 3], &TimeRange::new(1, 100))
+            .unwrap();
         tombstone.flush().unwrap();
 
         tombstone.load().unwrap();
@@ -357,8 +350,7 @@ mod test {
             tombstone
                 .add_range(
                     &[3 * i as u64 + 1, 3 * i as u64 + 2, 3 * i as u64 + 3],
-                    i as i64 * 2,
-                    i as i64 * 2 + 100,
+                    &TimeRange::new(i as i64 * 2, i as i64 * 2 + 100),
                 )
                 .unwrap();
         }

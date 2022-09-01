@@ -162,6 +162,7 @@ impl IndexBuf {
 /// writer.flush().unwrap();
 /// ```
 pub struct TsmWriter {
+    path: PathBuf,
     writer: FileCursor,
     /// Store tsm sequence for debug
     sequence: u64,
@@ -177,8 +178,15 @@ pub struct TsmWriter {
 }
 
 impl TsmWriter {
-    pub fn open(writer: FileCursor, sequence: u64, is_delta: bool, max_size: u64) -> Result<Self> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        sequence: u64,
+        is_delta: bool,
+        max_size: u64,
+    ) -> Result<Self> {
+        let writer = file_manager::create_file(&path)?.into_cursor();
         let mut w = Self {
+            path: path.as_ref().into(),
             writer,
             sequence,
             is_delta,
@@ -192,6 +200,10 @@ impl TsmWriter {
             .context(error::WriteTsmSnafu)
             .map(|s| w.size = s as u64)?;
         Ok(w)
+    }
+
+    pub fn path(&self) -> PathBuf {
+        self.path.clone()
     }
 
     pub fn sequence(&self) -> u64 {
@@ -278,9 +290,12 @@ pub fn new_tsm_writer(
     is_delta: bool,
     max_size: u64,
 ) -> Result<TsmWriter> {
-    let tsm_path = file_utils::make_tsm_file_name(dir, tsm_sequence);
-    let tsm_cursor = file_manager::create_file(&tsm_path)?.into_cursor();
-    TsmWriter::open(tsm_cursor, tsm_sequence, is_delta, max_size)
+    let tsm_path = if is_delta {
+        file_utils::make_delta_file_name(dir, tsm_sequence)
+    } else {
+        file_utils::make_tsm_file_name(dir, tsm_sequence)
+    };
+    TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size)
 }
 
 pub fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
@@ -447,8 +462,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let tsm_path = dir.as_ref().join(file_name);
-        let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
-        let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
+        let mut writer = TsmWriter::open(tsm_path, 0, false, 0).unwrap();
         for (fid, blk) in data.iter() {
             writer.write_block(*fid, blk).unwrap();
         }
@@ -515,8 +529,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let tsm_path = dir.join("test_tsm_write_1.tsm");
-        let file = file_manager::create_file(&tsm_path).unwrap().into_cursor();
-        let mut writer = TsmWriter::open(file, 0, false, 0).unwrap();
+        let mut writer = TsmWriter::open(tsm_path, 0, false, 0).unwrap();
 
         #[rustfmt::skip]
         let data = vec![

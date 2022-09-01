@@ -29,6 +29,7 @@ pub use error::{Error, Result};
 pub use kv_option::Options;
 pub use kvcore::TsKv;
 use protos::kv_service::WritePointsRpcResponse;
+pub use summary::print_summary_statistics;
 pub use summary::Summary;
 use tokio::sync::oneshot;
 pub use tseries_family::TimeRange;

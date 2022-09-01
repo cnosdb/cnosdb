@@ -104,14 +104,14 @@ impl<'a> ExtParser<'a> {
                         self.parse_create()
                     }
                     _ => {
-                        Ok(ExtStatement::Standard(Box::new(
+                        Ok(ExtStatement::SqlStatement(Box::new(
                             self.parser.parse_statement()?,
                         )))
                     }
                 }
             }
             _ => {
-                Ok(ExtStatement::Standard(Box::new(
+                Ok(ExtStatement::SqlStatement(Box::new(
                     self.parser.parse_statement()?,
                 )))
             }

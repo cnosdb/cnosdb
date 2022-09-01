@@ -12,7 +12,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError;
 use trace::info;
 
-use crossbeam::channel;
+use async_channel as channel;
 
 use crate::http::handler::route;
 
@@ -40,9 +40,7 @@ pub enum Error {
     ChannelReceive { source: RecvError },
 
     #[snafu(display("Error sending to channel receiver: {}", source))]
-    CrossbeamSend {
-        source: channel::SendError<tskv::Task>,
-    },
+    AsyncChanSend { source: channel::SendError<tskv::Task> },
 
     #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
@@ -51,22 +49,14 @@ pub enum Error {
     Syntax { reason: String },
 }
 
-pub async fn serve(
-    addr: SocketAddr,
-    db: Arc<Db>,
-    sender: channel::Sender<tskv::Task>,
-) -> Result<(), Error> {
+pub async fn serve(addr: SocketAddr, db: Arc<Db>, sender: channel::Sender<tskv::Task>) -> Result<(), Error> {
     let make_service = make_service_fn(move |conn: &AddrStream| {
         let db = db.clone();
         let sender = sender.clone();
         let remote_addr = conn.remote_addr();
         info!("Remote IP: {}", remote_addr);
 
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
-                route(req, db.clone(), sender.clone())
-            }))
-        }
+        async move { Ok::<_, Infallible>(service_fn(move |req| route(req, db.clone(), sender.clone()))) }
     });
 
     let server = HyperServer::bind(&addr).serve(make_service);
@@ -104,6 +94,7 @@ fn parse_query(query: &str) -> HashMap<&str, &str> {
 mod test {
     use std::{net::SocketAddr, sync::Arc};
 
+    use async_channel as channel;
     use config::get_config;
     use crossbeam::channel;
     use protos::kv_service::WritePointsRpcResponse;
@@ -126,18 +117,16 @@ mod test {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
         let global_config = get_config("../config/config.toml");
-        let http_host = "127.0.0.1:8003"
-            .parse::<SocketAddr>()
-            .expect("Invalid host");
-        let opt = Options::from(global_config);
+        let http_host = "127.0.0.1:8003".parse::<SocketAddr>().expect("Invalid host");
+        let opt = Options::from(&global_config);
 
-        let tskv = TsKv::open(opt, global_config.tsfamily_num).await.unwrap();
+        let tskv = TsKv::open(opt).await.unwrap();
         let db = Arc::new(Db::new(Arc::new(tskv)));
         let (sender, receiver) = channel::unbounded();
         let server_join_handle = spawn(async move { serve(http_host, db, sender) });
 
         spawn(async move {
-            while let Ok(task) = receiver.recv() {
+            while let Ok(task) = receiver.recv().await {
                 match task {
                     Task::WritePoints { req, tx } => {
                         println!("{:?}", req);

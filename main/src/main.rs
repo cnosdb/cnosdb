@@ -5,7 +5,8 @@ use futures::join;
 use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 
-use crossbeam::channel;
+use async_channel as channel;
+
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use query::db::Db;
 use trace::init_default_global_tracing;
@@ -36,20 +37,10 @@ long_about = r#"cnosdb and command line tools
 )]
 struct Cli {
     /// gRPC address
-    #[clap(
-        short,
-        long,
-        global = true,
-        env = "server_addr",
-        default_value = "127.0.0.1:31006"
-    )]
+    #[clap(short, long, global = true, env = "server_addr", default_value = "127.0.0.1:31006")]
     host: String,
 
-    #[clap(
-        global = true,
-        env = "server_http_addr",
-        default_value = "127.0.0.1:31007"
-    )]
+    #[clap(global = true, env = "server_http_addr", default_value = "127.0.0.1:31007")]
     http_host: String,
 
     #[clap(short, long, global = true)]
@@ -109,20 +100,14 @@ fn main() -> Result<(), std::io::Error> {
                 println!("TSKV {}", debug);
 
                 let grpc_host = cli.host.parse::<SocketAddr>().expect("Invalid grpc_host");
-                let http_host = cli
-                    .http_host
-                    .parse::<SocketAddr>()
-                    .expect("Invalid http_host");
+                let http_host = cli.http_host.parse::<SocketAddr>().expect("Invalid http_host");
 
                 //let (sender, receiver) = mpsc::unbounded_channel();
                 let (sender, receiver) = channel::unbounded();
 
-                let tskv_options = tskv::Options::from(global_config);
-                let tskv = Arc::new(
-                    TsKv::open(tskv_options, global_config.tsfamily_num)
-                        .await
-                        .unwrap(),
-                );
+                let tskv_options = tskv::Options::from(&global_config);
+
+                let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
 
                 for _ in 0..1 {
                     TsKv::start(tskv.clone(), receiver.clone());
@@ -130,9 +115,7 @@ fn main() -> Result<(), std::io::Error> {
 
                 let db = Arc::new(Db::new(tskv));
 
-                let tskv_grpc_service = TskvServiceServer::new(rpc::tskv::TskvServiceImpl {
-                    sender: sender.clone(),
-                });
+                let tskv_grpc_service = TskvServiceServer::new(rpc::tskv::TskvServiceImpl { sender: sender.clone() });
                 let mut grpc_builder = tonic::transport::server::Server::builder();
                 let grpc_router = grpc_builder.add_service(tskv_grpc_service);
                 let grpc = tokio::spawn(async move {
@@ -178,12 +161,7 @@ unsafe extern "C" fn signal_handler(sig: i32) {
         .name()
         .map(|n| format!(" for thread \"{}\"", n))
         .unwrap_or_else(|| "".to_owned());
-    eprintln!(
-        "Signal {}, Stack trace{}\n{:?}",
-        sig,
-        name,
-        Backtrace::new()
-    );
+    eprintln!("Signal {}, Stack trace{}\n{:?}", sig, name, Backtrace::new());
     abort();
 }
 
@@ -205,10 +183,7 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     match cores {
         None => Runtime::new(),
         Some(cores) => {
-            println!(
-                "Setting core number to '{}' per command line request",
-                cores
-            );
+            println!("Setting core number to '{}' per command line request", cores);
 
             match cores {
                 0 => {
@@ -216,10 +191,7 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
                     Err(std::io::Error::new(kind, msg))
                 }
                 1 => Builder::new_current_thread().enable_all().build(),
-                _ => Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(cores)
-                    .build(),
+                _ => Builder::new_multi_thread().enable_all().worker_threads(cores).build(),
             }
         }
     }

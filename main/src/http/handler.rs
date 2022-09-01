@@ -8,18 +8,15 @@ use hyper::{Body, Request, Response};
 use lazy_static::lazy_static;
 use line_protocol::{line_protocol_to_lines, Line};
 use protos::kv_service::WritePointsRpcRequest;
-use protos::models::{
-    self as fb_models, FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder,
-};
+use protos::models::{self as fb_models, FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
 use query::db::Db;
 use regex::Regex;
 use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::debug;
 
-use crossbeam::channel;
-
-use crate::http::{parse_query, CrossbeamSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+use crate::http::{parse_query, AsyncChanSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
+use async_channel as channel;
 
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
@@ -52,10 +49,7 @@ pub(crate) async fn ping(req: Request<Body>) -> Result<Response<Body>, Error> {
         Some(v) if !v.is_empty() && v != "0" || v != "false" => http::Response::builder()
             .body(Body::from(format!("{{ \"version\" = {} }}", "0.0.1")))
             .unwrap(),
-        _ => http::Response::builder()
-            .status(204)
-            .body(Body::empty())
-            .unwrap(),
+        _ => http::Response::builder().status(204).body(Body::empty()).unwrap(),
     };
 
     Ok(resp)
@@ -93,8 +87,8 @@ pub(crate) async fn write_line_protocol(
         buffer.extend_from_slice(chunk.as_ref());
     }
     let lines = String::from_utf8(buffer).map_err(|_| Error::NotUtf8)?;
-    let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_millis())
-        .context(ParseLineProtocolSnafu)?;
+    let line_protocol_lines =
+        line_protocol_to_lines(&lines, Local::now().timestamp_millis()).context(ParseLineProtocolSnafu)?;
     debug!("Write request: {:?}", line_protocol_lines);
     let points = parse_lines_to_points(&db, &line_protocol_lines)?;
 
@@ -104,7 +98,8 @@ pub(crate) async fn write_line_protocol(
     let (tx, rx) = oneshot::channel();
     sender
         .send(tskv::Task::WritePoints { req, tx })
-        .context(CrossbeamSendSnafu)?; //CrossbeamSendSnafu  ChannelSendSnafu
+        .await
+        .context(AsyncChanSendSnafu)?;
 
     // Receive Response from handler
     let _ = match rx.await {
@@ -113,10 +108,7 @@ pub(crate) async fn write_line_protocol(
         Err(err) => return Err(Error::ChannelReceive { source: err }),
     };
 
-    let resp = http::Response::builder()
-        .status(204)
-        .body(Body::empty())
-        .unwrap();
+    let resp = http::Response::builder().status(204).body(Body::empty()).unwrap();
     Ok(resp)
 }
 
@@ -159,9 +151,7 @@ pub(crate) async fn query(req: Request<Body>, database: Arc<Db>) -> Result<Respo
 
     let resp_msg = format!("{}", pretty_format_batches(&record_batches).unwrap());
 
-    let resp = http::Response::builder()
-        .body(Body::from(resp_msg))
-        .unwrap();
+    let resp = http::Response::builder().body(Body::from(resp_msg)).unwrap();
     Ok(resp)
 }
 
@@ -189,11 +179,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
                             &v[..v.len() - 1]
                                 .parse::<i64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!(
-                                        "Value '{}' is not valid i64: {}",
-                                        v,
-                                        e.to_string()
-                                    ),
+                                    reason: format!("Value '{}' is not valid i64: {}", v, e.to_string()),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -205,11 +191,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
                             &v[..v.len() - 1]
                                 .parse::<u64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!(
-                                        "Value '{}' is not valid u64: {}",
-                                        v,
-                                        e.to_string()
-                                    ),
+                                    reason: format!("Value '{}' is not valid u64: {}", v, e.to_string()),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -221,38 +203,22 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
                             &v[..]
                                 .parse::<f64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!(
-                                        "Value '{}' is not valid f64: {}",
-                                        v,
-                                        e.to_string()
-                                    ),
+                                    reason: format!("Value '{}' is not valid f64: {}", v, e.to_string()),
                                 })?
                                 .to_be_bytes(),
                         ),
                     )
                 }
             } else if STRING_PATTERN.is_match(v) {
-                (
-                    fb_models::FieldType::String,
-                    fbb.create_vector(v.as_bytes()),
-                )
+                (fb_models::FieldType::String, fbb.create_vector(v.as_bytes()))
             } else {
                 let vl = v.to_lowercase();
                 if TRUE_PATTERN.is_match(&vl) {
-                    (
-                        fb_models::FieldType::Boolean,
-                        fbb.create_vector(&[1_u8][..]),
-                    )
+                    (fb_models::FieldType::Boolean, fbb.create_vector(&[1_u8][..]))
                 } else if FALSE_PATTERN.is_match(&vl) {
-                    (
-                        fb_models::FieldType::Boolean,
-                        fbb.create_vector(&[0_u8][..]),
-                    )
+                    (fb_models::FieldType::Boolean, fbb.create_vector(&[0_u8][..]))
                 } else {
-                    (
-                        fb_models::FieldType::Unknown,
-                        fbb.create_vector(v.as_bytes()),
-                    )
+                    (fb_models::FieldType::Unknown, fbb.create_vector(v.as_bytes()))
                 }
             };
             let mut field_builder = FieldBuilder::new(&mut fbb);

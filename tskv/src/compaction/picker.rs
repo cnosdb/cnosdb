@@ -9,7 +9,9 @@ use std::{
     },
 };
 
-use chrono::{DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{
+    DateTime, Datelike, Duration, DurationRound, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc,
+};
 use lazy_static::lazy_static;
 use models::Timestamp;
 use parking_lot::RwLock;
@@ -20,7 +22,7 @@ use crate::{
     compaction::CompactReq,
     direct_io::File,
     error::Result,
-    kv_option::TseriesFamOpt,
+    kv_option::{Options, StorageOptions},
     tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
     LevelId, TimeRange, TseriesFamilyId,
 };
@@ -47,6 +49,34 @@ impl Picker for LevelCompactionPicker {
         //!    max_compact_size.
         //! 5. Build CompactReq using **version**, picked level and picked files.
 
+        info!(
+            "Picker: Version info: [ {} ]",
+            version
+                .levels_info()
+                .iter()
+                .enumerate()
+                .map(|(i, lvl)| {
+                    format!(
+                        "Level-{}: files: [ {} ]",
+                        i,
+                        lvl.files
+                            .iter()
+                            .map(|f| format!(
+                                "{}(C:{}, {}-{}, {} B)",
+                                f.file_id(),
+                                if f.is_compacting() { "Y" } else { "N" },
+                                f.time_range().min_ts,
+                                f.time_range().max_ts,
+                                f.size()
+                            ))
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )
+                })
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
+
         let level_infos = version.levels_info();
 
         // Pick a level to compact with level 0
@@ -54,21 +84,24 @@ impl Picker for LevelCompactionPicker {
         let out_level;
 
         if let Some((start_lvl, out_lvl)) = self.pick_level(level_infos) {
+            info!("Picker: picked level: {} to {}", start_lvl, out_lvl);
             level_start = &level_infos[start_lvl as usize];
             out_level = out_lvl;
         } else {
+            info!("Picker: picked level: None");
             return None;
         }
-        let max_compact_size = version.ts_family_opt.level_file_size(out_level);
+        let max_compact_size = version.storage_opt.level_file_size(out_level);
 
         // Pick selected level files.
         let mut picking_files: Vec<Arc<ColumnFile>> = Vec::new();
-        let (mut picking_files_size, picking_time_range) = if level_start.files.len() > 1 {
+        let (mut picking_files_size, picking_time_range) = if level_start.files.is_empty() {
+            info!("Picker: picked files: None");
+            return None;
+        } else {
             let mut files = level_start.files.clone();
             files.sort_by(Self::compare_column_file);
             Self::pick_files(files, max_compact_size, &mut picking_files)
-        } else {
-            return None;
         };
 
         // Pick level 0 files.
@@ -89,24 +122,32 @@ impl Picker for LevelCompactionPicker {
             file.mark_compaction();
         }
 
-        let mut log_buf = "Picker: Picked column files:\n".to_string();
-        for f in picking_files.iter() {
-            log_buf.push_str(
-                format!(
-                    "Level-{} | File-{} | {}-{}\n",
-                    f.level(),
-                    f.file_id(),
-                    f.time_range().min_ts,
-                    f.time_range().max_ts
-                )
-                .as_str(),
-            );
+        if picking_files.len() <= 1 {
+            info!("Picker: picked files: None");
+            return None;
         }
-        info!(log_buf);
+
+        info!(
+            "Picker: Picked files: [ {} ]",
+            picking_files
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                        f.level(),
+                        f.file_id(),
+                        f.time_range().min_ts,
+                        f.time_range().max_ts
+                    )
+                })
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
 
         Some(CompactReq {
             ts_family_id: version.ts_family_id,
-            ts_family_opt: version.ts_family_opt.clone(),
+            database: version.database.clone(),
+            storage_opt: version.storage_opt.clone(),
             files: picking_files,
             version: version.clone(),
             out_level,
@@ -141,9 +182,13 @@ impl LevelCompactionPicker {
         }
     }
 
-    fn pick_level_1(&self, ts_family_opt: &TseriesFamOpt, levels: &[LevelInfo]) -> Option<(LevelId, LevelId)> {
+    fn pick_level_1(
+        &self,
+        storage_opt: &StorageOptions,
+        levels: &[LevelInfo],
+    ) -> Option<(LevelId, LevelId)> {
         let mut ctx = LevelCompatContext::default();
-        ctx.cal_score(levels, ts_family_opt);
+        ctx.cal_score(levels, storage_opt);
         ctx.pick_level()
     }
 
@@ -162,9 +207,10 @@ impl LevelCompactionPicker {
         }
 
         // Level score context: Vec<(level, level_size, compacting_files in level, level_weight, level_score)>
-        let mut level_scores: Vec<(LevelId, u64, usize, f64, f64)> = Vec::with_capacity(levels.len());
+        let mut level_scores: Vec<(LevelId, u64, usize, f64, f64)> =
+            Vec::with_capacity(levels.len());
         for lvl in levels.iter() {
-            if lvl.level == 0 || lvl.cur_size == 0 {
+            if lvl.level == 0 || lvl.cur_size == 0 || lvl.files.len() <= 1 {
                 continue;
             }
             let mut compacting_files = 0_usize;
@@ -174,12 +220,17 @@ impl LevelCompactionPicker {
                 }
             }
             let level_weight = Self::level_weight(lvl.level);
-            let level_score = if compacting_files == 0 {
-                (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64 / (lvl.max_size as f64)
-            } else {
-                0.0
-            };
-            level_scores.push((lvl.level, lvl.cur_size, compacting_files, level_weight, level_score));
+
+            let level_score = (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
+                / (lvl.max_size as f64 + 10000.0 * level_weight * compacting_files as f64);
+
+            level_scores.push((
+                lvl.level,
+                lvl.cur_size,
+                compacting_files,
+                level_weight,
+                level_score,
+            ));
         }
 
         if level_scores.is_empty() {
@@ -187,11 +238,14 @@ impl LevelCompactionPicker {
         }
         level_scores.sort_by(|a, b| a.4.partial_cmp(&b.4).expect("a NaN score").reverse());
 
-        let mut log_buf = "Picker: Calculate level scores:\n".to_string();
-        for lvl_score in level_scores.iter() {
-            log_buf.push_str(format!("Level-{} | {}\n", lvl_score.0, lvl_score.4).as_str());
-        }
-        info!(log_buf);
+        info!(
+            "Picker: Calculate level scores: [ {} ]",
+            level_scores
+                .iter()
+                .map(|lc| format!("{{ Level-{}: {} }}", lc.0, lc.4))
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
 
         level_scores.first().map(|lvl_score| {
             if lvl_score.0 == 4 {
@@ -243,7 +297,7 @@ struct LevelCompatContext {
 }
 
 impl LevelCompatContext {
-    fn cal_score(&mut self, level_infos: &[LevelInfo], opts: &TseriesFamOpt) {
+    fn cal_score(&mut self, level_infos: &[LevelInfo], storage_opt: &StorageOptions) {
         let mut level0_being_compact = false;
         for t in &level_infos[0].files {
             if t.is_compacting() {
@@ -251,11 +305,11 @@ impl LevelCompatContext {
                 break;
             }
         }
-        let l0_size = opts.base_file_size;
+        let l0_size = storage_opt.base_file_size;
         let base_level = 0;
 
         if !level0_being_compact {
-            let score = level_infos[0].files.len() as f64 / opts.compact_trigger as f64;
+            let score = level_infos[0].files.len() as f64 / storage_opt.compact_trigger as f64;
             self.level_scores.push((
                 0,
                 f64::max(
@@ -279,8 +333,13 @@ impl LevelCompatContext {
     }
 
     fn pick_level(&mut self) -> Option<(u32, u32)> {
-        self.level_scores
-            .sort_by(|a, b| if a.1 > b.1 { Ordering::Less } else { Ordering::Greater });
+        self.level_scores.sort_by(|a, b| {
+            if a.1 > b.1 {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        });
 
         println!("==========Debug(pick_level)1==========");
         println!("Calculate level scores:");
@@ -307,7 +366,7 @@ impl LevelCompatContext {
     fn pick_files(
         &self,
         level_infos: &[LevelInfo; 5],
-        opts: &TseriesFamOpt,
+        storage_opt: &StorageOptions,
         level: u32,
         output_level: u32,
     ) -> Option<(u32, Vec<Arc<ColumnFile>>)> {
@@ -318,7 +377,7 @@ impl LevelCompatContext {
         let mut ts_min = i64::MAX;
         let mut ts_max = i64::MIN;
         let mut file_size = 0;
-        let max_size = opts.level_file_size(output_level);
+        let max_size = storage_opt.level_file_size(output_level);
         let lvl_info = &level_infos[level as usize];
         for file in &lvl_info.files {
             file_size += file.size();
@@ -342,25 +401,19 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        kv_option::TseriesFamOpt,
+        file_utils::make_tsm_file_name,
+        kv_option::{Options, StorageOptions},
         memcache::MemCache,
         tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
         TimeRange,
     };
 
-    fn create_options(tsm_dir: &str) -> Arc<TseriesFamOpt> {
-        Arc::new(TseriesFamOpt {
-            base_file_size: 16 * 1024 * 1024,         // 16 MiB: 16777216
-            max_compact_size: 2 * 1024 * 1024 * 1024, // 2 GiB: 2147483648
-            tsm_dir: tsm_dir.to_string(),
-            max_level: 4,
-            level_ratio: 16_f64,
-            compact_trigger: 4,
-            delta_dir: "/tmp/test/picker_delta".to_string(),
-            index_path: "/tmp/test/index_dir".to_string(),
-            max_memcache_size: 128 * 1024 * 1024,
-            max_immemcache_num: 4,
-        })
+    fn create_options(base_dir: String) -> Arc<Options> {
+        let dir = "../config/config.toml";
+        let mut config = config::get_config(dir);
+        config.storage.path = base_dir;
+        let opt = Options::from(&config);
+        Arc::new(opt)
     }
 
     /// Returns a TseriesFamily by TseriesFamOpt and levels_sketch.
@@ -377,11 +430,14 @@ mod test {
     ///   - size
     ///   - being_compact
     fn create_tseries_family(
-        tsf_opt: Arc<TseriesFamOpt>,
+        database: String,
+        opt: Arc<Options>,
         levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)>,
     ) -> TseriesFamily {
-        let mut level_infos = LevelInfo::init_levels(tsf_opt.clone());
+        let mut level_infos = LevelInfo::init_levels(database.clone(), opt.storage.clone());
         let mut max_level_ts = 0_i64;
+        let ts_family_id = 0;
+        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         for lvl_desc in levels_sketch.iter() {
             max_level_ts = max_level_ts.max(lvl_desc.2);
             let mut col_files = Vec::new();
@@ -394,7 +450,7 @@ mod test {
                     TimeRange::new(file_desc.1, file_desc.2),
                     file_desc.3,
                     lvl_desc.0 == 0,
-                    tsf_opt.clone(),
+                    make_tsm_file_name(&tsm_dir, file_desc.0),
                 );
                 if file_desc.4 {
                     col.mark_compaction();
@@ -403,11 +459,12 @@ mod test {
             }
             level_infos[lvl_desc.0 as usize] = LevelInfo {
                 files: col_files,
+                database: database.clone(),
                 tsf_id: 0,
-                tsf_opt: tsf_opt.clone(),
+                storage_opt: opt.storage.clone(),
                 level: lvl_desc.0,
                 cur_size,
-                max_size: tsf_opt.level_file_size(lvl_desc.0),
+                max_size: opt.storage.level_file_size(lvl_desc.0),
                 time_range: TimeRange::new(lvl_desc.1, lvl_desc.2),
             };
         }
@@ -415,7 +472,7 @@ mod test {
         let version = Arc::new(Version::new(
             1,
             "version_1".to_string(),
-            tsf_opt.clone(),
+            opt.storage.clone(),
             1,
             level_infos,
             1000,
@@ -426,7 +483,8 @@ mod test {
             "ts_family_1".to_string(),
             MemCache::new(1, 1000, 1),
             version,
-            tsf_opt,
+            opt.cache.clone(),
+            opt.storage.clone(),
         )
     }
 
@@ -436,7 +494,7 @@ mod test {
         //! In this case, Level 2, and serial files in Level 0 will be picked,
         //! and compact to Level 3.
         let dir = "/tmp/test/pick/1";
-        let tsf_opt = create_options(dir);
+        let opt = create_options(dir.to_string());
 
         #[rustfmt::skip]
         let levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)> = vec![
@@ -450,24 +508,24 @@ mod test {
                 (8, 35001, 36000, 1000, false),
                 (9, 34501, 35500, 1000, true),
                 (10, 35001, 36000, 1000, true),
-            ]),
+            ]), // 0.00019
             (2, 30001, 34000, vec![
                 (5, 30001, 32000, 2000, false),
                 (6, 32001, 34000, 2000, false),
-            ]),
+            ]), // 0.00002
             (3, 20001, 30000, vec![
                 (3, 20001, 25000, 5000, false),
                 (4, 25001, 30000, 5000, false),
-            ]),
+            ]), // 0.00002
             (4, 1, 20000, vec![
                 (1, 1, 10000, 10000, false),
                 (2, 10001, 20000, 10000, false),
-            ]),
+            ]), // 0.00001
         ];
 
-        let tsf = create_tseries_family(tsf_opt, levels_sketch);
+        let tsf = create_tseries_family("dba".to_string(), opt, levels_sketch);
         let compact_req = tsf.pick_compaction().unwrap();
-        assert_eq!(compact_req.out_level, 3);
-        assert_eq!(compact_req.files.len(), 3);
+        assert_eq!(compact_req.out_level, 2);
+        assert_eq!(compact_req.files.len(), 2);
     }
 }

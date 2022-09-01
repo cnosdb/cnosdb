@@ -10,11 +10,11 @@ use protos::{kv_service::WritePointsRpcRequest, models as fb_models, models_help
 use tskv::{engine::Engine, error, TsKv};
 
 async fn get_tskv() -> TsKv {
-    let mut global_config = (*config::get_config("../config/config.toml")).clone();
-    global_config.wal_config_dir = "/tmp/test_bench/wal".to_string();
+    let mut global_config = config::get_config("../config/config.toml");
+    global_config.wal.path = "/tmp/test_bench/wal".to_string();
     let opt = tskv::kv_option::Options::from(&global_config);
 
-    TsKv::open(opt, global_config.tsfamily_num).await.unwrap()
+    TsKv::open(opt).await.unwrap()
 }
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {

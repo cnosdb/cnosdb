@@ -19,7 +19,7 @@ use crate::{
     error::{self, Error, Result},
     file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
-    kv_option::TseriesFamOpt,
+    kv_option::Options,
     memcache::{MemCache, MemEntry},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
@@ -30,8 +30,8 @@ use crate::{
 
 pub struct FlushTask {
     mems: Vec<Arc<RwLock<MemCache>>>,
-    meta: CompactMeta,
     tsf_id: TseriesFamilyId,
+    kernel: Arc<GlobalContext>,
     path_tsm: PathBuf,
     path_delta: PathBuf,
 }
@@ -40,25 +40,20 @@ impl FlushTask {
     pub fn new(
         mems: Vec<Arc<RwLock<MemCache>>>,
         tsf_id: TseriesFamilyId,
+        kernel: Arc<GlobalContext>,
         path_tsm: PathBuf,
         path_delta: PathBuf,
     ) -> Self {
         Self {
             mems,
-            meta: CompactMeta::default(),
             tsf_id,
+            kernel,
             path_tsm,
             path_delta,
         }
     }
 
-    pub async fn run(
-        &mut self,
-        version: Arc<Version>,
-        kernel: Arc<GlobalContext>,
-        edits: &mut Vec<VersionEdit>,
-        cf_opt: Arc<TseriesFamOpt>,
-    ) -> Result<()> {
+    pub async fn run(&mut self, version: Arc<Version>, edits: &mut Vec<VersionEdit>) -> Result<()> {
         let mut mem_guard = vec![];
         for i in self.mems.iter() {
             mem_guard.push(i.write());
@@ -82,91 +77,92 @@ impl FlushTask {
         }
 
         let (mut min_ts, mut max_ts) = (i64::MAX, i64::MIN);
-        let block_set_delta = build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
+        let block_set_delta =
+            build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
         // build tsm file
         if !block_set_delta.is_empty() {
-            kernel.file_id_next();
-            self.meta.file_id = kernel.file_id();
-            let tmp_meta = CompactMeta {
-                file_id: 0,
-                file_size: 0,
-                tsf_id: self.tsf_id,
-                min_ts,
-                max_ts,
-                level: 0,
-                high_seq,
-                low_seq,
-                is_delta: true,
-            };
-            update_meta(
-                block_set_delta,
-                tsm::MAX_BLOCK_VALUES,
-                &self.path_delta,
-                &mut self.meta,
-                &tmp_meta,
-            )?;
-            append_meta_to_version_edits(&self.meta, edits, version.max_level_ts);
+            let mut meta = self.write_block_set(block_set_delta, tsm::MAX_BLOCK_VALUES, true)?;
+            meta.low_seq = low_seq;
+            meta.high_seq = high_seq;
+            let max_level_ts = meta.max_ts.max(version.max_level_ts);
+            let mut edit = VersionEdit::new();
+            edit.add_file(meta, max_level_ts);
+            edits.push(edit);
         }
+
+        // Write tsm files.
         (min_ts, max_ts) = (i64::MAX, i64::MIN);
         let block_set = build_block_set(field_size, field_map, &mut min_ts, &mut max_ts);
         if !block_set.is_empty() {
-            kernel.file_id_next();
-            self.meta.file_id = kernel.file_id();
-            let tmp_meta = CompactMeta {
-                file_id: 0,
-                file_size: 0,
-                tsf_id: self.tsf_id,
-                min_ts,
-                max_ts,
-                level: 1,
-                high_seq,
-                low_seq,
-                is_delta: false,
-            };
-            update_meta(
-                block_set,
-                tsm::MAX_BLOCK_VALUES,
-                &self.path_tsm,
-                &mut self.meta,
-                &tmp_meta,
-            )?;
-            append_meta_to_version_edits(&self.meta, edits, version.max_level_ts);
+            let mut meta = self.write_block_set(block_set, tsm::MAX_BLOCK_VALUES, false)?;
+            meta.low_seq = low_seq;
+            meta.high_seq = high_seq;
+            let max_level_ts = meta.max_ts.max(version.max_level_ts);
+            let mut edit = VersionEdit::new();
+            edit.add_file(meta, max_level_ts);
+            edits.push(edit);
         }
+
         for i in mem_guard.iter_mut() {
             i.flushed = true;
         }
         Ok(())
     }
-}
 
-fn update_meta(
-    block_set: HashMap<FieldId, DataBlock>,
-    max_block_size: u32,
-    path: &PathBuf,
-    meta: &mut CompactMeta,
-    tmp_meta: &CompactMeta,
-) -> Result<()> {
-    let (fname, fseq) = if tmp_meta.is_delta {
-        (make_delta_file_name(path, meta.file_id), meta.file_id)
-    } else {
-        (make_tsm_file_name(path, meta.file_id), meta.file_id)
-    };
-    // update meta
-    meta.tsf_id = tmp_meta.tsf_id;
-    meta.low_seq = tmp_meta.low_seq;
-    meta.high_seq = tmp_meta.high_seq;
-    meta.max_ts = tmp_meta.max_ts;
-    meta.min_ts = tmp_meta.min_ts;
-    meta.level = tmp_meta.level;
-    meta.file_size = build_tsm_file(fname, fseq, tmp_meta.is_delta, block_set, max_block_size)?;
-    meta.is_delta = tmp_meta.is_delta;
-    Ok(())
-}
+    fn write_block_set(
+        &self,
+        block_set: HashMap<FieldId, DataBlock>,
+        max_block_size: u32,
+        is_delta: bool,
+    ) -> Result<CompactMeta> {
+        let out_level = if is_delta { 0 } else { 1 };
+        let mut tsm_writer = if is_delta {
+            tsm::new_tsm_writer(
+                self.path_delta.clone(),
+                self.kernel.file_id_next(),
+                is_delta,
+                0,
+            )?
+        } else {
+            tsm::new_tsm_writer(
+                self.path_tsm.clone(),
+                self.kernel.file_id_next(),
+                is_delta,
+                0,
+            )?
+        };
 
-fn append_meta_to_version_edits(meta: &CompactMeta, edits: &mut Vec<VersionEdit>, max_level_ts: Timestamp) {
-    let mut edit = VersionEdit::new();
-    edit.add_file(meta.clone(), max_level_ts);
-    edits.push(edit);
+        info!("Flush: File {} been created.", tsm_writer.sequence());
+
+        for (fid, blk) in block_set.into_iter() {
+            let merged_blks = DataBlock::merge_blocks(vec![blk], max_block_size);
+            for merged_blk in merged_blks.iter() {
+                tsm_writer
+                    .write_block(fid, merged_blk)
+                    .context(error::WriteTsmSnafu)?;
+            }
+        }
+        tsm_writer.write_index().context(error::WriteTsmSnafu)?;
+        tsm_writer.flush().context(error::WriteTsmSnafu)?;
+
+        info!(
+            "Flush: File: {} write finished ({} B).",
+            tsm_writer.sequence(),
+            tsm_writer.size()
+        );
+
+        let compact_meta = CompactMeta::new(
+            tsm_writer.sequence(),
+            tsm_writer.size(),
+            self.tsf_id,
+            out_level,
+            tsm_writer.min_ts(),
+            tsm_writer.max_ts(),
+            is_delta,
+        );
+
+        Ok(compact_meta)
+    }
 }
 
 fn build_block_set(
@@ -211,26 +207,6 @@ fn build_block_set(
     block_set
 }
 
-fn build_tsm_file(
-    tsm_path: impl AsRef<Path>,
-    tsm_sequence: u64,
-    is_delta: bool,
-    block_set: HashMap<FieldId, DataBlock>,
-    max_block_size: u32,
-) -> Result<u64> {
-    let file = file_manager::get_file_manager().create_file(tsm_path)?;
-    let mut writer = TsmWriter::open(file.into_cursor(), tsm_sequence, is_delta, 0)?;
-    for (fid, blk) in block_set.into_iter() {
-        let merged_blks = DataBlock::merge_blocks(vec![blk], max_block_size);
-        for merged_blk in merged_blks.iter() {
-            writer.write_block(fid, merged_blk).context(error::WriteTsmSnafu)?;
-        }
-    }
-    writer.write_index().context(error::WriteTsmSnafu)?;
-    writer.flush().context(error::WriteTsmSnafu)?;
-    Ok(writer.size())
-}
-
 pub async fn run_flush_memtable_job(
     reqs: Arc<Mutex<Vec<FlushReq>>>,
     kernel: Arc<GlobalContext>,
@@ -262,13 +238,22 @@ pub async fn run_flush_memtable_job(
             }
 
             // todo: build path by vnode data
-            let cf_opt = tsf.read().options();
-            let path_tsm = cf_opt.tsm_dir(*tsf_id);
-            let path_delta = cf_opt.delta_dir(*tsf_id);
 
-            let mut job = FlushTask::new(memtables.clone(), *tsf_id, path_tsm, path_delta);
-            job.run(tsf.read().version(), kernel.clone(), &mut edits, cf_opt.clone())
-                .await?;
+            let tsf_rlock = tsf.read();
+            let storage_opt = tsf_rlock.storage_opt();
+            let database = tsf_rlock.database();
+            let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
+            let path_delta = storage_opt.delta_dir(&database, *tsf_id);
+            drop(tsf_rlock);
+
+            let mut job = FlushTask::new(
+                memtables.clone(),
+                *tsf_id,
+                kernel.clone(),
+                path_tsm,
+                path_delta,
+            );
+            job.run(tsf.read().version(), &mut edits).await?;
 
             match compact_task_sender.send(*tsf_id) {
                 Err(e) => error!("{}", e),
@@ -276,6 +261,8 @@ pub async fn run_flush_memtable_job(
             }
         }
     }
+
+    info!("Flush: Flush finished, version edits: {:?}", edits);
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
     let task = SummaryTask {
@@ -287,4 +274,31 @@ pub async fn run_flush_memtable_job(
         error!("failed to send Summary task,the edits not be loaded!")
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use std::{collections::HashMap, sync::Arc};
+
+    use models::{FieldId, ValueType};
+    use parking_lot::{Mutex, RwLock};
+    use tokio::sync::mpsc;
+
+    use crate::{
+        compaction::FlushReq, context::GlobalContext, kv_option::Options, memcache::MemCache,
+        tseries_family::FLUSH_REQ, version_set::VersionSet,
+    };
+
+    use super::run_flush_memtable_job;
+
+    fn make_value(value_type: ValueType) -> Vec<u8> {
+        match value_type {
+            ValueType::Float => 1.0_f64.to_be_bytes().as_slice().to_vec(),
+            ValueType::Integer => 1_i64.to_be_bytes().as_slice().to_vec(),
+            ValueType::Unsigned => 1_u64.to_be_bytes().as_slice().to_vec(),
+            ValueType::Boolean => [0_u8].to_vec(),
+            ValueType::String => "HelloWorld".as_bytes().to_vec(),
+            ValueType::Unknown => panic!("Unsuported value type: Unknown"),
+        }
+    }
 }
