@@ -79,12 +79,21 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn delete_series(
+
+    fn drop_database(&self, database: &str) -> Result<()> {
+        todo!()
+    }
+
+    fn drop_table(&self, database: &str, table: &str) -> Result<()> {
+        todo!()
+    }
+
+    fn delete_series(
         &self,
         db: &String,
-        sids: Vec<SeriesId>,
-        min: Timestamp,
-        max: Timestamp,
+        sids: &[SeriesId],
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
     ) -> Result<()> {
         todo!()
     }
