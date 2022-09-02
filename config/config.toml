@@ -1,8 +1,8 @@
 [storage]
 # Directory for summary: $path/summary/
 # Directory for index: $path/index/$database/
-# Directory for tsm: $path/$database/tsm/
-# Directory for delta: $path/$database/delta/
+# Directory for tsm: $path/data/$database/tsm/
+# Directory for delta: $path/data/$database/delta/
 path = 'dev/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4
@@ -19,5 +19,5 @@ path = 'dev/wal'
 sync = true
 
 [cache]
-max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
+max_buffer_size = 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4

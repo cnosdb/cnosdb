@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::HashSet;
 use std::mem::size_of;
 use std::ops::Index;
 use std::path::{self, Path, PathBuf};
@@ -285,10 +286,6 @@ impl DBIndex {
         Ok(())
     }
 
-    pub fn get_series_info_list(&self, sids: &[u64]) -> Vec<SeriesInfo> {
-        todo!()
-    }
-
     pub fn get_series_key(&mut self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         let (hash_id, _) = utils::split_id(sid);
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
@@ -324,9 +321,11 @@ impl DBIndex {
                             utils::encode_inverted_index_key(key.table(), &tag.key, &tag.value);
                         if let Some(data) = self.storage.get(&key)? {
                             let mut id_list = utils::decode_series_id_list(&data)?;
-                            if let Ok(index) = id_list.binary_search(&sid) {
-                                id_list.remove(index);
-                            }
+                            // TODO binary search by low 40 bits
+                            id_list.retain(|x| *x != sid);
+                            // if let Ok(index) = id_list.binary_search(&sid) {
+                            //     id_list.remove(index);
+                            // }
 
                             let data = utils::encode_series_id_list(&id_list);
                             self.storage.set(&key, &data)?;
