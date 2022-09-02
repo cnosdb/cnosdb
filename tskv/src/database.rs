@@ -41,7 +41,7 @@ impl Database {
         Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(&name),
+                .get_db_index(name),
             name: name.to_string(),
             ts_families: HashMap::new(),
             opt,
@@ -166,7 +166,7 @@ impl Database {
             mem_points.push(point);
         }
 
-        return Ok(mem_points);
+        Ok(mem_points)
     }
 
     fn build_index_and_check_type(&self, info: &mut SeriesInfo) -> Result<u64> {
@@ -180,7 +180,7 @@ impl Database {
             .add_series_if_not_exists(info)
             .context(error::IndexErrSnafu)?;
 
-        return Ok(id);
+        Ok(id)
     }
 
     pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
@@ -231,7 +231,7 @@ impl Database {
     }
 
     pub fn get_index(&self) -> Arc<RwLock<db_index::DBIndex>> {
-        return self.index.clone();
+        self.index.clone()
     }
 
     // todo: will delete in cluster version
@@ -328,7 +328,7 @@ pub(crate) async fn delete_table_async(
             };
 
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
-                ts_family.write().delete_cache(&storage_fids, &time_range);
+                ts_family.write().delete_cache(&storage_fids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
                     if let Err(e) = column_file.add_tombstone(&storage_fids, time_range) {

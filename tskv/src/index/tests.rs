@@ -84,7 +84,7 @@ async fn test_index_add_del() {
     }
     println!("Deleted {} series ids.", sids_2.len());
     let sids_3 = index.get_series_id_list(&table, &vec![]).await.unwrap();
-    let remained_sid: HashSet<u64> = HashSet::from_iter(sids_3.iter().map(|sid| *sid));
+    let remained_sid: HashSet<u64> = HashSet::from_iter(sids_3.iter().copied());
     println!(
         "Remained {} series ids after Deleted {} series ids. And remained - deleted = {:?}.",
         deleted_sid.len(),
@@ -158,8 +158,8 @@ async fn test_index_id_list() {
 
     let enc = utils::encode_inverted_index_key(
         &"table_test".to_string(),
-        &"tag".as_bytes(),
-        &"val".as_bytes(),
+        "tag".as_bytes(),
+        "val".as_bytes(),
     );
     assert_eq!(enc, "table_test.tag=val".as_bytes());
 

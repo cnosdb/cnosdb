@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{physical_plan::SendableRecordBatchStream, scheduler::Scheduler};
+use datafusion::scheduler::Scheduler;
 use snafu::ResultExt;
 use spi::query::execution::Output;
 use spi::query::{

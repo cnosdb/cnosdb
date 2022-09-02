@@ -114,16 +114,17 @@ mod tests {
 
         let mut result = db.execute(&query).await.unwrap();
         for ele in result.result().iter_mut() {
-            match ele{
+            match ele {
                 Output::StreamData(data) => {
                     while let Some(next) = data.next().await {
                         let batch = next.unwrap();
                         actual.push(batch);
                     }
                 }
-                Output::Nil(_) => {todo!();}
+                Output::Nil(_) => {
+                    todo!();
+                }
             }
-
         }
 
         let expected = vec![
@@ -157,15 +158,16 @@ mod tests {
                     drop database test; \
                     drop table if exists test; \
                     drop table test; \
-                    ".to_string(),
+                    "
+            .to_string(),
         );
         let mut result = db.execute(&query).await.unwrap();
         for ele in result.result().iter_mut() {
-            match ele{
-                Output::StreamData(data) => {
+            match ele {
+                Output::StreamData(_data) => {
                     panic!("should not happen");
                 }
-                Output::Nil(res) => {
+                Output::Nil(_res) => {
                     println!("sql excuted ok")
                 }
             }

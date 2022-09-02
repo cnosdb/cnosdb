@@ -59,7 +59,7 @@ impl VersionSet {
     }
 
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
-        return &self.dbs;
+        &self.dbs
     }
 
     pub fn get_db(&self, name: &String) -> Option<Arc<RwLock<Database>>> {
@@ -76,7 +76,7 @@ impl VersionSet {
             size += db.read().tsf_num();
         }
 
-        return size;
+        size
     }
 
     pub fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
