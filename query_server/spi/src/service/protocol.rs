@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use datafusion::physical_plan::SendableRecordBatchStream;
+
 
 use crate::catalog::{DEFAULT_CATALOG, DEFAULT_SCHEMA};
 use crate::query::execution::Output;

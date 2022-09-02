@@ -24,7 +24,7 @@ impl IndexEngine {
             panic!(
                 "open database at '{}' failed: {}",
                 index_dir.display(),
-                err.to_string()
+                err
             )
         });
         db.set_merge_operator(concatenate_merge);

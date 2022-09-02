@@ -31,7 +31,7 @@ impl QueryExecution for DropExecution {
             Ok(_) => {
                 Ok(Output::Nil(()))
             }
-            Err(e) => {
+            Err(_e) => {
                 Err(QueryError::Analyzer {
                     err: "drop failed".to_string(),
                 })

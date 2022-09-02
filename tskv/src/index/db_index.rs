@@ -55,7 +55,7 @@ impl DbIndexMgr {
             .entry(db.clone())
             .or_insert_with(|| Arc::new(RwLock::new(DBIndex::new(self.base_path.join(db)))));
 
-        return index.clone();
+        index.clone()
     }
 }
 
@@ -71,7 +71,7 @@ pub struct DBIndex {
 
 impl From<&str> for DBIndex {
     fn from(path: &str) -> Self {
-        DBIndex::new(&path.to_string())
+        DBIndex::new(path)
     }
 }
 
@@ -186,7 +186,7 @@ impl DBIndex {
 
             Ok(())
         } else {
-            return Err(IndexError::NotFoundField);
+            Err(IndexError::NotFoundField)
         }
     }
 

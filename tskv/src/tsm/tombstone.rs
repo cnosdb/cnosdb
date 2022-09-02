@@ -58,7 +58,7 @@ impl TsmTombstone {
         };
         let (tombstones, tomb_size) = if let Some(file) = tomb_accessor.as_ref() {
             let mut tomb = HashMap::new();
-            Self::load_all(&file, &mut tomb)?;
+            Self::load_all(file, &mut tomb)?;
             (tomb, file.len())
         } else {
             (HashMap::new(), 0)
@@ -98,7 +98,7 @@ impl TsmTombstone {
         Ok(Some(Self {
             tombstones: HashMap::new(),
             tomb_size,
-            path: path,
+            path,
             tomb_accessor: Some(file),
         }))
     }
@@ -195,7 +195,7 @@ impl TsmTombstone {
                 field_id: *field_id,
                 time_range: *time_range,
             };
-            Self::write_to(&writer, self.tomb_size, &tomb).map(|s| {
+            Self::write_to(writer, self.tomb_size, &tomb).map(|s| {
                 self.tomb_size += s as u64;
                 self.tombstones
                     .entry(*field_id)

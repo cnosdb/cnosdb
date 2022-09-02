@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use parking_lot::Mutex;
-use snafu::ResultExt;
+
 use tokio::runtime::Runtime;
 
-use models::InMemPoint;
-use protos::{kv_service::WritePointsRpcRequest, models as fb_models, models_helper};
-use tskv::{engine::Engine, error, TsKv};
+
+use protos::{kv_service::WritePointsRpcRequest, models_helper};
+use tskv::{engine::Engine, TsKv};
 
 async fn get_tskv() -> TsKv {
     let mut global_config = config::get_config("../config/config.toml");
@@ -22,20 +22,20 @@ fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
     rt.block_on(tskv.lock().write(request)).unwrap();
 }
 
-fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
-    let rt = Runtime::new().unwrap();
-    let ps = flatbuffers::root::<fb_models::Points>(buf)
-        .context(error::InvalidFlatbufferSnafu)
-        .unwrap();
-    if let Some(inmem_points) = ps.points().map(|points| {
-        points
-            .iter()
-            .map(|p| InMemPoint::from_flatbuffers(&p).unwrap())
-            .collect()
-    }) {
-        rt.block_on(tskv.lock().insert_cache(&1.to_string(), 0, &inmem_points));
-    }
-}
+// fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
+//     let rt = Runtime::new().unwrap();
+//     let ps = flatbuffers::root::<fb_models::Points>(buf)
+//         .context(error::InvalidFlatbufferSnafu)
+//         .unwrap();
+//     if let Some(inmem_points) = ps.points().map(|points| {
+//         points
+//             .iter()
+//             .map(|p| InMemPoint::from_flatbuffers(&p).unwrap())
+//             .collect()
+//     }) {
+//         rt.block_on(tskv.lock().insert_cache(&1.to_string(), 0, &inmem_points));
+//     }
+// }
 
 fn big_write(c: &mut Criterion) {
     c.bench_function("big_write", |b| {
@@ -43,7 +43,7 @@ fn big_write(c: &mut Criterion) {
             let rt = Runtime::new().unwrap();
             let tskv = rt.block_on(get_tskv());
             for _i in 0..50 {
-                let database = "db".to_string();
+                let _database = "db".to_string();
                 let mut fbb = flatbuffers::FlatBufferBuilder::new();
                 let points = models_helper::create_big_random_points(&mut fbb, 10);
                 fbb.finish(points, None);
@@ -51,7 +51,6 @@ fn big_write(c: &mut Criterion) {
 
                 let request = WritePointsRpcRequest {
                     version: 1,
-                    database,
                     points,
                 };
                 rt.block_on(tskv.write(request)).unwrap();
@@ -63,7 +62,7 @@ fn big_write(c: &mut Criterion) {
 fn run(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let tskv = Arc::new(Mutex::new(rt.block_on(get_tskv())));
-    let database = "db".to_string();
+    let _database = "db".to_string();
     let mut fbb = flatbuffers::FlatBufferBuilder::new();
     let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
     fbb.finish(points, None);
@@ -71,7 +70,6 @@ fn run(c: &mut Criterion) {
     let points = points_str.to_vec();
     let request = WritePointsRpcRequest {
         version: 1,
-        database,
         points,
     };
 
@@ -80,9 +78,9 @@ fn run(c: &mut Criterion) {
         b.iter(|| test_write(tskv.clone(), request.clone()))
     });
     // maybe 200 us
-    c.bench_function("insert_cache", |b| {
-        b.iter(|| test_insert_cache(tskv.clone(), &(*points_str)))
-    });
+    // c.bench_function("insert_cache", |b| {
+    //     b.iter(|| test_insert_cache(tskv.clone(), &(*points_str)))
+    // });
 }
 
 criterion_group!(benches, big_write);

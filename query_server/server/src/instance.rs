@@ -162,10 +162,10 @@ mod tests {
         let mut result = db.execute(&query).await.unwrap();
         for ele in result.result().iter_mut() {
             match ele{
-                Output::StreamData(data) => {
+                Output::StreamData(_data) => {
                     panic!("should not happen");
                 }
-                Output::Nil(res) => {
+                Output::Nil(_res) => {
                     println!("sql excuted ok")
                 }
             }

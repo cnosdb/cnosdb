@@ -342,7 +342,7 @@ impl TsKv {
 
     // Compact TSM files in database into bigger TSM files.
     pub async fn compact(&self, database: &String) {
-        if let Some(db) = self.version_set.read().get_db(&database) {
+        if let Some(db) = self.version_set.read().get_db(database) {
             // TODO: stop current and prevent next flush and compaction.
 
             for (ts_family_id, ts_family) in db.read().ts_families() {
@@ -547,7 +547,7 @@ impl Engine for TsKv {
 
                 ts_family
                     .write()
-                    .delete_cache(&storage_field_ids, &time_range);
+                    .delete_cache(&storage_field_ids, time_range);
 
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
@@ -644,7 +644,7 @@ mod test {
 
             let field_ids: Vec<u32> = table_schema.iter().map(|f| f.field_id() as u32).collect();
             let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
-                tskv.read(database, series_ids.clone(), time_range, field_ids.clone());
+                tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
         }
     }

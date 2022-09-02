@@ -107,7 +107,7 @@ pub fn get_config(path: &str) -> Config {
         Err(err) => panic!(
             "Failed to open configurtion file '{}': {}",
             path,
-            err.to_string()
+            err
         ),
     };
     let mut content = String::new();
@@ -115,7 +115,7 @@ pub fn get_config(path: &str) -> Config {
         panic!(
             "Failed to read configurtion file '{}': {}",
             path,
-            err.to_string()
+            err
         );
     }
     let config: Config = match toml::from_str(&content) {
@@ -123,7 +123,7 @@ pub fn get_config(path: &str) -> Config {
         Err(err) => panic!(
             "Failed to parse configurtion file '{}': {}",
             path,
-            err.to_string()
+            err
         ),
     };
     info!("Start with configuration: {:#?}", config);
@@ -154,6 +154,6 @@ max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
 "#;
 
-    let config: Config = toml::from_str(&config_str).unwrap();
+    let config: Config = toml::from_str(config_str).unwrap();
     dbg!(config);
 }

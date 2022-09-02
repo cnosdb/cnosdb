@@ -172,7 +172,7 @@ impl ColumnFile {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let mut tombstone = TsmTombstone::open_for_write(dir, self.file_id)?;
-        tombstone.add_range(&field_ids, time_range)?;
+        tombstone.add_range(field_ids, time_range)?;
         tombstone.flush()?;
         Ok(())
     }
@@ -455,13 +455,12 @@ impl Version {
     ) -> Vec<Arc<ColumnFile>> {
         self.levels_info
             .iter()
-            .filter(|level| level.time_range.overlaps(&time_range))
+            .filter(|level| level.time_range.overlaps(time_range))
             .flat_map(|level| {
                 level.files.iter().filter(|f| {
-                    f.time_range().overlaps(&time_range) && f.contains_any_field_id(&field_ids)
+                    f.time_range().overlaps(time_range) && f.contains_any_field_id(field_ids)
                 })
-            })
-            .map(|f| f.clone())
+            }).cloned()
             .collect()
     }
 
@@ -910,7 +909,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(database.clone(), 3, opt.storage.clone()),
-                LevelInfo::init(database.clone(), 4, opt.storage.clone()),
+                LevelInfo::init(database, 4, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
@@ -991,7 +990,7 @@ mod test {
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(database.clone(), 3, opt.storage.clone()),
-                LevelInfo::init(database.clone(), 4, opt.storage.clone()),
+                LevelInfo::init(database, 4, opt.storage.clone()),
             ],
         };
         let mut version_edits = Vec::new();
