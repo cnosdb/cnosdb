@@ -495,14 +495,12 @@ impl Engine for TsKv {
         }
 
         let idx_dir = self.options.storage.index_dir(&database);
-        let db_dir = self.options.storage.database_dir(&database);
-        match std::fs::remove_dir_all(idx_dir) {
-            Ok(_) => {}
-            Err(_) => {}
+        if let Err(e) = std::fs::remove_dir_all(&idx_dir) {
+            error!("Failed to remove dir '{}'", idx_dir.display());
         }
-        match std::fs::remove_dir_all(db_dir) {
-            Ok(_) => {}
-            Err(_) => {}
+        let db_dir = self.options.storage.database_dir(&database);
+        if let Err(e) = std::fs::remove_dir_all(&db_dir) {
+            error!("Failed to remove dir '{}'", db_dir.display());
         }
 
         Ok(())
@@ -518,7 +516,7 @@ impl Engine for TsKv {
         let version_set = self.version_set.clone();
         tokio::spawn(async move {
             info!("Executing drop table: {}.{}", &database, &table);
-            delete_table(options, version_set, database, table, cb).await;
+            database::delete_table_async(database, table, version_set, cb).await;
         });
         let recv_ret =
             match std::thread::spawn(|| rx.blocking_recv().context(error::ReceiveSnafu)).join() {
@@ -552,30 +550,8 @@ impl Engine for TsKv {
                     .delete_cache(&storage_field_ids, &time_range);
 
                 let version = ts_family.read().super_version();
-                let tsm_path = self
-                    .options
-                    .storage
-                    .tsm_dir(database.as_str(), *ts_family_id);
-                let delta_path = self
-                    .options
-                    .storage
-                    .delta_dir(database.as_str(), *ts_family_id);
-                for column_file in version
-                    .version
-                    .levels_info()
-                    .iter()
-                    .filter(|level| level.time_range.overlaps(&time_range))
-                    .flat_map(|level| {
-                        level.files.iter().filter(|f| {
-                            f.time_range().overlaps(&time_range)
-                                && f.contains_any_field_id(&storage_field_ids)
-                        })
-                    })
-                {
-                    let mut tombstone =
-                        TsmTombstone::open_for_write(&tsm_path, column_file.file_id())?;
-                    tombstone.add_range(&storage_field_ids, time_range)?;
-                    tombstone.flush()?;
+                for column_file in version.version.column_files(&storage_field_ids, time_range) {
+                    column_file.add_tombstone(&storage_field_ids, time_range)?;
                 }
 
                 // TODO Start next flush or compaction.
@@ -626,138 +602,6 @@ impl Engine for TsKv {
     }
 }
 
-async fn delete_table(
-    options: Arc<Options>,
-    version_set: Arc<RwLock<VersionSet>>,
-    database: String,
-    table: String,
-    cb: oneshot::Sender<Result<()>>,
-) {
-    if let Some(db) = version_set.read().get_db(&database) {
-        let index = db.read().get_index();
-        let sids = match index
-            .read()
-            .get_series_id_list(&table, &vec![])
-            .await
-            .context(error::IndexErrSnafu)
-        {
-            Ok(x) => x,
-            Err(e) => {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
-        };
-
-        let mut index_wlock = index.write();
-
-        info!(
-            "Drop table: deleting index in table: {}.{}",
-            &database, &table
-        );
-        let field_infos = match index_wlock
-            .get_table_schema(&table)
-            .context(error::IndexErrSnafu)
-        {
-            Ok(x) => x,
-            Err(e) => {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
-        };
-        if let Err(e) = index_wlock
-            .del_table_schema(&table)
-            .await
-            .context(error::IndexErrSnafu)
-        {
-            cb.send(Err(e)).expect("send to oneshot receiver");
-            return;
-        }
-        for sid in sids.iter() {
-            if let Err(e) = index_wlock
-                .del_series_info(*sid)
-                .await
-                .context(error::IndexErrSnafu)
-            {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
-        }
-
-        drop(index_wlock);
-
-        info!(
-            "Drop table: delete series in table: {}.{}",
-            &database, &table
-        );
-        if let Some(fields) = field_infos {
-            let fids: Vec<u64> = fields.iter().map(|f| f.field_id()).collect();
-            if let Err(e) = delete_series(
-                options,
-                version_set.clone(),
-                &database,
-                &sids,
-                &fids,
-                &TimeRange {
-                    min_ts: Timestamp::MIN,
-                    max_ts: Timestamp::MAX,
-                },
-            ) {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
-        }
-    }
-    cb.send(Ok(())).expect("send to oneshot receiver");
-}
-
-fn delete_series(
-    options: Arc<Options>,
-    version_set: Arc<RwLock<VersionSet>>,
-    database: &String,
-    series_ids: &[SeriesId],
-    field_ids: &[FieldId],
-    time_range: &TimeRange,
-) -> Result<()> {
-    let storage_field_ids: Vec<u64> = series_ids
-        .iter()
-        .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
-        .collect();
-
-    if let Some(db) = version_set.read().get_db(database) {
-        for (ts_family_id, ts_family) in db.read().ts_families().iter() {
-            // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
-
-            ts_family
-                .write()
-                .delete_cache(&storage_field_ids, &time_range);
-
-            let version = ts_family.read().super_version();
-            let tsm_path = options.storage.tsm_dir(database.as_str(), *ts_family_id);
-            let delta_path = options.storage.delta_dir(database.as_str(), *ts_family_id);
-            for column_file in version
-                .version
-                .levels_info()
-                .iter()
-                .filter(|level| level.time_range.overlaps(&time_range))
-                .flat_map(|level| {
-                    level.files.iter().filter(|f| {
-                        f.time_range().overlaps(&time_range)
-                            && f.contains_any_field_id(&storage_field_ids)
-                    })
-                })
-            {
-                let mut tombstone = TsmTombstone::open_for_write(&tsm_path, column_file.file_id())?;
-                tombstone.add_range(&storage_field_ids, time_range)?;
-                tombstone.flush()?;
-            }
-
-            // TODO Start next flush or compaction.
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
@@ -806,7 +650,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_drop_table() {
         let base_dir = "/tmp/test/tskv/drop_table".to_string();
         let _ = std::fs::remove_dir_all(&base_dir);
@@ -841,7 +684,6 @@ mod test {
                     .get_series_id_list(&database, &table, &vec![])
                     .await
                     .unwrap();
-                // Fixme: series_ids for table seems not to be cleared after droping the table.
                 assert!(series_ids.is_empty());
             }
         });
@@ -875,6 +717,9 @@ mod test {
             tskv.drop_database(&database).unwrap();
 
             {
+                let db = tskv.version_set.read().get_db(&database);
+                assert!(db.is_none());
+
                 let table_schema = tskv.get_table_schema(&database, &table).unwrap();
                 assert!(table_schema.is_none());
 

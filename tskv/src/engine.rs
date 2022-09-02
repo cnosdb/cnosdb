@@ -79,7 +79,6 @@ impl Engine for MockEngine {
         todo!()
     }
 
-
     fn drop_database(&self, database: &str) -> Result<()> {
         todo!()
     }
