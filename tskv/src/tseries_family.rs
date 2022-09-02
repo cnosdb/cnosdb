@@ -24,7 +24,8 @@ use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
     error::{Error, Result},
-    file_manager, file_utils,
+    file_manager,
+    file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache},
     summary::{CompactMeta, VersionEdit},
@@ -154,6 +155,19 @@ impl ColumnFile {
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
         self.time_range.overlaps(time_range)
     }
+
+    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
+        self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+    }
+
+    pub fn contains_any_field_id(&self, field_ids: &[FieldId]) -> bool {
+        for field_id in field_ids {
+            if self.field_id_bloom_filter.contains(&field_id.to_be_bytes()) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl ColumnFile {
@@ -161,7 +175,7 @@ impl ColumnFile {
         self.deleted.load(Ordering::Acquire)
     }
 
-    pub fn mark_removed(&self) {
+    pub fn mark_deleted(&self) {
         self.deleted.store(true, Ordering::Release);
     }
 
@@ -169,12 +183,26 @@ impl ColumnFile {
         self.compacting.load(Ordering::Acquire)
     }
 
-    pub fn mark_compaction(&self) {
+    pub fn mark_compacting(&self) {
         self.compacting.store(true, Ordering::Release);
     }
+}
 
-    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
-        self.field_id_bloom_filter.contains(&field_id.to_be_bytes())
+impl Drop for ColumnFile {
+    fn drop(&mut self) {
+        debug!("Removing file {}", self.file_id);
+        if self.is_deleted() {
+            let path = self.file_path();
+            if let Err(e) = std::fs::remove_file(&path) {
+                error!(
+                    "Error when removing file {} at '{}': {}",
+                    self.file_id,
+                    path.display(),
+                    e.to_string()
+                );
+            }
+            info!("Removed file {} at '{}", self.file_id, path.display());
+        }
     }
 }
 
@@ -219,10 +247,15 @@ impl LevelInfo {
     }
 
     pub fn push_compact_meta(&mut self, compact_meta: &CompactMeta) {
-        self.files.push(Arc::new(ColumnFile::with_compact_data(
-            compact_meta,
-            self.storage_opt.tsm_dir(&self.database, self.tsf_id),
-        )));
+        let file_path = if compact_meta.is_delta {
+            let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
+            make_delta_file_name(base_dir, compact_meta.file_id)
+        } else {
+            let base_dir = self.storage_opt.tsm_dir(&self.database, self.tsf_id);
+            make_tsm_file_name(base_dir, compact_meta.file_id)
+        };
+        self.files
+            .push(Arc::new(ColumnFile::with_compact_data(compact_meta, file_path)));
         self.tsf_id = compact_meta.tsf_id;
         self.cur_size += compact_meta.file_size;
         self.time_range.max_ts = self.time_range.max_ts.max(compact_meta.max_ts);
@@ -248,12 +281,7 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub fn read_column_file(
-        &self,
-        tf_id: u32,
-        field_id: FieldId,
-        time_range: &TimeRange,
-    ) -> Vec<DataBlock> {
+    pub fn read_column_file(&self, tf_id: u32, field_id: FieldId, time_range: &TimeRange) -> Vec<DataBlock> {
         let mut data = vec![];
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
@@ -315,11 +343,7 @@ impl Version {
     }
 
     /// Creates new Version using current Version and `VersionEdit`s.
-    pub fn copy_apply_version_edits(
-        &self,
-        version_edits: Vec<VersionEdit>,
-        last_seq: Option<u64>,
-    ) -> Version {
+    pub fn copy_apply_version_edits(&self, version_edits: Vec<VersionEdit>, last_seq: Option<u64>) -> Version {
         let mut added_files: HashMap<LevelId, Vec<CompactMeta>> = HashMap::new();
         let mut deleted_files: HashMap<LevelId, HashSet<ColumnFileId>> = HashMap::new();
         for ve in version_edits {
@@ -330,23 +354,19 @@ impl Version {
             }
             if !ve.del_files.is_empty() {
                 ve.del_files.into_iter().for_each(|f| {
-                    deleted_files
-                        .entry(f.level)
-                        .or_insert(HashSet::new())
-                        .insert(f.file_id);
+                    deleted_files.entry(f.level).or_insert(HashSet::new()).insert(f.file_id);
                 });
             }
         }
 
-        let mut new_levels =
-            LevelInfo::init_levels(self.database.clone(), self.storage_opt.clone());
+        let mut new_levels = LevelInfo::init_levels(self.database.clone(), self.storage_opt.clone());
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if let Some(true) = deleted_files
                     .get(&file.level)
                     .map(|file_ids| file_ids.contains(&file.file_id))
                 {
-                    file.mark_removed();
+                    file.mark_deleted();
                     continue;
                 }
                 new_levels[level.level as usize].push_column_file(file.clone());
@@ -403,6 +423,20 @@ impl Version {
 
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
+    }
+
+    pub fn column_files(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Vec<Arc<ColumnFile>> {
+        self.levels_info
+            .iter()
+            .filter(|level| level.time_range.overlaps(&time_range))
+            .flat_map(|level| {
+                level
+                    .files
+                    .iter()
+                    .filter(|f| f.time_range().overlaps(&time_range) && f.contains_any_field_id(&field_ids))
+            })
+            .map(|f| f.clone())
+            .collect()
     }
 
     // todo:
@@ -480,11 +514,7 @@ impl TseriesFamily {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
         let max_level_ts = version.max_level_ts;
-        let delta_mm = Arc::new(RwLock::new(MemCache::new(
-            tf_id,
-            cache_opt.max_buffer_size,
-            seq,
-        )));
+        let delta_mm = Arc::new(RwLock::new(MemCache::new(tf_id, cache_opt.max_buffer_size, seq)));
 
         Self {
             tf_id,
@@ -604,13 +634,8 @@ impl TseriesFamily {
             mems: req_mem,
             wait_req: 0,
         });
-        info!(
-            "flush_req send,now req queue len : {}",
-            FLUSH_REQ.lock().len()
-        );
-        sender
-            .send(FLUSH_REQ.clone())
-            .expect("error send flush req to kvcore");
+        info!("flush_req send,now req queue len : {}", FLUSH_REQ.lock().len());
+        sender.send(FLUSH_REQ.clone()).expect("error send flush req to kvcore");
     }
 
     pub async fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
@@ -630,12 +655,12 @@ impl TseriesFamily {
         }
     }
 
-    pub async fn delete_cache(&self, time_range: &TimeRange) {
-        self.mut_cache.read().delete_data(time_range);
-        self.delta_mut_cache.read().delete_data(time_range);
+    pub fn delete_cache(&self, field_ids: &[FieldId], time_range: &TimeRange) {
+        self.mut_cache.read().delete_data(field_ids, time_range);
+        self.delta_mut_cache.read().delete_data(field_ids, time_range);
 
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_data(time_range);
+            memcache.read().delete_data(field_ids, time_range);
         }
     }
 
@@ -876,10 +901,7 @@ mod test {
         assert_eq!(new_version.max_level_ts, 3150);
 
         let lvl = new_version.levels_info.get(1).unwrap();
-        assert_eq!(
-            lvl.time_range,
-            TimeRange::new(Timestamp::MAX, Timestamp::MIN)
-        );
+        assert_eq!(lvl.time_range, TimeRange::new(Timestamp::MAX, Timestamp::MIN));
         assert_eq!(lvl.files.len(), 0);
 
         let lvl = new_version.levels_info.get(2).unwrap();
@@ -918,10 +940,7 @@ mod test {
         let row_group = RowGroup {
             schema_id: 0,
             schema: vec![0, 1, 2],
-            range: TimeRange {
-                min_ts: 1,
-                max_ts: 100,
-            },
+            range: TimeRange { min_ts: 1, max_ts: 100 },
             rows: vec![RowData {
                 ts: 10,
                 fields: vec![
@@ -932,16 +951,15 @@ mod test {
             }],
         };
         let mut points = HashMap::new();
-        points.insert((0, 1), row_group);
-        tsf.put_points(1, points).await;
+        points.insert((0, 0), row_group);
+        tsf.put_points(0, points).await;
 
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
-        tsf.delete_cache(&TimeRange {
-            min_ts: 0,
-            max_ts: 200,
-        })
-        .await;
-        assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 0);
+        tsf.delete_cache(&[0], &TimeRange { min_ts: 0, max_ts: 200 });
+        let data = tsf.mut_cache.read().get(&0);
+        if let Some(cache) = data {
+            assert_eq!(cache.read().cells.len(), 0);
+        }
     }
 
     // Util function for testing with summary modification.
@@ -988,10 +1006,7 @@ mod test {
         let row_group = RowGroup {
             schema_id: 0,
             schema: vec![0, 1, 2],
-            range: TimeRange {
-                min_ts: 1,
-                max_ts: 100,
-            },
+            range: TimeRange { min_ts: 1, max_ts: 100 },
             rows: vec![RowData {
                 ts: 10,
                 fields: vec![
@@ -1019,8 +1034,7 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
 
-        let version_set: Arc<RwLock<VersionSet>> =
-            Arc::new(RwLock::new(VersionSet::new(opt.clone(), HashMap::new())));
+        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new(opt.clone(), HashMap::new())));
         version_set.write().create_db(&database);
         let db = version_set.write().get_db(&database).unwrap();
 
@@ -1045,14 +1059,7 @@ mod test {
         let version_set = version_set.write();
         let tsf = version_set.get_tsfamily_by_name(&database).unwrap();
         let version = tsf.write().version();
-        version.levels_info[1].read_column_file(
-            ts_family_id,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1].read_column_file(ts_family_id, 0, &TimeRange { max_ts: 0, min_ts: 0 });
 
         let file = version.levels_info[1].files[0].clone();
 
@@ -1062,13 +1069,6 @@ mod test {
         tombstone.flush().unwrap();
         tombstone.load().unwrap();
 
-        version.levels_info[1].read_column_file(
-            0,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1].read_column_file(0, 0, &TimeRange { max_ts: 0, min_ts: 0 });
     }
 }

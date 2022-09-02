@@ -51,13 +51,13 @@ impl StorageConfig {
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
             self.max_compact_size = size.parse::<u64>().unwrap();
         }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_RESIDENT") {
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_RESIDENT") {
             self.dio_max_resident = size.parse::<u64>().unwrap();
         }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_NON_RESIDENT") {
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_NON_RESIDENT") {
             self.dio_max_non_resident = size.parse::<u64>().unwrap();
         }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_PAGE_LEN_SCALE") {
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_PAGE_LEN_SCALE") {
             self.dio_page_len_scale = size.parse::<u64>().unwrap();
         }
     }

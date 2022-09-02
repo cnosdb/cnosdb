@@ -165,6 +165,10 @@ impl SeriesData {
             }
         }
 
+        if entry.field_type == ValueType::Unknown || entry.cells.is_empty() {
+            return None;
+        }
+
         entry.sort();
 
         return Some(Arc::new(RwLock::new(entry)));
@@ -261,11 +265,13 @@ impl MemCache {
         return true;
     }
 
-    pub fn delete_data(&self, range: &TimeRange) {
-        for part in self.partions.iter() {
-            let part = part.read();
-            for (_, item) in part.iter() {
-                item.write().delete_data(range);
+    pub fn delete_data(&self, field_ids: &[FieldId], range: &TimeRange) {
+        for fid in field_ids {
+            let (_, sid) = utils::split_id(*fid);
+            let index = (sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+            if let Some(data) = part.get(&sid) {
+                data.write().delete_data(range);
             }
         }
     }
