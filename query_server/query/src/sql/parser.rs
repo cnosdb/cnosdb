@@ -1,12 +1,14 @@
 use std::collections::VecDeque;
 
+use snafu::ResultExt;
 use spi::query::ast::{DropObject, ExtStatement, ObjectType};
+use spi::query::parser::Parser as CnosdbParser;
+use spi::query::ParserSnafu;
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
     tokenizer::{Token, Tokenizer},
 };
-
 use trace::debug;
 
 pub type Result<T, E = ParserError> = std::result::Result<T, E>;
@@ -16,6 +18,15 @@ macro_rules! parser_err {
     ($MSG:expr) => {
         Err(ParserError::ParserError($MSG.to_string()))
     };
+}
+
+#[derive(Default)]
+pub struct DefaultParser {}
+
+impl CnosdbParser for DefaultParser {
+    fn parse(&self, sql: &str) -> spi::query::Result<VecDeque<ExtStatement>> {
+        ExtParser::parse_sql(sql).context(ParserSnafu)
+    }
 }
 
 /// SQL Parser
