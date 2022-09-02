@@ -18,7 +18,7 @@ use spi::{
 
 use query::extension::expr::load_all_functions;
 use query::metadata::LocalCatalogMeta;
-use query::sql::parser_impl::DefaultParser;
+use query::sql::parser::DefaultParser;
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
 
