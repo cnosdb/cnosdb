@@ -43,6 +43,10 @@ impl VersionSet {
         Self { dbs, opt }
     }
 
+    pub fn options(&self) -> Arc<Options> {
+        self.opt.clone()
+    }
+
     pub fn create_db(&mut self, name: &String) -> Arc<RwLock<Database>> {
         self.dbs
             .entry(name.clone())

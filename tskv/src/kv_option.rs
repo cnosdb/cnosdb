@@ -9,6 +9,7 @@ use crate::{direct_io, index::IndexConfig, summary};
 
 const SUMMARY_PATH: &str = "summary";
 const INDEX_PATH: &str = "index";
+const DATA_PATH: &str = "data";
 const TSM_PATH: &str = "tsm";
 const DELTA_PATH: &str = "delta";
 
@@ -60,7 +61,7 @@ impl StorageOptions {
     }
 
     pub fn database_dir(&self, database: &str) -> PathBuf {
-        self.path.join(database)
+        self.path.join(DATA_PATH).join(database)
     }
 
     pub fn tsm_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {

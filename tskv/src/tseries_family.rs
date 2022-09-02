@@ -167,6 +167,15 @@ impl ColumnFile {
         }
         false
     }
+
+    pub fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+        let dir = self.path.parent().expect("file has parent");
+        // TODO flock tombstone file.
+        let mut tombstone = TsmTombstone::open_for_write(dir, self.file_id)?;
+        tombstone.add_range(&field_ids, time_range)?;
+        tombstone.flush()?;
+        Ok(())
+    }
 }
 
 impl ColumnFile {
