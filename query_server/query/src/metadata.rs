@@ -1,7 +1,9 @@
-use crate::catalog::{CatalogRef, UserCatalog};
+use crate::catalog::{CatalogRef, UserCatalog, UserCatalogRef};
+use crate::error::Error::{DatabaseName, TableName};
 use crate::error::{Error, Result};
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use datafusion::arrow::datatypes::DataType;
+use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::{
     datasource::DefaultTableSource,
     error::DataFusionError,
@@ -13,16 +15,16 @@ use spi::query::function::FuncMetaManagerRef;
 use std::sync::Arc;
 use tskv::engine::EngineRef;
 
-// pub type LocalMetadataRef = Arc<LocalCatalogMeta>;
 pub type MetaDataRef = Arc<dyn MetaData + Send + Sync>;
 
 pub trait MetaData: Send + Sync {
-    // fn new(&self, tenant: String, engine: EngineRef) -> LocalCatalogMeta;
     fn catalog_name(&self) -> String;
     fn schema_name(&self) -> String;
     fn table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>>;
     fn catalog(&self) -> CatalogRef;
     fn function(&self) -> FuncMetaManagerRef;
+    fn drop_table(&self, name: &str) -> Result<()>;
+    fn drop_database(&self, name: &str) -> Result<()>;
 }
 
 /// remote meta
@@ -33,7 +35,7 @@ pub struct RemoteCatalogMeta {}
 pub struct LocalCatalogMeta {
     catalog_name: String,
     schema_name: String,
-    catalog: CatalogRef,
+    catalog: UserCatalogRef,
     func_manager: FuncMetaManagerRef,
 }
 
@@ -67,7 +69,7 @@ impl MetaData for LocalCatalogMeta {
         // let catalog_name = name.catalog;
         let schema = match self.catalog.schema(name.schema) {
             None => {
-                return Err(Error::DatabaseNameError {
+                return Err(Error::DatabaseName {
                     name: name.schema.to_string(),
                 });
             }
@@ -75,7 +77,7 @@ impl MetaData for LocalCatalogMeta {
         };
         let table = match schema.table(name.table) {
             None => {
-                return Err(Error::TableNameError {
+                return Err(Error::TableName {
                     name: name.table.to_string(),
                 });
             }
@@ -91,6 +93,33 @@ impl MetaData for LocalCatalogMeta {
     fn function(&self) -> FuncMetaManagerRef {
         self.func_manager.clone()
     }
+
+    fn drop_table(&self, name: &str) -> Result<()> {
+        let table: TableReference = name.into();
+        let name = table.resolve(self.catalog_name.as_str(), self.schema_name.as_str());
+        let schema = self.catalog.schema(name.schema);
+        if let Some(db) = schema {
+            match db.deregister_table(name.table) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    return Err(TableName {
+                        name: name.table.to_string(),
+                    })
+                }
+            }
+        }
+        Err(DatabaseName {
+            name: name.schema.to_string(),
+        })
+    }
+
+    fn drop_database(&self, name: &str) -> Result<()> {
+        self.catalog
+            .deregister_schema(name)
+            .map_err(|e| DatabaseName {
+                name: name.to_string(),
+            })
+    }
 }
 
 pub struct MetadataProvider {
@@ -103,8 +132,6 @@ impl MetadataProvider {
         Self { meta }
     }
 }
-
-impl MetadataProvider {}
 impl ContextProvider for MetadataProvider {
     fn get_table_provider(
         &self,

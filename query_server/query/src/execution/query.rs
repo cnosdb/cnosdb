@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{physical_plan::SendableRecordBatchStream, scheduler::Scheduler};
 use snafu::ResultExt;
+use spi::query::execution::Output;
 use spi::query::{
     execution::{QueryExecution, QueryStateMachineRef},
     logical_planner::QueryPlan,
@@ -36,7 +37,7 @@ impl SqlQueryExecution {
 
 #[async_trait]
 impl QueryExecution for SqlQueryExecution {
-    async fn start(&self) -> Result<SendableRecordBatchStream> {
+    async fn start(&self) -> Result<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
         let optimized_physical_plan = self
@@ -57,6 +58,6 @@ impl QueryExecution for SqlQueryExecution {
             .stream();
         self.query_state_machine.end_schedule();
 
-        Ok(execution_result)
+        Ok(Output::StreamData(execution_result))
     }
 }

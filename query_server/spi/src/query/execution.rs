@@ -10,7 +10,7 @@ use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};
 #[async_trait]
 pub trait QueryExecution: Send + Sync {
     // 开始
-    async fn start(&self) -> Result<SendableRecordBatchStream>;
+    async fn start(&self) -> Result<Output>;
     // 停止
     // query状态
     // 查询计划
@@ -19,6 +19,13 @@ pub trait QueryExecution: Send + Sync {
     // sql
     // 资源占用（cpu时间/内存/吞吐量等）
     // ......
+}
+// pub trait Output {
+//     fn as_any(&self) -> &dyn Any;
+// }
+pub enum Output {
+    StreamData(SendableRecordBatchStream),
+    Nil(()),
 }
 
 pub trait QueryExecutionFactory {
