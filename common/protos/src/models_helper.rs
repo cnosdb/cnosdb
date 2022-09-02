@@ -208,4 +208,56 @@ mod test {
             },
         )
     }
+
+    pub fn create_dev_ops_points<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        num: usize,
+        database: &str,
+        table: &str,
+    ) -> WIPOffset<Points<'a>> {
+        #[rustfmt::skip]
+        let tag_key_values = [
+            ("region", vec!["rg_1", "rg_2", "rg_3", "rg_4", "rg_5", "rg_6"]),
+            ("host", vec!["192.168.0.1", "192.168.0.2", "192.168.0.3", "192.168.0.4", "192.168.0.5", "192.168.0.6"]),
+        ];
+        let field_keys = ["cpu", "mem"];
+
+        let now = Local::now().timestamp_millis();
+        let database = fbb.create_vector(database.as_bytes());
+        let table = fbb.create_vector(table.as_bytes());
+        let mut points = vec![];
+        for i in 0..num as i64 {
+            let timestamp = now + i;
+
+            #[rustfmt::skip]
+            let tags = create_tags(fbb, vec![
+                (tag_key_values[0].0, tag_key_values[0].1[i as usize / tag_key_values[0].1.len() % tag_key_values[0].1.len()]),
+                (tag_key_values[1].0, tag_key_values[1].1[i as usize % tag_key_values[1].1.len()]),
+            ]);
+
+            let mut fields = vec![];
+            let fv = rand::random::<f64>().to_be_bytes();
+            for fk in field_keys {
+                fields.push((fk, FieldType::Float, fv.as_slice()));
+            }
+            let fields = create_fields(fbb, fields);
+
+            points.push(create_point(
+                fbb,
+                timestamp,
+                database.clone(),
+                table,
+                tags,
+                fields,
+            ));
+        }
+        let points = fbb.create_vector(&points);
+        Points::create(
+            fbb,
+            &PointsArgs {
+                database: Some(database),
+                points: Some(points),
+            },
+        )
+    }
 }
