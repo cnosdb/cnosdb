@@ -9,9 +9,6 @@ use arrow::{
 use datafusion::error::Result;
 use datafusion::from_slice::FromSlice;
 use datafusion::{arrow, datasource::MemTable};
-use query::extension::datafusion::expr::{
-    func_manager::DFSessionContextFuncAdapter, load_all_functions,
-};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -21,6 +18,8 @@ use trace::warn;
 
 use datafusion::execution::context::SessionContext;
 use parking_lot::Mutex;
+use query::extension::expr::func_manager::DFSessionContextFuncAdapter;
+use query::extension::expr::load_all_functions;
 
 pub fn query(ctx: Arc<Mutex<SessionContext>>, sql: &str) {
     let rt = Runtime::new().unwrap();

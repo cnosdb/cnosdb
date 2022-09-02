@@ -198,34 +198,26 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
         for (k, v) in line.fields.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
             let (fbv_type, fbv) = if NUMBER_PATTERN.is_match(v) {
-                if v.ends_with("i") || v.ends_with("I") {
+                if v.ends_with('i') || v.ends_with('I') {
                     (
                         fb_models::FieldType::Integer,
                         fbb.create_vector(
                             &v[..v.len() - 1]
                                 .parse::<i64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!(
-                                        "Value '{}' is not valid i64: {}",
-                                        v,
-                                        e.to_string()
-                                    ),
+                                    reason: format!("Value '{}' is not valid i64: {}", v, e),
                                 })?
                                 .to_be_bytes(),
                         ),
                     )
-                } else if v.ends_with("u") || v.ends_with("U") {
+                } else if v.ends_with('u') || v.ends_with('U') {
                     (
                         fb_models::FieldType::Unsigned,
                         fbb.create_vector(
                             &v[..v.len() - 1]
                                 .parse::<u64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!(
-                                        "Value '{}' is not valid u64: {}",
-                                        v,
-                                        e.to_string()
-                                    ),
+                                    reason: format!("Value '{}' is not valid u64: {}", v, e),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -237,11 +229,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
                             &v[..]
                                 .parse::<f64>()
                                 .map_err(|e| Error::Syntax {
-                                    reason: format!(
-                                        "Value '{}' is not valid f64: {}",
-                                        v,
-                                        e.to_string()
-                                    ),
+                                    reason: format!("Value '{}' is not valid f64: {}", v, e),
                                 })?
                                 .to_be_bytes(),
                         ),
@@ -345,13 +333,13 @@ mod test {
         let mut lp_lines = String::new();
         lp_file.read_to_string(&mut lp_lines).unwrap();
 
-        let lines: Vec<&str> = lp_lines.split("\n").collect();
+        let lines: Vec<&str> = lp_lines.split('\n').collect();
         println!("Received line-protocol lines: {}", lines.len());
 
         let parser = Parser::new(0);
         for line in lines {
             println!("Parsing: {}", line);
-            let parsed_lines = parser.parse(&line).unwrap();
+            let parsed_lines = parser.parse(line).unwrap();
             let _ = parse_lines_to_points("test", &parsed_lines);
             // println!("{:?}", points);
         }

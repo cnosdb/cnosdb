@@ -230,7 +230,7 @@ impl MemCache {
             }
         }
 
-        return true;
+        true
     }
 
     pub fn delete_data(&self, field_ids: &[FieldId], time_range: &TimeRange) {

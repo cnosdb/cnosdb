@@ -101,7 +101,7 @@ impl MetaData for LocalCatalogMeta {
         if let Some(db) = schema {
             match db.deregister_table(name.table) {
                 Ok(_) => return Ok(()),
-                Err(e) => {
+                Err(_e) => {
                     return Err(TableName {
                         name: name.table.to_string(),
                     })
@@ -116,7 +116,7 @@ impl MetaData for LocalCatalogMeta {
     fn drop_database(&self, name: &str) -> Result<()> {
         self.catalog
             .deregister_schema(name)
-            .map_err(|e| DatabaseName {
+            .map_err(|_e| DatabaseName {
                 name: name.to_string(),
             })
     }

@@ -21,11 +21,7 @@ impl IndexEngine {
             .mode(sled::Mode::HighThroughput);
 
         let db = config.open().unwrap_or_else(|err| {
-            panic!(
-                "open database at '{}' failed: {}",
-                index_dir.display(),
-                err.to_string()
-            )
+            panic!("open database at '{}' failed: {}", index_dir.display(), err)
         });
         db.set_merge_operator(concatenate_merge);
 

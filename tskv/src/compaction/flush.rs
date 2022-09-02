@@ -320,7 +320,7 @@ mod test {
                     ts: timestamp,
                     field_id: *fid,
                     field_type: *ftyp,
-                    val: &fval,
+                    val: fval,
                 };
                 cache.insert_raw(&mut raw).unwrap();
             }

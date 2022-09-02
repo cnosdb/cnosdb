@@ -28,14 +28,10 @@ impl QueryExecution for DropExecution {
             return Ok(Output::Nil(()));
         }
         return match res {
-            Ok(_) => {
-                Ok(Output::Nil(()))
-            }
-            Err(e) => {
-                Err(QueryError::Analyzer {
-                    err: "drop failed".to_string(),
-                })
-            }
-        }
+            Ok(_) => Ok(Output::Nil(())),
+            Err(_e) => Err(QueryError::Analyzer {
+                err: "drop failed".to_string(),
+            }),
+        };
     }
 }
