@@ -96,7 +96,6 @@ mod test {
 
     use async_channel as channel;
     use config::get_config;
-    use crossbeam::channel;
     use protos::kv_service::WritePointsRpcResponse;
     use query::db::Db;
     use tokio::spawn;
