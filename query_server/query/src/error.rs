@@ -5,9 +5,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[snafu(visibility(pub))]
 pub enum Error {
     #[snafu(display("stmt to datafusion plan error"))]
-    DFPlanError,
+    DFPlan,
     #[snafu(display("cannot find table name:{}", name))]
-    TableNameError { name: String },
+    TableName { name: String },
     #[snafu(display("cannot find database name:{}", name))]
-    DatabaseNameError { name: String },
+    DatabaseName { name: String },
 }

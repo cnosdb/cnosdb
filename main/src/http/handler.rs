@@ -22,6 +22,7 @@ use trace::debug;
 use super::QuerySnafu;
 use crate::http::{parse_query, AsyncChanSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
 use async_channel as channel;
+use spi::query::execution::Output;
 
 lazy_static! {
     static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
@@ -160,14 +161,20 @@ pub(crate) async fn query(
     let mut actual = vec![];
     let query = Query::new(Context::default(), sql);
     let mut result = database.execute(&query).await.context(QuerySnafu)?;
+    let mut resp_msg = "execute ok".to_string();
     for stmt_result in result.result().iter_mut() {
-        while let Some(batch) = stmt_result.next().await {
-            actual.push(batch.unwrap());
+        match stmt_result {
+            Output::StreamData(res) => {
+                while let Some(batch) = res.next().await {
+                    actual.push(batch.unwrap());
+                }
+            }
+            Output::Nil(_) => resp_msg = "sql execute Ok".to_string(),
         }
     }
-
-    let resp_msg = format!("{}", pretty_format_batches(actual.deref_mut()).unwrap());
-
+    if !actual.is_empty() {
+        resp_msg = format!("{}", pretty_format_batches(actual.deref_mut()).unwrap());
+    }
     let resp = http::Response::builder()
         .body(Body::from(resp_msg))
         .unwrap();
