@@ -238,9 +238,7 @@ impl WalWriter {
             .context(error::IOSnafu)?;
 
         // Do fsync
-        self.file
-            .sync_data(FileSync::Hard)
-            .context(error::IOSnafu)?;
+        self.file.sync_all(FileSync::Hard).context(error::IOSnafu)?;
 
         Ok(())
     }
@@ -678,6 +676,7 @@ mod test {
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.clone();
+        global_config.wal.sync = false;
         let wal_config = WalOptions::from(&global_config);
 
         let database = "test_db".to_string();
@@ -685,7 +684,7 @@ mod test {
         let mut mgr = WalManager::new(Arc::new(wal_config));
         for _i in 0..100 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
-            let points = models_helper::create_dev_ops_points(&mut fbb, 100, &database, &table);
+            let points = models_helper::create_dev_ops_points(&mut fbb, 10, &database, &table);
             fbb.finish(points, None);
             let blk = WalEntryBlock::new(WalEntryType::Write, fbb.finished_data());
             mgr.write(WalEntryType::Write, &blk.buf).await.unwrap();
