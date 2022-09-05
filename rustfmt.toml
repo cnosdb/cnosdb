@@ -1,5 +1,4 @@
 edition = "2021"
-max_width = 120
 
 # ignore dir
 ignore = [

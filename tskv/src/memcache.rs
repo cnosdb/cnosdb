@@ -81,15 +81,18 @@ pub struct RowData {
 
 impl From<fb_models::Point<'_>> for RowData {
     fn from(p: fb_models::Point<'_>) -> Self {
-        let mut fields = Vec::new();
-
-        for fit in p.fields().into_iter() {
-            for f in fit.into_iter() {
-                let vtype = f.type_().into();
-                let val = f.value().unwrap().to_vec();
-                fields.push(Some(FieldVal::new(val, vtype)));
+        let fields = match p.fields() {
+            Some(fields_inner) => {
+                let mut fields = Vec::with_capacity(fields_inner.len());
+                for f in fields_inner.into_iter() {
+                    let vtype = f.type_().into();
+                    let val = f.value().unwrap().to_vec();
+                    fields.push(Some(FieldVal::new(val, vtype)));
+                }
+                fields
             }
-        }
+            None => vec![],
+        };
 
         let ts = p.timestamp();
         Self { ts, fields }

@@ -67,34 +67,28 @@ impl InMemPoint {
 
 impl From<fb_models::Point<'_>> for InMemPoint {
     fn from(p: fb_models::Point<'_>) -> Self {
-        let mut fields = Vec::new();
-        let mut tags = Vec::new();
-
-        for tit in p.tags().into_iter() {
-            for t in tit.into_iter() {
-                let k = t.key().unwrap().to_vec();
-                let v = t.value().unwrap().to_vec();
-                let tag = Tag::new(k, v);
-                tags.push(tag);
+        let fields = match p.fields() {
+            Some(fields_inner) => {
+                let mut fields = Vec::with_capacity(fields_inner.len());
+                for f in fields_inner.into_iter() {
+                    let val_type = f.type_().into();
+                    let val = f.value().unwrap().to_vec();
+                    fields.push(FieldValue {
+                        field_id: 0,
+                        value_type: val_type,
+                        value: val,
+                    });
+                }
+                fields
             }
-        }
+            None => vec![],
+        };
 
-        for fit in p.fields().into_iter() {
-            for f in fit.into_iter() {
-                let val_type = f.type_().into();
-                let val = f.value().unwrap().to_vec();
-                fields.push(FieldValue {
-                    field_id: 0,
-                    value_type: val_type,
-                    value: val,
-                });
-            }
-        }
-        let ts = p.timestamp();
+        let timestamp = p.timestamp();
 
         Self {
             series_id: 0,
-            timestamp: ts,
+            timestamp,
             fields,
         }
     }

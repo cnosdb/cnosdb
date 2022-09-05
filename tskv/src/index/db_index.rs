@@ -176,8 +176,13 @@ impl DBIndex {
             }
 
             for it in schema.iter() {
-                if it.is_tag() {
-                    continue;
+                match info.field_infos().iter().find(|item| it.eq(item)) {
+                    Some(v) => {}
+                    None => {
+                        if !it.is_tag() {
+                            info.push_field_fill(it.clone())
+                        }
+                    }
                 }
             }
 

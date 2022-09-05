@@ -59,13 +59,18 @@ impl Database {
             self.opt.cache.clone(),
             self.opt.storage.clone(),
         );
-        self.ts_families.insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
+        self.ts_families
+            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
     pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
         if let Some(tf) = self.ts_families.get(&tf_id) {
             let mut tf = tf.write();
-            let mem = Arc::new(RwLock::new(MemCache::new(tf_id, self.opt.cache.max_buffer_size, seq)));
+            let mem = Arc::new(RwLock::new(MemCache::new(
+                tf_id,
+                self.opt.cache.max_buffer_size,
+                seq,
+            )));
 
             tf.switch_memcache(mem).await;
         }
@@ -140,7 +145,8 @@ impl Database {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for point in points {
-            let mut info = SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let mut info =
+                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
 
             let sid = self.build_index_and_check_type(&mut info)?;
 
@@ -178,8 +184,14 @@ impl Database {
                 },
             });
 
-            entry.range.merge(&TimeRange { min_ts: ts, max_ts: ts });
-            entry.rows.push(RowData { ts, fields: all_row });
+            entry.range.merge(&TimeRange {
+                min_ts: ts,
+                max_ts: ts,
+            });
+            entry.rows.push(RowData {
+                ts,
+                fields: all_row,
+            });
         }
 
         return Ok(map);
