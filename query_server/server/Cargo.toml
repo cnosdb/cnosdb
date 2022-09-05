@@ -15,7 +15,7 @@ datafusion = { path = "../../common/datafusion_dep" }
 tskv = { path = "../../tskv" }
 
 snafu = { version = "0.7", features = ["backtraces"] }
-tokio = { version = "1.17", features = ["full"] }
+tokio = { version = "1.21", features = ["full"] }
 async-trait = "0.1"
 futures = "0.3"
 num_cpus = "1.0"

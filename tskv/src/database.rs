@@ -15,7 +15,7 @@ use parking_lot::RwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::{error, info};
+use trace::{debug, error, info};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 
@@ -248,8 +248,8 @@ pub(crate) async fn delete_table_async(
     database: String,
     table: String,
     version_set: Arc<RwLock<VersionSet>>,
-    cb: oneshot::Sender<Result<()>>,
-) {
+) -> Result<()> {
+    info!("Drop table: '{}.{}'", &database, &table);
     let version_set_rlock = version_set.read();
     let options = version_set_rlock.options();
     let db_instance = version_set_rlock.get_db(&database);
@@ -257,63 +257,39 @@ pub(crate) async fn delete_table_async(
 
     if let Some(db) = db_instance {
         let index = db.read().get_index();
-        let sids = match index
+        let sids = index
             .read()
             .get_series_id_list(&table, &vec![])
             .await
-            .context(error::IndexErrSnafu)
-        {
-            Ok(x) => x,
-            Err(e) => {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
-        };
+            .context(error::IndexErrSnafu)?;
 
         let mut index_wlock = index.write();
 
-        info!(
+        debug!(
             "Drop table: deleting index in table: {}.{}",
             &database, &table
         );
-        let field_infos = match index_wlock
+        let field_infos = index_wlock
             .get_table_schema(&table)
-            .context(error::IndexErrSnafu)
-        {
-            Ok(x) => x,
-            Err(e) => {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
-        };
-        if let Err(e) = index_wlock
+            .context(error::IndexErrSnafu)?;
+        index_wlock
             .del_table_schema(&table)
             .await
-            .context(error::IndexErrSnafu)
-        {
-            cb.send(Err(e)).expect("send to oneshot receiver");
-            return;
-        }
+            .context(error::IndexErrSnafu)?;
+
         println!("{:?}", &sids);
         for sid in sids.iter() {
-            if let Err(e) = index_wlock
+            index_wlock
                 .del_series_info(*sid)
                 .await
-                .context(error::IndexErrSnafu)
-            {
-                cb.send(Err(e)).expect("send to oneshot receiver");
-                return;
-            }
+                .context(error::IndexErrSnafu)?;
         }
-        if let Err(e) = index_wlock.flush().await.context(error::IndexErrSnafu) {
-            cb.send(Err(e)).expect("send to oneshot receiver");
-            return;
-        }
+        index_wlock.flush().await.context(error::IndexErrSnafu)?;
 
         drop(index_wlock);
 
         if let Some(fields) = field_infos {
-            info!(
+            debug!(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
@@ -331,13 +307,10 @@ pub(crate) async fn delete_table_async(
                 ts_family.write().delete_cache(&storage_fids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
-                    if let Err(e) = column_file.add_tombstone(&storage_fids, time_range) {
-                        cb.send(Err(e)).expect("send to oneshot receiver");
-                        return;
-                    }
+                    column_file.add_tombstone(&storage_fids, time_range)?;
                 }
             }
         }
     }
-    cb.send(Ok(())).expect("send to oneshot receiver");
+    Ok(())
 }

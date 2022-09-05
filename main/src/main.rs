@@ -93,13 +93,14 @@ fn main() -> Result<(), std::io::Error> {
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
+    let runtime = Arc::new(runtime);
     println!(
         "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
         cli.host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
     );
     let global_config = config::get_config(cli.config.as_str());
     // TODO check global_config
-    runtime.block_on(async move {
+    runtime.clone().block_on(async move {
         match &cli.subcmd {
             SubCommand::Debug { debug } => {
                 println!("Debug {}", debug);
@@ -121,7 +122,7 @@ fn main() -> Result<(), std::io::Error> {
 
                 let tskv_options = tskv::Options::from(&global_config);
 
-                let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
+                let tskv = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
 
                 for _ in 0..1 {
                     TsKv::start(tskv.clone(), receiver.clone());
