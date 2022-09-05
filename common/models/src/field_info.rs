@@ -100,7 +100,11 @@ impl PartialEq for FieldInfo {
 
 impl FieldInfo {
     pub fn new(id: SeriesId, name: FieldName, value_type: ValueType) -> Self {
-        Self { id, name, value_type }
+        Self {
+            id,
+            name,
+            value_type,
+        }
     }
 
     pub fn from_flatbuffers(field: &fb_models::Field) -> Result<Self> {
@@ -108,7 +112,9 @@ impl FieldInfo {
             id: 0,
             name: field
                 .name()
-                .ok_or(Error::InvalidFlatbufferMessage { err: "".to_string() })?
+                .ok_or(Error::InvalidFlatbufferMessage {
+                    err: "".to_string(),
+                })?
                 .to_vec(),
             value_type: field.type_().into(),
         })
@@ -117,7 +123,10 @@ impl FieldInfo {
     pub fn check(&self) -> Result<()> {
         if self.name.len() > FIELD_NAME_MAX_LEN {
             return Err(Error::InvalidField {
-                err: format!("TagKey exceeds the FIELD_NAME_MAX_LEN({})", FIELD_NAME_MAX_LEN),
+                err: format!(
+                    "TagKey exceeds the FIELD_NAME_MAX_LEN({})",
+                    FIELD_NAME_MAX_LEN
+                ),
             });
         }
         Ok(())

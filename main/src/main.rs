@@ -36,10 +36,20 @@ long_about = r#"cnosdb and command line tools
 )]
 struct Cli {
     /// gRPC address
-    #[clap(short, long, global = true, env = "server_addr", default_value = "127.0.0.1:31006")]
+    #[clap(
+        short,
+        long,
+        global = true,
+        env = "server_addr",
+        default_value = "127.0.0.1:31006"
+    )]
     host: String,
 
-    #[clap(global = true, env = "server_http_addr", default_value = "127.0.0.1:31007")]
+    #[clap(
+        global = true,
+        env = "server_http_addr",
+        default_value = "127.0.0.1:31007"
+    )]
     http_host: String,
 
     #[clap(short, long, global = true)]
@@ -165,7 +175,12 @@ unsafe extern "C" fn signal_handler(sig: i32) {
         .name()
         .map(|n| format!(" for thread \"{}\"", n))
         .unwrap_or_else(|| "".to_owned());
-    eprintln!("Signal {}, Stack trace{}\n{:?}", sig, name, Backtrace::new());
+    eprintln!(
+        "Signal {}, Stack trace{}\n{:?}",
+        sig,
+        name,
+        Backtrace::new()
+    );
     abort();
 }
 
@@ -187,7 +202,10 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     match cores {
         None => Runtime::new(),
         Some(cores) => {
-            println!("Setting core number to '{}' per command line request", cores);
+            println!(
+                "Setting core number to '{}' per command line request",
+                cores
+            );
 
             match cores {
                 0 => {
@@ -195,7 +213,10 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
                     Err(std::io::Error::new(kind, msg))
                 }
                 1 => Builder::new_current_thread().enable_all().build(),
-                _ => Builder::new_multi_thread().enable_all().worker_threads(cores).build(),
+                _ => Builder::new_multi_thread()
+                    .enable_all()
+                    .worker_threads(cores)
+                    .build(),
             }
         }
     }

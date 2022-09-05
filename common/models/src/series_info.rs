@@ -174,8 +174,11 @@ impl SeriesInfo {
         };
 
         let db = match point.db() {
-            Some(db) => String::from_utf8(db.to_vec())
-                .map_err(|err| Error::InvalidFlatbufferMessage { err: err.to_string() })?,
+            Some(db) => {
+                String::from_utf8(db.to_vec()).map_err(|err| Error::InvalidFlatbufferMessage {
+                    err: err.to_string(),
+                })?
+            }
 
             None => {
                 return Err(Error::InvalidFlatbufferMessage {
@@ -185,8 +188,11 @@ impl SeriesInfo {
         };
 
         let table = match point.table() {
-            Some(table) => String::from_utf8(table.to_vec())
-                .map_err(|err| Error::InvalidFlatbufferMessage { err: err.to_string() })?,
+            Some(table) => String::from_utf8(table.to_vec()).map_err(|err| {
+                Error::InvalidFlatbufferMessage {
+                    err: err.to_string(),
+                }
+            })?,
 
             None => {
                 return Err(Error::InvalidFlatbufferMessage {

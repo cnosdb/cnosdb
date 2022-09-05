@@ -41,7 +41,9 @@ pub enum Error {
     ChannelReceive { source: RecvError },
 
     #[snafu(display("Error sending to channel receiver: {}", source))]
-    AsyncChanSend { source: channel::SendError<tskv::Task> },
+    AsyncChanSend {
+        source: channel::SendError<tskv::Task>,
+    },
 
     #[snafu(display("Error executiong query: {}", source))]
     Query { source: ServerError },
@@ -64,7 +66,11 @@ pub async fn serve(
         let remote_addr = conn.remote_addr();
         info!("Remote IP: {}", remote_addr);
 
-        async move { Ok::<_, Infallible>(service_fn(move |req| route(req, db.clone(), sender.clone()))) }
+        async move {
+            Ok::<_, Infallible>(service_fn(move |req| {
+                route(req, db.clone(), sender.clone())
+            }))
+        }
     });
 
     let server = HyperServer::bind(&addr).serve(make_service);
@@ -123,12 +129,16 @@ mod test {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
         let global_config = get_config("../config/config.toml");
-        let http_host = "127.0.0.1:8003".parse::<SocketAddr>().expect("Invalid host");
+        let http_host = "127.0.0.1:8003"
+            .parse::<SocketAddr>()
+            .expect("Invalid host");
         let opt = Options::from(&global_config);
 
         let tskv = TsKv::open(opt).await.unwrap();
         // let db = Arc::new(Db::new(Arc::new(tskv)));
-        let db = Arc::new(server::instance::make_cnosdbms(Arc::new(tskv)).expect("Failed to build dbms."));
+        let db = Arc::new(
+            server::instance::make_cnosdbms(Arc::new(tskv)).expect("Failed to build dbms."),
+        );
         let (sender, receiver) = channel::unbounded();
         let server_join_handle = spawn(async move { serve(http_host, db, sender) });
 
