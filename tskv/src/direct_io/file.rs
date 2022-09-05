@@ -193,7 +193,9 @@ impl PageWriteGuard<'_> {
 
     pub fn set_len(&mut self, len: usize) {
         assert!(len <= self.max_len());
-        self.len = len;
+        if self.len < len {
+            self.len = len;
+        }
     }
 }
 

@@ -291,14 +291,19 @@ impl WalManager {
 
     async fn roll_wal_file(&mut self) -> Result<()> {
         if self.current_file.size > SEGMENT_SIZE {
-            let id = self.current_file.id + 1;
-            let max_sequence = self.current_file.max_sequence;
+            info!(
+                "WAL '{}' is full at seq '{}', begin rolling.",
+                self.current_file.id, self.current_file.max_sequence
+            );
 
-            self.current_file.flush().await?;
+            let new_file_id = self.current_file.id + 1;
+            let new_file_name = file_utils::make_wal_file(&self.config.path, new_file_id);
 
-            let new_file_name = file_utils::make_wal_file(&self.config.path, id);
-            let new_file = WalWriter::open(id, new_file_name, self.config.clone())?;
-            self.current_file = new_file;
+            let new_file = WalWriter::open(new_file_id, new_file_name, self.config.clone())?;
+            let mut old_file = std::mem::replace(&mut self.current_file, new_file);
+            old_file.flush().await?;
+
+            info!("WAL '{}' starts write", self.current_file.id);
         }
         Ok(())
     }
@@ -350,6 +355,10 @@ impl WalManager {
             }
         }
         Ok(())
+    }
+
+    pub async fn close(&mut self) -> Result<()> {
+        self.current_file.flush().await
     }
 }
 
@@ -432,13 +441,14 @@ impl WalReader {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::{borrow::BorrowMut, sync::Arc};
+    use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
 
     use chrono::Utc;
     use config::get_config;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use protos::{models as fb_models, models_helper};
+    use trace::init_default_global_tracing;
 
     use crate::{
         direct_io::{File, FileCursor, FileSync},
@@ -579,48 +589,11 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn test_read_and_write() {
-        let dir = "/tmp/test/wal/1".to_string();
-        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = get_config("../config/config.toml");
-        global_config.wal.path = dir.clone();
-        let wal_config = WalOptions::from(&global_config);
-
-        let mut mgr = WalManager::new(Arc::new(wal_config));
-
-        for _i in 0..10 {
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-
-            let entry = random_wal_entry_block(&mut fbb);
-
-            let bytes = fbb.finished_data();
-            dbg!(bytes.len());
-
-            match entry.typ {
-                WalEntryType::Write => {
-                    let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
-                }
-                WalEntryType::Delete => {
-                    let de_block = flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::Delete, &entry.buf).await.unwrap();
-                }
-                WalEntryType::DeleteRange => {
-                    let de_block =
-                        flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::DeleteRange, &entry.buf)
-                        .await
-                        .unwrap();
-                }
-                _ => {}
-            };
-        }
-
-        let wal_files = list_file_names(dir);
+    fn check_wal_files(wal_dir: PathBuf) {
+        let wal_files = list_file_names(&wal_dir);
         for wal_file in wal_files {
             let file = file_manager::get_file_manager()
-                .open_file(mgr.current_dir.join(wal_file))
+                .open_file(wal_dir.join(wal_file))
                 .unwrap();
             let cursor: FileCursor = file.into();
 
@@ -652,5 +625,72 @@ mod test {
             }
             assert_eq!(wrote_crcs, read_crcs);
         }
+    }
+
+    #[tokio::test]
+    async fn test_read_and_write() {
+        let dir = "/tmp/test/wal/1".to_string();
+        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
+        let mut global_config = get_config("../config/config.toml");
+        global_config.wal.path = dir.clone();
+        let wal_config = WalOptions::from(&global_config);
+
+        let mut mgr = WalManager::new(Arc::new(wal_config));
+
+        for _i in 0..10 {
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+
+            let entry = random_wal_entry_block(&mut fbb);
+
+            let bytes = fbb.finished_data();
+            println!("WAL write entry length: {}", bytes.len());
+
+            match entry.typ {
+                WalEntryType::Write => {
+                    let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
+                    mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
+                }
+                WalEntryType::Delete => {
+                    let de_block = flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
+                    mgr.write(WalEntryType::Delete, &entry.buf).await.unwrap();
+                }
+                WalEntryType::DeleteRange => {
+                    let de_block =
+                        flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
+                    mgr.write(WalEntryType::DeleteRange, &entry.buf)
+                        .await
+                        .unwrap();
+                }
+                _ => {}
+            };
+        }
+
+        check_wal_files(mgr.current_dir);
+    }
+
+    #[tokio::test]
+    async fn test_roll_wal_file() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+
+        let dir = "/tmp/test/wal/2".to_string();
+        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
+        let mut global_config = get_config("../config/config.toml");
+        global_config.wal.path = dir.clone();
+        global_config.wal.sync = false;
+        let wal_config = WalOptions::from(&global_config);
+
+        let database = "test_db".to_string();
+        let table = "test_table".to_string();
+        let mut mgr = WalManager::new(Arc::new(wal_config));
+        for _i in 0..100 {
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+            let points = models_helper::create_dev_ops_points(&mut fbb, 10, &database, &table);
+            fbb.finish(points, None);
+            let blk = WalEntryBlock::new(WalEntryType::Write, fbb.finished_data());
+            mgr.write(WalEntryType::Write, &blk.buf).await.unwrap();
+        }
+        mgr.close().await.unwrap();
+
+        check_wal_files(mgr.current_dir);
     }
 }

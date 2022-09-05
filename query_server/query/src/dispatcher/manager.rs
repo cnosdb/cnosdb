@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{
-    physical_plan::SendableRecordBatchStream, scheduler::Scheduler, sql::planner::ContextProvider,
-};
+use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
+use spi::query::execution::Output;
 use spi::{
     query::{
         ast::ExtStatement,
@@ -54,11 +53,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         // TODO
     }
 
-    async fn execute_query(
-        &self,
-        _id: QueryId,
-        query: &Query,
-    ) -> Result<Vec<SendableRecordBatchStream>> {
+    async fn execute_query(&self, _id: QueryId, query: &Query) -> Result<Vec<Output>> {
         let mut results = vec![];
 
         let session = self.session_factory.default_isipho_session_ctx();
@@ -100,7 +95,7 @@ impl SimpleQueryDispatcher {
         session: &IsiphoSessionCtx,
         logical_planner: &DefaultLogicalPlanner<S>,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<SendableRecordBatchStream> {
+    ) -> Result<Output> {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner.create_logical_plan(stmt.clone(), session)?;
@@ -171,7 +166,11 @@ impl SimpleQueryDispatcherBuilder {
             err: "lost of scheduler".to_string(),
         })?;
 
-        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(optimizer, scheduler));
+        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
+            metadata.clone(),
+            optimizer,
+            scheduler,
+        ));
 
         Ok(SimpleQueryDispatcher {
             metadata,

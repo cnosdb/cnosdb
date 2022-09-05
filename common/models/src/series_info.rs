@@ -100,9 +100,9 @@ impl Display for SeriesInfo {
         if !self.tags.is_empty() {
             for t in self.tags.iter() {
                 tags.push_str(&String::from_utf8(t.key.clone()).unwrap());
-                tags.push_str("=");
+                tags.push('=');
                 tags.push_str(&String::from_utf8(t.value.clone()).unwrap());
-                tags.push_str(",");
+                tags.push(',');
             }
             tags.truncate(tags.len() - 1);
         }
@@ -113,7 +113,7 @@ impl Display for SeriesInfo {
                 field_infos.push_str(&String::from_utf8(t.name().clone()).unwrap());
                 field_infos.push_str("_t_");
                 field_infos.push_str(&format!("{}", t.value_type()));
-                field_infos.push_str(",");
+                field_infos.push(',');
             }
             field_infos.truncate(tags.len() - 1);
         }

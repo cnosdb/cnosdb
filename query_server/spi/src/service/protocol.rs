@@ -1,8 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use datafusion::physical_plan::SendableRecordBatchStream;
-
 use crate::catalog::{DEFAULT_CATALOG, DEFAULT_SCHEMA};
+use crate::query::execution::Output;
 
 #[derive(Debug, Clone, Copy)]
 pub struct QueryId(u64);
@@ -58,12 +57,12 @@ impl Query {
 pub struct QueryHandle {
     id: QueryId,
     query: Query,
-    result: Vec<SendableRecordBatchStream>,
+    result: Vec<Output>,
 }
 
 impl QueryHandle {
     #[inline(always)]
-    pub fn new(id: QueryId, query: Query, result: Vec<SendableRecordBatchStream>) -> Self {
+    pub fn new(id: QueryId, query: Query, result: Vec<Output>) -> Self {
         Self { id, query, result }
     }
 
@@ -79,7 +78,7 @@ impl QueryHandle {
         // TODO
     }
 
-    pub fn result(&mut self) -> &mut Vec<SendableRecordBatchStream> {
+    pub fn result(&mut self) -> &mut Vec<Output> {
         self.result.as_mut()
     }
 }

@@ -78,6 +78,7 @@ mod tests {
     use super::*;
     use datafusion::arrow::util::pretty::pretty_format_batches;
     use futures::StreamExt;
+    use spi::query::execution::Output;
     use tskv::engine::MockEngine;
 
     #[macro_export]
@@ -113,10 +114,16 @@ mod tests {
 
         let mut result = db.execute(&query).await.unwrap();
         for ele in result.result().iter_mut() {
-            while let Some(next) = ele.next().await {
-                let batch = next.unwrap();
-
-                actual.push(batch);
+            match ele {
+                Output::StreamData(data) => {
+                    while let Some(next) = data.next().await {
+                        let batch = next.unwrap();
+                        actual.push(batch);
+                    }
+                }
+                Output::Nil(_) => {
+                    todo!();
+                }
             }
         }
 
@@ -137,5 +144,33 @@ mod tests {
         println!("{}", formatted);
 
         assert_batches_eq!(expected, actual.deref_mut());
+    }
+
+    #[tokio::test]
+    async fn test_drop() {
+        let result_db = make_cnosdbms(Arc::new(MockEngine::default()));
+
+        let db = result_db.unwrap();
+
+        let query = Query::new(
+            Default::default(),
+            "drop database if exists test; \
+                    drop database test; \
+                    drop table if exists test; \
+                    drop table test; \
+                    "
+            .to_string(),
+        );
+        let mut result = db.execute(&query).await.unwrap();
+        for ele in result.result().iter_mut() {
+            match ele {
+                Output::StreamData(_data) => {
+                    panic!("should not happen");
+                }
+                Output::Nil(_res) => {
+                    println!("sql excuted ok")
+                }
+            }
+        }
     }
 }

@@ -18,6 +18,9 @@ use crate::{
     table::ClusterTable,
 };
 pub type CatalogRef = Arc<dyn CatalogProvider>;
+pub type SchemaRef = Arc<dyn SchemaProvider>;
+pub type UserCatalogRef = Arc<UserCatalog>;
+pub type TableRef = Arc<dyn TableProvider>;
 
 pub struct UserCatalog {
     engine: EngineRef,
@@ -30,6 +33,14 @@ impl UserCatalog {
             schemas: RwLock::new(HashMap::new()),
             engine,
         }
+    }
+    pub fn deregister_schema(&self, db_name: &str) -> Result<()> {
+        self.engine
+            .drop_database(db_name)
+            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let mut schema = self.schemas.write();
+        schema.remove(db_name);
+        Ok(())
     }
 }
 
@@ -54,7 +65,7 @@ impl CatalogProvider for UserCatalog {
         let mut schemas = self.schemas.write();
         let v = schemas
             .entry(name.to_owned())
-            .or_insert_with(|| Arc::new(IsiphoSchema::new(name.to_owned(), self.engine.clone())));
+            .or_insert_with(|| Arc::new(UserSchema::new(name.to_owned(), self.engine.clone())));
 
         Some(v.clone())
     }
@@ -69,13 +80,13 @@ impl CatalogProvider for UserCatalog {
     }
 }
 
-pub struct IsiphoSchema {
+pub struct UserSchema {
     db_name: String,
     engine: EngineRef,
-    tables: RwLock<HashMap<String, Arc<dyn TableProvider>>>,
+    tables: RwLock<HashMap<String, TableRef>>,
 }
 
-impl IsiphoSchema {
+impl UserSchema {
     pub fn new(db: String, engine: EngineRef) -> Self {
         Self {
             db_name: db,
@@ -85,7 +96,7 @@ impl IsiphoSchema {
     }
 }
 
-impl SchemaProvider for IsiphoSchema {
+impl SchemaProvider for UserSchema {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -141,7 +152,7 @@ impl SchemaProvider for IsiphoSchema {
         let mut tables = self.tables.write();
 
         self.engine
-            .drop_table(&self.db_name, &name)
+            .drop_table(&self.db_name, name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
         Ok(tables.remove(name))

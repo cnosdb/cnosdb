@@ -90,7 +90,7 @@ mod tests {
     use rand::{distributions::uniform::SampleUniform, thread_rng, Rng};
     use tskv::{kv_option, TsKv};
 
-    use crate::{catalog::IsiphoSchema, db::Db};
+    use crate::{catalog::UserSchema, db::Db};
 
     #[derive(Debug)]
     pub struct Column {
@@ -241,7 +241,7 @@ mod tests {
 
         // todo： init tables
         let table = Arc::new(Table {});
-        let schema = Arc::new(IsiphoSchema::new("public".to_string(), Arc::new(tskv)));
+        let schema = Arc::new(UserSchema::new("public".to_string(), Arc::new(tskv)));
         schema.register_table("table1".to_string(), table).unwrap();
         db.catalog
             .register_schema("public", schema.clone())

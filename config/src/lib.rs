@@ -104,27 +104,15 @@ impl CacheConfig {
 pub fn get_config(path: &str) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
-        Err(err) => panic!(
-            "Failed to open configurtion file '{}': {}",
-            path,
-            err.to_string()
-        ),
+        Err(err) => panic!("Failed to open configurtion file '{}': {}", path, err),
     };
     let mut content = String::new();
     if let Err(err) = file.read_to_string(&mut content) {
-        panic!(
-            "Failed to read configurtion file '{}': {}",
-            path,
-            err.to_string()
-        );
+        panic!("Failed to read configurtion file '{}': {}", path, err);
     }
     let config: Config = match toml::from_str(&content) {
         Ok(config) => config,
-        Err(err) => panic!(
-            "Failed to parse configurtion file '{}': {}",
-            path,
-            err.to_string()
-        ),
+        Err(err) => panic!("Failed to parse configurtion file '{}': {}", path, err),
     };
     info!("Start with configuration: {:#?}", config);
     config
@@ -154,6 +142,6 @@ max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
 "#;
 
-    let config: Config = toml::from_str(&config_str).unwrap();
+    let config: Config = toml::from_str(config_str).unwrap();
     dbg!(config);
 }

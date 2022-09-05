@@ -7,15 +7,17 @@ use std::{
 use crate::{
     error::{self, Result},
     memcache::{RowData, RowGroup},
+    version_set::VersionSet,
     TimeRange, TseriesFamilyId,
 };
-use models::utils::split_id;
+use models::utils::{split_id, unite_id};
+use models::Timestamp;
 
 use parking_lot::RwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::error;
+use trace::{error, info};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 
@@ -41,7 +43,7 @@ impl Database {
         Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(&name),
+                .get_db_index(name),
             name: name.to_string(),
             ts_families: HashMap::new(),
             opt,
@@ -208,7 +210,7 @@ impl Database {
             .add_series_if_not_exists(info)
             .context(error::IndexErrSnafu)?;
 
-        return Ok(id);
+        Ok(id)
     }
 
     pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
@@ -259,7 +261,7 @@ impl Database {
     }
 
     pub fn get_index(&self) -> Arc<RwLock<db_index::DBIndex>> {
-        return self.index.clone();
+        self.index.clone()
     }
 
     // todo: will delete in cluster version
@@ -270,4 +272,102 @@ impl Database {
 
         None
     }
+}
+
+pub(crate) async fn delete_table_async(
+    database: String,
+    table: String,
+    version_set: Arc<RwLock<VersionSet>>,
+    cb: oneshot::Sender<Result<()>>,
+) {
+    let version_set_rlock = version_set.read();
+    let options = version_set_rlock.options();
+    let db_instance = version_set_rlock.get_db(&database);
+    drop(version_set_rlock);
+
+    if let Some(db) = db_instance {
+        let index = db.read().get_index();
+        let sids = match index
+            .read()
+            .get_series_id_list(&table, &vec![])
+            .await
+            .context(error::IndexErrSnafu)
+        {
+            Ok(x) => x,
+            Err(e) => {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        };
+
+        let mut index_wlock = index.write();
+
+        info!(
+            "Drop table: deleting index in table: {}.{}",
+            &database, &table
+        );
+        let field_infos = match index_wlock
+            .get_table_schema(&table)
+            .context(error::IndexErrSnafu)
+        {
+            Ok(x) => x,
+            Err(e) => {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        };
+        if let Err(e) = index_wlock
+            .del_table_schema(&table)
+            .await
+            .context(error::IndexErrSnafu)
+        {
+            cb.send(Err(e)).expect("send to oneshot receiver");
+            return;
+        }
+        println!("{:?}", &sids);
+        for sid in sids.iter() {
+            if let Err(e) = index_wlock
+                .del_series_info(*sid)
+                .await
+                .context(error::IndexErrSnafu)
+            {
+                cb.send(Err(e)).expect("send to oneshot receiver");
+                return;
+            }
+        }
+        if let Err(e) = index_wlock.flush().await.context(error::IndexErrSnafu) {
+            cb.send(Err(e)).expect("send to oneshot receiver");
+            return;
+        }
+
+        drop(index_wlock);
+
+        if let Some(fields) = field_infos {
+            info!(
+                "Drop table: deleting series in table: {}.{}",
+                &database, &table
+            );
+            let fids: Vec<u64> = fields.iter().map(|f| f.field_id()).collect();
+            let storage_fids: Vec<u64> = sids
+                .iter()
+                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
+                .collect();
+            let time_range = &TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            };
+
+            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+                ts_family.write().delete_cache(&storage_fids, time_range);
+                let version = ts_family.read().super_version();
+                for column_file in version.version.column_files(&storage_fids, time_range) {
+                    if let Err(e) = column_file.add_tombstone(&storage_fids, time_range) {
+                        cb.send(Err(e)).expect("send to oneshot receiver");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    cb.send(Ok(())).expect("send to oneshot receiver");
 }

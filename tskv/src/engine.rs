@@ -8,6 +8,7 @@ use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
+use tracing::log::info;
 
 pub type EngineRef = Arc<dyn Engine>;
 
@@ -79,13 +80,14 @@ impl Engine for MockEngine {
         todo!()
     }
 
-
     fn drop_database(&self, database: &str) -> Result<()> {
-        todo!()
+        println!("drop_database {:?}", database);
+        Ok(())
     }
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
-        todo!()
+        println!("drop_table db:{:?}, table:{:?}", database, table);
+        Ok(())
     }
 
     fn delete_series(

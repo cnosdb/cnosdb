@@ -42,7 +42,10 @@ impl FieldVal {
             FieldVal::Integer(val) => DataType::I64(I64Cell { ts, val: *val }),
             FieldVal::Unsigned(val) => DataType::U64(U64Cell { ts, val: *val }),
             FieldVal::Boolean(val) => DataType::Bool(BoolCell { ts, val: *val }),
-            FieldVal::Bytes(val) => DataType::Str(StrCell { ts, val: val.clone() }),
+            FieldVal::Bytes(val) => DataType::Str(StrCell {
+                ts,
+                val: val.clone(),
+            }),
         }
     }
 
@@ -134,7 +137,8 @@ impl SeriesData {
         }
 
         for item in self.groups.iter_mut() {
-            item.rows.retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
+            item.rows
+                .retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
         }
     }
 
@@ -234,7 +238,8 @@ impl MemCache {
 
     pub fn write_group(&self, sid: u64, seq: u64, group: RowGroup) {
         self.seq_no.store(seq, Ordering::Relaxed);
-        self.cache_size.fetch_add(size_of_val(&group) as u64, Ordering::Relaxed);
+        self.cache_size
+            .fetch_add(size_of_val(&group) as u64, Ordering::Relaxed);
 
         let index = (sid as usize) % self.part_count;
         let entry = self.partions[index]
