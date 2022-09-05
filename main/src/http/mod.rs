@@ -111,7 +111,7 @@ mod test {
     use async_channel as channel;
     use config::get_config;
     use protos::kv_service::WritePointsRpcResponse;
-    use tokio::spawn;
+    use tokio::{runtime::Runtime, spawn};
     use trace::init_default_global_tracing;
     use tskv::{Options, Task, TsKv};
 
@@ -134,7 +134,9 @@ mod test {
             .expect("Invalid host");
         let opt = Options::from(&global_config);
 
-        let tskv = TsKv::open(opt).await.unwrap();
+        let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
+            .await
+            .unwrap();
         // let db = Arc::new(Db::new(Arc::new(tskv)));
         let db = Arc::new(
             server::instance::make_cnosdbms(Arc::new(tskv)).expect("Failed to build dbms."),

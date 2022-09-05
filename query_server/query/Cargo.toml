@@ -12,7 +12,7 @@ config = { path = "../../config" }
 spi = { path = "../spi" }
 datafusion = { path = "../../common/datafusion_dep" }
 criterion = { version = "0.3.5", features = ["async_tokio"] }
-tokio = { version = "1.17", features = ["full"] }
+tokio = { version = "1.21", features = ["full"] }
 futures = { version = "0.3" }
 parking_lot = "0.12"
 pin-project = "1.0"
