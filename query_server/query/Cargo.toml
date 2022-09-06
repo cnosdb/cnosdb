@@ -26,6 +26,7 @@ snafu = "0.7"
 sled = "0.34"
 paste = "1.0"
 sqlparser = "0.18.0"
+priority-queue = "1.2.3"
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]
 version = "0.2"
