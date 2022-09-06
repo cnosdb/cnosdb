@@ -13,9 +13,10 @@ use snafu::ResultExt;
 use spi::query::{physical_planner::PhysicalPlanner, Result};
 use spi::query::{session::IsiphoSessionCtx, PhysicalPlanerSnafu};
 
+use crate::extension::physical::transform_rule::topk::TopKPlanner;
+
 use super::optimizer::PhysicalOptimizer;
 
-#[derive(Default)]
 pub struct DefaultPhysicalPlanner {
     ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     /// Responsible for optimizing a physical execution plan
@@ -44,14 +45,20 @@ impl DefaultPhysicalPlanner {
     }
 }
 
-// impl Default for DefaultPhysicalPlanner {
-//     fn default() -> Self {
-//         Self {
-//             ext_physical_transform_rules: Default::default(),
-//             ext_physical_optimizer_rules: Default::default(),
-//         }
-//     }
-// }
+impl Default for DefaultPhysicalPlanner {
+    fn default() -> Self {
+        let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> =
+            vec![Arc::new(TopKPlanner {})];
+
+        let ext_physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>> =
+            vec![];
+
+        Self {
+            ext_physical_transform_rules,
+            ext_physical_optimizer_rules,
+        }
+    }
+}
 
 #[async_trait]
 impl PhysicalPlanner for DefaultPhysicalPlanner {

@@ -73,10 +73,13 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+    use rand::{self, Rng};
     use std::ops::DerefMut;
+    use trace::debug;
 
     use super::*;
-    use datafusion::arrow::util::pretty::pretty_format_batches;
+    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
     use futures::StreamExt;
     use spi::query::execution::Output;
     use tskv::engine::MockEngine;
@@ -98,34 +101,27 @@ mod tests {
         };
     }
 
-    #[tokio::test]
-    async fn test_simple_sql() {
-        let result_db = make_cnosdbms(Arc::new(MockEngine::default()));
+    async fn exec_sql(db: &Cnosdbms, sql: &str) -> Vec<RecordBatch> {
+        let query = Query::new(Default::default(), sql.to_string());
 
-        let db = result_db.unwrap();
-
-        let query = Query::new(
-            Default::default(),
-            "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num"
-                .to_string(),
-        );
-
+        // let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
         let mut actual = vec![];
 
         let mut result = db.execute(&query).await.unwrap();
+
         for ele in result.result().iter_mut() {
-            match ele {
-                Output::StreamData(data) => {
-                    while let Some(next) = data.next().await {
-                        let batch = next.unwrap();
-                        actual.push(batch);
-                    }
-                }
-                Output::Nil(_) => {
-                    todo!();
-                }
+            while let Some(next) = ele.next().await {
+                actual.push(next.unwrap());
             }
         }
+        actual
+    }
+
+    #[tokio::test]
+    async fn test_simple_sql() {
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+
+        let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
 
         let expected = vec![
             "+-----+--------+",
@@ -137,40 +133,104 @@ mod tests {
             "+-----+--------+",
         ];
 
-        let formatted = pretty_format_batches(actual.deref_mut())
-            .unwrap()
-            .to_string();
+        // let formatted = pretty_format_batches(result.deref_mut())
+        //     .unwrap()
+        //     .to_string();
 
-        println!("{}", formatted);
+        // println!("{}", formatted);
 
-        assert_batches_eq!(expected, actual.deref_mut());
+        assert_batches_eq!(expected, result.deref_mut());
+    }
+
+    fn generate_data(n: usize) -> String {
+        // let mut random = rand::thread_rng();
+
+        // random.gen_range();
+        debug!("start generate data.");
+        let rows: Vec<String> = (0..n)
+            .into_iter()
+            .map(|i| {
+                format!(
+                    "({}, '{}----xxxxxx=====3333444hhhhhhxx324r9cc')",
+                    i % 1000,
+                    i % 100
+                )
+            })
+            .collect();
+        // .reduce(|l, r| {
+        //     format!("{}, {}", l, r)
+        // }).unwrap();
+
+        let result = rows.join(",");
+
+        debug!("end generate data.");
+
+        result
     }
 
     #[tokio::test]
-    async fn test_drop() {
-        let result_db = make_cnosdbms(Arc::new(MockEngine::default()));
+    async fn test_topk_sql() {
+        // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
 
-        let db = result_db.unwrap();
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
 
-        let query = Query::new(
-            Default::default(),
-            "drop database if exists test; \
-                    drop database test; \
-                    drop table if exists test; \
-                    drop table test; \
-                    "
-            .to_string(),
+        let sql = format!(
+            "SELECT * FROM 
+        (VALUES  {}) AS t (num,letter) 
+        order by num limit 20",
+            generate_data(1_000_000)
         );
-        let mut result = db.execute(&query).await.unwrap();
-        for ele in result.result().iter_mut() {
-            match ele {
-                Output::StreamData(_data) => {
-                    panic!("should not happen");
-                }
-                Output::Nil(_res) => {
-                    println!("sql excuted ok")
-                }
-            }
-        }
+
+        let start = Utc::now();
+
+        let mut result = exec_sql(&db, &sql).await;
+
+        let end = Utc::now();
+
+        println!("used time: {}", (start - end).num_milliseconds());
+
+        let expected = vec![
+            "+-----+--------+",
+            "| num | letter |",
+            "+-----+--------+",
+            "| 1   | one    |",
+            "| 2   | two    |",
+            "+-----+--------+",
+        ];
+
+        assert_batches_eq!(expected, result.deref_mut());
+    }
+
+    #[tokio::test]
+    async fn test_topk_desc_sql() {
+        trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
+
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+
+        let mut result = exec_sql(
+            &db,
+            "
+        SELECT * FROM 
+        (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter) 
+        order by num desc limit 2",
+        )
+        .await;
+
+        let expected = vec![
+            "+-----+--------+",
+            "| num | letter |",
+            "+-----+--------+",
+            "| 9   | nine    |",
+            "| 3   | three    |",
+            "+-----+--------+",
+        ];
+
+        // let formatted = pretty_format_batches(result.deref_mut())
+        //     .unwrap()
+        //     .to_string();
+
+        // println!("{}", formatted);
+
+        assert_batches_eq!(expected, result.deref_mut());
     }
 }
