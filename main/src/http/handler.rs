@@ -5,7 +5,6 @@ use datafusion::arrow::util::pretty::pretty_format_batches;
 use flatbuffers::FlatBufferBuilder;
 use futures::StreamExt;
 use hyper::{Body, Request, Response};
-use lazy_static::lazy_static;
 use line_protocol::{line_protocol_to_lines, Line};
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models::{
@@ -23,13 +22,6 @@ use super::QuerySnafu;
 use crate::http::{parse_query, AsyncChanSendSnafu, Error, HyperSnafu, ParseLineProtocolSnafu};
 use async_channel as channel;
 use spi::query::execution::Output;
-
-lazy_static! {
-    static ref NUMBER_PATTERN: Regex = Regex::new(r"^[+-]?\d+([IiUu]?|(.\d*))$").unwrap();
-    static ref STRING_PATTERN: Regex = Regex::new("^\".*\"$").unwrap();
-    static ref TRUE_PATTERN: Regex = Regex::new("^(t|(true))$").unwrap();
-    static ref FALSE_PATTERN: Regex = Regex::new("^(f|(false))$").unwrap();
-}
 
 pub(crate) async fn route(
     req: Request<Body>,
@@ -197,67 +189,30 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
         let mut fields = Vec::new();
         for (k, v) in line.fields.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
-            let (fbv_type, fbv) = if NUMBER_PATTERN.is_match(v) {
-                if v.ends_with('i') || v.ends_with('I') {
-                    (
-                        fb_models::FieldType::Integer,
-                        fbb.create_vector(
-                            &v[..v.len() - 1]
-                                .parse::<i64>()
-                                .map_err(|e| Error::Syntax {
-                                    reason: format!("Value '{}' is not valid i64: {}", v, e),
-                                })?
-                                .to_be_bytes(),
-                        ),
-                    )
-                } else if v.ends_with('u') || v.ends_with('U') {
-                    (
-                        fb_models::FieldType::Unsigned,
-                        fbb.create_vector(
-                            &v[..v.len() - 1]
-                                .parse::<u64>()
-                                .map_err(|e| Error::Syntax {
-                                    reason: format!("Value '{}' is not valid u64: {}", v, e),
-                                })?
-                                .to_be_bytes(),
-                        ),
-                    )
-                } else {
-                    (
-                        fb_models::FieldType::Float,
-                        fbb.create_vector(
-                            &v[..]
-                                .parse::<f64>()
-                                .map_err(|e| Error::Syntax {
-                                    reason: format!("Value '{}' is not valid f64: {}", v, e),
-                                })?
-                                .to_be_bytes(),
-                        ),
-                    )
+            let (fbv_type, fbv) = match v {
+                line_protocol::FieldValue::U64(field_val) => (
+                    fb_models::FieldType::Unsigned,
+                    fbb.create_vector(&field_val.to_be_bytes()),
+                ),
+                line_protocol::FieldValue::I64(field_val) => (
+                    fb_models::FieldType::Integer,
+                    fbb.create_vector(&field_val.to_be_bytes()),
+                ),
+                line_protocol::FieldValue::Str(field_val) => {
+                    (fb_models::FieldType::String, fbb.create_vector(field_val))
                 }
-            } else if STRING_PATTERN.is_match(v) {
-                (
-                    fb_models::FieldType::String,
-                    fbb.create_vector(v.as_bytes()),
-                )
-            } else {
-                let vl = v.to_lowercase();
-                if TRUE_PATTERN.is_match(&vl) {
-                    (
-                        fb_models::FieldType::Boolean,
-                        fbb.create_vector(&[1_u8][..]),
-                    )
-                } else if FALSE_PATTERN.is_match(&vl) {
-                    (
-                        fb_models::FieldType::Boolean,
-                        fbb.create_vector(&[0_u8][..]),
-                    )
-                } else {
-                    (
-                        fb_models::FieldType::Unknown,
-                        fbb.create_vector(v.as_bytes()),
-                    )
-                }
+                line_protocol::FieldValue::F64(field_val) => (
+                    fb_models::FieldType::Float,
+                    fbb.create_vector(&field_val.to_be_bytes()),
+                ),
+                line_protocol::FieldValue::Bool(field_val) => (
+                    fb_models::FieldType::Boolean,
+                    if *field_val {
+                        fbb.create_vector(&[1_u8][..])
+                    } else {
+                        fbb.create_vector(&[0_u8][..])
+                    },
+                ),
             };
             let mut field_builder = FieldBuilder::new(&mut fbb);
             field_builder.add_name(fbk);
@@ -302,29 +257,6 @@ mod test {
     use line_protocol::Parser;
 
     use crate::http::handler::parse_lines_to_points;
-
-    #[test]
-    fn test_parse() {
-        let number_strings = ["0.1", "1.99999", "99999999i", "999I", "1U", "1u"];
-        let non_number_strings = ["\"0.1\"", "1.99.99.9", ".50", "999B", "1.0I", "1.1U"];
-        for s in number_strings {
-            println!("{} is number? {}", s, super::NUMBER_PATTERN.is_match(s));
-        }
-        for s in non_number_strings {
-            println!("{} is number? {}", s, super::NUMBER_PATTERN.is_match(s));
-        }
-
-        let bolean_strings = ["t", "f", "true", "false"];
-        let non_bolean_strings = ["t1", "f_", "@true", "false@"];
-        for s in bolean_strings {
-            println!("{} is true? {}", s, super::TRUE_PATTERN.is_match(s));
-            println!("{} is false? {}", s, super::FALSE_PATTERN.is_match(s));
-        }
-        for s in non_bolean_strings {
-            println!("{} is true? {}", s, super::TRUE_PATTERN.is_match(s));
-            println!("{} is false? {}", s, super::FALSE_PATTERN.is_match(s));
-        }
-    }
 
     #[test]
     #[ignore]

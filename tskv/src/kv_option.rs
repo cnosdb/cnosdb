@@ -65,15 +65,13 @@ impl StorageOptions {
     }
 
     pub fn tsm_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
-        self.path
-            .join(database)
+        self.database_dir(database)
             .join(TSM_PATH)
             .join(ts_family_id.to_string())
     }
 
     pub fn delta_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
-        self.path
-            .join(database)
+        self.database_dir(database)
             .join(DELTA_PATH)
             .join(ts_family_id.to_string())
     }

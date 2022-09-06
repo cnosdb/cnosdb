@@ -1,7 +1,7 @@
 use snafu::Snafu;
 
 mod parser;
-pub use parser::{Line, Parser};
+pub use parser::{FieldValue, Line, Parser};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
