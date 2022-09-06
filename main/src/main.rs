@@ -89,7 +89,6 @@ enum SubCommand {
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
 fn main() -> Result<(), std::io::Error> {
-    let mut _trace_guard = init_global_tracing("tskv_log", "tskv.log", "debug");
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
@@ -99,6 +98,13 @@ fn main() -> Result<(), std::io::Error> {
         cli.host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
     );
     let global_config = config::get_config(cli.config.as_str());
+
+    let mut _trace_guard = init_global_tracing(
+        &global_config.log.path,
+        "tskv.log",
+        &global_config.log.level,
+    );
+
     // TODO check global_config
     runtime.clone().block_on(async move {
         match &cli.subcmd {
