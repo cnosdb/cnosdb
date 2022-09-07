@@ -120,7 +120,7 @@ fn main() -> Result<(), std::io::Error> {
 
                 let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
 
-                for _ in 0..1 {
+                for _ in 0..cli.cpu.unwrap() {
                     TsKv::start(tskv.clone(), receiver.clone());
                 }
 

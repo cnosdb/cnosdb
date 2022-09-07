@@ -35,6 +35,16 @@ impl SeriesKey {
         bincode::serialize(self).unwrap()
     }
 
+    pub fn tag_val(&self, key: &str) -> Vec<u8> {
+        for tag in &self.tags {
+            if tag.key == key.as_bytes() {
+                return tag.value.clone();
+            }
+        }
+
+        return vec![];
+    }
+
     pub fn hash(&self) -> u64 {
         let mut hasher = BkdrHasher::new();
         hasher.hash_with(self.table.as_bytes());

@@ -9,7 +9,7 @@ models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
-
+datafusion = { path = "../common/datafusion_dep" }
 
 async-channel = "1.7.1"
 chrono = "0.4"

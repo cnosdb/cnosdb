@@ -63,7 +63,7 @@ async fn test_index_add_del() {
     sids_1.sort();
 
     // Test get series id list
-    let mut sids_2 = index.get_series_id_list(&table, &vec![]).await.unwrap();
+    let mut sids_2 = index.get_series_id_list(&table, &vec![]).unwrap();
     sids_2.sort();
     assert_eq!(&sids_1, &sids_2);
 
@@ -83,7 +83,7 @@ async fn test_index_add_del() {
         deleted_sid.insert(*sid);
     }
     println!("Deleted {} series ids.", sids_2.len());
-    let sids_3 = index.get_series_id_list(&table, &vec![]).await.unwrap();
+    let sids_3 = index.get_series_id_list(&table, &vec![]).unwrap();
     let remained_sid: HashSet<u64> = HashSet::from_iter(sids_3.iter().copied());
     println!(
         "Remained {} series ids after Deleted {} series ids. And remained - deleted = {:?}.",
@@ -170,13 +170,11 @@ async fn test_index_id_list() {
 
     let list = index
         .get_series_id_list(&"table_test".to_string(), &tags)
-        .await
         .unwrap();
     assert_eq!(vec![id2], list);
 
     let list = index
         .get_series_id_list(&"table_test".to_string(), &tags[0..0].to_vec())
-        .await
         .unwrap();
     assert_eq!(vec![id1, id2, id3], list);
 

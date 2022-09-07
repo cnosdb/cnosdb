@@ -5,6 +5,7 @@ use models::{utils, FieldId, RwLockRef, Timestamp, ValueType};
 use protos::models::{FieldType, Rows};
 
 use std::cmp::Ordering as CmpOrdering;
+use std::ops::Index;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
@@ -180,6 +181,18 @@ impl SeriesData {
 
         return Some(Arc::new(RwLock::new(entry)));
     }
+
+    pub fn field_data_block(&self, ids: &[u32], time_range: &TimeRange) -> HashMap<u32, DataBlock> {
+        let mut map = HashMap::new();
+
+        for id in ids {
+            if let Some(entry) = self.read_entry(*id) {
+                map.insert(*id, entry.read().data_block(time_range));
+            }
+        }
+
+        return map;
+    }
 }
 
 impl Default for SeriesData {
@@ -326,14 +339,19 @@ pub struct MemEntry {
 }
 
 impl MemEntry {
-    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
+    pub fn data_block(&self, time_range: &TimeRange) -> DataBlock {
         let mut data = DataBlock::new(0, self.field_type);
         for datum in self.cells.iter() {
             if datum.timestamp() >= time_range.min_ts && datum.timestamp() <= time_range.max_ts {
                 data.insert(datum);
             }
         }
-        return vec![data];
+
+        return data;
+    }
+
+    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
+        return vec![self.data_block(time_range)];
     }
 
     pub fn sort(&mut self) {
@@ -371,6 +389,16 @@ pub enum DataType {
 }
 
 impl DataType {
+    pub fn new(vtype: ValueType, ts: i64) -> Self {
+        match vtype {
+            ValueType::Unsigned => DataType::U64(DataCell { ts, val: 0 }),
+            ValueType::Integer => DataType::I64(DataCell { ts, val: 0 }),
+            ValueType::Float => DataType::F64(DataCell { ts, val: 0.0 }),
+            ValueType::Boolean => DataType::Bool(DataCell { ts, val: false }),
+            ValueType::String => DataType::Str(DataCell { ts, val: vec![] }),
+            _ => todo!(),
+        }
+    }
     pub fn timestamp(&self) -> i64 {
         match *self {
             DataType::U64(U64Cell { ts, .. }) => ts,

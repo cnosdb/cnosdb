@@ -92,4 +92,7 @@ pub enum Error {
 
     #[snafu(display("panics in thread: {}", reason))]
     ThreadJoin { reason: String },
+
+    #[snafu(display("data fusion RecordBatch::try_new {}", reason))]
+    DataFusionNew { reason: String },
 }

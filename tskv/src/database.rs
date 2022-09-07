@@ -290,7 +290,6 @@ pub(crate) async fn delete_table_async(
         let sids = match index
             .read()
             .get_series_id_list(&table, &vec![])
-            .await
             .context(error::IndexErrSnafu)
         {
             Ok(x) => x,

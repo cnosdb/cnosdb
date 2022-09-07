@@ -19,7 +19,6 @@ use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::memcache::RowGroup;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
@@ -32,6 +31,7 @@ use crate::{
     tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
     ColumnFileId, LevelId, TseriesFamilyId,
 };
+use crate::{memcache::RowGroup, tsm::BlockMetaIterator};
 
 lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
@@ -215,6 +215,36 @@ impl Drop for ColumnFile {
     }
 }
 
+pub struct FieldFileLocation {
+    field_id: u64,
+    file: Arc<ColumnFile>,
+    reader: TsmReader,
+    block_it: BlockMetaIterator,
+
+    read_index: usize,
+    data_block: DataBlock,
+}
+
+impl FieldFileLocation {
+    pub fn peek(&mut self) -> Result<Option<DataType>, Error> {
+        if self.read_index >= self.data_block.len() {
+            if let Some(meta) = self.block_it.next() {
+                let blk = self.reader.get_data_block(&meta)?;
+                self.read_index = 0;
+                self.data_block = blk;
+            } else {
+                return Ok(None);
+            }
+        }
+
+        return Ok(self.data_block.get(self.read_index));
+    }
+
+    pub fn next(&mut self) {
+        self.read_index += 1;
+    }
+}
+
 #[derive(Debug)]
 pub struct LevelInfo {
     pub files: Vec<Arc<ColumnFile>>,
@@ -271,6 +301,8 @@ impl LevelInfo {
         self.cur_size += compact_meta.file_size;
         self.time_range.max_ts = self.time_range.max_ts.max(compact_meta.max_ts);
         self.time_range.min_ts = self.time_range.min_ts.min(compact_meta.min_ts);
+
+        self.sort_file_asc();
     }
 
     pub fn push_column_file(&mut self, file: Arc<ColumnFile>) {
@@ -278,6 +310,8 @@ impl LevelInfo {
         self.time_range.max_ts = self.time_range.max_ts.max(file.time_range.max_ts);
         self.time_range.min_ts = self.time_range.min_ts.min(file.time_range.min_ts);
         self.files.push(file);
+
+        self.sort_file_asc();
     }
 
     /// Update time_range by a scan with files.
@@ -320,6 +354,11 @@ impl LevelInfo {
             }
         }
         data
+    }
+
+    pub fn sort_file_asc(&mut self) {
+        self.files
+            .sort_by(|a, b| a.file_id.partial_cmp(&b.file_id).unwrap());
     }
 
     pub fn level(&self) -> u32 {

@@ -1,5 +1,6 @@
 use crate::error::Result;
 use crate::index::IndexResult;
+use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
@@ -44,13 +45,15 @@ pub trait Engine: Send + Sync + Debug {
 
     fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>>;
 
-    async fn get_series_id_list(
+    fn get_series_id_list(
         &self,
         db: &String,
         tab: &String,
         tags: &Vec<Tag>,
     ) -> IndexResult<Vec<u64>>;
     fn get_series_key(&self, db: &String, sid: u64) -> IndexResult<Option<SeriesKey>>;
+
+    fn get_db_version(&self, db: &String) -> Option<Arc<SuperVersion>>;
 }
 
 #[derive(Debug, Default)]
@@ -104,7 +107,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn get_series_id_list(
+    fn get_series_id_list(
         &self,
         db: &String,
         tab: &String,
@@ -114,6 +117,10 @@ impl Engine for MockEngine {
     }
 
     fn get_series_key(&self, db: &String, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        todo!()
+    }
+
+    fn get_db_version(&self, db: &String) -> Option<Arc<SuperVersion>> {
         todo!()
     }
 }

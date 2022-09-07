@@ -574,19 +574,14 @@ impl Engine for TsKv {
         Ok(None)
     }
 
-    async fn get_series_id_list(
+    fn get_series_id_list(
         &self,
         name: &String,
         tab: &String,
         tags: &Vec<Tag>,
     ) -> IndexResult<Vec<u64>> {
         if let Some(db) = self.version_set.read().get_db(name) {
-            return db
-                .read()
-                .get_index()
-                .write()
-                .get_series_id_list(tab, tags)
-                .await;
+            return db.read().get_index().write().get_series_id_list(tab, tags);
         }
 
         Ok(vec![])
@@ -599,18 +594,75 @@ impl Engine for TsKv {
 
         Ok(None)
     }
+
+    fn get_db_version(&self, db: &String) -> Option<Arc<SuperVersion>> {
+        let version_set = self.version_set.read();
+        if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
+            return Some(tsf.read().super_version());
+        } else {
+            warn!("ts_family with db name '{}' not found.", db);
+            return None;
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
+    use std::sync::{atomic, Arc};
+
+    use async_channel as channel;
 
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
+    use models::utils::now_timestamp;
     use models::{InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
 
-    use crate::{engine::Engine, error, index::utils, tsm::DataBlock, Options, TimeRange, TsKv};
+    use crate::{
+        engine::Engine,
+        error,
+        tsm::{timestamp, DataBlock},
+        Options, TimeRange, TsKv,
+    };
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_async_chan() {
+        let atomic = Arc::new(AtomicI64::new(0));
+        let (sender, receiver) = channel::unbounded();
+        for i in 0..60 {
+            consumer(atomic.clone(), receiver.clone());
+        }
+
+        let mut start = now_timestamp();
+        for i in 0..100000000 {
+            let _ = sender.send(i).await;
+
+            if i % 1000000 == 0 {
+                println!(
+                    "{} {} {}",
+                    now_timestamp() - start,
+                    i,
+                    atomic.load(Ordering::SeqCst)
+                );
+                start = now_timestamp();
+            }
+        }
+    }
+
+    fn consumer(atomic: Arc<AtomicI64>, req_rx: channel::Receiver<u64>) {
+        let f = async move {
+            println!(" 111111");
+            while let Ok(_) = req_rx.recv().await {
+                println!(" ====");
+                atomic.fetch_add(1, Ordering::SeqCst);
+            }
+        };
+
+        tokio::spawn(f);
+    }
 
     #[tokio::test]
     #[ignore]
@@ -636,10 +688,7 @@ mod test {
 
         {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
-            let series_ids = tskv
-                .get_series_id_list(database, table, &vec![])
-                .await
-                .unwrap();
+            let series_ids = tskv.get_series_id_list(database, table, &vec![]).unwrap();
 
             let field_ids: Vec<u32> = table_schema.iter().map(|f| f.field_id() as u32).collect();
             let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
@@ -679,10 +728,7 @@ mod test {
                 let table_schema = tskv.get_table_schema(&database, &table).unwrap();
                 assert!(table_schema.is_none());
 
-                let series_ids = tskv
-                    .get_series_id_list(&database, &table, &vec![])
-                    .await
-                    .unwrap();
+                let series_ids = tskv.get_series_id_list(&database, &table, &vec![]).unwrap();
                 assert!(series_ids.is_empty());
             }
         });
@@ -722,10 +768,7 @@ mod test {
                 let table_schema = tskv.get_table_schema(&database, &table).unwrap();
                 assert!(table_schema.is_none());
 
-                let series_ids = tskv
-                    .get_series_id_list(&database, &table, &vec![])
-                    .await
-                    .unwrap();
+                let series_ids = tskv.get_series_id_list(&database, &table, &vec![]).unwrap();
                 assert!(series_ids.is_empty());
             }
         });

@@ -419,6 +419,7 @@ impl Iterator for BlockMetaIterator {
     }
 }
 
+#[derive(Clone)]
 pub struct TsmReader {
     reader: Arc<File>,
     index_reader: Arc<IndexReader>,
