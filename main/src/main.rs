@@ -41,14 +41,16 @@ struct Cli {
         long,
         global = true,
         env = "server_addr",
-        default_value = "127.0.0.1:31006"
+        default_value = "0.0.0.0:31006"
     )]
-    host: String,
+    grpc_host: String,
 
     #[clap(
+        short,
+        long,
         global = true,
         env = "server_http_addr",
-        default_value = "127.0.0.1:31007"
+        default_value = "0.0.0.0:31007"
     )]
     http_host: String,
 
@@ -88,6 +90,10 @@ enum SubCommand {
 /// ```bash
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
+use mem_allocator::Jemalloc;
+#[global_allocator]
+static A: Jemalloc = Jemalloc;
+
 fn main() -> Result<(), std::io::Error> {
     install_crash_handler();
     let cli = Cli::parse();
@@ -95,13 +101,13 @@ fn main() -> Result<(), std::io::Error> {
     let runtime = Arc::new(runtime);
     println!(
         "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
-        cli.host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
+        cli.grpc_host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
     );
     let global_config = config::get_config(cli.config.as_str());
 
     let mut _trace_guard = init_global_tracing(
         &global_config.log.path,
-        "tskv.log",
+        "tsdb.log",
         &global_config.log.level,
     );
 
@@ -109,15 +115,10 @@ fn main() -> Result<(), std::io::Error> {
     runtime.clone().block_on(async move {
         match &cli.subcmd {
             SubCommand::Debug { debug } => {
-                println!("Debug {}", debug);
             }
-            SubCommand::Run {
-
-            } => {}
+            SubCommand::Run {} => {}
             SubCommand::Tskv { debug } => {
-                println!("TSKV {}", debug);
-
-                let grpc_host = cli.host.parse::<SocketAddr>().expect("Invalid grpc_host");
+                let grpc_host = cli.grpc_host.parse::<SocketAddr>().expect("Invalid grpc_host");
                 let http_host = cli
                     .http_host
                     .parse::<SocketAddr>()
@@ -130,7 +131,7 @@ fn main() -> Result<(), std::io::Error> {
 
                 let tskv = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
 
-                for _ in 0..1 {
+                for _ in 0..64 {
                     TsKv::start(tskv.clone(), receiver.clone());
                 }
 
