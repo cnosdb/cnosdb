@@ -45,10 +45,10 @@ impl DatabaseManagerSystem for Cnosdbms {
 pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
     // todo: add query config
     // for now only support local mode
-    let meta = Arc::new(LocalCatalogMeta::new_with_default(engine));
-
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
+
+    let meta = Arc::new(LocalCatalogMeta::new_with_default(engine, Arc::new(function_manager)));
 
     // TODO session config need load global system config
     let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
@@ -110,8 +110,16 @@ mod tests {
         let mut result = db.execute(&query).await.unwrap();
 
         for ele in result.result().iter_mut() {
-            while let Some(next) = ele.next().await {
-                actual.push(next.unwrap());
+            match ele {
+                Output::StreamData(data) => {
+                    while let Some(next) = data.next().await {
+                        let batch = next.unwrap();
+                        actual.push(batch);
+                    }
+                }
+                Output::Nil(_) => {
+                    todo!();
+                }
             }
         }
         actual
@@ -169,6 +177,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_topk_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
 
@@ -203,7 +212,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_topk_desc_sql() {
-        trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
+        // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
 
         let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
 
@@ -220,8 +229,8 @@ mod tests {
             "+-----+--------+",
             "| num | letter |",
             "+-----+--------+",
-            "| 9   | nine    |",
-            "| 3   | three    |",
+            "| 9   | nine   |",
+            "| 3   | three  |",
             "+-----+--------+",
         ];
 
@@ -232,5 +241,33 @@ mod tests {
         // println!("{}", formatted);
 
         assert_batches_eq!(expected, result.deref_mut());
+    }
+
+    #[tokio::test]
+    async fn test_drop() {
+        let result_db = make_cnosdbms(Arc::new(MockEngine::default()));
+
+        let db = result_db.unwrap();
+
+        let query = Query::new(
+            Default::default(),
+            "drop database if exists test; \
+                    drop database test; \
+                    drop table if exists test; \
+                    drop table test; \
+                    "
+            .to_string(),
+        );
+        let mut result = db.execute(&query).await.unwrap();
+        for ele in result.result().iter_mut() {
+            match ele {
+                Output::StreamData(_data) => {
+                    panic!("should not happen");
+                }
+                Output::Nil(_res) => {
+                    println!("sql excuted ok")
+                }
+            }
+        }
     }
 }

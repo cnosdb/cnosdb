@@ -58,7 +58,7 @@ impl TopKExec {
             input,
             expr,
             options,
-            metrics_set: CompositeMetricsSet::new()
+            metrics_set: CompositeMetricsSet::new(),
         }
     }
 }
@@ -595,12 +595,8 @@ impl RecordBatchWithPositionComparator for SimpleRecordBatchWithPositionComparat
                 Ordering::Equal => continue,
                 order => {
                     if order_opts.descending {
-                        debug!("{} {:#?} {}", left_position, &order, right_position);
-
                         return Ok(order.reverse());
                     } else {
-                        debug!("{} {:#?} {}", left_position, &order, right_position);
-
                         return Ok(order);
                     }
                 }

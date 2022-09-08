@@ -1,7 +1,6 @@
 use crate::catalog::{CatalogRef, UserCatalog, UserCatalogRef};
 use crate::error::Error::{DatabaseName, TableName};
 use crate::error::{Error, Result};
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::{
@@ -40,12 +39,12 @@ pub struct LocalCatalogMeta {
 }
 
 impl LocalCatalogMeta {
-    pub fn new_with_default(engine: EngineRef) -> Self {
+    pub fn new_with_default(engine: EngineRef, func_manager: FuncMetaManagerRef) -> Self {
         Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
             schema_name: DEFAULT_SCHEMA.to_string(),
             catalog: Arc::new(UserCatalog::new(engine)),
-            func_manager: Arc::new(SimpleFunctionMetadataManager::default()),
+            func_manager,
         }
     }
 }

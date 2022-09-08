@@ -3,7 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{
     logical_plan::LogicalPlan,
-    physical_optimizer::PhysicalOptimizerRule,
+    physical_optimizer::{
+        aggregate_statistics::AggregateStatistics, coalesce_batches::CoalesceBatches,
+        hash_build_probe_order::HashBuildProbeOrder, merge_exec::AddCoalescePartitionsExec,
+        repartition::Repartition, PhysicalOptimizerRule,
+    },
     physical_plan::{
         planner::{DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner},
         ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner,
@@ -50,8 +54,14 @@ impl Default for DefaultPhysicalPlanner {
         let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> =
             vec![Arc::new(TopKPlanner {})];
 
-        let ext_physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>> =
-            vec![];
+        let ext_physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>> = vec![
+            //
+            Arc::new(AggregateStatistics::new()),
+            Arc::new(HashBuildProbeOrder::new()),
+            Arc::new(CoalesceBatches::new(4 * 1024)),
+            Arc::new(Repartition::new()),
+            Arc::new(AddCoalescePartitionsExec::new()),
+        ];
 
         Self {
             ext_physical_transform_rules,

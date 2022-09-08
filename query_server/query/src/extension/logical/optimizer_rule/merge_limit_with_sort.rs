@@ -35,7 +35,8 @@ impl OptimizerRule for MergeLimitWithSortRule {
                 ref input,
             }) = **input
             {
-                if expr.len() == 1 {
+                // If k is too large, no topk optimization is performed
+                if skip.unwrap_or(0) + fetch <= 255 {
                     // we found a sort with a single sort expr, replace with a a TopK
                     return Ok(LogicalPlan::Extension(Extension {
                         node: Arc::new(TopKPlanNode::new(
@@ -55,6 +56,6 @@ impl OptimizerRule for MergeLimitWithSortRule {
     }
 
     fn name(&self) -> &str {
-        "topk"
+        "merge_limit_with_sort"
     }
 }

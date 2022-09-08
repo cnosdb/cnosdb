@@ -1,0 +1,186 @@
+use std::sync::Arc;
+
+use datafusion::{
+    error::DataFusionError,
+    logical_plan::{
+        plan::{Extension, Projection},
+        LogicalPlan,
+    },
+    optimizer::{OptimizerConfig, OptimizerRule},
+    prelude::Expr,
+    scalar::ScalarValue,
+};
+
+use crate::extension::{
+    expr::{expr_utils, selector_function::TOPK},
+    logical::plan_node::topk::TopKPlanNode,
+};
+
+use datafusion::error::Result;
+
+const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. There cannot be multiple selection functions.";
+const INVALID_ARGUMENTS: &str =
+    "Routine not match. Maybe (field_name, k). k is integer literal value. The range of values for k is [1, 255].";
+
+pub struct TransformTopkFuncToTopkNodeRule {}
+
+impl OptimizerRule for TransformTopkFuncToTopkNodeRule {
+    // Example rewrite pass to insert a user defined LogicalPlanNode
+    fn optimize(
+        &self,
+        plan: &LogicalPlan,
+        optimizer_config: &OptimizerConfig,
+    ) -> Result<LogicalPlan> {
+        if let LogicalPlan::Projection(projection) = plan {
+            // check exprs and then do transform
+            if let (true, Some(topk_function)) = (
+                //check exprs
+                valid_exprs(&projection.expr)?,
+                // extract topk function expr, If it does not exist, return None
+                extract_topk_function(&projection.expr),
+            ) {
+                return self.do_transform(&topk_function, projection, optimizer_config);
+            };
+        }
+
+        // If we didn't find the match pattern, recurse as
+        // normal and build the result.
+        datafusion::optimizer::utils::optimize_children(self, plan, optimizer_config)
+    }
+
+    fn name(&self) -> &str {
+        "transform_topk_func_to_topk_node"
+    }
+}
+
+impl TransformTopkFuncToTopkNodeRule {
+    fn do_transform(
+        &self,
+        topk_function: &Expr,
+        projection: &Projection,
+        optimizer_config: &OptimizerConfig,
+    ) -> Result<LogicalPlan> {
+        let Projection {
+            expr,
+            input,
+            schema,
+            alias,
+        } = projection;
+
+        let (field, k) = extract_args(topk_function)?;
+
+        let sort_expr = Expr::Sort {
+            /// The expression to sort on
+            expr: Box::new(field.clone()),
+            /// The direction of the sort
+            asc: false,
+            /// Whether to put Nulls before all other data values
+            nulls_first: false,
+        };
+
+        let topk_node = LogicalPlan::Extension(Extension {
+            node: Arc::new(TopKPlanNode::new(
+                vec![sort_expr],
+                Arc::new(self.optimize(input.as_ref(), optimizer_config)?),
+                None,
+                k,
+            )),
+        });
+
+        // 2. construct a new projection node
+        // * replace topk func expression with inner column expr
+        // * not construct the new set of required columns
+        let new_projection = LogicalPlan::Projection(Projection {
+            expr: expr_utils::replace_expr_with(expr, topk_function, &field),
+            input: Arc::new(topk_node),
+            schema: schema.clone(),
+            alias: alias.clone(),
+        });
+
+        // 3. Assemble the new execution plan return
+        Ok(new_projection)
+    }
+}
+
+fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
+    let selector_function_num = expr_utils::find_selector_function_exprs(exprs).len();
+    let selector_function_with_nested_num = expr_utils::find_selector_function_exprs(exprs).len();
+
+    // 1. There cannot be nested selection functions
+    // 2. There cannot be multiple selection functions
+    if selector_function_num == selector_function_with_nested_num {
+        match selector_function_num {
+            0 => return Ok(false),
+            1 => return Ok(true),
+            _ => {
+                return Err(DataFusionError::Plan(format!(
+                    "{}, found: {:#?}",
+                    INVALID_EXPRS, exprs
+                )))
+            }
+        }
+    }
+
+    Err(DataFusionError::Plan(format!(
+        "{}, found: {:#?}",
+        INVALID_EXPRS, exprs
+    )))
+}
+
+fn extract_topk_function(exprs: &[Expr]) -> Option<Expr> {
+    expr_utils::find_exprs_in_exprs(exprs, &|nested_expr| {
+        matches!(
+            nested_expr,
+            Expr::ScalarUDF {
+                fun,
+                ..
+            } if fun.name.eq_ignore_ascii_case(TOPK)
+        )
+    })
+    .first()
+    .cloned()
+}
+
+fn extract_args(expr: &Expr) -> Result<(Expr, usize)> {
+    if let Expr::ScalarUDF { fun: _, args } = expr {
+        if args.len() != 2 {
+            return Err(DataFusionError::Plan(INVALID_ARGUMENTS.to_string()));
+        }
+
+        let field_expr = args
+            .get(0)
+            .ok_or_else(|| DataFusionError::Plan(INVALID_ARGUMENTS.to_string()))?;
+        let k_expr = args
+            .get(1)
+            .ok_or_else(|| DataFusionError::Plan(INVALID_ARGUMENTS.to_string()))?;
+
+        let k = extract_args_k(k_expr)?;
+
+        return Ok((field_expr.clone(), k));
+    }
+
+    Err(DataFusionError::Plan(INVALID_EXPRS.to_string()))
+}
+
+/// Extract the k value and check the value range
+fn extract_args_k(expr: &Expr) -> Result<usize> {
+    if let Expr::Literal(val) = expr.clone() {
+        let k = match val {
+            ScalarValue::UInt8(Some(v)) => v as usize,
+            ScalarValue::UInt16(Some(v)) if v < 256 => v as usize,
+            ScalarValue::UInt32(Some(v)) if v < 256 => v as usize,
+            #[cfg(target_pointer_width = "64")]
+            ScalarValue::UInt64(Some(v)) if v < 256 => v as usize,
+            ScalarValue::Int8(Some(v)) if v > 0 => v as usize,
+            ScalarValue::Int16(Some(v)) if v > 0 && v < 256 => v as usize,
+            ScalarValue::Int32(Some(v)) if v > 0 && v < 256 => v as usize,
+            #[cfg(target_pointer_width = "64")]
+            ScalarValue::Int64(Some(v)) if v > 0 && v < 256 => v as usize,
+            _ => return Err(DataFusionError::Plan(INVALID_ARGUMENTS.to_string())),
+        };
+
+        return Ok(k);
+    }
+
+    Err(DataFusionError::Plan(INVALID_ARGUMENTS.to_string()))
+}
