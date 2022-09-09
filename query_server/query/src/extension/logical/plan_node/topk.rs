@@ -112,7 +112,9 @@ impl UserDefinedLogicalNode for TopKPlanNode {
 
     /// For example: `TopK: k=10, skip=None`
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TopK: {}", self.options,)
+        let expr: Vec<String> = self.expr.iter().map(|e| e.to_string()).collect();
+
+        write!(f, "TopK: [{}], {}", expr.join(","), self.options,)
     }
 
     fn from_template(

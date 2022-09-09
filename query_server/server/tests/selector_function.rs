@@ -7,8 +7,8 @@ mod tests {
 
     use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
     use futures::StreamExt;
-    use spi::server::dbms::DatabaseManagerSystem;
     use spi::query::execution::Output;
+    use spi::server::dbms::DatabaseManagerSystem;
     use tskv::engine::MockEngine;
 
     #[macro_export]
@@ -43,7 +43,7 @@ mod tests {
                         let batch = next.unwrap();
                         actual.push(batch);
                     }
-               } 
+                }
                 Output::Nil(_) => {
                     todo!();
                 }
@@ -504,7 +504,7 @@ mod tests {
             //     FROM
             //     (VALUES
             //         (1, CAST(11 as SMALLINT), CAST(111111111 as INT), CAST(111111111 as BIGINT), CAST(1.1111 as DECIMAL(10, 4)), CAST(1.1 as REAL), CAST(1111.11111 as DOUBLE), date '1994-01-31' + interval '1' month as date, time '08:01:10.123456789' as time_nano,  to_timestamp_micros(1235865600000001), CAST('111111111' as CHAR(10)), CAST('111111111' as VARCHAR), true, 'one'),
-            //         (2, CAST(22 as SMALLINT), CAST(222222222 as INT), CAST(222222222 as BIGINT), CAST(2.2222 as DECIMAL(10, 4)), CAST(2.2 as REAL), CAST(2222.22222 as DOUBLE), date '1994-02-30' + interval '1' month as date, time '08:02:10.123456'    as time_micro, to_timestamp_micros(1235865600100001), CAST('222222222' as CHAR(10)), CAST('222222222' as VARCHAR), true, 'two'), 
+            //         (2, CAST(22 as SMALLINT), CAST(222222222 as INT), CAST(222222222 as BIGINT), CAST(2.2222 as DECIMAL(10, 4)), CAST(2.2 as REAL), CAST(2222.22222 as DOUBLE), date '1994-02-30' + interval '1' month as date, time '08:02:10.123456'    as time_micro, to_timestamp_micros(1235865600100001), CAST('222222222' as CHAR(10)), CAST('222222222' as VARCHAR), true, 'two'),
             //         (3, CAST(33 as SMALLINT), CAST(333333333 as INT), CAST(333333333 as BIGINT), CAST(3.3333 as DECIMAL(10, 4)), CAST(3.3 as REAL), CAST(3333.33333 as DOUBLE), date '1994-03-31' + interval '1' month as date, time '08:03:10.123'       as time_milli, to_timestamp_micros(1235865600200001), CAST('333333333' as CHAR(10)), CAST('333333333' as VARCHAR), true, 'three'),
             //         (4, CAST(44 as SMALLINT), CAST(444444444 as INT), CAST(444444444 as BIGINT), CAST(4.4444 as DECIMAL(10, 4)), CAST(4.4 as REAL), CAST(4444.44444 as DOUBLE), date '1994-04-30' + interval '1' month as date, time '08:04:10'           as time,       to_timestamp_micros(1235865600300001), CAST('444444444' as CHAR(10)), CAST('444444444' as VARCHAR), false, 'three'),
             //         (5, CAST(55 as SMALLINT), CAST(555555555 as INT), CAST(555555555 as BIGINT), CAST(5.5555 as DECIMAL(10, 4)), CAST(5.5 as REAL), CAST(5555.55555 as DOUBLE), date '1994-05-31' + interval '1' month as date, time '08:05:10.123456789' as time_nano,  to_timestamp_micros(1235865600400001), CAST('555555555' as CHAR(10)), CAST('555555555' as VARCHAR), false, 'three'),

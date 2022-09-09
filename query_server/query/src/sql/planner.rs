@@ -38,7 +38,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn df_sql_to_plan(&self, stmt: Statement) -> Result<Plan> {
         match stmt {
-            Statement::Query(_) => {
+            Statement::Query(_) | Statement::Explain { .. } => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
                 let df_plan = df_planner
                     .sql_statement_to_plan(stmt)

@@ -164,11 +164,9 @@ impl ExecutionPlan for TopKExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default => {
-                write!(
-                    f,
-                    "TopKExec: {}",
-                    self.options,
-                )
+                let expr: Vec<String> = self.expr.iter().map(|e| e.to_string()).collect();
+
+                write!(f, "TopKExec: [{}], {}", expr.join(","), self.options,)
             }
         }
     }
