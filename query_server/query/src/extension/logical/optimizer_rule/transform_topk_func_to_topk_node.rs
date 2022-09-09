@@ -29,7 +29,7 @@ impl OptimizerRule for TransformTopkFuncToTopkNodeRule {
     fn optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &OptimizerConfig,
+        optimizer_config: &mut OptimizerConfig,
     ) -> Result<LogicalPlan> {
         if let LogicalPlan::Projection(projection) = plan {
             // check exprs and then do transform
@@ -58,7 +58,7 @@ impl TransformTopkFuncToTopkNodeRule {
         &self,
         topk_function: &Expr,
         projection: &Projection,
-        optimizer_config: &OptimizerConfig,
+        optimizer_config: &mut OptimizerConfig,
     ) -> Result<LogicalPlan> {
         let Projection {
             expr,

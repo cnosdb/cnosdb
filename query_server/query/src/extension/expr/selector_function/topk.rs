@@ -29,7 +29,7 @@ fn new() -> ScalarUDF {
     };
     let func = make_scalar_function(func);
 
-    // Accept any numeric value paired with a float64 percentile
+    // Accept any numeric value paired with a Int64 k
     let type_signatures = STRINGS
         .iter()
         .chain(NUMERICS.iter())
