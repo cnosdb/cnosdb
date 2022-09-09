@@ -82,7 +82,9 @@ mod tests {
     use trace::debug;
 
     use super::*;
-    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
+    use datafusion::arrow::{
+        datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
+    };
     use futures::StreamExt;
     use spi::query::execution::Output;
     use tskv::engine::MockEngine;
@@ -121,7 +123,8 @@ mod tests {
                     }
                 }
                 Output::Nil(_) => {
-                    todo!();
+                    let batch = RecordBatch::new_empty(Arc::new(Schema::empty()));
+                    actual.push(batch);
                 }
             }
         }
@@ -331,5 +334,140 @@ mod tests {
         ];
 
         assert_batches_eq!(expected, result.deref_mut());
+    }
+
+    #[tokio::test]
+    async fn test_create_external_csv_table() {
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+
+        assert_batches_eq!(
+            vec!["++", "++", "++",],
+            exec_sql(
+                &db,
+                "CREATE EXTERNAL TABLE decimal_simple (
+                    c1  DECIMAL(10,6) NOT NULL,
+                    c2  DOUBLE NOT NULL,
+                    c3  BIGINT NOT NULL,
+                    c4  BOOLEAN NOT NULL,
+                    c5  DECIMAL(12,7) NOT NULL
+                )
+                STORED AS CSV
+                WITH HEADER ROW
+                LOCATION 'tests/data/csv/decimal_data.csv'",
+            )
+            .await
+            .deref_mut()
+        );
+
+        assert_batches_eq!(
+            vec![
+                "+----------+----------------+-----+-------+-----------+",
+                "| c1       | c2             | c3  | c4    | c5        |",
+                "+----------+----------------+-----+-------+-----------+",
+                "| 0.000010 | 0.000000000001 | 1   | true  | 0.0000140 |",
+                "| 0.000020 | 0.000000000002 | 2   | true  | 0.0000250 |",
+                "| 0.000020 | 0.000000000002 | 3   | false | 0.0000190 |",
+                "| 0.000030 | 0.000000000003 | 4   | true  | 0.0000320 |",
+                "| 0.000030 | 0.000000000003 | 5   | false | 0.0000350 |",
+                "| 0.000030 | 0.000000000003 | 5   | true  | 0.0000110 |",
+                "| 0.000040 | 0.000000000004 | 5   | true  | 0.0000440 |",
+                "| 0.000040 | 0.000000000004 | 8   | false | 0.0000440 |",
+                "| 0.000040 | 0.000000000004 | 12  | false | 0.0000400 |",
+                "| 0.000040 | 0.000000000004 | 14  | true  | 0.0000400 |",
+                "| 0.000050 | 0.000000000005 | 1   | false | 0.0001000 |",
+                "| 0.000050 | 0.000000000005 | 4   | true  | 0.0000780 |",
+                "| 0.000050 | 0.000000000005 | 8   | false | 0.0000330 |",
+                "| 0.000050 | 0.000000000005 | 9   | true  | 0.0000520 |",
+                "| 0.000050 | 0.000000000005 | 100 | true  | 0.0000680 |",
+                "+----------+----------------+-----+-------+-----------+",
+            ],
+            exec_sql(&db, "select * from decimal_simple order by c1,c2,c3,c4,c5;",)
+                .await
+                .deref_mut()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_external_parquet_table() {
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+
+        assert_batches_eq!(
+            vec!["++", "++", "++",],
+            exec_sql(
+                &db,
+                "
+            CREATE EXTERNAL TABLE rep
+            STORED AS PARQUET
+            LOCATION 'tests/data/parquet/userdata1.parquet';",
+            )
+            .await
+            .deref_mut()
+        );
+
+        assert_batches_eq!(vec![
+            "+---------------------+----+---------+---------+--------------------------+--------+----------------+------------------+------------------------+------------+-----------+--------------------------+-------+",
+            "| COUNT(UInt8(1))     |    |         |         |                          |        |                |                  |                        |            |           |                          |       |",
+            "+---------------------+----+---------+---------+--------------------------+--------+----------------+------------------+------------------------+------------+-----------+--------------------------+-------+",
+            "| 1000                |    |         |         |                          |        |                |                  |                        |            |           |                          |       |",
+            "| 2016-02-03 07:55:29 | 1  | Amanda  | Jordan  | ajordan0@com.com         | Female | 1.197.201.2    | 6759521864920116 | Indonesia              | 3/8/1971   | 49756.53  | Internal Auditor         | 1E+02 |",
+            "| 2016-02-03 17:04:03 | 2  | Albert  | Freeman | afreeman1@is.gd          | Male   | 218.111.175.34 |                  | Canada                 | 1/16/1968  | 150280.17 | Accountant IV            |       |",
+            "| 2016-02-03 01:09:31 | 3  | Evelyn  | Morgan  | emorgan2@altervista.org  | Female | 7.161.136.94   | 6767119071901597 | Russia                 | 2/1/1960   | 144972.51 | Structural Engineer      |       |",
+            "| 2016-02-03 00:36:21 | 4  | Denise  | Riley   | driley3@gmpg.org         | Female | 140.35.109.83  | 3576031598965625 | China                  | 4/8/1997   | 90263.05  | Senior Cost Accountant   |       |",
+            "| 2016-02-03 05:05:31 | 5  | Carlos  | Burns   | cburns4@miitbeian.gov.cn |        | 169.113.235.40 | 5602256255204850 | South Africa           |            |           |                          |       |",
+            "| 2016-02-03 07:22:34 | 6  | Kathryn | White   | kwhite5@google.com       | Female | 195.131.81.179 | 3583136326049310 | Indonesia              | 2/25/1983  | 69227.11  | Account Executive        |       |",
+            "| 2016-02-03 08:33:08 | 7  | Samuel  | Holmes  | sholmes6@foxnews.com     | Male   | 232.234.81.197 | 3582641366974690 | Portugal               | 12/18/1987 | 14247.62  | Senior Financial Analyst |       |",
+            "| 2016-02-03 06:47:06 | 8  | Harry   | Howell  | hhowell7@eepurl.com      | Male   | 91.235.51.73   |                  | Bosnia and Herzegovina | 3/1/1962   | 186469.43 | Web Developer IV         |       |",
+            "| 2016-02-03 03:52:53 | 9  | Jose    | Foster  | jfoster8@yelp.com        | Male   | 132.31.53.61   |                  | South Korea            | 3/27/1992  | 231067.84 | Software Test Engineer I | 1E+02 |",
+            "| 2016-02-03 18:29:47 | 10 | Emily   | Stewart | estewart9@opensource.org | Female | 143.28.251.245 | 3574254110301671 | Nigeria                | 1/28/1997  | 27234.28  | Health Coach IV          |       |",
+            "+---------------------+----+---------+---------+--------------------------+--------+----------------+------------------+------------------------+------------+-----------+--------------------------+-------+",
+        ], exec_sql(
+            &db,
+            "
+            select count(1) from rep;
+            select * from rep limit 10;
+            ",
+        )
+        .await.deref_mut());
+    }
+
+    #[tokio::test]
+    async fn test_create_external_json_table() {
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+
+        assert_batches_eq!(
+            vec!["++", "++", "++",],
+            exec_sql(
+                &db,
+                "
+            CREATE EXTERNAL TABLE rep
+            STORED AS NDJSON
+            LOCATION 'tests/data/json/schema_infer_limit.json';",
+            )
+            .await
+            .deref_mut()
+        );
+
+        assert_batches_eq!(
+            vec![
+                "+-----+------+-------+---+",
+                "| a   | b    | c     | d |",
+                "+-----+------+-------+---+",
+                "| 1   |      |       |   |",
+                "| -10 | -3.5 |       |   |",
+                "| 2   | 0.6  | false |   |",
+                "| 1   | 2    | false | 4 |",
+                "| 4   |      |       |   |",
+                "+-----+------+-------+---+",
+            ],
+            exec_sql(
+                &db,
+                "
+            select * from rep limit 10;
+            select count(1) from rep;
+            ",
+            )
+            .await
+            .deref_mut()
+        );
     }
 }

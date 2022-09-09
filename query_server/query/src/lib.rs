@@ -4,7 +4,6 @@ pub mod catalog;
 pub mod context;
 pub mod db;
 pub mod dispatcher;
-mod error;
 mod exec;
 mod execution;
 pub mod extension;

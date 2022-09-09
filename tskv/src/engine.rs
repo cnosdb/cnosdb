@@ -101,7 +101,8 @@ impl Engine for MockEngine {
     }
 
     fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>> {
-        todo!()
+        println!("get_table_schema db:{:?}, table:{:?}", db, tab);
+        Ok(None)
     }
 
     async fn get_series_id_list(
