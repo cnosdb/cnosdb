@@ -745,20 +745,6 @@ mod internal {
             self.used_row_count -= 1;
         }
 
-        pub fn compaction(self) -> Result<RecordBatch> {
-            // If all records are valid, return directly
-            if self.used_row_count() == self.record_batch().num_rows() {
-                return Ok(self.record_batch().clone());
-            }
-
-            // compact record batch
-            let predicate = BooleanArray::from(self.reference);
-
-            let filtered_record_batch = filter_record_batch(&self.record_batch, &predicate)?;
-
-            Ok(filtered_record_batch)
-        }
-
         pub fn compaction_v2(&mut self) -> Result<()> {
             // If all records are valid, return directly
             if self.used_row_count() == self.record_batch().num_rows() {

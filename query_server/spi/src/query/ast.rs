@@ -1,6 +1,6 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::Statement;
+use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 
 /// Statement representations
 #[derive(Debug, Clone, PartialEq)]
@@ -8,6 +8,7 @@ pub enum ExtStatement {
     /// ANSI SQL AST node
     SqlStatement(Box<Statement>),
 
+    CreateExternalTable(CreateExternalTable),
     CreateTable(CreateTable),
     CreateDatabase(CreateDatabase),
     CreateUser(CreateUser),

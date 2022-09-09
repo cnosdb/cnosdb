@@ -1,11 +1,22 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::physical_plan::SendableRecordBatchStream;
+use datafusion::{error::DataFusionError, physical_plan::SendableRecordBatchStream};
+use snafu::Snafu;
 
-use crate::service::protocol::Query;
+use crate::{catalog::MetadataError, service::protocol::Query};
 
 use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum ExecutionError {
+    #[snafu(display("External err: {}", source))]
+    External { source: DataFusionError },
+
+    #[snafu(display("Metadata operator err: {}", source))]
+    Metadata { source: MetadataError },
+}
 
 #[async_trait]
 pub trait QueryExecution: Send + Sync {
