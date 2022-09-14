@@ -14,7 +14,7 @@ use datafusion::{
 use futures::Stream;
 use parking_lot::Mutex;
 
-use models::SeriesId;
+use models::{FieldId, SeriesId};
 use trace::{debug, error};
 use tskv::engine::EngineRef;
 use tskv::memcache::DataType as MDataType;
@@ -146,7 +146,7 @@ impl RecordBatchStream for TableScanStream {
     }
 }
 
-fn get_field_ids(proj_schema: SchemaRef) -> Vec<u32> {
+fn get_field_ids(proj_schema: SchemaRef) -> Vec<FieldId> {
     let mut fields = vec![];
     for i in proj_schema.fields() {
         if let Some(meta_data) = i.metadata() {
@@ -157,7 +157,7 @@ fn get_field_ids(proj_schema: SchemaRef) -> Vec<u32> {
                 }
             }
             if let Some(field_id) = meta_data.get(FIELD_ID) {
-                fields.push(u32::from_str(field_id).unwrap());
+                fields.push(FieldId::from_str(field_id).unwrap());
             }
         }
     }
@@ -166,9 +166,9 @@ fn get_field_ids(proj_schema: SchemaRef) -> Vec<u32> {
 
 #[allow(clippy::comparison_chain)]
 fn push_record_array(
-    field_id: u32,
+    field_id: FieldId,
     entry: &mut ArrayType,
-    field_array_index: &mut HashMap<u32, i32>,
+    field_array_index: &mut HashMap<FieldId, i32>,
     data_blocks: &Vec<DataBlock>,
     ts_array: &Vec<i64>,
     ts_array_index: usize,
@@ -250,7 +250,7 @@ fn push_record_array(
 }
 
 fn push_record_batch(
-    fid: u32,
+    fid: FieldId,
     array_type: ArrayType,
     batch_array_vec: &mut Vec<ArrayRef>,
     schema_vec: &mut Vec<Field>,
@@ -259,7 +259,7 @@ fn push_record_batch(
     let mut field_name = "";
     for field in proj_schema.fields() {
         if let Some(field_id) = field.metadata().unwrap().get(FIELD_ID) {
-            let id = u32::from_str(field_id).unwrap();
+            let id = FieldId::from_str(field_id).unwrap();
             if id == fid {
                 field_name = field.name();
             }
@@ -294,7 +294,7 @@ fn push_record_batch(
     }
 }
 
-fn build_ts_array(field_block: &HashMap<u32, Vec<DataBlock>>) -> Vec<i64> {
+fn build_ts_array(field_block: &HashMap<FieldId, Vec<DataBlock>>) -> Vec<i64> {
     let mut ts_array = vec![];
     for field in field_block {
         for block in field.1 {
@@ -310,9 +310,9 @@ fn build_ts_array(field_block: &HashMap<u32, Vec<DataBlock>>) -> Vec<i64> {
 }
 
 fn build_field_array(
-    field_block: &HashMap<u32, Vec<DataBlock>>,
+    field_block: &HashMap<FieldId, Vec<DataBlock>>,
     ts_array: &Vec<i64>,
-    field_array_map: &mut HashMap<u32, ArrayType>,
+    field_array_map: &mut HashMap<FieldId, ArrayType>,
 ) {
     let mut ts_array_index: usize = 0;
 
@@ -357,7 +357,7 @@ fn build_field_array(
 
 fn make_record_batch(
     db_name: &String,
-    block_map: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>,
+    block_map: HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>>,
     store_engine: EngineRef,
     proj_schema: SchemaRef,
 ) -> Vec<RecordBatch> {
@@ -419,7 +419,7 @@ fn make_record_batch(
 }
 
 fn make_field_col(
-    field_array_map: HashMap<u32, ArrayType>,
+    field_array_map: HashMap<FieldId, ArrayType>,
     proj_schema: SchemaRef,
     batch_array_vec: &mut Vec<ArrayRef>,
     schema_vec: &mut Vec<Field>,

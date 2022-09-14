@@ -27,8 +27,8 @@ pub trait Engine: Send + Sync + Debug {
         db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>;
+        fields: Vec<FieldId>,
+    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>>;
 
     fn drop_database(&self, database: &str) -> Result<()>;
 
@@ -75,8 +75,8 @@ impl Engine for MockEngine {
         db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
+        fields: Vec<FieldId>,
+    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
         todo!()
     }
 

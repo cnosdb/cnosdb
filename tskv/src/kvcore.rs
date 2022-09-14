@@ -460,8 +460,8 @@ impl Engine for TsKv {
         db: &String,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
+        fields: Vec<FieldId>,
+    ) -> HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> {
         // get data block
         let mut ans = HashMap::new();
         for sid in sids {
@@ -616,7 +616,7 @@ mod test {
 
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
-    use models::{InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
+    use models::{FieldId, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
     use tokio::runtime::{self, Runtime};
 
@@ -653,8 +653,8 @@ mod test {
                 .await
                 .unwrap();
 
-            let field_ids: Vec<u32> = table_schema.iter().map(|f| f.field_id() as u32).collect();
-            let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
+            let field_ids: Vec<FieldId> = table_schema.iter().map(|f| f.field_id()).collect();
+            let result: HashMap<SeriesId, HashMap<FieldId, Vec<DataBlock>>> =
                 tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
         }
