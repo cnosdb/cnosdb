@@ -5,6 +5,7 @@ use models::{utils, FieldId, RwLockRef, Timestamp, ValueType};
 use protos::models::{FieldType, Rows};
 
 use std::cmp::Ordering as CmpOrdering;
+use std::fmt::Display;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
@@ -38,14 +39,11 @@ impl FieldVal {
 
     pub fn data_value(&self, ts: i64) -> DataType {
         match self {
-            FieldVal::Float(val) => DataType::F64(F64Cell { ts, val: *val }),
-            FieldVal::Integer(val) => DataType::I64(I64Cell { ts, val: *val }),
-            FieldVal::Unsigned(val) => DataType::U64(U64Cell { ts, val: *val }),
-            FieldVal::Boolean(val) => DataType::Bool(BoolCell { ts, val: *val }),
-            FieldVal::Bytes(val) => DataType::Str(StrCell {
-                ts,
-                val: val.clone(),
-            }),
+            FieldVal::Float(val) => DataType::F64(ts, *val),
+            FieldVal::Integer(val) => DataType::I64(ts, *val),
+            FieldVal::Unsigned(val) => DataType::U64(ts, *val),
+            FieldVal::Boolean(val) => DataType::Bool(ts, *val),
+            FieldVal::Bytes(val) => DataType::Str(ts, val.clone()),
         }
     }
 
@@ -348,36 +346,45 @@ impl MemEntry {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct DataCell<T> {
-    pub ts: i64,
-    pub val: T,
-}
-
-pub type Byte = Vec<u8>;
-pub type U64Cell = DataCell<u64>;
-pub type I64Cell = DataCell<i64>;
-pub type StrCell = DataCell<Byte>;
-pub type F64Cell = DataCell<f64>;
-pub type BoolCell = DataCell<bool>;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DataType {
-    U64(U64Cell),
-    I64(I64Cell),
-    Str(StrCell),
-    F64(F64Cell),
-    Bool(BoolCell),
+    U64(i64, u64),
+    I64(i64, i64),
+    Str(i64, Vec<u8>),
+    F64(i64, f64),
+    Bool(i64, bool),
 }
 
 impl DataType {
     pub fn timestamp(&self) -> i64 {
         match *self {
-            DataType::U64(U64Cell { ts, .. }) => ts,
-            DataType::I64(I64Cell { ts, .. }) => ts,
-            DataType::Str(StrCell { ts, .. }) => ts,
-            DataType::F64(F64Cell { ts, .. }) => ts,
-            DataType::Bool(BoolCell { ts, .. }) => ts,
+            DataType::U64(ts, ..) => ts,
+            DataType::I64(ts, ..) => ts,
+            DataType::Str(ts, ..) => ts,
+            DataType::F64(ts, ..) => ts,
+            DataType::Bool(ts, ..) => ts,
+        }
+    }
+
+    pub fn with_field_val(ts: Timestamp, field_val: FieldVal) -> Self {
+        match field_val {
+            FieldVal::Float(val) => Self::F64(ts, val),
+            FieldVal::Integer(val) => Self::I64(ts, val),
+            FieldVal::Unsigned(val) => Self::U64(ts, val),
+            FieldVal::Boolean(val) => Self::Bool(ts, val),
+            FieldVal::Bytes(val) => Self::Str(ts, val),
+        }
+    }
+}
+
+impl Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataType::U64(ts, val) => write!(f, "({}, {})", ts, val),
+            DataType::I64(ts, val) => write!(f, "({}, {})", ts, val),
+            DataType::Str(ts, val) => write!(f, "({}, {:?})", ts, val),
+            DataType::F64(ts, val) => write!(f, "({}, {})", ts, val),
+            DataType::Bool(ts, val) => write!(f, "({}, {})", ts, val),
         }
     }
 }

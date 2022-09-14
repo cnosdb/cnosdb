@@ -212,29 +212,38 @@ fn push_record_array(
         } else if data_blocks[vec_index].ts()[block_index] == ts_array[ts_array_index] {
             match entry {
                 ArrayType::U64(v) => {
-                    if let MDataType::U64(cell) = data_blocks[vec_index].get(block_index).unwrap() {
-                        v.push(cell.val);
+                    if let MDataType::U64(.., val) =
+                        data_blocks[vec_index].get(block_index).unwrap()
+                    {
+                        v.push(val);
                     }
                 }
                 ArrayType::I64(v) => {
-                    if let MDataType::I64(cell) = data_blocks[vec_index].get(block_index).unwrap() {
-                        v.push(cell.val);
+                    if let MDataType::I64(.., val) =
+                        data_blocks[vec_index].get(block_index).unwrap()
+                    {
+                        v.push(val);
                     }
                 }
                 ArrayType::F64(v) => {
-                    if let MDataType::F64(cell) = data_blocks[vec_index].get(block_index).unwrap() {
-                        v.push(cell.val);
+                    if let MDataType::F64(.., val) =
+                        data_blocks[vec_index].get(block_index).unwrap()
+                    {
+                        v.push(val);
                     }
                 }
                 ArrayType::Str(v) => {
-                    if let MDataType::Str(cell) = data_blocks[vec_index].get(block_index).unwrap() {
-                        v.push(String::from_utf8(cell.val).unwrap());
+                    if let MDataType::Str(.., val) =
+                        data_blocks[vec_index].get(block_index).unwrap()
+                    {
+                        v.push(String::from_utf8(val).unwrap());
                     }
                 }
                 ArrayType::Bool(v) => {
-                    if let MDataType::Bool(cell) = data_blocks[vec_index].get(block_index).unwrap()
+                    if let MDataType::Bool(.., val) =
+                        data_blocks[vec_index].get(block_index).unwrap()
                     {
-                        v.push(cell.val);
+                        v.push(val);
                     }
                 }
             }
