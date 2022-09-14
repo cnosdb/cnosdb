@@ -8,6 +8,7 @@ pub struct Config {
     pub storage: StorageConfig,
     pub wal: WalConfig,
     pub cache: CacheConfig,
+    pub log: LogConfig,
 }
 
 impl Config {
@@ -101,6 +102,23 @@ impl CacheConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogConfig {
+    pub level: String,
+    pub path: String,
+}
+
+impl LogConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(level) = std::env::var("CNOSDB_LOG_LEVEL") {
+            self.level = level;
+        }
+        if let Ok(path) = std::env::var("CNOSDB_LOG_PATH") {
+            self.path = path;
+        }
+    }
+}
+
 pub fn get_config(path: &str) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
@@ -140,6 +158,10 @@ sync = true
 [cache]
 max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
+
+[log]
+level = 'info'
+path = 'dev/log'
 "#;
 
     let config: Config = toml::from_str(config_str).unwrap();

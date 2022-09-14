@@ -3,7 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{
     logical_plan::LogicalPlan,
-    physical_optimizer::PhysicalOptimizerRule,
+    physical_optimizer::{
+        aggregate_statistics::AggregateStatistics, coalesce_batches::CoalesceBatches,
+        hash_build_probe_order::HashBuildProbeOrder, merge_exec::AddCoalescePartitionsExec,
+        repartition::Repartition, PhysicalOptimizerRule,
+    },
     physical_plan::{
         planner::{DefaultPhysicalPlanner as DFDefaultPhysicalPlanner, ExtensionPlanner},
         ExecutionPlan, PhysicalPlanner as DFPhysicalPlanner,
@@ -13,9 +17,10 @@ use snafu::ResultExt;
 use spi::query::{physical_planner::PhysicalPlanner, Result};
 use spi::query::{session::IsiphoSessionCtx, PhysicalPlanerSnafu};
 
+use crate::extension::physical::transform_rule::topk::TopKPlanner;
+
 use super::optimizer::PhysicalOptimizer;
 
-#[derive(Default)]
 pub struct DefaultPhysicalPlanner {
     ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
     /// Responsible for optimizing a physical execution plan
@@ -44,14 +49,26 @@ impl DefaultPhysicalPlanner {
     }
 }
 
-// impl Default for DefaultPhysicalPlanner {
-//     fn default() -> Self {
-//         Self {
-//             ext_physical_transform_rules: Default::default(),
-//             ext_physical_optimizer_rules: Default::default(),
-//         }
-//     }
-// }
+impl Default for DefaultPhysicalPlanner {
+    fn default() -> Self {
+        let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> =
+            vec![Arc::new(TopKPlanner {})];
+
+        let ext_physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>> = vec![
+            //
+            Arc::new(AggregateStatistics::new()),
+            Arc::new(HashBuildProbeOrder::new()),
+            Arc::new(CoalesceBatches::new(4 * 1024)),
+            Arc::new(Repartition::new()),
+            Arc::new(AddCoalescePartitionsExec::new()),
+        ];
+
+        Self {
+            ext_physical_transform_rules,
+            ext_physical_optimizer_rules,
+        }
+    }
+}
 
 #[async_trait]
 impl PhysicalPlanner for DefaultPhysicalPlanner {

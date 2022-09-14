@@ -16,8 +16,12 @@ dio_page_len_scale = 1
 [wal]
 enabled = true
 path = 'dev/wal'
-sync = true
+sync = false
 
 [cache]
 max_buffer_size = 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
+
+[log]
+level = 'debug'
+path = 'dev/log'

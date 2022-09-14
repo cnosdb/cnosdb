@@ -1,12 +1,18 @@
+use datafusion::error::DataFusionError;
+use datafusion::logical_plan::{FileType, LogicalPlan};
+use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use snafu::ResultExt;
 use spi::query::ast::{DropObject, ExtStatement};
-use spi::query::logical_planner::{DropPlan, LogicalPlanner, Plan, QueryPlan};
+use spi::query::logical_planner::{
+    CSVOptions, CreateExternalTable, DDLPlan, DropPlan, FileDescriptor, LogicalPlanner, Plan,
+    QueryPlan,
+};
 use spi::query::session::IsiphoSessionCtx;
 use sqlparser::ast::Statement;
 
-use spi::query::LogicalPlannerSnafu;
 use spi::query::Result;
+use spi::query::{LogicalPlannerSnafu, QueryError, UNEXPECTED_EXTERNAL_PLAN};
 
 /// CnosDB SQL query planner
 #[derive(Debug)]
@@ -24,6 +30,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn statement_to_plan(&self, statement: ExtStatement) -> Result<Plan> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
+            ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
             ExtStatement::CreateTable(_) => todo!(),
             ExtStatement::CreateDatabase(_) => todo!(),
             ExtStatement::CreateUser(_) => todo!(),
@@ -38,7 +45,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn df_sql_to_plan(&self, stmt: Statement) -> Result<Plan> {
         match stmt {
-            Statement::Query(_) => {
+            Statement::Query(_) | Statement::Explain { .. } => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
                 let df_plan = df_planner
                     .sql_statement_to_plan(stmt)
@@ -52,11 +59,57 @@ impl<S: ContextProvider> SqlPlaner<S> {
     }
 
     fn drop_object_to_plan(&self, stmt: DropObject) -> Result<Plan> {
-        Ok(Plan::Drop(DropPlan {
+        Ok(Plan::DDL(DDLPlan::Drop(DropPlan {
             if_exist: stmt.if_exist,
             object_name: stmt.object_name,
             obj_type: stmt.obj_type,
-        }))
+        })))
+    }
+
+    /// Generate a logical plan from a CREATE EXTERNAL TABLE statement
+    pub fn external_table_to_plan(&self, statement: AstCreateExternalTable) -> Result<Plan> {
+        let df_planner = SqlToRel::new(&self.schema_provider);
+
+        let logical_plan = df_planner
+            .external_table_to_plan(statement)
+            .context(LogicalPlannerSnafu)?;
+
+        if let LogicalPlan::CreateExternalTable(datafusion::logical_plan::CreateExternalTable {
+            schema,
+            name,
+            location,
+            file_type,
+            has_header,
+            delimiter,
+            table_partition_cols,
+            if_not_exists,
+        }) = logical_plan
+        {
+            let file_descriptor = match file_type {
+                FileType::NdJson => FileDescriptor::NdJson,
+                FileType::Parquet => FileDescriptor::Parquet,
+                FileType::CSV => FileDescriptor::CSV(CSVOptions {
+                    has_header,
+                    delimiter,
+                }),
+                FileType::Avro => FileDescriptor::Avro,
+            };
+
+            return Ok(Plan::DDL(DDLPlan::CreateExternalTable(
+                CreateExternalTable {
+                    schema,
+                    name,
+                    location,
+                    file_descriptor,
+                    table_partition_cols,
+                    if_not_exists,
+                },
+            )));
+        }
+
+        Err(QueryError::LogicalPlanner {
+            source: DataFusionError::Internal(UNEXPECTED_EXTERNAL_PLAN.to_string()),
+        })
     }
 }
 

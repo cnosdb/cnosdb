@@ -60,6 +60,7 @@ impl NormalizedSimpleComparison {
             | ScalarValue::IntervalYearMonth(_)
             | ScalarValue::IntervalDayTime(_)
             | ScalarValue::IntervalMonthDayNano(_)
+            | ScalarValue::Dictionary(_, _)
             | ScalarValue::Struct(_, _) => false,
 
             ScalarValue::Float32(_)
@@ -79,6 +80,7 @@ impl NormalizedSimpleComparison {
             | ScalarValue::LargeBinary(_)
             | ScalarValue::Date32(_)
             | ScalarValue::Date64(_)
+            | ScalarValue::Time64(_)
             | ScalarValue::TimestampSecond(_, _)
             | ScalarValue::TimestampMillisecond(_, _)
             | ScalarValue::TimestampMicrosecond(_, _)

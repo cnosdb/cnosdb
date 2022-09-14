@@ -13,17 +13,19 @@ pub struct SimpleFunctionMetadataManager {
 
 impl FunctionMetadataManager for SimpleFunctionMetadataManager {
     fn register_udf(&mut self, f: ScalarUDF) -> Result<()> {
-        self.scalar_functions.insert(f.name.clone(), Arc::new(f));
+        self.scalar_functions
+            .insert(f.name.to_uppercase(), Arc::new(f));
         Ok(())
     }
 
     fn register_udaf(&mut self, f: AggregateUDF) -> Result<()> {
-        self.aggregate_functions.insert(f.name.clone(), Arc::new(f));
+        self.aggregate_functions
+            .insert(f.name.to_uppercase(), Arc::new(f));
         Ok(())
     }
 
     fn udf(&self, name: &str) -> Result<Arc<ScalarUDF>> {
-        let result = self.scalar_functions.get(name);
+        let result = self.scalar_functions.get(&name.to_uppercase());
 
         result.cloned().ok_or_else(|| Error::NotExists {
             name: name.to_string(),
@@ -31,7 +33,7 @@ impl FunctionMetadataManager for SimpleFunctionMetadataManager {
     }
 
     fn udaf(&self, name: &str) -> Result<Arc<AggregateUDF>> {
-        let result = self.aggregate_functions.get(name);
+        let result = self.aggregate_functions.get(&name.to_uppercase());
 
         result.cloned().ok_or_else(|| Error::NotExists {
             name: name.to_string(),

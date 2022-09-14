@@ -88,6 +88,7 @@ mod tests {
     };
     use futures::TryStreamExt;
     use rand::{distributions::uniform::SampleUniform, thread_rng, Rng};
+    use tokio::runtime::Runtime;
     use tskv::{kv_option, TsKv};
 
     use crate::{catalog::UserSchema, db::Db};
@@ -224,7 +225,9 @@ mod tests {
         global_config.wal.path = "/tmp/test/wal".to_string();
         let opt = kv_option::Options::from(&global_config);
 
-        TsKv::open(opt).await.unwrap()
+        TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
+            .await
+            .unwrap()
     }
 
     async fn run_query(db: Arc<Db>) {

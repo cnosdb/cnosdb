@@ -6,39 +6,42 @@ use futures::FutureExt;
 use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::{runtime::Builder, sync::oneshot};
+use tokio::{
+    runtime::Runtime,
+    sync::{
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
+};
 
 use async_channel as channel;
 
-use ::models::{utils::unite_id, FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
-use models::{FieldId, SeriesId, SeriesKey, Timestamp};
-use protos::models::Points;
+use models::{
+    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag,
+    Timestamp, ValueType,
+};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
 };
 use trace::{debug, error, info, trace, warn};
 
-use crate::engine::Engine;
-
-use crate::database;
-use crate::index::IndexResult;
-use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
+    database,
+    engine::Engine,
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
-    index::db_index,
+    index::{db_index, IndexResult},
     kv_option::Options,
     memcache::{DataType, MemCache},
     record_file::Reader,
     summary,
     summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
     tseries_family::{SuperVersion, TimeRange, Version},
-    tsm::TsmTombstone,
+    tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
@@ -55,15 +58,15 @@ pub struct TsKv {
     global_ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
 
+    runtime: Arc<Runtime>,
     wal_sender: UnboundedSender<WalTask>,
-
     flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
     summary_task_sender: UnboundedSender<SummaryTask>,
 }
 
 impl TsKv {
-    pub async fn open(opt: Options) -> Result<TsKv> {
+    pub async fn open(opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
@@ -77,6 +80,7 @@ impl TsKv {
         let core = Self {
             version_set,
             global_ctx: summary.global_context(),
+            runtime,
             wal_sender,
             flush_task_sender,
             options: shared_options,
@@ -100,6 +104,7 @@ impl TsKv {
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
+        // core.run_kv_satement_job(core.version_set.clone(), stmt_task_receiver);
 
         Ok(core)
     }
@@ -226,7 +231,7 @@ impl TsKv {
                 }
             }
         };
-        tokio::spawn(f);
+        self.runtime.spawn(f);
         warn!("job 'WAL' started.");
     }
 
@@ -251,7 +256,7 @@ impl TsKv {
                 .unwrap();
             }
         };
-        tokio::spawn(f);
+        self.runtime.spawn(f);
         warn!("Flush task handler started");
     }
 
@@ -262,7 +267,7 @@ impl TsKv {
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) {
-        tokio::spawn(async move {
+        self.runtime.spawn(async move {
             while let Some(ts_family_id) = receiver.recv().await {
                 if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
                     info!("Starting compaction on ts_family {}", ts_family_id);
@@ -303,18 +308,19 @@ impl TsKv {
                 summary_processor.apply().await;
             }
         };
-        tokio::spawn(f);
+        self.runtime.spawn(f);
         warn!("Summary task handler started");
     }
 
     pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {
         warn!("job 'main' starting.");
+        let tskv_ref = tskv.clone();
         let f = async move {
             while let Ok(command) = req_rx.recv().await {
                 match command {
                     Task::WritePoints { req, tx } => {
                         debug!("writing points.");
-                        match tskv.write(req).await {
+                        match tskv_ref.write(req).await {
                             Ok(resp) => {
                                 let _ret = tx.send(Ok(resp));
                             }
@@ -330,7 +336,7 @@ impl TsKv {
             }
         };
 
-        tokio::spawn(f);
+        tskv.runtime.spawn(f);
         warn!("job 'main' started.");
     }
 
@@ -506,26 +512,27 @@ impl Engine for TsKv {
     }
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
+        // TODO Create global DropTable flag for droping the same table at the same time.
+
+        let runtime = self.runtime.clone();
+        let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
-
-        // TODO Create global DropTable flag for droping the same table at the same time.
-        let (cb, rx) = oneshot::channel();
-        let options = self.options.clone();
-        let version_set = self.version_set.clone();
-        tokio::spawn(async move {
-            info!("Executing drop table: {}.{}", &database, &table);
-            database::delete_table_async(database, table, version_set, cb).await;
+        let handle = std::thread::spawn(move || {
+            runtime.block_on(database::delete_table_async(
+                database.to_string(),
+                table.to_string(),
+                version_set,
+            ))
         });
-        let recv_ret =
-            match std::thread::spawn(|| rx.blocking_recv().context(error::ReceiveSnafu)).join() {
-                Ok(ret) => ret,
-                Err(e) => panic::resume_unwind(e),
-            };
+        let recv_ret = match handle.join() {
+            Ok(ret) => ret,
+            Err(e) => panic::resume_unwind(e),
+        };
 
         // TODO Release global DropTable flag.
 
-        recv_ret?
+        recv_ret
     }
 
     fn delete_series(
@@ -603,12 +610,13 @@ impl Engine for TsKv {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::{InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
+    use tokio::runtime::{self, Runtime};
 
     use crate::{engine::Engine, error, index::utils, tsm::DataBlock, Options, TimeRange, TsKv};
 
@@ -618,7 +626,9 @@ mod test {
         trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
         let config = get_config("/tmp/test/config/config.toml");
         let opt = Options::from(&config);
-        let tskv = TsKv::open(opt).await.unwrap();
+        let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
+            .await
+            .unwrap();
         tskv.compact(&"public".to_string()).await;
     }
 
@@ -649,23 +659,25 @@ mod test {
     }
 
     #[test]
-    fn test_drop_table() {
+    fn test_drop_table_database() {
         let base_dir = "/tmp/test/tskv/drop_table".to_string();
         let _ = std::fs::remove_dir_all(&base_dir);
-        trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
+        trace::init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let runtime = Arc::new(
+            runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
 
-        runtime.block_on(async move {
+        runtime.clone().block_on(async move {
             let mut config = get_config("../config/config.toml").clone();
             config.storage.path = base_dir;
             // TODO Add test case for `max_buffer_size = 0`.
             // config.cache.max_buffer_size = 0;
             let opt = Options::from(&config);
-            let tskv = TsKv::open(opt).await.unwrap();
+            let tskv = TsKv::open(opt, runtime).await.unwrap();
 
             let database = "db".to_string();
             let table = "table".to_string();
@@ -685,33 +697,6 @@ mod test {
                     .unwrap();
                 assert!(series_ids.is_empty());
             }
-        });
-    }
-
-    #[test]
-    fn test_drop_database() {
-        let base_dir = "/tmp/test/tskv/drop_database".to_string();
-        let _ = std::fs::remove_dir_all(&base_dir);
-        trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
-
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        runtime.block_on(async move {
-            let mut config = get_config("../config/config.toml").clone();
-            config.storage.path = base_dir;
-            // TODO Add test case for `max_buffer_size = 0`.
-            // config.cache.max_buffer_size = 0;
-            let opt = Options::from(&config);
-            let tskv = TsKv::open(opt).await.unwrap();
-
-            let database = "db".to_string();
-            let table = "table".to_string();
-            let time_range = TimeRange::new(i64::MIN, i64::MAX);
-
-            prepare(&tskv, &database, &table, &time_range).await;
 
             tskv.drop_database(&database).unwrap();
 

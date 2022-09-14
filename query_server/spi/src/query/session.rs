@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use datafusion::{
     catalog::catalog::CatalogProvider,
+    config::OPT_OPTIMIZER_SKIP_FAILED_RULES,
     execution::context,
     prelude::{SessionConfig, SessionContext},
 };
@@ -17,9 +18,22 @@ impl IsiphoSessionCtx {
     }
 }
 
-#[derive(Default)]
 pub struct IsiphoSessionCtxFactory {
     default_session_config: SessionConfig,
+}
+
+impl Default for IsiphoSessionCtxFactory {
+    fn default() -> Self {
+        let mut default_session_config: SessionConfig = Default::default();
+
+        default_session_config
+            .config_options
+            .set_bool(OPT_OPTIMIZER_SKIP_FAILED_RULES, false);
+
+        Self {
+            default_session_config,
+        }
+    }
 }
 
 impl IsiphoSessionCtxFactory {

@@ -14,7 +14,7 @@ trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
 server = { path = "../query_server/server" }
 spi = { path = "../query_server/spi" }
-
+mem_allocator = { path = "../common/mem_allocator" }
 async-channel = "1.7.1"
 #datafusion = { version = "10.0.0", features = ["scheduler"] }
 datafusion = { path = "../common/datafusion_dep" }
@@ -37,7 +37,7 @@ regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 snafu = "0.7"
-tokio = { version = "1.13", features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.21", features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tokio-util = { version = "0.7.0" }
 tonic = "0.7"

@@ -1,21 +1,22 @@
 use crate::catalog::{CatalogRef, UserCatalog, UserCatalogRef};
-use crate::error::Error::{DatabaseName, TableName};
-use crate::error::{Error, Result};
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::catalog::catalog::CatalogProvider;
+use datafusion::datasource::TableProvider;
 use datafusion::{
     datasource::DefaultTableSource,
     error::DataFusionError,
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
-use spi::catalog::{DEFAULT_CATALOG, DEFAULT_SCHEMA};
+use snafu::ResultExt;
+use spi::catalog::{ExternalSnafu, MetadataError, DEFAULT_CATALOG, DEFAULT_SCHEMA};
 use spi::query::function::FuncMetaManagerRef;
 use std::sync::Arc;
 use tskv::engine::EngineRef;
 
 pub type MetaDataRef = Arc<dyn MetaData + Send + Sync>;
+
+pub type Result<T> = std::result::Result<T, MetadataError>;
 
 pub trait MetaData: Send + Sync {
     fn catalog_name(&self) -> String;
@@ -25,6 +26,7 @@ pub trait MetaData: Send + Sync {
     fn function(&self) -> FuncMetaManagerRef;
     fn drop_table(&self, name: &str) -> Result<()>;
     fn drop_database(&self, name: &str) -> Result<()>;
+    fn create_table(&self, name: &str, table: Arc<dyn TableProvider>) -> Result<()>;
 }
 
 /// remote meta
@@ -40,12 +42,12 @@ pub struct LocalCatalogMeta {
 }
 
 impl LocalCatalogMeta {
-    pub fn new_with_default(engine: EngineRef) -> Self {
+    pub fn new_with_default(engine: EngineRef, func_manager: FuncMetaManagerRef) -> Self {
         Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
             schema_name: DEFAULT_SCHEMA.to_string(),
             catalog: Arc::new(UserCatalog::new(engine)),
-            func_manager: Arc::new(SimpleFunctionMetadataManager::default()),
+            func_manager,
         }
     }
 }
@@ -69,16 +71,16 @@ impl MetaData for LocalCatalogMeta {
         // let catalog_name = name.catalog;
         let schema = match self.catalog.schema(name.schema) {
             None => {
-                return Err(Error::DatabaseName {
-                    name: name.schema.to_string(),
+                return Err(MetadataError::DatabaseNotExists {
+                    database_name: name.schema.to_string(),
                 });
             }
             Some(s) => s,
         };
         let table = match schema.table(name.table) {
             None => {
-                return Err(Error::TableName {
-                    name: name.table.to_string(),
+                return Err(MetadataError::TableNotExists {
+                    table_name: name.table.to_string(),
                 });
             }
             Some(t) => t,
@@ -99,26 +101,37 @@ impl MetaData for LocalCatalogMeta {
         let name = table.resolve(self.catalog_name.as_str(), self.schema_name.as_str());
         let schema = self.catalog.schema(name.schema);
         if let Some(db) = schema {
-            match db.deregister_table(name.table) {
-                Ok(_) => return Ok(()),
-                Err(_e) => {
-                    return Err(TableName {
-                        name: name.table.to_string(),
-                    })
-                }
-            }
+            return db
+                .deregister_table(name.table)
+                .map(|_| ())
+                .context(ExternalSnafu);
         }
-        Err(DatabaseName {
-            name: name.schema.to_string(),
+
+        Err(MetadataError::DatabaseNotExists {
+            database_name: name.schema.to_string(),
         })
     }
 
     fn drop_database(&self, name: &str) -> Result<()> {
         self.catalog
             .deregister_schema(name)
-            .map_err(|_e| DatabaseName {
-                name: name.to_string(),
-            })
+            .map(|_| ())
+            .context(ExternalSnafu)
+    }
+
+    fn create_table(&self, name: &str, table_provider: Arc<dyn TableProvider>) -> Result<()> {
+        let table: TableReference = name.into();
+        let table_ref = table.resolve(self.catalog_name.as_str(), self.schema_name.as_str());
+
+        self.catalog
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
+            // Currently the SchemaProvider creates a temporary table
+            .register_table(table.table().to_owned(), table_provider)
+            .map(|_| ())
+            .context(ExternalSnafu)
     }
 }
 
