@@ -3,6 +3,7 @@ pub mod float;
 pub mod integer;
 mod simple8b;
 pub mod string;
+mod test;
 pub mod timestamp;
 pub mod unsigned;
 
