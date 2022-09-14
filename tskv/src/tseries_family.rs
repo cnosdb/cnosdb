@@ -63,6 +63,11 @@ impl TimeRange {
         self.min_ts = self.min_ts.min(other.min_ts);
         self.max_ts = self.max_ts.max(other.max_ts);
     }
+
+    #[inline(always)]
+    pub fn is_boundless(&self) -> bool {
+        self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
+    }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRange {

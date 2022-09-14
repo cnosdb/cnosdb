@@ -517,13 +517,21 @@ fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::mem::size_of;
 
     use crate::{
+        memcache::DataType,
         tseries_family::TimeRange,
         tsm::{block::exclude_fast, DataBlock},
     };
+
+    pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
+        assert_eq!(block.len(), pattern.len());
+        for j in 0..block.len() {
+            assert_eq!(block.get(j).unwrap(), pattern[j]);
+        }
+    }
 
     #[test]
     fn test_merge_blocks() {
