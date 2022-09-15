@@ -1,55 +1,57 @@
+#[cfg(test)]
 mod tests {
-
     use std::sync::Arc;
     use std::time::Duration;
 
+    use async_channel as channel;
     use chrono::Local;
+    use serial_test::serial;
+    use snafu::ResultExt;
+    use tokio::runtime;
+    use tokio::runtime::Runtime;
+    use tokio::sync::oneshot::channel;
 
     use config::get_config;
     use models::SeriesInfo;
     use protos::{kv_service, models as fb_models, models_helper};
-    use serial_test::serial;
-    use snafu::ResultExt;
-    use tokio::sync::{mpsc, oneshot::channel};
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::engine::Engine;
     use tskv::{error, kv_option, Task, TimeRange, TsKv};
+    use tskv::engine::Engine;
 
-    async fn get_tskv() -> TsKv {
+    fn get_tskv() -> (Arc<Runtime>, TsKv) {
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = "/tmp/test/wal".to_string();
+        global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
-
-        TsKv::open(opt).await.unwrap()
+        let rt = Arc::new(runtime::Runtime::new().unwrap());
+        rt.clone()
+            .block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) })
     }
 
-    #[tokio::test]
+    #[test]
     #[serial]
-    async fn test_kvcore_init() {
+    fn test_kvcore_init() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let _tskv = get_tskv().await;
-
+        get_tskv();
         dbg!("Ok");
     }
 
-    #[tokio::test]
+    #[test]
     #[serial]
-    async fn test_kvcore_write() {
+    fn test_kvcore_write() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
 
-        let database = "db".to_string();
+        let (rt, tskv) = get_tskv();
+
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
+        let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
-        tskv.write(request).await.unwrap();
+        rt.spawn(async move {
+            tskv.write(request).await.unwrap();
+        });
     }
 
     // remove repeat sid and fields_id
@@ -69,25 +71,22 @@ mod tests {
     }
 
     // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
-    #[tokio::test]
+    #[test]
     #[serial]
-    async fn test_kvcore_read() {
+    fn test_kvcore_read() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+        let (rt, tskv) = get_tskv();
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
-
-        tskv.write(request.clone()).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let request = kv_service::WritePointsRpcRequest { version: 1, points };
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        });
 
         let shared_write_batch = Arc::new(request.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
@@ -111,33 +110,37 @@ mod tests {
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
+
+        let fields_id = fields_id.iter().map(|id| {
+            *id as u32
+        }).collect();
+
         let output = tskv.read(
-            &request.database,
+            &database,
             sids,
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id,
         );
+
         info!("{:#?}", output);
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_kvcore_delete_cache() {
+    #[test]
+    #[serial]
+    fn test_kvcore_delete_cache() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+        let (rt, tskv) = get_tskv();
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 5);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
+        let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
-        tskv.write(request.clone()).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        });
 
         let shared_write_batch = Arc::new(request.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&shared_write_batch)
@@ -161,111 +164,92 @@ mod tests {
         sids = sids[0..l].to_owned();
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
+
+        let fields_id: Vec<u32> = fields_id.iter().map(|id| {
+            *id as u32
+        }).collect();
+
         tskv.read(
-            &request.database,
+            &database,
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
         );
+
         info!("delete delta data");
-        tskv.delete_series(&request.database, sids.clone(), 1, 1)
-            .await
+        tskv.delete_series(&database, &sids, &vec![1], &TimeRange::new(1, 1))
             .unwrap();
         tskv.read(
-            &request.database,
+            &database,
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
             fields_id.clone(),
         );
     }
 
-    #[tokio::test]
+    #[test]
     #[ignore]
-    async fn test_kvcore_big_write() {
+    fn test_kvcore_big_write() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+        let (rt, tskv) = get_tskv();
 
         for _ in 0..100 {
-            let database = "db".to_string();
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
             let points = models_helper::create_big_random_points(&mut fbb, 10);
             fbb.finish(points, None);
             let points = fbb.finished_data().to_vec();
 
-            let request = kv_service::WritePointsRpcRequest {
-                version: 1,
-                database,
-                points,
-            };
+            let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
-            tskv.write(request).await.unwrap();
+            rt.block_on(async {
+                tskv.write(request).await.unwrap();
+            });
         }
     }
 
-    // #[tokio::test]
-    // #[serial]
-    // async fn test_kvcore_insert_cache() {
-    //     init_default_global_tracing("tskv_log", "tskv.log", "debug");
-    //     let tskv = get_tskv().await;
-
-    //     let mut fbb = flatbuffers::FlatBufferBuilder::new();
-    //     let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
-    //     fbb.finish(points, None);
-    //     let buf = fbb.finished_data();
-    //     let ps = flatbuffers::root::<fb_models::Points>(buf)
-    //         .context(error::InvalidFlatbufferSnafu)
-    //         .unwrap();
-    //     tskv.insert_cache(1, &ps).await;
-    // }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_kvcore_start() {
+    #[test]
+    #[serial]
+    fn test_kvcore_start() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
+        let (rt, tskv) = get_tskv();
 
-        let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
+        let (wal_sender, wal_receiver) = channel::unbounded();
         let (tx, rx) = channel();
 
-        let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let req = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
+        let req = kv_service::WritePointsRpcRequest { version: 1, points };
 
-        wal_sender.send(Task::WritePoints { req, tx }).unwrap();
-
-        TsKv::start(Arc::new(tskv), wal_receiver);
-
-        match rx.await {
-            Ok(Ok(_)) => info!("successful"),
-            _ => panic!("wrong"),
-        };
+        rt.block_on(async {
+            wal_sender
+                .send(Task::WritePoints { req, tx })
+                .await
+                .unwrap();
+            TsKv::start(Arc::new(tskv), wal_receiver);
+            match rx.await {
+                Ok(Ok(_)) => info!("successful"),
+                _ => panic!("wrong"),
+            };
+        });
     }
 
-    #[tokio::test]
+    #[test]
     #[serial]
-    async fn test_kvcore_flush_delta() {
+    fn test_kvcore_flush_delta() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let tskv = get_tskv().await;
-        let database = "db".to_string();
+        let (rt, tskv) = get_tskv();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRpcRequest {
-            version: 1,
-            database,
-            points,
-        };
+        let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
-        tskv.write(request).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        rt.block_on(async {
+            tskv.write(request).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        })
     }
 
     #[tokio::test]
@@ -276,6 +260,5 @@ mod tests {
         warn!("hello");
         debug!("hello");
         error!("hello"); //maybe we can use panic directly
-                         // panic!("hello");
     }
 }
