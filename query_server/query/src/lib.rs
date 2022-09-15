@@ -1,10 +1,7 @@
 extern crate core;
 
 pub mod catalog;
-pub mod context;
-pub mod db;
 pub mod dispatcher;
-mod exec;
 mod execution;
 pub mod extension;
 pub mod function;
