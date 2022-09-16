@@ -1,26 +1,34 @@
 use std::{
     cmp::max,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
+    iter::Peekable,
     path::{Path, PathBuf},
+    rc::Rc,
+    slice,
     sync::Arc,
 };
 
-use models::{FieldId, Timestamp};
+use models::{utils as model_utils, FieldId, RwLockRef, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
 use snafu::{NoneError, ResultExt};
-use tokio::sync::{mpsc::UnboundedSender, oneshot, oneshot::Sender};
+use tokio::{
+    select,
+    sync::{
+        mpsc::{self, UnboundedSender},
+        oneshot,
+        oneshot::Sender,
+    },
+};
 use trace::{debug, error, info, warn};
+use utils;
 
 use crate::{
     compaction::FlushReq,
     context::GlobalContext,
-    direct_io::FileSync,
-    error::{self, Error, Result},
-    file_manager,
-    file_utils::{make_delta_file_name, make_tsm_file_name},
+    error::{self, Result},
     kv_option::Options,
-    memcache::{MemCache, MemEntry},
+    memcache::{DataType, FieldVal, MemCache, MemEntry, SeriesData, SeriesDataIterator},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
     tsm::{self, DataBlock, TsmWriter},
@@ -28,205 +36,198 @@ use crate::{
     TseriesFamilyId,
 };
 
+struct FlushingBlock {
+    pub field_id: FieldId,
+    pub data_block: DataBlock,
+    pub is_delta: bool,
+}
+
 pub struct FlushTask {
-    mems: Vec<Arc<RwLock<MemCache>>>,
-    tsf_id: TseriesFamilyId,
-    kernel: Arc<GlobalContext>,
+    mem_caches: Vec<Arc<RwLock<MemCache>>>,
+    ts_family_id: TseriesFamilyId,
+    global_context: Arc<GlobalContext>,
     path_tsm: PathBuf,
     path_delta: PathBuf,
 }
 
 impl FlushTask {
     pub fn new(
-        mems: Vec<Arc<RwLock<MemCache>>>,
-        tsf_id: TseriesFamilyId,
-        kernel: Arc<GlobalContext>,
+        mem_caches: Vec<Arc<RwLock<MemCache>>>,
+        ts_family_id: TseriesFamilyId,
+        global_context: Arc<GlobalContext>,
         path_tsm: PathBuf,
         path_delta: PathBuf,
     ) -> Self {
         Self {
-            mems,
-            tsf_id,
-            kernel,
+            mem_caches,
+            ts_family_id,
+            global_context,
             path_tsm,
             path_delta,
         }
     }
 
-    pub async fn run(&mut self, version: Arc<Version>, edits: &mut Vec<VersionEdit>) -> Result<()> {
-        let mut mem_guard = vec![];
-        for i in self.mems.iter() {
-            mem_guard.push(i.write());
-        }
-
+    pub async fn run(
+        self,
+        version: Arc<Version>,
+        version_edits: &mut Vec<VersionEdit>,
+    ) -> Result<()> {
+        info!(
+            "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
+            version.ts_family_id,
+            self.mem_caches.len(),
+        );
         let (mut high_seq, mut low_seq) = (0, u64::MAX);
-        let mut field_map = HashMap::new();
-        let mut field_map_delta = HashMap::new();
-        let mut field_size = HashMap::new();
-        let mut field_size_delta = HashMap::new();
-        for mem in mem_guard.iter() {
-            // get req seq_no range
-            if mem.seq_no() > high_seq {
-                high_seq = mem.seq_no();
-            }
-            if mem.seq_no() < low_seq {
-                low_seq = mem.seq_no();
-            }
+        let mut total_memcache_size = 0_u64;
 
-            if mem.is_delta {
-                mem.copy_data(&mut field_map_delta, &mut field_size_delta);
-            } else {
-                mem.copy_data(&mut field_map, &mut field_size);
-            }
+        let mut flushing_mems = Vec::with_capacity(self.mem_caches.len());
+        for mem in self.mem_caches.iter() {
+            flushing_mems.push(mem.write());
+        }
+        let mut compactor = FlushCompactIterator::new(flushing_mems.len(), version.max_level_ts);
+        for mem in flushing_mems.iter() {
+            let seq_no = mem.seq_no();
+            high_seq = seq_no.max(high_seq);
+            low_seq = seq_no.min(low_seq);
+            total_memcache_size += mem.cache_size();
+
+            compactor.append_upstream_iterator(mem.iter_series_data());
         }
 
-        let (mut min_ts, mut max_ts) = (i64::MAX, i64::MIN);
-        let block_set_delta =
-            build_block_set(field_size_delta, field_map_delta, &mut min_ts, &mut max_ts);
-        if !block_set_delta.is_empty() {
-            let mut meta = self.write_block_set(block_set_delta, tsm::MAX_BLOCK_VALUES, true)?;
-            meta.low_seq = low_seq;
-            meta.high_seq = high_seq;
-            let max_level_ts = meta.max_ts.max(version.max_level_ts);
-            let mut edit = VersionEdit::new();
-            edit.add_file(meta, max_level_ts);
-            edits.push(edit);
+        if total_memcache_size == 0 {
+            return Ok(());
         }
 
-        // Write tsm files.
-        (min_ts, max_ts) = (i64::MAX, i64::MIN);
-        let block_set = build_block_set(field_size, field_map, &mut min_ts, &mut max_ts);
-        if !block_set.is_empty() {
-            let mut meta = self.write_block_set(block_set, tsm::MAX_BLOCK_VALUES, false)?;
-            meta.low_seq = low_seq;
-            meta.high_seq = high_seq;
-            let max_level_ts = meta.max_ts.max(version.max_level_ts);
-            let mut edit = VersionEdit::new();
-            edit.add_file(meta, max_level_ts);
-            edits.push(edit);
+        let mut compact_metas = self.write_block_set(&mut compactor, 0)?;
+        let mut max_level_ts = version.max_level_ts;
+        let mut edit = VersionEdit::new();
+        for cm in compact_metas.iter_mut() {
+            cm.low_seq = low_seq;
+            cm.high_seq = high_seq;
+            max_level_ts = max_level_ts.max(cm.max_ts);
+        }
+        for cm in compact_metas {
+            edit.add_file(cm, max_level_ts);
+        }
+        version_edits.push(edit);
+
+        drop(compactor);
+        for mem in flushing_mems.iter_mut() {
+            mem.flushed = true;
         }
 
-        for i in mem_guard.iter_mut() {
-            i.flushed = true;
-        }
         Ok(())
     }
 
     fn write_block_set(
         &self,
-        block_set: HashMap<FieldId, DataBlock>,
-        max_block_size: u32,
-        is_delta: bool,
-    ) -> Result<CompactMeta> {
-        let out_level = if is_delta { 0 } else { 1 };
-        let mut tsm_writer = if is_delta {
-            tsm::new_tsm_writer(
-                self.path_delta.clone(),
-                self.kernel.file_id_next(),
-                is_delta,
-                0,
-            )?
-        } else {
-            tsm::new_tsm_writer(
-                self.path_tsm.clone(),
-                self.kernel.file_id_next(),
-                is_delta,
-                0,
-            )?
-        };
-
-        info!("Flush: File {} been created.", tsm_writer.sequence());
-
-        for (fid, blk) in block_set.into_iter() {
-            let merged_blks = DataBlock::merge_blocks(vec![blk], max_block_size);
-            for merged_blk in merged_blks.iter() {
-                tsm_writer
-                    .write_block(fid, merged_blk)
-                    .context(error::WriteTsmSnafu)?;
+        compactor: &mut FlushCompactIterator,
+        max_file_size: u64,
+    ) -> Result<Vec<CompactMeta>> {
+        let mut tsm_writer: Option<TsmWriter> = None;
+        let mut delta_writer: Option<TsmWriter> = None;
+        while let Some(series_flushing_data) = compactor.next() {
+            for (field_id, dlt_blks, tsm_blks) in series_flushing_data {
+                if !tsm_blks.is_empty() && tsm_writer.is_none() {
+                    let writer = tsm::new_tsm_writer(
+                        self.path_tsm.clone(),
+                        self.global_context.file_id_next(),
+                        false,
+                        max_file_size,
+                    )?;
+                    info!("Flush: File {}(tsm) been created.", writer.sequence());
+                    tsm_writer = Some(writer);
+                }
+                if !dlt_blks.is_empty() && delta_writer.is_none() {
+                    let writer = tsm::new_tsm_writer(
+                        self.path_delta.clone(),
+                        self.global_context.file_id_next(),
+                        true,
+                        max_file_size,
+                    )?;
+                    info!("Flush: File {}(delta) been created.", writer.sequence());
+                    delta_writer = Some(writer);
+                }
+                for data_block in tsm_blks {
+                    if let Some(writer) = tsm_writer.as_mut() {
+                        writer
+                            .write_block(field_id, &data_block)
+                            .context(error::WriteTsmSnafu)?;
+                    }
+                }
+                for data_block in dlt_blks {
+                    if let Some(writer) = delta_writer.as_mut() {
+                        writer
+                            .write_block(field_id, &data_block)
+                            .context(error::WriteTsmSnafu)?;
+                    }
+                }
             }
         }
-        tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-        tsm_writer.flush().context(error::WriteTsmSnafu)?;
-
-        info!(
-            "Flush: File: {} write finished ({} B).",
-            tsm_writer.sequence(),
-            tsm_writer.size()
-        );
-
-        let compact_meta = CompactMeta::new(
-            tsm_writer.sequence(),
-            tsm_writer.size(),
-            self.tsf_id,
-            out_level,
-            tsm_writer.min_ts(),
-            tsm_writer.max_ts(),
-            is_delta,
-        );
-
-        Ok(compact_meta)
-    }
-}
-
-fn build_block_set(
-    field_size: HashMap<FieldId, usize>,
-    field_map: HashMap<FieldId, Vec<Arc<RwLock<MemEntry>>>>,
-    ts_min: &mut i64,
-    ts_max: &mut i64,
-) -> HashMap<FieldId, DataBlock> {
-    let mut block_set = HashMap::new();
-    for (fid, entries) in field_map {
-        let size = match field_size.get(&fid) {
-            None => {
-                error!("failed to get field size");
-                continue;
-            }
-            Some(v) => v,
-        };
-
-        let entry = match entries.first() {
-            None => {
-                error!("failed to get mem entry");
-                continue;
-            }
-            Some(v) => v,
-        };
-
-        let mut block = DataBlock::new(*size, entry.read().field_type);
-
-        for entry in entries.iter() {
-            let entry = entry.read();
-            // get tsm ts range
-            if entry.ts_max > *ts_max {
-                *ts_max = entry.ts_max;
-            }
-            if entry.ts_min < *ts_min {
-                *ts_min = entry.ts_min;
-            }
-            block.batch_insert(&entry.cells);
+        if let Some(writer) = tsm_writer.as_mut() {
+            writer.write_index().context(error::WriteTsmSnafu)?;
+            writer.flush().context(error::WriteTsmSnafu)?;
+            info!(
+                "Flush: File: {} write finished ({} B).",
+                writer.sequence(),
+                writer.size()
+            );
         }
-        block_set.insert(fid, block);
+        if let Some(writer) = delta_writer.as_mut() {
+            writer.write_index().context(error::WriteTsmSnafu)?;
+            writer.flush().context(error::WriteTsmSnafu)?;
+            info!(
+                "Flush: File: {} write finished ({} B).",
+                writer.sequence(),
+                writer.size()
+            );
+        }
+
+        let mut compact_metas = vec![];
+        if let Some(writer) = tsm_writer {
+            compact_metas.push(CompactMeta::new(
+                writer.sequence(),
+                writer.size(),
+                self.ts_family_id,
+                1,
+                writer.min_ts(),
+                writer.max_ts(),
+                false,
+            ));
+        }
+        if let Some(writer) = delta_writer {
+            compact_metas.push(CompactMeta::new(
+                writer.sequence(),
+                writer.size(),
+                self.ts_family_id,
+                0,
+                writer.min_ts(),
+                writer.max_ts(),
+                true,
+            ));
+        }
+
+        Ok(compact_metas)
     }
-    block_set
 }
 
 pub async fn run_flush_memtable_job(
     reqs: Arc<Mutex<Vec<FlushReq>>>,
-    kernel: Arc<GlobalContext>,
+    global_context: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
 ) -> Result<()> {
-    let mut mems: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
+    let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
     {
         let mut reqs = reqs.lock();
-        info!("get flush request len {}", reqs.len());
+        info!("Flush: Running flush job on {} MemCaches", reqs.len());
         if reqs.len() == 0 {
             return Ok(());
         }
         for req in reqs.iter() {
             for (tf, mem) in &req.mems {
-                let mem_vec = mems.entry(*tf).or_insert(Vec::new());
+                let mem_vec = tsf_caches.entry(*tf).or_insert(Vec::new());
                 mem_vec.push(mem.clone());
             }
         }
@@ -234,13 +235,14 @@ pub async fn run_flush_memtable_job(
     }
 
     let mut edits: Vec<VersionEdit> = vec![];
-    for (tsf_id, memtables) in mems.iter() {
+    for (tsf_id, caches) in tsf_caches.iter() {
         if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
-            if memtables.is_empty() {
+            if caches.is_empty() {
                 continue;
             }
 
             // todo: build path by vnode data
+
             let tsf_rlock = tsf.read();
             let storage_opt = tsf_rlock.storage_opt();
             let database = tsf_rlock.database();
@@ -248,14 +250,15 @@ pub async fn run_flush_memtable_job(
             let path_delta = storage_opt.delta_dir(&database, *tsf_id);
             drop(tsf_rlock);
 
-            let mut job = FlushTask::new(
-                memtables.clone(),
+            FlushTask::new(
+                caches.clone(),
                 *tsf_id,
-                kernel.clone(),
+                global_context.clone(),
                 path_tsm,
                 path_delta,
-            );
-            job.run(tsf.read().version(), &mut edits).await?;
+            )
+            .run(tsf.read().version(), &mut edits)
+            .await?;
 
             match compact_task_sender.send(*tsf_id) {
                 Err(e) => error!("{}", e),
@@ -278,54 +281,332 @@ pub async fn run_flush_memtable_job(
     Ok(())
 }
 
-#[cfg(test)]
-mod test {
-    use std::{collections::HashMap, sync::Arc};
+struct FlushCompactIterator<'a> {
+    iterators: Vec<Peekable<SeriesDataIterator<'a>>>,
+    max_level_ts: i64,
+    data_block_size: usize,
 
-    use models::{FieldId, ValueType};
-    use parking_lot::{Mutex, RwLock};
-    use tokio::sync::mpsc;
+    iterators_count: usize,
+    curr_sid: Option<SeriesId>,
+    last_sid: Option<SeriesId>,
+    flushing_series_datas: Vec<RwLockRef<SeriesData>>,
+}
 
-    use crate::{
-        compaction::FlushReq,
-        context::GlobalContext,
-        kv_option::Options,
-        memcache::{MemCache, MemRaw},
-        tseries_family::FLUSH_REQ,
-        version_set::VersionSet,
-    };
+impl<'a> FlushCompactIterator<'a> {
+    pub fn new(capacity: usize, max_level_ts: i64) -> Self {
+        Self {
+            iterators: Vec::with_capacity(capacity),
+            max_level_ts,
+            data_block_size: 1000,
 
-    use super::run_flush_memtable_job;
-
-    fn make_value(value_type: ValueType) -> Vec<u8> {
-        match value_type {
-            ValueType::Float => 1.0_f64.to_be_bytes().as_slice().to_vec(),
-            ValueType::Integer => 1_i64.to_be_bytes().as_slice().to_vec(),
-            ValueType::Unsigned => 1_u64.to_be_bytes().as_slice().to_vec(),
-            ValueType::Boolean => [0_u8].to_vec(),
-            ValueType::String => "HelloWorld".as_bytes().to_vec(),
-            ValueType::Unknown => panic!("Unsuported value type: Unknown"),
+            iterators_count: 0,
+            curr_sid: None,
+            last_sid: None,
+            flushing_series_datas: vec![],
         }
     }
 
-    /// MemRaw descriptor: [ (seq_start, seq_end), timestamp_start, [ (FieldId, ValueType, Value) ] ]
-    fn make_mem_cache(desc: ((u64, u64), i64, Vec<(FieldId, ValueType, Vec<u8>)>)) -> MemCache {
-        let cache = MemCache::new(1, 1048576, 0, false);
-        let mut timestamp = desc.1;
-        for seq in desc.0 .0..desc.0 .1 {
-            for (fid, ftyp, fval) in desc.2.iter() {
-                let value = make_value(*ftyp);
-                let mut raw = MemRaw {
-                    seq,
-                    ts: timestamp,
-                    field_id: *fid,
-                    field_type: *ftyp,
-                    val: fval,
-                };
-                cache.insert_raw(&mut raw).unwrap();
+    pub fn append_upstream_iterator(&mut self, iterator: SeriesDataIterator<'a>) {
+        self.iterators.push(iterator.peekable());
+        self.iterators_count += 1;
+    }
+
+    pub fn next_series_id(&mut self) {
+        debug!("Selecting next series_id.");
+        let mut skipped = 0_usize;
+        self.curr_sid = None;
+        self.last_sid = None;
+        self.flushing_series_datas.truncate(0);
+        loop {
+            if skipped >= self.iterators_count {
+                // Current series_id found, or all iterators finished
+                self.curr_sid = None;
+                break;
             }
-            timestamp += 1;
+            for iter in self.iterators.iter_mut() {
+                if let Some((sid, series_data)) = iter.peek() {
+                    if let Some(curr_sid) = self.curr_sid {
+                        if *sid != curr_sid {
+                            debug!("Skipped series_id: {}", sid);
+                            skipped += 1;
+                            continue;
+                        }
+                    } else {
+                        debug!("Selected next series_id: '{}'", sid);
+                        self.curr_sid = Some(*sid);
+                        self.last_sid = Some(*sid);
+                    }
+                    self.flushing_series_datas.push(series_data.clone());
+                    iter.next();
+                } else {
+                    skipped += 1;
+                    continue;
+                }
+            }
         }
-        cache
+
+        debug!("Selected series_id: '{:?}'.", self.last_sid);
+    }
+
+    fn sort_dedup(v: &mut Vec<(Timestamp, FieldVal)>) {
+        v.sort_by_key(|a| a.0);
+        utils::dedup_front_by_key(v, |a| a.0);
+    }
+
+    /// Transform v into two Vec<DataBlock>, witch are delta blocks and tsm blocks.
+    fn into_splited_data_blocks(
+        value_type: ValueType,
+        v: Vec<(Timestamp, FieldVal)>,
+        max_level_ts: Timestamp,
+        data_block_size: usize,
+    ) -> (Vec<DataBlock>, Vec<DataBlock>) {
+        let mut delta_blocks = Vec::new();
+        let mut delta_blk = DataBlock::new(data_block_size, value_type);
+        let mut tsm_blocks = Vec::new();
+        let mut tsm_blk = DataBlock::new(data_block_size, value_type);
+        for (ts, v) in v {
+            if ts > max_level_ts {
+                tsm_blk.insert(&v.data_value(ts));
+                if tsm_blk.len() as usize >= data_block_size {
+                    tsm_blocks.push(tsm_blk);
+                    tsm_blk = DataBlock::new(data_block_size, value_type);
+                }
+            } else {
+                delta_blk.insert(&v.data_value(ts));
+                if delta_blk.len() as usize >= data_block_size {
+                    delta_blocks.push(delta_blk);
+                    delta_blk = DataBlock::new(data_block_size, value_type);
+                }
+            }
+        }
+        if tsm_blk.len() > 0 {
+            tsm_blocks.push(tsm_blk);
+        }
+        if delta_blk.len() > 0 {
+            delta_blocks.push(delta_blk);
+        }
+
+        (delta_blocks, tsm_blocks)
+    }
+}
+
+impl<'a> Iterator for FlushCompactIterator<'a> {
+    type Item = Vec<(FieldId, Vec<DataBlock>, Vec<DataBlock>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // 1. Get next Vec<SeriesData> for next SeriesId from each MemCache.
+        self.next_series_id();
+        if self.last_sid.is_none() {
+            return None;
+        }
+
+        // 2. Merge Vec<SeriesData> of the next SeriesId.
+        if self.flushing_series_datas.is_empty() {
+            // TODO: Return something
+            return Some(vec![]);
+        }
+
+        let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
+        let mut column_values_map: HashMap<u32, Vec<(Timestamp, FieldVal)>> = HashMap::new();
+
+        // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
+        for series_data in self.flushing_series_datas.iter() {
+            // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
+            for (sch_id, sch_cols, rows) in series_data.read().flat_groups() {
+                // Iterates [ RowData ]
+                for row in rows.iter() {
+                    // Iterates RowData -> [ Option<FieldVal>, column_id ]
+                    for (val, col) in row.fields.iter().zip(sch_cols.iter()) {
+                        if let Some(v) = val {
+                            schema_columns_value_type_map
+                                .entry(*col)
+                                .or_insert_with(|| v.value_type());
+                            column_values_map
+                                .entry(*col)
+                                .or_insert_with(|| Vec::new())
+                                .push((row.ts, v.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut ret_vec: Vec<(FieldId, Vec<DataBlock>, Vec<DataBlock>)> =
+            Vec::with_capacity(column_values_map.len());
+        let mut ret_vec_col_id = Vec::with_capacity(ret_vec.capacity());
+        for (col, mut values) in column_values_map.into_iter() {
+            Self::sort_dedup(&mut values);
+            if let Some(typ) = schema_columns_value_type_map.get(&col) {
+                let (dlt, tsm) = Self::into_splited_data_blocks(
+                    *typ,
+                    values,
+                    self.max_level_ts,
+                    self.data_block_size,
+                );
+                let field_id = model_utils::unite_id(col as u64, self.last_sid.unwrap());
+                ret_vec.push((field_id, dlt, tsm));
+                ret_vec_col_id.push(col);
+            }
+        }
+        ret_vec.sort_by_key(|a| a.0);
+
+        return Some(ret_vec);
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use models::{utils as model_utils, Timestamp};
+    use utils::dedup_front_by_key;
+
+    use crate::memcache::test::put_rows_to_cache;
+    use crate::{
+        compaction::{flush::FlushCompactIterator, FlushReq},
+        context::GlobalContext,
+        kv_option::Options,
+        memcache::{DataType, FieldVal, MemCache},
+        tseries_family::FLUSH_REQ,
+        tsm::test::check_data_block,
+        version_set::VersionSet,
+    };
+
+    #[test]
+    fn test_sort_dedup() {
+        #[rustfmt::skip]
+        let mut data = vec![
+            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42)
+        ];
+        data.sort_by_key(|a| a.0);
+        println!("{:?}", &data);
+        assert_eq!(
+            &data,
+            &vec![(1, 11), (1, 12), (2, 21), (2, 22), (3, 3), (4, 41), (4, 42)]
+        );
+        dedup_front_by_key(&mut data, |a| a.0);
+        println!("{:?}", &data);
+        assert_eq!(&data, &vec![(1, 12), (2, 22), (3, 3), (4, 42)]);
+    }
+
+    #[test]
+    fn test_flush() {
+        let mut caches = vec![
+            MemCache::new(1, 1024, 0),
+            MemCache::new(1, 1024, 0),
+            MemCache::new(1, 1024, 0),
+        ];
+        put_rows_to_cache(&mut caches[0], 1, 1, vec![0, 1, 2], (3, 4), false);
+        put_rows_to_cache(&mut caches[0], 1, 2, vec![0, 1, 3], (1, 2), false);
+        put_rows_to_cache(&mut caches[0], 1, 3, vec![0, 1, 2, 3], (5, 5), true);
+        put_rows_to_cache(&mut caches[0], 1, 3, vec![0, 1, 2, 3], (5, 6), false);
+
+        put_rows_to_cache(&mut caches[1], 2, 1, vec![0, 1, 2], (9, 10), false);
+        put_rows_to_cache(&mut caches[1], 2, 2, vec![0, 1, 3], (7, 8), false);
+        put_rows_to_cache(&mut caches[1], 2, 3, vec![0, 1, 2, 3], (11, 11), true);
+        put_rows_to_cache(&mut caches[1], 2, 3, vec![0, 1, 2, 3], (11, 12), false);
+
+        put_rows_to_cache(&mut caches[2], 3, 1, vec![0, 1, 2], (15, 16), false);
+        put_rows_to_cache(&mut caches[2], 3, 2, vec![0, 1, 3], (13, 14), false);
+        put_rows_to_cache(&mut caches[2], 3, 3, vec![0, 1, 2, 3], (17, 17), true);
+        put_rows_to_cache(&mut caches[2], 3, 3, vec![0, 1, 2, 3], (17, 18), false);
+
+        let max_level_ts = 10;
+
+        #[rustfmt::skip]
+        let expected_data: Vec<Vec<(u32, u64, Vec<DataType>, Vec<DataType>)>> = vec![
+            // | === SeriesId: 1 === |
+            // Ts:    1,    2,    3,    4,    5,    5, 6
+            // Col_0: 1,    2,    3,    4,    None, 5, 6
+            // Col_1: 1,    2,    3,    4,    None, 5, 6
+            // Col_2: None, None, 3,    4,    None, 5, 6
+            // Col_3: 1,    2,    None, None, None, 5, 6
+            vec![
+                (0, 1, vec![
+                    DataType::F64(1, 1.0), DataType::F64(2, 2.0), DataType::F64(3, 3.0), DataType::F64(4, 4.0),
+                    DataType::F64(5, 5.0), DataType::F64(6, 6.0),
+                ], vec![]),
+                (1, 1, vec![
+                    DataType::F64(1, 1.0), DataType::F64(2, 2.0), DataType::F64(3, 3.0), DataType::F64(4, 4.0),
+                    DataType::F64(5, 5.0), DataType::F64(6, 6.0),
+                ], vec![],),
+                (2, 1, vec![
+                    DataType::F64(3, 3.0), DataType::F64(4, 4.0), DataType::F64(5, 5.0), DataType::F64(6, 6.0),
+                ], vec![]),
+                (3, 1, vec![
+                    DataType::F64(1, 1.0), DataType::F64(2, 2.0), DataType::F64(5, 5.0), DataType::F64(6, 6.0),
+                ], vec![]),
+            ],
+            // | === SeriesId: 2 === |
+            // Ts:    7,    8,    9,    10,   11,   11, 12
+            // Col_0: 7,    8,    9,    10,   None, 11, 12
+            // Col_1: 7,    8,    9,    10,   None, 11, 12
+            // Col_2: None, None, 9,    10,   None, 11, 12
+            // Col_3: 7,    8,    None, None, None, 11, 12
+            vec![
+                (0, 2, vec![
+                    DataType::F64(7, 7.0), DataType::F64(8, 8.0), DataType::F64(9, 9.0), DataType::F64(10, 10.0),
+                ], vec![DataType::F64(11, 11.0), DataType::F64(12, 12.0)],),
+                (1, 2, vec![
+                    DataType::F64(7, 7.0), DataType::F64(8, 8.0), DataType::F64(9, 9.0), DataType::F64(10, 10.0),
+                ], vec![DataType::F64(11, 11.0), DataType::F64(12, 12.0)],),
+                (2, 2, vec![
+                    DataType::F64(9, 9.0), DataType::F64(10, 10.0),
+                ], vec![DataType::F64(11, 11.0), DataType::F64(12, 12.0)]),
+                (3, 2, vec![
+                    DataType::F64(7, 7.0), DataType::F64(8, 8.0),
+                ], vec![DataType::F64(11, 11.0), DataType::F64(12, 12.0)]),
+            ],
+            // | === SeriesId: 3 === |
+            // Ts:    13,   14,   15,   16,   16,   17, 18
+            // Col_0: 13,   14,   15,   16,   None, 17, 18
+            // Col_1: 13,   14,   15,   16,   None, 17, 18
+            // Col_2: None, None, 15,   16,   None, 17, 18
+            // Col_3: 13,   14,   None, None, None, 17, 18
+            vec![
+                (0, 3, vec![], vec![
+                    DataType::F64(13, 13.0), DataType::F64(14, 14.0), DataType::F64(15, 15.0),
+                    DataType::F64(16, 16.0), DataType::F64(17, 17.0), DataType::F64(18, 18.0),
+                ]),
+                (1, 3, vec![], vec![
+                    DataType::F64(13, 13.0), DataType::F64(14, 14.0), DataType::F64(15, 15.0),
+                    DataType::F64(16, 16.0), DataType::F64(17, 17.0), DataType::F64(18, 18.0),
+                ]),
+                (2, 3, vec![], vec![
+                    DataType::F64(15, 15.0), DataType::F64(16, 16.0), DataType::F64(17, 17.0), DataType::F64(18, 18.0),
+                ]),
+                (3, 3, vec![], vec![
+                    DataType::F64(13, 13.0), DataType::F64(14, 14.0), DataType::F64(17, 17.0), DataType::F64(18, 18.0),
+                ]),
+            ]
+        ];
+
+        let mut flush_compact_iterator = FlushCompactIterator::new(3, max_level_ts);
+        flush_compact_iterator.append_upstream_iterator(caches[0].iter_series_data());
+        flush_compact_iterator.append_upstream_iterator(caches[1].iter_series_data());
+        flush_compact_iterator.append_upstream_iterator(caches[2].iter_series_data());
+
+        for (i, data) in expected_data.iter().enumerate() {
+            let ret_vec = flush_compact_iterator.next().unwrap();
+            for (
+                (fid, delta_blks, tsm_blks),
+                (data_col_id, data_sid, data_delta_blks, data_tsm_blks),
+            ) in ret_vec.into_iter().zip(data.iter())
+            {
+                let (col_id, sid) = model_utils::split_id(fid);
+                assert_eq!(*data_col_id, col_id);
+                assert_eq!(*data_sid, sid);
+                if data_tsm_blks.is_empty() {
+                    assert!(tsm_blks.is_empty());
+                } else {
+                    assert_eq!(tsm_blks.len(), 1);
+                    check_data_block(&tsm_blks[0], data_tsm_blks);
+                }
+                if data_delta_blks.is_empty() {
+                    assert!(delta_blks.is_empty());
+                } else {
+                    assert_eq!(delta_blks.len(), 1);
+                    check_data_block(&delta_blks[0], data_delta_blks);
+                }
+            }
+        }
     }
 }

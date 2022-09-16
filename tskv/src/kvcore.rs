@@ -17,7 +17,8 @@ use tokio::{
 use async_channel as channel;
 
 use models::{
-    FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag, Timestamp, ValueType,
+    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag,
+    Timestamp, ValueType,
 };
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -25,26 +26,22 @@ use protos::{
 };
 use trace::{debug, error, info, trace, warn};
 
-use crate::database;
-use crate::engine::Engine;
-use crate::index::utils::unite_id;
-use crate::index::IndexResult;
-use crate::memcache::MemRaw;
-use crate::tsm::{DataBlock, MAX_BLOCK_VALUES};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
+    database,
+    engine::Engine,
     error::{self, Result},
     file_manager::{self, FileManager},
     file_utils,
-    index::db_index,
+    index::{db_index, IndexResult},
     kv_option::Options,
     memcache::{DataType, MemCache},
     record_file::Reader,
     summary,
     summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit},
     tseries_family::{SuperVersion, TimeRange, Version},
-    tsm::TsmTombstone,
+    tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES},
     version_set,
     version_set::VersionSet,
     wal::{self, WalEntryType, WalManager, WalTask},
@@ -388,7 +385,7 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
+        let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
         let (cb, rx) = oneshot::channel();
         self.wal_sender
@@ -407,7 +404,7 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, &mem_points).await;
+        tsf.read().put_points(seq, write_group).await;
         tsf.write()
             .check_to_flush(self.flush_task_sender.clone())
             .await;
@@ -431,7 +428,8 @@ impl Engine for TsKv {
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self.version_set.write().create_db(&db_name);
-        let mem_points = db.read().build_mem_points(fb_points.points().unwrap())?;
+
+        let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
         let opt_tsf = db.read().get_tsfamily_random();
         let tsf = match opt_tsf {
@@ -444,7 +442,7 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, &mem_points).await;
+        tsf.read().put_points(seq, write_group).await;
         tsf.write()
             .check_to_flush(self.flush_task_sender.clone())
             .await;

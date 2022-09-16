@@ -7,9 +7,11 @@ use futures::StreamExt;
 use hyper::{Body, Request, Response};
 use line_protocol::{line_protocol_to_lines, Line};
 use protos::kv_service::WritePointsRpcRequest;
+
 use protos::models::{
     self as fb_models, FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder,
 };
+
 use regex::Regex;
 use snafu::ResultExt;
 use spi::server::dbms::DatabaseManagerSystem;
@@ -164,6 +166,7 @@ pub(crate) async fn query(
             Output::Nil(_) => resp_msg = "sql execute Ok".to_string(),
         }
     }
+
     if !actual.is_empty() {
         resp_msg = format!("{}", pretty_format_batches(actual.deref_mut()).unwrap());
     }

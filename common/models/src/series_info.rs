@@ -84,11 +84,14 @@ impl PartialEq for SeriesKey {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SeriesInfo {
     id: SeriesId,
+
     tags: Vec<Tag>,
     field_infos: Vec<FieldInfo>,
-
     db: String,
     table: String,
+
+    field_fill: Vec<FieldInfo>,
+    schema_id: u32,
 }
 
 impl Display for SeriesInfo {
@@ -131,6 +134,9 @@ impl SeriesInfo {
             table,
             tags,
             field_infos,
+
+            schema_id: 0,
+            field_fill: vec![],
         };
 
         si.sort_tags();
@@ -201,6 +207,9 @@ impl SeriesInfo {
             table,
             tags,
             field_infos,
+
+            schema_id: 0,
+            field_fill: vec![],
         };
         info.sort_tags();
         Ok(info)
@@ -226,12 +235,28 @@ impl SeriesInfo {
         &self.db
     }
 
+    pub fn get_schema_id(&self) -> u32 {
+        return self.schema_id;
+    }
+
+    pub fn set_schema_id(&mut self, id: u32) {
+        self.schema_id = id;
+    }
+
     pub fn field_infos(&mut self) -> &mut Vec<FieldInfo> {
         &mut self.field_infos
     }
 
+    pub fn field_fill(&mut self) -> &mut Vec<FieldInfo> {
+        &mut self.field_fill
+    }
+
     pub fn push_field_info(&mut self, field_info: FieldInfo) {
         self.field_infos.push(field_info)
+    }
+
+    pub fn push_field_fill(&mut self, field_info: FieldInfo) {
+        self.field_fill.push(field_info)
     }
 
     pub fn field_info_with_id(&self, field_id: FieldId) -> Vec<&FieldInfo> {
@@ -265,15 +290,6 @@ impl From<&SeriesInfo> for SeriesKey {
             table: value.table().clone(),
         }
     }
-}
-
-pub fn generate_series_id(tags: &[Tag]) -> SeriesId {
-    let mut hasher = BkdrHasher::new();
-    for tag in tags {
-        hasher.hash_with(&tag.key);
-        hasher.hash_with(&tag.value);
-    }
-    hasher.number()
 }
 
 #[cfg(test)]

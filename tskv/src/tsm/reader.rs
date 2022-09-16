@@ -335,10 +335,10 @@ pub struct BlockMetaIterator {
     /// Number of `BlockMeta` in current `IndexMeta`
     block_count: u16,
 
-    /// The max number of iterations
-    block_meta_limit: usize,
     /// The current iteration number.
     block_meta_idx: usize,
+    /// The max number of iterations
+    block_meta_idx_end: usize,
 }
 
 impl BlockMetaIterator {
@@ -356,7 +356,7 @@ impl BlockMetaIterator {
             field_type,
             block_offset: index_offset + INDEX_META_SIZE,
             block_count,
-            block_meta_limit: block_count as usize,
+            block_meta_idx_end: block_count as usize - 1,
             block_meta_idx: 0,
         }
     }
@@ -367,9 +367,11 @@ impl BlockMetaIterator {
         let base = self.index_offset + INDEX_META_SIZE;
         let sli = &self.index_ref.data()[base..base + self.block_count as usize * BLOCK_META_SIZE];
         let mut pos = 0_usize;
+        let mut idx = 0_usize;
         while pos < sli.len() {
-            if min_ts > decode_be_i64(&sli[pos..pos + 8]) {
+            if min_ts > decode_be_i64(&sli[pos + 8..pos + 16]) {
                 pos += BLOCK_META_SIZE;
+                idx += 1;
             } else {
                 // First data block in time range
                 self.block_offset = pos;
@@ -377,16 +379,20 @@ impl BlockMetaIterator {
             }
         }
         if max_ts == min_ts {
-            self.block_meta_limit = 1;
+            self.block_meta_idx_end = 1;
             return;
         }
-        let min_pos = pos;
-        self.block_meta_limit = 0;
+        self.block_meta_idx = idx;
+        self.block_meta_idx_end = idx;
+        pos += BLOCK_META_SIZE;
         while pos < sli.len() {
-            self.block_meta_limit += 1;
-            if max_ts < decode_be_i64(&sli[pos + 8..pos + 16]) {
+            if max_ts < decode_be_i64(&sli[pos..pos + 8]) {
+                return;
+            } else if max_ts < decode_be_i64(&sli[pos + 8..pos + 16]) {
+                self.block_meta_idx_end += 1;
                 return;
             } else {
+                self.block_meta_idx_end += 1;
                 pos += BLOCK_META_SIZE;
             }
         }
@@ -397,7 +403,7 @@ impl Iterator for BlockMetaIterator {
     type Item = BlockMeta;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.block_meta_idx >= self.block_meta_limit as usize {
+        if self.block_meta_idx > self.block_meta_idx_end as usize {
             return None;
         }
         let ret = Some(get_data_block_meta_unchecked(
@@ -613,7 +619,7 @@ mod test {
         sync::Arc,
     };
 
-    use models::FieldId;
+    use models::{FieldId, Timestamp};
     use parking_lot::Mutex;
 
     use super::print_tsm_statistics;
@@ -643,6 +649,7 @@ mod test {
             (2, vec![
                 DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
                 DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
             ]),
         ]);
         let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).unwrap();
@@ -659,6 +666,24 @@ mod test {
         tombstone.flush().unwrap();
 
         (tsm_file, tombstone_file)
+    }
+
+    fn read_and_check(reader: &TsmReader, expected_data: HashMap<u64, Vec<DataBlock>>) {
+        let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
+        for idx in reader.index_iterator() {
+            for blk in idx.block_iterator() {
+                let data_blk = reader.get_data_block(&blk).unwrap();
+                read_data
+                    .entry(idx.field_id())
+                    .or_insert(Vec::new())
+                    .push(data_blk);
+            }
+        }
+        assert_eq!(expected_data.len(), read_data.len());
+        for (field_id, data_blks) in read_data.iter() {
+            let expected_data_blks = expected_data.get(field_id).unwrap();
+            assert_eq!(data_blks, expected_data_blks);
+        }
     }
 
     #[test]
@@ -680,11 +705,21 @@ mod test {
             (2, vec![
                 DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
                 DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
             ]),
         ]);
+        read_and_check(&reader, expected_data);
+    }
+
+    fn read_opt_and_check(
+        reader: &TsmReader,
+        field_id: FieldId,
+        time_range: (Timestamp, Timestamp),
+        expected_data: HashMap<u64, Vec<DataBlock>>,
+    ) {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
-        for idx in reader.index_iterator() {
-            for blk in idx.block_iterator() {
+        for idx in reader.index_iterator_opt(2) {
+            for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
                 let data_blk = reader.get_data_block(&blk).unwrap();
                 read_data
                     .entry(idx.field_id())
@@ -711,26 +746,57 @@ mod test {
 
         let reader = TsmReader::open(&tsm_file).unwrap();
 
-        #[rustfmt::skip]
-        let expected_data = HashMap::from([
-            (2, vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
-            ])
-        ]);
-        let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
-        for idx in reader.index_iterator_opt(2) {
-            for blk in idx.block_iterator_opt(&TimeRange::from((2, 3))) {
-                let data_blk = reader.get_data_block(&blk).unwrap();
-                read_data
-                    .entry(idx.field_id())
-                    .or_insert(Vec::new())
-                    .push(data_blk);
-            }
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (2, vec![
+                    DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
+                ])
+            ]);
+            read_opt_and_check(&reader, 2, (2, 3), expected_data);
         }
-        assert_eq!(expected_data.len(), read_data.len());
-        for (field_id, data_blks) in read_data.iter() {
-            let expected_data_blks = expected_data.get(field_id).unwrap();
-            assert_eq!(data_blks, expected_data_blks);
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (2, vec![
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                ])
+            ]);
+            read_opt_and_check(&reader, 2, (5, 8), expected_data);
+        }
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (2, vec![
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                ])
+            ]);
+            read_opt_and_check(&reader, 2, (6, 10), expected_data);
+        }
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (2, vec![
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                ])
+            ]);
+            read_opt_and_check(&reader, 2, (8, 9), expected_data);
+        }
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (2, vec![
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                ])
+            ]);
+            read_opt_and_check(&reader, 2, (5, 12), expected_data);
         }
     }
 }

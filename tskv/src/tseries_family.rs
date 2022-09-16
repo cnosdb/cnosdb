@@ -19,6 +19,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
+use crate::memcache::RowGroup;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
@@ -26,7 +27,7 @@ use crate::{
     file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
-    memcache::{DataType, MemCache, MemRaw},
+    memcache::{DataType, MemCache},
     summary::{CompactMeta, VersionEdit},
     tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
     ColumnFileId, LevelId, TseriesFamilyId,
@@ -61,6 +62,11 @@ impl TimeRange {
     pub fn merge(&mut self, other: &TimeRange) {
         self.min_ts = self.min_ts.min(other.min_ts);
         self.max_ts = self.max_ts.max(other.max_ts);
+    }
+
+    #[inline(always)]
+    pub fn is_boundless(&self) -> bool {
+        self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
     }
 }
 
@@ -544,8 +550,8 @@ impl TseriesFamily {
             tf_id,
             cache_opt.max_buffer_size,
             seq,
-            true,
         )));
+
         Self {
             tf_id,
             database,
@@ -577,11 +583,6 @@ impl TseriesFamily {
     }
 
     pub async fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
-        self.super_version
-            .caches
-            .mut_cache
-            .write()
-            .switch_to_immutable();
         self.immut_cache.push(self.mut_cache.clone());
         self.new_super_version(self.version.clone());
         self.mut_cache = cache;
@@ -613,79 +614,23 @@ impl TseriesFamily {
     }
 
     pub async fn switch_to_immutable(&mut self) {
-        self.super_version
-            .caches
-            .mut_cache
-            .write()
-            .switch_to_immutable();
-
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
             self.cache_opt.max_buffer_size,
             self.seq_no,
-            false,
         )));
         self.new_super_version(self.version.clone());
     }
 
     pub async fn switch_to_delta_immutable(&mut self) {
-        self.delta_mut_cache.write().switch_to_immutable();
         self.delta_immut_cache.push(self.delta_mut_cache.clone());
         self.delta_mut_cache = Arc::new(RwLock::new(MemCache::new(
             self.tf_id,
             self.cache_opt.max_buffer_size,
             self.seq_no,
-            true,
         )));
         self.new_super_version(self.version.clone());
-    }
-
-    async fn wrap_delta_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
-        if self.delta_mut_cache.read().is_empty() {
-            return;
-        }
-
-        info!("delta memcache full or other,switch to immutable");
-        self.switch_to_delta_immutable().await;
-        let len = self.delta_immut_cache.len();
-        let mut immut = vec![];
-        for i in self.delta_immut_cache.iter() {
-            if !i.read().flushed {
-                immut.push(i.clone());
-            }
-        }
-        self.delta_immut_cache = immut;
-
-        if len != self.delta_immut_cache.len() {
-            self.new_super_version(self.version.clone());
-        }
-
-        let mut req_mem = vec![];
-        for i in self.delta_immut_cache.iter() {
-            let read_i = i.read();
-            if read_i.flushing {
-                continue;
-            }
-            req_mem.push((self.tf_id, i.clone()));
-        }
-        if req_mem.is_empty() {
-            return;
-        }
-        for i in req_mem.iter() {
-            i.1.write().flushing = true;
-        }
-        FLUSH_REQ.lock().push(FlushReq {
-            mems: req_mem,
-            wait_req: 0,
-        });
-        info!(
-            "delta flush_req send,now req queue len : {}",
-            FLUSH_REQ.lock().len()
-        );
-        sender
-            .send(FLUSH_REQ.clone())
-            .expect("error send flush req to kvcore");
     }
 
     async fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
@@ -721,7 +666,6 @@ impl TseriesFamily {
             i.1.write().flushing = true;
         }
 
-        self.wrap_delta_flush_req(sender.clone()).await;
         FLUSH_REQ.lock().push(FlushReq {
             mems: req_mem,
             wait_req: 0,
@@ -735,19 +679,10 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    pub async fn put_points(&self, seq: u64, points: &Vec<InMemPoint>) {
-        for p in points.iter() {
-            let sid = p.series_id();
-            for f in p.fields().iter() {
-                self.put_mutcache(&mut MemRaw {
-                    seq,
-                    ts: p.timestamp,
-                    field_id: f.field_id(),
-                    field_type: f.value_type,
-                    val: &f.value,
-                })
-                .await;
-            }
+    pub async fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
+        for ((sid, schema_id), group) in points {
+            let mem = self.super_version.caches.mut_cache.read();
+            mem.write_group(sid, seq, group);
         }
     }
 
@@ -758,25 +693,6 @@ impl TseriesFamily {
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
                 self.wrap_flush_req(sender.clone()).await;
             }
-        }
-
-        if self.super_version.caches.delta_mut_cache.read().is_full() {
-            self.wrap_delta_flush_req(sender.clone()).await;
-        }
-    }
-
-    // todo(Subsegment) : (&mut self) will case performance regression.we must get writeLock to get
-    // version_set when we insert each point
-    pub async fn put_mutcache(&self, raw: &mut MemRaw<'_>) {
-        if raw.ts >= self.immut_ts_min.load(Ordering::Relaxed) {
-            if raw.ts > self.mut_ts_max.load(Ordering::Relaxed) {
-                self.mut_ts_max.store(raw.ts, Ordering::Relaxed);
-            }
-            let mem = self.super_version.caches.mut_cache.write();
-            let _ = mem.insert_raw(raw);
-        } else {
-            let delta_mem = self.super_version.caches.delta_mut_cache.write();
-            let _ = delta_mem.insert_raw(raw);
         }
     }
 
@@ -834,6 +750,7 @@ impl TseriesFamily {
 
 #[cfg(test)]
 mod test {
+    use std::collections::hash_map;
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
     use config::get_config;
@@ -844,7 +761,7 @@ mod test {
     use trace::info;
 
     use crate::file_utils::{self, make_tsm_file_name};
-    use crate::memcache::MemRaw;
+    use crate::memcache::{FieldVal, RowData, RowGroup};
     use crate::summary::SummaryTask;
     use crate::{
         compaction::{run_flush_memtable_job, FlushReq},
@@ -1053,7 +970,7 @@ mod test {
         let tsf = TseriesFamily::new(
             0,
             database.clone(),
-            MemCache::new(0, 500, 0, false),
+            MemCache::new(0, 500, 0),
             Arc::new(Version::new(
                 0,
                 database.clone(),
@@ -1066,23 +983,38 @@ mod test {
             opt.storage.clone(),
         );
 
-        tsf.put_mutcache(&mut MemRaw {
-            seq: 0,
-            ts: 0,
-            field_id: 0,
-            field_type: ValueType::Integer,
-            val: 10_i32.to_be_bytes().as_slice(),
-        })
-        .await;
+        let row_group = RowGroup {
+            schema_id: 0,
+            schema: vec![0, 1, 2],
+            range: TimeRange {
+                min_ts: 1,
+                max_ts: 100,
+            },
+            rows: vec![RowData {
+                ts: 10,
+                fields: vec![
+                    Some(FieldVal::Integer(11)),
+                    Some(FieldVal::Integer(12)),
+                    Some(FieldVal::Integer(13)),
+                ],
+            }],
+        };
+        let mut points = HashMap::new();
+        points.insert((0, 0), row_group);
+        tsf.put_points(0, points).await;
+
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
         tsf.delete_cache(
             &[0],
             &TimeRange {
-                max_ts: 0,
                 min_ts: 0,
+                max_ts: 200,
             },
         );
-        assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 0);
+        let data = tsf.mut_cache.read().get(&0);
+        if let Some(cache) = data {
+            assert_eq!(cache.read().cells.len(), 0);
+        }
     }
 
     // Util function for testing with summary modification.
@@ -1115,15 +1047,35 @@ mod test {
 
     #[tokio::test]
     pub async fn test_read_with_tomb() {
-        let mem = MemCache::new(0, 1000, 0, false);
-        mem.insert_raw(&mut MemRaw {
-            seq: 0,
-            ts: 0,
-            field_id: 0,
-            field_type: ValueType::Integer,
-            val: 10_i64.to_be_bytes().as_slice(),
-        })
-        .unwrap();
+        let dir = PathBuf::from("db/tsm/test/0".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+
+        let dir = PathBuf::from("dev/db".to_string());
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+
+        let mem = MemCache::new(0, 1000, 0);
+        let row_group = RowGroup {
+            schema_id: 0,
+            schema: vec![0, 1, 2],
+            range: TimeRange {
+                min_ts: 1,
+                max_ts: 100,
+            },
+            rows: vec![RowData {
+                ts: 10,
+                fields: vec![
+                    Some(FieldVal::Integer(11)),
+                    Some(FieldVal::Integer(12)),
+                    Some(FieldVal::Integer(13)),
+                ],
+            }],
+        };
+        mem.write_group(1, 0, row_group);
+
         let mem = Arc::new(RwLock::new(mem));
         let req_mem = vec![(0, mem)];
         let flush_seq = Arc::new(Mutex::new(vec![FlushReq {
@@ -1174,6 +1126,7 @@ mod test {
                 min_ts: 0,
             },
         );
+
         let file = version.levels_info[1].files[0].clone();
 
         let dir = opt.storage.tsm_dir(&database, ts_family_id);

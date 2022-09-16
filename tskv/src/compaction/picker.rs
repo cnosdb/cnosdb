@@ -220,6 +220,7 @@ impl LevelCompactionPicker {
                 }
             }
             let level_weight = Self::level_weight(lvl.level);
+
             let level_score = (lvl.files.len() as f64) * level_weight * lvl.cur_size as f64
                 / (lvl.max_size as f64 + 10000.0 * level_weight * compacting_files as f64);
 
@@ -480,7 +481,7 @@ mod test {
         TseriesFamily::new(
             1,
             "ts_family_1".to_string(),
-            MemCache::new(1, 1000, 1, false),
+            MemCache::new(1, 1000, 1),
             version,
             opt.cache.clone(),
             opt.storage.clone(),

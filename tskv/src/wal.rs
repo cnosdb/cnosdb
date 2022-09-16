@@ -18,6 +18,7 @@ use engine::EngineRef;
 
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
 
+use crate::engine;
 use crate::{
     byte_utils,
     compaction::FlushReq,
@@ -30,7 +31,6 @@ use crate::{
     memcache::MemCache,
     version_set::VersionSet,
 };
-use crate::{engine, memcache::MemRaw};
 
 const SEGMENT_HEADER_SIZE: usize = 32;
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];

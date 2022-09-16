@@ -7,7 +7,7 @@ use trace::error;
 use super::coders;
 use crate::{
     compaction::overlaps_tuples,
-    memcache::{BoolCell, Byte, DataType, F64Cell, I64Cell, StrCell, U64Cell},
+    memcache::{DataType, FieldVal},
     tseries_family::TimeRange,
 };
 
@@ -15,7 +15,7 @@ use crate::{
 pub enum DataBlock {
     U64 { ts: Vec<i64>, val: Vec<u64> },
     I64 { ts: Vec<i64>, val: Vec<i64> },
-    Str { ts: Vec<i64>, val: Vec<Byte> },
+    Str { ts: Vec<i64>, val: Vec<Vec<u8>> },
     F64 { ts: Vec<i64>, val: Vec<f64> },
     Bool { ts: Vec<i64>, val: Vec<bool> },
 }
@@ -52,34 +52,34 @@ impl DataBlock {
     /// Inserts new timestamp and value wrapped by `DataType` to this `DataBlock`.
     pub fn insert(&mut self, data: &DataType) {
         match data {
-            DataType::Bool(item) => {
+            DataType::Bool(ts_in, val_in) => {
                 if let Self::Bool { ts, val, .. } = self {
-                    ts.push(item.ts);
-                    val.push(item.val);
+                    ts.push(*ts_in);
+                    val.push(*val_in);
                 }
             }
-            DataType::U64(item) => {
+            DataType::U64(ts_in, val_in) => {
                 if let Self::U64 { ts, val, .. } = self {
-                    ts.push(item.ts);
-                    val.push(item.val);
+                    ts.push(*ts_in);
+                    val.push(*val_in);
                 }
             }
-            DataType::I64(item) => {
+            DataType::I64(ts_in, val_in) => {
                 if let Self::I64 { ts, val, .. } = self {
-                    ts.push(item.ts);
-                    val.push(item.val);
+                    ts.push(*ts_in);
+                    val.push(*val_in);
                 }
             }
-            DataType::Str(item) => {
+            DataType::Str(ts_in, val_in) => {
                 if let Self::Str { ts, val, .. } = self {
-                    ts.push(item.ts);
-                    val.push(item.val.clone());
+                    ts.push(*ts_in);
+                    val.push(val_in.clone());
                 }
             }
-            DataType::F64(item) => {
+            DataType::F64(ts_in, val_in) => {
                 if let Self::F64 { ts, val, .. } = self {
-                    ts.push(item.ts);
-                    val.push(item.val);
+                    ts.push(*ts_in);
+                    val.push(*val_in);
                 }
             }
         }
@@ -140,17 +140,6 @@ impl DataBlock {
         }
     }
 
-    /// Returns a new `DataType` by this `DataBlock` variant.
-    pub fn get_type(&self) -> DataType {
-        match &self {
-            DataBlock::U64 { .. } => DataType::U64(U64Cell::default()),
-            DataBlock::I64 { .. } => DataType::I64(I64Cell::default()),
-            DataBlock::Str { .. } => DataType::Str(StrCell::default()),
-            DataBlock::F64 { .. } => DataType::F64(F64Cell::default()),
-            DataBlock::Bool { .. } => DataType::Bool(BoolCell::default()),
-        }
-    }
-
     /// Returns a slice containing the entire timestamps of this `DataBlock`.
     pub fn ts(&self) -> &[i64] {
         match self {
@@ -180,50 +169,35 @@ impl DataBlock {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::U64(U64Cell {
-                        ts: ts[i],
-                        val: val[i],
-                    }))
+                    Some(DataType::U64(ts[i], val[i]))
                 }
             }
             DataBlock::I64 { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::I64(I64Cell {
-                        ts: ts[i],
-                        val: val[i],
-                    }))
+                    Some(DataType::I64(ts[i], val[i]))
                 }
             }
             DataBlock::Str { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::Str(StrCell {
-                        ts: ts[i],
-                        val: val[i].clone(),
-                    }))
+                    Some(DataType::Str(ts[i], val[i].clone()))
                 }
             }
             DataBlock::F64 { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::F64(F64Cell {
-                        ts: ts[i],
-                        val: val[i],
-                    }))
+                    Some(DataType::F64(ts[i], val[i]))
                 }
             }
             DataBlock::Bool { ts, val, .. } => {
                 if ts.len() <= i {
                     None
                 } else {
-                    Some(DataType::Bool(BoolCell {
-                        ts: ts[i],
-                        val: val[i],
-                    }))
+                    Some(DataType::Bool(ts[i], val[i]))
                 }
             }
         }
@@ -232,25 +206,25 @@ impl DataBlock {
     /// Set the (ts, val) wrapped by `DataType` at the index 'i'
     pub fn set(&mut self, i: usize, data_type: DataType) {
         match (self, data_type) {
-            (DataBlock::U64 { ts, val, .. }, DataType::U64(c)) => {
-                ts[i] = c.ts;
-                val[i] = c.val;
+            (DataBlock::U64 { ts, val, .. }, DataType::U64(ts_in, val_in)) => {
+                ts[i] = ts_in;
+                val[i] = val_in;
             }
-            (DataBlock::I64 { ts, val, .. }, DataType::I64(c)) => {
-                ts[i] = c.ts;
-                val[i] = c.val;
+            (DataBlock::I64 { ts, val, .. }, DataType::I64(ts_in, val_in)) => {
+                ts[i] = ts_in;
+                val[i] = val_in;
             }
-            (DataBlock::Str { ts, val, .. }, DataType::Str(c)) => {
-                ts[i] = c.ts;
-                val[i] = c.val;
+            (DataBlock::Str { ts, val, .. }, DataType::Str(ts_in, val_in)) => {
+                ts[i] = ts_in;
+                val[i] = val_in;
             }
-            (DataBlock::F64 { ts, val, .. }, DataType::F64(c)) => {
-                ts[i] = c.ts;
-                val[i] = c.val;
+            (DataBlock::F64 { ts, val, .. }, DataType::F64(ts_in, val_in)) => {
+                ts[i] = ts_in;
+                val[i] = val_in;
             }
-            (DataBlock::Bool { ts, val, .. }, DataType::Bool(c)) => {
-                ts[i] = c.ts;
-                val[i] = c.val;
+            (DataBlock::Bool { ts, val, .. }, DataType::Bool(ts_in, val_in)) => {
+                ts[i] = ts_in;
+                val[i] = val_in;
             }
             _ => {}
         }
@@ -531,7 +505,7 @@ fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize)
     }
 }
 
-fn exclude_slow(v: &mut Vec<Byte>, min_idx: usize, max_idx: usize) {
+fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
     if min_idx == max_idx {
         v.remove(min_idx);
     }
@@ -543,13 +517,21 @@ fn exclude_slow(v: &mut Vec<Byte>, min_idx: usize, max_idx: usize) {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::mem::size_of;
 
     use crate::{
+        memcache::DataType,
         tseries_family::TimeRange,
         tsm::{block::exclude_fast, DataBlock},
     };
+
+    pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
+        assert_eq!(block.len(), pattern.len());
+        for j in 0..block.len() {
+            assert_eq!(block.get(j).unwrap(), pattern[j]);
+        }
+    }
 
     #[test]
     fn test_merge_blocks() {

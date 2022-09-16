@@ -5,14 +5,17 @@ use std::ops::Index;
 use std::path::{self, Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
 
+use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
+use super::*;
+
 use bytes::BufMut;
 use chrono::format::format;
 use config::Config;
-use models::{FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
+use models::{utils, FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 
-use super::{errors, utils, IndexEngine, IndexError, IndexResult};
+use super::{errors, IndexEngine, IndexError, IndexResult};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
@@ -66,6 +69,7 @@ pub struct DBIndex {
     storage: IndexEngine,
     series_cache: HashMap<u32, Vec<SeriesKey>>,
 
+    schema_id: HashMap<String, u32>,
     table_schema: HashMap<String, Vec<FieldInfo>>,
 }
 
@@ -82,6 +86,7 @@ impl DBIndex {
             storage: IndexEngine::new(path),
             series_cache: HashMap::new(),
             table_schema: HashMap::new(),
+            schema_id: HashMap::new(),
 
             path: path.into(),
         }
@@ -140,7 +145,7 @@ impl DBIndex {
         let id = utils::unite_id(hash_id as u64, self.storage.incr_id()?);
         series_key.set_id(id);
         for tag in series_key.tags() {
-            let key = utils::encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
+            let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
             self.storage.push(&key, id.to_be_bytes().as_ref())?;
         }
 
@@ -171,6 +176,17 @@ impl DBIndex {
                 }
             }
 
+            for it in schema.iter() {
+                match info.field_infos().iter().find(|item| it.eq(item)) {
+                    Some(v) => {}
+                    None => {
+                        if !it.is_tag() {
+                            info.push_field_fill(it.clone())
+                        }
+                    }
+                }
+            }
+
             for tag in info.tags() {
                 let mut field = FieldInfo::from(tag);
                 if let Some(v) = schema.iter().find(|item| field.eq(item)) {
@@ -183,6 +199,8 @@ impl DBIndex {
                     return Err(IndexError::NotFoundField);
                 }
             }
+
+            info.set_schema_id(self.table_schema_id(info.table()));
 
             Ok(())
         } else {
@@ -210,7 +228,7 @@ impl DBIndex {
             }
         }
 
-        let mut need_store = false;
+        let mut schema_change = false;
         let mut check_fn = |field: &mut FieldInfo| -> IndexResult<()> {
             match schema.iter().find(|item| field.eq(item)) {
                 Some(v) => {
@@ -221,7 +239,7 @@ impl DBIndex {
                     field.set_field_id(utils::unite_id(v.field_id(), series_id));
                 }
                 None => {
-                    need_store = true;
+                    schema_change = true;
 
                     let index = (schema.len() + 1) as u64;
 
@@ -245,11 +263,26 @@ impl DBIndex {
             check_fn(&mut FieldInfo::from(tag))?
         }
 
-        //if needed, store it
-        if need_store {
+        for it in schema.iter() {
+            match info.field_infos().iter().find(|item| it.eq(item)) {
+                Some(v) => {}
+                None => {
+                    if !it.is_tag() {
+                        info.push_field_fill(it.clone())
+                    }
+                }
+            }
+        }
+
+        //schema changed store it
+        if schema_change {
             let data = bincode::serialize(schema).unwrap();
             let key = format!("{}{}", TABLE_SCHEMA_PREFIX, info.table());
             self.storage.set(key.as_bytes(), &data)?;
+
+            info.set_schema_id(self.incr_schema_id(info.table()));
+        } else {
+            info.set_schema_id(self.table_schema_id(info.table()));
         }
 
         Ok(())
@@ -270,6 +303,22 @@ impl DBIndex {
         }
 
         Ok(None)
+    }
+
+    pub fn table_schema_id(&self, tab: &String) -> u32 {
+        if let Some(v) = self.schema_id.get(tab) {
+            return *v;
+        }
+
+        return 1;
+    }
+
+    pub fn incr_schema_id(&mut self, tab: &String) -> u32 {
+        let v = self.schema_id.entry(tab.clone()).or_insert(1);
+
+        *v = *v + 1;
+
+        return *v;
     }
 
     pub async fn del_table_schema(&mut self, tab: &String) -> IndexResult<()> {
@@ -317,17 +366,16 @@ impl DBIndex {
             if let Ok(keys) = bincode::deserialize::<Vec<SeriesKey>>(&data) {
                 if let Some(key) = keys.iter().find(|key| key.id() == sid) {
                     for tag in key.tags() {
-                        let key =
-                            utils::encode_inverted_index_key(key.table(), &tag.key, &tag.value);
+                        let key = encode_inverted_index_key(key.table(), &tag.key, &tag.value);
                         if let Some(data) = self.storage.get(&key)? {
-                            let mut id_list = utils::decode_series_id_list(&data)?;
+                            let mut id_list = decode_series_id_list(&data)?;
                             // TODO binary search by low 40 bits
                             id_list.retain(|x| *x != sid);
                             // if let Ok(index) = id_list.binary_search(&sid) {
                             //     id_list.remove(index);
                             // }
 
-                            let data = utils::encode_series_id_list(&id_list);
+                            let data = encode_series_id_list(&id_list);
                             self.storage.set(&key, &data)?;
                         }
                     }
@@ -349,7 +397,7 @@ impl DBIndex {
             loop {
                 if let Some(kv) = it.next() {
                     if let Ok(kv) = kv {
-                        let id_list = utils::decode_series_id_list(&kv.1)?;
+                        let id_list = decode_series_id_list(&kv.1)?;
                         result = utils::or_u64(&result, &id_list);
                     } else {
                         return Err(IndexError::IndexStroage {
@@ -364,18 +412,18 @@ impl DBIndex {
             return Ok(result);
         }
 
-        let key = utils::encode_inverted_index_key(tab, &tags[0].key, &tags[0].value);
+        let key = encode_inverted_index_key(tab, &tags[0].key, &tags[0].value);
         if let Some(data) = self.storage.get(&key)? {
-            result = utils::decode_series_id_list(&data)?;
+            result = decode_series_id_list(&data)?;
             if tags.len() == 1 {
                 return Ok(result);
             }
         }
 
         for tag in &tags[1..] {
-            let key = utils::encode_inverted_index_key(tab, &tag.key, &tag.value);
+            let key = encode_inverted_index_key(tab, &tag.key, &tag.value);
             if let Some(data) = self.storage.get(&key)? {
-                let id_list = utils::decode_series_id_list(&data)?;
+                let id_list = decode_series_id_list(&data)?;
                 result = utils::and_u64(&result, &id_list);
             } else {
                 return Ok(vec![]);
