@@ -44,6 +44,7 @@ integer-encoding = "3.0.3"
 snap = "1.0.0"
 tracing = "0.1.35"
 sled = "0.34.7"
+minivec = "0.4.0"
 
 [dev-dependencies]
 criterion = { version = "0.3.5", features = ["async_tokio"] }

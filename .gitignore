@@ -3,6 +3,7 @@
 /.vscode/
 /dev/
 /query_server/query/dev
+/tskv/dev
 /main/dev
 /main/tskv_log
 

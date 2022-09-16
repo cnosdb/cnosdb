@@ -1,6 +1,7 @@
 use std::{convert::TryInto, error::Error};
 
 use integer_encoding::VarInt;
+use minivec::MiniVec;
 
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
@@ -76,7 +77,7 @@ pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Se
 /// Decodes a slice of bytes representing Snappy-compressed data into a vector
 /// of vectors of bytes representing string data, which may or may not be valid
 /// UTF-8.
-pub fn decode(src: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn decode(src: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
@@ -108,7 +109,7 @@ pub fn decode(src: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error + 
             return Err("short buffer".into());
         }
 
-        dst.push(decoded_bytes[lower..upper].to_vec());
+        dst.push(MiniVec::from(  &decoded_bytes[lower..upper]));
 
         // The length of this string plus the length of the variable byte encoded length
         i += length + num_bytes_read;
