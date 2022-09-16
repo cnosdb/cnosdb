@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use minivec::MiniVec;
 
 use models::{FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;

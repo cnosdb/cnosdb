@@ -12,6 +12,7 @@ use std::ops::Index;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
+use minivec::{mini_vec, MiniVec};
 use trace::{error, info, warn};
 
 use crate::tsm::{timestamp, DataBlock};
@@ -26,7 +27,7 @@ pub enum FieldVal {
     Integer(i64),
     Unsigned(u64),
     Boolean(bool),
-    Bytes(Vec<u8>),
+    Bytes(MiniVec<u8>),
 }
 
 impl FieldVal {
@@ -50,7 +51,7 @@ impl FieldVal {
         }
     }
 
-    pub fn new(val: Vec<u8>, vtype: ValueType) -> FieldVal {
+    pub fn new(val: MiniVec<u8>, vtype: ValueType) -> FieldVal {
         match vtype {
             ValueType::Unsigned => {
                 let val = byte_utils::decode_be_u64(&val);
@@ -102,7 +103,7 @@ impl From<fb_models::Point<'_>> for RowData {
                 let mut fields = Vec::with_capacity(fields_inner.len());
                 for f in fields_inner.into_iter() {
                     let vtype = f.type_().into();
-                    let val = f.value().unwrap().to_vec();
+                    let val = MiniVec::from(f.value().unwrap());
                     fields.push(Some(FieldVal::new(val, vtype)));
                 }
                 fields
@@ -541,7 +542,7 @@ impl MemEntry {
 pub enum DataType {
     U64(i64, u64),
     I64(i64, i64),
-    Str(i64, Vec<u8>),
+    Str(i64, MiniVec<u8>),
     F64(i64, f64),
     Bool(i64, bool),
 }
@@ -553,7 +554,7 @@ impl DataType {
             ValueType::Integer => DataType::I64(ts, 0),
             ValueType::Float => DataType::F64(ts, 0.0),
             ValueType::Boolean => DataType::Bool(ts, false),
-            ValueType::String => DataType::Str(ts, vec![]),
+            ValueType::String => DataType::Str(ts, mini_vec![]),
             _ => todo!(),
         }
     }

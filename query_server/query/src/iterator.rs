@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use std::sync::Arc;
+use minivec::MiniVec;
 
 use datafusion::arrow::array::ArrayBuilder;
 use models::utils::{min_num, unite_id};
@@ -107,7 +108,7 @@ impl TagCursor {
 
 impl Cursor for TagCursor {
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        let data = DataType::Str(0, self.value.as_bytes().to_vec());
+        let data = DataType::Str(0, MiniVec::from(self.value.as_bytes()));
 
         return Ok(Some(data));
     }

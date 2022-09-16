@@ -1,4 +1,5 @@
 use std::{fmt::Display, mem::size_of, ops::Index};
+use minivec::MiniVec;
 
 use models::{Timestamp, ValueType};
 use protos::models::FieldType;
@@ -15,7 +16,7 @@ use crate::{
 pub enum DataBlock {
     U64 { ts: Vec<i64>, val: Vec<u64> },
     I64 { ts: Vec<i64>, val: Vec<i64> },
-    Str { ts: Vec<i64>, val: Vec<Vec<u8>> },
+    Str { ts: Vec<i64>, val: Vec<MiniVec<u8>> },
     F64 { ts: Vec<i64>, val: Vec<f64> },
     Bool { ts: Vec<i64>, val: Vec<bool> },
 }
@@ -505,7 +506,7 @@ fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize)
     }
 }
 
-fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
+fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
     if min_idx == max_idx {
         v.remove(min_idx);
     }
@@ -519,6 +520,7 @@ fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
 #[cfg(test)]
 pub mod test {
     use std::mem::size_of;
+    use minivec::mini_vec;
 
     use crate::{
         memcache::DataType,
@@ -583,7 +585,8 @@ pub mod test {
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
+            val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
+                      mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]]
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
@@ -591,14 +594,14 @@ pub mod test {
             DataBlock::Str {
                 ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
                 val: vec![
-                    vec![10],
-                    vec![11],
-                    vec![14],
-                    vec![15],
-                    vec![16],
-                    vec![17],
-                    vec![18],
-                    vec![19]
+                    mini_vec![10],
+                    mini_vec![11],
+                    mini_vec![14],
+                    mini_vec![15],
+                    mini_vec![16],
+                    mini_vec![17],
+                    mini_vec![18],
+                    mini_vec![19]
                 ]
             }
         );
@@ -606,14 +609,15 @@ pub mod test {
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
+            val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
+                      mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]]
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
             blk,
             DataBlock::Str {
                 ts: vec![0, 1, 9],
-                val: vec![vec![10], vec![11], vec![19]]
+                val: vec![mini_vec![10], mini_vec![11], mini_vec![19]]
             }
         )
     }
