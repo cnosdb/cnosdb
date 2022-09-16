@@ -127,7 +127,7 @@ impl FlushTask {
         let mut tsm_writer: Option<TsmWriter> = None;
         let mut delta_writer: Option<TsmWriter> = None;
         while let Some(series_flushing_data) = compactor.next() {
-            for (field_id, tsm_blks, dlt_blks) in series_flushing_data {
+            for (field_id, dlt_blks, tsm_blks) in series_flushing_data {
                 if !tsm_blks.is_empty() && tsm_writer.is_none() {
                     let writer = tsm::new_tsm_writer(
                         self.path_tsm.clone(),

@@ -298,7 +298,23 @@ mod tests {
         )
         .await;
 
-        let re_partition = format!("|               |           RepartitionExec: partitioning=RoundRobinBatch({})                                                            |", num_cpus::get());
+        let mut num_cpu = num_cpus::get();
+        let mut num_cpu_w = 0;
+        loop {
+            num_cpu /= 10;
+            num_cpu_w += 1;
+            if num_cpu == 0 {
+                break;
+            }
+        }
+        let mut re_partition = format!(
+            "|               |           RepartitionExec: partitioning=RoundRobinBatch({})",
+            num_cpus::get()
+        );
+        for _ in 0..60 - num_cpu_w + 1 {
+            re_partition.push(' ');
+        }
+        re_partition.push('|');
 
         let expected = vec![
             "+---------------+-----------------------------------------------------------------------------------------------------------------------+",

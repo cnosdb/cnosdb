@@ -15,8 +15,8 @@ mod tests {
     use models::SeriesInfo;
     use protos::{kv_service, models as fb_models, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::{error, kv_option, Task, TimeRange, TsKv};
     use tskv::engine::Engine;
+    use tskv::{error, kv_option, Task, TimeRange, TsKv};
 
     fn get_tskv() -> (Arc<Runtime>, TsKv) {
         let mut global_config = get_config("../config/config.toml");
@@ -111,9 +111,7 @@ mod tests {
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
 
-        let fields_id = fields_id.iter().map(|id| {
-            *id as u32
-        }).collect();
+        let fields_id = fields_id.iter().map(|id| *id as u32).collect();
 
         let output = tskv.read(
             &database,
@@ -165,9 +163,7 @@ mod tests {
         let l = remove_duplicates(&mut fields_id);
         fields_id = fields_id[0..l].to_owned();
 
-        let fields_id: Vec<u32> = fields_id.iter().map(|id| {
-            *id as u32
-        }).collect();
+        let fields_id: Vec<u32> = fields_id.iter().map(|id| *id as u32).collect();
 
         tskv.read(
             &database,
