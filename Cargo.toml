@@ -1,20 +1,21 @@
 [workspace]
 
 members = [
-    "config",
-    "coordinator",
-    "common/line_protocol",
-    "main",
     "common/models",
     "common/protos",
+    "common/line_protocol",
+    "common/datafusion_dep",
+    "common/trace",
+    "common/utils",
+    "common/mem_allocator",
+    "query_server/spi",
     "query_server/query",
     "query_server/server",
     "e2e_test",
-    "common/trace",
+    "coordinator",
+    "config",
     "tskv",
-    "common/utils",
-    "query_server/spi",
-    "common/datafusion_dep"
+    "main",
 ]
 
 default-members = ["main"]

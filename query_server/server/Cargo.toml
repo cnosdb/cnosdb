@@ -13,10 +13,17 @@ query = { path = "../query" }
 datafusion = { path = "../../common/datafusion_dep" }
 #datafusion = { version = "10.0.0", features = ["scheduler"] }
 tskv = { path = "../../tskv" }
+trace = { path = "../../common/trace" }
 
 snafu = { version = "0.7", features = ["backtraces"] }
-tokio = { version = "1.17", features = ["full"] }
+tokio = { version = "1.21", features = ["full"] }
 async-trait = "0.1"
 futures = "0.3"
 num_cpus = "1.0"
+rand = "0.8.4"
+chrono = "0.4.22"
+criterion = { version = "0.3.5", features = ["async_tokio", "async_futures"] }
 
+[[bench]]
+harness = false
+name = "topk"

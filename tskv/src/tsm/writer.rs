@@ -439,7 +439,6 @@ mod test {
     use crate::{
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
-        memcache::{BoolCell, DataType, F64Cell, I64Cell, StrCell, U64Cell},
         tsm::{coders, ColumnReader, DataBlock, IndexReader, TsmReader, TsmWriter},
     };
 

@@ -2,6 +2,8 @@ use datafusion::{error::DataFusionError, sql::sqlparser::parser::ParserError};
 use models::define_result;
 use snafu::Snafu;
 
+use self::execution::ExecutionError;
+
 pub mod ast;
 pub mod dispatcher;
 pub mod execution;
@@ -13,6 +15,8 @@ pub mod physical_planner;
 pub mod session;
 
 define_result!(QueryError);
+
+pub const UNEXPECTED_EXTERNAL_PLAN: &str = "Unexpected plan, maybe it's a df problem";
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -40,4 +44,7 @@ pub enum QueryError {
 
     #[snafu(display("Failed to do schedule. err: {}", source))]
     Schedule { source: DataFusionError },
+
+    #[snafu(display("Failed to do execution. err: {}", source))]
+    Execution { source: ExecutionError },
 }

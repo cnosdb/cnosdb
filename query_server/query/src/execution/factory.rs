@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::execution::ddl::DropExecution;
+use crate::execution::ddl::DDLExecution;
 use crate::metadata::MetaDataRef;
 use datafusion::scheduler::Scheduler;
 use spi::query::{
@@ -46,7 +46,11 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 self.optimizer.clone(),
                 self.scheduler.clone(),
             )),
-            Plan::Drop(drop_plan) => Box::new(DropExecution::new(drop_plan, self.catalog.clone())),
+            Plan::DDL(ddl_plan) => Box::new(DDLExecution::new(
+                state_machine,
+                ddl_plan,
+                self.catalog.clone(),
+            )),
         }
     }
 }

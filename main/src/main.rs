@@ -8,7 +8,7 @@ use tokio::runtime::Runtime;
 use async_channel as channel;
 
 use protos::kv_service::tskv_service_server::TskvServiceServer;
-use trace::init_default_global_tracing;
+use trace::init_global_tracing;
 use tskv::TsKv;
 
 mod http;
@@ -41,14 +41,16 @@ struct Cli {
         long,
         global = true,
         env = "server_addr",
-        default_value = "127.0.0.1:31006"
+        default_value = "0.0.0.0:31006"
     )]
-    host: String,
+    grpc_host: String,
 
     #[clap(
+        short,
+        long,
         global = true,
         env = "server_http_addr",
-        default_value = "127.0.0.1:31007"
+        default_value = "0.0.0.0:31007"
     )]
     http_host: String,
 
@@ -88,37 +90,46 @@ enum SubCommand {
 /// ```bash
 /// cargo run -- tskv --cpu 1 --memory 64 debug
 /// ```
+use mem_allocator::Jemalloc;
+#[global_allocator]
+static A: Jemalloc = Jemalloc;
+
 fn main() -> Result<(), std::io::Error> {
-    init_default_global_tracing("tskv_log", "tskv.log", "debug");
     install_crash_handler();
     let cli = Cli::parse();
     let runtime = init_runtime(cli.cpu)?;
+    let runtime = Arc::new(runtime);
     println!(
         "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
-        cli.host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
+        cli.grpc_host, cli.http_host, cli.cpu, cli.memory, cli.config, cli.subcmd
     );
     let global_config = config::get_config(cli.config.as_str());
+
+    let mut _trace_guard = init_global_tracing(
+        &global_config.log.path,
+        "tsdb.log",
+        &global_config.log.level,
+    );
+
     // TODO check global_config
-    runtime.block_on(async move {
+    runtime.clone().block_on(async move {
         match &cli.subcmd {
             SubCommand::Debug { debug } => {
-                println!("Debug {}", debug);
             }
-            SubCommand::Run {
-
-            } => {}
+            SubCommand::Run {} => {}
             SubCommand::Tskv { debug } => {
-                println!("TSKV {}", debug);
-
-                let grpc_host = cli.host.parse::<SocketAddr>().expect("Invalid grpc_host");
-                let http_host = cli.http_host.parse::<SocketAddr>().expect("Invalid http_host");
+                let grpc_host = cli.grpc_host.parse::<SocketAddr>().expect("Invalid grpc_host");
+                let http_host = cli
+                    .http_host
+                    .parse::<SocketAddr>()
+                    .expect("Invalid http_host");
 
                 //let (sender, receiver) = mpsc::unbounded_channel();
                 let (sender, receiver) = channel::unbounded();
 
                 let tskv_options = tskv::Options::from(&global_config);
 
-                let tskv = Arc::new(TsKv::open(tskv_options).await.unwrap());
+                let tskv = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
 
                 for _ in 0..cli.cpu.unwrap() {
                     TsKv::start(tskv.clone(), receiver.clone());
@@ -127,7 +138,9 @@ fn main() -> Result<(), std::io::Error> {
                 let db =
                     Arc::new(server::instance::make_cnosdbms(tskv).expect("Failed to build dbms."));
 
-                let tskv_grpc_service = TskvServiceServer::new(rpc::tskv::TskvServiceImpl { sender: sender.clone() });
+                let tskv_grpc_service = TskvServiceServer::new(rpc::tskv::TskvServiceImpl {
+                    sender: sender.clone(),
+                });
                 let mut grpc_builder = tonic::transport::server::Server::builder();
                 let grpc_router = grpc_builder.add_service(tskv_grpc_service);
                 let grpc = tokio::spawn(async move {

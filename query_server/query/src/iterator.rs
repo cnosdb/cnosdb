@@ -1,21 +1,18 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
 
 use std::sync::Arc;
 
 use datafusion::arrow::array::ArrayBuilder;
-use datafusion::physical_plan::values;
 use models::utils::{min_num, unite_id};
 use models::ValueType;
 use snafu::ResultExt;
 use trace::debug;
-use tskv::memcache::U64Cell;
 
 use crate::schema::{ColumnType, TableSchema};
 
 use tskv::{
     engine::EngineRef,
-    memcache::{DataType, StrCell},
+    memcache::DataType,
     tseries_family::{ColumnFile, SuperVersion, TimeRange},
     tsm::{BlockMetaIterator, DataBlock, TsmReader},
     Error, {error, ColumnFileId},
@@ -110,10 +107,7 @@ impl TagCursor {
 
 impl Cursor for TagCursor {
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        let data = DataType::Str(StrCell {
-            ts: 0,
-            val: self.value.as_bytes().to_vec(),
-        });
+        let data = DataType::Str(0, self.value.as_bytes().to_vec());
 
         return Ok(Some(data));
     }
@@ -405,9 +399,9 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<Float64Builder>()
                         .unwrap();
-                    if let Some(DataType::F64(val)) = &values[i] {
+                    if let Some(DataType::F64(_, val)) = &values[i] {
                         debug!("append float value");
-                        field_builder.append_value(val.val);
+                        field_builder.append_value(*val);
                     } else {
                         debug!("append float null");
                         field_builder.append_null();
@@ -418,8 +412,8 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<Int64Builder>()
                         .unwrap();
-                    if let Some(DataType::I64(val)) = &values[i] {
-                        field_builder.append_value(val.val);
+                    if let Some(DataType::I64(_, val)) = &values[i] {
+                        field_builder.append_value(*val);
                     } else {
                         field_builder.append_null();
                     }
@@ -429,8 +423,8 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<UInt64Builder>()
                         .unwrap();
-                    if let Some(DataType::U64(val)) = &values[i] {
-                        field_builder.append_value(val.val);
+                    if let Some(DataType::U64(_, val)) = &values[i] {
+                        field_builder.append_value(*val);
                     } else {
                         field_builder.append_null();
                     }
@@ -440,8 +434,8 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<BooleanBuilder>()
                         .unwrap();
-                    if let Some(DataType::Bool(val)) = &values[i] {
-                        field_builder.append_value(val.val);
+                    if let Some(DataType::Bool(_, val)) = &values[i] {
+                        field_builder.append_value(*val);
                     } else {
                         field_builder.append_null();
                     }
@@ -451,9 +445,9 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<StringBuilder>()
                         .unwrap();
-                    if let Some(DataType::Str(val)) = &values[i] {
+                    if let Some(DataType::Str(_, val)) = &values[i] {
                         debug!("append string value");
-                        field_builder.append_value(String::from_utf8(val.val.to_vec()).unwrap());
+                        field_builder.append_value(String::from_utf8(val.to_vec()).unwrap());
                     } else {
                         debug!("append string null");
                         field_builder.append_null();

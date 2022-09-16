@@ -1,12 +1,16 @@
 use std::collections::VecDeque;
 
+use datafusion::logical_plan::FileType;
+use datafusion::sql::parser::CreateExternalTable;
+use snafu::ResultExt;
 use spi::query::ast::{DropObject, ExtStatement, ObjectType};
+use spi::query::parser::Parser as CnosdbParser;
+use spi::query::ParserSnafu;
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
     tokenizer::{Token, Tokenizer},
 };
-
 use trace::debug;
 
 pub type Result<T, E = ParserError> = std::result::Result<T, E>;
@@ -16,6 +20,15 @@ macro_rules! parser_err {
     ($MSG:expr) => {
         Err(ParserError::ParserError($MSG.to_string()))
     };
+}
+
+#[derive(Default)]
+pub struct DefaultParser {}
+
+impl CnosdbParser for DefaultParser {
+    fn parse(&self, sql: &str) -> spi::query::Result<VecDeque<ExtStatement>> {
+        ExtParser::parse_sql(sql).context(ParserSnafu)
+    }
 }
 
 /// SQL Parser
@@ -116,9 +129,9 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a SQL SHOW statement
     fn parse_show(&mut self) -> Result<ExtStatement> {
-        if self.consume_token("TABLES") {
+        if self.consume_token(&Token::make_keyword("TABLES")) {
             Ok(ExtStatement::ShowTables)
-        } else if self.consume_token("DATABASES") {
+        } else if self.consume_token(&Token::make_keyword("DATABASES")) {
             Ok(ExtStatement::ShowDatabases)
         } else {
             self.expected("tables/databases", self.parser.peek_token())
@@ -135,9 +148,120 @@ impl<'a> ExtParser<'a> {
         todo!()
     }
 
+    /// This is a copy of the equivalent implementation in Datafusion.
+    fn parse_csv_has_header(&mut self) -> bool {
+        self.consume_token(&Token::make_keyword("WITH"))
+            & self.consume_token(&Token::make_keyword("HEADER"))
+            & self.consume_token(&Token::make_keyword("ROW"))
+    }
+
+    /// This is a copy of the equivalent implementation in Datafusion.
+    fn parse_has_delimiter(&mut self) -> bool {
+        self.consume_token(&Token::make_keyword("DELIMITER"))
+    }
+
+    /// This is a copy of the equivalent implementation in Datafusion.
+    fn parse_delimiter(&mut self) -> Result<char, ParserError> {
+        let token = self.parser.parse_literal_string()?;
+        match token.len() {
+            1 => Ok(token.chars().next().unwrap()),
+            _ => Err(ParserError::TokenizerError(
+                "Delimiter must be a single char".to_string(),
+            )),
+        }
+    }
+
+    /// This is a copy of the equivalent implementation in Datafusion.
+    fn parse_has_partition(&mut self) -> bool {
+        self.consume_token(&Token::make_keyword("PARTITIONED"))
+            & self.consume_token(&Token::make_keyword("BY"))
+    }
+
+    /// Parses the set of valid formats
+    /// This is a copy of the equivalent implementation in Datafusion.
+    fn parse_file_format(&mut self) -> Result<FileType, ParserError> {
+        match self.parser.next_token() {
+            Token::Word(w) => parse_file_type(&w.value),
+            unexpected => self.expected("one of PARQUET, NDJSON, or CSV", unexpected),
+        }
+    }
+
+    /// This is a copy of the equivalent implementation in Datafusion.
+    fn parse_partitions(&mut self) -> Result<Vec<String>, ParserError> {
+        let mut partitions: Vec<String> = vec![];
+        if !self.parser.consume_token(&Token::LParen) || self.parser.consume_token(&Token::RParen) {
+            return Ok(partitions);
+        }
+
+        loop {
+            if let Token::Word(_) = self.parser.peek_token() {
+                let identifier = self.parser.parse_identifier()?;
+                partitions.push(identifier.to_string());
+            } else {
+                return self.expected("partition name", self.parser.peek_token());
+            }
+            let comma = self.parser.consume_token(&Token::Comma);
+            if self.parser.consume_token(&Token::RParen) {
+                // allow a trailing comma, even though it's not in standard
+                break;
+            } else if !comma {
+                return self.expected(
+                    "',' or ')' after partition definition",
+                    self.parser.peek_token(),
+                );
+            }
+        }
+        Ok(partitions)
+    }
+
+    fn parse_create_external_table(&mut self) -> Result<ExtStatement> {
+        self.parser.expect_keyword(Keyword::TABLE)?;
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let table_name = self.parser.parse_object_name()?;
+        let (columns, _) = self.parser.parse_columns()?;
+        self.parser
+            .expect_keywords(&[Keyword::STORED, Keyword::AS])?;
+
+        // THIS is the main difference: we parse a different file format.
+        let file_type = self.parse_file_format()?;
+
+        let has_header = self.parse_csv_has_header();
+
+        let has_delimiter = self.parse_has_delimiter();
+        let delimiter = match has_delimiter {
+            true => self.parse_delimiter()?,
+            false => ',',
+        };
+
+        let table_partition_cols = if self.parse_has_partition() {
+            self.parse_partitions()?
+        } else {
+            vec![]
+        };
+
+        self.parser.expect_keyword(Keyword::LOCATION)?;
+        let location = self.parser.parse_literal_string()?;
+
+        let create = CreateExternalTable {
+            name: table_name.to_string(),
+            columns,
+            file_type,
+            has_header,
+            delimiter,
+            location,
+            table_partition_cols,
+            if_not_exists,
+        };
+        Ok(ExtStatement::CreateExternalTable(create))
+    }
+
     /// Parse a SQL CREATE statement
     fn parse_create(&mut self) -> Result<ExtStatement> {
-        todo!()
+        // Currently only supports the creation of external tables
+        self.parser.expect_keyword(Keyword::EXTERNAL)?;
+        self.parse_create_external_table()
     }
 
     /// Parse a SQL DROP statement
@@ -159,13 +283,29 @@ impl<'a> ExtParser<'a> {
         }))
     }
 
-    fn consume_token(&mut self, expected: &str) -> bool {
-        if self.parser.peek_token().to_string().to_uppercase() == *expected.to_uppercase() {
+    fn consume_token(&mut self, expected: &Token) -> bool {
+        let token = self.parser.peek_token().to_string().to_uppercase();
+        let token = Token::make_keyword(&token);
+        if token == *expected {
             self.parser.next_token();
             true
         } else {
             false
         }
+    }
+}
+
+/// This is a copy of the equivalent implementation in Datafusion.
+fn parse_file_type(s: &str) -> Result<FileType, ParserError> {
+    match s.to_uppercase().as_str() {
+        "PARQUET" => Ok(FileType::Parquet),
+        "NDJSON" => Ok(FileType::NdJson),
+        "CSV" => Ok(FileType::CSV),
+        "AVRO" => Ok(FileType::Avro),
+        other => Err(ParserError::ParserError(format!(
+            "expect one of PARQUET, AVRO, NDJSON, or CSV, found: {}",
+            other
+        ))),
     }
 }
 

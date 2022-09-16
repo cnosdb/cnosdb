@@ -6,6 +6,7 @@ mod test {
 
     use config::get_config;
     use protos::{kv_service, models_helper};
+    use tokio::runtime::Runtime;
     use trace::init_default_global_tracing;
     use tskv::engine::Engine;
     use tskv::{kv_option, TsKv};
@@ -18,7 +19,9 @@ mod test {
         global_config.wal.path = "/tmp/test/wal".to_string();
         let opt = kv_option::Options::from(&global_config);
 
-        let tskv = TsKv::open(opt).await.unwrap();
+        let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
+            .await
+            .unwrap();
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 200);
