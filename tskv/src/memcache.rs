@@ -12,6 +12,8 @@ use std::ops::Index;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
+use std::mem::size_of;
+
 use minivec::{mini_vec, MiniVec};
 use trace::{error, info, warn};
 
@@ -76,6 +78,14 @@ impl FieldVal {
             _ => todo!(),
         }
     }
+
+    pub fn heap_size(&self) -> usize {
+        if let FieldVal::Bytes(val) = self {
+            val.capacity()
+        } else {
+            0
+        }
+    }
 }
 
 impl Display for FieldVal {
@@ -122,6 +132,8 @@ pub struct RowGroup {
     pub schema: Vec<u32>,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
+    /// total size in stack and heap
+    pub size: usize
 }
 
 #[derive(Debug)]
@@ -334,7 +346,7 @@ impl MemCache {
     pub fn write_group(&self, sid: u64, seq: u64, group: RowGroup) {
         self.seq_no.store(seq, Ordering::Relaxed);
         self.cache_size
-            .fetch_add(size_of_val(&group) as u64, Ordering::Relaxed);
+            .fetch_add(group.size as u64, Ordering::Relaxed);
 
         let index = (sid as usize) % self.part_count;
         let entry = self.partions[index]
@@ -827,6 +839,7 @@ impl<'a> ColumnBlockValueIterator<'a> {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use std::mem::{size_of, size_of_val};
     use bytes::buf;
     use models::{SeriesId, Timestamp};
 
@@ -878,15 +891,19 @@ pub(crate) mod test {
         put_none: bool,
     ) {
         let mut rows = Vec::new();
+        let mut size: usize = schema_column_ids.capacity() * size_of::<Vec<u32>>();
         for ts in time_range.0..time_range.1 + 1 {
             let mut fields = Vec::new();
             for _ in 0..schema_column_ids.len() {
+                size += size_of::<Option<FieldVal>>();
                 if put_none {
                     fields.push(None);
                 } else {
                     fields.push(Some(FieldVal::Float(ts as f64)));
+                    size += 8;
                 }
             }
+            size += 8;
             rows.push(RowData { ts, fields });
         }
 
@@ -895,6 +912,7 @@ pub(crate) mod test {
             schema: schema_column_ids,
             range: TimeRange::from(time_range),
             rows,
+            size: size_of::<RowGroup>() + size
         };
         cache.write_group(series_id, 1, row_group);
     }
