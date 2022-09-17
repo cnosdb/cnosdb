@@ -565,6 +565,7 @@ fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
 #[cfg(test)]
 mod test {
     use core::panic;
+    use minivec::MiniVec;
     use std::{
         collections::HashMap,
         default,
@@ -574,7 +575,6 @@ mod test {
             Arc,
         },
     };
-    use minivec::MiniVec;
 
     use models::{FieldId, Timestamp, ValueType};
     use utils::BloomFilter;

@@ -247,7 +247,10 @@ pub fn str_snappy_decode(
     Ok(())
 }
 
-fn split_stream(data: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn split_stream(
+    data: &[u8],
+    dst: &mut Vec<MiniVec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let len = data.len();
     let mut i = 0;
 
@@ -350,8 +353,8 @@ pub fn str_without_compress_decode(
 
 #[cfg(test)]
 mod tests {
-    use datafusion::parquet::data_type::AsBytes;
     use super::*;
+    use datafusion::parquet::data_type::AsBytes;
 
     #[test]
     fn encode_no_values() {
