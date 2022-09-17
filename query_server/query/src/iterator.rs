@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use std::sync::Arc;
 use minivec::MiniVec;
+use std::sync::Arc;
 
 use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
 use models::utils::{min_num, unite_id};

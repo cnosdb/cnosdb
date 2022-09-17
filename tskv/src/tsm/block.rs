@@ -1,5 +1,5 @@
-use std::{fmt::Display, mem::size_of, ops::Index};
 use minivec::MiniVec;
+use std::{fmt::Display, mem::size_of, ops::Index};
 
 use models::{Timestamp, ValueType};
 use protos::models::FieldType;
@@ -655,8 +655,8 @@ fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use std::mem::size_of;
     use minivec::mini_vec;
+    use std::mem::size_of;
 
     use crate::{
         memcache::DataType,
