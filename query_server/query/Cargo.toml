@@ -25,7 +25,11 @@ serde = { version = "1.0", features = ["derive"] }
 snafu = "0.7"
 sled = "0.34"
 paste = "1.0"
+
+# df lib
 sqlparser = "0.20"
+hashbrown = { version = "0.12", features = ["raw"] }
+
 priority-queue = "1.2.3"
 num_cpus = "1"
 # use libc on unix like platforms to set worker priority in DedicatedExecutor

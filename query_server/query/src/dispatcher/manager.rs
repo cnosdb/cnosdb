@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
+use snafu::ResultExt;
 use spi::query::execution::Output;
 use spi::{
     query::{
@@ -17,7 +18,7 @@ use spi::{
 };
 
 use spi::query::QueryError::BuildQueryDispatcher;
-use spi::query::Result;
+use spi::query::{LogicalPlannerSnafu, Result};
 
 use crate::metadata::{MetaDataRef, MetadataProvider};
 use crate::{
@@ -98,7 +99,9 @@ impl SimpleQueryDispatcher {
     ) -> Result<Output> {
         // begin analyze
         query_state_machine.begin_analyze();
-        let logical_plan = logical_planner.create_logical_plan(stmt.clone(), session)?;
+        let logical_plan = logical_planner
+            .create_logical_plan(stmt.clone(), session)
+            .context(LogicalPlannerSnafu)?;
         query_state_machine.end_analyze();
 
         // begin execute

@@ -17,7 +17,9 @@ use snafu::ResultExt;
 use spi::query::{physical_planner::PhysicalPlanner, Result};
 use spi::query::{session::IsiphoSessionCtx, PhysicalPlanerSnafu};
 
-use crate::extension::physical::transform_rule::topk::TopKPlanner;
+use crate::extension::physical::transform_rule::{
+    table_writer::TableWriterPlanner, topk::TopKPlanner,
+};
 
 use super::optimizer::PhysicalOptimizer;
 
@@ -52,7 +54,7 @@ impl DefaultPhysicalPlanner {
 impl Default for DefaultPhysicalPlanner {
     fn default() -> Self {
         let ext_physical_transform_rules: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> =
-            vec![Arc::new(TopKPlanner {})];
+            vec![Arc::new(TableWriterPlanner {}), Arc::new(TopKPlanner {})];
 
         let ext_physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>> = vec![
             //

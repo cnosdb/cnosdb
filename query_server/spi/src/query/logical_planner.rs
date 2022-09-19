@@ -1,10 +1,37 @@
+use crate::catalog::MetadataError;
+
 use super::{
     ast::{ExtStatement, ObjectType},
     session::IsiphoSessionCtx,
-    Result,
 };
 
-use datafusion::logical_plan::{DFSchemaRef, LogicalPlan as DFPlan};
+use datafusion::{
+    error::DataFusionError,
+    logical_plan::{DFSchemaRef, LogicalPlan as DFPlan},
+    prelude::{lit, Expr},
+    scalar::ScalarValue,
+};
+use models::define_result;
+use snafu::Snafu;
+
+define_result!(LogicalPlannerError);
+
+pub const MISSING_COLUMN: &str = "Insert column name does not exist in target table: ";
+pub const DUPLICATE_COLUMN_NAME: &str = "Insert column name is specified more than once: ";
+pub const MISMATCHED_COLUMNS: &str = "Insert columns and Source columns not match";
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum LogicalPlannerError {
+    #[snafu(display("External err: {}", source))]
+    External { source: DataFusionError },
+
+    #[snafu(display("Semantic err: {}", err))]
+    Semantic { err: String },
+
+    #[snafu(display("Metadata err: {}", source))]
+    Metadata { source: MetadataError },
+}
 
 #[derive(Debug, Clone)]
 pub enum Plan {
@@ -78,4 +105,9 @@ pub trait LogicalPlanner {
         statement: ExtStatement,
         session: &IsiphoSessionCtx,
     ) -> Result<Plan>;
+}
+
+/// TODO Additional output information
+pub fn affected_row_expr() -> Expr {
+    lit(ScalarValue::Null).alias("COUNT")
 }
