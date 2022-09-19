@@ -467,7 +467,7 @@ mod test {
         let mut data = vec![];
         let str = vec![vec![1_u8]];
         let tmp: Vec<&[u8]> = str.iter().map(|x| &x[..]).collect();
-        let _ = coders::string::encode(&tmp, &mut data);
+        let _ = coders::string::str_snappy_encode(&tmp, &mut data);
     }
 
     fn write_to_tsm(dir: impl AsRef<Path>, file_name: &str, data: &HashMap<FieldId, DataBlock>) {

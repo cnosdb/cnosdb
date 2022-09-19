@@ -1,5 +1,9 @@
 use std::error::Error;
 
+use crate::tsm::timestamp::{
+    ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
+    ts_without_compress_encode,
+};
 use integer_encoding::*;
 
 use super::simple8b;
@@ -15,13 +19,30 @@ pub enum Encoding {
     Rle = 2,
 }
 
+pub fn i64_q_compress_encode(
+    src: &[i64],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ts_q_compress_encode(src, dst)
+}
+
+pub fn i64_without_compress_encode(
+    src: &[i64],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ts_without_compress_encode(src, dst)
+}
+
 /// encode encodes a vector of signed integers into dst.
 ///
 /// Deltas between the integers in the vector are first calculated, and these
 /// deltas are then zig-zag encoded. The resulting zig-zag encoded deltas are
 /// further compressed if possible, either via bit-packing using simple8b or by
 /// run-length encoding the deltas if they're all the same.
-pub fn encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn i64_zigzag_simple8b_encode(
+    src: &[i64],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
@@ -123,7 +144,10 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
 }
 
 /// decode decodes a slice of bytes into a vector of signed integers.
-pub fn decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn i64_zigzag_simple8b_decode(
+    src: &[u8],
+    dst: &mut Vec<i64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
@@ -214,6 +238,20 @@ fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error +
     Ok(())
 }
 
+pub fn i64_without_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<i64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ts_without_compress_decode(src, dst)
+}
+
+pub fn i64_q_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<i64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ts_q_compress_decode(src, dst)
+}
+
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
@@ -238,7 +276,7 @@ mod tests {
         let mut dst = vec![];
 
         // check for error
-        encode(&src, &mut dst).expect("failed to encode src");
+        i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode src");
 
         // verify encoded no values.
         assert_eq!(dst.to_vec().len(), 0);
@@ -250,12 +288,12 @@ mod tests {
         let mut dst = vec![];
 
         let exp = src.clone();
-        encode(&src, &mut dst).expect("failed to encode");
+        i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         // verify uncompressed encoding used
         assert_eq!(&dst[0] >> 4, Encoding::Uncompressed as u8);
         let mut got = vec![];
-        decode(&dst, &mut got).expect("failed to decode");
+        i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
 
         // verify got same values back
         assert_eq!(got, exp);
@@ -299,12 +337,12 @@ mod tests {
             let mut dst = vec![];
             let src = test.input.clone();
             let exp = test.input;
-            encode(&src, &mut dst).expect("failed to encode");
+            i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
             assert_eq!(&dst[0] >> 4, Encoding::Rle as u8);
             let mut got = vec![];
-            decode(&dst, &mut got).expect("failed to decode");
+            i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
             assert_eq!(got, exp, "{}", test.name);
         }
@@ -336,12 +374,12 @@ mod tests {
             let mut dst = vec![];
             let src = test.input.clone();
             let exp = test.input;
-            encode(&src, &mut dst).expect("failed to encode");
+            i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
             assert_eq!(&dst[0] >> 4, Encoding::Simple8b as u8);
 
             let mut got = vec![];
-            decode(&dst, &mut got).expect("failed to decode");
+            i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
             assert_eq!(got, exp, "{}", test.name);
         }
@@ -352,7 +390,7 @@ mod tests {
     fn rle_regression() {
         let values = vec![809201799168i64; 509];
         let mut enc = vec![];
-        encode(&values, &mut enc).expect("encoding failed");
+        i64_zigzag_simple8b_encode(&values, &mut enc).expect("encoding failed");
 
         // this is a compressed rle integer block representing 509 identical
         // 809201799168 values.
@@ -362,7 +400,7 @@ mod tests {
         assert_eq!(enc, enc_influx);
 
         let mut dec = vec![];
-        decode(&enc, &mut dec).expect("failed to decode");
+        i64_zigzag_simple8b_decode(&enc, &mut dec).expect("failed to decode");
 
         assert_eq!(dec.len(), values.len());
         assert_eq!(dec, values);
@@ -373,7 +411,7 @@ mod tests {
     fn simple8b_short_regression() {
         let values = vec![346];
         let mut enc = vec![];
-        encode(&values, &mut enc).expect("encoding failed");
+        i64_zigzag_simple8b_encode(&values, &mut enc).expect("encoding failed");
 
         // this is a compressed simple8b integer block representing the value 346.
         let enc_influx = [16, 0, 0, 0, 0, 0, 0, 2, 180];
@@ -382,7 +420,7 @@ mod tests {
         assert_eq!(enc, enc_influx);
 
         let mut dec = vec![];
-        decode(&enc, &mut dec).expect("failed to decode");
+        i64_zigzag_simple8b_decode(&enc, &mut dec).expect("failed to decode");
 
         assert_eq!(dec.len(), values.len());
         assert_eq!(dec, values);

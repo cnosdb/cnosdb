@@ -1,3 +1,6 @@
+use crate::byte_utils::decode_be_f64;
+use crate::tsm::coder_instence::CodeType;
+use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
 use std::error::Error;
 
 // note: encode/decode adapted from influxdb_iox
@@ -7,7 +10,6 @@ use std::error::Error;
 // is useful because blocks do not always end aligned to bytes, and spare empty
 // bits can otherwise have undesirable semantic meaning.
 const SENTINEL: u64 = 0x7ff8_0000_0000_00ff; // in the quiet NaN range.
-const SENTINEL_INFLUXDB: u64 = 0x7ff8_0000_0000_0001; // legacy NaN value used by InfluxDB
 
 fn is_sentinel_f64(v: f64, sentinel: u64) -> bool {
     v.to_bits() == sentinel
@@ -23,7 +25,10 @@ fn is_sentinel_u64(v: u64, sentinel: u64) -> bool {
 /// two is determined. Leading and trailing zero bits are then analysed and
 /// representations based on those are stored.
 #[allow(clippy::many_single_char_names)]
-pub fn encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_gorilla_encode(
+    src: &[f64],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer.
     if src.is_empty() {
         return Ok(());
@@ -233,7 +238,41 @@ pub fn encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send
         length += 1;
     }
     dst.truncate(length);
+    dst.insert(0, CodeType::Gorilla as u8);
     Ok(())
+}
+
+pub fn f64_q_compress_encode(
+    src: &[f64],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear();
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    dst.push(CodeType::Quantile as u8);
+
+    dst.append(&mut auto_compress(&src, DEFAULT_COMPRESSION_LEVEL));
+    return Ok(());
+}
+
+pub fn f64_without_compress_encode(
+    src: &[f64],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear();
+
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    dst.push(CodeType::Null as u8);
+
+    for i in src.iter() {
+        dst.extend_from_slice(((*i) as f64).to_be_bytes().as_slice());
+    }
+    return Ok(());
 }
 
 // BIT_MASK contains a lookup table where the index is the number of bits
@@ -318,19 +357,46 @@ const BIT_MASK: [u64; 64] = [
 ];
 
 /// decode decodes the provided slice of bytes into a vector of f64 values.
-pub fn decode(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_gorilla_decode(
+    src: &[u8],
+    dst: &mut Vec<f64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let src = &src[1..];
     decode_with_sentinel(src, dst, SENTINEL)
 }
 
-/// decode_influxdb decodes the provided slice of bytes, which must have been
-/// encoded into a TSM file via InfluxDB's encoder.
-///
-/// TODO(edd): InfluxDB uses a different  sentinel value to terminate a block
-/// than we chose to use for the float decoder. As we settle on a story around
-/// compression of f64 blocks we may be able to clean this API and not have
-/// multiple methods.
-pub fn decode_influxdb(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    decode_with_sentinel(src, dst, SENTINEL_INFLUXDB)
+pub fn f64_q_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<f64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let mut decode: Vec<f64> = auto_decompress(src)?;
+    dst.append(&mut decode);
+    return Ok(());
+}
+
+pub fn f64_without_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<f64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+    let iter = src.chunks(8);
+    for i in iter {
+        dst.push(decode_be_f64(i))
+    }
+    return Ok(());
 }
 
 /// decode decodes a slice of bytes into a vector of floats.
@@ -516,13 +582,15 @@ fn decode_with_sentinel(
 mod tests {
     // use test_helpers::approximately_equal;
 
+    use crate::tsm::float::{f64_gorilla_decode, f64_gorilla_encode};
+
     #[test]
     fn encode_no_values() {
         let src: Vec<f64> = vec![];
         let mut dst = vec![];
 
         // check for error
-        super::encode(&src, &mut dst).expect("failed to encode src");
+        f64_gorilla_encode(&src, &mut dst).expect("failed to encode src");
 
         // verify encoded no values.
         let exp: Vec<u8> = Vec::new();
@@ -550,10 +618,10 @@ mod tests {
         let mut dst = vec![];
 
         // check for error
-        super::encode(&src, &mut dst).expect("failed to encode src");
+        f64_gorilla_encode(&src, &mut dst).expect("failed to encode src");
 
         let mut got = vec![];
-        super::decode(&dst, &mut got).expect("failed to decode");
+        f64_gorilla_decode(&dst, &mut got).expect("failed to decode");
 
         // Verify decoded values.
         assert_eq!(got.len(), src.len());
@@ -1673,28 +1741,12 @@ mod tests {
             let mut dst = vec![];
             let src = test.input;
 
-            super::encode(&src, &mut dst).expect("failed to encode");
+            f64_gorilla_encode(&src, &mut dst).expect("failed to encode");
 
             let mut got = vec![];
-            super::decode(&dst, &mut got).expect("failed to decode");
+            f64_gorilla_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
             assert_eq!(got, src, "{}", test.name);
         }
-    }
-
-    #[test]
-    fn decode_influxdb() {
-        // A block compressed with InfluxDB's gorilla encoder containing 507 0
-        // values.
-        let enc_influxdb = [
-            16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 255, 255, 224, 0, 0, 0, 0, 0, 4,
-        ];
-
-        let mut got = vec![];
-        let exp = vec![0.0; 507];
-        super::decode_influxdb(&enc_influxdb, &mut got).expect("failed to decode");
-        assert_eq!(got, exp);
     }
 }

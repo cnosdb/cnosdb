@@ -35,18 +35,6 @@ pub fn ts_without_compress_encode(
     return Ok(());
 }
 
-pub fn ts_without_compress_decode(
-    src: &[u8],
-    dst: &mut Vec<i64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let src = &src[1..];
-    let iter = src.chunks(8);
-    for i in iter {
-        dst.push(decode_be_i64(i))
-    }
-    return Ok(());
-}
-
 pub fn ts_q_compress_encode(
     src: &[i64],
     dst: &mut Vec<u8>,
@@ -201,20 +189,6 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
     dst.truncate(n);
 }
 
-pub fn ts_q_compress_decode(
-    src: &[u8],
-    dst: &mut Vec<i64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let src = &src[1..];
-    if src.is_empty() {
-        return Ok(());
-    }
-
-    let mut decode: Vec<i64> = auto_decompress(src)?;
-    dst.append(&mut decode);
-    return Ok(());
-}
-
 /// decode decodes a slice of bytes encoded using encode back into a
 /// vector of signed integers.
 pub fn ts_zigzag_simple8b_decode(
@@ -322,6 +296,36 @@ fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error +
         dst.push(next);
     }
     Ok(())
+}
+
+pub fn ts_without_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<i64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+    let iter = src.chunks(8);
+    for i in iter {
+        dst.push(decode_be_i64(i))
+    }
+    return Ok(());
+}
+
+pub fn ts_q_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<i64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+    let mut decode: Vec<i64> = auto_decompress(src)?;
+    dst.append(&mut decode);
+    return Ok(());
 }
 
 #[cfg(test)]

@@ -91,3 +91,21 @@ pub fn now_timestamp() -> u64 {
 pub fn to_str(arr: &[u8]) -> String {
     String::from_utf8(arr.to_vec()).unwrap()
 }
+
+#[cfg(test)]
+mod test {
+    use crate::utils::split_code_type_id;
+
+    #[test]
+    fn test_split_code_type_id() {
+        let id_0 = 0b00010011;
+        let (code0, code1) = split_code_type_id(id_0);
+        assert_eq!(code0, 1);
+        assert_eq!(code1, 3);
+
+        let id_1 = 0b01011111;
+        let (code2, code3) = split_code_type_id(id_1);
+        assert_eq!(code2, 5);
+        assert_eq!(code3, 15)
+    }
+}

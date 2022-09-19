@@ -1,7 +1,14 @@
+use std::io::Write;
 use std::{convert::TryInto, error::Error};
 
+use crate::byte_utils::{decode_be_i64, decode_be_u32, decode_be_u64};
+use crate::tsm::coder_instence::CodeType;
+use bzip2::write::{BzDecoder, BzEncoder};
+use bzip2::Compression as CompressionBzip;
+use flate2::write::{GzDecoder, GzEncoder};
+use flate2::write::{ZlibDecoder, ZlibEncoder};
+use flate2::Compression as CompressionFlate;
 use integer_encoding::VarInt;
-
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
@@ -13,9 +20,15 @@ const HEADER_LEN: usize = 1;
 /// Store `i32::MAX` as a `usize` for comparing with lengths in assertions
 const MAX_I32: usize = i32::MAX as usize;
 
+/// zstd compress level, select from -5 ~ 17
+const ZSTD_COMPRESS_LEVEL: i32 = 3;
+
 /// Encodes a slice of byte slices representing string data into a vector of
 /// bytes. Currently uses Snappy compression.
-pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_snappy_encode(
+    src: &[&[u8]],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear(); // reset buffer
     if src.is_empty() {
         return Ok(());
@@ -73,10 +86,124 @@ pub fn encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Se
     Ok(())
 }
 
+pub fn str_zstd_encode(
+    src: &[&[u8]],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear(); // reset buffer
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let mut data = vec![];
+    for s in src {
+        let len = s.len() as u64;
+        data.extend_from_slice(len.to_be_bytes().as_slice());
+        data.extend_from_slice(s);
+    }
+
+    dst.push(CodeType::Zstd as u8);
+    zstd::stream::copy_encode(data.as_slice(), dst, ZSTD_COMPRESS_LEVEL)?;
+    return Ok(());
+}
+
+pub fn str_gzip_encode(
+    src: &[&[u8]],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear(); // reset buffer
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let mut data = vec![];
+    for s in src {
+        let len = s.len() as u64;
+        data.extend_from_slice(len.to_be_bytes().as_slice());
+        data.extend_from_slice(s);
+    }
+
+    let mut encoder = GzEncoder::new(vec![], CompressionFlate::default());
+    encoder.write_all(&data)?;
+
+    dst.push(CodeType::Gzip as u8);
+    dst.append(&mut encoder.finish()?);
+    return Ok(());
+}
+
+pub fn str_bzip_encode(
+    src: &[&[u8]],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear(); // reset buffer
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let mut data = vec![];
+    for s in src {
+        let len = s.len() as u64;
+        data.extend_from_slice(len.to_be_bytes().as_slice());
+        data.extend_from_slice(s);
+    }
+
+    let mut encoder = BzEncoder::new(vec![], CompressionBzip::default());
+    encoder.write_all(&data).unwrap();
+
+    dst.push(CodeType::Bzip as u8);
+    dst.append(&mut encoder.finish()?);
+    return Ok(());
+}
+
+pub fn str_zlib_encode(
+    src: &[&[u8]],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear(); // reset buffer
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let mut data = vec![];
+    for s in src {
+        let len = s.len() as u64;
+        data.extend_from_slice(len.to_be_bytes().as_slice());
+        data.extend_from_slice(s);
+    }
+    let mut encoder = ZlibEncoder::new(vec![], CompressionFlate::default());
+    encoder.write_all(&data).unwrap();
+    dst.push(CodeType::Zlib as u8);
+    dst.append(&mut encoder.finish()?);
+    return Ok(());
+}
+
+pub fn str_without_compress_encode(
+    src: &[&[u8]],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.clear(); // reset buffer
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    dst.push(CodeType::Null as u8);
+
+    for s in src {
+        let len = s.len() as u64;
+        dst.extend_from_slice(len.to_be_bytes().as_slice());
+        dst.extend_from_slice(s);
+    }
+
+    return Ok(());
+}
+
 /// Decodes a slice of bytes representing Snappy-compressed data into a vector
 /// of vectors of bytes representing string data, which may or may not be valid
 /// UTF-8.
-pub fn decode(src: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_snappy_decode(
+    src: &[u8],
+    dst: &mut Vec<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
@@ -117,6 +244,107 @@ pub fn decode(src: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error + 
     Ok(())
 }
 
+fn split_stream(data: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let len = data.len();
+    let mut i = 0;
+
+    while i < len {
+        let str_len = decode_be_u64(&data[i..i + 8]);
+        i += 8;
+        let str_len: usize = str_len.try_into()?;
+        dst.push(Vec::from(&data[i..i + str_len]));
+        i += str_len;
+    }
+    return Ok(());
+}
+
+pub fn str_zstd_decode(
+    src: &[u8],
+    dst: &mut Vec<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+    let mut data = vec![];
+
+    zstd::stream::copy_decode(src, &mut data)?;
+
+    split_stream(&data, dst)?;
+    return Ok(());
+}
+
+pub fn str_bizp_decode(
+    src: &[u8],
+    dst: &mut Vec<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+
+    let mut decoder = BzDecoder::new(vec![]);
+    decoder.write_all(src).unwrap();
+    let data = decoder.finish()?;
+
+    split_stream(&data, dst)?;
+
+    return Ok(());
+}
+
+pub fn str_gzip_decode(
+    src: &[u8],
+    dst: &mut Vec<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+
+    let mut decoder = GzDecoder::new(vec![]);
+    decoder.write_all(src).unwrap();
+    let data = decoder.finish()?;
+
+    split_stream(&data, dst)?;
+
+    return Ok(());
+}
+
+pub fn str_zlib_decode(
+    src: &[u8],
+    dst: &mut Vec<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+    let src = &src[1..];
+
+    let mut decoder = ZlibDecoder::new(vec![]);
+
+    decoder.write_all(src).unwrap();
+    let data = decoder.finish()?;
+
+    split_stream(&data, dst)?;
+
+    return Ok(());
+}
+
+pub fn str_without_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+    let src = &src[1..];
+    split_stream(src, dst)?;
+
+    return Ok(());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,7 +355,7 @@ mod tests {
         let mut dst = vec![];
 
         // check for error
-        encode(&src, &mut dst).expect("failed to encode src");
+        str_snappy_encode(&src, &mut dst).expect("failed to encode src");
 
         // verify encoded no values.
         assert_eq!(dst.to_vec().len(), 0);
@@ -139,7 +367,7 @@ mod tests {
         let src = vec![&v1_bytes[..]];
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
+        str_snappy_encode(&src, &mut dst).expect("failed to encode src");
         assert_eq!(dst, vec![16, 3, 8, 2, 118, 49]);
     }
 
@@ -149,7 +377,7 @@ mod tests {
         let src: Vec<_> = src_strings.iter().map(|s| s.as_bytes()).collect();
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
+        str_snappy_encode(&src, &mut dst).expect("failed to encode src");
         assert_eq!(
             dst,
             vec![
@@ -165,7 +393,7 @@ mod tests {
         let src = vec!["☃".as_bytes()];
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
+        str_snappy_encode(&src, &mut dst).expect("failed to encode src");
         assert_eq!(dst, vec![16, 4, 12, 3, 226, 152, 131]);
     }
 
@@ -174,7 +402,7 @@ mod tests {
         let src = vec![&[b'\xC0'][..]];
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
+        str_snappy_encode(&src, &mut dst).expect("failed to encode src");
         assert_eq!(dst, vec![16, 2, 4, 1, 192]);
     }
 
@@ -184,7 +412,7 @@ mod tests {
         let mut dst = vec![];
 
         // check for error
-        decode(&src, &mut dst).expect("failed to decode src");
+        str_snappy_decode(&src, &mut dst).expect("failed to decode src");
 
         // verify decoded no values.
         assert_eq!(dst.to_vec().len(), 0);
@@ -195,7 +423,7 @@ mod tests {
         let src = vec![16, 3, 8, 2, 118, 49];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        str_snappy_decode(&src, &mut dst).expect("failed to decode src");
 
         let dst_as_strings: Vec<_> = dst
             .iter()
@@ -213,7 +441,7 @@ mod tests {
         ];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        str_snappy_decode(&src, &mut dst).expect("failed to decode src");
 
         let dst_as_strings: Vec<_> = dst
             .iter()
@@ -228,7 +456,7 @@ mod tests {
         let src = vec![16, 4, 12, 3, 226, 152, 131];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        str_snappy_decode(&src, &mut dst).expect("failed to decode src");
 
         let dst_as_strings: Vec<_> = dst
             .iter()
@@ -242,7 +470,7 @@ mod tests {
         let src = vec![16, 2, 4, 1, 192];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        str_snappy_decode(&src, &mut dst).expect("failed to decode src");
         assert_eq!(dst, vec![&[b'\xC0'][..]]);
     }
 }

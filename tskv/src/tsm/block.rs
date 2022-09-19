@@ -5,7 +5,9 @@ use protos::models::FieldType;
 use trace::error;
 
 use super::coders;
-use crate::tsm::coder_instence::{get_ts_coder, CodeType};
+use crate::tsm::coder_instence::{
+    get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder, CodeType,
+};
 use crate::{
     compaction::overlaps_tuples,
     memcache::{DataType, FieldVal},
@@ -391,20 +393,24 @@ impl DataBlock {
             }
             DataBlock::U64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                coders::unsigned::encode(&val[start..end], &mut data_buf)?;
+                let val_coder = get_u64_coder(other_compress_algo);
+                val_coder.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::I64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                coders::integer::encode(&val[start..end], &mut data_buf)?;
+                let val_coder = get_i64_coder(other_compress_algo);
+                val_coder.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::Str { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
-                coders::string::encode(&strs[start..end], &mut data_buf)?;
+                let val_coder = get_str_coder(other_compress_algo);
+                val_coder.encode(&strs[start..end], &mut data_buf)?;
             }
             DataBlock::F64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                coders::float::encode(&val[start..end], &mut data_buf)?;
+                let val_coder = get_f64_coder(other_compress_algo);
+                val_coder.encode(&val[start..end], &mut data_buf)?;
             }
         }
         Ok((ts_buf, data_buf))

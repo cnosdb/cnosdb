@@ -14,7 +14,10 @@ use super::{
     integer, string, timestamp, unsigned, BlockMeta, DataBlock, IndexMeta, Tombstone, TsmTombstone,
     BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
-use crate::tsm::coder_instence::{get_code_type, get_ts_coder, CodeType};
+use crate::tsm::coder_instence::{
+    get_code_type, get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder,
+    CodeType,
+};
 use crate::{
     byte_utils,
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
@@ -582,8 +585,8 @@ pub fn decode_data_block(
     // let crc_ts = &self.buf[..4];
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES as usize);
     let ts_code_type = get_code_type(&buf[4..val_off as usize]);
-    let coder = get_ts_coder(ts_code_type);
-    coder
+    let ts_coder = get_ts_coder(ts_code_type);
+    ts_coder
         .decode(&buf[4..val_off as usize], &mut ts)
         .context(DecodeSnafu)?;
 
@@ -593,13 +596,17 @@ pub fn decode_data_block(
         ValueType::Float => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            float::decode(data, &mut val).context(DecodeSnafu)?;
+            let float_code_type = get_code_type(&data);
+            let val_coder = get_f64_coder(float_code_type);
+            val_coder.decode(data, &mut val).context(DecodeSnafu)?;
             Ok((DataBlock::F64 { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            integer::decode(data, &mut val).context(DecodeSnafu)?;
+            let integer_code_type = get_code_type(&data);
+            let val_coder = get_i64_coder(integer_code_type);
+            val_coder.decode(data, &mut val).context(DecodeSnafu)?;
             Ok((DataBlock::I64 { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::Boolean => {
@@ -612,13 +619,17 @@ pub fn decode_data_block(
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            string::decode(data, &mut val).context(DecodeSnafu)?;
+            let string_code_type = get_code_type(&data);
+            let val_coder = get_str_coder(string_code_type);
+            val_coder.decode(data, &mut val).context(DecodeSnafu)?;
             Ok((DataBlock::Str { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            unsigned::decode(data, &mut val).context(DecodeSnafu)?;
+            let unsigned_code_type = get_code_type(&data);
+            let val_coder = get_u64_coder(unsigned_code_type);
+            val_coder.decode(data, &mut val).context(DecodeSnafu)?;
             Ok((DataBlock::U64 { ts, val }, ts_code_type, CodeType::Unknown))
         }
         _ => Err(ReadTsmError::Decode {
