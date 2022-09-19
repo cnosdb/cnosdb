@@ -9,7 +9,7 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef};
+use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
 use serde::{Deserialize, Serialize};
 
 use models::{FieldInfo, ValueType};
@@ -18,6 +18,7 @@ pub type TableSchemaRef = Arc<TableSchema>;
 
 pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
+pub const TIME_FIELD: &str = "time";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TableSchema {
@@ -28,7 +29,7 @@ pub struct TableSchema {
 
 impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<Field> = self
+        let mut fields: Vec<Field> = self
             .fields
             .iter()
             .map(|(name, schema)| {
@@ -40,6 +41,14 @@ impl TableSchema {
                 f
             })
             .collect();
+
+        let time_field = Field::new(
+            &TIME_FIELD.to_string(),
+            ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        );
+        fields.push(time_field);
+
         Arc::new(Schema::new(fields))
     }
 
@@ -84,7 +93,7 @@ impl From<ColumnType> for ArrowDataType {
     fn from(t: ColumnType) -> Self {
         match t {
             ColumnType::Tag => Self::Utf8,
-            ColumnType::Time => Self::Date64,
+            ColumnType::Time => Self::Timestamp(TimeUnit::Nanosecond, None),
             ColumnType::Field(ValueType::Float) => Self::Float64,
             ColumnType::Field(ValueType::Integer) => Self::Int64,
             ColumnType::Field(ValueType::Unsigned) => Self::UInt64,

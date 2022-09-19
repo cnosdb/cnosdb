@@ -95,4 +95,7 @@ pub enum Error {
 
     #[snafu(display("data fusion RecordBatch::try_new {}", reason))]
     DataFusionNew { reason: String },
+
+    #[snafu(display("can't find field name: {}", reason))]
+    NotFoundField { reason: String },
 }

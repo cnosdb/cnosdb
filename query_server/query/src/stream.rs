@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    collections::{btree_map, BTreeMap},
+    sync::Arc,
+};
 
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
@@ -11,11 +14,12 @@ use tskv::engine::EngineRef;
 
 use tskv::{Error, TimeRange};
 
-use crate::iterator::{QueryOption, RowIterator};
-use crate::predicate::PredicateRef;
 use crate::schema::TableSchema;
-
-pub const TIME_FIELD: &str = "time";
+use crate::{
+    iterator::{QueryOption, RowIterator},
+    schema::{ColumnType, TableFiled},
+};
+use crate::{predicate::PredicateRef, schema::TIME_FIELD};
 
 pub enum ArrayType {
     U64(Vec<u64>),
@@ -43,14 +47,38 @@ impl TableScanStream {
         batch_size: usize,
         store_engine: EngineRef,
     ) -> Result<Self, Error> {
+        let mut proj_fileds = BTreeMap::new();
+        for item in proj_schema.fields().iter() {
+            let field_name = item.name();
+            if field_name == TIME_FIELD {
+                proj_fileds.insert(
+                    TIME_FIELD.to_string(),
+                    TableFiled::new(0, TIME_FIELD.to_string(), ColumnType::Time),
+                );
+                continue;
+            }
+
+            if let Some(v) = table_schema.fields.get(field_name) {
+                proj_fileds.insert(field_name.clone(), v.clone());
+            } else {
+                return Err(Error::NotFoundField {
+                    reason: field_name.clone(),
+                });
+            }
+        }
+
+        let proj_table_schema = TableSchema::new(
+            table_schema.db.clone(),
+            table_schema.name.clone(),
+            proj_fileds,
+        );
+
         let option = QueryOption {
-            db_name: table_schema.db.clone(),
-            table_name: table_schema.name.clone(),
             time_range: TimeRange {
                 min_ts: i64::MIN,
                 max_ts: i64::MAX,
             },
-            table_schema,
+            table_schema: proj_table_schema,
             datafusion_schema: proj_schema.clone(),
         };
 

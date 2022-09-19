@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use std::sync::Arc;
 
-use datafusion::arrow::array::ArrayBuilder;
+use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
 use models::utils::{min_num, unite_id};
 use models::ValueType;
 use snafu::ResultExt;
 use trace::debug;
 
-use crate::schema::{ColumnType, TableSchema};
+use crate::schema::{ColumnType, TableSchema, TIME_FIELD};
 
 use tskv::{
     engine::EngineRef,
@@ -42,8 +42,6 @@ pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 pub struct QueryOption {
-    pub db_name: String,
-    pub table_name: String,
     pub time_range: TimeRange,
     pub table_schema: TableSchema,
     pub datafusion_schema: SchemaRef,
@@ -87,25 +85,64 @@ impl FieldFileLocation {
 
 //-----------trait Cursor----------------
 pub trait Cursor: Send + Sync {
-    fn is_tag(&self) -> bool;
+    fn name(&self) -> &String;
+    fn is_field(&self) -> bool;
     fn val_type(&self) -> ValueType;
 
     fn next(&mut self, ts: i64);
     fn peek(&mut self) -> Result<Option<DataType>, Error>;
 }
 
+//-----------Time Cursor----------------
+pub struct TimeCursor {
+    ts: i64,
+    name: String,
+}
+
+impl TimeCursor {
+    pub fn new(ts: i64, name: String) -> Self {
+        Self { ts, name }
+    }
+}
+
+impl Cursor for TimeCursor {
+    fn name(&self) -> &String {
+        &self.name
+    }
+
+    fn peek(&mut self) -> Result<Option<DataType>, Error> {
+        let data = DataType::I64(self.ts, self.ts);
+
+        return Ok(Some(data));
+    }
+
+    fn next(&mut self, _ts: i64) {}
+
+    fn val_type(&self) -> ValueType {
+        return ValueType::Integer;
+    }
+
+    fn is_field(&self) -> bool {
+        return false;
+    }
+}
 //-----------Tag Cursor----------------
 pub struct TagCursor {
+    name: String,
     value: String,
 }
 
 impl TagCursor {
-    pub fn new(value: String) -> Self {
-        Self { value }
+    pub fn new(value: String, name: String) -> Self {
+        Self { name, value }
     }
 }
 
 impl Cursor for TagCursor {
+    fn name(&self) -> &String {
+        &self.name
+    }
+
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
         let data = DataType::Str(0, self.value.as_bytes().to_vec());
 
@@ -118,13 +155,14 @@ impl Cursor for TagCursor {
         return ValueType::String;
     }
 
-    fn is_tag(&self) -> bool {
-        return true;
+    fn is_field(&self) -> bool {
+        return false;
     }
 }
 
 //-----------Field Cursor----------------
 pub struct FieldCursor {
+    name: String,
     value_type: ValueType,
 
     cache_index: usize,
@@ -134,7 +172,12 @@ pub struct FieldCursor {
 }
 
 impl FieldCursor {
-    pub fn new(field_id: u64, vtype: ValueType, iterator: &mut RowIterator) -> Result<Self, Error> {
+    pub fn new(
+        field_id: u64,
+        name: String,
+        vtype: ValueType,
+        iterator: &mut RowIterator,
+    ) -> Result<Self, Error> {
         let version = iterator.version.clone();
         let time_range = iterator.option.time_range;
 
@@ -187,6 +230,7 @@ impl FieldCursor {
         }
 
         Ok(Self {
+            name,
             value_type: vtype,
             cache_index: 0,
             cache_block,
@@ -196,6 +240,10 @@ impl FieldCursor {
 }
 
 impl Cursor for FieldCursor {
+    fn name(&self) -> &String {
+        &self.name
+    }
+
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
         let mut data = DataType::new(self.value_type, i64::MAX);
         for loc in self.locations.iter_mut() {
@@ -238,8 +286,8 @@ impl Cursor for FieldCursor {
         return self.value_type;
     }
 
-    fn is_tag(&self) -> bool {
-        return false;
+    fn is_field(&self) -> bool {
+        return true;
     }
 }
 
@@ -257,14 +305,15 @@ pub struct RowIterator {
 
 impl RowIterator {
     pub fn new(engine: EngineRef, option: QueryOption, batch_size: usize) -> Result<Self, Error> {
-        let version = engine
-            .get_db_version(&option.db_name)
-            .ok_or(Error::DatabaseNotFound {
-                database: option.db_name.clone(),
-            })?;
+        let version =
+            engine
+                .get_db_version(&option.table_schema.db)
+                .ok_or(Error::DatabaseNotFound {
+                    database: option.table_schema.db.clone(),
+                })?;
 
         let series = engine
-            .get_series_id_list(&option.db_name, &option.table_name, &vec![])
+            .get_series_id_list(&option.table_schema.db, &option.table_schema.name, &vec![])
             .context(error::IndexErrSnafu)?;
 
         Ok(Self {
@@ -294,18 +343,20 @@ impl RowIterator {
     fn build_series_columns(&mut self, id: u64) -> Result<(), Error> {
         if let Some(key) = self
             .engine
-            .get_series_key(&self.option.db_name, id)
+            .get_series_key(&self.option.table_schema.db, id)
             .context(error::IndexErrSnafu)?
         {
             self.columns.clear();
             let fields = self.option.table_schema.fields.clone();
             for (_, item) in fields {
+                let field_name = item.name.clone();
                 debug!("build series columns id:{:02X}, {:?}", id, item);
                 let column: CursorPtr = match item.column_type {
-                    ColumnType::Time => todo!(),
+                    ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
 
                     ColumnType::Tag => Box::new(TagCursor::new(
                         String::from_utf8(key.tag_val(&item.name)).unwrap(),
+                        field_name,
                     )),
 
                     ColumnType::Field(vtype) => match vtype {
@@ -316,7 +367,8 @@ impl RowIterator {
                         | ValueType::Unsigned
                         | ValueType::Boolean
                         | ValueType::String => {
-                            let cursor = FieldCursor::new(unite_id(item.id, id), vtype, self)?;
+                            let cursor =
+                                FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)?;
                             Box::new(cursor)
                         }
                     },
@@ -356,7 +408,7 @@ impl RowIterator {
             match column.peek() {
                 Ok(val) => match val {
                     Some(ref data) => {
-                        if !column.is_tag() {
+                        if column.is_field() {
                             min_time = min_num(min_time, data.timestamp());
                         }
 
@@ -370,8 +422,8 @@ impl RowIterator {
         }
 
         for (column, value) in self.columns.iter_mut().zip(values.iter_mut()) {
-            debug!("field value {:?}", value);
-            if column.is_tag() {
+            debug!("field: {} value {:?}", column.name(), value);
+            if !column.is_field() {
                 continue;
             }
 
@@ -392,6 +444,16 @@ impl RowIterator {
         }
 
         for i in 0..values.len() {
+            if self.columns[i].name() == TIME_FIELD {
+                let field_builder = builder[i]
+                    .as_any_mut()
+                    .downcast_mut::<TimestampNanosecondBuilder>()
+                    .unwrap();
+                field_builder.append_value(min_time);
+
+                continue;
+            }
+
             match self.columns[i].val_type() {
                 ValueType::Unknown => todo!(),
                 ValueType::Float => {
@@ -485,7 +547,9 @@ impl RowIterator {
 
             match item.column_type {
                 ColumnType::Tag => builders.push(Box::new(StringBuilder::new(self.batch_size))),
-                ColumnType::Time => todo!(),
+                ColumnType::Time => {
+                    builders.push(Box::new(TimestampNanosecondBuilder::new(self.batch_size)))
+                }
                 ColumnType::Field(t) => match t {
                     ValueType::Unknown => todo!(),
                     ValueType::Float => {
