@@ -3,8 +3,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const LOW_40BIT_MASK: u64 = (0x01 << 40) - 1;
 const HIGH_24BIT_MASK: u64 = ((0x01 << 24) - 1) << 40;
 
+const LOW_4BIT_MASK: u8 = (0x01 << 4) - 1;
+const HIGH_4BIT_MASK: u8 = ((0x01 << 4) - 1) << 4;
+
 pub fn split_id(id: u64) -> (u32, u64) {
     (((id & HIGH_24BIT_MASK) >> 40) as u32, id & LOW_40BIT_MASK)
+}
+
+pub fn split_code_type_id(id: u8) -> (u8, u8) {
+    ((id & HIGH_4BIT_MASK) >> 4, id & LOW_4BIT_MASK)
 }
 
 pub fn unite_id(hash_id: u64, incr_id: u64) -> u64 {

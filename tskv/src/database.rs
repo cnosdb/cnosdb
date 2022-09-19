@@ -11,7 +11,7 @@ use crate::{
     TimeRange, TseriesFamilyId,
 };
 use models::utils::{split_id, unite_id};
-use models::Timestamp;
+use models::{SeriesKey, Timestamp};
 
 use parking_lot::RwLock;
 use protos::models::{Point, Points};
@@ -21,6 +21,7 @@ use trace::{debug, error, info};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 
+use crate::index::IndexResult;
 use crate::tseries_family::LevelInfo;
 use crate::{
     index::db_index,
@@ -239,6 +240,14 @@ impl Database {
         }
 
         (edits, files)
+    }
+
+    pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        self.index.write().get_series_key(sid)
+    }
+
+    pub fn get_table_schema(&self, table_name: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
+        self.index.write().get_table_schema(table_name)
     }
 
     pub fn get_tsfamily(&self, id: u32) -> Option<&Arc<RwLock<TseriesFamily>>> {

@@ -11,6 +11,7 @@ use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
 
+use crate::tsm::coder_instence::CodeType;
 use crate::{
     compaction::CompactReq,
     context::GlobalContext,
@@ -75,6 +76,8 @@ enum CompactingBlock {
         priority: usize,
         field_id: FieldId,
         data_block: DataBlock,
+        ts_code_type: CodeType,
+        val_code_type: CodeType,
     },
     Raw {
         priority: usize,
@@ -86,30 +89,50 @@ enum CompactingBlock {
 impl CompactingBlock {
     /// Sort the given `CompactingBlock`s by priority, transform all of them
     /// into CompactingBlock::DataBlock (for CompactingBlock::Raw)
-    fn rebuild_data_blocks(mut source: Vec<Self>) -> Result<Vec<DataBlock>> {
+    fn rebuild_data_blocks(mut source: Vec<Self>) -> Result<(Vec<DataBlock>, CodeType, CodeType)> {
         source.sort_by_key(|k| match k {
             CompactingBlock::DataBlock { priority, .. } => *priority,
             CompactingBlock::Raw { priority, .. } => *priority,
         });
+
+        let mut res_ts_code_type = CodeType::Unknown;
+        let mut res_val_code_type = CodeType::Unknown;
+
+        let mut update_code_type = |ts_code_type: CodeType, val_code_type: CodeType| {
+            if res_ts_code_type == CodeType::Unknown {
+                res_ts_code_type = ts_code_type
+            }
+            if res_val_code_type == CodeType::Unknown {
+                res_val_code_type = val_code_type;
+            }
+        };
+
         let mut res: Vec<DataBlock> = Vec::with_capacity(source.len());
         for cb in source.into_iter() {
             match cb {
-                CompactingBlock::DataBlock { data_block, .. } => {
+                CompactingBlock::DataBlock {
+                    data_block,
+                    ts_code_type,
+                    val_code_type,
+                    ..
+                } => {
                     res.push(data_block);
+                    update_code_type(ts_code_type, val_code_type);
                 }
                 CompactingBlock::Raw { meta, raw, .. } => {
-                    let data_block = tsm::decode_data_block(
+                    let (data_block, ts_code_type, val_code_type) = tsm::decode_data_block(
                         &raw,
                         meta.field_type(),
                         meta.val_off() - meta.offset(),
                     )
                     .context(error::ReadTsmSnafu)?;
                     res.push(data_block);
+                    update_code_type(ts_code_type, val_code_type)
                 }
             }
         }
 
-        Ok(res)
+        Ok((res, res_ts_code_type, res_val_code_type))
     }
 }
 
@@ -250,13 +273,16 @@ impl CompactIterator {
                     buf.resize(cbm.block_meta.size() as usize, 0);
                 }
                 if cbm.has_tombstone {
-                    let data_block = self.tsm_readers[cbm.readers_idx]
+                    let (data_block, ts_code_type, val_code_type) = self.tsm_readers
+                        [cbm.readers_idx]
                         .get_data_block(&cbm.block_meta)
                         .context(error::ReadTsmSnafu)?;
                     merging_blks.push(CompactingBlock::DataBlock {
                         priority: cbm.readers_idx + 1,
                         field_id,
                         data_block,
+                        ts_code_type,
+                        val_code_type,
                     });
                 } else {
                     let size = self.tsm_readers[cbm.readers_idx]
@@ -273,13 +299,15 @@ impl CompactIterator {
                 (cbm.block_meta.min_ts(), cbm.block_meta.max_ts()),
             ) {
                 // 2.1
-                let data_block = self.tsm_readers[cbm.readers_idx]
+                let (data_block, ts_code_type, val_code_type) = self.tsm_readers[cbm.readers_idx]
                     .get_data_block(&cbm.block_meta)
                     .context(error::ReadTsmSnafu)?;
                 merging_blks.push(CompactingBlock::DataBlock {
                     priority: cbm.readers_idx + 1,
                     field_id,
                     data_block,
+                    ts_code_type,
+                    val_code_type,
                 });
 
                 merged_blk_time_range.0 = merged_blk_time_range.0.min(cbm.block_meta.min_ts());
@@ -296,7 +324,8 @@ impl CompactIterator {
                         }
                     } else {
                         // 2.2.2
-                        let merging_data_blks = CompactingBlock::rebuild_data_blocks(merging_blks)?;
+                        let (merging_data_blks, ts_code_type, val_code_type) =
+                            CompactingBlock::rebuild_data_blocks(merging_blks)?;
                         merging_blks = Vec::new();
                         let merged_data_blks =
                             DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
@@ -307,6 +336,8 @@ impl CompactIterator {
                                     priority: 0,
                                     field_id,
                                     data_block,
+                                    ts_code_type,
+                                    val_code_type,
                                 });
                                 break;
                             }
@@ -314,6 +345,8 @@ impl CompactIterator {
                                 priority: 0,
                                 field_id,
                                 data_block,
+                                ts_code_type,
+                                val_code_type,
                             });
                         }
                     }
@@ -329,13 +362,16 @@ impl CompactIterator {
                         merged_blk_time_range.1 =
                             merged_blk_time_range.0.max(cbm.block_meta.max_ts());
                         if cbm.has_tombstone {
-                            let data_block = self.tsm_readers[cbm.readers_idx]
+                            let (data_block, ts_code_type, val_code_type) = self.tsm_readers
+                                [cbm.readers_idx]
                                 .get_data_block(&cbm.block_meta)
                                 .context(error::ReadTsmSnafu)?;
                             merging_blks.push(CompactingBlock::DataBlock {
                                 priority: cbm.readers_idx + 1,
                                 field_id,
                                 data_block,
+                                ts_code_type,
+                                val_code_type,
                             });
                         } else {
                             let size = self.tsm_readers[cbm.readers_idx]
@@ -349,13 +385,16 @@ impl CompactIterator {
                         }
                     } else {
                         // cbm.block_meta.count is less than max_datablock_values
-                        let data_block = self.tsm_readers[cbm.readers_idx]
+                        let (data_block, ts_code_type, val_code_type) = self.tsm_readers
+                            [cbm.readers_idx]
                             .get_data_block(&cbm.block_meta)
                             .context(error::ReadTsmSnafu)?;
                         merging_blks.push(CompactingBlock::DataBlock {
                             priority: cbm.readers_idx + 1,
                             field_id,
                             data_block,
+                            ts_code_type,
+                            val_code_type,
                         });
                     }
                 }
@@ -363,7 +402,8 @@ impl CompactIterator {
         }
 
         if !merging_blks.is_empty() {
-            let merging_data_blks = CompactingBlock::rebuild_data_blocks(merging_blks)?;
+            let (merging_data_blks, ts_code_type, val_code_type) =
+                CompactingBlock::rebuild_data_blocks(merging_blks)?;
             let merged_data_blks =
                 DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
@@ -372,6 +412,8 @@ impl CompactIterator {
                     priority: 0,
                     field_id,
                     data_block,
+                    ts_code_type,
+                    val_code_type,
                 });
             }
         }
@@ -490,8 +532,10 @@ pub fn run_compaction_job(
             CompactingBlock::DataBlock {
                 field_id: fid,
                 data_block: b,
+                ts_code_type,
+                val_code_type,
                 ..
-            } => tsm_writer.write_block(fid, &b),
+            } => tsm_writer.write_block(fid, &b, ts_code_type, val_code_type),
             CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
         };
         if let Err(e) = write_ret {
@@ -573,6 +617,7 @@ mod test {
     use models::{FieldId, Timestamp, ValueType};
     use utils::BloomFilter;
 
+    use crate::tsm::coder_instence::CodeType;
     use crate::{
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
@@ -600,7 +645,9 @@ mod test {
             let mut writer = tsm::new_tsm_writer(&dir, file_seq, false, 0).unwrap();
             for (fid, data_blks) in d.iter() {
                 for blk in data_blks.iter() {
-                    writer.write_block(*fid, blk).unwrap();
+                    writer
+                        .write_block(*fid, blk, CodeType::default(), CodeType::default())
+                        .unwrap();
                 }
             }
             writer.write_index().unwrap();
@@ -625,7 +672,7 @@ mod test {
         for idx in tsm_reader.index_iterator() {
             let field_id = idx.field_id();
             for blk_meta in idx.block_iterator() {
-                let blk = tsm_reader.get_data_block(&blk_meta).unwrap();
+                let (blk, _, _) = tsm_reader.get_data_block(&blk_meta).unwrap();
                 data.entry(field_id).or_insert(vec![]).push(blk);
             }
         }
@@ -1006,7 +1053,12 @@ mod test {
             let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
             for arg in args.iter() {
                 tsm_writer
-                    .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                    .write_block(
+                        arg.1,
+                        &generate_data_block(arg.0, vec![(arg.2, arg.3)]),
+                        CodeType::default(),
+                        CodeType::default(),
+                    )
                     .unwrap();
             }
             tsm_writer.write_index().unwrap();
@@ -1147,7 +1199,12 @@ mod test {
             let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
             for arg in tsm_desc.iter() {
                 tsm_writer
-                    .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                    .write_block(
+                        arg.1,
+                        &generate_data_block(arg.0, vec![(arg.2, arg.3)]),
+                        CodeType::default(),
+                        CodeType::default(),
+                    )
                     .unwrap();
             }
             tsm_writer.write_index().unwrap();

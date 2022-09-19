@@ -1,4 +1,5 @@
 pub mod boolean;
+pub mod coder_instence;
 pub mod float;
 pub mod integer;
 mod simple8b;

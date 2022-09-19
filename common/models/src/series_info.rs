@@ -304,7 +304,7 @@ mod tests_series_info {
             "db_test".to_string(),
             "tab_test".to_string(),
             vec![Tag::new(b"col_a".to_vec(), b"val_a".to_vec())],
-            vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer)],
+            vec![FieldInfo::new(1, b"col_b".to_vec(), ValueType::Integer, 0)],
         );
         let data = info.encode();
         let new_info = SeriesInfo::decode(&data);

@@ -14,6 +14,7 @@ use super::{
     integer, string, timestamp, unsigned, BlockMeta, DataBlock, IndexMeta, Tombstone, TsmTombstone,
     BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
+use crate::tsm::coder_instence::{get_code_type, get_ts_coder, CodeType};
 use crate::{
     byte_utils,
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
@@ -449,10 +450,13 @@ impl TsmReader {
     }
 
     /// Returns a DataBlock without tombstone
-    pub fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    pub fn get_data_block(
+        &self,
+        block_meta: &BlockMeta,
+    ) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
         let blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
-        let mut blk = read_data_block(
+        let (mut blk, ts_code_type, val_code_type) = read_data_block(
             self.reader.clone(),
             &mut buf,
             block_meta.field_type(),
@@ -462,7 +466,17 @@ impl TsmReader {
         self.tombstone
             .read()
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
-        Ok(blk)
+        Ok((blk, ts_code_type, val_code_type))
+    }
+
+    pub fn get_data_block_without_code_type(
+        &self,
+        block_meta: &BlockMeta,
+    ) -> ReadTsmResult<DataBlock> {
+        match self.get_data_block(block_meta) {
+            Ok(v) => Ok(v.0),
+            Err(e) => Err(e),
+        }
     }
 
     // Reads raw data from file and returns the read data size.
@@ -517,7 +531,7 @@ impl ColumnReader {
         }
     }
 
-    fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
         let (offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
         read_data_block(
@@ -531,7 +545,7 @@ impl ColumnReader {
 }
 
 impl Iterator for ColumnReader {
-    type Item = Result<DataBlock>;
+    type Item = Result<(DataBlock, CodeType, CodeType)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(dbm) = self.inner.next() {
@@ -548,7 +562,7 @@ fn read_data_block(
     field_type: ValueType,
     offset: u64,
     val_off: u64,
-) -> ReadTsmResult<DataBlock> {
+) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
     reader.read_at(offset, buf).context(IOSnafu)?;
     decode_data_block(buf, field_type, val_off - offset)
 }
@@ -557,7 +571,7 @@ pub fn decode_data_block(
     buf: &[u8],
     field_type: ValueType,
     val_off: u64,
-) -> ReadTsmResult<DataBlock> {
+) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
     debug_assert!(buf.len() >= 8);
     if buf.len() < 8 {
         return Err(ReadTsmError::Decode {
@@ -567,7 +581,12 @@ pub fn decode_data_block(
 
     // let crc_ts = &self.buf[..4];
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES as usize);
-    timestamp::decode(&buf[4..val_off as usize], &mut ts).context(DecodeSnafu)?;
+    let ts_code_type = get_code_type(&buf[4..val_off as usize]);
+    let coder = get_ts_coder(ts_code_type);
+    coder
+        .decode(&buf[4..val_off as usize], &mut ts)
+        .context(DecodeSnafu)?;
+
     // let crc_data = &self.buf[(val_offset - offset) as usize..4];
     let data = &buf[(val_off + 4) as usize..];
     match field_type {
@@ -575,32 +594,32 @@ pub fn decode_data_block(
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             float::decode(data, &mut val).context(DecodeSnafu)?;
-            Ok(DataBlock::F64 { ts, val })
+            Ok((DataBlock::F64 { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             integer::decode(data, &mut val).context(DecodeSnafu)?;
-            Ok(DataBlock::I64 { ts, val })
+            Ok((DataBlock::I64 { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             boolean::decode(data, &mut val).context(DecodeSnafu)?;
 
-            Ok(DataBlock::Bool { ts, val })
+            Ok((DataBlock::Bool { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             string::decode(data, &mut val).context(DecodeSnafu)?;
-            Ok(DataBlock::Str { ts, val })
+            Ok((DataBlock::Str { ts, val }, ts_code_type, CodeType::Unknown))
         }
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
             unsigned::decode(data, &mut val).context(DecodeSnafu)?;
-            Ok(DataBlock::U64 { ts, val })
+            Ok((DataBlock::U64 { ts, val }, ts_code_type, CodeType::Unknown))
         }
         _ => Err(ReadTsmError::Decode {
             source: From::from(format!(
@@ -623,6 +642,7 @@ mod test {
     use parking_lot::Mutex;
 
     use super::print_tsm_statistics;
+    use crate::tsm::coder_instence::CodeType;
     use crate::{
         file_manager::{self, get_file_manager},
         file_utils,
@@ -655,7 +675,9 @@ mod test {
         let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).unwrap();
         for (fid, blks) in ori_data.iter() {
             for blk in blks.iter() {
-                writer.write_block(*fid, blk).unwrap();
+                writer
+                    .write_block(*fid, blk, CodeType::default(), CodeType::default())
+                    .unwrap();
             }
         }
         writer.write_index().unwrap();
@@ -672,7 +694,7 @@ mod test {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
-                let data_blk = reader.get_data_block(&blk).unwrap();
+                let (data_blk, _, _) = reader.get_data_block(&blk).unwrap();
                 read_data
                     .entry(idx.field_id())
                     .or_insert(Vec::new())
@@ -720,7 +742,7 @@ mod test {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator_opt(2) {
             for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
-                let data_blk = reader.get_data_block(&blk).unwrap();
+                let (data_blk, _, _) = reader.get_data_block(&blk).unwrap();
                 read_data
                     .entry(idx.field_id())
                     .or_insert(Vec::new())

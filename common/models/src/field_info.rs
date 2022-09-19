@@ -76,6 +76,10 @@ pub struct FieldInfo {
     id: FieldId,
     name: FieldName,
     value_type: ValueType,
+
+    // first 4 bit for ts code type
+    // last 4 bit for val code type
+    code_type: u8,
 }
 
 impl From<&Tag> for FieldInfo {
@@ -84,6 +88,7 @@ impl From<&Tag> for FieldInfo {
             id: 0,
             name: tag.key.clone(),
             value_type: ValueType::Unknown,
+            code_type: 0,
         }
     }
 }
@@ -99,11 +104,12 @@ impl PartialEq for FieldInfo {
 }
 
 impl FieldInfo {
-    pub fn new(id: SeriesId, name: FieldName, value_type: ValueType) -> Self {
+    pub fn new(id: SeriesId, name: FieldName, value_type: ValueType, code_type: u8) -> Self {
         Self {
             id,
             name,
             value_type,
+            code_type,
         }
     }
 
@@ -117,6 +123,7 @@ impl FieldInfo {
                 })?
                 .to_vec(),
             value_type: field.type_().into(),
+            code_type: 0,
         })
     }
 
@@ -148,6 +155,10 @@ impl FieldInfo {
         self.value_type
     }
 
+    pub fn code_type(&self) -> u8 {
+        self.code_type
+    }
+
     pub fn is_tag(&self) -> bool {
         self.value_type == ValueType::Unknown
     }
@@ -164,7 +175,7 @@ mod test {
 
     #[test]
     fn test_field_info_format_check() {
-        let field_info = FieldInfo::new(1, Vec::from("hello"), ValueType::Integer);
+        let field_info = FieldInfo::new(1, Vec::from("hello"), ValueType::Integer, 0);
         field_info.check().unwrap();
     }
 }

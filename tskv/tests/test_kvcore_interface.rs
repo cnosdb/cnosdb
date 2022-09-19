@@ -79,13 +79,25 @@ mod tests {
 
         let database = "db".to_string();
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let points = models_helper::create_random_points_with_delta(&mut fbb, 20);
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
         rt.block_on(async {
             tskv.write(request.clone()).await.unwrap();
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
         });
 
         let shared_write_batch = Arc::new(request.points);

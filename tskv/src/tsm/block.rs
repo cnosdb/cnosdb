@@ -5,6 +5,7 @@ use protos::models::FieldType;
 use trace::error;
 
 use super::coders;
+use crate::tsm::coder_instence::{get_ts_coder, CodeType};
 use crate::{
     compaction::overlaps_tuples,
     memcache::{DataType, FieldVal},
@@ -377,29 +378,32 @@ impl DataBlock {
         &self,
         start: usize,
         end: usize,
+        ts_compress_algo: CodeType,
+        other_compress_algo: CodeType,
     ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
+        let ts_coder = get_ts_coder(ts_compress_algo);
         match self {
             DataBlock::Bool { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 coders::boolean::encode(&val[start..end], &mut data_buf)?;
             }
             DataBlock::U64 { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 coders::unsigned::encode(&val[start..end], &mut data_buf)?;
             }
             DataBlock::I64 { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 coders::integer::encode(&val[start..end], &mut data_buf)?;
             }
             DataBlock::Str { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
                 coders::string::encode(&strs[start..end], &mut data_buf)?;
             }
             DataBlock::F64 { ts, val, .. } => {
-                coders::timestamp::encode(&ts[start..end], &mut ts_buf)?;
+                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 coders::float::encode(&val[start..end], &mut data_buf)?;
             }
         }

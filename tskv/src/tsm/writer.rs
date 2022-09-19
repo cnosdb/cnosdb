@@ -12,6 +12,7 @@ use super::{
     block, index::Index, BlockEntry, BlockMetaIterator, IndexEntry, IndexMeta, BLOCK_META_SIZE,
     BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
+use crate::tsm::coder_instence::CodeType;
 use crate::{
     direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
@@ -226,7 +227,13 @@ impl TsmWriter {
         self.size
     }
 
-    pub fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
+    pub fn write_block(
+        &mut self,
+        field_id: FieldId,
+        block: &DataBlock,
+        ts_compress_algo: CodeType,
+        other_compress_algo: CodeType,
+    ) -> WriteTsmResult<usize> {
         let mut write_pos = self.writer.pos();
         if let Some(rg) = block.time_range() {
             self.min_ts = self.min_ts.min(rg.0);
@@ -238,6 +245,8 @@ impl TsmWriter {
             &mut self.index_buf,
             field_id,
             block,
+            ts_compress_algo,
+            other_compress_algo,
         );
         if let Ok(s) = ret {
             self.size += s as u64
@@ -350,6 +359,8 @@ fn write_block_to(
     index_buf: &mut IndexBuf,
     field_id: FieldId,
     block: &DataBlock,
+    ts_compress_algo: CodeType,
+    other_compress_algo: CodeType,
 ) -> WriteTsmResult<usize> {
     if block.is_empty() {
         return Ok(0);
@@ -359,7 +370,9 @@ fn write_block_to(
     let mut size = 0;
 
     // TODO Make encoding result streamable
-    let (ts_buf, data_buf) = block.encode(0, block.len()).context(EncodeSnafu)?;
+    let (ts_buf, data_buf) = block
+        .encode(0, block.len(), ts_compress_algo, other_compress_algo)
+        .context(EncodeSnafu)?;
     // Write u32 hash for timestamps
     writer
         .write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
@@ -436,6 +449,7 @@ mod test {
     use models::{FieldId, ValueType};
 
     use super::new_tsm_writer;
+    use crate::tsm::coder_instence::CodeType;
     use crate::{
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
@@ -463,7 +477,9 @@ mod test {
         let tsm_path = dir.as_ref().join(file_name);
         let mut writer = TsmWriter::open(tsm_path, 0, false, 0).unwrap();
         for (fid, blk) in data.iter() {
-            writer.write_block(*fid, blk).unwrap();
+            writer
+                .write_block(*fid, blk, CodeType::default(), CodeType::default())
+                .unwrap();
         }
         writer.write_index().unwrap();
         writer.flush().unwrap();
@@ -478,7 +494,7 @@ mod test {
         for idx_meta in index.iter() {
             let cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
             for blk_ret in cr {
-                let blk = blk_ret.unwrap();
+                let (blk, _, _) = blk_ret.unwrap();
                 data.insert(idx_meta.field_id(), blk);
             }
         }
@@ -536,7 +552,9 @@ mod test {
             (1, DataBlock::I64 { ts: ts_2, val: val_2 }),
         ];
         for (fid, blk) in data.iter() {
-            writer.write_block(*fid, blk).unwrap();
+            writer
+                .write_block(*fid, blk, CodeType::default(), CodeType::default())
+                .unwrap();
         }
         writer.write_index().unwrap();
         writer.flush().unwrap();

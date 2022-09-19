@@ -571,8 +571,6 @@ impl Engine for TsKv {
         if let Some(db) = self.version_set.read().get_db(name) {
             let val = db
                 .read()
-                .get_index()
-                .write()
                 .get_table_schema(tab)
                 .context(error::IndexErrSnafu)?;
             return Ok(val);
@@ -601,7 +599,7 @@ impl Engine for TsKv {
 
     fn get_series_key(&self, name: &String, sid: u64) -> IndexResult<Option<SeriesKey>> {
         if let Some(db) = self.version_set.read().get_db(name) {
-            return db.read().get_index().write().get_series_key(sid);
+            return db.read().get_series_key(sid);
         }
 
         Ok(None)
