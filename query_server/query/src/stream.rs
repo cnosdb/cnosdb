@@ -22,9 +22,7 @@ use tskv::tsm::DataBlock;
 use tskv::TimeRange;
 
 use crate::predicate::PredicateRef;
-use crate::schema::{FIELD_ID, TAG};
-
-pub const TIME_FIELD: &str = "time";
+use crate::schema::{FIELD_ID, TAG, TIME_FIELD_NAME};
 
 enum ArrayType {
     U64(Vec<u64>),
@@ -445,10 +443,10 @@ fn make_time_col_if_need(
     schema_vec: &mut Vec<Field>,
 ) {
     for field in proj_schema.fields() {
-        if field.name() == TIME_FIELD {
+        if field.name() == TIME_FIELD_NAME {
             let ts_record_array = Int64Array::from(ts_array);
             batch_array_vec.push(Arc::new(ts_record_array));
-            schema_vec.push(Field::new(TIME_FIELD, DataType::Int64, false));
+            schema_vec.push(Field::new(TIME_FIELD_NAME, DataType::Int64, false));
             break;
         }
     }
