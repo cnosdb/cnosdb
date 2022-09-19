@@ -16,6 +16,8 @@ use models::{FieldInfo, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
+pub const TIME_FIELD_NAME: &str = "time";
+
 pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
 
@@ -61,6 +63,14 @@ impl TableFiled {
             id,
             name,
             column_type,
+        }
+    }
+
+    pub fn time_field() -> TableFiled {
+        TableFiled {
+            id: 0,
+            name: TIME_FIELD_NAME.to_string(),
+            column_type: ColumnType::Time,
         }
     }
 }
