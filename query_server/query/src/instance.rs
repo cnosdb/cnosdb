@@ -479,4 +479,31 @@ mod tests {
             .deref_mut()
         );
     }
+
+    #[tokio::test]
+    async fn test_insert() {
+        trace::init_global_tracing("/tmp", "test_rust.log", "debug");
+
+        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+
+        assert_batches_eq!(
+            vec![
+                "+-------+",
+                "| count |",
+                "+-------+",
+                "| 10    |",
+                "+-------+",
+            ],
+            exec_sql(
+                &db,
+                "
+                -- EXPLAIN
+                insert into test_insert(Integer) values(2);
+                ",
+            )
+            .await
+            .deref_mut()
+        );
+        // assert_batches_eq!(expected, result.deref_mut());
+    }
 }

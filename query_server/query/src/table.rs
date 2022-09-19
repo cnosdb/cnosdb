@@ -7,11 +7,15 @@ use datafusion::{
     error::Result,
     execution::context::SessionState,
     logical_expr::{Expr, TableProviderFilterPushDown},
-    physical_plan::{project_schema, ExecutionPlan},
+    physical_plan::{project_schema, ExecutionPlan, PhysicalExpr},
 };
+use spi::data_source::SupportWrite;
 use tskv::engine::EngineRef;
 
-use crate::{predicate::Predicate, schema::TableSchema, tskv_exec::TskvExec};
+use crate::{
+    extension::physical::plan_node::tskv_writer::TskvWriterExec, predicate::Predicate,
+    schema::TableSchema, tskv_exec::TskvExec,
+};
 
 pub struct ClusterTable {
     engine: EngineRef,
@@ -74,5 +78,23 @@ impl TableProvider for ClusterTable {
     }
     fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)
+    }
+}
+
+#[async_trait]
+impl SupportWrite for ClusterTable {
+    async fn write(
+        &self,
+        _state: &SessionState,
+        input: Arc<dyn ExecutionPlan>,
+        output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        // TODO
+        Ok(Arc::new(TskvWriterExec::new(
+            input,
+            self.schema.clone(),
+            output_physical_exprs,
+            self.engine.clone(),
+        )))
     }
 }

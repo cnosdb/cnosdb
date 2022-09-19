@@ -1,7 +1,6 @@
-use datafusion::logical_plan::FileType;
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{ColumnDef, DataType, Ident, ObjectName};
+use datafusion::sql::sqlparser::ast::{DataType, Ident};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 
 /// Statement representations
