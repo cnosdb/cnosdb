@@ -24,6 +24,11 @@ pub struct Context {
     pub schema: String,
 }
 
+impl Context {
+    pub fn new(catalog: String, schema: String) -> Self {
+        Self { catalog, schema }
+    }
+}
 impl Default for Context {
     fn default() -> Self {
         Self {
