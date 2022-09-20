@@ -104,7 +104,6 @@ impl TsKv {
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
-        // core.run_kv_satement_job(core.version_set.clone(), stmt_task_receiver);
 
         Ok(core)
     }
@@ -232,7 +231,7 @@ impl TsKv {
             }
         };
         self.runtime.spawn(f);
-        warn!("job 'WAL' started.");
+        info!("job 'WAL' started.");
     }
 
     fn run_flush_job(
@@ -257,7 +256,7 @@ impl TsKv {
             }
         };
         self.runtime.spawn(f);
-        warn!("Flush task handler started");
+        info!("Flush task handler started");
     }
 
     fn run_compact_job(
@@ -309,7 +308,7 @@ impl TsKv {
             }
         };
         self.runtime.spawn(f);
-        warn!("Summary task handler started");
+        info!("Summary task handler started");
     }
 
     pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {

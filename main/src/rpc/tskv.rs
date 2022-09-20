@@ -9,17 +9,15 @@ use protos::{
     },
     models::{PingBody, PingBodyBuilder},
 };
-use tokio::sync::{
-    mpsc::{self},
-    oneshot,
-};
+use tokio::sync::mpsc::{self};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 
-use async_channel as channel;
+use tskv::engine::EngineRef;
 
 pub struct TskvServiceImpl {
-    pub sender: channel::Sender<tskv::Task>,
+    // pub sender: channel::Sender<tskv::Task>,
+    pub kv_engine: EngineRef,
 }
 
 #[tonic::async_trait]
@@ -111,29 +109,33 @@ impl TskvService for TskvServiceImpl {
     ) -> Result<Response<Self::WritePointsStream>, Status> {
         let mut stream = request.into_inner();
         let (resp_sender, resp_receiver) = mpsc::channel(128);
-        let req_sender = self.sender.clone();
+        // let req_sender = self.sender.clone();
         // let f =
         while let Some(result) = stream.next().await {
             match result {
                 Ok(req) => {
                     // 1. send Request to handler
-                    let (tx, rx) = oneshot::channel();
-                    let ret = req_sender
-                        .send(tskv::Task::WritePoints { req, tx })
+                    // let (tx, rx) = oneshot::channel();
+                    // let ret = req_sender
+                    //     .send(tskv::Task::WritePoints { req, tx })
+                    //     .await
+                    //     .map_err(|err| Status::internal(err.to_string()));
+                    let ret = self
+                        .kv_engine
+                        .write(req)
                         .await
                         .map_err(|err| Status::internal(err.to_string()));
-
                     // 2. if something wrong when sending Request
-                    if let Err(err) = ret {
-                        resp_sender.send(Err(err)).await.expect("successful");
-                        continue;
-                    }
-                    // 3. receive Response from handler
-                    let ret = match rx.await {
-                        Ok(Ok(resp)) => Ok(resp),
-                        Ok(Err(err)) => Err(Status::internal(err.to_string())),
-                        Err(err) => Err(Status::internal(err.to_string())),
-                    };
+                    // if let Err(err) = ret {
+                    //     resp_sender.send(Err(err)).await.expect("successful");
+                    //     continue;
+                    // }
+                    // // 3. receive Response from handler
+                    // let ret = match rx.await {
+                    //     Ok(Ok(resp)) => Ok(resp),
+                    //     Ok(Err(err)) => Err(Status::internal(err.to_string())),
+                    //     Err(err) => Err(Status::internal(err.to_string())),
+                    // };
 
                     // 4. send Response out of this Stream
                     resp_sender.send(ret).await.expect("successful");

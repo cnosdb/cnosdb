@@ -12,7 +12,6 @@ protos = { path = "../common/protos" }
 query = { path = "../query_server/query" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
-server = { path = "../query_server/server" }
 spi = { path = "../query_server/spi" }
 mem_allocator = { path = "../common/mem_allocator" }
 async-channel = "1.7.1"
@@ -22,11 +21,9 @@ async-stream = "0.3"
 backtrace = "0.3"
 chrono = "0.4"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
-http = "0.2"
-hyper = "0.14"
+libc = "0.2"
+warp = "0.3"
 lazy_static = "1.4"
-libc = { version = "0.2" }
-log = "0.4"
 num_cpus = "1.13.0"
 clap = { version = "3", features = ["derive", "env"] }
 flatbuffers = "2.1"
@@ -41,6 +38,7 @@ tokio = { version = "1.21", features = ["macros", "net", "parking_lot", "rt-mult
 tokio-stream = { version = "0.1", features = ["net"] }
 tokio-util = { version = "0.7.0" }
 tonic = "0.7"
-
+ctrlc = "3"
+async-trait = "0.1"
 [dev-dependencies]
 reqwest = "0.11"

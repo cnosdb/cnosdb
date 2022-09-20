@@ -9,6 +9,7 @@ mod execution;
 pub mod extension;
 pub mod function;
 mod helper;
+pub mod instance;
 pub mod metadata;
 pub mod predicate;
 pub mod schema;

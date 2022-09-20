@@ -10,7 +10,6 @@ members = [
     "common/mem_allocator",
     "query_server/spi",
     "query_server/query",
-    "query_server/server",
     "e2e_test",
     "coordinator",
     "config",
