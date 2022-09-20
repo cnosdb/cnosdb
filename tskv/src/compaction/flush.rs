@@ -255,7 +255,7 @@ impl FlushTask {
         series_id: SeriesId,
         version_set: Arc<RwLock<VersionSet>>,
     ) -> Result<Vec<FieldInfo>> {
-        if let Some(db) = version_set.read().get_db(&self.db_name) {
+        return if let Some(db) = version_set.read().get_db(&self.db_name) {
             let series_key = match db.read().get_series_key(series_id) {
                 Ok(series_key) => {
                     if let Some(series_key_unwrap) = series_key {
@@ -271,7 +271,7 @@ impl FlushTask {
                 Err(e) => return Err(Error::IndexErr { source: e }),
             };
 
-            return match db.read().get_table_schema(series_key.table()) {
+            match db.read().get_table_schema(series_key.table()) {
                 Ok(schema) => {
                     if let Some(schema_unwrap) = schema {
                         Ok(schema_unwrap)
@@ -284,14 +284,14 @@ impl FlushTask {
                     }
                 }
                 Err(e) => Err(Error::IndexErr { source: e }),
-            };
+            }
         } else {
             warn!(
                 "database not found for database name : {}, get empty schema",
                 self.db_name
             );
-            return Ok(vec![]);
-        }
+            Ok(vec![])
+        };
     }
 }
 

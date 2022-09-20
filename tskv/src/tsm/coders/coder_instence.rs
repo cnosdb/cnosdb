@@ -1,3 +1,7 @@
+use crate::tsm::boolean::{
+    bool_bitpack_decode, bool_bitpack_encode, bool_without_compress_decode,
+    bool_without_compress_encode,
+};
 use crate::tsm::float::{
     f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
     f64_without_compress_decode, f64_without_compress_encode,
@@ -7,7 +11,7 @@ use crate::tsm::integer::{
     i64_without_compress_encode, i64_zigzag_simple8b_decode, i64_zigzag_simple8b_encode,
 };
 use crate::tsm::string::{
-    str_bizp_decode, str_bzip_encode, str_gzip_decode, str_gzip_encode, str_snappy_decode,
+    str_bzip_decode, str_bzip_encode, str_gzip_decode, str_gzip_encode, str_snappy_decode,
     str_snappy_encode, str_without_compress_decode, str_without_compress_encode, str_zlib_decode,
     str_zlib_encode, str_zstd_decode, str_zstd_encode,
 };
@@ -20,9 +24,10 @@ use crate::tsm::unsigned::{
     u64_q_compress_decode, u64_q_compress_encode, u64_without_compress_decode,
     u64_without_compress_encode, u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
 };
+use libc::max_align_t;
 use std::error::Error;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CodeType {
     Null = 0,
     Delta = 1,
@@ -227,10 +232,33 @@ impl UnsignedCoder for QuantileUnsignedCoder {
     }
 }
 
-/// boolean use bitpack
 pub trait BooleanCoder {
     fn encode(&self, src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Send + Sync>>;
+}
+
+struct NullBooleanCoder();
+
+impl BooleanCoder for NullBooleanCoder {
+    fn encode(&self, src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        bool_without_compress_encode(src, dst)
+    }
+
+    fn decode(&self, src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        bool_without_compress_decode(src, dst)
+    }
+}
+
+struct BitPackBooleanCoder();
+
+impl BooleanCoder for BitPackBooleanCoder {
+    fn encode(&self, src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        bool_bitpack_encode(src, dst)
+    }
+
+    fn decode(&self, src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        bool_bitpack_decode(src, dst)
+    }
 }
 
 pub trait StringCoder {
@@ -302,7 +330,7 @@ impl StringCoder for BzipStringCoder {
         src: &[u8],
         dst: &mut Vec<Vec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        str_bizp_decode(src, dst)
+        str_bzip_decode(src, dst)
     }
 }
 
@@ -390,5 +418,13 @@ pub fn get_str_coder(algo: CodeType) -> Box<dyn StringCoder> {
         CodeType::Zstd => Box::new(ZstdStringCoder()),
         CodeType::Zlib => Box::new(ZlibStringCoder()),
         _ => Box::new(SnappyStringCoder()),
+    }
+}
+
+pub fn get_bool_coder(algo: CodeType) -> Box<dyn BooleanCoder> {
+    match algo {
+        CodeType::Null => Box::new(NullBooleanCoder()),
+        CodeType::BitPack => Box::new(BitPackBooleanCoder()),
+        _ => Box::new(BitPackBooleanCoder()),
     }
 }

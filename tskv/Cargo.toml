@@ -28,8 +28,6 @@ futures = { version = "0.3", features = ["std", "thread-pool"] }
 integer-encoding = "3.0.3"
 lazy_static = "1.4"
 libc = "0.2"
-lzzzz = "1.0.3"
-lz4 = "1.24.0"
 mio = "0.8"
 num_cpus = "1.13.1"
 num_enum = "0.5.7"

@@ -98,6 +98,7 @@ mod tests {
         super::{integer::Encoding, simple8b},
         *,
     };
+    use crate::tsm::coder_instence::{get_code_type, CodeType};
 
     #[test]
     fn encode_no_values() {
@@ -126,6 +127,33 @@ mod tests {
 
         // verify got same values back
         assert_eq!(got, exp);
+    }
+
+    #[test]
+    fn encode_q_compress_and_uncompress() {
+        let src: Vec<u64> = vec![1000, 0, simple8b::MAX_VALUE as u64, 213123421];
+        let mut dst = vec![];
+        let mut got = vec![];
+        let exp = src.clone();
+
+        u64_q_compress_encode(&src, &mut dst).unwrap();
+        let exp_code_type = CodeType::Quantile;
+        let got_code_type = get_code_type(&dst);
+        assert_eq!(exp_code_type, got_code_type);
+
+        u64_q_compress_decode(&dst, &mut got).unwrap();
+        assert_eq!(exp, got);
+
+        dst.clear();
+        got.clear();
+
+        u64_without_compress_encode(&src, &mut dst).unwrap();
+        let exp_code_type = CodeType::Null;
+        let got_code_type = get_code_type(&dst);
+        assert_eq!(exp_code_type, got_code_type);
+
+        u64_without_compress_decode(&dst, &mut got).unwrap();
+        assert_eq!(exp, got);
     }
 
     struct Test {

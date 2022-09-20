@@ -77,8 +77,8 @@ pub struct FieldInfo {
     name: FieldName,
     value_type: ValueType,
 
-    // first 4 bit for ts code type
-    // last 4 bit for val code type
+    // high 4 bit for ts code type
+    // low 4 bit for val code type
     code_type: u8,
 }
 

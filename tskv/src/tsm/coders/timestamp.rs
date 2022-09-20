@@ -23,11 +23,10 @@ pub fn ts_without_compress_encode(
     dst: &mut Vec<u8>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear();
-
-    dst.push(CodeType::Null as u8);
     if src.is_empty() {
         return Ok(());
     }
+    dst.push(CodeType::Null as u8);
 
     for i in src.iter() {
         dst.extend_from_slice(i.to_be_bytes().as_slice());
@@ -332,6 +331,7 @@ pub fn ts_q_compress_decode(
 #[allow(clippy::unreadable_literal)]
 mod tests {
     use super::*;
+    use crate::tsm::coder_instence::get_code_type;
 
     #[test]
     fn encode_no_values() {
@@ -340,8 +340,10 @@ mod tests {
 
         // check for error
         ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode src");
-
-        // verify encoded no values.
+        assert_eq!(dst.len(), 0);
+        ts_q_compress_encode(&src, &mut dst).unwrap();
+        assert_eq!(dst.len(), 0);
+        ts_without_compress_encode(&src, &mut dst).unwrap();
         assert_eq!(dst.len(), 0);
     }
 
@@ -361,6 +363,34 @@ mod tests {
 
         // verify got same values back
         assert_eq!(got, exp);
+    }
+
+    #[test]
+    fn encode_q_compress_and_uncompress() {
+        let src: Vec<i64> = vec![-1000, 0, simple8b::MAX_VALUE as i64, 213123421];
+        let mut dst = vec![];
+        let mut got = vec![];
+        let exp = src.clone();
+
+        ts_q_compress_encode(&src, &mut dst).unwrap();
+        let exp_code_type = CodeType::Quantile;
+        let got_code_type = get_code_type(&dst);
+        assert_eq!(exp_code_type, got_code_type);
+
+        ts_q_compress_decode(&dst, &mut got).unwrap();
+        assert_eq!(exp, got);
+
+        dst.clear();
+        got.clear();
+
+        ts_without_compress_encode(&src, &mut dst).unwrap();
+        let exp_code_type = CodeType::Null;
+        let got_code_type = get_code_type(&dst);
+        assert_eq!(exp_code_type, got_code_type);
+
+        ts_without_compress_decode(&dst, &mut got).unwrap();
+
+        assert_eq!(exp, got);
     }
 
     #[test]

@@ -256,6 +256,7 @@ pub fn i64_q_compress_decode(
 #[allow(clippy::unreadable_literal)]
 mod tests {
     use super::*;
+    use crate::tsm::coder_instence::{get_code_type, CodeType};
 
     #[test]
     fn zig_zag_encoding() {
@@ -277,6 +278,8 @@ mod tests {
 
         // check for error
         i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode src");
+        i64_q_compress_encode(&src, &mut dst).unwrap();
+        i64_without_compress_encode(&src, &mut dst).unwrap();
 
         // verify encoded no values.
         assert_eq!(dst.to_vec().len(), 0);
@@ -297,6 +300,34 @@ mod tests {
 
         // verify got same values back
         assert_eq!(got, exp);
+    }
+
+    #[test]
+    fn encode_q_compress_and_uncompress() {
+        let src: Vec<i64> = vec![-1000, 0, simple8b::MAX_VALUE as i64, 213123421];
+        let mut dst = vec![];
+        let mut got = vec![];
+        let exp = src.clone();
+
+        i64_q_compress_encode(&src, &mut dst).unwrap();
+        let exp_code_type = CodeType::Quantile;
+        let got_code_type = get_code_type(&dst);
+        assert_eq!(exp_code_type, got_code_type);
+
+        i64_q_compress_decode(&dst, &mut got).unwrap();
+        assert_eq!(exp, got);
+
+        dst.clear();
+        got.clear();
+
+        i64_without_compress_encode(&src, &mut dst).unwrap();
+        let exp_code_type = CodeType::Null;
+        let got_code_type = get_code_type(&dst);
+        assert_eq!(exp_code_type, got_code_type);
+
+        i64_without_compress_decode(&dst, &mut got).unwrap();
+
+        assert_eq!(exp, got);
     }
 
     #[test]

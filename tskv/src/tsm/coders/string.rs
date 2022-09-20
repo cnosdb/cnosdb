@@ -82,6 +82,7 @@ pub fn str_snappy_encode(
     let actual_compressed_size = encoder.compress(data, compressed_data)?;
 
     dst.truncate(HEADER_LEN + actual_compressed_size);
+    dst.insert(0, CodeType::Gorilla as u8);
 
     Ok(())
 }
@@ -207,6 +208,7 @@ pub fn str_snappy_decode(
     if src.is_empty() {
         return Ok(());
     }
+    let src = &src[1..];
 
     let mut decoder = snap::raw::Decoder::new();
     // First byte stores the encoding type, only have snappy format
@@ -275,7 +277,7 @@ pub fn str_zstd_decode(
     return Ok(());
 }
 
-pub fn str_bizp_decode(
+pub fn str_bzip_decode(
     src: &[u8],
     dst: &mut Vec<Vec<u8>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -356,9 +358,19 @@ mod tests {
 
         // check for error
         str_snappy_encode(&src, &mut dst).expect("failed to encode src");
+        assert_eq!(dst.to_vec().len(), 0);
+        str_zlib_encode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_gzip_encode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_zstd_encode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_bzip_encode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_without_compress_encode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
 
         // verify encoded no values.
-        assert_eq!(dst.to_vec().len(), 0);
     }
 
     #[test]
@@ -368,7 +380,7 @@ mod tests {
         let mut dst = vec![];
 
         str_snappy_encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(dst, vec![16, 3, 8, 2, 118, 49]);
+        assert_eq!(dst[1..], vec![16, 3, 8, 2, 118, 49]);
     }
 
     #[test]
@@ -379,7 +391,7 @@ mod tests {
 
         str_snappy_encode(&src, &mut dst).expect("failed to encode src");
         assert_eq!(
-            dst,
+            dst[1..],
             vec![
                 16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0, 50, 13, 8,
                 0, 51, 13, 8, 0, 52, 13, 8, 0, 53, 13, 8, 0, 54, 13, 8, 0, 55, 13, 8, 32, 56, 7,
@@ -394,7 +406,7 @@ mod tests {
         let mut dst = vec![];
 
         str_snappy_encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(dst, vec![16, 4, 12, 3, 226, 152, 131]);
+        assert_eq!(dst[1..], vec![16, 4, 12, 3, 226, 152, 131]);
     }
 
     #[test]
@@ -403,7 +415,7 @@ mod tests {
         let mut dst = vec![];
 
         str_snappy_encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(dst, vec![16, 2, 4, 1, 192]);
+        assert_eq!(dst[1..], vec![16, 2, 4, 1, 192]);
     }
 
     #[test]
@@ -411,16 +423,23 @@ mod tests {
         let src: Vec<u8> = vec![];
         let mut dst = vec![];
 
-        // check for error
-        str_snappy_decode(&src, &mut dst).expect("failed to decode src");
-
-        // verify decoded no values.
+        str_snappy_decode(&src, &mut dst).expect("failed to encode src");
+        assert_eq!(dst.to_vec().len(), 0);
+        str_zlib_decode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_gzip_decode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_zstd_decode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_bzip_decode(&src, &mut dst).unwrap();
+        assert_eq!(dst.to_vec().len(), 0);
+        str_without_compress_decode(&src, &mut dst).unwrap();
         assert_eq!(dst.to_vec().len(), 0);
     }
 
     #[test]
     fn decode_single() {
-        let src = vec![16, 3, 8, 2, 118, 49];
+        let src = vec![0, 16, 3, 8, 2, 118, 49];
         let mut dst = vec![];
 
         str_snappy_decode(&src, &mut dst).expect("failed to decode src");
@@ -435,7 +454,7 @@ mod tests {
     #[test]
     fn decode_multi_compressed() {
         let src = vec![
-            16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0, 50, 13, 8, 0,
+            0, 16, 80, 28, 7, 118, 97, 108, 117, 101, 32, 48, 13, 8, 0, 49, 13, 8, 0, 50, 13, 8, 0,
             51, 13, 8, 0, 52, 13, 8, 0, 53, 13, 8, 0, 54, 13, 8, 0, 55, 13, 8, 32, 56, 7, 118, 97,
             108, 117, 101, 32, 57,
         ];
@@ -453,7 +472,7 @@ mod tests {
 
     #[test]
     fn decode_unicode() {
-        let src = vec![16, 4, 12, 3, 226, 152, 131];
+        let src = vec![0, 16, 4, 12, 3, 226, 152, 131];
         let mut dst = vec![];
 
         str_snappy_decode(&src, &mut dst).expect("failed to decode src");
@@ -467,10 +486,70 @@ mod tests {
 
     #[test]
     fn decode_invalid_utf8() {
-        let src = vec![16, 2, 4, 1, 192];
+        let src = vec![0, 16, 2, 4, 1, 192];
         let mut dst = vec![];
 
         str_snappy_decode(&src, &mut dst).expect("failed to decode src");
         assert_eq!(dst, vec![&[b'\xC0'][..]]);
+    }
+
+    static ALLSTR: [&str; 10] = [
+        "beijing",
+        "shanghai",
+        "guangzhou",
+        "shenzhen",
+        "wuhan",
+        "qingdao",
+        "beihai",
+        "nanjing",
+        "chengdu",
+        "shijiazhuang",
+    ];
+
+    #[test]
+    fn test_encode_decode() {
+        let mut dst = vec![];
+        let mut got = vec![];
+
+        let mut data = vec![];
+        let mut data_exp = vec![];
+        for i in ALLSTR {
+            data.push(i.as_bytes());
+            data_exp.push(i.as_bytes().to_vec());
+        }
+
+        str_snappy_encode(&data, &mut dst).unwrap();
+        str_snappy_decode(&dst, &mut got).unwrap();
+        assert_eq!(data_exp, got);
+        dst.clear();
+        got.clear();
+
+        str_gzip_encode(&data, &mut dst).unwrap();
+        str_gzip_decode(&dst, &mut got).unwrap();
+        assert_eq!(data_exp, got);
+        dst.clear();
+        got.clear();
+
+        str_zstd_encode(&data, &mut dst).unwrap();
+        str_zstd_decode(&dst, &mut got).unwrap();
+        assert_eq!(data_exp, got);
+        dst.clear();
+        got.clear();
+
+        str_zlib_encode(&data, &mut dst).unwrap();
+        str_zlib_decode(&dst, &mut got).unwrap();
+        assert_eq!(data_exp, got);
+        dst.clear();
+        got.clear();
+
+        str_bzip_encode(&data, &mut dst).unwrap();
+        str_bzip_decode(&dst, &mut got).unwrap();
+        assert_eq!(data_exp, got);
+        dst.clear();
+        got.clear();
+
+        str_without_compress_encode(&data, &mut dst).unwrap();
+        str_without_compress_decode(&dst, &mut got).unwrap();
+        assert_eq!(data_exp, got);
     }
 }

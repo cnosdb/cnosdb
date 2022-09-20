@@ -6,7 +6,8 @@ use trace::error;
 
 use super::coders;
 use crate::tsm::coder_instence::{
-    get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder, CodeType,
+    get_bool_coder, get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder,
+    CodeType,
 };
 use crate::{
     compaction::overlaps_tuples,
@@ -389,7 +390,8 @@ impl DataBlock {
         match self {
             DataBlock::Bool { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                coders::boolean::encode(&val[start..end], &mut data_buf)?;
+                let val_coder = get_bool_coder(other_compress_algo);
+                val_coder.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::U64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;

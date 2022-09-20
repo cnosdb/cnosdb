@@ -582,7 +582,9 @@ fn decode_with_sentinel(
 mod tests {
     // use test_helpers::approximately_equal;
 
-    use crate::tsm::float::{f64_gorilla_decode, f64_gorilla_encode};
+    use crate::tsm::float::{
+        f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
+    };
 
     #[test]
     fn encode_no_values() {
@@ -624,6 +626,41 @@ mod tests {
         f64_gorilla_decode(&dst, &mut got).expect("failed to decode");
 
         // Verify decoded values.
+        assert_eq!(got.len(), src.len());
+
+        for (i, v) in got.iter().enumerate() {
+            if v.is_nan() || v.is_infinite() {
+                assert_eq!(src[i].to_bits(), v.to_bits());
+            } else {
+                // assert!(approximately_equal(src[i], *v));
+            }
+        }
+    }
+
+    #[test]
+    fn encode_special_value_q_compress() {
+        let src: Vec<f64> = vec![
+            100.0,
+            222.12,
+            f64::from_bits(0x7ff8000000000001), /* Go representation of
+                                                 * signalling NaN */
+            45.324,
+            f64::NAN,
+            2453.023,
+            -1234.235312132,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            9123419329123.1234,
+            f64::from_bits(0x7ff0000000000002), // Prometheus stale NaN
+            -19292929929292929292.22,
+            -0.0000000000000000000000000092,
+        ];
+        let mut dst = vec![];
+
+        f64_q_compress_encode(&src, &mut dst).expect("failed to encode src");
+        let mut got = vec![];
+        f64_q_compress_decode(&dst, &mut got).expect("failed to decode");
+
         assert_eq!(got.len(), src.len());
 
         for (i, v) in got.iter().enumerate() {
@@ -1737,14 +1774,26 @@ mod tests {
                 ],
             },
         ];
-        for test in tests {
+        for test in tests.iter() {
             let mut dst = vec![];
-            let src = test.input;
+            let src = test.input.clone();
 
             f64_gorilla_encode(&src, &mut dst).expect("failed to encode");
 
             let mut got = vec![];
             f64_gorilla_decode(&dst, &mut got).expect("failed to decode");
+            // verify got same values back
+            assert_eq!(got, src, "{}", test.name);
+        }
+
+        for test in tests.iter() {
+            let mut dst = vec![];
+            let src = test.input.clone();
+
+            f64_q_compress_encode(&src, &mut dst).expect("failed to encode");
+
+            let mut got = vec![];
+            f64_q_compress_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
             assert_eq!(got, src, "{}", test.name);
         }

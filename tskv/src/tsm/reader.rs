@@ -15,8 +15,8 @@ use super::{
     BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
 use crate::tsm::coder_instence::{
-    get_code_type, get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder,
-    CodeType,
+    get_bool_coder, get_code_type, get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder,
+    get_u64_coder, CodeType,
 };
 use crate::{
     byte_utils,
@@ -599,7 +599,7 @@ pub fn decode_data_block(
             let float_code_type = get_code_type(&data);
             let val_coder = get_f64_coder(float_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::F64 { ts, val }, ts_code_type, CodeType::Unknown))
+            Ok((DataBlock::F64 { ts, val }, ts_code_type, float_code_type))
         }
         ValueType::Integer => {
             // values will be same length as time-stamps.
@@ -607,14 +607,15 @@ pub fn decode_data_block(
             let integer_code_type = get_code_type(&data);
             let val_coder = get_i64_coder(integer_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::I64 { ts, val }, ts_code_type, CodeType::Unknown))
+            Ok((DataBlock::I64 { ts, val }, ts_code_type, integer_code_type))
         }
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            boolean::decode(data, &mut val).context(DecodeSnafu)?;
-
-            Ok((DataBlock::Bool { ts, val }, ts_code_type, CodeType::Unknown))
+            let boolean_code_type = get_code_type(&data);
+            let val_coder = get_bool_coder(boolean_code_type);
+            val_coder.decode(data, &mut val).context(DecodeSnafu)?;
+            Ok((DataBlock::Bool { ts, val }, ts_code_type, boolean_code_type))
         }
         ValueType::String => {
             // values will be same length as time-stamps.
@@ -622,7 +623,7 @@ pub fn decode_data_block(
             let string_code_type = get_code_type(&data);
             let val_coder = get_str_coder(string_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::Str { ts, val }, ts_code_type, CodeType::Unknown))
+            Ok((DataBlock::Str { ts, val }, ts_code_type, string_code_type))
         }
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
@@ -630,7 +631,7 @@ pub fn decode_data_block(
             let unsigned_code_type = get_code_type(&data);
             let val_coder = get_u64_coder(unsigned_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::U64 { ts, val }, ts_code_type, CodeType::Unknown))
+            Ok((DataBlock::U64 { ts, val }, ts_code_type, unsigned_code_type))
         }
         _ => Err(ReadTsmError::Decode {
             source: From::from(format!(
