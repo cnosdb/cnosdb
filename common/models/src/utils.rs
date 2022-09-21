@@ -14,6 +14,10 @@ pub fn split_code_type_id(id: u8) -> (u8, u8) {
     ((id & HIGH_4BIT_MASK) >> 4, id & LOW_4BIT_MASK)
 }
 
+pub fn combine_code_type_id(ts: u8, val: u8) -> u8 {
+    (ts & LOW_4BIT_MASK) << 4 | val & LOW_4BIT_MASK
+}
+
 pub fn unite_id(hash_id: u64, incr_id: u64) -> u64 {
     hash_id << 40 | (incr_id & LOW_40BIT_MASK)
 }
@@ -94,7 +98,7 @@ pub fn to_str(arr: &[u8]) -> String {
 
 #[cfg(test)]
 mod test {
-    use crate::utils::split_code_type_id;
+    use crate::utils::{combine_code_type_id, split_code_type_id};
 
     #[test]
     fn test_split_code_type_id() {
@@ -107,5 +111,14 @@ mod test {
         let (code2, code3) = split_code_type_id(id_1);
         assert_eq!(code2, 5);
         assert_eq!(code3, 15)
+    }
+
+    #[test]
+    fn test_combine_code_type_id() {
+        let id_0 = 0b00000001;
+        let id_1 = 0b00000001;
+
+        let code = combine_code_type_id(id_0, id_1);
+        assert_eq!(code, 0b00010001);
     }
 }

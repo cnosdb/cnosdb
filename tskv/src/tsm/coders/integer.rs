@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use crate::tsm::coder_instence::CodeType;
 use crate::tsm::timestamp::{
     ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
     ts_without_compress_encode,
@@ -75,6 +76,7 @@ pub fn i64_zigzag_simple8b_encode(
             encode_rle(deltas[0], deltas[1], deltas.len() as u64 - 1, dst);
             // 4 high bits of first byte used for the encoding type
             dst[0] |= (Encoding::Rle as u8) << 4;
+            dst.insert(0, CodeType::Delta as u8);
             return Ok(());
         }
     }
@@ -89,6 +91,7 @@ pub fn i64_zigzag_simple8b_encode(
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
+        dst.insert(0, CodeType::Delta as u8);
         return Ok(());
     }
 
@@ -96,7 +99,9 @@ pub fn i64_zigzag_simple8b_encode(
     // first 4 high bits used for encoding type
     dst.push((Encoding::Simple8b as u8) << 4);
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
-    simple8b::encode(&deltas[1..], dst)
+    simple8b::encode(&deltas[1..], dst)?;
+    dst.insert(0, CodeType::Delta as u8);
+    return Ok(());
 }
 
 // zig_zag_encode converts a signed integer into an unsigned one by zig zagging
@@ -151,6 +156,7 @@ pub fn i64_zigzag_simple8b_decode(
     if src.is_empty() {
         return Ok(());
     }
+    let src = &src[1..];
     let encoding = &src[0] >> 4;
     match encoding {
         encoding if encoding == Encoding::Uncompressed as u8 => {
@@ -371,7 +377,7 @@ mod tests {
             i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
-            assert_eq!(&dst[0] >> 4, Encoding::Rle as u8);
+            assert_eq!(&dst[1] >> 4, Encoding::Rle as u8);
             let mut got = vec![];
             i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
@@ -407,7 +413,7 @@ mod tests {
             let exp = test.input;
             i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
-            assert_eq!(&dst[0] >> 4, Encoding::Simple8b as u8);
+            assert_eq!(&dst[1] >> 4, Encoding::Simple8b as u8);
 
             let mut got = vec![];
             i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
@@ -428,7 +434,7 @@ mod tests {
         let enc_influx = [32, 0, 0, 1, 120, 208, 95, 32, 0, 0, 252, 3];
 
         // ensure that encoder produces same bytes as InfluxDB encoder.
-        assert_eq!(enc, enc_influx);
+        assert_eq!(enc[1..], enc_influx);
 
         let mut dec = vec![];
         i64_zigzag_simple8b_decode(&enc, &mut dec).expect("failed to decode");
@@ -448,7 +454,7 @@ mod tests {
         let enc_influx = [16, 0, 0, 0, 0, 0, 0, 2, 180];
 
         // ensure that encoder produces same bytes as InfluxDB encoder.
-        assert_eq!(enc, enc_influx);
+        assert_eq!(enc[1..], enc_influx);
 
         let mut dec = vec![];
         i64_zigzag_simple8b_decode(&enc, &mut dec).expect("failed to decode");

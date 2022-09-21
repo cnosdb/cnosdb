@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use models::utils::split_code_type_id;
 use models::{FieldId, Timestamp, ValueType};
 use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
@@ -227,13 +228,7 @@ impl TsmWriter {
         self.size
     }
 
-    pub fn write_block(
-        &mut self,
-        field_id: FieldId,
-        block: &DataBlock,
-        ts_compress_algo: CodeType,
-        other_compress_algo: CodeType,
-    ) -> WriteTsmResult<usize> {
+    pub fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
         let mut write_pos = self.writer.pos();
         if let Some(rg) = block.time_range() {
             self.min_ts = self.min_ts.min(rg.0);
@@ -245,8 +240,6 @@ impl TsmWriter {
             &mut self.index_buf,
             field_id,
             block,
-            ts_compress_algo,
-            other_compress_algo,
         );
         if let Ok(s) = ret {
             self.size += s as u64
@@ -359,8 +352,6 @@ fn write_block_to(
     index_buf: &mut IndexBuf,
     field_id: FieldId,
     block: &DataBlock,
-    ts_compress_algo: CodeType,
-    other_compress_algo: CodeType,
 ) -> WriteTsmResult<usize> {
     if block.is_empty() {
         return Ok(0);
@@ -369,9 +360,15 @@ fn write_block_to(
     let offset = writer.pos();
     let mut size = 0;
 
+    let (ts_code_type, val_code_type) = split_code_type_id(block.code_type_id());
     // TODO Make encoding result streamable
     let (ts_buf, data_buf) = block
-        .encode(0, block.len(), ts_compress_algo, other_compress_algo)
+        .encode(
+            0,
+            block.len(),
+            CodeType::try_from(ts_code_type).unwrap(),
+            CodeType::try_from(val_code_type).unwrap(),
+        )
         .context(EncodeSnafu)?;
     // Write u32 hash for timestamps
     writer
@@ -477,9 +474,7 @@ mod test {
         let tsm_path = dir.as_ref().join(file_name);
         let mut writer = TsmWriter::open(tsm_path, 0, false, 0).unwrap();
         for (fid, blk) in data.iter() {
-            writer
-                .write_block(*fid, blk, CodeType::default(), CodeType::default())
-                .unwrap();
+            writer.write_block(*fid, blk).unwrap();
         }
         writer.write_index().unwrap();
         writer.flush().unwrap();
@@ -494,7 +489,7 @@ mod test {
         for idx_meta in index.iter() {
             let cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
             for blk_ret in cr {
-                let (blk, _, _) = blk_ret.unwrap();
+                let blk = blk_ret.unwrap();
                 data.insert(idx_meta.field_id(), blk);
             }
         }
@@ -514,8 +509,8 @@ mod test {
         let dir = Path::new(TEST_PATH);
         #[rustfmt::skip]
         let data: HashMap<FieldId, DataBlock> = HashMap::from([
-            (1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
-            (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] }),
+            (1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], code_type_id: 0 }),
+            (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], code_type_id: 0 }),
         ]);
 
         write_to_tsm(&dir, "tsm_write_fast.tsm", &data);
@@ -548,20 +543,25 @@ mod test {
 
         #[rustfmt::skip]
         let data = vec![
-            (1, DataBlock::I64 { ts: ts_1, val: val_1 }),
-            (1, DataBlock::I64 { ts: ts_2, val: val_2 }),
+            (1, DataBlock::I64 { ts: ts_1, val: val_1, code_type_id: 0 }),
+            (1, DataBlock::I64 { ts: ts_2, val: val_2, code_type_id: 0 }),
         ];
         for (fid, blk) in data.iter() {
-            writer
-                .write_block(*fid, blk, CodeType::default(), CodeType::default())
-                .unwrap();
+            writer.write_block(*fid, blk).unwrap();
         }
         writer.write_index().unwrap();
         writer.flush().unwrap();
 
         check_tsm(
             dir.join("test_tsm_write_1.tsm"),
-            &HashMap::from([(1, DataBlock::I64 { ts, val })]),
+            &HashMap::from([(
+                1,
+                DataBlock::I64 {
+                    ts,
+                    val,
+                    code_type_id: 0,
+                },
+            )]),
         );
     }
 }

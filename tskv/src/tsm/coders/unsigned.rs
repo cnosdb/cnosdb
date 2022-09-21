@@ -186,7 +186,7 @@ mod tests {
 
             // verify RLE encoding used
             assert_eq!(
-                &dst[0] >> 4,
+                &dst[1] >> 4,
                 Encoding::Rle as u8,
                 "didn't use rle on {:?}",
                 src
@@ -205,9 +205,9 @@ mod tests {
         u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         let expected_encoded = vec![32, 0, 0, 2, 61, 218, 167, 172, 228, 0, 231, 7];
-        assert_eq!(dst, expected_encoded);
+        assert_eq!(dst[1..], expected_encoded);
 
-        assert_eq!(&dst[0] >> 4, Encoding::Rle as u8);
+        assert_eq!(&dst[1] >> 4, Encoding::Rle as u8);
         let mut got = vec![];
         u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
         assert_eq!(got, src);
@@ -226,7 +226,7 @@ mod tests {
             let exp = test.input;
             u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
-            assert_eq!(&dst[0] >> 4, Encoding::Simple8b as u8);
+            assert_eq!(&dst[1] >> 4, Encoding::Simple8b as u8);
 
             let mut got = vec![];
             u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
@@ -247,7 +247,7 @@ mod tests {
         let enc_influx = [32, 0, 0, 1, 120, 208, 95, 32, 0, 0, 252, 3];
 
         // ensure that encoder produces same bytes as InfluxDB encoder.
-        assert_eq!(enc, enc_influx);
+        assert_eq!(enc[1..], enc_influx);
 
         let mut dec = vec![];
         u64_zigzag_simple8b_decode(&enc, &mut dec).expect("failed to decode");

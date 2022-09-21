@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use models::utils::combine_code_type_id;
 use models::{FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
@@ -453,13 +454,10 @@ impl TsmReader {
     }
 
     /// Returns a DataBlock without tombstone
-    pub fn get_data_block(
-        &self,
-        block_meta: &BlockMeta,
-    ) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
+    pub fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
-        let (mut blk, ts_code_type, val_code_type) = read_data_block(
+        let mut blk = read_data_block(
             self.reader.clone(),
             &mut buf,
             block_meta.field_type(),
@@ -469,17 +467,7 @@ impl TsmReader {
         self.tombstone
             .read()
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
-        Ok((blk, ts_code_type, val_code_type))
-    }
-
-    pub fn get_data_block_without_code_type(
-        &self,
-        block_meta: &BlockMeta,
-    ) -> ReadTsmResult<DataBlock> {
-        match self.get_data_block(block_meta) {
-            Ok(v) => Ok(v.0),
-            Err(e) => Err(e),
-        }
+        Ok(blk)
     }
 
     // Reads raw data from file and returns the read data size.
@@ -534,7 +522,7 @@ impl ColumnReader {
         }
     }
 
-    fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
+    fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let (offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
         read_data_block(
@@ -548,7 +536,7 @@ impl ColumnReader {
 }
 
 impl Iterator for ColumnReader {
-    type Item = Result<(DataBlock, CodeType, CodeType)>;
+    type Item = Result<DataBlock>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(dbm) = self.inner.next() {
@@ -565,7 +553,7 @@ fn read_data_block(
     field_type: ValueType,
     offset: u64,
     val_off: u64,
-) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
+) -> ReadTsmResult<DataBlock> {
     reader.read_at(offset, buf).context(IOSnafu)?;
     decode_data_block(buf, field_type, val_off - offset)
 }
@@ -574,7 +562,7 @@ pub fn decode_data_block(
     buf: &[u8],
     field_type: ValueType,
     val_off: u64,
-) -> ReadTsmResult<(DataBlock, CodeType, CodeType)> {
+) -> ReadTsmResult<DataBlock> {
     debug_assert!(buf.len() >= 8);
     if buf.len() < 8 {
         return Err(ReadTsmError::Decode {
@@ -596,42 +584,67 @@ pub fn decode_data_block(
         ValueType::Float => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let float_code_type = get_code_type(&data);
-            let val_coder = get_f64_coder(float_code_type);
+            let val_code_type = get_code_type(&data);
+            let val_coder = get_f64_coder(val_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::F64 { ts, val }, ts_code_type, float_code_type))
+            let code_type_id = combine_code_type_id(ts_code_type as u8, val_code_type as u8);
+            Ok(DataBlock::F64 {
+                ts,
+                val,
+                code_type_id,
+            })
         }
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let integer_code_type = get_code_type(&data);
-            let val_coder = get_i64_coder(integer_code_type);
+            let val_code_type = get_code_type(&data);
+            let val_coder = get_i64_coder(val_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::I64 { ts, val }, ts_code_type, integer_code_type))
+            let code_type_id = combine_code_type_id(ts_code_type as u8, val_code_type as u8);
+            Ok(DataBlock::I64 {
+                ts,
+                val,
+                code_type_id,
+            })
         }
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let boolean_code_type = get_code_type(&data);
-            let val_coder = get_bool_coder(boolean_code_type);
+            let val_code_type = get_code_type(&data);
+            let val_coder = get_bool_coder(val_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::Bool { ts, val }, ts_code_type, boolean_code_type))
+            let code_type_id = combine_code_type_id(ts_code_type as u8, val_code_type as u8);
+            Ok(DataBlock::Bool {
+                ts,
+                val,
+                code_type_id,
+            })
         }
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let string_code_type = get_code_type(&data);
-            let val_coder = get_str_coder(string_code_type);
+            let val_code_type = get_code_type(&data);
+            let val_coder = get_str_coder(val_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::Str { ts, val }, ts_code_type, string_code_type))
+            let code_type_id = combine_code_type_id(ts_code_type as u8, val_code_type as u8);
+            Ok(DataBlock::Str {
+                ts,
+                val,
+                code_type_id,
+            })
         }
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let unsigned_code_type = get_code_type(&data);
-            let val_coder = get_u64_coder(unsigned_code_type);
+            let val_code_type = get_code_type(&data);
+            let val_coder = get_u64_coder(val_code_type);
             val_coder.decode(data, &mut val).context(DecodeSnafu)?;
-            Ok((DataBlock::U64 { ts, val }, ts_code_type, unsigned_code_type))
+            let code_type_id = combine_code_type_id(ts_code_type as u8, val_code_type as u8);
+            Ok(DataBlock::U64 {
+                ts,
+                val,
+                code_type_id,
+            })
         }
         _ => Err(ReadTsmError::Decode {
             source: From::from(format!(
@@ -676,20 +689,18 @@ mod test {
 
         #[rustfmt::skip]
         let ori_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15] }]
+            (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], code_type_id: 0 }]
             ),
             (2, vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
-                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
-                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], code_type_id: 0 },
+                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], code_type_id: 0 },
+                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], code_type_id: 0 },
             ]),
         ]);
         let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).unwrap();
         for (fid, blks) in ori_data.iter() {
             for blk in blks.iter() {
-                writer
-                    .write_block(*fid, blk, CodeType::default(), CodeType::default())
-                    .unwrap();
+                writer.write_block(*fid, blk).unwrap();
             }
         }
         writer.write_index().unwrap();
@@ -706,7 +717,7 @@ mod test {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
-                let (data_blk, _, _) = reader.get_data_block(&blk).unwrap();
+                let data_blk = reader.get_data_block(&blk).unwrap();
                 read_data
                     .entry(idx.field_id())
                     .or_insert(Vec::new())
@@ -734,12 +745,12 @@ mod test {
 
         #[rustfmt::skip]
         let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (1, vec![DataBlock::U64 { ts: vec![1], val: vec![11] }]
+            (1, vec![DataBlock::U64 { ts: vec![1], val: vec![11], code_type_id: 0 }]
             ),
             (2, vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
-                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
-                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], code_type_id: 0 },
+                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], code_type_id: 0 },
+                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], code_type_id: 0 },
             ]),
         ]);
         read_and_check(&reader, expected_data);
@@ -754,7 +765,7 @@ mod test {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator_opt(2) {
             for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
-                let (data_blk, _, _) = reader.get_data_block(&blk).unwrap();
+                let data_blk = reader.get_data_block(&blk).unwrap();
                 read_data
                     .entry(idx.field_id())
                     .or_insert(Vec::new())
@@ -784,7 +795,7 @@ mod test {
             #[rustfmt::skip]
             let expected_data = HashMap::from([
                 (2, vec![
-                    DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104] },
+                    DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], code_type_id: 0 },
                 ])
             ]);
             read_opt_and_check(&reader, 2, (2, 3), expected_data);
@@ -794,7 +805,7 @@ mod test {
             #[rustfmt::skip]
             let expected_data = HashMap::from([
                 (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], code_type_id: 0 },
                 ])
             ]);
             read_opt_and_check(&reader, 2, (5, 8), expected_data);
@@ -804,8 +815,8 @@ mod test {
             #[rustfmt::skip]
             let expected_data = HashMap::from([
                 (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], code_type_id: 0},
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], code_type_id: 0 },
                 ])
             ]);
             read_opt_and_check(&reader, 2, (6, 10), expected_data);
@@ -815,8 +826,8 @@ mod test {
             #[rustfmt::skip]
             let expected_data = HashMap::from([
                 (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], code_type_id: 0 },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], code_type_id: 0 },
                 ])
             ]);
             read_opt_and_check(&reader, 2, (8, 9), expected_data);
@@ -826,8 +837,8 @@ mod test {
             #[rustfmt::skip]
             let expected_data = HashMap::from([
                 (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108] },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112] },
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], code_type_id: 0 },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], code_type_id: 0 },
                 ])
             ]);
             read_opt_and_check(&reader, 2, (5, 12), expected_data);

@@ -29,22 +29,23 @@ use std::error::Error;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum CodeType {
-    Null = 0,
-    Delta = 1,
-    Quantile = 2,
-    Gzip = 3,
-    Bzip = 4,
-    Gorilla = 5,
-    Snappy = 6,
-    Zstd = 7,
-    Zlib = 8,
-    BitPack = 9,
-    Unknown = 10,
+    Default = 0,
+    Null = 1,
+    Delta = 2,
+    Quantile = 3,
+    Gzip = 4,
+    Bzip = 5,
+    Gorilla = 6,
+    Snappy = 7,
+    Zstd = 8,
+    Zlib = 9,
+    BitPack = 10,
+    Unknown = 11,
 }
 
 impl Default for CodeType {
     fn default() -> Self {
-        CodeType::Unknown
+        CodeType::Default
     }
 }
 
@@ -53,16 +54,17 @@ impl TryFrom<u8> for CodeType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(CodeType::Null),
-            1 => Ok(CodeType::Delta),
-            2 => Ok(CodeType::Quantile),
-            3 => Ok(CodeType::Gzip),
-            4 => Ok(CodeType::Bzip),
-            5 => Ok(CodeType::Gorilla),
-            6 => Ok(CodeType::Snappy),
-            7 => Ok(CodeType::Zstd),
-            8 => Ok(CodeType::Zlib),
-            9 => Ok(CodeType::BitPack),
+            0 => Ok(CodeType::Default),
+            1 => Ok(CodeType::Null),
+            2 => Ok(CodeType::Delta),
+            3 => Ok(CodeType::Quantile),
+            4 => Ok(CodeType::Gzip),
+            5 => Ok(CodeType::Bzip),
+            6 => Ok(CodeType::Gorilla),
+            7 => Ok(CodeType::Snappy),
+            8 => Ok(CodeType::Zstd),
+            9 => Ok(CodeType::Zlib),
+            10 => Ok(CodeType::BitPack),
             _ => Ok(CodeType::Unknown),
         }
     }

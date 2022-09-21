@@ -15,13 +15,95 @@ use crate::{
     tseries_family::TimeRange,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum DataBlock {
-    U64 { ts: Vec<i64>, val: Vec<u64> },
-    I64 { ts: Vec<i64>, val: Vec<i64> },
-    Str { ts: Vec<i64>, val: Vec<Vec<u8>> },
-    F64 { ts: Vec<i64>, val: Vec<f64> },
-    Bool { ts: Vec<i64>, val: Vec<bool> },
+    U64 {
+        ts: Vec<i64>,
+        val: Vec<u64>,
+        code_type_id: u8,
+    },
+    I64 {
+        ts: Vec<i64>,
+        val: Vec<i64>,
+        code_type_id: u8,
+    },
+    Str {
+        ts: Vec<i64>,
+        val: Vec<Vec<u8>>,
+        code_type_id: u8,
+    },
+    F64 {
+        ts: Vec<i64>,
+        val: Vec<f64>,
+        code_type_id: u8,
+    },
+    Bool {
+        ts: Vec<i64>,
+        val: Vec<bool>,
+        code_type_id: u8,
+    },
+}
+
+impl PartialEq for DataBlock {
+    fn eq(&self, other: &Self) -> bool {
+        match other {
+            DataBlock::U64 {
+                ts: ts_other,
+                val: val_other,
+                ..
+            } => {
+                if let Self::U64 { ts, val, .. } = self {
+                    return ts.eq(ts_other) && val.eq(val_other);
+                } else {
+                    false
+                }
+            }
+            DataBlock::I64 {
+                ts: ts_other,
+                val: val_other,
+                ..
+            } => {
+                if let Self::I64 { ts, val, .. } = self {
+                    return ts.eq(ts_other) && val.eq(val_other);
+                } else {
+                    false
+                }
+            }
+            DataBlock::Str {
+                ts: ts_other,
+                val: val_other,
+                ..
+            } => {
+                if let Self::Str { ts, val, .. } = self {
+                    return ts.eq(ts_other) && val.eq(val_other);
+                } else {
+                    false
+                }
+            }
+            DataBlock::F64 {
+                ts: ts_other,
+                val: val_other,
+                ..
+            } => {
+                if let Self::F64 { ts, val, .. } = self {
+                    return ts.eq(ts_other) && val.eq(val_other);
+                } else {
+                    false
+                }
+            }
+            DataBlock::Bool {
+                ts: ts_other,
+                val: val_other,
+                ..
+            } => {
+                if let Self::Bool { ts, val, .. } = self {
+                    return ts.eq(ts_other) && val.eq(val_other);
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 impl DataBlock {
@@ -30,22 +112,27 @@ impl DataBlock {
             ValueType::Unsigned => Self::U64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
+                code_type_id: 0,
             },
             ValueType::Integer => Self::I64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
+                code_type_id: 0,
             },
             ValueType::Float => Self::F64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
+                code_type_id: 0,
             },
             ValueType::String => Self::Str {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
+                code_type_id: 0,
             },
             ValueType::Boolean => Self::Bool {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
+                code_type_id: 0,
             },
             ValueType::Unknown => {
                 todo!()
@@ -119,6 +206,17 @@ impl DataBlock {
     pub fn batch_insert(&mut self, cells: &[DataType]) {
         for iter in cells.iter() {
             self.insert(iter);
+        }
+    }
+
+    /// Returns the code type id of the data block
+    pub fn code_type_id(&self) -> u8 {
+        match &self {
+            Self::U64 { code_type_id, .. } => *code_type_id,
+            Self::I64 { code_type_id, .. } => *code_type_id,
+            Self::F64 { code_type_id, .. } => *code_type_id,
+            Self::Str { code_type_id, .. } => *code_type_id,
+            Self::Bool { code_type_id, .. } => *code_type_id,
         }
     }
 
@@ -234,6 +332,26 @@ impl DataBlock {
         }
     }
 
+    pub fn set_code_type_id(&mut self, new_code_type_id: u8) {
+        match self {
+            DataBlock::U64 { code_type_id, .. } => {
+                *code_type_id = new_code_type_id;
+            }
+            DataBlock::I64 { code_type_id, .. } => {
+                *code_type_id = new_code_type_id;
+            }
+            DataBlock::Str { code_type_id, .. } => {
+                *code_type_id = new_code_type_id;
+            }
+            DataBlock::F64 { code_type_id, .. } => {
+                *code_type_id = new_code_type_id;
+            }
+            DataBlock::Bool { code_type_id, .. } => {
+                *code_type_id = new_code_type_id;
+            }
+        }
+    }
+
     /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
     /// sorted by timestamp, if many (timestamp, value) conflict with the same
     /// timestamp, use the last value.
@@ -293,23 +411,23 @@ impl DataBlock {
     /// **Panics** if min or max is out of range of the ts or val in this `DataBlock`.
     fn exclude_by_index(&mut self, min: usize, max: usize) {
         match self {
-            DataBlock::U64 { ts, val } => {
+            DataBlock::U64 { ts, val, .. } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
             }
-            DataBlock::I64 { ts, val } => {
+            DataBlock::I64 { ts, val, .. } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
             }
-            DataBlock::Str { ts, val } => {
+            DataBlock::Str { ts, val, .. } => {
                 exclude_fast(ts, min, max);
                 exclude_slow(val, min, max);
             }
-            DataBlock::F64 { ts, val } => {
+            DataBlock::F64 { ts, val, .. } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
             }
-            DataBlock::Bool { ts, val } => {
+            DataBlock::Bool { ts, val, .. } => {
                 exclude_fast(ts, min, max);
                 exclude_fast(val, min, max);
             }
@@ -424,7 +542,7 @@ impl DataBlock {
 impl Display for DataBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataBlock::U64 { ts, val } => {
+            DataBlock::U64 { ts, val, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -437,7 +555,7 @@ impl Display for DataBlock {
                     write!(f, "U64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::I64 { ts, val } => {
+            DataBlock::I64 { ts, val, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -450,7 +568,7 @@ impl Display for DataBlock {
                     write!(f, "I64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Str { ts, val } => {
+            DataBlock::Str { ts, val, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -463,7 +581,7 @@ impl Display for DataBlock {
                     write!(f, "Str {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::F64 { ts, val } => {
+            DataBlock::F64 { ts, val, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -476,7 +594,7 @@ impl Display for DataBlock {
                     write!(f, "F64 {{ len: {}, min_ts: NONE, max_ts: NONE }}", ts.len())
                 }
             }
-            DataBlock::Bool { ts, val } => {
+            DataBlock::Bool { ts, val, .. } => {
                 if !ts.is_empty() {
                     write!(
                         f,
@@ -550,15 +668,16 @@ pub mod test {
         #[rustfmt::skip]
         let res = DataBlock::merge_blocks(
             vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50] },
-                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] },
+                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50],code_type_id: 0 },
+                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15],code_type_id: 0 },
+
             ],
             0
         );
 
         #[rustfmt::skip]
         assert_eq!(res, vec![
-            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50] },
+            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50],code_type_id: 0 },
         ]);
     }
 
@@ -567,35 +686,40 @@ pub mod test {
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+            val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
-                val: vec![10, 11, 14, 15, 16, 17, 18, 19]
+                val: vec![10, 11, 14, 15, 16, 17, 18, 19],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+            val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![0, 1, 9],
-                val: vec![10, 11, 19]
+                val: vec![10, 11, 19],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
+            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
@@ -611,21 +735,24 @@ pub mod test {
                     vec![17],
                     vec![18],
                     vec![19]
-                ]
+                ],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]]
+            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
             blk,
             DataBlock::Str {
                 ts: vec![0, 1, 9],
-                val: vec![vec![10], vec![11], vec![19]]
+                val: vec![vec![10], vec![11], vec![19]],
+                code_type_id: 0
             }
         )
     }
@@ -634,66 +761,76 @@ pub mod test {
     fn test_data_block_exclude_2() {
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((-2, 0)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![1, 2, 3],
-                val: vec![11, 12, 13]
+                val: vec![11, 12, 13],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((3, 5)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![0, 1, 2],
-                val: vec![10, 11, 12]
+                val: vec![10, 11, 12],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+           code_type_id: 0
         };
         blk.exclude(&TimeRange::from((-3, -1)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3],
-                val: vec![10, 11, 12, 13]
+                val: vec![10, 11, 12, 13],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13]
+            ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
+            code_type_id: 0
         };
         blk.exclude(&TimeRange::from((5, 7)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3],
-                val: vec![10, 11, 12, 13]
+                val: vec![10, 11, 12, 13],
+                code_type_id: 0
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
-            ts: vec![0, 1, 2, 3, 7, 8, 9, 10], val: vec![10, 11, 12, 13, 17, 18, 19, 20]
+            ts: vec![0, 1, 2, 3, 7, 8, 9, 10], val: vec![10, 11, 12, 13, 17, 18, 19, 20],
+            code_type_id: 0
         };
         blk.exclude(&TimeRange::from((5, 6)));
         assert_eq!(
             blk,
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
-                val: vec![10, 11, 12, 13, 17, 18, 19, 20]
+                val: vec![10, 11, 12, 13, 17, 18, 19, 20],
+                code_type_id: 0
             }
         );
     }
