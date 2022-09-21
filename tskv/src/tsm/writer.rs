@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use models::utils::split_code_type_id;
 use models::{FieldId, Timestamp, ValueType};
 use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
@@ -12,6 +13,7 @@ use super::{
     block, index::Index, BlockEntry, BlockMetaIterator, IndexEntry, IndexMeta, BLOCK_META_SIZE,
     BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
+use crate::tsm::coder_instence::CodeType;
 use crate::{
     direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
@@ -358,8 +360,16 @@ fn write_block_to(
     let offset = writer.pos();
     let mut size = 0;
 
+    let (ts_code_type, val_code_type) = split_code_type_id(block.code_type_id());
     // TODO Make encoding result streamable
-    let (ts_buf, data_buf) = block.encode(0, block.len()).context(EncodeSnafu)?;
+    let (ts_buf, data_buf) = block
+        .encode(
+            0,
+            block.len(),
+            CodeType::try_from(ts_code_type).unwrap(),
+            CodeType::try_from(val_code_type).unwrap(),
+        )
+        .context(EncodeSnafu)?;
     // Write u32 hash for timestamps
     writer
         .write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
@@ -436,6 +446,7 @@ mod test {
     use models::{FieldId, ValueType};
 
     use super::new_tsm_writer;
+    use crate::tsm::coder_instence::CodeType;
     use crate::{
         direct_io::FileSync,
         file_manager::{self, get_file_manager, FileManager},
@@ -453,7 +464,7 @@ mod test {
         let mut data = vec![];
         let str = vec![vec![1_u8]];
         let tmp: Vec<&[u8]> = str.iter().map(|x| &x[..]).collect();
-        let _ = coders::string::encode(&tmp, &mut data);
+        let _ = coders::string::str_snappy_encode(&tmp, &mut data);
     }
 
     fn write_to_tsm(dir: impl AsRef<Path>, file_name: &str, data: &HashMap<FieldId, DataBlock>) {
@@ -498,8 +509,8 @@ mod test {
         let dir = Path::new(TEST_PATH);
         #[rustfmt::skip]
         let data: HashMap<FieldId, DataBlock> = HashMap::from([
-            (1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15] }),
-            (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103] }),
+            (1, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], code_type_id: 0 }),
+            (2, DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], code_type_id: 0 }),
         ]);
 
         write_to_tsm(&dir, "tsm_write_fast.tsm", &data);
@@ -532,8 +543,8 @@ mod test {
 
         #[rustfmt::skip]
         let data = vec![
-            (1, DataBlock::I64 { ts: ts_1, val: val_1 }),
-            (1, DataBlock::I64 { ts: ts_2, val: val_2 }),
+            (1, DataBlock::I64 { ts: ts_1, val: val_1, code_type_id: 0 }),
+            (1, DataBlock::I64 { ts: ts_2, val: val_2, code_type_id: 0 }),
         ];
         for (fid, blk) in data.iter() {
             writer.write_block(*fid, blk).unwrap();
@@ -543,7 +554,14 @@ mod test {
 
         check_tsm(
             dir.join("test_tsm_write_1.tsm"),
-            &HashMap::from([(1, DataBlock::I64 { ts, val })]),
+            &HashMap::from([(
+                1,
+                DataBlock::I64 {
+                    ts,
+                    val,
+                    code_type_id: 0,
+                },
+            )]),
         );
     }
 }

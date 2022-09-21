@@ -8,10 +8,13 @@ use std::{
     sync::Arc,
 };
 
-use models::{utils as model_utils, FieldId, RwLockRef, SeriesId, Timestamp, ValueType};
+use models::utils::split_code_type_id;
+use models::{
+    utils as model_utils, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp, ValueType,
+};
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
-use snafu::{NoneError, ResultExt};
+use snafu::{NoneError, OptionExt, ResultExt, Snafu};
 use tokio::{
     select,
     sync::{
@@ -23,6 +26,9 @@ use tokio::{
 use trace::{debug, error, info, warn};
 use utils;
 
+use crate::database::Database;
+use crate::index::IndexResult;
+use crate::tsm::coder_instence::CodeType;
 use crate::{
     compaction::FlushReq,
     context::GlobalContext,
@@ -33,7 +39,7 @@ use crate::{
     tseries_family::{LevelInfo, Version},
     tsm::{self, DataBlock, TsmWriter},
     version_set::VersionSet,
-    TseriesFamilyId,
+    Error, TseriesFamilyId,
 };
 
 struct FlushingBlock {
@@ -71,6 +77,7 @@ impl FlushTask {
         self,
         version: Arc<Version>,
         version_edits: &mut Vec<VersionEdit>,
+        db: Option<Arc<RwLock<Database>>>,
     ) -> Result<()> {
         info!(
             "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
@@ -98,7 +105,7 @@ impl FlushTask {
             return Ok(());
         }
 
-        let mut compact_metas = self.write_block_set(&mut compactor, 0)?;
+        let mut compact_metas = self.write_block_set(&mut compactor, 0, db)?;
         let mut max_level_ts = version.max_level_ts;
         let mut edit = VersionEdit::new();
         for cm in compact_metas.iter_mut() {
@@ -123,10 +130,26 @@ impl FlushTask {
         &self,
         compactor: &mut FlushCompactIterator,
         max_file_size: u64,
+        db: Option<Arc<RwLock<Database>>>,
     ) -> Result<Vec<CompactMeta>> {
         let mut tsm_writer: Option<TsmWriter> = None;
         let mut delta_writer: Option<TsmWriter> = None;
         while let Some(series_flushing_data) = compactor.next() {
+            let series_id = match compactor.last_sid {
+                None => return Err(Error::InvalidSeriesId),
+                Some(v) => v,
+            };
+
+            let schema = self.get_table_schema(series_id, db.clone())?;
+            let field_id_code_type_map = {
+                let mut res_map = HashMap::new();
+                for i in schema.iter() {
+                    let code_type_id = i.code_type();
+                    res_map.insert(i.field_id(), code_type_id);
+                }
+                res_map
+            };
+
             for (field_id, dlt_blks, tsm_blks) in series_flushing_data {
                 if !tsm_blks.is_empty() && tsm_writer.is_none() {
                     let writer = tsm::new_tsm_writer(
@@ -148,15 +171,20 @@ impl FlushTask {
                     info!("Flush: File {}(delta) been created.", writer.sequence());
                     delta_writer = Some(writer);
                 }
-                for data_block in tsm_blks {
+
+                for mut data_block in tsm_blks {
                     if let Some(writer) = tsm_writer.as_mut() {
+                        data_block
+                            .set_code_type_id(*field_id_code_type_map.get(&field_id).unwrap_or(&0));
                         writer
                             .write_block(field_id, &data_block)
                             .context(error::WriteTsmSnafu)?;
                     }
                 }
-                for data_block in dlt_blks {
+                for mut data_block in dlt_blks {
                     if let Some(writer) = delta_writer.as_mut() {
+                        data_block
+                            .set_code_type_id(*field_id_code_type_map.get(&field_id).unwrap_or(&0));
                         writer
                             .write_block(field_id, &data_block)
                             .context(error::WriteTsmSnafu)?;
@@ -209,6 +237,50 @@ impl FlushTask {
 
         Ok(compact_metas)
     }
+
+    fn get_table_schema(
+        &self,
+        series_id: SeriesId,
+        db: Option<Arc<RwLock<Database>>>,
+    ) -> Result<Vec<FieldInfo>> {
+        match db {
+            None => {
+                warn!("database not found, get empty schema",);
+                Ok(vec![])
+            }
+            Some(db) => {
+                let series_key = match db.read().get_series_key(series_id) {
+                    Ok(series_key) => {
+                        if let Some(series_key_unwrap) = series_key {
+                            series_key_unwrap
+                        } else {
+                            warn!(
+                                "table not found for series id : {}, get empty schema",
+                                series_id
+                            );
+                            return Ok(vec![]);
+                        }
+                    }
+                    Err(e) => return Err(Error::IndexErr { source: e }),
+                };
+
+                match db.read().get_table_schema(series_key.table()) {
+                    Ok(schema) => {
+                        if let Some(schema_unwrap) = schema {
+                            Ok(schema_unwrap)
+                        } else {
+                            warn!(
+                                "table schema not found for table name : {}, get empty schema",
+                                series_key.table()
+                            );
+                            return Ok(vec![]);
+                        }
+                    }
+                    Err(e) => Err(Error::IndexErr { source: e }),
+                }
+            }
+        }
+    }
 }
 
 pub async fn run_flush_memtable_job(
@@ -246,6 +318,7 @@ pub async fn run_flush_memtable_job(
             let tsf_rlock = tsf.read();
             let storage_opt = tsf_rlock.storage_opt();
             let database = tsf_rlock.database();
+            let db = version_set.read().get_db(&database);
             let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
             let path_delta = storage_opt.delta_dir(&database, *tsf_id);
             drop(tsf_rlock);
@@ -257,7 +330,7 @@ pub async fn run_flush_memtable_job(
                 path_tsm,
                 path_delta,
             )
-            .run(tsf.read().version(), &mut edits)
+            .run(tsf.read().version(), &mut edits, db)
             .await?;
 
             match compact_task_sender.send(*tsf_id) {

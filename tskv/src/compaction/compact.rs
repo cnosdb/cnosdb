@@ -7,10 +7,12 @@ use std::{
 };
 
 use evmap::new;
+use models::utils::split_code_type_id;
 use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
 
+use crate::tsm::coder_instence::CodeType;
 use crate::{
     compaction::CompactReq,
     context::GlobalContext,
@@ -91,6 +93,7 @@ impl CompactingBlock {
             CompactingBlock::DataBlock { priority, .. } => *priority,
             CompactingBlock::Raw { priority, .. } => *priority,
         });
+
         let mut res: Vec<DataBlock> = Vec::with_capacity(source.len());
         for cb in source.into_iter() {
             match cb {
@@ -491,7 +494,10 @@ pub fn run_compaction_job(
                 field_id: fid,
                 data_block: b,
                 ..
-            } => tsm_writer.write_block(fid, &b),
+            } => {
+                let code_type_id = b.code_type_id();
+                tsm_writer.write_block(fid, &b)
+            }
             CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
         };
         if let Err(e) = write_ret {
@@ -573,6 +579,7 @@ mod test {
     use models::{FieldId, Timestamp, ValueType};
     use utils::BloomFilter;
 
+    use crate::tsm::coder_instence::CodeType;
     use crate::{
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
@@ -707,26 +714,26 @@ mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
         ]);
 
         let dir = "/tmp/test/compaction";
@@ -746,26 +753,26 @@ mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
         ]);
 
         let dir = "/tmp/test/compaction/1";
@@ -785,26 +792,26 @@ mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5] }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3] }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], code_type_id: 0 }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6] }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8] }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8], code_type_id: 0 }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9] }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0 }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], code_type_id: 0}]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9] }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], code_type_id: 0 }]),
         ]);
 
         let dir = "/tmp/test/compaction/2";
@@ -843,6 +850,7 @@ mod test {
                 DataBlock::U64 {
                     ts: ts_vec,
                     val: val_vec,
+                    code_type_id: 0,
                 }
             }
             ValueType::Integer => {
@@ -857,6 +865,7 @@ mod test {
                 DataBlock::I64 {
                     ts: ts_vec,
                     val: val_vec,
+                    code_type_id: 0,
                 }
             }
             ValueType::String => {
@@ -872,6 +881,7 @@ mod test {
                 DataBlock::Str {
                     ts: ts_vec,
                     val: val_vec,
+                    code_type_id: 0,
                 }
             }
             ValueType::Float => {
@@ -886,6 +896,7 @@ mod test {
                 DataBlock::F64 {
                     ts: ts_vec,
                     val: val_vec,
+                    code_type_id: 0,
                 }
             }
             ValueType::Boolean => {
@@ -900,6 +911,7 @@ mod test {
                 DataBlock::Bool {
                     ts: ts_vec,
                     val: val_vec,
+                    code_type_id: 0,
                 }
             }
             ValueType::Unknown => {

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use models::SeriesId;
 use snafu::Snafu;
 
 use crate::{
@@ -92,4 +93,7 @@ pub enum Error {
 
     #[snafu(display("panics in thread: {}", reason))]
     ThreadJoin { reason: String },
+
+    #[snafu(display("failed get sid"))]
+    InvalidSeriesId,
 }

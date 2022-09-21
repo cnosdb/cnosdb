@@ -25,7 +25,12 @@ fn generate_serie_infos(database: String, table: String) -> Vec<SeriesInfo> {
         for t1 in tag_values[1].iter() {
             let mut fields = Vec::<FieldInfo>::new();
             for fk in field_keys {
-                fields.push(FieldInfo::new(0, fk.as_bytes().to_vec(), ValueType::Float));
+                fields.push(FieldInfo::new(
+                    0,
+                    fk.as_bytes().to_vec(),
+                    ValueType::Float,
+                    0,
+                ));
             }
             infos.push(SeriesInfo::new(
                 database.clone(),
@@ -124,8 +129,8 @@ async fn test_index_id_list() {
             Tag::new(b"host".to_vec(), b"h1".to_vec()),
         ],
         vec![
-            FieldInfo::new(0, b"cpu".to_vec(), ValueType::Float),
-            FieldInfo::new(0, b"mem".to_vec(), ValueType::Float),
+            FieldInfo::new(0, b"cpu".to_vec(), ValueType::Float, 0),
+            FieldInfo::new(0, b"mem".to_vec(), ValueType::Float, 0),
         ],
     );
 
@@ -136,7 +141,7 @@ async fn test_index_id_list() {
             Tag::new(b"loc".to_vec(), b"bj".to_vec()),
             Tag::new(b"host".to_vec(), b"h2".to_vec()),
         ],
-        vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Float)],
+        vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Float, 0)],
     );
 
     let mut info3 = SeriesInfo::new(
@@ -146,7 +151,7 @@ async fn test_index_id_list() {
             Tag::new(b"loc".to_vec(), b"bj".to_vec()),
             Tag::new(b"host".to_vec(), b"h3".to_vec()),
         ],
-        vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Float)],
+        vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Float, 0)],
     );
 
     let id1 = index.add_series_if_not_exists(&mut info1).unwrap();
@@ -196,8 +201,8 @@ async fn test_field_type() {
             Tag::new(b"host".to_vec(), b"h1".to_vec()),
         ],
         vec![
-            FieldInfo::new(0, b"cpu".to_vec(), ValueType::Float),
-            FieldInfo::new(0, b"mem".to_vec(), ValueType::Float),
+            FieldInfo::new(0, b"cpu".to_vec(), ValueType::Float, 0),
+            FieldInfo::new(0, b"mem".to_vec(), ValueType::Float, 0),
         ],
     );
 
@@ -208,7 +213,7 @@ async fn test_field_type() {
             Tag::new(b"loc".to_vec(), b"bj".to_vec()),
             Tag::new(b"host".to_vec(), b"h2".to_vec()),
         ],
-        vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Unsigned)],
+        vec![FieldInfo::new(0, b"mem".to_vec(), ValueType::Unsigned, 0)],
     );
     let id1 = index.add_series_if_not_exists(&mut info1).unwrap();
     let id2 = index.add_series_if_not_exists(&mut info2);
