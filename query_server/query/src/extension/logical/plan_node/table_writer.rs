@@ -43,8 +43,6 @@ impl TableWriterPlanNode {
 }
 
 impl Debug for TableWriterPlanNode {
-    /// For TopK, use explain format for the Debug format. Other types
-    /// of nodes may
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_for_explain(f)
     }
@@ -59,7 +57,6 @@ impl UserDefinedLogicalNode for TableWriterPlanNode {
         vec![&self.input]
     }
 
-    /// Schema for TopK is the same as the input
     fn schema(&self) -> &DFSchemaRef {
         self.input.schema()
     }
@@ -70,11 +67,7 @@ impl UserDefinedLogicalNode for TableWriterPlanNode {
 
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let out_exprs: Vec<String> = self.output_exprs.iter().map(|e| e.to_string()).collect();
-        write!(
-            f,
-            "TableWriter: {}",
-            out_exprs.join(",") // self.target_table_name(),
-        )?;
+        write!(f, "TableWriter: {}", out_exprs.join(","))?;
         for field in self.target_table.schema().fields() {
             write!(
                 f,

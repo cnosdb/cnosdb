@@ -452,7 +452,7 @@ mod tests {
     use std::ops::Deref;
 
     use spi::query::ast::{DropObject, ExtStatement};
-    use sqlparser::ast::{Statement, ObjectName, Ident, SetExpr};
+    use sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
 
     use super::*;
 
@@ -604,37 +604,56 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match statements[0] {
-            ExtStatement::SqlStatement(ref stmt) => {
-                match stmt.deref() {
-                    Statement::Insert {
-                        table_name: ref sql_object_name,
-                        columns: ref sql_column_names,
-                        source: _,
-                        ..
-                    } => {
-                        let expect_table_name = &ObjectName(vec![
-                            Ident { value: "public".to_string(), quote_style: None },
-                            Ident { value: "test".to_string(), quote_style: None },
-                        ]);
+            ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
+                Statement::Insert {
+                    table_name: ref sql_object_name,
+                    columns: ref sql_column_names,
+                    source: _,
+                    ..
+                } => {
+                    let expect_table_name = &ObjectName(vec![
+                        Ident {
+                            value: "public".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "test".to_string(),
+                            quote_style: None,
+                        },
+                    ]);
 
-                        let expect_column_names = &vec![
-                            Ident { value: "TIME".to_string(), quote_style: None },
-                            Ident { value: "ta".to_string(), quote_style: None },
-                            Ident { value: "tb".to_string(), quote_style: None },
-                            Ident { value: "fa".to_string(), quote_style: None },
-                            Ident { value: "fb".to_string(), quote_style: None },
-                        ];
+                    let expect_column_names = &vec![
+                        Ident {
+                            value: "TIME".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "ta".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "tb".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fa".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fb".to_string(),
+                            quote_style: None,
+                        },
+                    ];
 
-                        assert_eq!(sql_object_name, expect_table_name);
-                        assert_eq!(sql_column_names, expect_column_names);
-                    },
-                    _ => panic!("failed"),
+                    assert_eq!(sql_object_name, expect_table_name);
+                    assert_eq!(sql_column_names, expect_column_names);
                 }
-            }
+                _ => panic!("failed"),
+            },
             _ => panic!("failed"),
         }
     }
-    
+
     #[test]
     fn test_insert_select() {
         let sql = "insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
@@ -646,38 +665,57 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match statements[0] {
-            ExtStatement::SqlStatement(ref stmt) => {
-                match stmt.deref() {
-                    Statement::Insert {
-                        table_name: ref sql_object_name,
-                        columns: ref sql_column_names,
-                        source,
-                        ..
-                    } => {
-                        let expect_table_name = &ObjectName(vec![
-                            Ident { value: "public".to_string(), quote_style: None },
-                            Ident { value: "test_insert_subquery".to_string(), quote_style: None },
-                        ]);
+            ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
+                Statement::Insert {
+                    table_name: ref sql_object_name,
+                    columns: ref sql_column_names,
+                    source,
+                    ..
+                } => {
+                    let expect_table_name = &ObjectName(vec![
+                        Ident {
+                            value: "public".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "test_insert_subquery".to_string(),
+                            quote_style: None,
+                        },
+                    ]);
 
-                        let expect_column_names = &vec![
-                            Ident { value: "TIME".to_string(), quote_style: None },
-                            Ident { value: "ta".to_string(), quote_style: None },
-                            Ident { value: "tb".to_string(), quote_style: None },
-                            Ident { value: "fa".to_string(), quote_style: None },
-                            Ident { value: "fb".to_string(), quote_style: None },
-                        ];
+                    let expect_column_names = &vec![
+                        Ident {
+                            value: "TIME".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "ta".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "tb".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fa".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fb".to_string(),
+                            quote_style: None,
+                        },
+                    ];
 
-                        assert_eq!(sql_object_name, expect_table_name);
-                        assert_eq!(sql_column_names, expect_column_names);
+                    assert_eq!(sql_object_name, expect_table_name);
+                    assert_eq!(sql_column_names, expect_column_names);
 
-                        match source.deref().body.deref() {
-                            SetExpr::Select(_) => {},
-                            _ => panic!("failed"),
-                        }
-                    },
-                    _ => panic!("failed"),
+                    match source.deref().body.deref() {
+                        SetExpr::Select(_) => {}
+                        _ => panic!("failed"),
+                    }
                 }
-            }
+                _ => panic!("failed"),
+            },
             _ => panic!("failed"),
         }
     }

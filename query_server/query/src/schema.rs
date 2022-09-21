@@ -50,6 +50,10 @@ impl TableSchema {
     }
 }
 
+pub fn is_time_column(field: &Field) -> bool {
+    TIME_FIELD_NAME == field.name()
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TableFiled {
     pub id: u64,
@@ -94,7 +98,8 @@ impl From<ColumnType> for ArrowDataType {
     fn from(t: ColumnType) -> Self {
         match t {
             ColumnType::Tag => Self::Utf8,
-            ColumnType::Time => Self::Date64,
+            // TODO time col type
+            ColumnType::Time => Self::Int64,
             ColumnType::Field(ValueType::Float) => Self::Float64,
             ColumnType::Field(ValueType::Integer) => Self::Int64,
             ColumnType::Field(ValueType::Unsigned) => Self::UInt64,
