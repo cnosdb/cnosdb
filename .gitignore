@@ -16,3 +16,4 @@ Cargo.lock
 # tmpfile
 trace.log.*
 test_*.log
+*.out
