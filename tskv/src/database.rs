@@ -250,6 +250,10 @@ impl Database {
         self.index.write().get_table_schema(table_name)
     }
 
+    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<Vec<FieldInfo>>> {
+        self.index.write().get_table_schema_by_series_id(sid)
+    }
+
     pub fn get_tsfamily(&self, id: u32) -> Option<&Arc<RwLock<TseriesFamily>>> {
         self.ts_families.get(&id)
     }

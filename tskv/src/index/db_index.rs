@@ -11,9 +11,10 @@ use super::*;
 use bytes::BufMut;
 use chrono::format::format;
 use config::Config;
-use models::{utils, FieldId, FieldInfo, SeriesInfo, SeriesKey, Tag, ValueType};
+use models::{utils, FieldId, FieldInfo, SeriesId, SeriesInfo, SeriesKey, Tag, ValueType};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use trace::warn;
 
 use super::{errors, IndexEngine, IndexError, IndexResult};
 
@@ -303,6 +304,32 @@ impl DBIndex {
         }
 
         Ok(None)
+    }
+
+    pub fn get_table_schema_by_series_id(
+        &mut self,
+        series_id: SeriesId,
+    ) -> IndexResult<Option<Vec<FieldInfo>>> {
+        match self.get_series_key(series_id) {
+            Ok(Some(key)) => match self.get_table_schema(key.table()) {
+                Ok(None) => {
+                    warn!(
+                        "Schema for table ('{}') not found, get empty schema",
+                        key.table()
+                    );
+                    Ok(None)
+                }
+                other => other,
+            },
+            Ok(None) => {
+                warn!(
+                    "Table for series id('{}') not found, get empty schema",
+                    series_id
+                );
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn table_schema_id(&self, tab: &String) -> u32 {

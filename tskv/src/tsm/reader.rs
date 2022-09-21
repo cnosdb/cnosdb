@@ -656,7 +656,8 @@ pub fn decode_data_block(
 }
 
 #[cfg(test)]
-mod test {
+pub mod tsm_reader_tests {
+    use core::panic;
     use std::{
         collections::HashMap,
         path::{Path, PathBuf},
@@ -713,7 +714,7 @@ mod test {
         (tsm_file, tombstone_file)
     }
 
-    fn read_and_check(reader: &TsmReader, expected_data: HashMap<u64, Vec<DataBlock>>) {
+    pub(crate) fn read_and_check(reader: &TsmReader, expected_data: HashMap<u64, Vec<DataBlock>>) {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
@@ -726,8 +727,11 @@ mod test {
         }
         assert_eq!(expected_data.len(), read_data.len());
         for (field_id, data_blks) in read_data.iter() {
-            let expected_data_blks = expected_data.get(field_id).unwrap();
-            assert_eq!(data_blks, expected_data_blks);
+            let expected_data_blks = expected_data.get(field_id);
+            if expected_data_blks.is_none() {
+                panic!("Expected DataBlocks for field_id: '{}' is None", field_id);
+            }
+            assert_eq!(data_blks, expected_data_blks.unwrap());
         }
     }
 
@@ -756,7 +760,7 @@ mod test {
         read_and_check(&reader, expected_data);
     }
 
-    fn read_opt_and_check(
+    pub(crate) fn read_opt_and_check(
         reader: &TsmReader,
         field_id: FieldId,
         time_range: (Timestamp, Timestamp),
