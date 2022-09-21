@@ -6,30 +6,31 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
     },
 };
 
-use config::get_config;
 use lazy_static::lazy_static;
-use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
+
+use config::get_config;
+use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
 use crate::{
+    ColumnFileId,
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
     error::{Error, Result},
     file_manager,
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
+    LevelId,
     memcache::{DataType, MemCache},
-    summary::{CompactMeta, VersionEdit},
-    tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
-    ColumnFileId, LevelId, TseriesFamilyId,
+    summary::{CompactMeta, VersionEdit}, TseriesFamilyId, tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
 };
 use crate::{memcache::RowGroup, tsm::BlockMetaIterator};
 
@@ -789,31 +790,33 @@ impl TseriesFamily {
 
 #[cfg(test)]
 mod test {
-    use std::collections::hash_map;
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
+    use std::collections::hash_map;
+    use std::mem::{size_of, size_of_val};
 
-    use config::get_config;
-    use models::{Timestamp, ValueType};
     use parking_lot::{Mutex, RwLock};
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
+
+    use config::get_config;
+    use models::{Timestamp, ValueType};
     use trace::info;
 
-    use crate::file_utils::{self, make_tsm_file_name};
-    use crate::memcache::{FieldVal, RowData, RowGroup};
-    use crate::summary::SummaryTask;
     use crate::{
-        compaction::{run_flush_memtable_job, FlushReq},
+        compaction::{FlushReq, run_flush_memtable_job},
         context::GlobalContext,
         file_manager,
         kv_option::Options,
         memcache::MemCache,
         summary::{CompactMeta, VersionEdit},
         tseries_family::{TimeRange, TseriesFamily, Version},
+        TseriesFamilyId,
         tsm::TsmTombstone,
         version_set::VersionSet,
-        TseriesFamilyId,
     };
+    use crate::file_utils::{self, make_tsm_file_name};
+    use crate::memcache::{FieldVal, RowData, RowGroup};
+    use crate::summary::SummaryTask;
 
     use super::{ColumnFile, LevelInfo};
 
@@ -1037,6 +1040,7 @@ mod test {
                     Some(FieldVal::Integer(13)),
                 ],
             }],
+            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8
         };
         let mut points = HashMap::new();
         points.insert((0, 0), row_group);
@@ -1112,6 +1116,7 @@ mod test {
                     Some(FieldVal::Integer(13)),
                 ],
             }],
+            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8
         };
         mem.write_group(1, 0, row_group);
 

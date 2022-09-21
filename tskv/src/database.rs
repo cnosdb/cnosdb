@@ -1,33 +1,29 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    mem::{size_of, size_of_val},
     path::{self, Path},
-    sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
+    sync::{Arc, atomic::AtomicU32, atomic::Ordering, Mutex},
 };
+
+use parking_lot::RwLock;
+use snafu::ResultExt;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
+
+use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
+use models::{SchemaId, Timestamp};
+use models::utils::{split_id, unite_id};
+use protos::models::{Point, Points};
+use trace::{debug, error, info};
 
 use crate::{
     error::{self, Result},
-    memcache::{RowData, RowGroup},
-    version_set::VersionSet,
-    TimeRange, TseriesFamilyId,
-};
-use models::utils::{split_id, unite_id};
-use models::Timestamp;
-
-use parking_lot::RwLock;
-use protos::models::{Point, Points};
-use snafu::ResultExt;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::{debug, error, info};
-
-use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
-
-use crate::tseries_family::LevelInfo;
-use crate::{
     index::db_index,
     kv_option::Options,
-    memcache::MemCache,
-    summary::{CompactMeta, SummaryTask, VersionEdit},
-    tseries_family::{TseriesFamily, Version},
+    memcache::{FieldVal, MemCache, RowData, RowGroup}, summary::{CompactMeta, SummaryTask, VersionEdit},
+    TimeRange,
+    tseries_family::{LevelInfo, TseriesFamily, Version},
+    TseriesFamilyId,
+    version_set::VersionSet,
 };
 
 #[derive(Debug)]
@@ -147,33 +143,49 @@ impl Database {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for point in points {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+            let (mut info, row) = {
+                (SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?,
+                 RowData::from(point))
+            };
 
             let sid = self.build_index_and_check_type(&mut info)?;
 
-            let row = RowData::from(point);
-            let mut all_fileds = BTreeMap::new();
-            let fields = info.field_infos();
-            for (i, f) in row.fields.into_iter().enumerate() {
-                all_fileds.insert(fields[i].field_id(), f);
-            }
+            let all_fileds = {
+                let mut all_fileds = BTreeMap::new();
+                let fields = info.field_infos();
+                for (i, f) in row.fields.into_iter().enumerate() {
+                    all_fileds.insert(fields[i].field_id(), f);
+                }
 
-            let fields = info.field_fill();
-            for i in 0..fields.len() {
-                all_fileds.insert(fields[i].field_id(), None);
-            }
+                let fields = info.field_fill();
+                for i in 0..fields.len() {
+                    all_fileds.insert(fields[i].field_id(), None);
+                }
+                all_fileds
+            };
 
             let ts = row.ts;
             let schema_id = info.get_schema_id();
-            let mut schema = Vec::with_capacity(all_fileds.len());
-            let mut all_row = Vec::with_capacity(all_fileds.len());
-            for (k, v) in all_fileds {
-                let (fid, _) = split_id(k);
+            let (schema, all_row, schema_size, row_size) = {
+                let mut schema = Vec::with_capacity(all_fileds.len());
+                let mut all_row: Vec<Option<FieldVal>> = Vec::with_capacity(all_fileds.len());
+                let schema_size = schema.capacity() * size_of::<u32>();
+                let mut row_size = all_row.capacity() * size_of::<Option<FieldVal>>();
 
-                all_row.push(v);
-                schema.push(fid);
-            }
+                for (k, field_val) in all_fileds {
+                    let (fid, _) = split_id(k);
+                    schema.push(fid);
+
+                    row_size += size_of_val(&field_val);
+                    if let Some(val) = &field_val {
+                        row_size += val.heap_size();
+                    }
+
+                    all_row.push(field_val);
+                }
+                (schema, all_row, schema_size, row_size)
+            };
+
 
             let (_, sid) = split_id(sid);
             let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
@@ -184,12 +196,14 @@ impl Database {
                     min_ts: i64::MAX,
                     max_ts: i64::MIN,
                 },
+                size: size_of::<RowGroup>() + schema_size,
             });
 
             entry.range.merge(&TimeRange {
                 min_ts: ts,
                 max_ts: ts,
             });
+            entry.size += row_size + size_of::<u64>();
             entry.rows.push(RowData {
                 ts,
                 fields: all_row,
