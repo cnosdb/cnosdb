@@ -9,11 +9,11 @@ use datafusion::{
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan, PhysicalExpr},
 };
-use spi::data_source::SupportWrite;
 use tskv::engine::EngineRef;
 
 use crate::{
-    extension::physical::plan_node::tskv_writer::TskvWriterExec, predicate::Predicate,
+    data_source::tskv_sink::TskvRecordBatchSinkPrivider,
+    extension::physical::plan_node::table_writer::TableWriterExec, predicate::Predicate,
     schema::TableSchema, tskv_exec::TskvExec,
 };
 
@@ -41,6 +41,25 @@ impl ClusterTable {
 
     pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
         ClusterTable { engine, schema }
+    }
+
+    pub async fn write(
+        &self,
+        _state: &SessionState,
+        input: Arc<dyn ExecutionPlan>,
+        output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkPrivider::new(
+            self.engine.clone(),
+            self.schema.clone(),
+        ));
+
+        Ok(Arc::new(TableWriterExec::new(
+            input,
+            self.schema.clone(),
+            output_physical_exprs,
+            record_batch_sink_privider,
+        )))
     }
 }
 
@@ -78,23 +97,5 @@ impl TableProvider for ClusterTable {
     }
     fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)
-    }
-}
-
-#[async_trait]
-impl SupportWrite for ClusterTable {
-    async fn write(
-        &self,
-        _state: &SessionState,
-        input: Arc<dyn ExecutionPlan>,
-        output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
-        // TODO
-        Ok(Arc::new(TskvWriterExec::new(
-            input,
-            self.schema.clone(),
-            output_physical_exprs,
-            self.engine.clone(),
-        )))
     }
 }

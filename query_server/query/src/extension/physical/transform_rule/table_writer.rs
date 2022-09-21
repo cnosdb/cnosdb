@@ -8,7 +8,6 @@ use datafusion::{
     physical_expr::create_physical_expr,
     physical_plan::{displayable, planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
 };
-use spi::data_source::SupportWrite;
 use trace::debug;
 use trace::trace;
 

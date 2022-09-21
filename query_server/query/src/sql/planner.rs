@@ -22,6 +22,7 @@ use sqlparser::ast::{Ident, ObjectName, Query, Statement};
 
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
+use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 
@@ -64,11 +65,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 Ok(Plan::Query(QueryPlan { df_plan }))
             }
             Statement::Insert {
-                table_name,
-                columns,
+                table_name: ref sql_object_name,
+                columns: ref sql_column_names,
                 source,
                 ..
-            } => self.insert_to_plan(table_name, columns, source),
+            } => self.insert_to_plan(sql_object_name, sql_column_names, source),
             _ => {
                 unimplemented!()
             }
@@ -92,6 +93,12 @@ impl<S: ContextProvider> SqlPlaner<S> {
             .zip(source_plan.schema().fields())
             .collect();
 
+        debug!(
+            "Insert col name with source field tuples: {:?}",
+            insert_col_name_with_source_field_tuples
+        );
+        debug!("Target table: {:?}", target_table.schema());
+
         let assignments: Vec<Expr> = target_table
             .schema()
             .fields()
@@ -109,8 +116,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
                         // save if type matches col(source_field_name)
                         col(source_field.name())
                     } else {
-                        // Add cast(null as target_type) if it doesn't exist
-                        cast(lit(ScalarValue::Null), target_column_data_type.clone())
+                        // Add cast(source_col as target_type) if it doesn't exist
+                        cast(col(source_field.name()), target_column_data_type.clone())
                     }
                 } else {
                     // The specified column in the target table is missing from the insert
@@ -131,14 +138,20 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn insert_to_plan(
         &self,
-        table_name: ObjectName,
-        columns: Vec<Ident>,
+        sql_object_name: &ObjectName,
+        sql_column_names: &[Ident],
         source: Box<Query>,
     ) -> Result<Plan> {
         // Transform subqueries
         let source_plan = SqlToRel::new(&self.schema_provider)
             .query_to_plan(*source, &mut HashMap::new())
             .context(logical_planner::ExternalSnafu)?;
+
+        let table_name = normalize_sql_object_name(sql_object_name);
+        let columns = sql_column_names
+            .iter()
+            .map(normalize_ident)
+            .collect::<Vec<String>>();
 
         // Get the metadata of the target table
         let target_table = self.get_table_metadata(table_name.to_string())?;
@@ -159,7 +172,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
         // construct table writer logical node
         let node = Arc::new(TableWriterPlanNode::new(
-            table_name.to_string(),
+            table_name,
             target_table,
             Arc::new(final_source_logical_plan),
             vec![affected_row_expr],
@@ -227,7 +240,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn extract_column_names(
         &self,
-        columns: &[Ident],
+        columns: &[String],
         target_table_source_ref: Arc<dyn TableSource>,
     ) -> Vec<String> {
         if columns.is_empty() {
@@ -238,7 +251,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 .map(|e| e.name().clone())
                 .collect()
         } else {
-            columns.iter().map(|e| e.to_string()).collect()
+            columns.to_vec()
         }
     }
 
@@ -293,6 +306,24 @@ fn semantic_check(
     }
 
     Ok(())
+}
+
+/// Normalize a SQL object name
+fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+    sql_object_name
+        .0
+        .iter()
+        .map(normalize_ident)
+        .collect::<Vec<String>>()
+        .join(".")
+}
+
+// Normalize an identifier to a lowercase string unless the identifier is quoted.
+pub fn normalize_ident(id: &Ident) -> String {
+    match id.quote_style {
+        Some(_) => id.value.clone(),
+        None => id.value.to_ascii_lowercase(),
+    }
 }
 
 impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
@@ -412,16 +443,15 @@ mod tests {
             .unwrap();
 
         match plan {
-            Plan::Query(QueryPlan{ df_plan: LogicalPlan::Extension(Extension { node }) }) => {
-                match node.as_any().downcast_ref::<TableWriterPlanNode>() {
-                    Some(TableWriterPlanNode {
-                        target_table_name,
-                        ..
-                    }) => {
-                        assert_eq!(target_table_name.deref(), "test_tb");
-                    },
-                    _ => panic!(),
+            Plan::Query(QueryPlan {
+                df_plan: LogicalPlan::Extension(Extension { node }),
+            }) => match node.as_any().downcast_ref::<TableWriterPlanNode>() {
+                Some(TableWriterPlanNode {
+                    target_table_name, ..
+                }) => {
+                    assert_eq!(target_table_name.deref(), "test_tb");
                 }
+                _ => panic!(),
             },
             _ => panic!(),
         }

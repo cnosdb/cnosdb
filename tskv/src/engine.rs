@@ -4,13 +4,15 @@ use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
 use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
-use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
+use protos::{
+    kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
+    models as fb_models,
+};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use trace::debug;
 use tracing::log::info;
-
 pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
@@ -60,7 +62,12 @@ pub struct MockEngine {}
 #[async_trait]
 impl Engine for MockEngine {
     async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
-        debug!("write point");
+        debug!("writing point");
+        let points = Arc::new(write_batch.points);
+        let fb_points = flatbuffers::root::<fb_models::Points>(&points).unwrap();
+
+        debug!("writed point: {:?}", fb_points);
+
         Ok(WritePointsRpcResponse {
             version: write_batch.version,
             points: vec![],
