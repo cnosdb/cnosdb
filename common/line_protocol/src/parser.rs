@@ -314,7 +314,7 @@ fn parse_field_value(buf: &str) -> Result<FieldValue> {
 }
 
 fn parse_numeric_field(buf: &str, positive: bool) -> Result<FieldValue> {
-    if buf.len() == 0 {
+    if buf.is_empty() {
         return Err(Error::Parse {
             pos: 0,
             content: buf.to_string(),
@@ -406,12 +406,10 @@ fn parse_boolean_field(buf: &str, boolean: bool) -> Result<FieldValue> {
 fn parse_string_field(buf: &str) -> Result<FieldValue> {
     match &buf[buf.len() - 1..] {
         "\"" => return Ok(FieldValue::Str(buf[1..buf.len() - 1].as_bytes().to_vec())),
-        _ => {
-            return Err(Error::Parse {
-                pos: 0,
-                content: buf.to_string(),
-            });
-        }
+        _ => Err(Error::Parse {
+            pos: 0,
+            content: buf.to_string(),
+        }),
     }
 }
 

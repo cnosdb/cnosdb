@@ -98,8 +98,6 @@ impl From<&ColumnFile> for CompactMeta {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct VersionEdit {
-    pub level: u32,
-
     pub has_seq_no: bool,
     pub seq_no: u64,
     pub has_file_id: bool,
@@ -123,7 +121,6 @@ impl Default for VersionEdit {
 impl VersionEdit {
     pub fn new() -> Self {
         Self {
-            level: 0,
             seq_no: 0,
             file_id: 0,
             add_files: vec![],
@@ -146,7 +143,6 @@ impl VersionEdit {
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
-        self.level = compact_meta.level;
         self.has_seq_no = true;
         self.seq_no = compact_meta.high_seq;
         self.has_file_id = true;
@@ -186,8 +182,8 @@ impl VersionEdit {
 
 impl Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "level: {}, seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
-               self.level, self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
+        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
+               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
     }
 }
 

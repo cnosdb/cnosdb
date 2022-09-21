@@ -190,7 +190,7 @@ impl SeriesData {
 
         entry.sort();
 
-        return Some(Arc::new(RwLock::new(entry)));
+        Some(Arc::new(RwLock::new(entry)))
     }
 
     pub fn flat_groups(&self) -> Vec<(u32, &Vec<u32>, &Vec<RowData>)> {
@@ -289,7 +289,7 @@ impl MemCache {
             }
         }
 
-        return true;
+        true
     }
 
     pub fn delete_data(&self, field_ids: &[FieldId], range: &TimeRange) {
@@ -303,8 +303,15 @@ impl MemCache {
         }
     }
 
-    pub fn iter_series_data<'a>(&'a self) -> SeriesDataIterator<'a> {
-        SeriesDataIterator::new(self)
+    pub fn read_series_data(&self) -> Vec<(SeriesId, Arc<RwLock<SeriesData>>)> {
+        let mut ret = Vec::new();
+        self.partions.iter().for_each(|p| {
+            let p_rlock = p.read();
+            for (k, v) in p_rlock.iter() {
+                ret.push((*k, v.clone()));
+            }
+        });
+        ret
     }
 
     pub fn is_full(&self) -> bool {
@@ -329,72 +336,6 @@ impl MemCache {
 
     pub fn cache_size(&self) -> u64 {
         self.cache_size.load(Ordering::Relaxed)
-    }
-}
-
-/// Iterates over partions in a `MemCache`, and partion's inner `SeriesId`->`SeriesIdData` map,
-/// by `SeriesId`.
-pub struct SeriesDataIterator<'a> {
-    /// Sorted `SeriesId`s, and a map for `SereisId` to `SeriesIdData`.
-    partions: Vec<(
-        Vec<SeriesId>,
-        RwLockReadGuard<'a, HashMap<u64, RwLockRef<SeriesData>>>,
-    )>,
-
-    /// Partion index in `MemCache`.
-    partion_idx: usize,
-    /// `SeriesIdData` index in a partion.
-    series_data_idx: usize,
-}
-
-impl<'a> SeriesDataIterator<'a> {
-    pub fn new(cache: &'a MemCache) -> Self {
-        let mut partions = vec![];
-        for part in cache.partions.iter() {
-            let part_rlock = part.read();
-            let mut series_ids: Vec<u64> = part_rlock.keys().cloned().collect();
-            series_ids.sort();
-            partions.push((series_ids, part_rlock));
-        }
-        Self {
-            partions,
-            partion_idx: 0,
-            series_data_idx: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for SeriesDataIterator<'a> {
-    type Item = (SeriesId, RwLockRef<SeriesData>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.partion_idx >= self.partions.len() {
-                return None;
-            }
-            let (sids, sid_series_data) = self
-                .partions
-                .get(self.partion_idx)
-                .expect("self.partion_idx < self.partions.len()");
-            if sids.is_empty() {
-                self.series_data_idx = 0;
-                self.partion_idx += 1;
-                continue;
-            }
-            let ret = sids.get(self.series_data_idx).and_then(|sid| {
-                sid_series_data
-                    .get(sid)
-                    .and_then(|series_data| Some((*sid, series_data.clone())))
-            });
-
-            self.series_data_idx += 1;
-            if self.series_data_idx >= sids.len() {
-                self.series_data_idx = 0;
-                self.partion_idx += 1;
-            }
-
-            return ret;
-        }
     }
 }
 
@@ -488,7 +429,7 @@ pub(crate) mod test {
 
     use crate::{tsm::DataBlock, TimeRange};
 
-    use super::{DataType, FieldVal, MemCache, RowData, RowGroup, SeriesDataIterator};
+    use super::{DataType, FieldVal, MemCache, RowData, RowGroup};
 
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,
