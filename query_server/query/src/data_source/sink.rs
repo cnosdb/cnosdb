@@ -8,6 +8,6 @@ pub trait RecordBatchSink: Send + Sync {
     async fn append(&self, record_batch: RecordBatch) -> Result<()>;
 }
 
-pub trait RecordBatchSinkPrivider: Send + Sync {
+pub trait RecordBatchSinkProvider: Send + Sync {
     fn create_batch_sink(&self, partition: usize) -> Box<dyn RecordBatchSink>;
 }

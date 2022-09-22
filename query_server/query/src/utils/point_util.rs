@@ -48,7 +48,7 @@ macro_rules! arrow_array_to_specific_offset_array {
 }
 
 /// convert arrow::array:Array to Vec<Option<WIPOfset>>
-/// 
+///
 /// only support Timestamp/Float64/Int64/UInt64/Utf8/Boolean
 macro_rules! arrow_array_to_offset_array {
     ($fbb:ident, $col_array:ident) => {{
@@ -160,7 +160,6 @@ fn construct_row_based_points(
     let mut point_offsets = Vec::with_capacity(num_rows);
     // row-based
     for row_idx in 0..num_rows {
-
         let time = unsafe { time_col_array.get_unchecked(row_idx) };
 
         // Extract tags and fields
