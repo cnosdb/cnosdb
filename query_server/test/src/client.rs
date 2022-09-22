@@ -1,20 +1,15 @@
-use crate::query::Query;
-use lazy_static::lazy_static;
-use reqwest::Method;
+use reqwest::{Method, Request};
 use reqwest::Url;
+
+use crate::query::Query;
 
 pub struct Client {
     url: Url,
     client: reqwest::Client,
 }
 
-lazy_static! {
-    pub static ref CLIENT: Client = Client::new("http://127.0.0.1:31007");
-}
-
 impl Client {
-    pub fn new(url: &str) -> Client {
-        let url = Url::parse(url).unwrap();
+    pub fn from_url(url: Url) -> Client {
         Client {
             url,
             client: reqwest::Client::new(),
@@ -39,28 +34,40 @@ impl Client {
         url.set_query(Some(http_query.as_str()));
         url
     }
-    /// execute one sql at http://domain/query
-    pub async fn execute_query(&self, query: &Query, buffer: &mut String) {
-        buffer.push_str(format!("-- EXECUTE SQL: {} --\n", query.as_str()).as_str());
 
+    fn build_request(&self, query: &Query) -> std::result::Result<Request, reqwest::Error> {
         let url = self.construct_query_url(query);
 
         let mut body = String::new();
         body.push_str(query.as_str());
 
-        let request = self
+        self
             .client
             .request(Method::POST, url)
             .body(body)
             .build()
-            .unwrap();
+    }
+
+    /// execute one sql at http://domain/query
+    pub async fn execute_query(&self, query: &Query, buffer: &mut String) {
+        buffer.push_str(format!("-- EXECUTE SQL: {} --\n", query.as_str()).as_str());
+
+        let request_build = self.build_request(query);
+        if request_build.is_err() {
+            buffer.push_str("-- ERROR: request build fail --\n\n");
+            return;
+        }
+        let request = request_build.unwrap();
 
         if let Ok(resp) = self.client.execute(request).await {
-            let text = resp.text().await.unwrap();
-            buffer.push_str(text.as_str());
-            buffer.push_str("\n\n");
+            if let Ok(text) = resp.text().await {
+                buffer.push_str(text.as_str());
+                buffer.push_str("\n\n");
+            } else {
+                buffer.push_str("-- ERROR: --\n\n");
+            }
         } else {
-            buffer.push_str(format!("-- ERROR: --\n\n").as_str());
+            buffer.push_str("-- ERROR: --\n\n");
         }
     }
 
@@ -83,8 +90,11 @@ impl Client {
 
     /// ping db succeed return true
     pub async fn ping(&self) -> bool {
-        let url = self.url.join("ping").unwrap();
-        println!("{}", &url);
+        let url = self.url.join("ping");
+        if url.is_err() {
+            return false;
+        }
+        let url = url.unwrap();
         if let Ok(req) = reqwest::get(url).await {
             req.status().is_success()
         } else {
@@ -95,22 +105,20 @@ impl Client {
 
 #[tokio::test]
 async fn test_ping() {
-    let client = Client::new("http://127.0.0.1:31007");
-
-    if client.ping().await {
+    use crate::CLIENT;
+    if CLIENT.ping().await {
         println!("sucess");
     }
 }
 
 #[tokio::test]
 async fn test_query() {
-    let client = Client::new("http://127.0.0.1:31007");
-
+    use crate::CLIENT;
     let sqls = r##"
         Select 1;
     "##;
-    let mut queries = Vec::new();
-    Query::parse_queries(sqls, &mut queries);
+    let queries = Query::parse_queries(sqls).unwrap();
+    let res = CLIENT.execute_queries(&queries).await;
 
-    // client.execute_query(&queries[0], io::stdout()).await;
+    println!("{:#?}", res);
 }

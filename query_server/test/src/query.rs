@@ -1,5 +1,7 @@
-use lazy_regex::{lazy_regex, Lazy, Regex};
 use std::string::ToString;
+
+use lazy_regex::{Lazy, lazy_regex, Regex};
+use crate::error::Result;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
@@ -49,26 +51,33 @@ impl Instruction {
 
         // assert!(DATABASE.is_match(line));
         if let Some(captures) = DATABASE.captures(line) {
-            old.db_name = captures.get(1).unwrap().as_str().to_string();
+            if let Some(matches) = captures.get(1) {
+                old.db_name = matches.as_str().to_string();
+            }
             return;
         }
 
         if let Some(captures) = PRETTY.captures(line) {
-            if captures.get(1).unwrap().as_str() == "true" {
-                old.pretty = true;
-            } else {
-                old.pretty = false;
+            if let Some(matches) = captures.get(1) {
+                if matches.as_str() == "true" {
+                    old.pretty = true;
+                } else {
+                    old.pretty = false
+                }
+
+                return;
             }
-            return;
         }
 
         if let Some(captures) = SORT.captures(line) {
-            if captures.get(1).unwrap().as_str() == "true" {
-                old.sort = true;
-            } else {
-                old.sort = false;
+            if let Some(matches) = captures.get(1) {
+                if matches.as_str() == "true" {
+                    old.sort = true;
+                } else {
+                    old.sort = false
+                }
+                return;
             }
-            return;
         }
     }
 }
@@ -103,7 +112,8 @@ impl Query {
         &self.instruction
     }
 
-    pub fn parse_queries(lines: &str, queries: &mut Vec<Query>) {
+    pub fn parse_queries(lines: &str) -> Result<Vec<Query>> {
+        let mut queries = Vec::new();
         let mut query_build = QueryBuild::new();
         for line in lines.lines().into_iter() {
             let line = line.trim();
@@ -125,6 +135,7 @@ impl Query {
         if !query_build.finished() {
             queries.push(query_build.finish());
         }
+        Ok(queries)
     }
 }
 
@@ -186,7 +197,7 @@ fn test_query_build() {
         .push_str("Select * ")
         .push_str("From table\n")
         .finish();
-    // println!("{}", query.get_query());
+    println!("{}", query.as_str());
 }
 
 #[test]
@@ -203,7 +214,6 @@ fn test_queries_parse() {
     From people;
 
     "##;
-    let mut queries = Vec::new();
-    Query::parse_queries(sqls, &mut queries);
+    let queries = Query::parse_queries(sqls);
     println!("{:#?}", &queries);
 }
