@@ -1,64 +1,61 @@
-use crate::client::CLIENT;
-use crate::query::*;
-use prettydiff::diff_lines;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::time::Instant;
+
+use prettydiff::diff_lines;
 use tokio::fs;
 use walkdir::WalkDir;
 
-/// one test case
+use crate::CLIENT;
+use crate::query::*;
+use crate::error::{Error, Result};
+
 #[derive(Clone, Debug)]
 pub struct Case {
-    case_name: String,
-    sql_file: PathBuf,
-    result_file: PathBuf,
-    out_file: PathBuf,
-    queries: Vec<Query>,
-}
-
-pub fn search_cases(path: &PathBuf) -> Vec<Case> {
-    let mut sqls: Vec<PathBuf> = Vec::new();
-    let mut results: Vec<PathBuf> = Vec::new();
-
-    for entry in WalkDir::new(path) {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            continue;
-        }
-
-        if path.extension().unwrap().eq("sql") {
-            sqls.push(PathBuf::from(&path));
-            continue;
-        }
-
-        if path.extension().unwrap().eq("result") {
-            results.push(PathBuf::from(&path));
-            continue;
-        }
-    }
-    sqls.sort();
-    results.sort();
-    let mut res = Vec::new();
-
-    for i in 0..sqls.len() {
-        assert_eq!(
-            sqls[i].parent(),
-            results[i].parent(),
-            "sql must .sql and .result must one-to-one correspondence"
-        );
-        assert_eq!(
-            sqls[i].file_stem(),
-            results[i].file_stem(),
-            "sql must .sql and .result must one-to-one correspondence"
-        );
-
-        res.push(Case::new(sqls[i].clone(), results[i].clone()));
-    }
-    res
+    name: String,
+    path: PathBuf,
 }
 
 impl Case {
+    pub fn new(sql_path: PathBuf) -> Result<Case> {
+        let name = sql_path
+            .file_stem().ok_or(Error::CaseNew)?
+            .to_str().ok_or(Error::CaseNew)?
+            .to_string();
+
+        let path = sql_path.parent().ok_or(Error::CaseNew)?.to_path_buf();
+        Ok (Case{ name, path })
+    }
+
+    pub fn case_name(&self) -> &str {
+        &self.name
+    }
+
+    fn sql_file(&self) -> PathBuf {
+        let mut res = self.path.to_owned();
+        res.push(&self.name);
+        res.set_extension("sql");
+        res
+    }
+
+    fn out_file(&self) -> PathBuf {
+        let mut res = self.path.to_owned();
+        res.push(&self.name);
+        res.set_extension("out");
+        res
+    }
+
+    fn res_file(&self) -> PathBuf {
+        let mut res = self.path.to_owned();
+        res.push(&self.name);
+        res.set_extension("result");
+        res
+    }
+
+    pub async fn get_queries(&self) -> Result<Vec<Query>> {
+        let sqls = fs::read_to_string(self.sql_file()).await?;
+        Query::parse_queries(&sqls)
+    }
     /// check out and expected result
     pub async fn check(&self, result: &str, out: &str) -> bool {
         let diff = diff_lines(&result, &out)
@@ -72,75 +69,89 @@ impl Case {
 
         if is_diff {
             diff.prettytable();
-            fs::write(&self.out_file, &out).await.unwrap();
+            fs::write(self.out_file(), &out).await.unwrap();
         }
         !is_diff
     }
 
     /// run and return is succeed
-    pub async fn run(&mut self) -> bool {
-        self.load_queries().await;
-        if self.queries.is_empty() {
-            return true;
+    pub async fn run(&self) -> Result<()> {
+        let queries = self.get_queries().await?;
+        if queries.is_empty() {
+            return Ok(());
         }
-        println!(
-            "Case: {} in {} begin",
-            self.case_name,
-            self.sql_file.parent().unwrap().to_str().unwrap()
-        );
+
+        println!("\t{} begin.", &self);
         let before = Instant::now();
 
-        let result = fs::read_to_string(&self.result_file).await.unwrap();
-        let out = CLIENT.execute_queries(&self.queries).await;
+        let result = fs::read_to_string(self.res_file()).await?;
+        let out = CLIENT.execute_queries(&queries).await;
         let succeed = self.check(&result, &out).await;
 
         let after = Instant::now();
 
+        let millis = after.duration_since(before).as_millis();
+
         if succeed {
-            println!(
-                "Case: {} at {} succeed! in {}",
-                self.case_name,
-                self.sql_file.parent().unwrap().to_str().unwrap(),
-                after.duration_since(before).as_millis()
-            );
+            println!("\t{} succeed! in {} ms", self, millis);
+            Ok(())
         } else {
-            println!(
-                "Case: {} at {} FAIL! in {} ms",
-                self.case_name,
-                self.sql_file.parent().unwrap().to_str().unwrap(),
-                after.duration_since(before).as_millis()
-            );
+            println!("\t{} FAIL! in {} ms", self, millis);
+            Err(Error::CaseFail)
         }
-
-        succeed
-    }
-
-    pub fn case_name(&self) -> &str {
-        &self.case_name
-    }
-
-    pub fn new(sql_file: PathBuf, result_file: PathBuf) -> Case {
-        let name = sql_file.file_stem().unwrap().to_str().unwrap().to_string();
-        let mut out_file = PathBuf::from(sql_file.parent().unwrap());
-        out_file.push(sql_file.file_stem().unwrap());
-        out_file.set_extension("out");
-
-        Case {
-            case_name: name,
-            sql_file,
-            result_file,
-            out_file,
-            queries: Vec::new(),
-        }
-    }
-
-    pub async fn load_queries(&mut self) {
-        let input = fs::read_to_string(&self.sql_file).await.unwrap();
-        Query::parse_queries(&input, &mut self.queries);
     }
 }
 
-#[test]
-fn test_parse_queries() {
-    Case::new(PathBuf::from("a"), PathBuf::from("b"));
+impl Display for Case {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Case: {} at {}",
+            &self.name,
+            &self.path.as_os_str().to_str().unwrap()
+        )
+    }
+}
+
+/// search all cases
+pub fn search_cases(path: &PathBuf) -> Result<Vec<Case>>{
+    let mut sql_files: Vec<PathBuf> = Vec::new();
+    let mut result_files: Vec<PathBuf> = Vec::new();
+
+    for entry in WalkDir::new(path) {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+
+        if path.extension().ok_or(Error::CaseSearch)?.eq("sql") {
+            sql_files.push(PathBuf::from(&path));
+            continue;
+        }
+
+        if path.extension().ok_or(Error::CaseSearch)?.eq("result") {
+            result_files.push(PathBuf::from(&path));
+            continue;
+        }
+    }
+
+    sql_files.sort();
+    result_files.sort();
+
+    for i in 0..sql_files.len() {
+        if !sql_files[i].parent().eq(&result_files[i].parent()) {
+            return Err(Error::CaseNotMatch)
+        }
+
+        if !sql_files[i].file_stem().eq(&result_files[i].file_stem()) {
+            return Err(Error::CaseNotMatch)
+        }
+    }
+
+    let mut res = Vec::new();
+    for sql_file in sql_files {
+        res.push(Case::new(sql_file)?);
+    };
+    Ok(res)
 }

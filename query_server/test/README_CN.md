@@ -33,3 +33,4 @@ parallel = true # 是否并行
 - [ ] 添加 test group filter 机制
 - [ ] 支持行协议格式的sql文件
 - [ ] 支持自启动DB
+- [ ] 设定group中case执行顺序
