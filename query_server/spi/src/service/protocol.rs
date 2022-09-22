@@ -28,6 +28,13 @@ impl Context {
     pub fn new(catalog: String, schema: String) -> Self {
         Self { catalog, schema }
     }
+
+    pub fn with(catalog: Option<String>, schema: Option<String>) -> Self {
+        let catalog = catalog.unwrap_or_else(|| DEFAULT_CATALOG.to_string());
+        let schema = schema.unwrap_or_else(|| DEFAULT_SCHEMA.to_string());
+
+        Self { catalog, schema }
+    }
 }
 impl Default for Context {
     fn default() -> Self {

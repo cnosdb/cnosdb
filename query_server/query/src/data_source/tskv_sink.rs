@@ -8,7 +8,7 @@ use tskv::engine::EngineRef;
 
 use crate::{schema::TableSchema, utils::point_util::record_batch_to_points_flat_buffer};
 
-use super::sink::{RecordBatchSink, RecordBatchSinkPrivider};
+use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 use super::PointUtilSnafu;
 use super::Result;
@@ -39,18 +39,18 @@ impl RecordBatchSink for TskvRecordBatchSink {
     }
 }
 
-pub struct TskvRecordBatchSinkPrivider {
+pub struct TskvRecordBatchSinkProvider {
     engine: EngineRef,
     schema: TableSchema,
 }
 
-impl TskvRecordBatchSinkPrivider {
+impl TskvRecordBatchSinkProvider {
     pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
         Self { engine, schema }
     }
 }
 
-impl RecordBatchSinkPrivider for TskvRecordBatchSinkPrivider {
+impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
     fn create_batch_sink(&self, partition: usize) -> Box<dyn RecordBatchSink> {
         Box::new(TskvRecordBatchSink {
             engine: self.engine.clone(),

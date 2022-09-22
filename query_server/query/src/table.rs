@@ -12,7 +12,7 @@ use datafusion::{
 use tskv::engine::EngineRef;
 
 use crate::{
-    data_source::tskv_sink::TskvRecordBatchSinkPrivider,
+    data_source::tskv_sink::TskvRecordBatchSinkProvider,
     extension::physical::plan_node::table_writer::TableWriterExec, predicate::Predicate,
     schema::TableSchema, tskv_exec::TskvExec,
 };
@@ -49,7 +49,7 @@ impl ClusterTable {
         input: Arc<dyn ExecutionPlan>,
         output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkPrivider::new(
+        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
             self.engine.clone(),
             self.schema.clone(),
         ));

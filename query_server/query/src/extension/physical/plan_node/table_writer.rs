@@ -24,7 +24,7 @@ use futures::StreamExt;
 use trace::debug;
 
 use crate::{
-    data_source::sink::{RecordBatchSink, RecordBatchSinkPrivider},
+    data_source::sink::{RecordBatchSink, RecordBatchSinkProvider},
     schema::TableSchema,
 };
 
@@ -35,7 +35,7 @@ pub struct TableWriterExec {
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
 
-    record_batch_sink_privider: Arc<dyn RecordBatchSinkPrivider>,
+    record_batch_sink_privider: Arc<dyn RecordBatchSinkProvider>,
 }
 
 impl TableWriterExec {
@@ -43,7 +43,7 @@ impl TableWriterExec {
         input: Arc<dyn ExecutionPlan>,
         schema: TableSchema,
         output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
-        record_batch_sink_privider: Arc<dyn RecordBatchSinkPrivider>,
+        record_batch_sink_privider: Arc<dyn RecordBatchSinkProvider>,
     ) -> Self {
         Self {
             input,

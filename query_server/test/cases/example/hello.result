@@ -34,5 +34,5 @@
 +---------------------+
 
 -- EXECUTE SQL: SELECT "Hello World"; --
--- ERROR: --
+{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'Hello World'. Valid fields are .\" })"}
 
