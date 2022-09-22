@@ -1,5 +1,6 @@
 use std::{cmp, convert::TryInto, error::Error};
 
+use crate::tsm::coder_instence::CodeType;
 use integer_encoding::VarInt;
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
@@ -16,7 +17,10 @@ const BOOLEAN_COMPRESSED_BIT_PACKED: u8 = 1;
 /// 1 byte header indicating the compression type, followed by a variable byte
 /// encoded length indicating how many booleans are packed in the slice. The
 /// remaining bytes contain 1 byte for every 8 boolean values encoded.
-pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn bool_bitpack_encode(
+    src: &[bool],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     dst.clear();
     if src.is_empty() {
         return Ok(());
@@ -54,15 +58,36 @@ pub fn encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Sen
     let length: usize = length.try_into()?;
 
     dst.truncate(length);
+    dst.insert(0, CodeType::BitPack as u8);
 
     Ok(())
 }
 
+pub fn bool_without_compress_encode(
+    src: &[bool],
+    dst: &mut Vec<u8>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    dst.push(CodeType::Null as u8);
+    for i in src {
+        if *i {
+            dst.push(1);
+        } else {
+            dst.push(0);
+        }
+    }
+    return Ok(());
+}
+
 /// Decodes a slice of bytes into a destination vector of `bool`s.
-pub fn decode(src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn bool_bitpack_decode(
+    src: &[u8],
+    dst: &mut Vec<bool>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
+
+    let src = &src[1..];
 
     // First byte stores the encoding type, only have the bit packed format
     // currently so ignore for now.
@@ -96,6 +121,27 @@ pub fn decode(src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Sen
     Ok(())
 }
 
+pub fn bool_without_compress_decode(
+    src: &[u8],
+    dst: &mut Vec<bool>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    let src = &src[1..];
+
+    for i in src {
+        if *i == 1 {
+            dst.push(true);
+        } else {
+            dst.push(false);
+        }
+    }
+
+    return Ok(());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,7 +152,7 @@ mod tests {
         let mut dst = vec![];
 
         // check for error
-        encode(&src, &mut dst).expect("failed to encode src");
+        bool_bitpack_encode(&src, &mut dst).expect("failed to encode src");
 
         // verify encoded no values.
         assert_eq!(dst.len(), 0);
@@ -117,8 +163,8 @@ mod tests {
         let src = vec![true];
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(dst, vec![16, 1, 128]);
+        bool_bitpack_encode(&src, &mut dst).expect("failed to encode src");
+        assert_eq!(dst[1..], vec![16, 1, 128]);
     }
 
     #[test]
@@ -126,8 +172,8 @@ mod tests {
         let src = vec![false];
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(dst, vec![16, 1, 0]);
+        bool_bitpack_encode(&src, &mut dst).expect("failed to encode src");
+        assert_eq!(dst[1..], vec![16, 1, 0]);
     }
 
     #[test]
@@ -135,8 +181,8 @@ mod tests {
         let src: Vec<_> = (0..10).map(|i| i % 2 == 0).collect();
         let mut dst = vec![];
 
-        encode(&src, &mut dst).expect("failed to encode src");
-        assert_eq!(dst, vec![16, 10, 170, 128]);
+        bool_bitpack_encode(&src, &mut dst).expect("failed to encode src");
+        assert_eq!(dst[1..], vec![16, 10, 170, 128]);
     }
 
     #[test]
@@ -145,7 +191,7 @@ mod tests {
         let mut dst = vec![];
 
         // check for error
-        decode(&src, &mut dst).expect("failed to decode src");
+        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
 
         // verify decoded no values.
         assert_eq!(dst.len(), 0);
@@ -153,30 +199,53 @@ mod tests {
 
     #[test]
     fn decode_single_true() {
-        let src = vec![16, 1, 128];
+        let src = vec![0, 16, 1, 128];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
         assert_eq!(dst, vec![true]);
     }
 
     #[test]
     fn decode_single_false() {
-        let src = vec![16, 1, 0];
+        let src = vec![0, 16, 1, 0];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
         assert_eq!(dst, vec![false]);
     }
 
     #[test]
     fn decode_multi_compressed() {
-        let src = vec![16, 10, 170, 128];
+        let src = vec![0, 16, 10, 170, 128];
         let mut dst = vec![];
 
-        decode(&src, &mut dst).expect("failed to decode src");
+        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
 
         let expected: Vec<_> = (0..10).map(|i| i % 2 == 0).collect();
         assert_eq!(dst, expected);
+    }
+
+    #[test]
+    fn test_bool_encode_decode() {
+        let mut data = vec![];
+        for _ in 0..100 {
+            data.push(rand::random::<bool>());
+        }
+
+        let mut dst = vec![];
+        let mut got = vec![];
+
+        bool_bitpack_encode(&data, &mut dst).unwrap();
+        bool_bitpack_decode(&dst, &mut got).unwrap();
+
+        assert_eq!(data, got);
+        dst.clear();
+        got.clear();
+
+        bool_without_compress_encode(&data, &mut dst).unwrap();
+        bool_without_compress_decode(&dst, &mut got).unwrap();
+
+        assert_eq!(data, got);
     }
 }

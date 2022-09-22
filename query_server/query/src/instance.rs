@@ -2,11 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::scheduler::Scheduler;
-use query::{
-    dispatcher::manager::SimpleQueryDispatcherBuilder,
-    function::simple_func_manager::SimpleFunctionMetadataManager,
-    sql::optimizer::CascadeOptimizerBuilder,
-};
 use spi::{
     query::{dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory},
     server::dbms::DatabaseManagerSystem,
@@ -16,9 +11,12 @@ use spi::{
     service::protocol::{Query, QueryHandle},
 };
 
-use query::extension::expr::load_all_functions;
-use query::metadata::LocalCatalogMeta;
-use query::sql::parser::DefaultParser;
+use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
+use crate::extension::expr::load_all_functions;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use crate::metadata::LocalCatalogMeta;
+use crate::sql::optimizer::CascadeOptimizerBuilder;
+use crate::sql::parser::DefaultParser;
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
 
@@ -190,8 +188,8 @@ mod tests {
         let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
 
         let sql = format!(
-            "SELECT * FROM 
-        (VALUES  {}) AS t (num,letter) 
+            "SELECT * FROM
+        (VALUES  {}) AS t (num,letter)
         order by num limit 20",
             generate_data(1_000_000)
         );
@@ -225,8 +223,8 @@ mod tests {
         let mut result = exec_sql(
             &db,
             "
-        SELECT * FROM 
-        (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter) 
+        SELECT * FROM
+        (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter)
         order by num desc limit 2",
         )
         .await;
@@ -287,18 +285,26 @@ mod tests {
             &db,
             "
         EXPLAIN
-            SELECT * FROM 
-            (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter) 
+            SELECT * FROM
+            (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter)
             order by num desc limit 2;
         EXPLAIN
-            SELECT * FROM 
-            (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter) 
+            SELECT * FROM
+            (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter)
             order by num desc, letter limit 3;
         ",
         )
         .await;
 
-        let re_partition = format!("|               |           RepartitionExec: partitioning=RoundRobinBatch({})                                                            |", num_cpus::get());
+        let num_cpu = num_cpus::get().to_string();
+        let mut re_partition = format!(
+            "|               |           RepartitionExec: partitioning=RoundRobinBatch({})",
+            num_cpu
+        );
+        for _ in 0..60 - num_cpu.chars().count() + 1 {
+            re_partition.push(' ');
+        }
+        re_partition.push('|');
 
         let expected = vec![
             "+---------------+-----------------------------------------------------------------------------------------------------------------------+",
@@ -337,6 +343,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_create_external_csv_table() {
         let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
 
@@ -388,6 +395,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_create_external_parquet_table() {
         let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
 
@@ -431,6 +439,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_create_external_json_table() {
         let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
 

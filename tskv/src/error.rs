@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use models::SeriesId;
 use snafu::Snafu;
 
 use crate::{
@@ -98,4 +99,6 @@ pub enum Error {
 
     #[snafu(display("can't find field name: {}", reason))]
     NotFoundField { reason: String },
+    #[snafu(display("failed get sid"))]
+    InvalidSeriesId,
 }
