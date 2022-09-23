@@ -1,34 +1,35 @@
-use crate::tsm::boolean::{
+use crate::tsm::codec::boolean::{
     bool_bitpack_decode, bool_bitpack_encode, bool_without_compress_decode,
     bool_without_compress_encode,
 };
-use crate::tsm::float::{
+use crate::tsm::codec::float::{
     f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
     f64_without_compress_decode, f64_without_compress_encode,
 };
-use crate::tsm::integer::{
+use crate::tsm::codec::integer::{
     i64_q_compress_decode, i64_q_compress_encode, i64_without_compress_decode,
     i64_without_compress_encode, i64_zigzag_simple8b_decode, i64_zigzag_simple8b_encode,
 };
-use crate::tsm::string::{
+use crate::tsm::codec::string::{
     str_bzip_decode, str_bzip_encode, str_gzip_decode, str_gzip_encode, str_snappy_decode,
     str_snappy_encode, str_without_compress_decode, str_without_compress_encode, str_zlib_decode,
     str_zlib_encode, str_zstd_decode, str_zstd_encode,
 };
-use crate::tsm::timestamp;
-use crate::tsm::timestamp::{
+use crate::tsm::codec::timestamp;
+use crate::tsm::codec::timestamp::{
     ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
     ts_without_compress_encode, ts_zigzag_simple8b_decode, ts_zigzag_simple8b_encode,
 };
-use crate::tsm::unsigned::{
+use crate::tsm::codec::unsigned::{
     u64_q_compress_decode, u64_q_compress_encode, u64_without_compress_decode,
     u64_without_compress_encode, u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
 };
 use libc::max_align_t;
 use std::error::Error;
 
+#[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum CodeType {
+pub enum Encoding {
     Default = 0,
     Null = 1,
     Delta = 2,
@@ -40,44 +41,42 @@ pub enum CodeType {
     Zstd = 8,
     Zlib = 9,
     BitPack = 10,
-    Unknown = 11,
+    Unknown = 15,
 }
 
-impl Default for CodeType {
+impl Default for Encoding {
     fn default() -> Self {
-        CodeType::Default
+        Encoding::Default
     }
 }
 
-impl TryFrom<u8> for CodeType {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl From<u8> for Encoding {
+    fn from(value: u8) -> Self {
         match value {
-            0 => Ok(CodeType::Default),
-            1 => Ok(CodeType::Null),
-            2 => Ok(CodeType::Delta),
-            3 => Ok(CodeType::Quantile),
-            4 => Ok(CodeType::Gzip),
-            5 => Ok(CodeType::Bzip),
-            6 => Ok(CodeType::Gorilla),
-            7 => Ok(CodeType::Snappy),
-            8 => Ok(CodeType::Zstd),
-            9 => Ok(CodeType::Zlib),
-            10 => Ok(CodeType::BitPack),
-            _ => Ok(CodeType::Unknown),
+            0 => Encoding::Default,
+            1 => Encoding::Null,
+            2 => Encoding::Delta,
+            3 => Encoding::Quantile,
+            4 => Encoding::Gzip,
+            5 => Encoding::Bzip,
+            6 => Encoding::Gorilla,
+            7 => Encoding::Snappy,
+            8 => Encoding::Zstd,
+            9 => Encoding::Zlib,
+            10 => Encoding::BitPack,
+            _ => Encoding::Unknown,
         }
     }
 }
 
-pub trait TimestampCoder {
+pub trait TimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-struct NullTimestampCoder();
+struct NullTimestampCodec();
 
-impl TimestampCoder for NullTimestampCoder {
+impl TimestampCodec for NullTimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         ts_without_compress_encode(src, dst)
     }
@@ -87,9 +86,9 @@ impl TimestampCoder for NullTimestampCoder {
     }
 }
 
-struct DeltaTimestampCoder();
+struct DeltaTimestampCodec();
 
-impl TimestampCoder for DeltaTimestampCoder {
+impl TimestampCodec for DeltaTimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         ts_zigzag_simple8b_encode(src, dst)
     }
@@ -99,9 +98,9 @@ impl TimestampCoder for DeltaTimestampCoder {
     }
 }
 
-struct QuantileTimestampCoder();
+struct QuantileTimestampCodec();
 
-impl TimestampCoder for QuantileTimestampCoder {
+impl TimestampCodec for QuantileTimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         ts_q_compress_encode(src, dst)
     }
@@ -111,14 +110,14 @@ impl TimestampCoder for QuantileTimestampCoder {
     }
 }
 
-pub trait IntegerCoder {
+pub trait IntegerCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-struct NullIntegerCoder();
+struct NullIntegerCodec();
 
-impl IntegerCoder for NullIntegerCoder {
+impl IntegerCodec for NullIntegerCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         i64_without_compress_encode(src, dst)
     }
@@ -128,9 +127,9 @@ impl IntegerCoder for NullIntegerCoder {
     }
 }
 
-struct DeltaIntegerCoder();
+struct DeltaIntegerCodec();
 
-impl IntegerCoder for DeltaIntegerCoder {
+impl IntegerCodec for DeltaIntegerCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         i64_zigzag_simple8b_encode(src, dst)
     }
@@ -140,9 +139,9 @@ impl IntegerCoder for DeltaIntegerCoder {
     }
 }
 
-struct QuantileIntegerCoder();
+struct QuantileIntegerCodec();
 
-impl IntegerCoder for QuantileIntegerCoder {
+impl IntegerCodec for QuantileIntegerCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         i64_q_compress_encode(src, dst)
     }
@@ -152,14 +151,14 @@ impl IntegerCoder for QuantileIntegerCoder {
     }
 }
 
-pub trait FloatCoder {
+pub trait FloatCodec {
     fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-struct NullFloatCoder();
+struct NullFloatCodec();
 
-impl FloatCoder for NullFloatCoder {
+impl FloatCodec for NullFloatCodec {
     fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         f64_without_compress_encode(src, dst)
     }
@@ -169,9 +168,9 @@ impl FloatCoder for NullFloatCoder {
     }
 }
 
-struct GorillaFloatCoder();
+struct GorillaFloatCodec();
 
-impl FloatCoder for GorillaFloatCoder {
+impl FloatCodec for GorillaFloatCodec {
     fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         f64_gorilla_encode(src, dst)
     }
@@ -181,9 +180,9 @@ impl FloatCoder for GorillaFloatCoder {
     }
 }
 
-struct QuantileFloatCoder();
+struct QuantileFloatCodec();
 
-impl FloatCoder for QuantileFloatCoder {
+impl FloatCodec for QuantileFloatCodec {
     fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         f64_q_compress_encode(src, dst)
     }
@@ -193,14 +192,14 @@ impl FloatCoder for QuantileFloatCoder {
     }
 }
 
-pub trait UnsignedCoder {
+pub trait UnsignedCodec {
     fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-struct NullUnsignedCoder();
+struct NullUnsignedCodec();
 
-impl UnsignedCoder for NullUnsignedCoder {
+impl UnsignedCodec for NullUnsignedCodec {
     fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         u64_without_compress_encode(src, dst)
     }
@@ -210,9 +209,9 @@ impl UnsignedCoder for NullUnsignedCoder {
     }
 }
 
-struct DeltaUnsignedCoder();
+struct DeltaUnsignedCodec();
 
-impl UnsignedCoder for DeltaUnsignedCoder {
+impl UnsignedCodec for DeltaUnsignedCodec {
     fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         u64_zigzag_simple8b_encode(src, dst)
     }
@@ -222,9 +221,9 @@ impl UnsignedCoder for DeltaUnsignedCoder {
     }
 }
 
-struct QuantileUnsignedCoder();
+struct QuantileUnsignedCodec();
 
-impl UnsignedCoder for QuantileUnsignedCoder {
+impl UnsignedCodec for QuantileUnsignedCodec {
     fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         u64_q_compress_encode(src, dst)
     }
@@ -234,14 +233,14 @@ impl UnsignedCoder for QuantileUnsignedCoder {
     }
 }
 
-pub trait BooleanCoder {
+pub trait BooleanCodec {
     fn encode(&self, src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(&self, src: &[u8], dst: &mut Vec<bool>) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-struct NullBooleanCoder();
+struct NullBooleanCodec();
 
-impl BooleanCoder for NullBooleanCoder {
+impl BooleanCodec for NullBooleanCodec {
     fn encode(&self, src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         bool_without_compress_encode(src, dst)
     }
@@ -251,9 +250,9 @@ impl BooleanCoder for NullBooleanCoder {
     }
 }
 
-struct BitPackBooleanCoder();
+struct BitPackBooleanCodec();
 
-impl BooleanCoder for BitPackBooleanCoder {
+impl BooleanCodec for BitPackBooleanCodec {
     fn encode(&self, src: &[bool], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         bool_bitpack_encode(src, dst)
     }
@@ -263,7 +262,7 @@ impl BooleanCoder for BitPackBooleanCoder {
     }
 }
 
-pub trait StringCoder {
+pub trait StringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
     fn decode(
         &self,
@@ -272,9 +271,9 @@ pub trait StringCoder {
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
-struct NullStringCoder();
+struct NullStringCodec();
 
-impl StringCoder for NullStringCoder {
+impl StringCodec for NullStringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_without_compress_encode(src, dst)
     }
@@ -288,9 +287,9 @@ impl StringCoder for NullStringCoder {
     }
 }
 
-struct SnappyStringCoder();
+struct SnappyStringCodec();
 
-impl StringCoder for SnappyStringCoder {
+impl StringCodec for SnappyStringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_snappy_encode(src, dst)
     }
@@ -304,9 +303,9 @@ impl StringCoder for SnappyStringCoder {
     }
 }
 
-struct GzipStringCoder();
+struct GzipStringCodec();
 
-impl StringCoder for GzipStringCoder {
+impl StringCodec for GzipStringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_gzip_encode(src, dst)
     }
@@ -320,9 +319,9 @@ impl StringCoder for GzipStringCoder {
     }
 }
 
-struct BzipStringCoder();
+struct BzipStringCodec();
 
-impl StringCoder for BzipStringCoder {
+impl StringCodec for BzipStringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_bzip_encode(src, dst)
     }
@@ -336,9 +335,9 @@ impl StringCoder for BzipStringCoder {
     }
 }
 
-struct ZstdStringCoder();
+struct ZstdStringCodec();
 
-impl StringCoder for ZstdStringCoder {
+impl StringCodec for ZstdStringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_zstd_encode(src, dst)
     }
@@ -352,9 +351,9 @@ impl StringCoder for ZstdStringCoder {
     }
 }
 
-struct ZlibStringCoder();
+struct ZlibStringCodec();
 
-impl StringCoder for ZlibStringCoder {
+impl StringCodec for ZlibStringCodec {
     fn encode(&self, src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_zlib_encode(src, dst)
     }
@@ -368,65 +367,65 @@ impl StringCoder for ZlibStringCoder {
     }
 }
 
-pub fn get_code_type(src: &[u8]) -> CodeType {
+pub fn get_encoding(src: &[u8]) -> Encoding {
     if src.is_empty() {
-        return CodeType::Unknown;
+        return Encoding::Unknown;
     }
-    return CodeType::try_from(src[0]).unwrap();
+    return Encoding::from(src[0]);
 }
 
-pub fn get_ts_coder(algo: CodeType) -> Box<dyn TimestampCoder> {
+pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec> {
     match algo {
-        CodeType::Null => Box::new(NullTimestampCoder()),
-        CodeType::Delta => Box::new(DeltaTimestampCoder()),
-        CodeType::Quantile => Box::new(QuantileTimestampCoder()),
-        _ => Box::new(DeltaTimestampCoder()),
-    }
-}
-
-pub fn get_i64_coder(algo: CodeType) -> Box<dyn IntegerCoder> {
-    match algo {
-        CodeType::Null => Box::new(NullIntegerCoder()),
-        CodeType::Delta => Box::new(DeltaIntegerCoder()),
-        CodeType::Quantile => Box::new(QuantileIntegerCoder()),
-        _ => Box::new(DeltaIntegerCoder()),
+        Encoding::Null => Box::new(NullTimestampCodec()),
+        Encoding::Delta => Box::new(DeltaTimestampCodec()),
+        Encoding::Quantile => Box::new(QuantileTimestampCodec()),
+        _ => Box::new(DeltaTimestampCodec()),
     }
 }
 
-pub fn get_u64_coder(algo: CodeType) -> Box<dyn UnsignedCoder> {
+pub fn get_i64_codec(algo: Encoding) -> Box<dyn IntegerCodec> {
     match algo {
-        CodeType::Null => Box::new(NullUnsignedCoder()),
-        CodeType::Delta => Box::new(DeltaUnsignedCoder()),
-        CodeType::Quantile => Box::new(QuantileUnsignedCoder()),
-        _ => Box::new(DeltaUnsignedCoder()),
+        Encoding::Null => Box::new(NullIntegerCodec()),
+        Encoding::Delta => Box::new(DeltaIntegerCodec()),
+        Encoding::Quantile => Box::new(QuantileIntegerCodec()),
+        _ => Box::new(DeltaIntegerCodec()),
     }
 }
 
-pub fn get_f64_coder(algo: CodeType) -> Box<dyn FloatCoder> {
+pub fn get_u64_codec(algo: Encoding) -> Box<dyn UnsignedCodec> {
     match algo {
-        CodeType::Null => Box::new(NullFloatCoder()),
-        CodeType::Gorilla => Box::new(GorillaFloatCoder()),
-        CodeType::Quantile => Box::new(QuantileFloatCoder()),
-        _ => Box::new(GorillaFloatCoder()),
+        Encoding::Null => Box::new(NullUnsignedCodec()),
+        Encoding::Delta => Box::new(DeltaUnsignedCodec()),
+        Encoding::Quantile => Box::new(QuantileUnsignedCodec()),
+        _ => Box::new(DeltaUnsignedCodec()),
     }
 }
 
-pub fn get_str_coder(algo: CodeType) -> Box<dyn StringCoder> {
+pub fn get_f64_codec(algo: Encoding) -> Box<dyn FloatCodec> {
     match algo {
-        CodeType::Null => Box::new(NullStringCoder()),
-        CodeType::Gzip => Box::new(GzipStringCoder()),
-        CodeType::Bzip => Box::new(BzipStringCoder()),
-        CodeType::Snappy => Box::new(SnappyStringCoder()),
-        CodeType::Zstd => Box::new(ZstdStringCoder()),
-        CodeType::Zlib => Box::new(ZlibStringCoder()),
-        _ => Box::new(SnappyStringCoder()),
+        Encoding::Null => Box::new(NullFloatCodec()),
+        Encoding::Gorilla => Box::new(GorillaFloatCodec()),
+        Encoding::Quantile => Box::new(QuantileFloatCodec()),
+        _ => Box::new(GorillaFloatCodec()),
     }
 }
 
-pub fn get_bool_coder(algo: CodeType) -> Box<dyn BooleanCoder> {
+pub fn get_str_codec(algo: Encoding) -> Box<dyn StringCodec> {
     match algo {
-        CodeType::Null => Box::new(NullBooleanCoder()),
-        CodeType::BitPack => Box::new(BitPackBooleanCoder()),
-        _ => Box::new(BitPackBooleanCoder()),
+        Encoding::Null => Box::new(NullStringCodec()),
+        Encoding::Gzip => Box::new(GzipStringCodec()),
+        Encoding::Bzip => Box::new(BzipStringCodec()),
+        Encoding::Snappy => Box::new(SnappyStringCodec()),
+        Encoding::Zstd => Box::new(ZstdStringCodec()),
+        Encoding::Zlib => Box::new(ZlibStringCodec()),
+        _ => Box::new(SnappyStringCodec()),
+    }
+}
+
+pub fn get_bool_codec(algo: Encoding) -> Box<dyn BooleanCodec> {
+    match algo {
+        Encoding::Null => Box::new(NullBooleanCodec()),
+        Encoding::BitPack => Box::new(BitPackBooleanCodec()),
+        _ => Box::new(BitPackBooleanCodec()),
     }
 }
