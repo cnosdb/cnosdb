@@ -11,10 +11,10 @@ pub enum Error {
     CasePathNotFound,
 
     CaseFail,
-    IO
+    IO,
 }
 
-impl From<walkdir::Error>  for Error {
+impl From<walkdir::Error> for Error {
     fn from(_: walkdir::Error) -> Self {
         Self::CaseSearch
     }
@@ -24,7 +24,6 @@ impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
         Error::IO
     }
-
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -6,9 +6,9 @@ use prettydiff::diff_lines;
 use tokio::fs;
 use walkdir::WalkDir;
 
-use crate::CLIENT;
-use crate::query::*;
 use crate::error::{Error, Result};
+use crate::query::*;
+use crate::CLIENT;
 
 #[derive(Clone, Debug)]
 pub struct Case {
@@ -19,12 +19,14 @@ pub struct Case {
 impl Case {
     pub fn new(sql_path: PathBuf) -> Result<Case> {
         let name = sql_path
-            .file_stem().ok_or(Error::CaseNew)?
-            .to_str().ok_or(Error::CaseNew)?
+            .file_stem()
+            .ok_or(Error::CaseNew)?
+            .to_str()
+            .ok_or(Error::CaseNew)?
             .to_string();
 
         let path = sql_path.parent().ok_or(Error::CaseNew)?.to_path_buf();
-        Ok (Case{ name, path })
+        Ok(Case { name, path })
     }
 
     pub fn case_name(&self) -> &str {
@@ -114,7 +116,7 @@ impl Display for Case {
 }
 
 /// search all cases
-pub fn search_cases(path: &PathBuf) -> Result<Vec<Case>>{
+pub fn search_cases(path: &PathBuf) -> Result<Vec<Case>> {
     let mut sql_files: Vec<PathBuf> = Vec::new();
     let mut result_files: Vec<PathBuf> = Vec::new();
 
@@ -141,17 +143,17 @@ pub fn search_cases(path: &PathBuf) -> Result<Vec<Case>>{
 
     for i in 0..sql_files.len() {
         if !sql_files[i].parent().eq(&result_files[i].parent()) {
-            return Err(Error::CaseNotMatch)
+            return Err(Error::CaseNotMatch);
         }
 
         if !sql_files[i].file_stem().eq(&result_files[i].file_stem()) {
-            return Err(Error::CaseNotMatch)
+            return Err(Error::CaseNotMatch);
         }
     }
 
     let mut res = Vec::new();
     for sql_file in sql_files {
         res.push(Case::new(sql_file)?);
-    };
+    }
     Ok(res)
 }
