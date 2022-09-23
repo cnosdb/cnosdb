@@ -13,7 +13,6 @@ use sqlparser::{
     tokenizer::{Token, Tokenizer},
 };
 use trace::debug;
-use tskv::tsm::coder_instence::CodeType;
 
 // support tag token
 const TAGS: &str = "TAGS";

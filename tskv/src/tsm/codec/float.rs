@@ -1,5 +1,5 @@
 use crate::byte_utils::decode_be_f64;
-use crate::tsm::coder_instence::CodeType;
+use crate::tsm::codec::Encoding;
 use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
 use std::error::Error;
 
@@ -238,7 +238,7 @@ pub fn f64_gorilla_encode(
         length += 1;
     }
     dst.truncate(length);
-    dst.insert(0, CodeType::Gorilla as u8);
+    dst.insert(0, Encoding::Gorilla as u8);
     Ok(())
 }
 
@@ -251,7 +251,7 @@ pub fn f64_q_compress_encode(
         return Ok(());
     }
 
-    dst.push(CodeType::Quantile as u8);
+    dst.push(Encoding::Quantile as u8);
 
     dst.append(&mut auto_compress(&src, DEFAULT_COMPRESSION_LEVEL));
     return Ok(());
@@ -267,7 +267,7 @@ pub fn f64_without_compress_encode(
         return Ok(());
     }
 
-    dst.push(CodeType::Null as u8);
+    dst.push(Encoding::Null as u8);
 
     for i in src.iter() {
         dst.extend_from_slice(((*i) as f64).to_be_bytes().as_slice());
@@ -582,7 +582,7 @@ fn decode_with_sentinel(
 mod tests {
     // use test_helpers::approximately_equal;
 
-    use crate::tsm::float::{
+    use crate::tsm::codec::float::{
         f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
     };
 

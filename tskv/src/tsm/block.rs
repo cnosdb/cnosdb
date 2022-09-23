@@ -4,43 +4,48 @@ use models::{Timestamp, ValueType};
 use protos::models::FieldType;
 use trace::error;
 
-use super::coders;
-use crate::tsm::coder_instence::{
-    get_bool_coder, get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder,
-    CodeType,
-};
 use crate::{
     compaction::overlaps_tuples,
-    memcache::{DataType, FieldVal},
+    memcache::DataType,
     tseries_family::TimeRange,
+    tsm::codec::{
+        get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
+        DataBlockEncoding, Encoding,
+    },
 };
+
+pub trait ByTimeRange {
+    fn time_range(&self) -> Option<TimeRange>;
+    fn time_range_by_range(&self, start: usize, end: usize) -> TimeRange;
+    fn exclude(&mut self, time_range: &TimeRange);
+}
 
 #[derive(Debug, Clone)]
 pub enum DataBlock {
     U64 {
         ts: Vec<i64>,
         val: Vec<u64>,
-        code_type_id: u8,
+        enc: DataBlockEncoding,
     },
     I64 {
         ts: Vec<i64>,
         val: Vec<i64>,
-        code_type_id: u8,
+        enc: DataBlockEncoding,
     },
     Str {
         ts: Vec<i64>,
         val: Vec<Vec<u8>>,
-        code_type_id: u8,
+        enc: DataBlockEncoding,
     },
     F64 {
         ts: Vec<i64>,
         val: Vec<f64>,
-        code_type_id: u8,
+        enc: DataBlockEncoding,
     },
     Bool {
         ts: Vec<i64>,
         val: Vec<bool>,
-        code_type_id: u8,
+        enc: DataBlockEncoding,
     },
 }
 
@@ -112,27 +117,27 @@ impl DataBlock {
             ValueType::Unsigned => Self::U64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
-                code_type_id: 0,
+                enc: DataBlockEncoding::default(),
             },
             ValueType::Integer => Self::I64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
-                code_type_id: 0,
+                enc: DataBlockEncoding::default(),
             },
             ValueType::Float => Self::F64 {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
-                code_type_id: 0,
+                enc: DataBlockEncoding::default(),
             },
             ValueType::String => Self::Str {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
-                code_type_id: 0,
+                enc: DataBlockEncoding::default(),
             },
             ValueType::Boolean => Self::Bool {
                 ts: Vec::with_capacity(size),
                 val: Vec::with_capacity(size),
-                code_type_id: 0,
+                enc: DataBlockEncoding::default(),
             },
             ValueType::Unknown => {
                 todo!()
@@ -209,14 +214,14 @@ impl DataBlock {
         }
     }
 
-    /// Returns the code type id of the data block
-    pub fn code_type_id(&self) -> u8 {
+    /// Returns the encodings for timestamps and values of this `DataBlock`.
+    pub fn encodings(&self) -> DataBlockEncoding {
         match &self {
-            Self::U64 { code_type_id, .. } => *code_type_id,
-            Self::I64 { code_type_id, .. } => *code_type_id,
-            Self::F64 { code_type_id, .. } => *code_type_id,
-            Self::Str { code_type_id, .. } => *code_type_id,
-            Self::Bool { code_type_id, .. } => *code_type_id,
+            Self::U64 { enc, .. } => *enc,
+            Self::I64 { enc, .. } => *enc,
+            Self::F64 { enc, .. } => *enc,
+            Self::Str { enc, .. } => *enc,
+            Self::Bool { enc, .. } => *enc,
         }
     }
 
@@ -332,22 +337,22 @@ impl DataBlock {
         }
     }
 
-    pub fn set_code_type_id(&mut self, new_code_type_id: u8) {
+    pub fn set_encodings(&mut self, encoding: DataBlockEncoding) {
         match self {
-            DataBlock::U64 { code_type_id, .. } => {
-                *code_type_id = new_code_type_id;
+            DataBlock::U64 { enc, .. } => {
+                *enc = encoding;
             }
-            DataBlock::I64 { code_type_id, .. } => {
-                *code_type_id = new_code_type_id;
+            DataBlock::I64 { enc, .. } => {
+                *enc = encoding;
             }
-            DataBlock::Str { code_type_id, .. } => {
-                *code_type_id = new_code_type_id;
+            DataBlock::Str { enc, .. } => {
+                *enc = encoding;
             }
-            DataBlock::F64 { code_type_id, .. } => {
-                *code_type_id = new_code_type_id;
+            DataBlock::F64 { enc, .. } => {
+                *enc = encoding;
             }
-            DataBlock::Bool { code_type_id, .. } => {
-                *code_type_id = new_code_type_id;
+            DataBlock::Bool { enc, .. } => {
+                *enc = encoding;
             }
         }
     }
@@ -499,38 +504,39 @@ impl DataBlock {
         &self,
         start: usize,
         end: usize,
-        ts_compress_algo: CodeType,
-        other_compress_algo: CodeType,
+        encodings: DataBlockEncoding,
     ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
+        let (ts_enc, val_enc) = encodings.split();
+        let ts_codec = get_ts_codec(ts_enc);
+
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
-        let ts_coder = get_ts_coder(ts_compress_algo);
         match self {
             DataBlock::Bool { ts, val, .. } => {
-                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_bool_coder(other_compress_algo);
-                val_coder.encode(&val[start..end], &mut data_buf)?
+                ts_codec.encode(&ts[start..end], &mut ts_buf)?;
+                let val_codec = get_bool_codec(val_enc);
+                val_codec.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::U64 { ts, val, .. } => {
-                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_u64_coder(other_compress_algo);
-                val_coder.encode(&val[start..end], &mut data_buf)?
+                ts_codec.encode(&ts[start..end], &mut ts_buf)?;
+                let val_codec = get_u64_codec(val_enc);
+                val_codec.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::I64 { ts, val, .. } => {
-                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_i64_coder(other_compress_algo);
-                val_coder.encode(&val[start..end], &mut data_buf)?
+                ts_codec.encode(&ts[start..end], &mut ts_buf)?;
+                let val_codec = get_i64_codec(val_enc);
+                val_codec.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::Str { ts, val, .. } => {
-                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
+                ts_codec.encode(&ts[start..end], &mut ts_buf)?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
-                let val_coder = get_str_coder(other_compress_algo);
-                val_coder.encode(&strs[start..end], &mut data_buf)?;
+                let val_codec = get_str_codec(val_enc);
+                val_codec.encode(&strs[start..end], &mut data_buf)?
             }
             DataBlock::F64 { ts, val, .. } => {
-                ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_f64_coder(other_compress_algo);
-                val_coder.encode(&val[start..end], &mut data_buf)?;
+                ts_codec.encode(&ts[start..end], &mut ts_buf)?;
+                let val_codec = get_f64_codec(val_enc);
+                val_codec.encode(&val[start..end], &mut data_buf)?
             }
         }
         Ok((ts_buf, data_buf))
@@ -653,7 +659,7 @@ pub mod test {
     use crate::{
         memcache::DataType,
         tseries_family::TimeRange,
-        tsm::{block::exclude_fast, DataBlock},
+        tsm::{block::exclude_fast, codec::DataBlockEncoding, DataBlock},
     };
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
@@ -668,8 +674,8 @@ pub mod test {
         #[rustfmt::skip]
         let res = DataBlock::merge_blocks(
             vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50],code_type_id: 0 },
-                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15],code_type_id: 0 },
+                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
 
             ],
             0
@@ -677,7 +683,7 @@ pub mod test {
 
         #[rustfmt::skip]
         assert_eq!(res, vec![
-            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50],code_type_id: 0 },
+            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
         ]);
     }
 
@@ -687,7 +693,7 @@ pub mod test {
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
@@ -695,7 +701,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
                 val: vec![10, 11, 14, 15, 16, 17, 18, 19],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
@@ -703,7 +709,7 @@ pub mod test {
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
@@ -711,7 +717,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 9],
                 val: vec![10, 11, 19],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
@@ -719,7 +725,7 @@ pub mod test {
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((2, 3)));
         assert_eq!(
@@ -736,7 +742,7 @@ pub mod test {
                     vec![18],
                     vec![19]
                 ],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
@@ -744,7 +750,7 @@ pub mod test {
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((2, 8)));
         assert_eq!(
@@ -752,7 +758,7 @@ pub mod test {
             DataBlock::Str {
                 ts: vec![0, 1, 9],
                 val: vec![vec![10], vec![11], vec![19]],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         )
     }
@@ -762,7 +768,7 @@ pub mod test {
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((-2, 0)));
         assert_eq!(
@@ -770,14 +776,14 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![1, 2, 3],
                 val: vec![11, 12, 13],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((3, 5)));
         assert_eq!(
@@ -785,14 +791,14 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2],
                 val: vec![10, 11, 12],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
-           code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((-3, -1)));
         assert_eq!(
@@ -800,14 +806,14 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3],
                 val: vec![10, 11, 12, 13],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3], val: vec![10, 11, 12, 13],
-            code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((5, 7)));
         assert_eq!(
@@ -815,14 +821,14 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3],
                 val: vec![10, 11, 12, 13],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
 
         #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 7, 8, 9, 10], val: vec![10, 11, 12, 13, 17, 18, 19, 20],
-            code_type_id: 0
+            enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((5, 6)));
         assert_eq!(
@@ -830,7 +836,7 @@ pub mod test {
             DataBlock::U64 {
                 ts: vec![0, 1, 2, 3, 7, 8, 9, 10],
                 val: vec![10, 11, 12, 13, 17, 18, 19, 20],
-                code_type_id: 0
+                enc: DataBlockEncoding::default()
             }
         );
     }

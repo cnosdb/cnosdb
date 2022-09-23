@@ -1,10 +1,10 @@
 use std::error::Error;
 
-use crate::tsm::coder_instence::CodeType;
-use crate::tsm::timestamp::{
+use crate::tsm::codec::timestamp::{
     ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
     ts_without_compress_encode,
 };
+use crate::tsm::codec::Encoding;
 use integer_encoding::*;
 
 use super::simple8b;
@@ -14,7 +14,7 @@ use super::simple8b;
 
 /// Encoding describes the type of encoding used by an encoded integer block.
 #[derive(Debug, Clone, Copy)]
-pub enum Encoding {
+pub enum DeltaEncoding {
     Uncompressed = 0,
     Simple8b = 1,
     Rle = 2,
@@ -75,8 +75,8 @@ pub fn i64_zigzag_simple8b_encode(
             // count is the number of deltas repeating excluding first value.
             encode_rle(deltas[0], deltas[1], deltas.len() as u64 - 1, dst);
             // 4 high bits of first byte used for the encoding type
-            dst[0] |= (Encoding::Rle as u8) << 4;
-            dst.insert(0, CodeType::Delta as u8);
+            dst[0] |= (DeltaEncoding::Rle as u8) << 4;
+            dst.insert(0, Encoding::Delta as u8);
             return Ok(());
         }
     }
@@ -87,20 +87,20 @@ pub fn i64_zigzag_simple8b_encode(
         if dst.capacity() < cap {
             dst.reserve_exact(cap - dst.capacity());
         }
-        dst.push((Encoding::Uncompressed as u8) << 4);
+        dst.push((DeltaEncoding::Uncompressed as u8) << 4);
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
-        dst.insert(0, CodeType::Delta as u8);
+        dst.insert(0, Encoding::Delta as u8);
         return Ok(());
     }
 
     // Compress with simple8b
     // first 4 high bits used for encoding type
-    dst.push((Encoding::Simple8b as u8) << 4);
+    dst.push((DeltaEncoding::Simple8b as u8) << 4);
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
-    dst.insert(0, CodeType::Delta as u8);
+    dst.insert(0, Encoding::Delta as u8);
     return Ok(());
 }
 
@@ -159,11 +159,11 @@ pub fn i64_zigzag_simple8b_decode(
     let src = &src[1..];
     let encoding = &src[0] >> 4;
     match encoding {
-        encoding if encoding == Encoding::Uncompressed as u8 => {
+        encoding if encoding == DeltaEncoding::Uncompressed as u8 => {
             decode_uncompressed(&src[1..], dst) // first byte not used
         }
-        encoding if encoding == Encoding::Rle as u8 => decode_rle(&src[1..], dst),
-        encoding if encoding == Encoding::Simple8b as u8 => decode_simple8b(&src[1..], dst),
+        encoding if encoding == DeltaEncoding::Rle as u8 => decode_rle(&src[1..], dst),
+        encoding if encoding == DeltaEncoding::Simple8b as u8 => decode_simple8b(&src[1..], dst),
         _ => Err(From::from("invalid block encoding")),
     }
 }
@@ -262,7 +262,7 @@ pub fn i64_q_compress_decode(
 #[allow(clippy::unreadable_literal)]
 mod tests {
     use super::*;
-    use crate::tsm::coder_instence::{get_code_type, CodeType};
+    use crate::tsm::codec::{get_encoding, Encoding};
 
     #[test]
     fn zig_zag_encoding() {
@@ -300,7 +300,7 @@ mod tests {
         i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         // verify uncompressed encoding used
-        assert_eq!(&dst[0] >> 4, Encoding::Uncompressed as u8);
+        assert_eq!(&dst[0] >> 4, DeltaEncoding::Uncompressed as u8);
         let mut got = vec![];
         i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
 
@@ -316,8 +316,8 @@ mod tests {
         let exp = src.clone();
 
         i64_q_compress_encode(&src, &mut dst).unwrap();
-        let exp_code_type = CodeType::Quantile;
-        let got_code_type = get_code_type(&dst);
+        let exp_code_type = Encoding::Quantile;
+        let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
         i64_q_compress_decode(&dst, &mut got).unwrap();
@@ -327,8 +327,8 @@ mod tests {
         got.clear();
 
         i64_without_compress_encode(&src, &mut dst).unwrap();
-        let exp_code_type = CodeType::Null;
-        let got_code_type = get_code_type(&dst);
+        let exp_code_type = Encoding::Null;
+        let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
         i64_without_compress_decode(&dst, &mut got).unwrap();
@@ -377,7 +377,7 @@ mod tests {
             i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
-            assert_eq!(&dst[1] >> 4, Encoding::Rle as u8);
+            assert_eq!(&dst[1] >> 4, DeltaEncoding::Rle as u8);
             let mut got = vec![];
             i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
@@ -413,7 +413,7 @@ mod tests {
             let exp = test.input;
             i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
-            assert_eq!(&dst[1] >> 4, Encoding::Simple8b as u8);
+            assert_eq!(&dst[1] >> 4, DeltaEncoding::Simple8b as u8);
 
             let mut got = vec![];
             i64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");

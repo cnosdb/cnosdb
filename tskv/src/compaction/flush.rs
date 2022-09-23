@@ -34,7 +34,11 @@ use crate::{
     memcache::{DataType, FieldVal, MemCache, MemEntry, SeriesData},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
-    tsm::{self, coder_instence::CodeType, DataBlock, TsmWriter},
+    tsm::{
+        self,
+        codec::{DataBlockEncoding, Encoding},
+        DataBlock, TsmWriter,
+    },
     version_set::VersionSet,
     TseriesFamilyId,
 };
@@ -184,6 +188,8 @@ impl FlushTask {
 
             // Write the merged data into files.
             for (field_id, dlt_blks, tsm_blks) in merged_series_data {
+                let encoding =
+                    DataBlockEncoding(field_id_code_type_map.get(&field_id).copied().unwrap_or(0));
                 if !dlt_blks.is_empty() {
                     if delta_writer.is_none() {
                         let writer = self.new_writer(true)?;
@@ -192,8 +198,7 @@ impl FlushTask {
                     };
                     let writer = delta_writer.as_mut().unwrap();
                     for mut data_block in dlt_blks {
-                        data_block
-                            .set_code_type_id(*field_id_code_type_map.get(&field_id).unwrap_or(&0));
+                        data_block.set_encodings(encoding);
                         writer
                             .write_block(field_id, &data_block)
                             .context(error::WriteTsmSnafu)?;
@@ -207,8 +212,7 @@ impl FlushTask {
                     }
                     let writer = tsm_writer.as_mut().unwrap();
                     for mut data_block in tsm_blks {
-                        data_block
-                            .set_code_type_id(*field_id_code_type_map.get(&field_id).unwrap_or(&0));
+                        data_block.set_encodings(encoding);
                         writer
                             .write_block(field_id, &data_block)
                             .context(error::WriteTsmSnafu)?;
@@ -221,8 +225,8 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer)
     }
 
-    /// For the collected data, sort and dedup by timestamp, and then group by max_level_ts.
-    /// Returns [ ( FieldId, Delta_DataBlock, Tsm_DatBlock) ]
+    /// For the collected data, sort and dedup by timestamp, and then split by max_level_ts.
+    /// Returns [ ( FieldId, Delta_DataBlocks, Tsm_DataBlocks) ]
     fn merge_series_data(
         series_id: SeriesId,
         column_values: HashMap<u32, Vec<(Timestamp, FieldVal)>>,
@@ -440,7 +444,7 @@ pub mod flush_tests {
     use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::tsm_reader_tests::read_and_check;
-    use crate::tsm::{DataBlock, TsmReader};
+    use crate::tsm::{codec::DataBlockEncoding, DataBlock, TsmReader};
     use crate::{
         compaction::FlushReq,
         context::GlobalContext,
@@ -517,14 +521,14 @@ pub mod flush_tests {
         // Col_3: 7,    8,    None, None
         #[rustfmt::skip]
         let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (model_utils::unite_id(0, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], code_type_id: 0}]),
-            (model_utils::unite_id(1, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], code_type_id: 0}]),
-            (model_utils::unite_id(2, 1), vec![DataBlock::F64{ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], code_type_id: 0}]),
-            (model_utils::unite_id(3, 1), vec![DataBlock::F64{ts: vec![1, 2, 5, 6], val: vec![1.0, 2.0, 5.0, 6.0], code_type_id: 0}]),
-            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], code_type_id: 0}]),
-            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], code_type_id: 0}]),
-            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![9, 10], val: vec![9.0, 10.0], code_type_id: 0}]),
-            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![7, 8], val: vec![7.0, 8.0], code_type_id: 0}]),
+            (model_utils::unite_id(0, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(1, 1), vec![DataBlock::F64{ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(2, 1), vec![DataBlock::F64{ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(3, 1), vec![DataBlock::F64{ts: vec![1, 2, 5, 6], val: vec![1.0, 2.0, 5.0, 6.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![7, 8, 9, 10], val: vec![7.0, 8.0, 9.0, 10.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![9, 10], val: vec![9.0, 10.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![7, 8], val: vec![7.0, 8.0], enc: DataBlockEncoding::default()}]),
         ]);
 
         // | === SeriesId: 2 === |
@@ -541,14 +545,14 @@ pub mod flush_tests {
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
         let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], code_type_id: 0}]),
-            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], code_type_id: 0}]),
-            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], code_type_id: 0}]),
-            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], code_type_id: 0}]),
-            (model_utils::unite_id(0, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], code_type_id: 0}]),
-            (model_utils::unite_id(1, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], code_type_id: 0}]),
-            (model_utils::unite_id(2, 3), vec![DataBlock::F64{ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], code_type_id: 0}]),
-            (model_utils::unite_id(3, 3), vec![DataBlock::F64{ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], code_type_id: 0}]),
+            (model_utils::unite_id(0, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(1, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(2, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(3, 2), vec![DataBlock::F64{ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(0, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(1, 3), vec![DataBlock::F64{ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(2, 3), vec![DataBlock::F64{ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
+            (model_utils::unite_id(3, 3), vec![DataBlock::F64{ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default()}]),
         ]);
 
         let ts_family_id = 1;
