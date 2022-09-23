@@ -387,7 +387,7 @@ impl Engine for TsKv {
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
         let mut seq = 0;
-        if self.options.wal.enabled == true{
+        if self.options.wal.enabled == true {
             let (cb, rx) = oneshot::channel();
             self.wal_sender
                 .send(WalTask::Write { cb, points })

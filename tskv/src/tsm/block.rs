@@ -1,19 +1,29 @@
+mod nullable;
+pub use nullable::*;
+mod bitmap;
+pub use bitmap::*;
+
 use std::{fmt::Display, mem::size_of, ops::Index};
 
 use models::{Timestamp, ValueType};
 use protos::models::FieldType;
 use trace::error;
 
-use super::coders;
-use crate::tsm::coder_instence::{
-    get_bool_coder, get_f64_coder, get_i64_coder, get_str_coder, get_ts_coder, get_u64_coder,
-    CodeType,
-};
 use crate::{
     compaction::overlaps_tuples,
     memcache::{DataType, FieldVal},
     tseries_family::TimeRange,
+    tsm::codec::{
+        get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
+        Encoding,
+    },
 };
+
+pub trait ByTimeRange {
+    fn time_range(&self) -> Option<TimeRange>;
+    fn time_range_by_range(&self, start: usize, end: usize) -> TimeRange;
+    fn exclude(&mut self, time_range: &TimeRange);
+}
 
 #[derive(Debug, Clone)]
 pub enum DataBlock {
@@ -173,32 +183,6 @@ impl DataBlock {
                     val.push(*val_in);
                 }
             }
-        }
-    }
-
-    pub fn time_range(&self) -> Option<(Timestamp, Timestamp)> {
-        if self.is_empty() {
-            return None;
-        }
-        let end = self.len();
-        match self {
-            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-        }
-    }
-
-    /// Returns (`timestamp[start]`, `timestamp[end]`) from this `DataBlock` at the specified
-    /// indexes.
-    pub fn time_range_by_range(&self, start: usize, end: usize) -> (i64, i64) {
-        match self {
-            DataBlock::U64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::I64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::Str { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::F64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::Bool { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
         }
     }
 
@@ -434,37 +418,6 @@ impl DataBlock {
         }
     }
 
-    /// Remove (ts, val) in this `DataBlock` where ts is greater equal than min_ts
-    /// and ts is less equal than the max_ts
-    pub fn exclude(&mut self, time_range: &TimeRange) {
-        if self.is_empty() {
-            return;
-        }
-        let TimeRange { min_ts, max_ts } = *time_range;
-
-        /// Returns possible position of ts in sli,
-        /// and if ts is not found, and position is at the bounds of sli, return (pos, false).
-        fn binary_search(sli: &[i64], ts: &i64) -> (usize, bool) {
-            match sli.binary_search(ts) {
-                Ok(i) => (i, true),
-                Err(i) => (i, false),
-            }
-        }
-
-        let ts_sli = self.ts();
-        let (min_idx, has_min) = binary_search(ts_sli, &min_ts);
-        let (mut max_idx, has_max) = binary_search(ts_sli, &max_ts);
-        // If ts_sli doesn't contain supported time range then return.
-        if min_idx > max_idx || min_idx == max_idx && !has_min && !has_max {
-            return;
-        }
-        if max_idx < ts_sli.len() {
-            max_idx += 1;
-        }
-
-        self.exclude_by_index(min_idx, max_idx);
-    }
-
     /// Extract `DataBlock`s to `DataType`s,
     /// returns the minimum timestamp in a series of `DataBlock`s
     fn next_min(
@@ -499,37 +452,37 @@ impl DataBlock {
         &self,
         start: usize,
         end: usize,
-        ts_compress_algo: CodeType,
-        other_compress_algo: CodeType,
+        ts_compress_algo: Encoding,
+        other_compress_algo: Encoding,
     ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>> {
         let mut ts_buf = vec![];
         let mut data_buf = vec![];
-        let ts_coder = get_ts_coder(ts_compress_algo);
+        let ts_coder = get_ts_codec(ts_compress_algo);
         match self {
             DataBlock::Bool { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_bool_coder(other_compress_algo);
+                let val_coder = get_bool_codec(other_compress_algo);
                 val_coder.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::U64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_u64_coder(other_compress_algo);
+                let val_coder = get_u64_codec(other_compress_algo);
                 val_coder.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::I64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_i64_coder(other_compress_algo);
+                let val_coder = get_i64_codec(other_compress_algo);
                 val_coder.encode(&val[start..end], &mut data_buf)?
             }
             DataBlock::Str { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
                 let strs: Vec<&[u8]> = val.iter().map(|str| &str[..]).collect();
-                let val_coder = get_str_coder(other_compress_algo);
+                let val_coder = get_str_codec(other_compress_algo);
                 val_coder.encode(&strs[start..end], &mut data_buf)?;
             }
             DataBlock::F64 { ts, val, .. } => {
                 ts_coder.encode(&ts[start..end], &mut ts_buf)?;
-                let val_coder = get_f64_coder(other_compress_algo);
+                let val_coder = get_f64_codec(other_compress_algo);
                 val_coder.encode(&val[start..end], &mut data_buf)?;
             }
         }
@@ -537,6 +490,55 @@ impl DataBlock {
     }
 
     pub fn decode() {}
+}
+
+impl ByTimeRange for DataBlock {
+    fn time_range(&self) -> Option<TimeRange> {
+        if self.is_empty() {
+            return None;
+        }
+        let end = self.len();
+        match self {
+            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+        }
+    }
+
+    /// Returns (`timestamp[start]`, `timestamp[end]`) from this `DataBlock` at the specified
+    /// indexes.
+    fn time_range_by_range(&self, start: usize, end: usize) -> TimeRange {
+        match self {
+            DataBlock::U64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()).into(),
+            DataBlock::I64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()).into(),
+            DataBlock::Str { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()).into(),
+            DataBlock::F64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()).into(),
+            DataBlock::Bool { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()).into(),
+        }
+    }
+
+    /// Remove (ts, val) in this `DataBlock` where ts is greater equal than min_ts
+    /// and ts is less equal than the max_ts
+    fn exclude(&mut self, time_range: &TimeRange) {
+        if self.is_empty() {
+            return;
+        }
+        let TimeRange { min_ts, max_ts } = *time_range;
+        let ts_sli = self.ts();
+        let (min_idx, has_min) = binary_search(ts_sli, &min_ts);
+        let (mut max_idx, has_max) = binary_search(ts_sli, &max_ts);
+        // If ts_sli doesn't contain supported time range then return.
+        if min_idx > max_idx || min_idx == max_idx && !has_min && !has_max {
+            return;
+        }
+        if max_idx < ts_sli.len() {
+            max_idx += 1;
+        }
+
+        self.exclude_by_index(min_idx, max_idx);
+    }
 }
 
 impl Display for DataBlock {
@@ -615,6 +617,29 @@ impl Display for DataBlock {
     }
 }
 
+impl From<NullableDataBlock> for DataBlock {
+    fn from(block: NullableDataBlock) -> Self {
+        let mut data_block = DataBlock::new(block.field_values().len(), block.field_type());
+        if let Some(bitmap) = block.bitmap() {
+            for (i, t) in block.timestamps().iter().enumerate() {
+                if bitmap.get(i) {
+                    data_block.insert(&block.field_values().data_value(i, *t));
+                }
+            }
+        }
+        data_block
+    }
+}
+
+/// Returns possible position of ts in sli,
+/// and if ts is not found, and position is at the bounds of sli, return (pos, false).
+fn binary_search(sli: &[i64], val: &i64) -> (usize, bool) {
+    match sli.binary_search(val) {
+        Ok(i) => (i, true),
+        Err(i) => (i, false),
+    }
+}
+
 fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize) {
     if v.is_empty() {
         return;
@@ -648,12 +673,14 @@ fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
+    use models::Timestamp;
     use std::mem::size_of;
 
+    use crate::memcache::FieldVal;
     use crate::{
         memcache::DataType,
         tseries_family::TimeRange,
-        tsm::{block::exclude_fast, DataBlock},
+        tsm::{block::exclude_fast, ByTimeRange, DataBlock, NullableDataBlock},
     };
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {

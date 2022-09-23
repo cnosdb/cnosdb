@@ -13,12 +13,12 @@ use models::{FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
-use super::DataBlock;
 use crate::{
     byte_utils,
     direct_io::{File, FileCursor, FileSync},
     error, file_manager, file_utils,
     tseries_family::{ColumnFile, TimeRange},
+    tsm::{ByTimeRange, DataBlock, NullableDataBlock},
     Error, Result,
 };
 
@@ -290,12 +290,15 @@ impl TsmTombstone {
         None
     }
 
-    pub fn data_block_exclude_tombstones(&self, field_id: FieldId, data_block: &mut DataBlock) {
-        if let Some(tr_tuple) = data_block.time_range() {
-            let time_range: &TimeRange = &tr_tuple.into();
+    pub fn data_block_exclude_tombstones(
+        &self,
+        field_id: FieldId,
+        data_block: &mut NullableDataBlock,
+    ) {
+        if let Some(time_range) = data_block.time_range() {
             if let Some(time_ranges) = self.tombstones.get(&field_id) {
                 for t in time_ranges.iter() {
-                    if t.overlaps(time_range) {
+                    if t.overlaps(&time_range) {
                         data_block.exclude(t);
                     }
                 }

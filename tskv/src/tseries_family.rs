@@ -303,7 +303,7 @@ impl LevelInfo {
         field_id: FieldId,
         time_range: &TimeRange,
     ) -> Vec<DataBlock> {
-        let mut data = vec![];
+        let mut data: Vec<DataBlock> = vec![];
         for file in self.files.iter() {
             if file.is_deleted() || !file.overlap(time_range) {
                 continue;
@@ -319,7 +319,7 @@ impl LevelInfo {
             for idx in tsm_reader.index_iterator_opt(field_id) {
                 for blk in idx.block_iterator_opt(time_range) {
                     if let Ok(blk) = tsm_reader.get_data_block(&blk) {
-                        data.push(blk);
+                        data.push(blk.into());
                     }
                 }
             }

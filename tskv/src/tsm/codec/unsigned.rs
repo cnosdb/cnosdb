@@ -95,10 +95,10 @@ fn u64_to_i64_vector(src: &[u64]) -> Vec<i64> {
 #[allow(clippy::unreadable_literal)]
 mod tests {
     use super::{
-        super::{integer::Encoding, simple8b},
+        super::{integer::DeltaEncoding, simple8b},
         *,
     };
-    use crate::tsm::coder_instence::{get_code_type, CodeType};
+    use crate::tsm::codec::{get_encoding, Encoding};
 
     #[test]
     fn encode_no_values() {
@@ -121,7 +121,7 @@ mod tests {
         u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         // verify uncompressed encoding used
-        assert_eq!(&dst[0] >> 4, Encoding::Uncompressed as u8);
+        assert_eq!(&dst[0] >> 4, DeltaEncoding::Uncompressed as u8);
         let mut got = vec![];
         u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
 
@@ -137,8 +137,8 @@ mod tests {
         let exp = src.clone();
 
         u64_q_compress_encode(&src, &mut dst).unwrap();
-        let exp_code_type = CodeType::Quantile;
-        let got_code_type = get_code_type(&dst);
+        let exp_code_type = Encoding::Quantile;
+        let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
         u64_q_compress_decode(&dst, &mut got).unwrap();
@@ -148,8 +148,8 @@ mod tests {
         got.clear();
 
         u64_without_compress_encode(&src, &mut dst).unwrap();
-        let exp_code_type = CodeType::Null;
-        let got_code_type = get_code_type(&dst);
+        let exp_code_type = Encoding::Null;
+        let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
         u64_without_compress_decode(&dst, &mut got).unwrap();
@@ -187,7 +187,7 @@ mod tests {
             // verify RLE encoding used
             assert_eq!(
                 &dst[1] >> 4,
-                Encoding::Rle as u8,
+                DeltaEncoding::Rle as u8,
                 "didn't use rle on {:?}",
                 src
             );
@@ -207,7 +207,7 @@ mod tests {
         let expected_encoded = vec![32, 0, 0, 2, 61, 218, 167, 172, 228, 0, 231, 7];
         assert_eq!(dst[1..], expected_encoded);
 
-        assert_eq!(&dst[1] >> 4, Encoding::Rle as u8);
+        assert_eq!(&dst[1] >> 4, DeltaEncoding::Rle as u8);
         let mut got = vec![];
         u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
         assert_eq!(got, src);
@@ -226,7 +226,7 @@ mod tests {
             let exp = test.input;
             u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
-            assert_eq!(&dst[1] >> 4, Encoding::Simple8b as u8);
+            assert_eq!(&dst[1] >> 4, DeltaEncoding::Simple8b as u8);
 
             let mut got = vec![];
             u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");

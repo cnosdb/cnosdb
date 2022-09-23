@@ -229,19 +229,26 @@ impl BlockMeta {
     pub fn val_off(&self) -> u64 {
         decode_be_u64(&self.index_ref.data()[self.block_offset + 36..self.block_offset + 44])
     }
+
+    #[inline(always)]
+    pub fn bitmap_off(&self) -> u64 {
+        decode_be_u64(&self.index_ref.data()[self.block_offset + 44..self.block_offset + 52])
+    }
 }
 
 impl Display for BlockMeta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f,
-               "BlockMeta: {{ field_id: {}, field_type: {:?}, min_ts: {}, max_ts: {}, count:{}, offset: {}, val_off: {} }}",
+               "BlockMeta: {{ field_id: {}, field_type: {:?}, min_ts: {}, max_ts: {}, count:{}, offset: {}, val_off: {}, bitmap_off: {} }}",
                self.field_id,
                self.field_type,
                self.min_ts,
                self.max_ts,
                self.count,
                self.offset(),
-               self.val_off())
+               self.val_off(),
+               self.bitmap_off()
+            )
     }
 }
 
@@ -303,6 +310,7 @@ pub(crate) struct BlockEntry {
     pub offset: u64,
     pub size: u64,
     pub val_offset: u64,
+    pub bitmap_offset: u64,
 }
 
 impl BlockEntry {
@@ -314,5 +322,6 @@ impl BlockEntry {
         buf[20..28].copy_from_slice(&self.offset.to_be_bytes()[..]);
         buf[28..36].copy_from_slice(&self.size.to_be_bytes()[..]);
         buf[36..44].copy_from_slice(&self.val_offset.to_be_bytes()[..]);
+        buf[44..52].copy_from_slice(&self.bitmap_offset.to_be_bytes()[..]);
     }
 }
