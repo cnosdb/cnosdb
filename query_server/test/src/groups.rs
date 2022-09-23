@@ -1,10 +1,13 @@
-use crate::case::{search_cases, Case};
-use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
+
+use serde::Deserialize;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::oneshot;
+
+use crate::case::{Case, search_cases};
+use crate::error::Result;
 
 /// test group
 #[derive(Clone, Deserialize, Debug)]
@@ -22,7 +25,7 @@ impl Group {
         self.tests.iter().any(|test| test.eq(case_name))
     }
 
-    pub fn new_with_onecase(case: Case) -> Self {
+    pub fn new_with_case(case: Case) -> Self {
         Group {
             name: case.case_name().to_string(),
             tests: vec![case.case_name().to_string()],
@@ -35,26 +38,29 @@ impl Group {
         self.cases.push(case)
     }
 
-    pub async fn run(&mut self) -> usize {
+    pub async fn run(&mut self) -> Vec<Case> {
         if self.parallel {
             self.run_parallel().await
         } else {
             self.run_serial().await
         }
     }
-    // run in serial and return failed case num
-    pub async fn run_serial(&mut self) -> usize {
-        let mut fail_num = 0;
 
-        for case in &mut self.cases {
-            if !case.run().await {
-                fail_num += 1
+    // run in serial and return failed case num
+    pub async fn run_serial(&self) -> Vec<Case> {
+        let mut failed_cases = Vec::new();
+
+        for case in &self.cases {
+            if let Err(_) = case.run().await {
+                failed_cases.push(case.clone());
             }
         }
-        fail_num
+
+        failed_cases
     }
-    // run in parallel and return failed case num
-    pub async fn run_parallel(&mut self) -> usize {
+
+    /// run in parallel and return failed cases
+    pub async fn run_parallel(&self) -> Vec<Case> {
         let (sender, mut receiver) = unbounded_channel();
         let cases = self.cases.clone();
 
@@ -62,30 +68,37 @@ impl Group {
             let mut handlers = Vec::new();
             for case in cases {
                 let sender = sender.clone();
-                let (tx, rx) = oneshot::channel::<bool>();
+                let (tx, rx) = oneshot::channel::<Option<Case>>();
                 let handler = tokio::spawn(async move {
                     sender.send((case.clone(), tx)).unwrap();
-                    if let Ok(succeed) = rx.await {
-                        succeed
+                    if let Ok(Some(case)) = rx.await {
+                        Some(case)
                     } else {
-                        false
+                        None
                     }
                 });
                 handlers.push(handler);
             }
-            let mut fail_num = 0;
+            let mut failed_cases = Vec::new();
             for handler in handlers {
-                if !handler.await.unwrap() {
-                    fail_num += 1;
+                if let Some(case) = handler.await.unwrap() {
+                    failed_cases.push(case);
                 }
             }
-            fail_num
+            failed_cases
         });
 
-        while let Some((mut case, tx)) = receiver.recv().await {
+        while let Some((case, tx)) = receiver.recv().await {
             tokio::spawn(async move {
-                let succeed = case.run().await; // 10s
-                tx.send(succeed).unwrap();
+                let result = case.run().await;
+                match result {
+                    Ok(_) => tx.send(None).unwrap(),
+
+                    Err(e) => {
+                        println!("\t{} {:#?}", &case, e);
+                        tx.send(Some(case)).unwrap();
+                    }
+                }
             });
         }
 
@@ -99,12 +112,12 @@ pub struct TestGroups {
 }
 
 impl TestGroups {
-    pub fn load(path: &PathBuf) -> Self {
-        let cases = search_cases(path);
+    pub fn load(path: &PathBuf) -> Result<Self> {
+        let cases = search_cases(path)?;
         let toml_str = fs::read_to_string(path.join("TestGroups.toml")).unwrap();
         let mut res: TestGroups = toml::from_str(&toml_str).unwrap();
         res.load_cases(cases);
-        res
+        Ok(res)
     }
 
     pub fn load_cases(&mut self, cases: Vec<Case>) {
@@ -123,13 +136,14 @@ impl TestGroups {
 
         for i in 0..cases.len() {
             if !is_in_group[i] {
-                self.groups.push(Group::new_with_onecase(cases[i].clone()))
+                self.groups.push(Group::new_with_case(cases[i].clone()))
             }
         }
     }
 
     /// serial run group
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Vec<Case> {
+        let mut failed_cases = Vec::new();
         self.groups.retain(|group| !group.cases.is_empty());
 
         let parallel_information = |group: &Group| {
@@ -150,15 +164,16 @@ impl TestGroups {
                 groups_num
             );
             let before = Instant::now();
-            let fail_num = group.run().await;
+            let failed_num = failed_cases.len();
+            failed_cases.extend(group.run().await.into_iter());
             let after = Instant::now();
-
             println!(
-                "TestGroup {} finished in {} ms has {} FAIL",
+                "TestGroup {} finished in {} ms has {} FAIL\n",
                 group.name.as_str(),
                 after.duration_since(before).as_millis(),
-                fail_num
+                failed_num
             );
         }
+        failed_cases
     }
 }

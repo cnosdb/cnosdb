@@ -1,23 +1,35 @@
-extern crate core;
-
-use crate::client::CLIENT;
-use clap::Parser;
-use groups::TestGroups;
-use lazy_static::lazy_static;
+use std::env::current_exe;
 use std::path::PathBuf;
+
+use clap::Parser;
+use lazy_static::lazy_static;
+use reqwest::Url;
+
+use groups::TestGroups;
+
+use crate::client::Client;
+use crate::error::{Error, Result};
 
 mod case;
 mod client;
 mod groups;
 mod query;
+mod error;
 
 #[derive(Parser, Debug)]
-#[clap(author = "ccx", version = "0.1.0", about, long_about = None)]
-pub struct Args {}
+#[clap(author, version = "0.1.0", about, long_about = None)]
+pub struct Args {
+    /// client url
+    #[clap(short, long, value_parser, default_value = "http://127.0.0.1:31007")]
+    pub client_url: Url,
 
-fn default_case_path() -> Result<PathBuf, std::io::Error> {
-    let mut cases_path = std::env::current_exe()?;
+    /// work thread num
+    #[clap(short, long, value_parser, default_value = "4")]
+    pub thread: usize,
+}
 
+fn default_case_path() -> Result<PathBuf> {
+    let mut cases_path = current_exe().or_else(|_| Err(Error::CasePathNotFound))?;
     loop {
         if cases_path.is_dir() {
             let cases_path = cases_path.join("query_server/test/cases");
@@ -27,30 +39,42 @@ fn default_case_path() -> Result<PathBuf, std::io::Error> {
         }
 
         if !cases_path.pop() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Not Found Cases Path",
-            ));
+            return Err(Error::CasePathNotFound)
         }
     }
 }
 
 lazy_static! {
-    pub static ref CASES_PATH: PathBuf = default_case_path().unwrap();
+    pub static ref ARGS: Args = Args::parse();
+    pub static ref CLIENT: Client = Client::from_url(ARGS.client_url.clone());
 }
 
-fn main() {
+fn main() -> Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(8)
+        .worker_threads(ARGS.thread)
         .enable_time()
         .enable_io()
         .build()
         .unwrap();
-    let mut groups = TestGroups::load(&CASES_PATH);
+
+    let case_path = default_case_path()?;
+    let mut groups = TestGroups::load(&case_path)?;
+
     let ping = rt.block_on(CLIENT.ping());
     //TODO (ADD startup db)
     if !ping {
         println!("db hasn't setup!");
     }
-    rt.block_on(groups.run());
+
+    let fail_cases = rt.block_on(groups.run());
+    if fail_cases.is_empty() {
+        return Ok(());
+    }
+
+    println!("FAIL {} cases FAIL:", fail_cases.len());
+    for case in &fail_cases {
+        println!("\t{}", case);
+    }
+    println!();
+    Err(Error::CaseFail)
 }
