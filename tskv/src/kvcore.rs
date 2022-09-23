@@ -386,11 +386,14 @@ impl Engine for TsKv {
         let db = self.version_set.write().create_db(&db_name);
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
-        let (cb, rx) = oneshot::channel();
-        self.wal_sender
-            .send(WalTask::Write { cb, points })
-            .map_err(|err| Error::Send)?;
-        let (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+        let mut seq = 0;
+        if self.options.wal.enabled == true{
+            let (cb, rx) = oneshot::channel();
+            self.wal_sender
+                .send(WalTask::Write { cb, points })
+                .map_err(|err| Error::Send)?;
+            (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+        }
 
         let opt_tsf = db.read().get_tsfamily_random();
         let tsf = match opt_tsf {
