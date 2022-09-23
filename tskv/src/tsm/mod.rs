@@ -1,5 +1,5 @@
 mod block;
-mod coders;
+pub mod coders;
 mod index;
 mod reader;
 mod tombstone;

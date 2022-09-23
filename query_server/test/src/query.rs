@@ -1,7 +1,7 @@
 use std::string::ToString;
 
-use lazy_regex::{Lazy, lazy_regex, Regex};
 use crate::error::Result;
+use lazy_regex::{lazy_regex, Lazy, Regex};
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
