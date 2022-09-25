@@ -530,7 +530,7 @@ impl RowIterator {
                 }
             }
 
-            if (self.collect_row_data(builder)?).is_some() {
+            if self.collect_row_data(builder)?.is_some() {
                 return Ok(Some(()));
             }
         }

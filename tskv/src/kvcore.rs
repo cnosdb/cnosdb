@@ -251,7 +251,6 @@ impl TsKv {
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
-                .await
                 .unwrap();
             }
         };
@@ -344,7 +343,7 @@ impl TsKv {
     // }
 
     // Compact TSM files in database into bigger TSM files.
-    pub async fn compact(&self, database: &str) {
+    pub fn compact(&self, database: &str) {
         if let Some(db) = self.version_set.read().get_db(database) {
             // TODO: stop current and prevent next flush and compaction.
 
@@ -358,7 +357,7 @@ impl TsKv {
                                 cb: summary_tx,
                             });
 
-                            let _ = summary_rx.await;
+                            // let _ = summary_rx.await;
                         }
                         Ok(None) => {
                             info!("There is nothing to compact.");
@@ -406,10 +405,8 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, write_group).await;
-        tsf.write()
-            .check_to_flush(self.flush_task_sender.clone())
-            .await;
+        tsf.read().put_points(seq, write_group);
+        tsf.write().check_to_flush(self.flush_task_sender.clone());
 
         Ok(WritePointsRpcResponse {
             version: 1,
@@ -444,10 +441,8 @@ impl Engine for TsKv {
             ),
         };
 
-        tsf.read().put_points(seq, write_group).await;
-        tsf.write()
-            .check_to_flush(self.flush_task_sender.clone())
-            .await;
+        tsf.read().put_points(seq, write_group);
+        tsf.write().check_to_flush(self.flush_task_sender.clone());
 
         return Ok(WritePointsRpcResponse {
             version: 1,
@@ -516,16 +511,11 @@ impl Engine for TsKv {
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
 
-        let runtime = self.runtime.clone();
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
         let handle = std::thread::spawn(move || {
-            runtime.block_on(database::delete_table_async(
-                database.to_string(),
-                table.to_string(),
-                version_set,
-            ))
+            database::delete_table_async(database.to_string(), table.to_string(), version_set)
         });
         let recv_ret = match handle.join() {
             Ok(ret) => ret,
@@ -600,7 +590,7 @@ impl Engine for TsKv {
     fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>> {
         let version_set = self.version_set.read();
         if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
-            Some(tsf.read().super_version())
+            return Some(tsf.read().super_version());
         } else {
             warn!("ts_family with db name '{}' not found.", db);
             None
@@ -653,7 +643,7 @@ mod test {
     fn consumer(atomic: Arc<AtomicI64>, req_rx: channel::Receiver<u64>) {
         let f = async move {
             println!(" 111111");
-            while (req_rx.recv().await).is_ok() {
+            while req_rx.recv().await.is_ok() {
                 println!(" ====");
                 atomic.fetch_add(1, Ordering::SeqCst);
             }
@@ -671,7 +661,7 @@ mod test {
         let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
             .await
             .unwrap();
-        tskv.compact("public").await;
+        tskv.compact("public");
     }
 
     async fn prepare(tskv: &TsKv, database: &str, table: &str, time_range: &TimeRange) {

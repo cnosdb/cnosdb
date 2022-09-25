@@ -15,7 +15,7 @@ pub fn sort_tags(tags: &mut [Tag]) {
     tags.sort_by(|a, b| -> Ordering { a.key.partial_cmp(&b.key).unwrap() })
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Hash, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Hash, Clone, Eq)]
 pub struct Tag {
     pub key: TagKey,
     pub value: TagValue,

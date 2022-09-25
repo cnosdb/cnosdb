@@ -621,7 +621,7 @@ impl TseriesFamily {
         }
     }
 
-    pub async fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
+    pub fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
         self.immut_cache.push(self.mut_cache.clone());
         self.new_super_version(self.version.clone());
         self.mut_cache = cache;
@@ -652,7 +652,7 @@ impl TseriesFamily {
         self.version = version;
     }
 
-    pub async fn switch_to_immutable(&mut self) {
+    pub fn switch_to_immutable(&mut self) {
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
@@ -672,7 +672,7 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    async fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for i in self.immut_cache.iter() {
@@ -718,19 +718,19 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    pub async fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
+    pub fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
         for ((sid, schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
             mem.write_group(sid, seq, group);
         }
     }
 
-    pub async fn check_to_flush(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    pub fn check_to_flush(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!("mut_cache full,switch to immutable");
-            self.switch_to_immutable().await;
+            self.switch_to_immutable();
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req(sender.clone()).await;
+                self.wrap_flush_req(sender);
             }
         }
     }
@@ -1015,7 +1015,7 @@ mod test {
                 database.clone(),
                 opt.storage.clone(),
                 0,
-                LevelInfo::init_levels(database.clone(), opt.storage.clone()),
+                LevelInfo::init_levels(database, opt.storage.clone()),
                 0,
             )),
             opt.cache.clone(),
@@ -1040,7 +1040,7 @@ mod test {
         };
         let mut points = HashMap::new();
         points.insert((0, 0), row_group);
-        tsf.put_points(0, points).await;
+        tsf.put_points(0, points);
 
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
         tsf.delete_cache(
@@ -1149,7 +1149,6 @@ mod test {
             summary_task_sender,
             compact_task_sender,
         )
-        .await
         .unwrap();
 
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;

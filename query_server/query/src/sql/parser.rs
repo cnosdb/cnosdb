@@ -410,7 +410,7 @@ impl<'a> ExtParser<'a> {
 
     fn parse_codec_type(&mut self) -> Result<String> {
         let token = self.parser.peek_token();
-        return if let Token::Comma = token {
+        if let Token::Comma = token {
             Ok("DEFAULT".to_string())
         } else {
             let has_codec = self.consume_cnos_token(CODEC);
@@ -429,7 +429,7 @@ impl<'a> ExtParser<'a> {
                     parser_err!(format!("{} is not a codec", unexpected))
                 }
             }
-        };
+        }
     }
 }
 

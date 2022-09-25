@@ -55,7 +55,7 @@ async fn test_index_add_del() {
     let database = "db_test".to_string();
     let table = "table_test".to_string();
 
-    let mut series_infos = generate_serie_infos(database.clone(), table.clone());
+    let mut series_infos = generate_serie_infos(database, table.clone());
     let mut sids_1: Vec<u64> = Vec::new();
     let mut sid_info_map: HashMap<u64, &SeriesInfo> = HashMap::new();
 
@@ -82,7 +82,7 @@ async fn test_index_add_del() {
     // Test delete series by series id
     let mut deleted_sid = HashSet::new();
     for sid in sids_2.iter() {
-        index.del_series_info(*sid).await.unwrap();
+        index.del_series_info(*sid).unwrap();
         let key = index.get_series_key(*sid).unwrap();
         assert_eq!(key, None);
         deleted_sid.insert(*sid);
@@ -109,11 +109,11 @@ async fn test_index_add_del() {
     }
 
     // Test delete table schema
-    index.del_table_schema(&table).await.unwrap();
+    index.del_table_schema(&table).unwrap();
     let schema_2 = index.get_table_schema(&table).unwrap();
     assert_eq!(schema_2, None);
 
-    index.flush().await.unwrap();
+    index.flush().unwrap();
 }
 
 #[tokio::test]
@@ -172,12 +172,10 @@ async fn test_index_id_list() {
     let list = index.get_series_id_list("table_test", &tags).unwrap();
     assert_eq!(vec![id2], list);
 
-    let list = index
-        .get_series_id_list("table_test", &tags[0..0].to_vec())
-        .unwrap();
+    let list = index.get_series_id_list("table_test", &tags[0..0]).unwrap();
     assert_eq!(vec![id1, id2, id3], list);
 
-    index.flush().await.unwrap();
+    index.flush().unwrap();
 }
 
 #[tokio::test]
@@ -212,5 +210,5 @@ async fn test_field_type() {
 
     let schema = index.get_table_schema("table_test");
 
-    index.flush().await.unwrap();
+    index.flush().unwrap();
 }

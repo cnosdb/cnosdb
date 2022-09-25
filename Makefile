@@ -11,7 +11,7 @@ fmt:
 	cargo +nightly fmt --all
 
 clippy_check:
-	cargo clippy --workspace --all-features --all-targets
+	cargo clippy --workspace --all-features --all-targets -- -D warnings
 
 clippy:
 	cargo clippy --workspace --all-features --all-targets --fix
