@@ -17,7 +17,7 @@ const MAX_VAR_INT_64: usize = 10;
 
 /// Combined encoding ids with timestamp-block-encoding (high 4 bit)
 /// and values-block-encoding (low 4 bit)
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct DataBlockEncoding(pub u8);
 
 impl DataBlockEncoding {
@@ -40,20 +40,14 @@ impl DataBlockEncoding {
     }
 }
 
-impl Default for DataBlockEncoding {
-    fn default() -> Self {
-        Self(0)
-    }
-}
-
 #[test]
 fn test_data_block_encoding() {
-    let id_0 = DataBlockEncoding(0b_00010011);
+    let id_0 = DataBlockEncoding(0b0001_0011);
     let (code0, code1) = id_0.split();
     assert_eq!(code0 as u8, 1);
     assert_eq!(code1 as u8, 3);
 
-    let id_1 = DataBlockEncoding(0b_01011111);
+    let id_1 = DataBlockEncoding(0b0101_1111);
     let (code2, code3) = id_1.split();
     assert_eq!(code2 as u8, 5);
     assert_eq!(code3 as u8, Encoding::Unknown as u8);
@@ -61,8 +55,8 @@ fn test_data_block_encoding() {
 
 #[test]
 fn test_combine_code_type_id() {
-    let id_0 = 0b_00000001;
-    let id_1 = 0b_00000001;
+    let id_0 = 0b0000_0001;
+    let id_1 = 0b0000_0001;
 
     let code = DataBlockEncoding::combine(Encoding::from(id_0), Encoding::from(id_1));
     assert_eq!(code.0, 0b00010001);

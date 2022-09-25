@@ -549,16 +549,17 @@ pub fn run_compaction_job(
 }
 
 fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
-    let mut cm = CompactMeta::default();
-    cm.file_id = tsm_writer.sequence();
-    cm.file_size = tsm_writer.size();
-    cm.min_ts = tsm_writer.min_ts();
-    cm.max_ts = tsm_writer.max_ts();
-    cm.level = level;
-    cm.high_seq = 0;
-    cm.low_seq = 0;
-    cm.is_delta = false;
-    cm
+    CompactMeta {
+        file_id: tsm_writer.sequence(),
+        file_size: tsm_writer.size(),
+        level,
+        min_ts: tsm_writer.min_ts(),
+        max_ts: tsm_writer.max_ts(),
+        high_seq: 0,
+        low_seq: 0,
+        is_delta: false,
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]

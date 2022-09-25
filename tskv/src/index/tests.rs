@@ -68,7 +68,7 @@ async fn test_index_add_del() {
     sids_1.sort();
 
     // Test get series id list
-    let mut sids_2 = index.get_series_id_list(&table, &vec![]).unwrap();
+    let mut sids_2 = index.get_series_id_list(&table, &[]).unwrap();
     sids_2.sort();
     assert_eq!(&sids_1, &sids_2);
 
@@ -88,7 +88,7 @@ async fn test_index_add_del() {
         deleted_sid.insert(*sid);
     }
     println!("Deleted {} series ids.", sids_2.len());
-    let sids_3 = index.get_series_id_list(&table, &vec![]).unwrap();
+    let sids_3 = index.get_series_id_list(&table, &[]).unwrap();
     let remained_sid: HashSet<u64> = HashSet::from_iter(sids_3.iter().copied());
     println!(
         "Remained {} series ids after Deleted {} series ids. And remained - deleted = {:?}.",
@@ -161,11 +161,7 @@ async fn test_index_id_list() {
     let key1 = index.get_series_key(id1).unwrap().unwrap();
     let key2 = index.get_series_key(id2).unwrap().unwrap();
 
-    let enc = utils::encode_inverted_index_key(
-        &"table_test".to_string(),
-        "tag".as_bytes(),
-        "val".as_bytes(),
-    );
+    let enc = utils::encode_inverted_index_key("table_test", "tag".as_bytes(), "val".as_bytes());
     assert_eq!(enc, "table_test.tag=val".as_bytes());
 
     let tags = vec![
@@ -173,13 +169,11 @@ async fn test_index_id_list() {
         Tag::new(b"host".to_vec(), b"h2".to_vec()),
     ];
 
-    let list = index
-        .get_series_id_list(&"table_test".to_string(), &tags)
-        .unwrap();
+    let list = index.get_series_id_list("table_test", &tags).unwrap();
     assert_eq!(vec![id2], list);
 
     let list = index
-        .get_series_id_list(&"table_test".to_string(), &tags[0..0].to_vec())
+        .get_series_id_list("table_test", &tags[0..0].to_vec())
         .unwrap();
     assert_eq!(vec![id1, id2, id3], list);
 
@@ -216,7 +210,7 @@ async fn test_field_type() {
     let id1 = index.add_series_if_not_exists(&mut info1).unwrap();
     let id2 = index.add_series_if_not_exists(&mut info2);
 
-    let schema = index.get_table_schema(&"table_test".to_string());
+    let schema = index.get_table_schema("table_test");
 
     index.flush().await.unwrap();
 }

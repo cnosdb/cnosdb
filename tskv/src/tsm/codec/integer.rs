@@ -101,7 +101,7 @@ pub fn i64_zigzag_simple8b_encode(
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
     dst.insert(0, Encoding::Delta as u8);
-    return Ok(());
+    Ok(())
 }
 
 // zig_zag_encode converts a signed integer into an unsigned one by zig zagging

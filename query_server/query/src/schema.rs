@@ -45,7 +45,7 @@ impl TableSchema {
             .collect();
 
         let time_field = Field::new(
-            &TIME_FIELD.to_string(),
+            TIME_FIELD,
             ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
             false,
         );

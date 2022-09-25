@@ -75,7 +75,7 @@ impl FieldFileLocation {
             }
         }
 
-        return Ok(self.data_block.get(self.read_index));
+        Ok(self.data_block.get(self.read_index))
     }
 
     pub fn next(&mut self) {
@@ -113,17 +113,17 @@ impl Cursor for TimeCursor {
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
         let data = DataType::I64(self.ts, self.ts);
 
-        return Ok(Some(data));
+        Ok(Some(data))
     }
 
     fn next(&mut self, _ts: i64) {}
 
     fn val_type(&self) -> ValueType {
-        return ValueType::Integer;
+        ValueType::Integer
     }
 
     fn is_field(&self) -> bool {
-        return false;
+        false
     }
 }
 //-----------Tag Cursor----------------
@@ -146,17 +146,17 @@ impl Cursor for TagCursor {
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
         let data = DataType::Str(0, self.value.as_bytes().to_vec());
 
-        return Ok(Some(data));
+        Ok(Some(data))
     }
 
     fn next(&mut self, _ts: i64) {}
 
     fn val_type(&self) -> ValueType {
-        return ValueType::String;
+        ValueType::String
     }
 
     fn is_field(&self) -> bool {
-        return false;
+        false
     }
 }
 
@@ -263,7 +263,7 @@ impl Cursor for FieldCursor {
         if data.timestamp() == i64::MAX {
             return Ok(None);
         }
-        return Ok(Some(data));
+        Ok(Some(data))
     }
 
     fn next(&mut self, ts: i64) {
@@ -283,11 +283,11 @@ impl Cursor for FieldCursor {
     }
 
     fn val_type(&self) -> ValueType {
-        return self.value_type;
+        self.value_type
     }
 
     fn is_field(&self) -> bool {
-        return true;
+        true
     }
 }
 
@@ -313,7 +313,7 @@ impl RowIterator {
                 })?;
 
         let series = engine
-            .get_series_id_list(&option.table_schema.db, &option.table_schema.name, &vec![])
+            .get_series_id_list(&option.table_schema.db, &option.table_schema.name, &[])
             .context(error::IndexErrSnafu)?;
 
         Ok(Self {
@@ -337,7 +337,7 @@ impl RowIterator {
         let tsm_reader = TsmReader::open(file.file_path())?;
         self.open_files.insert(file.file_id(), tsm_reader.clone());
 
-        return Ok(tsm_reader);
+        Ok(tsm_reader)
     }
 
     fn build_series_columns(&mut self, id: u64) -> Result<(), Error> {
@@ -378,7 +378,7 @@ impl RowIterator {
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 
     fn next_series(&mut self) -> Result<Option<()>, Error> {
@@ -394,13 +394,10 @@ impl RowIterator {
 
         self.build_series_columns(self.series[self.series_index])?;
 
-        return Ok(Some(()));
+        Ok(Some(()))
     }
 
-    fn collect_row_data(
-        &mut self,
-        builder: &mut Vec<ArrayBuilderPtr>,
-    ) -> Result<Option<()>, Error> {
+    fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
         debug!("======collect_row_data=========");
         let mut min_time = i64::MAX;
         let mut values = Vec::with_capacity(self.columns.len());
@@ -518,10 +515,10 @@ impl RowIterator {
             }
         }
 
-        return Ok(Some(()));
+        Ok(Some(()))
     }
 
-    fn next_row(&mut self, builder: &mut Vec<ArrayBuilderPtr>) -> Result<Option<()>, Error> {
+    fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
         loop {
             if self.columns.is_empty() {
                 match self.next_series() {
@@ -533,7 +530,7 @@ impl RowIterator {
                 }
             }
 
-            if let Some(_) = self.collect_row_data(builder)? {
+            if (self.collect_row_data(builder)?).is_some() {
                 return Ok(Some(()));
             }
         }
@@ -571,7 +568,7 @@ impl RowIterator {
             }
         }
 
-        return builders;
+        builders
     }
 
     fn is_finish(&self) -> bool {
@@ -579,7 +576,7 @@ impl RowIterator {
             return false;
         }
 
-        return self.series_index >= self.series.len();
+        self.series_index >= self.series.len()
     }
 }
 
@@ -610,12 +607,10 @@ impl Iterator for RowIterator {
         }
 
         match RecordBatch::try_new(self.option.datafusion_schema.clone(), cols) {
-            Ok(batch) => return Some(Ok(batch)),
-            Err(err) => {
-                return Some(Err(Error::DataFusionNew {
-                    reason: err.to_string(),
-                }))
-            }
+            Ok(batch) => Some(Ok(batch)),
+            Err(err) => Some(Err(Error::DataFusionNew {
+                reason: err.to_string(),
+            })),
         }
     }
 }

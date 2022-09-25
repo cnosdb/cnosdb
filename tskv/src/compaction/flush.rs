@@ -408,9 +408,8 @@ pub async fn run_flush_memtable_job(
             .run(tsf.read().version(), &mut edits)
             .await?;
 
-            match compact_task_sender.send(*tsf_id) {
-                Err(e) => error!("{}", e),
-                _ => {}
+            if let Err(e) = compact_task_sender.send(*tsf_id) {
+                error!("{}", e);
             }
         }
     }

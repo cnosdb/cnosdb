@@ -24,8 +24,7 @@ mod tests {
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
-        rt.clone()
-            .block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) })
+        rt.block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) })
     }
 
     #[test]
@@ -185,13 +184,13 @@ mod tests {
         );
 
         info!("delete delta data");
-        tskv.delete_series(&database, &sids, &vec![1], &TimeRange::new(1, 1))
+        tskv.delete_series(&database, &sids, &[1], &TimeRange::new(1, 1))
             .unwrap();
         tskv.read(
             &database,
             sids.clone(),
             &TimeRange::new(0, Local::now().timestamp_millis() + 100),
-            fields_id.clone(),
+            fields_id,
         );
     }
 

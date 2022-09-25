@@ -60,7 +60,7 @@ impl Case {
     }
     /// check out and expected result
     pub async fn check(&self, result: &str, out: &str) -> bool {
-        let diff = diff_lines(&result, &out)
+        let diff = diff_lines(result, out)
             .set_diff_only(true)
             .set_show_lines(true);
 

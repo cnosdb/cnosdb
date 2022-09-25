@@ -416,6 +416,8 @@ mod test {
         Arc::new(opt)
     }
 
+    type ColumnFilesSketch = (u64, i64, i64, u64, bool);
+    type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;
     /// Returns a TseriesFamily by TseriesFamOpt and levels_sketch.
     ///
     /// All elements in levels_sketch is :
@@ -432,7 +434,7 @@ mod test {
     fn create_tseries_family(
         database: String,
         opt: Arc<Options>,
-        levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)>,
+        levels_sketch: LevelsSketch,
     ) -> TseriesFamily {
         let mut level_infos = LevelInfo::init_levels(database.clone(), opt.storage.clone());
         let mut max_level_ts = 0_i64;
@@ -497,7 +499,7 @@ mod test {
         let opt = create_options(dir.to_string());
 
         #[rustfmt::skip]
-        let levels_sketch: Vec<(u32, i64, i64, Vec<(u64, i64, i64, u64, bool)>)> = vec![
+        let levels_sketch: LevelsSketch = vec![
             // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
             (0_u32, 1_i64, 1000_i64, vec![
                 (11_u64, 1_i64, 1000_i64, 1000_u64, false),

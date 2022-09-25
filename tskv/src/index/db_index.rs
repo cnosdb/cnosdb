@@ -289,7 +289,7 @@ impl DBIndex {
         Ok(())
     }
 
-    pub fn get_table_schema(&mut self, tab: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema(&mut self, tab: &str) -> IndexResult<Option<Vec<FieldInfo>>> {
         if let Some(fields) = self.table_schema.get(tab) {
             return Ok(Some(fields.to_vec()));
         }
@@ -337,15 +337,15 @@ impl DBIndex {
             return *v;
         }
 
-        return 1;
+        1
     }
 
-    pub fn incr_schema_id(&mut self, tab: &String) -> u32 {
-        let v = self.schema_id.entry(tab.clone()).or_insert(1);
+    pub fn incr_schema_id(&mut self, tab: &str) -> u32 {
+        let v = self.schema_id.entry(tab.to_owned()).or_insert(1);
 
-        *v = *v + 1;
+        *v += 1;
 
-        return *v;
+        *v
     }
 
     pub async fn del_table_schema(&mut self, tab: &String) -> IndexResult<()> {
@@ -417,22 +417,18 @@ impl DBIndex {
         Ok(())
     }
 
-    pub fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
+    pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
-            loop {
-                if let Some(kv) = it.next() {
-                    if let Ok(kv) = kv {
-                        let id_list = decode_series_id_list(&kv.1)?;
-                        result = utils::or_u64(&result, &id_list);
-                    } else {
-                        return Err(IndexError::IndexStroage {
-                            msg: format!("scan prefix: {}", tab),
-                        });
-                    }
+            for kv in it.by_ref() {
+                if let Ok(kv) = kv {
+                    let id_list = decode_series_id_list(&kv.1)?;
+                    result = utils::or_u64(&result, &id_list);
                 } else {
-                    break;
+                    return Err(IndexError::IndexStroage {
+                        msg: format!("scan prefix: {}", tab),
+                    });
                 }
             }
 

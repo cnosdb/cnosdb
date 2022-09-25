@@ -371,7 +371,7 @@ pub fn get_encoding(src: &[u8]) -> Encoding {
     if src.is_empty() {
         return Encoding::Unknown;
     }
-    return Encoding::from(src[0]);
+    Encoding::from(src[0])
 }
 
 pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec> {

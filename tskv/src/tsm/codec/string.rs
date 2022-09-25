@@ -105,7 +105,7 @@ pub fn str_zstd_encode(
 
     dst.push(Encoding::Zstd as u8);
     zstd::stream::copy_encode(data.as_slice(), dst, ZSTD_COMPRESS_LEVEL)?;
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_gzip_encode(
@@ -129,7 +129,7 @@ pub fn str_gzip_encode(
 
     dst.push(Encoding::Gzip as u8);
     dst.append(&mut encoder.finish()?);
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_bzip_encode(
@@ -153,7 +153,7 @@ pub fn str_bzip_encode(
 
     dst.push(Encoding::Bzip as u8);
     dst.append(&mut encoder.finish()?);
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_zlib_encode(
@@ -175,7 +175,7 @@ pub fn str_zlib_encode(
     encoder.write_all(&data).unwrap();
     dst.push(Encoding::Zlib as u8);
     dst.append(&mut encoder.finish()?);
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_without_compress_encode(
@@ -195,7 +195,7 @@ pub fn str_without_compress_encode(
         dst.extend_from_slice(s);
     }
 
-    return Ok(());
+    Ok(())
 }
 
 /// Decodes a slice of bytes representing Snappy-compressed data into a vector
@@ -257,7 +257,7 @@ fn split_stream(data: &[u8], dst: &mut Vec<Vec<u8>>) -> Result<(), Box<dyn Error
         dst.push(Vec::from(&data[i..i + str_len]));
         i += str_len;
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_zstd_decode(
@@ -274,7 +274,7 @@ pub fn str_zstd_decode(
     zstd::stream::copy_decode(src, &mut data)?;
 
     split_stream(&data, dst)?;
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_bzip_decode(
@@ -293,7 +293,7 @@ pub fn str_bzip_decode(
 
     split_stream(&data, dst)?;
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_gzip_decode(
@@ -312,7 +312,7 @@ pub fn str_gzip_decode(
 
     split_stream(&data, dst)?;
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_zlib_decode(
@@ -331,7 +331,7 @@ pub fn str_zlib_decode(
 
     split_stream(&data, dst)?;
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn str_without_compress_decode(
@@ -344,7 +344,7 @@ pub fn str_without_compress_decode(
     let src = &src[1..];
     split_stream(src, dst)?;
 
-    return Ok(());
+    Ok(())
 }
 
 #[cfg(test)]
