@@ -253,8 +253,8 @@ pub fn f64_q_compress_encode(
 
     dst.push(Encoding::Quantile as u8);
 
-    dst.append(&mut auto_compress(&src, DEFAULT_COMPRESSION_LEVEL));
-    return Ok(());
+    dst.append(&mut auto_compress(src, DEFAULT_COMPRESSION_LEVEL));
+    Ok(())
 }
 
 pub fn f64_without_compress_encode(
@@ -272,7 +272,7 @@ pub fn f64_without_compress_encode(
     for i in src.iter() {
         dst.extend_from_slice(((*i) as f64).to_be_bytes().as_slice());
     }
-    return Ok(());
+    Ok(())
 }
 
 // BIT_MASK contains a lookup table where the index is the number of bits
@@ -380,7 +380,7 @@ pub fn f64_q_compress_decode(
 
     let mut decode: Vec<f64> = auto_decompress(src)?;
     dst.append(&mut decode);
-    return Ok(());
+    Ok(())
 }
 
 pub fn f64_without_compress_decode(
@@ -396,7 +396,7 @@ pub fn f64_without_compress_decode(
     for i in iter {
         dst.push(decode_be_f64(i))
     }
-    return Ok(());
+    Ok(())
 }
 
 /// decode decodes a slice of bytes into a vector of floats.

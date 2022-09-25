@@ -1,4 +1,3 @@
-use config::get_config;
 use std::env;
 
 const ARG_PRINT: &str = "print"; // To print something

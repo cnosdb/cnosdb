@@ -218,14 +218,16 @@ fn next_tag_set(buf: &str) -> Option<(Vec<(&str, &str)>, usize)> {
     }
 }
 
-fn next_field_set(buf: &str) -> Result<Option<(Vec<(&str, FieldValue)>, usize)>> {
+type FieldSet<'a> = Vec<(&'a str, FieldValue)>;
+
+fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
     let mut escaped = false;
     let mut quoted = false;
     let mut exists_field_set = false;
     let mut tok_offsets = [0_usize; 3];
     let mut tok_end = 0_usize;
 
-    let mut field_set: Vec<(&str, FieldValue)> = Vec::new();
+    let mut field_set: FieldSet = Vec::new();
     for (i, c) in buf.chars().enumerate() {
         // TagSet begin character
         if c == '\\' {
@@ -291,24 +293,20 @@ fn next_field_set(buf: &str) -> Result<Option<(Vec<(&str, FieldValue)>, usize)>>
 }
 
 fn parse_field_value(buf: &str) -> Result<FieldValue> {
-    for (i, c) in buf.chars().enumerate() {
-        if i == 0 {
-            let ret = match c {
-                ch if ch.is_numeric() => parse_numeric_field(buf, true),
-                '+' => parse_numeric_field(&buf[1..], true),
-                '-' => parse_numeric_field(&buf[1..], false),
-                't' | 'T' => parse_boolean_field(buf, true),
-                'f' | 'F' => parse_boolean_field(buf, false),
-                '"' => parse_string_field(buf),
-                _ => Err(Error::Parse {
-                    pos: 0,
-                    content: buf.to_string(),
-                }),
-            };
-            return ret;
-        } else {
-            break;
-        }
+    if let Some((_, c)) = buf.chars().enumerate().next() {
+        let ret = match c {
+            ch if ch.is_numeric() => parse_numeric_field(buf, true),
+            '+' => parse_numeric_field(&buf[1..], true),
+            '-' => parse_numeric_field(&buf[1..], false),
+            't' | 'T' => parse_boolean_field(buf, true),
+            'f' | 'F' => parse_boolean_field(buf, false),
+            '"' => parse_string_field(buf),
+            _ => Err(Error::Parse {
+                pos: 0,
+                content: buf.to_string(),
+            }),
+        };
+        return ret;
     }
     Ok(FieldValue::F64(1.0))
 }

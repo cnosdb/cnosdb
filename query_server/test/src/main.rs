@@ -29,7 +29,7 @@ pub struct Args {
 }
 
 fn default_case_path() -> Result<PathBuf> {
-    let mut cases_path = current_exe().or_else(|_| Err(Error::CasePathNotFound))?;
+    let mut cases_path = current_exe().map_err(|_| Error::CasePathNotFound)?;
     loop {
         if cases_path.is_dir() {
             let cases_path = cases_path.join("query_server/test/cases");

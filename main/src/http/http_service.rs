@@ -311,7 +311,7 @@ mod test {
 
         let (tx, rx) = oneshot::channel();
 
-        let (addr, server) =
+        let (_addr, server) =
             warp::serve(routes).bind_with_graceful_shutdown(([127, 0, 0, 1], 30001), async {
                 rx.await.ok();
             });

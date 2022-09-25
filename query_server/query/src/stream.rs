@@ -1,7 +1,4 @@
-use std::{
-    collections::{btree_map, BTreeMap},
-    sync::Arc,
-};
+use std::collections::BTreeMap;
 
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
@@ -9,7 +6,6 @@ use datafusion::{
 };
 use futures::Stream;
 
-use trace::{debug, error};
 use tskv::engine::EngineRef;
 
 use tskv::{Error, TimeRange};
@@ -21,6 +17,7 @@ use crate::{
 };
 use crate::{predicate::PredicateRef, schema::TIME_FIELD};
 
+#[allow(dead_code)]
 pub enum ArrayType {
     U64(Vec<u64>),
     I64(Vec<i64>),
@@ -67,11 +64,8 @@ impl TableScanStream {
             }
         }
 
-        let proj_table_schema = TableSchema::new(
-            table_schema.db.clone(),
-            table_schema.name.clone(),
-            proj_fileds,
-        );
+        let proj_table_schema =
+            TableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
         let (min_ts, max_ts) = filter.get_time_range();
         let option = QueryOption {
@@ -100,20 +94,18 @@ impl Stream for TableScanStream {
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
         match this.iterator.next() {
             Some(data) => match data {
-                Ok(batch) => return std::task::Poll::Ready(Some(Ok(batch))),
+                Ok(batch) => std::task::Poll::Ready(Some(Ok(batch))),
                 Err(err) => {
-                    return std::task::Poll::Ready(Some(Err(ArrowError::CastError(
-                        err.to_string(),
-                    ))))
+                    std::task::Poll::Ready(Some(Err(ArrowError::CastError(err.to_string()))))
                 }
             },
-            None => return std::task::Poll::Ready(None),
+            None => std::task::Poll::Ready(None),
         }
     }
 

@@ -981,7 +981,7 @@ impl Predicate {
     }
 
     pub fn get_time_range(&self) -> (i64, i64) {
-        return (self.timeframe.min_ts, self.timeframe.max_ts);
+        (self.timeframe.min_ts, self.timeframe.max_ts)
     }
 }
 
