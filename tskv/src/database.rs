@@ -66,16 +66,15 @@ impl Database {
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
-    pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
+    pub fn switch_memcache(&self, tf_id: u32, seq: u64) {
         if let Some(tf) = self.ts_families.get(&tf_id) {
-            let mut tf = tf.write();
             let mem = Arc::new(RwLock::new(MemCache::new(
                 tf_id,
                 self.opt.cache.max_buffer_size,
                 seq,
             )));
-
-            tf.switch_memcache(mem).await;
+            let mut tf = tf.write();
+            tf.switch_memcache(mem);
         }
     }
 
@@ -287,7 +286,7 @@ impl Database {
     }
 }
 
-pub(crate) async fn delete_table_async(
+pub(crate) fn delete_table_async(
     database: String,
     table: String,
     version_set: Arc<RwLock<VersionSet>>,
@@ -316,17 +315,15 @@ pub(crate) async fn delete_table_async(
             .context(error::IndexErrSnafu)?;
         index_wlock
             .del_table_schema(&table)
-            .await
             .context(error::IndexErrSnafu)?;
 
         println!("{:?}", &sids);
         for sid in sids.iter() {
             index_wlock
                 .del_series_info(*sid)
-                .await
                 .context(error::IndexErrSnafu)?;
         }
-        index_wlock.flush().await.context(error::IndexErrSnafu)?;
+        index_wlock.flush().context(error::IndexErrSnafu)?;
 
         drop(index_wlock);
 

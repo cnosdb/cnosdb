@@ -17,7 +17,7 @@ const MAX_VAR_INT_64: usize = 10;
 
 /// Combined encoding ids with timestamp-block-encoding (high 4 bit)
 /// and values-block-encoding (low 4 bit)
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct DataBlockEncoding(pub u8);
 
 impl DataBlockEncoding {

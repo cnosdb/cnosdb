@@ -348,7 +348,7 @@ impl DBIndex {
         *v
     }
 
-    pub async fn del_table_schema(&mut self, tab: &String) -> IndexResult<()> {
+    pub fn del_table_schema(&mut self, tab: &String) -> IndexResult<()> {
         self.table_schema.remove(tab);
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
@@ -357,7 +357,7 @@ impl DBIndex {
         Ok(())
     }
 
-    pub async fn flush(&mut self) -> IndexResult<()> {
+    pub fn flush(&mut self) -> IndexResult<()> {
         self.storage.flush();
         Ok(())
     }
@@ -384,7 +384,7 @@ impl DBIndex {
         Ok(None)
     }
 
-    pub async fn del_series_info(&mut self, sid: u64) -> IndexResult<()> {
+    pub fn del_series_info(&mut self, sid: u64) -> IndexResult<()> {
         let (hash_id, _) = utils::split_id(sid);
         self.series_cache.remove(&hash_id);
 

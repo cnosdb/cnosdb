@@ -18,15 +18,6 @@ use crate::{
 use crate::{predicate::PredicateRef, schema::TIME_FIELD};
 
 #[allow(dead_code)]
-pub enum ArrayType {
-    U64(Vec<u64>),
-    I64(Vec<i64>),
-    Str(Vec<String>),
-    F64(Vec<f64>),
-    Bool(Vec<bool>),
-}
-
-#[allow(dead_code)]
 pub struct TableScanStream {
     proj_schema: SchemaRef,
     filter: PredicateRef,

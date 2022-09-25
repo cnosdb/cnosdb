@@ -25,7 +25,7 @@ use crate::{
 };
 
 const MAX_BATCH_SIZE: usize = 64;
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
     pub file_id: u64,
     pub file_size: u64,
@@ -96,7 +96,7 @@ impl From<&ColumnFile> for CompactMeta {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub has_seq_no: bool,
     pub seq_no: u64,

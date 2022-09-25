@@ -28,7 +28,7 @@ use libc::max_align_t;
 use std::error::Error;
 
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Encoding {
     Default = 0,
     Null = 1,

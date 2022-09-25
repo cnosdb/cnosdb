@@ -42,7 +42,7 @@ impl SeriesKey {
             }
         }
 
-        return vec![];
+        vec![]
     }
 
     pub fn hash(&self) -> u64 {

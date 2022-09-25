@@ -367,7 +367,7 @@ impl MemEntry {
     }
 
     pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
-        return vec![self.data_block(time_range)];
+        vec![self.data_block(time_range)]
     }
 
     pub fn sort(&mut self) {

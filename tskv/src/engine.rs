@@ -50,7 +50,6 @@ pub trait Engine: Send + Sync + Debug {
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
     fn get_series_key(&self, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>>;
-
     fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>>;
 }
 
