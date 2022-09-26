@@ -145,7 +145,9 @@ impl FlushTask {
         let mut tsm_writer: Option<TsmWriter> = None;
 
         for (sid, series_datas) in caches_data.iter_mut() {
-            let schema: Vec<FieldInfo> = self.get_table_schema(*sid)?;
+            // todo : improve get table schema
+            // let schema: Vec<FieldInfo> = self.get_table_schema(*sid)?;
+            let schema: Vec<FieldInfo> = vec![];
             let field_id_code_type_map: HashMap<FieldId, u8> =
                 HashMap::from_iter(schema.iter().map(|f| (f.field_id(), f.code_type())));
             let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
