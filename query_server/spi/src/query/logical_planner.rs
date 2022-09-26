@@ -51,6 +51,8 @@ pub enum DDLPlan {
     Drop(DropPlan),
     /// Create external table. such as parquet\csv...
     CreateExternalTable(CreateExternalTable),
+
+    CreateTable(CreateTable),
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +99,18 @@ pub struct CSVOptions {
     pub has_header: bool,
     /// Delimiter for CSV
     pub delimiter: char,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTable {
+    /// The table schema
+    pub schema: DFSchemaRef,
+    /// The table name
+    pub name: String,
+    /// Option to not error if table already exists
+    pub if_not_exists: bool,
+    /// The table tags
+    pub tags: Vec<String>,
 }
 
 pub trait LogicalPlanner {
