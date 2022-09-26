@@ -5,51 +5,55 @@ edition = "2021"
 
 [dependencies]
 config = { path = "../config" }
-models = { path = "../models" }
-protos = { path = "../protos", features = ["test"] }
-trace  = { path = "../trace" }
-utils  = { path = "../utils"  }
+models = { path = "../common/models" }
+protos = { path = "../common/protos", features = ["test"] }
+trace = { path = "../common/trace" }
+utils = { path = "../common/utils" }
 
 
 async-channel = "1.7.1"
+async-recursion = "1.0.0"
+async-trait = "0.1"
+bincode = "1.3.3"
+bytes = "1.1"
+bzip2 = "0.4.3"
 chrono = "0.4"
+crc32fast = "1.3.0"
 core_affinity = "0.5.10"
-futures = { version = "0.3", features = ["std", "thread-pool"] }
+dashmap = "5.2"
+evmap = "10.0"
 flatbuffers = "2.1"
+flate2 = "1.0.24"
+futures = { version = "0.3", features = ["std", "thread-pool"] }
+integer-encoding = "3.0.3"
 lazy_static = "1.4"
 libc = "0.2"
 mio = "0.8"
 num_cpus = "1.13.1"
+num_enum = "0.5.7"
+num-traits = "0.2.14"
 once_cell = "1.10"
-priority-queue = "1.2"
-regex = "1.5"
-snafu = "0.7"
-serial_test = "0.8.0"
-tokio = { version = "1.17", features = ["full"] }
-walkdir = "2.3"
-async-trait = "0.1"
-async-recursion = "1.0.0"
-bytes = "1.1"
-dashmap = "5.2"
-evmap = "10.0"
 page_size = "0.4"
 parking_lot = { version = "0.12.1", features = ["nightly", "send_guard"] }
-static_assertions = "1.1"
-crc32fast = "1.3.0"
+priority-queue = "1.2"
+q_compress = "0.11.1"
+regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
-bincode = "1.3.3"
-num-traits = "0.2.14"
-num_enum = "0.5.7"
-integer-encoding = "3.0.3"
-snap = "1.0.0"
-tracing = "0.1.35"
+serial_test = "0.8.0"
 sled = "0.34.7"
+snafu = "0.7"
+snap = "1.0.0"
+static_assertions = "1.1"
+tokio = { version = "1.21", features = ["full"] }
+tracing = "0.1.35"
+walkdir = "2.3"
+zstd = "0.11.2"
 
 [dev-dependencies]
 criterion = { version = "0.3.5", features = ["async_tokio"] }
 rand = "0.8"
 tempfile = "3"
-parking_lot = { version = "0.12.1", features = ["nightly"]}
+parking_lot = { version = "0.12.1", features = ["nightly"] }
 
 [[bench]]
 name = "kvcore_bench"

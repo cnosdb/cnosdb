@@ -1,22 +1,31 @@
 use std::{
-    collections::HashMap,
-    path,
+    collections::{BTreeMap, HashMap},
+    path::{self, Path},
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
-use crate::error::{self, Result};
+use crate::{
+    error::{self, Result},
+    memcache::{RowData, RowGroup},
+    version_set::VersionSet,
+    TimeRange, TseriesFamilyId,
+};
+use models::utils::{split_id, unite_id};
+use models::{SeriesKey, Timestamp};
+
 use parking_lot::RwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::error;
+use trace::{debug, error, info};
 
 use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
 
+use crate::index::IndexResult;
 use crate::tseries_family::LevelInfo;
 use crate::{
     index::db_index,
-    kv_option::{TseriesFamDesc, TseriesFamOpt},
+    kv_option::Options,
     memcache::MemCache,
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{TseriesFamily, Version},
@@ -27,26 +36,31 @@ pub struct Database {
     name: String,
     index: Arc<RwLock<db_index::DBIndex>>,
     ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
+    opt: Arc<Options>,
 }
 
 impl Database {
-    pub fn new(name: &String, path: &String) -> Self {
+    pub fn new(name: &String, opt: Arc<Options>) -> Self {
         Self {
-            index: db_index::index_manger(path).write().get_db_index(&name),
+            index: db_index::index_manger(opt.storage.index_base_dir())
+                .write()
+                .get_db_index(name),
             name: name.to_string(),
             ts_families: HashMap::new(),
+            opt,
         }
     }
 
     pub fn open_tsfamily(&mut self, ver: Arc<Version>) {
-        let opt = ver.ts_family_opt();
+        let opt = ver.storage_opt();
 
         let tf = TseriesFamily::new(
             ver.tf_id(),
-            ver.tf_name().to_string(),
-            MemCache::new(ver.tf_id(), opt.max_memcache_size, ver.last_seq, false),
+            ver.database().to_string(),
+            MemCache::new(ver.tf_id(), self.opt.cache.max_buffer_size, ver.last_seq),
             ver.clone(),
-            opt,
+            self.opt.cache.clone(),
+            self.opt.storage.clone(),
         );
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
@@ -57,10 +71,10 @@ impl Database {
             let mut tf = tf.write();
             let mem = Arc::new(RwLock::new(MemCache::new(
                 tf_id,
-                tf.options().max_memcache_size,
+                self.opt.cache.max_buffer_size,
                 seq,
-                false,
             )));
+
             tf.switch_memcache(mem).await;
         }
     }
@@ -72,24 +86,24 @@ impl Database {
         tsf_id: u32,
         seq_no: u64,
         file_id: u64,
-        opt: Arc<TseriesFamOpt>,
         summary_task_sender: UnboundedSender<SummaryTask>,
     ) -> Arc<RwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
             self.name.clone(),
-            opt.clone(),
+            self.opt.storage.clone(),
             file_id,
-            LevelInfo::init_levels(opt.clone()),
+            LevelInfo::init_levels(self.name.clone(), self.opt.storage.clone()),
             i64::MIN,
         ));
 
         let tf = TseriesFamily::new(
             tsf_id,
             self.name.clone(),
-            MemCache::new(tsf_id, opt.max_memcache_size, seq_no, false),
+            MemCache::new(tsf_id, self.opt.cache.max_buffer_size, seq_no),
             ver,
-            opt,
+            self.opt.cache.clone(),
+            self.opt.storage.clone(),
         );
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
@@ -127,30 +141,63 @@ impl Database {
         }
     }
 
-    pub fn build_mem_points(
+    pub fn build_write_group(
         &self,
         points: flatbuffers::Vector<flatbuffers::ForwardsUOffset<Point>>,
-    ) -> Result<Vec<InMemPoint>> {
-        let mut mem_points = Vec::<_>::with_capacity(points.len());
-
-        // get or create forward index
+    ) -> Result<HashMap<(u64, u32), RowGroup>> {
+        // (series id, schema id) -> RowGroup
+        let mut map = HashMap::new();
         for point in points {
             let mut info =
                 SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
+
             let sid = self.build_index_and_check_type(&mut info)?;
 
-            let mut point = InMemPoint::from(point);
-            point.series_id = sid;
+            let row = RowData::from(point);
+            let mut all_fileds = BTreeMap::new();
             let fields = info.field_infos();
-
-            for i in 0..fields.len() {
-                point.fields[i].field_id = fields[i].field_id();
+            for (i, f) in row.fields.into_iter().enumerate() {
+                all_fileds.insert(fields[i].field_id(), f);
             }
 
-            mem_points.push(point);
+            let fields = info.field_fill();
+            for i in 0..fields.len() {
+                all_fileds.insert(fields[i].field_id(), None);
+            }
+
+            let ts = row.ts;
+            let schema_id = info.get_schema_id();
+            let mut schema = Vec::with_capacity(all_fileds.len());
+            let mut all_row = Vec::with_capacity(all_fileds.len());
+            for (k, v) in all_fileds {
+                let (fid, _) = split_id(k);
+
+                all_row.push(v);
+                schema.push(fid);
+            }
+
+            let (_, sid) = split_id(sid);
+            let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
+                schema_id,
+                schema,
+                rows: vec![],
+                range: TimeRange {
+                    min_ts: i64::MAX,
+                    max_ts: i64::MIN,
+                },
+            });
+
+            entry.range.merge(&TimeRange {
+                min_ts: ts,
+                max_ts: ts,
+            });
+            entry.rows.push(RowData {
+                ts,
+                fields: all_row,
+            });
         }
 
-        return Ok(mem_points);
+        return Ok(map);
     }
 
     fn build_index_and_check_type(&self, info: &mut SeriesInfo) -> Result<u64> {
@@ -164,7 +211,7 @@ impl Database {
             .add_series_if_not_exists(info)
             .context(error::IndexErrSnafu)?;
 
-        return Ok(id);
+        Ok(id)
     }
 
     pub fn version_edit(&self, last_seq: u64) -> (Vec<VersionEdit>, Vec<VersionEdit>) {
@@ -195,6 +242,18 @@ impl Database {
         (edits, files)
     }
 
+    pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        self.index.write().get_series_key(sid)
+    }
+
+    pub fn get_table_schema(&self, table_name: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
+        self.index.write().get_table_schema(table_name)
+    }
+
+    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<Vec<FieldInfo>>> {
+        self.index.write().get_table_schema_by_series_id(sid)
+    }
+
     pub fn get_tsfamily(&self, id: u32) -> Option<&Arc<RwLock<TseriesFamily>>> {
         self.ts_families.get(&id)
     }
@@ -207,8 +266,15 @@ impl Database {
         &self.ts_families
     }
 
-    pub fn get_index(&self) -> &Arc<RwLock<db_index::DBIndex>> {
-        return &self.index;
+    pub fn for_each_ts_family<F>(&self, func: F)
+    where
+        F: FnMut((&TseriesFamilyId, &Arc<RwLock<TseriesFamily>>)),
+    {
+        self.ts_families.iter().for_each(func);
+    }
+
+    pub fn get_index(&self) -> Arc<RwLock<db_index::DBIndex>> {
+        self.index.clone()
     }
 
     // todo: will delete in cluster version
@@ -219,4 +285,75 @@ impl Database {
 
         None
     }
+}
+
+pub(crate) async fn delete_table_async(
+    database: String,
+    table: String,
+    version_set: Arc<RwLock<VersionSet>>,
+) -> Result<()> {
+    info!("Drop table: '{}.{}'", &database, &table);
+    let version_set_rlock = version_set.read();
+    let options = version_set_rlock.options();
+    let db_instance = version_set_rlock.get_db(&database);
+    drop(version_set_rlock);
+
+    if let Some(db) = db_instance {
+        let index = db.read().get_index();
+        let sids = index
+            .read()
+            .get_series_id_list(&table, &vec![])
+            .await
+            .context(error::IndexErrSnafu)?;
+
+        let mut index_wlock = index.write();
+
+        debug!(
+            "Drop table: deleting index in table: {}.{}",
+            &database, &table
+        );
+        let field_infos = index_wlock
+            .get_table_schema(&table)
+            .context(error::IndexErrSnafu)?;
+        index_wlock
+            .del_table_schema(&table)
+            .await
+            .context(error::IndexErrSnafu)?;
+
+        println!("{:?}", &sids);
+        for sid in sids.iter() {
+            index_wlock
+                .del_series_info(*sid)
+                .await
+                .context(error::IndexErrSnafu)?;
+        }
+        index_wlock.flush().await.context(error::IndexErrSnafu)?;
+
+        drop(index_wlock);
+
+        if let Some(fields) = field_infos {
+            debug!(
+                "Drop table: deleting series in table: {}.{}",
+                &database, &table
+            );
+            let fids: Vec<u64> = fields.iter().map(|f| f.field_id()).collect();
+            let storage_fids: Vec<u64> = sids
+                .iter()
+                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
+                .collect();
+            let time_range = &TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            };
+
+            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+                ts_family.write().delete_cache(&storage_fids, time_range);
+                let version = ts_family.read().super_version();
+                for column_file in version.version.column_files(&storage_fids, time_range) {
+                    column_file.add_tombstone(&storage_fids, time_range)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }

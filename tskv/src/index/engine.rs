@@ -1,31 +1,34 @@
 use std::fs;
 use std::io;
-use std::path;
+use std::path::{Path, PathBuf};
 
 use sled;
 
 #[derive(Debug)]
 pub struct IndexEngine {
     db: sled::Db,
-    dir: path::PathBuf,
+    dir: PathBuf,
 }
 
 impl IndexEngine {
-    pub fn new(path: &String) -> IndexEngine {
-        let dir = path::Path::new(&path).to_path_buf();
-        let _ = fs::create_dir_all(&dir);
+    pub fn new(index_dir: impl AsRef<Path>) -> IndexEngine {
+        let index_dir = index_dir.as_ref();
+        let _ = fs::create_dir_all(&index_dir);
 
         let config = sled::Config::new()
-            .path(path)
+            .path(&index_dir)
             .cache_capacity(128 * 1024 * 1024)
             .mode(sled::Mode::HighThroughput);
 
-        let db = config
-            .open()
-            .unwrap_or_else(|_| panic!("open db {} failed!", &path));
+        let db = config.open().unwrap_or_else(|err| {
+            panic!("open database at '{}' failed: {}", index_dir.display(), err)
+        });
         db.set_merge_operator(concatenate_merge);
 
-        Self { db, dir }
+        Self {
+            db,
+            dir: index_dir.into(),
+        }
     }
 
     pub fn set(&self, key: &[u8], value: &[u8]) -> Result<(), sled::Error> {

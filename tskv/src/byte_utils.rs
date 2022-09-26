@@ -32,14 +32,3 @@ pub fn decode_be_bool(key: &[u8]) -> bool {
     }
     ret
 }
-
-#[test]
-fn test_decode_bool() {
-    let buf = [1];
-    assert!(decode_be_bool(&buf));
-
-    let buf1 = [0];
-    assert!(!decode_be_bool(&buf1));
-
-    println!("decode bool {}", decode_be_bool(&buf));
-}

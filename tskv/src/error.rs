@@ -1,3 +1,6 @@
+use std::path::{Path, PathBuf};
+
+use models::SeriesId;
 use snafu::Snafu;
 
 use crate::{
@@ -13,10 +16,13 @@ pub enum Error {
     #[snafu(display("{}", source))]
     IO { source: std::io::Error },
 
-    #[snafu(display("Unable to open file: {}", source))]
-    OpenFile { source: std::io::Error },
+    #[snafu(display("Unable to open file '{}': {}", path.display(), source))]
+    OpenFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
-    #[snafu(display("Error with read file : {}", source))]
+    #[snafu(display("Error with read file: {}", source))]
     ReadFile { source: std::io::Error },
 
     #[snafu(display("Unable to write file: {}", source))]
@@ -84,4 +90,10 @@ pub enum Error {
 
     #[snafu(display("character set error"))]
     ErrCharacterSet,
+
+    #[snafu(display("panics in thread: {}", reason))]
+    ThreadJoin { reason: String },
+
+    #[snafu(display("failed get sid"))]
+    InvalidSeriesId,
 }

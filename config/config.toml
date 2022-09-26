@@ -1,28 +1,27 @@
-#[gloable-config]
-tsfamily_num = 1
-# DBOption
-front_cpu = 2
-back_cpu = 2
+[storage]
+# Directory for summary: $path/summary/
+# Directory for index: $path/index/$database/
+# Directory for tsm: $path/data/$database/tsm/
+# Directory for delta: $path/data/$database/delta/
+path = 'dev/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
-create_if_missing = false
-db_path = "dev/db"
-db_name =  "db"
-#WalConfig
-enabled = true
-wal_config_dir = "dev/wal"
-sync = true
-#TseriesFamOpt
-max_level =  4
-level_ratio = 16
+max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
 compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
-tsm_dir = "dev/tsm/"
-delta_dir = "dev/delta/"
-index_path = "dev/idx"
+dio_max_resident = 1024
+dio_max_non_resident = 1024
+dio_page_len_scale = 1
 
-max_memcache_size = 134217728 # 128 * 1024 * 1024
-max_immemcache_num =  4
-#SchemaStoreConfig
-schema_store_config_dir = "dev/schema"
+[wal]
+enabled = true
+path = 'dev/wal'
+sync = false
 
+[cache]
+max_buffer_size = 134217728 # 128 * 1024 * 1024
+max_immutable_number = 4
+
+[log]
+level = 'debug'
+path = 'dev/log'

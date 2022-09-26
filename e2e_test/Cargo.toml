@@ -1,0 +1,16 @@
+[package]
+name = "rpctests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-rt = "2.7.0"
+protos = { path = "../common/protos", features = ["test"] }
+
+[dev-dependencies]
+flatbuffers = "2.1"
+tonic = "0.7"
+tokio = { version = "1.21", features = ["full"] }
+tokio-stream = "0.1"

@@ -1,0 +1,87 @@
+-- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select column1, column2, column3, column4, column5 from (values (7, '7a', '7b', 7, 7)); --
++------+
+| rows |
++------+
+| 1    |
++------+
+
+-- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
++----+----+----+----+------+
+
+-- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select TIME, ta, tb, fa, fb from (values (8, '8a', '8b', 8, 8)) as t (TIME, ta, tb, fa, fb); --
++------+
+| rows |
++------+
+| 1    |
++------+
+
+-- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
+| 8  | 8  | 8a | 8b | 8    |
++----+----+----+----+------+
+
+-- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
++------+
+| rows |
++------+
+| 1    |
++------+
+
+-- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
+| 8  | 8  | 8a | 8b | 8    |
+| 9  | 9  | 9a | 9b | 9    |
++----+----+----+----+------+
+
+-- EXECUTE SQL: insert public.test_insert_subquery select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
+-- ERROR: --
+
+-- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
+| 8  | 8  | 8a | 8b | 8    |
+| 9  | 9  | 9a | 9b | 9    |
++----+----+----+----+------+
+
+-- EXECUTE SQL: insert public.test_insert_subquery select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
+{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Insert columns and Source columns not match\" })"}
+
+-- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
+| 8  | 8  | 8a | 8b | 8    |
+| 9  | 9  | 9a | 9b | 9    |
++----+----+----+----+------+
+
+-- EXECUTE SQL: insert public.test_insert_subquery(TIME, fa) select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
+-- ERROR: --
+
+-- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
+| 8  | 8  | 8a | 8b | 8    |
+| 9  | 9  | 9a | 9b | 9    |
++----+----+----+----+------+
+

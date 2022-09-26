@@ -1,0 +1,38 @@
+-- EXECUTE SQL: SELECT 1, 2, 3, 4; --
++----------+----------+----------+----------+
+| Int64(1) | Int64(2) | Int64(3) | Int64(4) |
++----------+----------+----------+----------+
+| 1        | 2        | 3        | 4        |
++----------+----------+----------+----------+
+
+-- EXECUTE SQL: SELECT NOT(TRUE); --
++-------------------+
+| NOT Boolean(true) |
++-------------------+
+| false             |
++-------------------+
+
+-- EXECUTE SQL: SELECT NOT(FALSE); --
++--------------------+
+| NOT Boolean(false) |
++--------------------+
+| true               |
++--------------------+
+
+-- EXECUTE SQL: SELECT TRUE; --
++---------------+
+| Boolean(true) |
++---------------+
+| true          |
++---------------+
+
+-- EXECUTE SQL: SELECT 'Hello World'; --
++---------------------+
+| Utf8("Hello World") |
++---------------------+
+| Hello World         |
++---------------------+
+
+-- EXECUTE SQL: SELECT "Hello World"; --
+{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'Hello World'. Valid fields are .\" })"}
+

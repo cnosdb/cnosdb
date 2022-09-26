@@ -1,8 +1,6 @@
 # IDE
-/.idea/
+**/.idea/
 /.vscode/
-/dev/
-/query/dev
 
 # Cargo
 **/target
@@ -11,11 +9,11 @@ Cargo.lock
 # OS
 .DS_Store
 
+# Developing
+**/dev/
+**/tskv_log/
+
 # tmpfile
 trace.log.*
-tskv.log.*
 test_*.log
-_*.tsm
-_*.delta
-_*.tombstone
-summary-00*
+*.out

@@ -1,0 +1,20 @@
+use crate::query::{function, QueryError};
+use models::define_result;
+use snafu::Snafu;
+
+pub mod dbms;
+
+define_result!(ServerError);
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+pub enum ServerError {
+    #[snafu(display("Failed to do execute statement, err:{}", source))]
+    Query { source: QueryError },
+
+    #[snafu(display("Failed to build server, err:{}", source))]
+    Build { source: QueryError },
+
+    #[snafu(display("Failed to load functions, err:{}", source))]
+    LoadFunction { source: function::Error },
+}

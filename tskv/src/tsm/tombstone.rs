@@ -42,12 +42,36 @@ pub struct Tombstone {
 /// - loop end
 pub struct TsmTombstone {
     tombstones: HashMap<FieldId, Vec<TimeRange>>,
-    tomb_accessor: File,
     tomb_size: u64,
-    mutex: Mutex<()>,
+
+    path: PathBuf,
+    tomb_accessor: Option<File>,
 }
 
 impl TsmTombstone {
+    pub fn new(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
+        let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
+        let tomb_accessor = if file_manager::try_exists(&path) {
+            Some(file_manager::get_file_manager().open_create_file(&path)?)
+        } else {
+            None
+        };
+        let (tombstones, tomb_size) = if let Some(file) = tomb_accessor.as_ref() {
+            let mut tomb = HashMap::new();
+            Self::load_all(file, &mut tomb)?;
+            (tomb, file.len())
+        } else {
+            (HashMap::new(), 0)
+        };
+
+        Ok(Self {
+            tombstones,
+            tomb_size,
+            path,
+            tomb_accessor,
+        })
+    }
+
     #[cfg(test)]
     pub fn with_path(path: impl AsRef<Path>) -> Result<Self> {
         let file = file_manager::get_file_manager().create_file(&path)?;
@@ -57,9 +81,9 @@ impl TsmTombstone {
 
         Ok(Self {
             tombstones: HashMap::new(),
-            tomb_accessor: file,
             tomb_size,
-            mutex: Mutex::new(()),
+            path: path.as_ref().into(),
+            tomb_accessor: Some(file),
         })
     }
 
@@ -73,14 +97,14 @@ impl TsmTombstone {
 
         Ok(Some(Self {
             tombstones: HashMap::new(),
-            tomb_accessor: file,
             tomb_size,
-            mutex: Mutex::new(()),
+            path,
+            tomb_accessor: Some(file),
         }))
     }
 
     pub fn open_for_write(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
-        let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
+        let path = file_utils::make_tsm_tombstone_file_name(&path, file_id);
         let mut is_new = false;
         if !file_manager::try_exists(&path) {
             is_new = true;
@@ -94,16 +118,19 @@ impl TsmTombstone {
 
         Ok(Self {
             tombstones: HashMap::new(),
-            tomb_accessor: file,
             tomb_size,
-            mutex: Mutex::new(()),
+            path,
+            tomb_accessor: Some(file),
         })
     }
 
+    #[cfg(test)]
     pub fn load(&mut self) -> Result<()> {
-        let mut tombstones = HashMap::new();
-        Self::load_all(&self.tomb_accessor, &mut tombstones)?;
-        self.tombstones = tombstones;
+        if let Some(file) = self.tomb_accessor.as_ref() {
+            let mut tombstones = HashMap::new();
+            Self::load_all(file, &mut tombstones)?;
+            self.tombstones = tombstones;
+        }
 
         Ok(())
     }
@@ -148,13 +175,27 @@ impl TsmTombstone {
         Ok(())
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.tomb_size == 0
+    }
+
     pub fn add_range(&mut self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+        if self.tomb_accessor.is_none() {
+            self.tomb_accessor =
+                Some(file_manager::get_file_manager().open_create_file(&self.path)?);
+        }
+        let writer = self.tomb_accessor.as_ref().expect("initialized file");
+        if writer.len() == 0 {
+            Self::write_header_to(writer)?;
+            writer.sync_data(FileSync::Hard).context(error::IOSnafu)?;
+        }
+
         for field_id in field_ids.iter() {
             let tomb = Tombstone {
                 field_id: *field_id,
                 time_range: *time_range,
             };
-            Self::write_to(&self.tomb_accessor, self.tomb_size, &tomb).map(|s| {
+            Self::write_to(writer, self.tomb_size, &tomb).map(|s| {
                 self.tomb_size += s as u64;
                 self.tombstones
                     .entry(*field_id)
@@ -202,10 +243,10 @@ impl TsmTombstone {
     }
 
     pub fn flush(&self) -> Result<()> {
-        self.tomb_accessor.set_len(self.tomb_size);
-        self.tomb_accessor
-            .sync_all(FileSync::Hard)
-            .context(error::IOSnafu)?;
+        if let Some(file) = self.tomb_accessor.as_ref() {
+            file.set_len(self.tomb_size);
+            file.sync_all(FileSync::Hard).context(error::IOSnafu)?;
+        }
         Ok(())
     }
 
