@@ -46,7 +46,7 @@ pub struct CreateDatabase {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTable {
     pub name: String,
-    pub if_exist: bool,
+    pub if_not_exists: bool,
     pub columns: Vec<ColumnOption>,
 }
 

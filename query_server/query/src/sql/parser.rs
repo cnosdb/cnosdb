@@ -271,7 +271,7 @@ impl<'a> ExtParser<'a> {
 
         let create = CreateTable {
             name: table_name.to_string(),
-            if_exist: if_not_exists,
+            if_not_exists,
             columns,
         };
         Ok(ExtStatement::CreateTable(create))
@@ -537,11 +537,11 @@ mod tests {
         match &statements[0] {
             ExtStatement::CreateTable(CreateTable {
                 name,
-                if_exist,
+                if_not_exists,
                 columns,
             }) => {
                 assert_eq!(name.to_string(), "test".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(if_not_exists.to_string(), "true".to_string());
                 assert_eq!(columns.len(), 7);
                 assert_eq!(
                     *columns,
