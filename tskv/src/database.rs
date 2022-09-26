@@ -303,7 +303,6 @@ pub(crate) async fn delete_table_async(
         let sids = index
             .read()
             .get_series_id_list(&table, &vec![])
-            .await
             .context(error::IndexErrSnafu)?;
 
         let mut index_wlock = index.write();

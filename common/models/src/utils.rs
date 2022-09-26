@@ -84,3 +84,19 @@ pub fn now_timestamp() -> u64 {
 pub fn to_str(arr: &[u8]) -> String {
     String::from_utf8(arr.to_vec()).unwrap()
 }
+
+pub fn min_num<T: std::cmp::PartialOrd>(a: T, b: T) -> T {
+    if a < b {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+pub fn max_num<T: std::cmp::PartialOrd>(a: T, b: T) -> T {
+    if a > b {
+        return a;
+    } else {
+        return b;
+    }
+}

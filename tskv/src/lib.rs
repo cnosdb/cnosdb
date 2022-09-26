@@ -20,7 +20,7 @@ pub mod memcache;
 mod reader;
 mod record_file;
 mod summary;
-mod tseries_family;
+pub mod tseries_family;
 pub mod tsm;
 mod version_set;
 mod wal;
@@ -36,7 +36,7 @@ pub use tseries_family::TimeRange;
 pub use tsm::print_tsm_statistics;
 use utils::BloomFilter;
 
-type ColumnFileId = u64;
+pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
 type LevelId = u32;
 

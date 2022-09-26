@@ -417,7 +417,7 @@ impl DBIndex {
         Ok(())
     }
 
-    pub async fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
+    pub fn get_series_id_list(&self, tab: &String, tags: &Vec<Tag>) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
