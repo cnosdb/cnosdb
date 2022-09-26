@@ -12,9 +12,9 @@ use crate::error::{Error, Result};
 
 mod case;
 mod client;
+mod error;
 mod groups;
 mod query;
-mod error;
 
 #[derive(Parser, Debug)]
 #[clap(author, version = "0.1.0", about, long_about = None)]
@@ -39,7 +39,7 @@ fn default_case_path() -> Result<PathBuf> {
         }
 
         if !cases_path.pop() {
-            return Err(Error::CasePathNotFound)
+            return Err(Error::CasePathNotFound);
         }
     }
 }

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
 use trace::{error, info, warn};
 
-use crate::tsm::{timestamp, DataBlock};
+use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 use parking_lot::{RwLock, RwLockReadGuard};
 

@@ -2,7 +2,7 @@ use datafusion::{error::DataFusionError, sql::sqlparser::parser::ParserError};
 use models::define_result;
 use snafu::Snafu;
 
-use self::execution::ExecutionError;
+use self::{execution::ExecutionError, logical_planner::LogicalPlannerError};
 
 pub mod ast;
 pub mod dispatcher;
@@ -25,7 +25,7 @@ pub enum QueryError {
     BuildQueryDispatcher { err: String },
 
     #[snafu(display("Failed to do logical plan. err: {}", source))]
-    LogicalPlanner { source: DataFusionError },
+    LogicalPlanner { source: LogicalPlannerError },
 
     #[snafu(display("Failed to do logical optimization. err: {}", source))]
     LogicalOptimize { source: DataFusionError },

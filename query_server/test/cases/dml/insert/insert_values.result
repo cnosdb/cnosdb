@@ -1,0 +1,102 @@
+-- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (7, '7a', '7b', 7, 7); --
++------+
+| rows |
++------+
+| 1    |
++------+
+
+-- EXECUTE SQL: select * from public.test order by fa, fb; --
++----+----+----+----+------+
+| fa | fb | ta | tb | time |
++----+----+----+----+------+
+| 1  | 2  | a1 | b1 | 3    |
+| 7  | 7  | 7a | 7b | 7    |
++----+----+----+----+------+
+
+-- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (8, '8a', '8b', 8, 8), (9, '9a', '9b', 9, 9), (10, '10a', '10b', 10, 10); --
++------+
+| rows |
++------+
+| 3    |
++------+
+
+-- EXECUTE SQL: select * from public.test order by fa, fb; --
++----+----+-----+-----+------+
+| fa | fb | ta  | tb  | time |
++----+----+-----+-----+------+
+| 1  | 2  | a1  | b1  | 3    |
+| 7  | 7  | 7a  | 7b  | 7    |
+| 8  | 8  | 8a  | 8b  | 8    |
+| 9  | 9  | 9a  | 9b  | 9    |
+| 10 | 10 | 10a | 10b | 10   |
++----+----+-----+-----+------+
+
+-- EXECUTE SQL: select time, ta, fa from public.test order by fa, fb; --
++------+-----+----+
+| time | ta  | fa |
++------+-----+----+
+| 3    | a1  | 1  |
+| 7    | 7a  | 7  |
+| 8    | 8a  | 8  |
+| 9    | 9a  | 9  |
+| 10   | 10a | 10 |
++------+-----+----+
+
+-- EXECUTE SQL: select time, fa from public.test order by fa, fb; --
++------+----+
+| time | fa |
++------+----+
+| 3    | 1  |
+| 7    | 7  |
+| 8    | 8  |
+| 9    | 9  |
+| 10   | 10 |
++------+----+
+
+-- EXECUTE SQL: select time, ta from public.test order by fa, fb; --
++------+-----+
+| time | ta  |
++------+-----+
+| 3    | a1  |
+| 7    | 7a  |
+| 8    | 8a  |
+| 9    | 9a  |
+| 10   | 10a |
++------+-----+
+
+-- EXECUTE SQL: select time from public.test order by fa, fb; --
++------+
+| time |
++------+
+| 3    |
+| 7    |
+| 8    |
+| 9    |
+| 10   |
++------+
+
+-- EXECUTE SQL: select ta from public.test order by fa, fb; --
++-----+
+| ta  |
++-----+
+| a1  |
+| 7a  |
+| 8a  |
+| 9a  |
+| 10a |
++-----+
+
+-- EXECUTE SQL: select fa from public.test order by fa, fb; --
++----+
+| fa |
++----+
+| 1  |
+| 7  |
+| 8  |
+| 9  |
+| 10 |
++----+
+
+-- EXECUTE SQL: select time, ta, fa, * from public.test order by fa, fb; --
+{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \\\"#public.test.fa\\\" at position 2 and \\\"#public.test.fa\\\" at position 3 have the same name. Consider aliasing (\\\"AS\\\") one of them.\" })"}
+

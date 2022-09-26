@@ -6,7 +6,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::oneshot;
 
-use crate::case::{Case, search_cases};
+use crate::case::{search_cases, Case};
 use crate::error::Result;
 
 /// test group

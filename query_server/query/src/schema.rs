@@ -16,6 +16,8 @@ use models::{FieldInfo, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
+pub const TIME_FIELD_NAME: &str = "time";
+
 pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
 pub const TIME_FIELD: &str = "time";
@@ -57,6 +59,10 @@ impl TableSchema {
     }
 }
 
+pub fn is_time_column(field: &Field) -> bool {
+    TIME_FIELD_NAME == field.name()
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TableFiled {
     pub id: u64,
@@ -70,6 +76,14 @@ impl TableFiled {
             id,
             name,
             column_type,
+        }
+    }
+
+    pub fn time_field() -> TableFiled {
+        TableFiled {
+            id: 0,
+            name: TIME_FIELD_NAME.to_string(),
+            column_type: ColumnType::Time,
         }
     }
 }

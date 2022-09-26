@@ -1,5 +1,6 @@
 use std::fmt;
 
+use datafusion::sql::sqlparser::ast::{DataType, Ident};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 
 /// Statement representations
@@ -43,7 +44,19 @@ pub struct CreateUser {}
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateDatabase {}
 #[derive(Debug, Clone, PartialEq)]
-pub struct CreateTable {}
+pub struct CreateTable {
+    pub name: String,
+    pub if_exist: bool,
+    pub columns: Vec<ColumnOption>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColumnOption {
+    pub name: Ident,
+    pub is_tag: bool,
+    pub data_type: DataType,
+    pub codec: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

@@ -3,15 +3,20 @@ use std::collections::VecDeque;
 use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
 use snafu::ResultExt;
-use spi::query::ast::{DropObject, ExtStatement, ObjectType};
+use spi::query::ast::{ColumnOption, CreateTable, DropObject, ExtStatement, ObjectType};
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
+use sqlparser::ast::DataType;
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
     tokenizer::{Token, Tokenizer},
 };
 use trace::debug;
+
+// support tag token
+const TAGS: &str = "TAGS";
+const CODEC: &str = "CODEC";
 
 pub type Result<T, E = ParserError> = std::result::Result<T, E>;
 
@@ -257,11 +262,33 @@ impl<'a> ExtParser<'a> {
         Ok(ExtStatement::CreateExternalTable(create))
     }
 
+    fn parse_create_table(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let table_name = self.parser.parse_object_name()?;
+        let columns = self.parse_cnos_column()?;
+
+        let create = CreateTable {
+            name: table_name.to_string(),
+            if_exist: if_not_exists,
+            columns,
+        };
+        Ok(ExtStatement::CreateTable(create))
+    }
+
     /// Parse a SQL CREATE statement
     fn parse_create(&mut self) -> Result<ExtStatement> {
         // Currently only supports the creation of external tables
-        self.parser.expect_keyword(Keyword::EXTERNAL)?;
-        self.parse_create_external_table()
+        if self.parser.parse_keyword(Keyword::EXTERNAL) {
+            self.parse_create_external_table()
+        } else if self.parser.parse_keyword(Keyword::TABLE) {
+            self.parse_create_table()
+        } else if self.parser.parse_keyword(Keyword::DATABASE) {
+            todo!()
+        } else {
+            self.expected("an object type after CREATE", self.parser.peek_token())
+        }
     }
 
     /// Parse a SQL DROP statement
@@ -284,14 +311,125 @@ impl<'a> ExtParser<'a> {
     }
 
     fn consume_token(&mut self, expected: &Token) -> bool {
-        let token = self.parser.peek_token().to_string().to_uppercase();
-        let token = Token::make_keyword(&token);
-        if token == *expected {
+        if self.parser.peek_token() == *expected {
             self.parser.next_token();
             true
         } else {
             false
         }
+    }
+
+    fn consume_cnos_token(&mut self, expected: &str) -> bool {
+        if self.parser.peek_token().to_string().to_uppercase() == *expected.to_uppercase() {
+            self.parser.next_token();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse_cnos_column(&mut self) -> Result<Vec<ColumnOption>> {
+        let mut columns = vec![];
+        if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
+            return Ok(columns);
+        }
+        loop {
+            if self.consume_cnos_token(TAGS) {
+                self.parse_tag_columns(&mut columns)?;
+                if self.consume_token(&Token::RParen) {
+                    break;
+                } else {
+                    return parser_err!(format!(") after column definition"));
+                }
+            }
+            let name = self.parser.parse_identifier()?;
+            let column_type = self.parse_column_type()?;
+            let codec_type = self.parse_codec_type()?;
+            columns.push(ColumnOption {
+                name,
+                is_tag: false,
+                data_type: column_type,
+                codec: codec_type,
+            });
+            let comma = self.consume_token(&Token::Comma);
+            if self.consume_token(&Token::RParen) {
+                // allow a trailing comma, even though it's not in standard
+                return parser_err!(format!("table should have TAGS"));
+            } else if !comma {
+                return self.expected(
+                    "',' or ')' after column definition",
+                    self.parser.peek_token(),
+                );
+            }
+        }
+
+        Ok(columns)
+    }
+
+    fn parse_tag_columns(&mut self, columns: &mut Vec<ColumnOption>) -> Result<()> {
+        if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
+            return Ok(());
+        }
+        loop {
+            let name = self.parser.parse_identifier()?;
+            columns.push(ColumnOption {
+                name,
+                is_tag: true,
+                data_type: DataType::String,
+                codec: "UNKNOWN".to_string(),
+            });
+            let is_comma = self.consume_token(&Token::Comma);
+            if self.consume_token(&Token::RParen) {
+                break;
+            }
+            if !is_comma {
+                return parser_err!(format!(", is expected after column"));
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_column_type(&mut self) -> Result<DataType> {
+        let token = self.parser.next_token();
+        match token {
+            Token::Word(w) => match w.keyword {
+                Keyword::TIMESTAMP => Ok(DataType::Timestamp),
+                Keyword::BIGINT => Ok(if self.parser.parse_keyword(Keyword::UNSIGNED) {
+                    DataType::UnsignedBigInt(None)
+                } else {
+                    DataType::BigInt(None)
+                }),
+                Keyword::DOUBLE => Ok(DataType::Double),
+                Keyword::STRING => Ok(DataType::String),
+                Keyword::BOOLEAN => Ok(DataType::Boolean),
+                _ => parser_err!(format!("{} is not a supported type", w)),
+            },
+            unexpected => parser_err!(format!("{} is not a type", unexpected)),
+        }
+    }
+
+    fn parse_codec_type(&mut self) -> Result<String> {
+        let token = self.parser.peek_token();
+        return if let Token::Comma = token {
+            Ok("DEFAULT".to_string())
+        } else {
+            let has_codec = self.consume_cnos_token(CODEC);
+            if !has_codec {
+                return parser_err!(", is expected after column");
+            }
+            self.parser.expect_token(&Token::LParen)?;
+            let token = self.parser.next_token();
+            match token {
+                Token::Word(w) => {
+                    let res = w.value.to_uppercase();
+                    self.parser.expect_token(&Token::RParen)?;
+                    Ok(res)
+                }
+                unexpected => {
+                    parser_err!(format!("{} is not a codec", unexpected))
+                }
+            }
+        };
     }
 }
 
@@ -302,16 +440,19 @@ fn parse_file_type(s: &str) -> Result<FileType, ParserError> {
         "NDJSON" => Ok(FileType::NdJson),
         "CSV" => Ok(FileType::CSV),
         "AVRO" => Ok(FileType::Avro),
-        other => Err(ParserError::ParserError(format!(
+        other => parser_err!(format!(
             "expect one of PARQUET, AVRO, NDJSON, or CSV, found: {}",
             other
-        ))),
+        )),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use spi::query::ast::{DropObject, ExtStatement};
+    use sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
 
     use super::*;
 
@@ -378,6 +519,203 @@ mod tests {
                 assert_eq!(if_exist.to_string(), "false".to_string());
                 assert_eq!(obj_type.to_string(), "DATABASE".to_string());
             }
+            _ => panic!("failed"),
+        }
+    }
+
+    #[test]
+    fn test_create_table_statement() {
+        let sql = "CREATE TABLE IF NOT EXISTS test\
+            (column1 BIGINT CODEC(DELTA),\
+            column2 STRING CODEC(GZIP),\
+            column3 BIGINT UNSIGNED CODEC(NULL),\
+            column4 BOOLEAN,\
+            column5 DOUBLE CODEC(GORILLA),\
+            TAGS(column6, column7))";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match &statements[0] {
+            ExtStatement::CreateTable(CreateTable {
+                name,
+                if_exist,
+                columns,
+            }) => {
+                assert_eq!(name.to_string(), "test".to_string());
+                assert_eq!(if_exist.to_string(), "true".to_string());
+                assert_eq!(columns.len(), 7);
+                assert_eq!(
+                    *columns,
+                    vec![
+                        ColumnOption {
+                            name: Ident::from("column1"),
+                            is_tag: false,
+                            data_type: DataType::BigInt(None),
+                            codec: "DELTA".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column2"),
+                            is_tag: false,
+                            data_type: DataType::String,
+                            codec: "GZIP".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column3"),
+                            is_tag: false,
+                            data_type: DataType::UnsignedBigInt(None),
+                            codec: "NULL".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column4"),
+                            is_tag: false,
+                            data_type: DataType::Boolean,
+                            codec: "DEFAULT".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column5"),
+                            is_tag: false,
+                            data_type: DataType::Double,
+                            codec: "GORILLA".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column6"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            codec: "UNKNOWN".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column7"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            codec: "UNKNOWN".to_string()
+                        }
+                    ]
+                );
+            }
+            _ => panic!("failed"),
+        }
+    }
+
+    #[test]
+    fn test_insert_values() {
+        let sql = "insert public.test(TIME, ta, tb, fa, fb)
+                         values
+                             (7, '7a', '7b', 7, 7);";
+
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match statements[0] {
+            ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
+                Statement::Insert {
+                    table_name: ref sql_object_name,
+                    columns: ref sql_column_names,
+                    source: _,
+                    ..
+                } => {
+                    let expect_table_name = &ObjectName(vec![
+                        Ident {
+                            value: "public".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "test".to_string(),
+                            quote_style: None,
+                        },
+                    ]);
+
+                    let expect_column_names = &vec![
+                        Ident {
+                            value: "TIME".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "ta".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "tb".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fa".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fb".to_string(),
+                            quote_style: None,
+                        },
+                    ];
+
+                    assert_eq!(sql_object_name, expect_table_name);
+                    assert_eq!(sql_column_names, expect_column_names);
+                }
+                _ => panic!("failed"),
+            },
+            _ => panic!("failed"),
+        }
+    }
+
+    #[test]
+    fn test_insert_select() {
+        let sql = "insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
+                        select column1, column2, column3, column4, column5
+                        from
+                        (values
+                            (7, '7a', '7b', 7, 7));";
+
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match statements[0] {
+            ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
+                Statement::Insert {
+                    table_name: ref sql_object_name,
+                    columns: ref sql_column_names,
+                    source,
+                    ..
+                } => {
+                    let expect_table_name = &ObjectName(vec![
+                        Ident {
+                            value: "public".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "test_insert_subquery".to_string(),
+                            quote_style: None,
+                        },
+                    ]);
+
+                    let expect_column_names = &vec![
+                        Ident {
+                            value: "TIME".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "ta".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "tb".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fa".to_string(),
+                            quote_style: None,
+                        },
+                        Ident {
+                            value: "fb".to_string(),
+                            quote_style: None,
+                        },
+                    ];
+
+                    assert_eq!(sql_object_name, expect_table_name);
+                    assert_eq!(sql_column_names, expect_column_names);
+
+                    match source.deref().body.deref() {
+                        SetExpr::Select(_) => {}
+                        _ => panic!("failed"),
+                    }
+                }
+                _ => panic!("failed"),
+            },
             _ => panic!("failed"),
         }
     }

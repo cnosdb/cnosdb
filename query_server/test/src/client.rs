@@ -1,5 +1,5 @@
-use reqwest::{Method, Request};
 use reqwest::Url;
+use reqwest::{Method, Request};
 
 use crate::query::Query;
 
@@ -41,11 +41,7 @@ impl Client {
         let mut body = String::new();
         body.push_str(query.as_str());
 
-        self
-            .client
-            .request(Method::POST, url)
-            .body(body)
-            .build()
+        self.client.request(Method::POST, url).body(body).build()
     }
 
     /// execute one sql at http://domain/query

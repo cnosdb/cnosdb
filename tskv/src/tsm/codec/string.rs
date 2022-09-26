@@ -2,7 +2,7 @@ use std::io::Write;
 use std::{convert::TryInto, error::Error};
 
 use crate::byte_utils::{decode_be_i64, decode_be_u32, decode_be_u64};
-use crate::tsm::coder_instence::CodeType;
+use crate::tsm::codec::Encoding;
 use bzip2::write::{BzDecoder, BzEncoder};
 use bzip2::Compression as CompressionBzip;
 use flate2::write::{GzDecoder, GzEncoder};
@@ -82,7 +82,7 @@ pub fn str_snappy_encode(
     let actual_compressed_size = encoder.compress(data, compressed_data)?;
 
     dst.truncate(HEADER_LEN + actual_compressed_size);
-    dst.insert(0, CodeType::Gorilla as u8);
+    dst.insert(0, Encoding::Gorilla as u8);
 
     Ok(())
 }
@@ -103,7 +103,7 @@ pub fn str_zstd_encode(
         data.extend_from_slice(s);
     }
 
-    dst.push(CodeType::Zstd as u8);
+    dst.push(Encoding::Zstd as u8);
     zstd::stream::copy_encode(data.as_slice(), dst, ZSTD_COMPRESS_LEVEL)?;
     return Ok(());
 }
@@ -127,7 +127,7 @@ pub fn str_gzip_encode(
     let mut encoder = GzEncoder::new(vec![], CompressionFlate::default());
     encoder.write_all(&data)?;
 
-    dst.push(CodeType::Gzip as u8);
+    dst.push(Encoding::Gzip as u8);
     dst.append(&mut encoder.finish()?);
     return Ok(());
 }
@@ -151,7 +151,7 @@ pub fn str_bzip_encode(
     let mut encoder = BzEncoder::new(vec![], CompressionBzip::default());
     encoder.write_all(&data).unwrap();
 
-    dst.push(CodeType::Bzip as u8);
+    dst.push(Encoding::Bzip as u8);
     dst.append(&mut encoder.finish()?);
     return Ok(());
 }
@@ -173,7 +173,7 @@ pub fn str_zlib_encode(
     }
     let mut encoder = ZlibEncoder::new(vec![], CompressionFlate::default());
     encoder.write_all(&data).unwrap();
-    dst.push(CodeType::Zlib as u8);
+    dst.push(Encoding::Zlib as u8);
     dst.append(&mut encoder.finish()?);
     return Ok(());
 }
@@ -187,7 +187,7 @@ pub fn str_without_compress_encode(
         return Ok(());
     }
 
-    dst.push(CodeType::Null as u8);
+    dst.push(Encoding::Null as u8);
 
     for s in src {
         let len = s.len() as u64;

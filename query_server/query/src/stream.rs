@@ -73,11 +73,9 @@ impl TableScanStream {
             proj_fileds,
         );
 
+        let (min_ts, max_ts) = filter.get_time_range();
         let option = QueryOption {
-            time_range: TimeRange {
-                min_ts: i64::MIN,
-                max_ts: i64::MAX,
-            },
+            time_range: TimeRange { min_ts, max_ts },
             table_schema: proj_table_schema,
             datafusion_schema: proj_schema.clone(),
         };
