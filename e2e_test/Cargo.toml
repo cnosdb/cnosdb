@@ -11,6 +11,6 @@ protos = { path = "../common/protos", features = ["test"] }
 
 [dev-dependencies]
 flatbuffers = "2.1"
-tonic = "0.7"
+tonic = {version = "0.7", features = ["tls", "transport"]}
 tokio = { version = "1.21", features = ["full"] }
 tokio-stream = "0.1"

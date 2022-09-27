@@ -9,6 +9,7 @@ pub struct Config {
     pub wal: WalConfig,
     pub cache: CacheConfig,
     pub log: LogConfig,
+    pub security: SecurityConfig,
 }
 
 impl Config {
@@ -119,6 +120,17 @@ impl LogConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    pub tls_config: Option<TLSConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TLSConfig {
+    pub certificate: String,
+    pub private_key: String,
+}
+
 pub fn get_config(path: &str) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
@@ -162,6 +174,9 @@ max_immutable_number = 4
 [log]
 level = 'info'
 path = 'dev/log'
+
+[security]
+
 "#;
 
     let config: Config = toml::from_str(config_str).unwrap();

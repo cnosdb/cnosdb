@@ -25,3 +25,8 @@ max_immutable_number = 4
 [log]
 level = 'debug'
 path = 'dev/log'
+
+#[security]
+[security.tls_config]
+certificate = "./config/tls/server.crt"
+private_key = "./config/tls/server.key"
