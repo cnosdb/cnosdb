@@ -92,7 +92,7 @@ impl Deref for PageReadGuard<'_> {
     type Target = Page;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
@@ -109,13 +109,13 @@ impl Deref for PageWriteGuard<'_> {
     type Target = Page;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 
 impl DerefMut for PageWriteGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.0
+        &mut self.0
     }
 }
 

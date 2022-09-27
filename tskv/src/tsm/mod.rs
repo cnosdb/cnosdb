@@ -1,12 +1,11 @@
 mod block;
-mod coders;
+pub mod codec;
 mod index;
 mod reader;
 mod tombstone;
 mod writer;
 
 pub use block::*;
-pub use coders::*;
 pub use index::*;
 pub use reader::*;
 pub use tombstone::{Tombstone, TsmTombstone};

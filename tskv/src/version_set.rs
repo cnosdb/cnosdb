@@ -62,7 +62,7 @@ impl VersionSet {
         &self.dbs
     }
 
-    pub fn get_db(&self, name: &String) -> Option<Arc<RwLock<Database>>> {
+    pub fn get_db(&self, name: &str) -> Option<Arc<RwLock<Database>>> {
         if let Some(v) = self.dbs.get(name) {
             return Some(v.clone());
         }
@@ -72,7 +72,7 @@ impl VersionSet {
 
     pub fn tsf_num(&self) -> usize {
         let mut size = 0;
-        for (_, db) in &self.dbs {
+        for db in self.dbs.values() {
             size += db.read().tsf_num();
         }
 
@@ -80,7 +80,7 @@ impl VersionSet {
     }
 
     pub fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
-        for (_, db) in &self.dbs {
+        for db in self.dbs.values() {
             if let Some(v) = db.read().get_tsfamily(tf_id) {
                 return Some(v.clone());
             }
@@ -90,7 +90,7 @@ impl VersionSet {
     }
 
     // will delete in cluster version
-    pub fn get_tsfamily_by_name(&self, name: &String) -> Option<Arc<RwLock<TseriesFamily>>> {
+    pub fn get_tsfamily_by_name(&self, name: &str) -> Option<Arc<RwLock<TseriesFamily>>> {
         if let Some(db) = self.dbs.get(name) {
             return db.read().get_tsfamily_random();
         }

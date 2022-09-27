@@ -53,10 +53,10 @@ impl HttpService {
         }
     }
     fn handle_header(&self) -> impl Filter<Extract = (Context,), Error = warp::Rejection> + Clone {
-        header::<String>("user_id")
-            .and(header::<String>("database"))
+        header::optional::<String>("user_id")
+            .and(header::optional::<String>("database"))
             .and_then(|catalog, schema| async move {
-                let res: Result<Context, warp::Rejection> = Ok(Context::new(catalog, schema));
+                let res: Result<Context, warp::Rejection> = Ok(Context::with(catalog, schema));
                 res
             })
     }
@@ -95,9 +95,10 @@ impl HttpService {
                 let query = Query::new(context, String::from_utf8_lossy(req.as_ref()).to_string());
                 let mut result = dbms.execute(&query).await.context(QuerySnafu);
                 match result {
-                    Ok(ref mut res) => Ok(warp::reply::json(&wrap_result(res).await)),
-                    Err(_) => Err(reject::custom(QueryFailed {
-                        reason: "Query failed".to_string(),
+                    // Ok(ref mut res) => Ok(warp::reply::json(&wrap_result(res).await)),
+                    Ok(ref mut res) => Ok(wrap_result(res).await.result),
+                    Err(e) => Err(reject::custom(QueryFailed {
+                        reason: format!("Query failed: {}", e),
                     })),
                 }
             })
@@ -310,7 +311,7 @@ mod test {
 
         let (tx, rx) = oneshot::channel();
 
-        let (addr, server) =
+        let (_addr, server) =
             warp::serve(routes).bind_with_graceful_shutdown(([127, 0, 0, 1], 30001), async {
                 rx.await.ok();
             });

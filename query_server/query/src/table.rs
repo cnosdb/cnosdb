@@ -7,11 +7,15 @@ use datafusion::{
     error::Result,
     execution::context::SessionState,
     logical_expr::{Expr, TableProviderFilterPushDown},
-    physical_plan::{project_schema, ExecutionPlan},
+    physical_plan::{project_schema, ExecutionPlan, PhysicalExpr},
 };
 use tskv::engine::EngineRef;
 
-use crate::{predicate::Predicate, schema::TableSchema, tskv_exec::TskvExec};
+use crate::{
+    data_source::tskv_sink::TskvRecordBatchSinkProvider,
+    extension::physical::plan_node::table_writer::TableWriterExec, predicate::Predicate,
+    schema::TableSchema, tskv_exec::TskvExec,
+};
 
 pub struct ClusterTable {
     engine: EngineRef,
@@ -27,8 +31,7 @@ impl ClusterTable {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
         Ok(Arc::new(TskvExec::new(
-            self.schema.db.clone(),
-            self.schema.name.clone(),
+            self.schema.clone(),
             proj_schema,
             predicate,
             self.engine.clone(),
@@ -37,6 +40,25 @@ impl ClusterTable {
 
     pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
         ClusterTable { engine, schema }
+    }
+
+    pub async fn write(
+        &self,
+        _state: &SessionState,
+        input: Arc<dyn ExecutionPlan>,
+        output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
+            self.engine.clone(),
+            self.schema.clone(),
+        ));
+
+        Ok(Arc::new(TableWriterExec::new(
+            input,
+            self.schema.clone(),
+            output_physical_exprs,
+            record_batch_sink_privider,
+        )))
     }
 }
 

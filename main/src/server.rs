@@ -2,10 +2,7 @@ use snafu::Backtrace;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 
-use crate::info;
-use config::Config;
 use snafu::Snafu;
-use spi::server::dbms::DBMSRef;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Snafu)]
@@ -66,39 +63,20 @@ impl Server {
     }
 }
 
+#[derive(Default)]
 pub struct Builder {
-    config: Config,
     // service
     services: Vec<ServiceRef>,
-    // todo node manager
-    // todo security(eg. ssl、kerberos、others)
-    // instance
-    dbms: Option<DBMSRef>,
 }
 
 impl Builder {
-    pub fn new(config: Config) -> Self {
-        Self {
-            config,
-            services: Vec::new(),
-            dbms: None,
-        }
-    }
-
     pub fn with_services(self, services: Vec<ServiceRef>) -> Self {
-        Self { services, ..self }
+        Self { services }
     }
 
     pub fn add_service(mut self, service: ServiceRef) -> Self {
         self.services.push(service);
         self
-    }
-
-    pub fn with_dbms(self, dbms: DBMSRef) -> Self {
-        Self {
-            dbms: Some(dbms),
-            ..self
-        }
     }
 
     pub fn build(self) -> Result<Server> {

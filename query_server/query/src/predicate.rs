@@ -181,7 +181,7 @@ impl Ord for Marker {
 }
 
 /// A Range of values across the continuous space defined by the types of the Markers.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Range {
     low: Marker,
     high: Marker,
@@ -381,7 +381,7 @@ pub struct ValueEntry {
 /// Ranges are coalesced into the most compact representation of non-overlapping Ranges.
 ///
 /// This structure allows iteration across these compacted Ranges in increasing order, as well as other common set-related operation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeValueSet {
     // data_type: DataType,
     low_indexed_ranges: BTreeMap<Marker, Range>,
@@ -391,14 +391,14 @@ pub struct RangeValueSet {
 ///
 /// Assumes an infinite number of possible values.
 /// The values may be collectively included (aka whitelist) or collectively excluded (aka !whitelist).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EqutableValueSet {
     data_type: DataType,
     white_list: bool,
     entries: HashSet<ValueEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Domain {
     Range(RangeValueSet),
     Equtable(EqutableValueSet),
@@ -702,7 +702,7 @@ impl Domain {
 /// respective allowable value domain(ValueSet). Conceptually, these ValueSet can be thought of
 ///
 /// as being AND'ed together to form the representative predicate.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnDomains<T>
 where
     T: Eq + Hash + Clone,
@@ -978,6 +978,10 @@ impl Predicate {
     pub fn with_time_frame(mut self, max_ts: i64, min_ts: i64) -> Self {
         self.timeframe = TimeRange::new(max_ts, min_ts);
         self
+    }
+
+    pub fn get_time_range(&self) -> (i64, i64) {
+        (self.timeframe.min_ts, self.timeframe.max_ts)
     }
 }
 

@@ -115,11 +115,12 @@ impl SchemaProvider for UserSchema {
         }
 
         let mut tables = self.tables.write();
-        if let Ok(Some(v)) = self
-            .engine
-            .get_table_schema(&self.db_name, &name.to_string())
-        {
+        if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {
             let mut fields = BTreeMap::new();
+            // system field (time)
+            let time_field = TableFiled::time_field();
+            fields.insert(time_field.name.clone(), time_field);
+
             for item in v {
                 let field = TableFiled::from(&item);
                 fields.insert(field.name.clone(), field);

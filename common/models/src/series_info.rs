@@ -1,12 +1,12 @@
-use protos::models as fb_models;
-use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
-use utils::BkdrHasher;
-
 use crate::{
     errors::{Error, Result},
     tag, FieldId, FieldInfo, FieldName, SeriesId, Tag,
 };
+use protos::models as fb_models;
+use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
+use std::fmt::{Display, Formatter};
+use utils::BkdrHasher;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SeriesKey {
@@ -33,6 +33,16 @@ impl SeriesKey {
 
     pub fn encode(&self) -> Vec<u8> {
         bincode::serialize(self).unwrap()
+    }
+
+    pub fn tag_val(&self, key: &str) -> Vec<u8> {
+        for tag in &self.tags {
+            if tag.key == key.as_bytes() {
+                return tag.value.clone();
+            }
+        }
+
+        vec![]
     }
 
     pub fn hash(&self) -> u64 {
@@ -112,7 +122,7 @@ impl Display for SeriesInfo {
             for t in self.field_infos.iter() {
                 field_infos.push_str(&String::from_utf8(t.name().clone()).unwrap());
                 field_infos.push_str("_t_");
-                field_infos.push_str(&format!("{}", t.value_type()));
+                let _ = write!(field_infos, "{}", t.value_type());
                 field_infos.push(',');
             }
             field_infos.truncate(tags.len() - 1);
@@ -236,7 +246,7 @@ impl SeriesInfo {
     }
 
     pub fn get_schema_id(&self) -> u32 {
-        return self.schema_id;
+        self.schema_id
     }
 
     pub fn set_schema_id(&mut self, id: u32) {

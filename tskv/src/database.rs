@@ -66,16 +66,15 @@ impl Database {
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
-    pub async fn switch_memcache(&self, tf_id: u32, seq: u64) {
+    pub fn switch_memcache(&self, tf_id: u32, seq: u64) {
         if let Some(tf) = self.ts_families.get(&tf_id) {
-            let mut tf = tf.write();
             let mem = Arc::new(RwLock::new(MemCache::new(
                 tf_id,
                 self.opt.cache.max_buffer_size,
                 seq,
             )));
-
-            tf.switch_memcache(mem).await;
+            let mut tf = tf.write();
+            tf.switch_memcache(mem);
         }
     }
 
@@ -161,8 +160,8 @@ impl Database {
             }
 
             let fields = info.field_fill();
-            for i in 0..fields.len() {
-                all_fileds.insert(fields[i].field_id(), None);
+            for item in fields {
+                all_fileds.insert(item.field_id(), None);
             }
 
             let ts = row.ts;
@@ -197,7 +196,7 @@ impl Database {
             });
         }
 
-        return Ok(map);
+        Ok(map)
     }
 
     fn build_index_and_check_type(&self, info: &mut SeriesInfo) -> Result<u64> {
@@ -246,7 +245,7 @@ impl Database {
         self.index.write().get_series_key(sid)
     }
 
-    pub fn get_table_schema(&self, table_name: &String) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<Vec<FieldInfo>>> {
         self.index.write().get_table_schema(table_name)
     }
 
@@ -279,7 +278,7 @@ impl Database {
 
     // todo: will delete in cluster version
     pub fn get_tsfamily_random(&self) -> Option<Arc<RwLock<TseriesFamily>>> {
-        for (_, v) in &self.ts_families {
+        if let Some((_, v)) = self.ts_families.iter().next() {
             return Some(v.clone());
         }
 
@@ -287,7 +286,7 @@ impl Database {
     }
 }
 
-pub(crate) async fn delete_table_async(
+pub(crate) fn delete_table_async(
     database: String,
     table: String,
     version_set: Arc<RwLock<VersionSet>>,
@@ -302,8 +301,7 @@ pub(crate) async fn delete_table_async(
         let index = db.read().get_index();
         let sids = index
             .read()
-            .get_series_id_list(&table, &vec![])
-            .await
+            .get_series_id_list(&table, &[])
             .context(error::IndexErrSnafu)?;
 
         let mut index_wlock = index.write();
@@ -317,17 +315,15 @@ pub(crate) async fn delete_table_async(
             .context(error::IndexErrSnafu)?;
         index_wlock
             .del_table_schema(&table)
-            .await
             .context(error::IndexErrSnafu)?;
 
         println!("{:?}", &sids);
         for sid in sids.iter() {
             index_wlock
                 .del_series_info(*sid)
-                .await
                 .context(error::IndexErrSnafu)?;
         }
-        index_wlock.flush().await.context(error::IndexErrSnafu)?;
+        index_wlock.flush().context(error::IndexErrSnafu)?;
 
         drop(index_wlock);
 

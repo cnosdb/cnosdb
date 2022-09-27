@@ -76,7 +76,7 @@ impl<T> LRUList<T> {
             assert!(self.head.prev.is_some());
             self.head.prev = last.prev;
             self.count -= 1;
-            (*last).data.take()
+            last.data.take()
         } else {
             None
         }

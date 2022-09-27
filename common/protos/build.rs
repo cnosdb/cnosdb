@@ -80,7 +80,7 @@ mod flatbuffers_generated;
                 .unwrap()
                 .split('.')
                 .collect::<Vec<&str>>()
-                .get(0)
+                .first()
                 .unwrap()
                 .deref()
                 .to_string();
@@ -109,10 +109,12 @@ mod flatbuffers_generated;
                 .arg("")
                 .arg(p)
                 .output()
-                .expect(&*format!(
-                    "Failed to generate file by flatbuffers {}.",
-                    output_file_name
-                ));
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Failed to generate file by flatbuffers {}.",
+                        output_file_name
+                    )
+                });
 
             if !output.status.success() {
                 panic!("{}", String::from_utf8(output.stderr).unwrap());

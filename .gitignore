@@ -1,5 +1,5 @@
 # IDE
-/.idea/
+**/.idea/
 /.vscode/
 
 # Cargo
@@ -16,3 +16,7 @@ Cargo.lock
 # tmpfile
 trace.log.*
 test_*.log
+*.out
+
+#generated files
+**/protos/src/generated/

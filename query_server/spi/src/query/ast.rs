@@ -1,9 +1,10 @@
 use std::fmt;
 
+use datafusion::sql::sqlparser::ast::{DataType, Ident};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 
 /// Statement representations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtStatement {
     /// ANSI SQL AST node
     SqlStatement(Box<Statement>),
@@ -23,27 +24,39 @@ pub enum ExtStatement {
     //todo:  insert/update/alter
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropObject {
     pub object_name: String,
     pub if_exist: bool,
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeObject {
     pub object_name: String,
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropUser {}
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateUser {}
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateDatabase {}
-#[derive(Debug, Clone, PartialEq)]
-pub struct CreateTable {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTable {
+    pub name: String,
+    pub if_exist: bool,
+    pub columns: Vec<ColumnOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnOption {
+    pub name: Ident,
+    pub is_tag: bool,
+    pub data_type: DataType,
+    pub codec: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

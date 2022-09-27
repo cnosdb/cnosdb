@@ -2,7 +2,7 @@ use bytes::Buf;
 use std::error::Error;
 
 use crate::byte_utils::decode_be_i64;
-use crate::tsm::coder_instence::CodeType;
+use crate::tsm::codec::Encoding;
 use integer_encoding::*;
 use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
 
@@ -12,7 +12,7 @@ use super::simple8b;
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 // Encoding describes the type of encoding used by an encoded timestamp block.
-enum Encoding {
+enum DeltaEncoding {
     Uncompressed = 0,
     Simple8b = 1,
     Rle = 2,
@@ -26,12 +26,12 @@ pub fn ts_without_compress_encode(
     if src.is_empty() {
         return Ok(());
     }
-    dst.push(CodeType::Null as u8);
+    dst.push(Encoding::Null as u8);
 
     for i in src.iter() {
         dst.extend_from_slice(i.to_be_bytes().as_slice());
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn ts_q_compress_encode(
@@ -43,10 +43,10 @@ pub fn ts_q_compress_encode(
         return Ok(());
     }
 
-    dst.push(CodeType::Quantile as u8);
+    dst.push(Encoding::Quantile as u8);
 
-    dst.append(&mut auto_compress(&src, DEFAULT_COMPRESSION_LEVEL));
-    return Ok(());
+    dst.append(&mut auto_compress(src, DEFAULT_COMPRESSION_LEVEL));
+    Ok(())
 }
 
 /// encode encodes a vector of signed integers into a slice of bytes.
@@ -86,8 +86,8 @@ pub fn ts_zigzag_simple8b_encode(
         if use_rle {
             encode_rle(deltas[0], deltas[1], deltas.len() as u64, dst);
             // 4 high bits of first byte used for the encoding type
-            dst[0] |= (Encoding::Rle as u8) << 4;
-            dst.insert(0, CodeType::Delta as u8);
+            dst[0] |= (DeltaEncoding::Rle as u8) << 4;
+            dst.insert(0, Encoding::Delta as u8);
             return Ok(());
         }
     }
@@ -99,11 +99,11 @@ pub fn ts_zigzag_simple8b_encode(
             dst.reserve_exact(cap - dst.capacity());
         }
 
-        dst.push((Encoding::Uncompressed as u8) << 4);
+        dst.push((DeltaEncoding::Uncompressed as u8) << 4);
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
-        dst.insert(0, CodeType::Delta as u8);
+        dst.insert(0, Encoding::Delta as u8);
         return Ok(());
     }
 
@@ -127,11 +127,11 @@ pub fn ts_zigzag_simple8b_encode(
     }
 
     // first 4 high bits used for encoding type
-    dst.push((Encoding::Simple8b as u8) << 4);
+    dst.push((DeltaEncoding::Simple8b as u8) << 4);
     dst[0] |= ((div as f64).log10()) as u8; // 4 low bits used for log10 divisor
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
-    dst.insert(0, CodeType::Delta as u8);
+    dst.insert(0, Encoding::Delta as u8);
     Ok(())
 }
 
@@ -201,11 +201,11 @@ pub fn ts_zigzag_simple8b_decode(
 
     let encoding = &src[0] >> 4;
     match encoding {
-        encoding if encoding == Encoding::Uncompressed as u8 => {
+        encoding if encoding == DeltaEncoding::Uncompressed as u8 => {
             decode_uncompressed(&src[1..], dst) // first byte not used
         }
-        encoding if encoding == Encoding::Rle as u8 => decode_rle(src, dst),
-        encoding if encoding == Encoding::Simple8b as u8 => decode_simple8b(src, dst),
+        encoding if encoding == DeltaEncoding::Rle as u8 => decode_rle(src, dst),
+        encoding if encoding == DeltaEncoding::Simple8b as u8 => decode_simple8b(src, dst),
         _ => Err(From::from("invalid block encoding")),
     }
 }
@@ -310,7 +310,7 @@ pub fn ts_without_compress_decode(
     for i in iter {
         dst.push(decode_be_i64(i))
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn ts_q_compress_decode(
@@ -324,14 +324,14 @@ pub fn ts_q_compress_decode(
     let src = &src[1..];
     let mut decode: Vec<i64> = auto_decompress(src)?;
     dst.append(&mut decode);
-    return Ok(());
+    Ok(())
 }
 
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
     use super::*;
-    use crate::tsm::coder_instence::get_code_type;
+    use crate::tsm::codec::get_encoding;
 
     #[test]
     fn encode_no_values() {
@@ -356,7 +356,7 @@ mod tests {
         ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         // verify uncompressed encoding used
-        assert_eq!(&dst[1] >> 4, Encoding::Uncompressed as u8);
+        assert_eq!(&dst[1] >> 4, DeltaEncoding::Uncompressed as u8);
 
         let mut got = vec![];
         ts_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
@@ -373,8 +373,8 @@ mod tests {
         let exp = src.clone();
 
         ts_q_compress_encode(&src, &mut dst).unwrap();
-        let exp_code_type = CodeType::Quantile;
-        let got_code_type = get_code_type(&dst);
+        let exp_code_type = Encoding::Quantile;
+        let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
         ts_q_compress_decode(&dst, &mut got).unwrap();
@@ -384,8 +384,8 @@ mod tests {
         got.clear();
 
         ts_without_compress_encode(&src, &mut dst).unwrap();
-        let exp_code_type = CodeType::Null;
-        let got_code_type = get_code_type(&dst);
+        let exp_code_type = Encoding::Null;
+        let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
         ts_without_compress_decode(&dst, &mut got).unwrap();
@@ -442,7 +442,7 @@ mod tests {
             ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
-            assert_eq!(&dst[1] >> 4, Encoding::Rle as u8);
+            assert_eq!(&dst[1] >> 4, DeltaEncoding::Rle as u8);
 
             let mut got = vec![];
             ts_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
@@ -479,7 +479,7 @@ mod tests {
             let exp = test.input;
             ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
-            assert_eq!(&dst[1] >> 4, Encoding::Simple8b as u8);
+            assert_eq!(&dst[1] >> 4, DeltaEncoding::Simple8b as u8);
 
             let mut got = vec![];
             ts_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");

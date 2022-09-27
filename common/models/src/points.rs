@@ -1,6 +1,6 @@
 use protos::models as fb_models;
 
-use crate::{Error, FieldId, Result, SeriesId, Tag, Timestamp, ValueType};
+use crate::{Error, FieldId, Result, SeriesId, Timestamp, ValueType};
 
 #[derive(Debug)]
 pub struct FieldValue {

@@ -132,7 +132,7 @@ fn main() -> Result<(), std::io::Error> {
                     Box::new(HttpService::new(dbms.clone(), kv_inst.clone(), http_host));
                 let grpc_service =
                     Box::new(GrpcService::new(dbms.clone(), kv_inst.clone(), grpc_host));
-                let mut server = server::Builder::new(global_config.clone())
+                let mut server = server::Builder::default()
                     .add_service(http_service)
                     .add_service(grpc_service)
                     .build()

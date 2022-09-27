@@ -2,21 +2,20 @@ use std::{any::Any, sync::Arc};
 
 use datafusion::{
     arrow::datatypes::SchemaRef,
-    error::Result,
+    error::{DataFusionError, Result},
     execution::context::TaskContext,
     physical_expr::PhysicalSortExpr,
     physical_plan::{ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics},
 };
 
-use crate::{predicate::PredicateRef, stream::TableScanStream};
+use crate::{predicate::PredicateRef, schema::TableSchema, stream::TableScanStream};
 use tskv::engine::EngineRef;
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
-    db_name: String,
-    table_name: String,
+    table_schema: TableSchema,
     proj_schema: SchemaRef,
     filter: PredicateRef,
     engine: EngineRef,
@@ -24,15 +23,13 @@ pub struct TskvExec {
 
 impl TskvExec {
     pub(crate) fn new(
-        db_name: String,
-        table_name: String,
+        table_schema: TableSchema,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         engine: EngineRef,
     ) -> Self {
         Self {
-            db_name,
-            table_name,
+            table_schema,
             proj_schema,
             filter,
             engine,
@@ -77,14 +74,19 @@ impl ExecutionPlan for TskvExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let batch_size = context.session_config().batch_size();
-        Ok(Box::pin(TableScanStream::new(
-            self.db_name.clone(),
-            self.table_name.clone(),
+
+        let table_stream = match TableScanStream::new(
+            self.table_schema.clone(),
             self.schema(),
             self.filter(),
             batch_size,
             self.engine.clone(),
-        )))
+        ) {
+            Ok(s) => s,
+            Err(err) => return Err(DataFusionError::Internal(err.to_string())),
+        };
+
+        Ok(Box::pin(table_stream))
     }
 
     fn statistics(&self) -> Statistics {

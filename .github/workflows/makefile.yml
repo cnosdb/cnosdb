@@ -7,6 +7,27 @@ on:
     branches: [ "main" ]
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        rust: [nightly]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Install clippy rustfmt
+        run: |
+          rustup component add clippy
+          rustup component add rustfmt --toolchain nightly
+      - name: Run
+        run: |
+          make clippy_check
+          make fmt_check
+
   build:
 
     runs-on: ubuntu-latest
