@@ -7,6 +7,7 @@ use crate::http::TskvSnafu;
 use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
+use config::TLSConfig;
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
@@ -36,7 +37,7 @@ const QUERY_LEN: u64 = 1024 * 16;
 const WRITE_LEN: u64 = 100 * 1024 * 1024;
 
 pub struct HttpService {
-    //todo: tls config
+    tls_config: Option<TLSConfig>,
     addr: SocketAddr,
     dbms: DBMSRef,
     kv_inst: EngineRef,
@@ -44,8 +45,14 @@ pub struct HttpService {
 }
 
 impl HttpService {
-    pub fn new(dbms: DBMSRef, kv_inst: EngineRef, addr: SocketAddr) -> Self {
+    pub fn new(
+        dbms: DBMSRef,
+        kv_inst: EngineRef,
+        addr: SocketAddr,
+        tls_config: Option<TLSConfig>,
+    ) -> Self {
         Self {
+            tls_config,
             addr,
             dbms,
             kv_inst,
@@ -140,12 +147,27 @@ impl Service for HttpService {
     fn start(&mut self) -> Result<(), server::Error> {
         let routes = self.routes().recover(handle_rejection);
         let (shutdown, rx) = oneshot::channel();
-        let (addr, server) = warp::serve(routes).bind_with_graceful_shutdown(self.addr, async {
+        let signal = async {
             rx.await.ok();
             info!("http server graceful shutdown!");
-        });
-        info!("http server start addr: {}", addr);
-        let join_handle = tokio::spawn(server);
+        };
+        let join_handle = if let Some(TLSConfig {
+            certificate,
+            private_key,
+        }) = &self.tls_config
+        {
+            let (addr, server) = warp::serve(routes)
+                .tls()
+                .cert_path(certificate)
+                .key_path(private_key)
+                .bind_with_graceful_shutdown(self.addr, signal);
+            info!("http server start addr: {}", addr);
+            tokio::spawn(server)
+        } else {
+            let (addr, server) = warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
+            info!("http server start addr: {}", addr);
+            tokio::spawn(server)
+        };
         self.handle = Some(ServiceHandle::new(
             "http service".to_string(),
             join_handle,
