@@ -7,6 +7,7 @@ edition = "2021"
 config = { path = "../config" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
+metrics = {path = "../common/metrics"}
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 datafusion = { path = "../common/datafusion_dep" }

@@ -84,6 +84,7 @@ enum SubCommand {
 
 use crate::http::http_service::HttpService;
 use crate::rpc::grpc_service::GrpcService;
+use metrics;
 use mem_allocator::Jemalloc;
 
 #[global_allocator]

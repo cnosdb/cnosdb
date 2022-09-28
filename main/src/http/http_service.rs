@@ -21,7 +21,9 @@ use snafu::ResultExt;
 use spi::query::execution::Output;
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, Query, QueryHandle};
+use metrics::{incr_point_write_failed, incr_point_write_success, incr_query_read_failed, incr_query_read_success, sample_query_metrics_read_latency, sample_query_metrics_write_latency};
 use std::ops::DerefMut;
+use std::time::Instant;
 use tokio::sync::oneshot;
 use trace::{error, info};
 use tskv::engine::EngineRef;
@@ -99,14 +101,25 @@ impl HttpService {
             .and(self.handle_header())
             .and(self.with_dbms())
             .and_then(|req: Bytes, context: Context, dbms: DBMSRef| async move {
+                let start = Instant::now();
                 let query = Query::new(context, String::from_utf8_lossy(req.as_ref()).to_string());
                 let mut result = dbms.execute(&query).await.context(QuerySnafu);
+                sample_query_metrics_read_latency(query.context().catalog.as_str(), query.context().schema.as_str(), start.elapsed().as_secs_f64());
                 match result {
                     // Ok(ref mut res) => Ok(warp::reply::json(&wrap_result(res).await)),
-                    Ok(ref mut res) => Ok(wrap_result(res).await.result),
-                    Err(e) => Err(reject::custom(QueryFailed {
-                        reason: format!("Query failed: {}", e),
-                    })),
+                    Ok(ref mut res) => Ok(
+                        {
+                            incr_query_read_success();
+                            wrap_result(res).await.result
+                        }
+                    ),
+                    Err(e) => Err(
+                        {
+                            incr_query_read_failed();
+                            reject::custom(QueryFailed {
+                                reason: format!("Query failed: {}", e),
+                            })
+                        }),
                 }
             })
     }
@@ -129,13 +142,22 @@ impl HttpService {
                     let points = parse_lines_to_points(&content.schema, &line_protocol_lines)?;
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
+                    sample_query_metrics_write_latency(query.context().catalog.as_str(), query.context().schema.as_str(), start.elapsed().as_secs_f64());
                     match resp {
-                        Ok(_) => Ok(warp::reply::json(&TempResponse {
-                            result: "success".to_string(),
-                        })),
-                        Err(_) => Err(reject::custom(WriteFailed {
-                            reason: "Write failed".to_string(),
-                        })),
+                        Ok(_) => Ok(
+                            {
+                                incr_point_write_success();
+                                warp::reply::json(&TempResponse {
+                                    result: "success".to_string(),
+                                })}),
+                        Err(_) => Err(
+                            {
+                                incr_point_write_failed();
+                                reject::custom(WriteFailed {
+                                    reason: "Write failed".to_string(),
+                                })
+                            }
+                        ),
                     }
                 },
             )

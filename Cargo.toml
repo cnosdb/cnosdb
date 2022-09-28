@@ -6,6 +6,7 @@ members = [
     "common/line_protocol",
     "common/datafusion_dep",
     "common/trace",
+    "common/metrics",
     "common/utils",
     "common/mem_allocator",
     "query_server/spi",
