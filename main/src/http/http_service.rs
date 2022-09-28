@@ -157,8 +157,8 @@ impl HttpService {
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
                     sample_point_write_latency(
-                        query.context().catalog.as_str(),
-                        query.context().schema.as_str(),
+                        content.catalog.as_str(),
+                        content.schema.as_str(),
                         start.elapsed().as_millis() as f64,
                     );
                     match resp {

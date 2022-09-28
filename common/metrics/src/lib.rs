@@ -1,10 +1,7 @@
 use once_cell::sync::Lazy;
-use prometheus::local::LocalHistogram;
 use prometheus::Registry;
-use prometheus::{
-    exponential_buckets, linear_buckets, Encoder, HistogramOpts, HistogramTimer, HistogramVec,
-    IntCounter, IntGauge, Opts,
-};
+use prometheus::{linear_buckets, Encoder, HistogramOpts, HistogramVec, IntCounter, Opts};
+use trace::error;
 
 pub const SERVER_NAMESPACE: &str = "server";
 

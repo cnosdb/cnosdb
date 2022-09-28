@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::time::Instant;
 use std::{collections::HashMap, panic, sync::Arc};
 
@@ -16,10 +17,7 @@ use tokio::{
 };
 
 use async_channel as channel;
-use metrics::{
-    incr_compaction_failed, incr_compaction_num, incr_compaction_success,
-    sample_tskv_compaction_duration,
-};
+use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 
 use models::{
     utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag,
@@ -276,6 +274,9 @@ impl TsKv {
                     info!("Starting compaction on ts_family {}", ts_family_id);
                     let start = Instant::now();
                     if let Some(compact_req) = tsf.read().pick_compaction() {
+                        let database = compact_req.database.clone();
+                        let compact_ts_family = compact_req.ts_family_id;
+                        let out_level = compact_req.out_level;
                         match compaction::run_compaction_job(compact_req, ctx.clone()) {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
@@ -285,9 +286,9 @@ impl TsKv {
                                     cb: summary_tx,
                                 });
                                 sample_tskv_compaction_duration(
-                                    compact_req.database.as_str(),
-                                    compact_req.ts_family_id.to_string().as_str(),
-                                    compact_req.out_level.to_string().as_str(),
+                                    database.as_str(),
+                                    compact_ts_family.to_string().as_str(),
+                                    out_level.to_string().as_str(),
                                     start.elapsed().as_secs_f64(),
                                 )
                                 // TODO Handle summary result using summary_rx.

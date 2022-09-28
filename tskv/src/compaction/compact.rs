@@ -449,8 +449,6 @@ pub fn run_compaction_job(
             .join(", ")
     );
 
-    let version = request.version;
-
     // Buffers all tsm-files and it's indexes for this compaction
     let max_data_block_size = 1000; // TODO this const value is in module tsm
     let tsf_id = request.ts_family_id;
@@ -518,7 +516,7 @@ pub fn run_compaction_job(
                         tsm_writer.size()
                     );
                     let cm = new_compact_meta(&tsm_writer, request.out_level);
-                    version_edit.add_file(cm, version.max_level_ts);
+                    version_edit.add_file(cm, request.version.max_level_ts);
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                     info!("Compaction: File {} been created.", tsm_writer.sequence());
                 }
@@ -535,7 +533,7 @@ pub fn run_compaction_job(
         tsm_writer.size()
     );
     let cm = new_compact_meta(&tsm_writer, request.out_level);
-    version_edit.add_file(cm, version.max_level_ts);
+    version_edit.add_file(cm, request.version.max_level_ts);
     for file in request.files {
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
