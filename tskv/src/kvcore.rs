@@ -1,3 +1,4 @@
+use std::time::Instant;
 use std::{collections::HashMap, panic, sync::Arc};
 
 use flatbuffers::FlatBufferBuilder;
@@ -15,6 +16,10 @@ use tokio::{
 };
 
 use async_channel as channel;
+use metrics::{
+    incr_compaction_failed, incr_compaction_num, incr_compaction_success,
+    sample_tskv_compaction_duration,
+};
 
 use models::{
     utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag,
@@ -269,20 +274,29 @@ impl TsKv {
             while let Some(ts_family_id) = receiver.recv().await {
                 if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
                     info!("Starting compaction on ts_family {}", ts_family_id);
+                    let start = Instant::now();
                     if let Some(compact_req) = tsf.read().pick_compaction() {
                         match compaction::run_compaction_job(compact_req, ctx.clone()) {
                             Ok(Some(version_edit)) => {
+                                incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
                                 let ret = summary_task_sender.send(SummaryTask {
                                     edits: vec![version_edit],
                                     cb: summary_tx,
                                 });
+                                sample_tskv_compaction_duration(
+                                    compact_req.database.as_str(),
+                                    compact_req.ts_family_id.to_string().as_str(),
+                                    compact_req.out_level.to_string().as_str(),
+                                    start.elapsed().as_secs_f64(),
+                                )
                                 // TODO Handle summary result using summary_rx.
                             }
                             Ok(None) => {
                                 info!("There is nothing to compact.");
                             }
                             Err(e) => {
+                                incr_compaction_failed();
                                 error!("Compaction job failed: {}", e);
                             }
                         }

@@ -116,7 +116,7 @@ impl HttpService {
                 let start = Instant::now();
                 let query = Query::new(context, String::from_utf8_lossy(req.as_ref()).to_string());
                 let mut result = dbms.execute(&query).await.context(QuerySnafu);
-                sample_query_metrics_read_latency(
+                sample_query_read_latency(
                     query.context().catalog.as_str(),
                     query.context().schema.as_str(),
                     start.elapsed().as_millis() as f64,

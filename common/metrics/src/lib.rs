@@ -5,7 +5,6 @@ use prometheus::{
     exponential_buckets, linear_buckets, Encoder, HistogramOpts, HistogramTimer, HistogramVec,
     IntCounter, IntGauge, Opts,
 };
-use std::os::linux::raw::stat;
 
 pub const SERVER_NAMESPACE: &str = "server";
 
@@ -88,7 +87,7 @@ pub static POINT_WRITE_LATENCY: Lazy<HistogramVec> = Lazy::new(|| {
     .expect("query metric cannot be created")
 });
 
-pub fn init_query_recorder() {
+pub fn init_query_metrics_recorder() {
     REGISTRY
         .register(Box::new(QUERY_READ_LATENCY.clone()))
         .expect("query metrics collector cannot be registered");
@@ -142,9 +141,21 @@ pub fn incr_point_write_success() {
     POINT_WRITE_SUCCESS.inc();
 }
 
-pub static COMPACTION_NUM: Lazy<IntCounter> = Lazy::new(|| {
+pub static COMPACTION_SUCCESS: Lazy<IntCounter> = Lazy::new(|| {
     IntCounter::with_opts(
-        Opts::new("compaction_total", "total num of compaction")
+        Opts::new(
+            "compaction_success_total",
+            "total success num of compaction",
+        )
+        .namespace(SERVER_NAMESPACE)
+        .subsystem(TSKV_SUBSYSTEM),
+    )
+    .expect("tskv metric cannot be created")
+});
+
+pub static COMPACTION_FAILED: Lazy<IntCounter> = Lazy::new(|| {
+    IntCounter::with_opts(
+        Opts::new("compaction_failed_total", "total failed num of compaction")
             .namespace(SERVER_NAMESPACE)
             .subsystem(TSKV_SUBSYSTEM),
     )
@@ -159,28 +170,35 @@ pub static COMPACTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
         )
         .namespace(SERVER_NAMESPACE)
         .subsystem(TSKV_SUBSYSTEM)
-        .buckets(linear_buckets(0.0, 200.0, 2000).unwrap()),
-        &["db", "level"],
+        .buckets(linear_buckets(0.0, 10.0, 200).unwrap()),
+        &["db", "ts_family", "level"],
     )
     .expect("tskv metric cannot be created")
 });
 
-pub fn init_compaction_recorder() {
+pub fn init_tskv_metrics_recorder() {
     REGISTRY
-        .register(Box::new(COMPACTION_NUM.clone()))
+        .register(Box::new(COMPACTION_SUCCESS.clone()))
+        .expect("tskv metrics collector cannot be registered");
+    REGISTRY
+        .register(Box::new(COMPACTION_FAILED.clone()))
         .expect("tskv metrics collector cannot be registered");
     REGISTRY
         .register(Box::new(COMPACTION_DURATION.clone()))
         .expect("tskv metrics collector cannot be registered");
 }
 
-pub fn incr_compaction_num() {
-    COMPACTION_NUM.inc();
+pub fn incr_compaction_success() {
+    COMPACTION_SUCCESS.inc();
 }
 
-pub fn sample_tskv_compaction_duration(db: &str, level: &str, delta: f64) {
+pub fn incr_compaction_failed() {
+    COMPACTION_FAILED.inc();
+}
+
+pub fn sample_tskv_compaction_duration(db: &str, ts_family: &str, level: &str, delta: f64) {
     COMPACTION_DURATION
-        .with_label_values(&[db, level])
+        .with_label_values(&[db, ts_family, level])
         .observe(delta)
 }
 
