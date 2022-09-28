@@ -1,14 +1,38 @@
 #[cfg(test)]
 mod test {
+    use protos::kv_service::tskv_service_client::TskvServiceClient;
     use protos::{self, kv_service::*, models::*, models_helper};
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::ReceiverStream;
+    use tonic::transport::{Certificate, Channel, ClientTlsConfig};
     use tonic::Request;
+
+    async fn get_tls_config() -> ClientTlsConfig {
+        let pem = tokio::fs::read("../config/tls/ca.crt").await.unwrap();
+        let ca = Certificate::from_pem(pem);
+        ClientTlsConfig::new()
+            .ca_certificate(ca)
+            .domain_name("cnosdb.com")
+    }
+    async fn get_client(tls: bool) -> TskvServiceClient<Channel> {
+        if tls {
+            let channel = Channel::from_static("http://127.0.0.1:31006")
+                .tls_config(get_tls_config().await)
+                .unwrap()
+                .connect()
+                .await
+                .unwrap();
+            TskvServiceClient::new(channel)
+        } else {
+            TskvServiceClient::connect("http://127.0.0.1:31006")
+                .await
+                .unwrap()
+        }
+    }
 
     #[tokio::test]
     #[ignore]
     async fn test_tskv_ping() {
-        use protos::kv_service::tskv_service_client::TskvServiceClient;
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let payload = fbb.create_vector(b"hello world");
 
@@ -22,9 +46,7 @@ mod test {
         let decoded_payload = flatbuffers::root::<PingBody>(finished_data);
         assert!(decoded_payload.is_ok());
 
-        let mut client = TskvServiceClient::connect("http://127.0.0.1:31006")
-            .await
-            .unwrap();
+        let mut client = get_client(true).await;
 
         let resp = client
             .ping(Request::new(PingRequest {
@@ -32,7 +54,6 @@ mod test {
                 body: finished_data.to_vec(),
             }))
             .await;
-        assert!(resp.is_ok());
 
         let ping_response = resp.unwrap().into_inner();
         println!("PING: {:?}", ping_response);
@@ -62,9 +83,7 @@ mod test {
         });
         let req_stream = ReceiverStream::from(rx);
 
-        let mut client = tskv_service_client::TskvServiceClient::connect("http://127.0.0.1:31006")
-            .await
-            .unwrap();
+        let mut client = get_client(true).await;
 
         let mut resp_stream = client.write_points(req_stream).await.unwrap().into_inner();
 

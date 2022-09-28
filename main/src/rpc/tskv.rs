@@ -12,6 +12,7 @@ use protos::{
 use tokio::sync::mpsc::{self};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
+use trace::debug;
 
 use tskv::engine::EngineRef;
 
@@ -23,7 +24,7 @@ pub struct TskvServiceImpl {
 #[tonic::async_trait]
 impl TskvService for TskvServiceImpl {
     async fn ping(&self, _request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
-        println!("PING: {:?}", _request);
+        debug!("PING");
 
         let ping_req = _request.into_inner();
         let ping_body = flatbuffers::root::<PingBody>(&ping_req.body);
