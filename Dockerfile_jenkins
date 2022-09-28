@@ -1,17 +1,23 @@
 ARG RUST_VERSION=1.62.1
 FROM rust:${RUST_VERSION}-slim-bullseye
 
-#RUN apt update \
-#    && apt install --yes pkg-config openssl libssl-dev g++ cmake git
-#
-#RUN git clone https://github.com/google/flatbuffers.git && cd flatbuffers \
-#    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
-#    && make install
-#
-#RUN cargo build
+RUN apt update \
+    && apt install --yes pkg-config openssl libssl-dev g++ cmake git
+
+RUN git clone https://github.com/google/flatbuffers.git && cd flatbuffers \
+    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
+    && make install
+
+RUN mkdir -p /rust/cnosdb
+WORKDIR /rust/cnosdb
+COPY . /rust/cnosdb
+
+RUN cd /rust/cnosdb
+
+RUN cargo build
 
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["./entrypoint.sh","Ubuntu","Debian","Archlinux","macOS"]
+CMD ["./entrypoint.sh","cnosdb"]
