@@ -4,9 +4,12 @@ package meta_service;
 // *********************Tenant Meta Data**************  
 // **    /cluster_name -> [vector<NodeInfo>] 集群、数据节点等信息
 // **    /cluster_name/tenant_name -> [vector<Resource>] 租户资源相关配置
-// **    /cluster_name/tenant_name/users -> [vector<UserInfo>] 租户下用户用户信息、访问权限等
+// **    /cluster_name/tenant_name/users -> [vector<UserInfo>] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/db_name -> [RetentionPolicyInfo] db相关信息、保留策略等
-// **    /cluster_name/tenant_name/db_name/bucket-id -> [BucketInfo] bucket相关信息
+// **    /cluster_name/tenant_name/db_name/buckets/id -> [BucketInfo] bucket相关信息
+// **    /cluster_name/tenant_name/db_name/schemas/name -> [BucketInfo] schema相关信息
+// **    
+
 
 message Resource {
 	required uint64 id = 1;
@@ -18,16 +21,16 @@ message Resource {
 message MetaData {
 	required uint64 version = 1;
 
-	repeated UserInfo users = 6;
-	repeated DatabaseInfo dbs = 5;
-	repeated NodeInfo data_nodes = 7;
-	repeated NodeInfo meta_nodes = 8;
+	repeated UserInfo users = 2;
+	repeated DatabaseInfo dbs = 3;
+	repeated NodeInfo data_nodes = 4;
+	repeated NodeInfo meta_nodes = 5;
 }
 
 message UserInfo {
 	required string name = 1;
 	required string pwd = 2;
-	required uint64 perm = 3; //read write admin
+	required uint64 perm = 3; //read write admin bitmap
 }
 
 message NodeInfo {
@@ -35,7 +38,6 @@ message NodeInfo {
 	required string rpc_addr = 2;
 	required string http_addr = 3;
 	required uint32 status = 4;
-	
 }
 
 message DatabaseInfo {
@@ -64,6 +66,33 @@ message VnodeInfo {
 
 
 // **************Command********************
+// **    
+// **    pub struct CommandHeader {
+// **    	u32 typ,
+// **    	u32 len,
+// **    }
+
+enum CommandType {
+	CreateNodeCommand                = 1;
+	DeleteNodeCommand                = 2;
+	CreateDatabaseCommand            = 3;
+	DropDatabaseCommand              = 4;
+	UpdateRetentionPolicyCommand     = 5;
+	CreateBucketCommand         	 = 6;
+	DeleteBucketCommand          	 = 7;
+	CreateUserCommand                = 8;
+	DropUserCommand                  = 9;
+	UpdateUserCommand                = 10;
+	CreateDataNodeCommand            = 11;
+	UpdateDataNodeCommand            = 12;
+	DeleteDataNodeCommand            = 13;
+	CreateMetaNodeCommand            = 14;
+	UpdateMetaNodeCommand            = 15;
+	DeleteMetaNodeCommand            = 16;
+	DropVnodeCommand                 = 17;
+	UpdateVnodeOwnersCommand         = 18;
+}
+
 message CommonResponse {
 	required bool ok = 1;
 	required uint64 term = 2;
@@ -72,7 +101,7 @@ message CommonResponse {
 }
 
 message PingCommand {
-  bytes body = 2;
+  required bytes body = 1;
 }
 
 message CreateNodeCommand {
