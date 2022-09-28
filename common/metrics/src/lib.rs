@@ -207,7 +207,10 @@ pub fn gather_metrics_as_prometheus_string() -> String {
     let encoder = prometheus::TextEncoder::new();
 
     let mut buffer = Vec::new();
-    encoder.encode(&REGISTRY.gather(), &mut buffer)?;
+    if let Err(e) = encoder.encode(&REGISTRY.gather(), &mut buffer) {
+        error!("could not encode metrics: {}", e);
+        return String::default();
+    };
 
     match String::from_utf8(buffer.clone()) {
         Ok(v) => v,
