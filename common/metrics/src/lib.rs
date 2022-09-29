@@ -167,7 +167,7 @@ pub static COMPACTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
         )
         .namespace(SERVER_NAMESPACE)
         .subsystem(TSKV_SUBSYSTEM)
-        .buckets(linear_buckets(0.0, 10.0, 200).unwrap()),
+        .buckets(linear_buckets(0.0, 300.0, 1800).unwrap()),
         &["db", "ts_family", "level"],
     )
     .expect("tskv metric cannot be created")
