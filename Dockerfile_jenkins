@@ -7,3 +7,17 @@ RUN apt update \
 RUN git clone https://github.com/google/flatbuffers.git && cd flatbuffers \
     && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
     && make install
+
+RUN mkdir -p /rust/cnosdb
+WORKDIR /rust/cnosdb
+COPY . /rust/cnosdb
+
+RUN cd /rust/cnosdb
+
+RUN cargo build
+
+COPY docker/entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["./entrypoint.sh","cnosdb"]
