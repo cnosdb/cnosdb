@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 config = { path = "../config" }
 models = { path = "../common/models" }
+metrics = {path = "../common/metrics"}
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }

@@ -5,6 +5,7 @@ members = [
     "common/protos",
     "common/line_protocol",
     "common/datafusion_dep",
+    "common/metrics",
     "common/trace",
     "common/utils",
     "common/mem_allocator",

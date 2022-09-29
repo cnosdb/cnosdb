@@ -23,13 +23,13 @@ pub trait CompactionEngine: Clone + Sync + Send {
 }
 
 pub struct CompactReq {
-    ts_family_id: TseriesFamilyId,
-    database: String,
+    pub ts_family_id: TseriesFamilyId,
+    pub database: String,
     storage_opt: Arc<StorageOptions>,
 
     files: Vec<Arc<ColumnFile>>,
     version: Arc<Version>,
-    out_level: LevelId,
+    pub out_level: LevelId,
 }
 
 #[derive(Debug)]
