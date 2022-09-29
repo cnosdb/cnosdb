@@ -58,7 +58,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         let mut results = vec![];
 
         let session = self.session_factory.default_isipho_session_ctx();
-        let scheme_provider = MetadataProvider::new(self.metadata.clone());
+        let metadata = self
+            .metadata
+            .with_catalog(&query.context().catalog)
+            .with_database(&query.context().database);
+        let scheme_provider = MetadataProvider::new(metadata);
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
 

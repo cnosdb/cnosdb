@@ -14,6 +14,11 @@ impl QueryId {
     }
 }
 
+pub struct UserInfo {
+    pub user: String,
+    pub password: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Context {
     // todo
@@ -21,26 +26,42 @@ pub struct Context {
     // security certification info
     // ...
     pub catalog: String,
-    pub schema: String,
+    pub database: String,
 }
 
-impl Context {
-    pub fn new(catalog: String, schema: String) -> Self {
-        Self { catalog, schema }
-    }
-
-    pub fn with(catalog: Option<String>, schema: Option<String>) -> Self {
-        let catalog = catalog.unwrap_or_else(|| DEFAULT_CATALOG.to_string());
-        let schema = schema.unwrap_or_else(|| DEFAULT_SCHEMA.to_string());
-
-        Self { catalog, schema }
-    }
-}
 impl Default for Context {
     fn default() -> Self {
         Self {
             catalog: DEFAULT_CATALOG.to_string(),
-            schema: DEFAULT_SCHEMA.to_string(),
+            database: DEFAULT_SCHEMA.to_string(),
+        }
+    }
+}
+
+pub struct ContextBuilder {
+    user_info: UserInfo,
+    database: String,
+}
+
+impl ContextBuilder {
+    pub fn new(user_info: UserInfo) -> ContextBuilder {
+        Self {
+            user_info,
+            database: DEFAULT_SCHEMA.to_string(),
+        }
+    }
+
+    pub fn with_database(mut self, database: Option<String>) -> ContextBuilder {
+        if let Some(db) = database {
+            self.database = db
+        }
+        self
+    }
+
+    pub fn build(self) -> Context {
+        Context {
+            catalog: self.user_info.user,
+            database: self.database,
         }
     }
 }
