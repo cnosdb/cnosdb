@@ -13,6 +13,11 @@ use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use futures::StreamExt;
 use line_protocol::{line_protocol_to_lines, Line};
+use metrics::{
+    gather_metrics_as_prometheus_string, incr_point_write_failed, incr_point_write_success,
+    incr_query_read_failed, incr_query_read_success, sample_point_write_latency,
+    sample_query_read_latency,
+};
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
@@ -22,6 +27,7 @@ use spi::query::execution::Output;
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, Query, QueryHandle};
 use std::ops::DerefMut;
+use std::time::Instant;
 use tokio::sync::oneshot;
 use trace::{error, info};
 use tskv::engine::EngineRef;
@@ -32,6 +38,7 @@ use warp::{header, reject, Filter};
 const PING: &str = "ping";
 const QUERY: &str = "query";
 const WRITE: &str = "write";
+const METRICS: &str = "metrics";
 
 const QUERY_LEN: u64 = 1024 * 16;
 const WRITE_LEN: u64 = 100 * 1024 * 1024;
@@ -77,7 +84,10 @@ impl HttpService {
     }
 
     fn routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-        self.ping().or(self.query()).or(self.write_line_protocol())
+        self.ping()
+            .or(self.query())
+            .or(self.write_line_protocol())
+            .or(self.metrics())
         // self.ping()
     }
 
@@ -99,14 +109,26 @@ impl HttpService {
             .and(self.handle_header())
             .and(self.with_dbms())
             .and_then(|req: Bytes, context: Context, dbms: DBMSRef| async move {
+                let start = Instant::now();
                 let query = Query::new(context, String::from_utf8_lossy(req.as_ref()).to_string());
                 let mut result = dbms.execute(&query).await.context(QuerySnafu);
+                sample_query_read_latency(
+                    query.context().catalog.as_str(),
+                    query.context().schema.as_str(),
+                    start.elapsed().as_millis() as f64,
+                );
                 match result {
                     // Ok(ref mut res) => Ok(warp::reply::json(&wrap_result(res).await)),
-                    Ok(ref mut res) => Ok(wrap_result(res).await.result),
-                    Err(e) => Err(reject::custom(QueryFailed {
-                        reason: format!("Query failed: {}", e),
-                    })),
+                    Ok(ref mut res) => Ok({
+                        incr_query_read_success();
+                        wrap_result(res).await.result
+                    }),
+                    Err(e) => Err({
+                        incr_query_read_failed();
+                        reject::custom(QueryFailed {
+                            reason: format!("Query failed: {}", e),
+                        })
+                    }),
                 }
             })
     }
@@ -122,6 +144,7 @@ impl HttpService {
             .and(self.with_kv_inst())
             .and_then(
                 |req: Bytes, content: Context, kv_inst: EngineRef| async move {
+                    let start = Instant::now();
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_millis())
@@ -129,16 +152,31 @@ impl HttpService {
                     let points = parse_lines_to_points(&content.schema, &line_protocol_lines)?;
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
+                    sample_point_write_latency(
+                        content.catalog.as_str(),
+                        content.schema.as_str(),
+                        start.elapsed().as_millis() as f64,
+                    );
                     match resp {
-                        Ok(_) => Ok(warp::reply::json(&TempResponse {
-                            result: "success".to_string(),
-                        })),
-                        Err(_) => Err(reject::custom(WriteFailed {
-                            reason: "Write failed".to_string(),
-                        })),
+                        Ok(_) => Ok({
+                            incr_point_write_success();
+                            warp::reply::json(&TempResponse {
+                                result: "success".to_string(),
+                            })
+                        }),
+                        Err(_) => Err({
+                            incr_point_write_failed();
+                            reject::custom(WriteFailed {
+                                reason: "Write failed".to_string(),
+                            })
+                        }),
                     }
                 },
             )
+    }
+
+    fn metrics(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+        warp::path(METRICS).map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
     }
 }
 
