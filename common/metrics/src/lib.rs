@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use prometheus::Registry;
-use prometheus::{linear_buckets, Encoder, HistogramOpts, HistogramVec, IntCounter, Opts};
+use prometheus::{linear_buckets, HistogramOpts, HistogramVec, IntCounter, Opts};
 use trace::error;
 
 pub const SERVER_NAMESPACE: &str = "server";
