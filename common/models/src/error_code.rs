@@ -1,0 +1,70 @@
+macro_rules! define_error_codes {
+    (
+        $(
+            $(#[$docs:meta])*
+            ($konst:ident, $name_bytes:literal);
+        )+
+    ) => {
+        #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+        pub enum ErrorCode {
+            $(
+                $konst,
+            )+
+        }
+
+        impl ErrorCode {
+            #[inline]
+            pub fn as_str(&self) -> &'static str {
+                match *self {
+                    $(
+                        ErrorCode::$konst => unsafe { std::str::from_utf8_unchecked( $name_bytes ) },
+                    )+
+                }
+            }
+
+            pub const fn from_bytes(name_bytes: &[u8]) -> Option<ErrorCode> {
+                match name_bytes {
+                    $(
+                        $name_bytes => Some(ErrorCode::$konst),
+                    )+
+                    _ => None,
+                }
+            }
+        }
+    }
+}
+
+// cnosdb provides an error code mechanism to help you quickly
+// locate information such as error types, severity levels,
+// and causes of errors, helping you quickly locate and solve problems.
+//
+// It is used to determine the category, cause and severity of the error code. The format is as follows.
+//
+// ```
+// MMCCCCX
+// ```
+//
+// MM：Indicates the module number. 2 bit integer. Number values are as follows:
+//
+//     00: Indicates an unknown module, meaningless, and serves as a placeholder
+//     01: query engine
+//     02: tskv engine
+//
+// CCCC：Indicates the error code, a 4-digit integer.
+//
+//     0000: Indicates an unknown exception, meaningless, and space occupying
+//
+// X：Indicates the severity of the error. 1-bit integer. The higher the value, the higher the severity. The value is 0~9. 0 is a placeholder, 1 is the smallest error, such as input error. 9 is the highest level error, such as atomic error.
+//
+// The following is the error code format and error code list of cnosdb.
+define_error_codes! {
+    /// The sql state code needs to be developed later
+    /// and is currently used as a placeholder
+    (Unknown, b"0000000");
+    /// The sql state code needs to be developed later
+    /// and is currently used as a placeholder
+    (QueryUnknown, b"0100000");
+    /// The sql state code needs to be developed later
+    /// and is currently used as a placeholder
+    (TskvUnknown, b"0200000");
+}

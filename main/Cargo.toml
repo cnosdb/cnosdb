@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+models = { path = "../common/models" }
 config = { path = "../config" }
 line_protocol = { path = "../common/line_protocol" }
 protos = { path = "../common/protos" }
@@ -24,6 +25,7 @@ chrono = "0.4"
 futures = { version = "0.3", default-features = false, features = ["alloc"] }
 libc = "0.2"
 warp = {version = "0.3", features = ["tls"]}
+base64 = { version = "0.13" }
 lazy_static = "1.4"
 num_cpus = "1.13.0"
 clap = { version = "3", features = ["derive", "env"] }

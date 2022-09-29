@@ -1,6 +1,16 @@
 use std::{collections::HashMap, convert::Infallible, net::SocketAddr};
 
+use super::header::Header;
+use super::header::ACCEPT;
+use super::header::AUTHORIZATION;
+use super::parameter::SqlParam;
+use super::parameter::WriteParam;
+use super::response::ErrorResponse;
+use super::Error as HttpError;
 use super::QuerySnafu;
+use crate::http::response::ResponseBuilder;
+use crate::http::result_format::fetch_record_batches;
+use crate::http::result_format::ResultFormat;
 use crate::http::Error;
 use crate::http::ParseLineProtocolSnafu;
 use crate::http::TskvSnafu;
@@ -8,37 +18,35 @@ use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
 use config::TLSConfig;
-use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
-use futures::StreamExt;
 use line_protocol::{line_protocol_to_lines, Line};
 use metrics::{
     gather_metrics_as_prometheus_string, incr_point_write_failed, incr_point_write_success,
     incr_query_read_failed, incr_query_read_success, sample_point_write_latency,
     sample_query_read_latency,
 };
+use models::error_code::ErrorCode;
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
-use serde::Serialize;
 use snafu::ResultExt;
-use spi::query::execution::Output;
 use spi::server::dbms::DBMSRef;
-use spi::service::protocol::{Context, Query, QueryHandle};
-use std::ops::DerefMut;
+use spi::service::protocol::ContextBuilder;
+use spi::service::protocol::Query;
 use std::time::Instant;
 use tokio::sync::oneshot;
-use trace::{error, info};
+use trace::debug;
+use trace::info;
 use tskv::engine::EngineRef;
-use warp::http::StatusCode;
 use warp::hyper::body::Bytes;
+use warp::reject::MethodNotAllowed;
+use warp::reject::MissingHeader;
+use warp::reject::PayloadTooLarge;
+use warp::reply::Response;
+use warp::Rejection;
+use warp::Reply;
 use warp::{header, reject, Filter};
-
-const PING: &str = "ping";
-const QUERY: &str = "query";
-const WRITE: &str = "write";
-const METRICS: &str = "metrics";
 
 const QUERY_LEN: u64 = 1024 * 16;
 const WRITE_LEN: u64 = 100 * 1024 * 1024;
@@ -66,11 +74,18 @@ impl HttpService {
             handle: None,
         }
     }
-    fn handle_header(&self) -> impl Filter<Extract = (Context,), Error = warp::Rejection> + Clone {
-        header::optional::<String>("user_id")
-            .and(header::optional::<String>("database"))
-            .and_then(|catalog, schema| async move {
-                let res: Result<Context, warp::Rejection> = Ok(Context::with(catalog, schema));
+
+    /// user_id
+    /// database
+    /// =》
+    /// Authorization
+    /// Accept
+    fn handle_header(&self) -> impl Filter<Extract = (Header,), Error = warp::Rejection> + Clone {
+        header::optional::<String>(ACCEPT.as_str())
+            .and(header::<String>(AUTHORIZATION.as_str()))
+            .and_then(|accept, authorization| async move {
+                debug!("handle_header");
+                let res: Result<Header, warp::Rejection> = Ok(Header::with(accept, authorization));
                 res
             })
     }
@@ -88,95 +103,123 @@ impl HttpService {
             .or(self.query())
             .or(self.write_line_protocol())
             .or(self.metrics())
-        // self.ping()
     }
 
     fn ping(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-        warp::path(PING).map(|| {
-            let mut resp = HashMap::new();
-            resp.insert("version", "0.1.0");
-            resp.insert("status", "healthy");
-            warp::reply::json(&resp)
-        })
+        warp::path!("api" / "v1" / "ping")
+            .and(warp::get().or(warp::head()))
+            .map(|_| {
+                let mut resp = HashMap::new();
+                resp.insert("version", "0.1.0");
+                resp.insert("status", "healthy");
+                warp::reply::json(&resp)
+            })
     }
 
     fn query(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         // let dbms = self.dbms.clone();
-        warp::path(QUERY)
+        warp::path!("api" / "v1" / "sql")
             .and(warp::post())
             .and(warp::body::content_length_limit(QUERY_LEN))
             .and(warp::body::bytes())
             .and(self.handle_header())
+            .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
-            .and_then(|req: Bytes, context: Context, dbms: DBMSRef| async move {
-                let start = Instant::now();
-                let query = Query::new(context, String::from_utf8_lossy(req.as_ref()).to_string());
-                let mut result = dbms.execute(&query).await.context(QuerySnafu);
-                sample_query_read_latency(
-                    query.context().catalog.as_str(),
-                    query.context().schema.as_str(),
-                    start.elapsed().as_millis() as f64,
-                );
-                match result {
-                    // Ok(ref mut res) => Ok(warp::reply::json(&wrap_result(res).await)),
-                    Ok(ref mut res) => Ok({
-                        incr_query_read_success();
-                        wrap_result(res).await.result
-                    }),
-                    Err(e) => Err({
-                        incr_query_read_failed();
-                        reject::custom(QueryFailed {
-                            reason: format!("Query failed: {}", e),
-                        })
-                    }),
-                }
-            })
+            .and_then(
+                |req: Bytes, header: Header, param: SqlParam, dbms: DBMSRef| async move {
+                    debug!(
+                        "Receive http sql request, header: {:?}, param: {:?}",
+                        header, param
+                    );
+
+                    // Parse req、header and param to construct query request
+                    let query_req = construct_query(req, &header, param);
+
+                    match query_req {
+                        Ok(ref q) => {
+                            let start = Instant::now();
+
+                            let result = sql_handle(q, header, dbms).await;
+
+                            let result = result.map_err(|e| {
+                                trace::error!("Failed to handle http sql request, err: {}", e);
+                                e
+                            });
+
+                            sample_query_read_latency(
+                                q.context().catalog.as_str(),
+                                q.context().database.as_str(),
+                                start.elapsed().as_millis() as f64,
+                            );
+
+                            match result {
+                                Ok(resp) => {
+                                    incr_query_read_success();
+                                    Ok(resp)
+                                }
+                                Err(e) => {
+                                    incr_query_read_failed();
+                                    Err(reject::custom(e))
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            incr_query_read_failed();
+                            Err(reject::custom(e))
+                        }
+                    }
+                },
+            )
     }
 
     fn write_line_protocol(
         &self,
     ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-        warp::path(WRITE)
+        warp::path!("api" / "v1" / "write")
             .and(warp::post())
             .and(warp::body::content_length_limit(WRITE_LEN))
             .and(warp::body::bytes())
             .and(self.handle_header())
+            .and(warp::query::<WriteParam>())
             .and(self.with_kv_inst())
             .and_then(
-                |req: Bytes, content: Context, kv_inst: EngineRef| async move {
+                |req: Bytes, header: Header, param: WriteParam, kv_inst: EngineRef| async move {
                     let start = Instant::now();
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_millis())
                             .context(ParseLineProtocolSnafu)?;
-                    let points = parse_lines_to_points(&content.schema, &line_protocol_lines)?;
+                    let points = parse_lines_to_points(&param.db, &line_protocol_lines)?;
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
+
+                    let user_info = match header.try_get_basic_auth() {
+                        Ok(u) => u,
+                        Err(e) => return Err(reject::custom(e)),
+                    };
+
                     sample_point_write_latency(
-                        content.catalog.as_str(),
-                        content.schema.as_str(),
+                        &user_info.user,
+                        &param.db,
                         start.elapsed().as_millis() as f64,
                     );
                     match resp {
-                        Ok(_) => Ok({
+                        Ok(_) => {
                             incr_point_write_success();
-                            warp::reply::json(&TempResponse {
-                                result: "success".to_string(),
-                            })
-                        }),
-                        Err(_) => Err({
+                            Ok(ResponseBuilder::ok())
+                        }
+                        Err(e) => {
                             incr_point_write_failed();
-                            reject::custom(WriteFailed {
-                                reason: "Write failed".to_string(),
-                            })
-                        }),
+                            Err(reject::custom(e))
+                        }
                     }
                 },
             )
     }
 
     fn metrics(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-        warp::path(METRICS).map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
+        warp::path!("api" / "v1" / "metrics")
+            .map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
     }
 }
 
@@ -291,71 +334,55 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
     Ok(fbb.finished_data().to_vec())
 }
 
+fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query, HttpError> {
+    let user_info = header.try_get_basic_auth()?;
+
+    let context = ContextBuilder::new(user_info)
+        .with_database(param.db)
+        .build();
+
+    Ok(Query::new(
+        context,
+        String::from_utf8_lossy(req.as_ref()).to_string(),
+    ))
+}
+
+async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Response, HttpError> {
+    debug!("prepare to execute: {:?}", query);
+
+    let fmt = ResultFormat::try_from(header.get_accept())?;
+
+    let mut result = dbms.execute(query).await.context(QuerySnafu)?;
+
+    let batches = fetch_record_batches(&mut result)
+        .await
+        .map_err(|e| HttpError::FetchResult {
+            reason: format!("{}", e),
+        })?;
+
+    fmt.wrap_batches_to_response(&batches)
+}
+
 /*************** top ****************/
-//todo: redefine the req/resp struct
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    code: u16,
-    message: String,
-}
-
-#[derive(Debug, Serialize)]
-struct EmptyResponse {}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-struct TempResponse {
-    result: String,
-}
-
-#[derive(Debug, Serialize)]
-struct QueryFailed {
-    reason: String,
-}
-impl reject::Reject for QueryFailed {}
-
-#[derive(Debug, Serialize)]
-struct WriteFailed {
-    reason: String,
-}
-impl reject::Reject for WriteFailed {}
-
-async fn wrap_result(res: &mut QueryHandle) -> TempResponse {
-    let mut actual = vec![];
-
-    for ele in res.result().iter_mut() {
-        match ele {
-            Output::StreamData(item) => {
-                while let Some(next) = item.next().await {
-                    let batch = next.unwrap();
-                    actual.push(batch);
-                }
-            }
-            Output::Nil(_) => {}
-        }
+// Custom rejection handler that maps rejections into responses.
+async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
+    if err.is_not_found() {
+        Ok(ResponseBuilder::not_found())
+    } else if err.find::<MethodNotAllowed>().is_some() {
+        Ok(ResponseBuilder::method_not_allowed())
+    } else if err.find::<PayloadTooLarge>().is_some() {
+        Ok(ResponseBuilder::payload_too_large())
+    } else if let Some(e) = err.find::<MissingHeader>() {
+        let error_resp = ErrorResponse::new(ErrorCode::Unknown, e.to_string());
+        Ok(ResponseBuilder::bad_request(&error_resp))
+    } else if let Some(e) = err.find::<HttpError>() {
+        let resp: Response = e.into();
+        Ok(resp)
+    } else {
+        trace::warn!("unhandled rejection: {:?}", err);
+        Ok(ResponseBuilder::internal_server_error())
     }
-
-    let result = pretty_format_batches(actual.deref_mut())
-        .unwrap()
-        .to_string();
-
-    TempResponse { result }
 }
-
-async fn handle_rejection(rejection: warp::Rejection) -> Result<impl warp::Reply, Infallible> {
-    error!("handle error: {:?}", rejection);
-
-    let code = StatusCode::INTERNAL_SERVER_ERROR;
-    let message = format!("TODO Wrap Error: {:?}", rejection);
-
-    let json = warp::reply::json(&ErrorResponse {
-        code: code.as_u16(),
-        message,
-    });
-
-    Ok(warp::reply::with_status(json, code))
-}
-
 /**************** bottom *****************/
 #[cfg(test)]
 mod test {
