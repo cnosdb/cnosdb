@@ -212,7 +212,7 @@ pub fn gather_metrics_as_prometheus_string() -> String {
     match String::from_utf8(buffer.clone()) {
         Ok(v) => v,
         Err(e) => {
-            error!("metrics could not be from_utf8'd: {}", e);
+            error!("failed to get metrics from_utf8'd: {}", e);
             String::default()
         }
     }
