@@ -10,6 +10,7 @@ mod http;
 mod rpc;
 pub mod server;
 mod signal;
+mod tcp;
 
 static VERSION: Lazy<String> = Lazy::new(|| {
     format!(
@@ -32,6 +33,15 @@ long_about = r#"cnosdb and command line tools
                         "#
 )]
 struct Cli {
+    #[clap(
+        short,
+        long,
+        global = true,
+        env = "server_tcp_addr",
+        default_value = "0.0.0.0:31005"
+    )]
+    tcp_host: String,
+
     /// gRPC address
     #[clap(
         short,
@@ -84,6 +94,7 @@ enum SubCommand {
 
 use crate::http::http_service::HttpService;
 use crate::rpc::grpc_service::GrpcService;
+use crate::tcp::tcp_service::TcpService;
 use mem_allocator::Jemalloc;
 
 #[global_allocator]
@@ -119,6 +130,11 @@ fn main() -> Result<(), std::io::Error> {
         .parse::<SocketAddr>()
         .expect("Invalid http_host");
 
+    let tcp_host = cli
+        .tcp_host
+        .parse::<SocketAddr>()
+        .expect("Invalid http_host");
+
     runtime.clone().block_on(async move {
         match &cli.subcmd {
             SubCommand::Debug { debug: _ } => {
@@ -132,9 +148,13 @@ fn main() -> Result<(), std::io::Error> {
                     Box::new(HttpService::new(dbms.clone(), kv_inst.clone(), http_host));
                 let grpc_service =
                     Box::new(GrpcService::new(dbms.clone(), kv_inst.clone(), grpc_host));
+                let tcp_service =
+                    Box::new(TcpService::new(dbms.clone(), kv_inst.clone(), tcp_host));
+
                 let mut server = server::Builder::default()
                     .add_service(http_service)
                     .add_service(grpc_service)
+                    .add_service(tcp_service)
                     .build()
                     .expect("build server.");
                 server.start().expect("server start.");

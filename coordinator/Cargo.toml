@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+config = { path = "../config" }
+models = { path = "../common/models" }
+protos = { path = "../common/protos", features = ["test"] }
+trace = { path = "../common/trace" }
+utils = { path = "../common/utils" }
+
+snafu = "0.7"
+flatbuffers = "2.1"

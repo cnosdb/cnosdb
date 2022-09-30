@@ -64,6 +64,7 @@ impl TableScanStream {
             table_schema: proj_table_schema,
             datafusion_schema: proj_schema.clone(),
         };
+        println!("========={} {}", min_ts, max_ts);
 
         let iterator = match RowIterator::new(store_engine.clone(), option, batch_size) {
             Ok(it) => it,

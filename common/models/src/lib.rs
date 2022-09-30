@@ -1,6 +1,7 @@
-mod consistency_level;
+pub mod consistency_level;
 mod errors;
 mod field_info;
+pub mod meta_data;
 mod node_info;
 mod points;
 mod series_info;

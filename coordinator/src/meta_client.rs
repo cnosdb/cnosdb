@@ -1,29 +1,112 @@
+use models::meta_data::*;
+
+use snafu::Snafu;
+
+#[derive(Snafu, Debug)]
+pub enum MetaError {
+    #[snafu(display("Not Found Field"))]
+    NotFoundField,
+
+    #[snafu(display("index storage error: {}", msg))]
+    IndexStroage { msg: String },
+}
+
+pub type MetaResult<T> = Result<T, MetaError>;
+
 pub trait MetaClient {
-    fn create_user();
-    fn drop_user();
+    //*数据节点上下线管理 */
+    fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()>;
+    fn del_data_node(&self, id: u64) -> MetaResult<()>;
 
-    fn create_db(); //(user db_name place_rule retention_time)
-    fn drop_db(); //(user db_name)
+    fn create_user(&mut self, user: &UserInfo) -> MetaResult<()>;
+    fn drop_user(&mut self, name: &String) -> MetaResult<()>;
 
-    fn set_retention_time(); //(user, db, retention_time)
-    fn set_place_rule(); //(user, db, rule)
+    fn create_db(&mut self, name: &String, policy: &RetentionPolicyInfo) -> MetaResult<()>;
+    fn drop_db(&mut self, name: &String) -> MetaResult<()>;
 
-    fn create_table(); //user db table_name
-    fn drop_table(); //user db table_name
+    fn create_bucket(&mut self, db: &String, ts: i64) -> MetaResult<&BucketInfo>;
+    fn drop_bucket(&mut self, db: &String, id: u64) -> MetaResult<()>;
 
-    fn drop_bucket(); //drop out of data bucket
-    fn create_bucket(); // (user db time_range) -> <bucket_id, vnode_list<vnode>>
+    fn bucket_by_timestamp(&self, db: &String, ts: i64) -> Option<&BucketInfo>;
+    fn databases(&self) -> Vec<String>;
 
-    fn buckets_by_time_range(); // user dbname
-    fn databases_by_user(); // user for show databases;
+    fn alloc_data_resource(&mut self, res: &Resource) -> MetaResult<()>;
+    fn release_data_resource(&mut self, id: u64) -> MetaResult<()>;
 
-    fn add_node(); // (nodeid, ip, memory, cpu, disk, status)
-    fn drop_node(); // drop data node
-    fn nodes(); //get all nodes
-    fn node(); //node_id -> nodeInfo
-    fn heartbeat(); // update node status
+    fn all_nodes(&self) -> Vec<NodeInfo>;
+    fn tenant_node(&self) -> Vec<NodeInfo>;
+    fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
 
-    fn add_meta_node();
-    fn del_meta_node();
-    fn meta_nodes();
+    // fn heartbeat(); // update node status
+    // fn create_table();
+    // fn drop_table();
+    // fn meta_nodes();
+}
+
+pub struct LocalMetaClient {
+    tenant: String,
+
+    data: MetaData,
+}
+
+impl MetaClient for LocalMetaClient {
+    fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn del_data_node(&self, id: u64) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn create_user(&mut self, user: &UserInfo) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn drop_user(&mut self, name: &String) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn create_db(&mut self, name: &String, policy: &RetentionPolicyInfo) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn drop_db(&mut self, name: &String) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn create_bucket(&mut self, db: &String, ts: i64) -> MetaResult<&BucketInfo> {
+        todo!()
+    }
+
+    fn drop_bucket(&mut self, db: &String, id: u64) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn bucket_by_timestamp(&self, db: &String, ts: i64) -> Option<&BucketInfo> {
+        todo!()
+    }
+
+    fn databases(&self) -> Vec<String> {
+        todo!()
+    }
+
+    fn alloc_data_resource(&mut self, res: &Resource) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn release_data_resource(&mut self, id: u64) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn all_nodes(&self) -> Vec<NodeInfo> {
+        todo!()
+    }
+
+    fn tenant_node(&self) -> Vec<NodeInfo> {
+        todo!()
+    }
+
+    fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
+        todo!()
+    }
 }

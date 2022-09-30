@@ -44,12 +44,12 @@ impl TableSchema {
             })
             .collect();
 
-        let time_field = Field::new(
-            TIME_FIELD,
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-            false,
-        );
-        fields.push(time_field);
+        // let time_field = Field::new(
+        //     TIME_FIELD,
+        //     ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+        //     false,
+        // );
+        // fields.push(time_field);
 
         Arc::new(Schema::new(fields))
     }
