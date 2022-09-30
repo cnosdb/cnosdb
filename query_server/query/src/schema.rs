@@ -31,7 +31,7 @@ pub struct TableSchema {
 
 impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let mut fields: Vec<Field> = self
+        let fields: Vec<Field> = self
             .fields
             .iter()
             .map(|(name, schema)| {
@@ -44,12 +44,12 @@ impl TableSchema {
             })
             .collect();
 
-        let time_field = Field::new(
-            TIME_FIELD,
-            ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-            false,
-        );
-        fields.push(time_field);
+        // let time_field = Field::new(
+        //     TIME_FIELD,
+        //     ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+        //     false,
+        // );
+        // fields.push(time_field);
 
         Arc::new(Schema::new(fields))
     }

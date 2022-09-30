@@ -58,7 +58,8 @@ impl TableScanStream {
         let proj_table_schema =
             TableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
-        let (min_ts, max_ts) = filter.get_time_range();
+        //let (min_ts, max_ts) = filter.get_time_range();
+        let (min_ts, max_ts) = (i64::MIN, i64::MAX);
         let option = QueryOption {
             time_range: TimeRange { min_ts, max_ts },
             table_schema: proj_table_schema,
