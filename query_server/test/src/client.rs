@@ -17,7 +17,7 @@ impl Client {
     }
 
     pub fn construct_query_url(&self, query: &Query) -> Url {
-        let mut url = self.url.join("query").unwrap();
+        let mut url = self.url.join("sql").unwrap();
 
         let mut http_query = String::new();
         http_query.push_str("db=");
@@ -41,7 +41,11 @@ impl Client {
         let mut body = String::new();
         body.push_str(query.as_str());
 
-        self.client.request(Method::POST, url).body(body).build()
+        self.client
+            .request(Method::POST, url)
+            .basic_auth::<&str, &str>(query.instruction().user_name(), None)
+            .body(body)
+            .build()
     }
 
     /// execute one sql at http://domain/query
@@ -56,7 +60,11 @@ impl Client {
         let request = request_build.unwrap();
 
         if let Ok(resp) = self.client.execute(request).await {
+            let status_code = &resp.status();
+
             if let Ok(text) = resp.text().await {
+                buffer.push_str(status_code.to_string().as_str());
+                buffer.push('\n');
                 buffer.push_str(text.as_str());
                 buffer.push_str("\n\n");
             } else {

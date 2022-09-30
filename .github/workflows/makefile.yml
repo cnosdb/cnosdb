@@ -51,3 +51,23 @@ jobs:
 
     - name: clean
       run: make clean
+
+  integration-test:
+    name: "Integration Test"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test.sh
+

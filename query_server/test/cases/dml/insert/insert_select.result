@@ -1,87 +1,81 @@
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select column1, column2, column3, column4, column5 from (values (7, '7a', '7b', 7, 7)); --
-+------+
-| rows |
-+------+
-| 1    |
-+------+
+200 OK
+rows
+1
+
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+
 
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select TIME, ta, tb, fa, fb from (values (8, '8a', '8b', 8, 8)) as t (TIME, ta, tb, fa, fb); --
-+------+
-| rows |
-+------+
-| 1    |
-+------+
+200 OK
+rows
+1
+
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-| 8  | 8  | 8a | 8b | 8    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+
 
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
-+------+
-| rows |
-+------+
-| 1    |
-+------+
+200 OK
+rows
+1
+
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-| 8  | 8  | 8a | 8b | 8    |
-| 9  | 9  | 9a | 9b | 9    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+
 
 -- EXECUTE SQL: insert public.test_insert_subquery select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
--- ERROR: --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '9a' to value of Float64 type"}
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-| 8  | 8  | 8a | 8b | 8    |
-| 9  | 9  | 9a | 9b | 9    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+
 
 -- EXECUTE SQL: insert public.test_insert_subquery select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
-{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Insert columns and Source columns not match\" })"}
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Insert columns and Source columns not match"}
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-| 8  | 8  | 8a | 8b | 8    |
-| 9  | 9  | 9a | 9b | 9    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+
 
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, fa) select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
--- ERROR: --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '10a' to value of Float64 type"}
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-| 8  | 8  | 8a | 8b | 8    |
-| 9  | 9  | 9a | 9b | 9    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+
 

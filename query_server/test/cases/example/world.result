@@ -1,27 +1,26 @@
 -- EXECUTE SQL: SELECT 2 + 2 * 5; --
-+--------------------------------+
-| Int64(2) + Int64(2) * Int64(5) |
-+--------------------------------+
-| 12                             |
-+--------------------------------+
+200 OK
+Int64(2) + Int64(2) * Int64(5)
+12
+
 
 -- EXECUTE SQL: SELECT (2 + 2) * 5; --
-+--------------------------------+
-| Int64(2) + Int64(2) * Int64(5) |
-+--------------------------------+
-| 20                             |
-+--------------------------------+
+200 OK
+Int64(2) + Int64(2) * Int64(5)
+20
+
 
 -- EXECUTE SQL: SELECT 3.0 / 5; --
-+-----------------------+
-| Float64(3) / Int64(5) |
-+-----------------------+
-| 0.6                   |
-+-----------------------+
+200 OK
+Float64(3) / Int64(5)
+0.6
+
 
 -- EXECUTE SQL: SELECT 3 + TRUE; --
-{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: 'Int64 + Boolean' can't be evaluated because there isn't a common type to coerce the types to\" })"}
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: 'Int64 + Boolean' can't be evaluated because there isn't a common type to coerce the types to"}
 
 -- EXECUTE SQL: SELECT *; --
-{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: SELECT * with no tables specified is not valid\" })"}
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: SELECT * with no tables specified is not valid"}
 
