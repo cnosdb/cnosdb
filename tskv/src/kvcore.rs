@@ -1,4 +1,3 @@
-use std::time::Instant;
 use std::{collections::HashMap, panic, sync::Arc};
 
 use flatbuffers::FlatBufferBuilder;
@@ -8,6 +7,7 @@ use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 use tokio::{
+    time::Instant,
     runtime::Runtime,
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -15,10 +15,9 @@ use tokio::{
     },
 };
 
-use async_channel as channel;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::{
-    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag,
+    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag,
     Timestamp, ValueType,
 };
 use protos::{
@@ -48,10 +47,6 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
-
-pub struct Entry {
-    pub series_id: u64,
-}
 
 #[derive(Debug)]
 pub struct TsKv {
@@ -160,21 +155,6 @@ impl TsKv {
         // get data from memcache
         if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
             data.append(&mut mem_entry.read().read_cell(time_range));
-        }
-
-        // get data from delta_memcache
-        if let Some(mem_entry) = version.caches.delta_mut_cache.read().get(&field_id) {
-            data.append(&mut mem_entry.read().read_cell(time_range));
-        }
-
-        // get data from immut_delta_memcache
-        for mem_cache in version.caches.delta_immut_cache.iter() {
-            if mem_cache.read().flushed {
-                continue;
-            }
-            if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                data.append(&mut mem_entry.read().read_cell(time_range));
-            }
         }
 
         // get data from im_memcache
@@ -323,34 +303,6 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {
-        warn!("job 'main' starting.");
-        let tskv_ref = tskv.clone();
-        let f = async move {
-            while let Ok(command) = req_rx.recv().await {
-                match command {
-                    Task::WritePoints { req, tx } => {
-                        debug!("writing points.");
-                        match tskv_ref.write(req).await {
-                            Ok(resp) => {
-                                let _ret = tx.send(Ok(resp));
-                            }
-                            Err(err) => {
-                                info!("write points error {}", err);
-                                let _ret = tx.send(Err(err));
-                            }
-                        }
-                        debug!("write points completed.");
-                    }
-                    _ => panic!("unimplemented."),
-                }
-            }
-        };
-
-        tskv.runtime.spawn(f);
-        warn!("job 'main' started.");
-    }
-
     // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
     //     Ok(None)
     // }
@@ -395,7 +347,11 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self.version_set.write().create_db(&db_name);
+        let db_warp = self.version_set.read().get_db(&db_name);
+        let db = match db_warp {
+            Some(database) => database,
+            None => self.version_set.write().create_db(&db_name),
+        };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
         let mut seq = 0;
@@ -586,7 +542,7 @@ impl Engine for TsKv {
 
     fn get_series_id_list(&self, name: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         if let Some(db) = self.version_set.read().get_db(name) {
-            return db.read().get_index().write().get_series_id_list(tab, tags);
+            return db.read().get_index().get_series_id_list(tab, tags);
         }
 
         Ok(vec![])
@@ -613,57 +569,17 @@ impl Engine for TsKv {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-    use std::sync::{atomic, Arc};
-
-    use async_channel as channel;
-
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::utils::now_timestamp;
-    use models::{InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
+    use models::{InMemPoint, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
+    use std::collections::HashMap;
+    use std::sync::{atomic, Arc};
     use tokio::runtime::{self, Runtime};
 
     use crate::{engine::Engine, error, tsm::DataBlock, Options, TimeRange, TsKv};
     use std::sync::atomic::{AtomicI64, Ordering};
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_async_chan() {
-        let atomic = Arc::new(AtomicI64::new(0));
-        let (sender, receiver) = channel::unbounded();
-        for i in 0..60 {
-            consumer(atomic.clone(), receiver.clone());
-        }
-
-        let mut start = now_timestamp();
-        for i in 0..100000000 {
-            let _ = sender.send(i).await;
-
-            if i % 1000000 == 0 {
-                println!(
-                    "{} {} {}",
-                    now_timestamp() - start,
-                    i,
-                    atomic.load(Ordering::SeqCst)
-                );
-                start = now_timestamp();
-            }
-        }
-    }
-
-    fn consumer(atomic: Arc<AtomicI64>, req_rx: channel::Receiver<u64>) {
-        let f = async move {
-            println!(" 111111");
-            while req_rx.recv().await.is_ok() {
-                println!(" ====");
-                atomic.fetch_add(1, Ordering::SeqCst);
-            }
-        };
-
-        tokio::spawn(f);
-    }
 
     #[tokio::test]
     #[ignore]
