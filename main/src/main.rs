@@ -128,11 +128,19 @@ fn main() -> Result<(), std::io::Error> {
                 let tskv_options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
                 let dbms = Arc::new(make_cnosdbms(kv_inst.clone()).expect("make dbms"));
-                let http_service =
-                    Box::new(HttpService::new(dbms.clone(), kv_inst.clone(), http_host));
-                let grpc_service =
-                    Box::new(GrpcService::new(dbms.clone(), kv_inst.clone(), grpc_host));
-                let mut server = server::Builder::new(global_config.clone())
+                let http_service = Box::new(HttpService::new(
+                    dbms.clone(),
+                    kv_inst.clone(),
+                    http_host,
+                    global_config.security.tls_config.clone(),
+                ));
+                let grpc_service = Box::new(GrpcService::new(
+                    dbms.clone(),
+                    kv_inst.clone(),
+                    grpc_host,
+                    global_config.security.tls_config.clone(),
+                ));
+                let mut server = server::Builder::default()
                     .add_service(http_service)
                     .add_service(grpc_service)
                     .build()

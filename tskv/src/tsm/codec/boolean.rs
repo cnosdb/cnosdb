@@ -75,7 +75,7 @@ pub fn bool_without_compress_encode(
             dst.push(0);
         }
     }
-    return Ok(());
+    Ok(())
 }
 
 /// Decodes a slice of bytes into a destination vector of `bool`s.
@@ -139,7 +139,7 @@ pub fn bool_without_compress_decode(
         }
     }
 
-    return Ok(());
+    Ok(())
 }
 
 #[cfg(test)]

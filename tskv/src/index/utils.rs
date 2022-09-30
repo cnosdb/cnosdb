@@ -8,7 +8,7 @@ use crate::byte_utils;
 
 use super::*;
 
-pub fn encode_inverted_index_key(tab: &String, tag_key: &[u8], tag_val: &[u8]) -> Vec<u8> {
+pub fn encode_inverted_index_key(tab: &str, tag_key: &[u8], tag_val: &[u8]) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::with_capacity(tab.len() + 1 + tag_key.len() + 1 + tag_val.len());
 
     buf.put_slice(tab.as_bytes());
@@ -35,10 +35,10 @@ pub fn decode_series_id_list(data: &[u8]) -> IndexResult<Vec<u64>> {
     Ok(list)
 }
 
-pub fn encode_series_id_list(list: &Vec<u64>) -> Vec<u8> {
+pub fn encode_series_id_list(list: &[u64]) -> Vec<u8> {
     let mut data: Vec<u8> = Vec::with_capacity(list.len() * 8);
-    for i in 0..list.len() {
-        data.put_u64(list[i]);
+    for i in list {
+        data.put_u64(*i);
     }
 
     data

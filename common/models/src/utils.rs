@@ -1,4 +1,7 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    cmp::Ordering,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const LOW_40BIT_MASK: u64 = (0x01 << 40) - 1;
 const HIGH_24BIT_MASK: u64 = ((0x01 << 24) - 1) << 40;
@@ -26,14 +29,14 @@ pub fn and_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
             break;
         }
 
-        if (arr1[i] & LOW_40BIT_MASK) < (arr2[j] & LOW_40BIT_MASK) {
-            i += 1;
-        } else if (arr1[i] & LOW_40BIT_MASK) > (arr2[j] & LOW_40BIT_MASK) {
-            j += 1;
-        } else {
-            result.push(arr1[i]);
-            i += 1;
-            j += 1;
+        match (arr1[i] & LOW_40BIT_MASK).cmp(&(arr2[j] & LOW_40BIT_MASK)) {
+            Ordering::Less => i += 1,
+            Ordering::Greater => j += 1,
+            Ordering::Equal => {
+                result.push(arr1[i]);
+                i += 1;
+                j += 1;
+            }
         }
     }
 
@@ -50,16 +53,20 @@ pub fn or_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
             break;
         }
 
-        if (arr1[i] & LOW_40BIT_MASK) < (arr2[j] & LOW_40BIT_MASK) {
-            result.push(arr1[i]);
-            i += 1;
-        } else if (arr1[i] & LOW_40BIT_MASK) > (arr2[j] & LOW_40BIT_MASK) {
-            result.push(arr2[j]);
-            j += 1;
-        } else {
-            result.push(arr1[i]);
-            i += 1;
-            j += 1;
+        match (arr1[i] & LOW_40BIT_MASK).cmp(&(arr2[j] & LOW_40BIT_MASK)) {
+            Ordering::Less => {
+                result.push(arr1[i]);
+                i += 1;
+            }
+            Ordering::Greater => {
+                result.push(arr2[j]);
+                j += 1;
+            }
+            Ordering::Equal => {
+                result.push(arr1[i]);
+                i += 1;
+                j += 1;
+            }
         }
     }
 
@@ -83,4 +90,20 @@ pub fn now_timestamp() -> u64 {
 
 pub fn to_str(arr: &[u8]) -> String {
     String::from_utf8(arr.to_vec()).unwrap()
+}
+
+pub fn min_num<T: std::cmp::PartialOrd>(a: T, b: T) -> T {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+pub fn max_num<T: std::cmp::PartialOrd>(a: T, b: T) -> T {
+    if a > b {
+        a
+    } else {
+        b
+    }
 }

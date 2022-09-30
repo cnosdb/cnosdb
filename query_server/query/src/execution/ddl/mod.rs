@@ -7,12 +7,14 @@ use spi::query::{self, QueryError};
 
 use spi::query::execution::ExecutionError;
 
+use self::create_table::CreateTableTask;
 use snafu::ResultExt;
 
 use self::create_external_table::CreateExternalTableTask;
 use self::drop_object::DropObjectTask;
 
 mod create_external_table;
+mod create_table;
 mod drop_object;
 
 /// Traits that DDL tasks should implement
@@ -74,6 +76,7 @@ impl DDLDefinitionTaskFactory {
                 Box::new(CreateExternalTableTask::new(stmt.clone()))
             }
             DDLPlan::Drop(stmt) => Box::new(DropObjectTask::new(stmt.clone())),
+            DDLPlan::CreateTable(stmt) => Box::new(CreateTableTask::new(stmt.clone())),
         }
     }
 }

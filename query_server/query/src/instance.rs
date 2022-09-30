@@ -75,7 +75,6 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use rand::{self, Rng};
     use std::ops::DerefMut;
     use trace::debug;
 

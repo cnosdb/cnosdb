@@ -1,5 +1,6 @@
 use crate::error::Result;
 use crate::index::IndexResult;
+use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
@@ -27,7 +28,7 @@ pub trait Engine: Send + Sync + Debug {
 
     fn read(
         &self,
-        db: &String,
+        db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
         fields: Vec<u32>,
@@ -39,21 +40,17 @@ pub trait Engine: Send + Sync + Debug {
 
     fn delete_series(
         &self,
-        db: &String,
+        db: &str,
         sids: &[SeriesId],
         field_ids: &[FieldId],
         time_range: &TimeRange,
     ) -> Result<()>;
 
-    fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>>;
+    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<Vec<FieldInfo>>>;
 
-    async fn get_series_id_list(
-        &self,
-        db: &String,
-        tab: &String,
-        tags: &Vec<Tag>,
-    ) -> IndexResult<Vec<u64>>;
-    fn get_series_key(&self, db: &String, sid: u64) -> IndexResult<Option<SeriesKey>>;
+    fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
+    fn get_series_key(&self, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>>;
+    fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>>;
 }
 
 #[derive(Debug, Default)]
@@ -88,7 +85,7 @@ impl Engine for MockEngine {
 
     fn read(
         &self,
-        db: &String,
+        db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
         fields: Vec<u32>,
@@ -108,7 +105,7 @@ impl Engine for MockEngine {
 
     fn delete_series(
         &self,
-        db: &String,
+        db: &str,
         sids: &[SeriesId],
         field_ids: &[FieldId],
         time_range: &TimeRange,
@@ -116,7 +113,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_table_schema(&self, db: &String, tab: &String) -> Result<Option<Vec<FieldInfo>>> {
+    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<Vec<FieldInfo>>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
 
         let types = vec![
@@ -137,16 +134,15 @@ impl Engine for MockEngine {
         Ok(Some(fields))
     }
 
-    async fn get_series_id_list(
-        &self,
-        db: &String,
-        tab: &String,
-        tags: &Vec<Tag>,
-    ) -> IndexResult<Vec<u64>> {
+    fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         Ok(vec![])
     }
 
-    fn get_series_key(&self, db: &String, sid: u64) -> IndexResult<Option<SeriesKey>> {
+    fn get_series_key(&self, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {
         Ok(None)
+    }
+
+    fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>> {
+        todo!()
     }
 }

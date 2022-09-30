@@ -77,11 +77,7 @@ impl FlushTask {
         }
     }
 
-    pub async fn run(
-        self,
-        version: Arc<Version>,
-        version_edits: &mut Vec<VersionEdit>,
-    ) -> Result<()> {
+    pub fn run(self, version: Arc<Version>, version_edits: &mut Vec<VersionEdit>) -> Result<()> {
         info!(
             "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
             version.ts_family_id,
@@ -149,7 +145,9 @@ impl FlushTask {
         let mut tsm_writer: Option<TsmWriter> = None;
 
         for (sid, series_datas) in caches_data.iter_mut() {
-            let schema: Vec<FieldInfo> = self.get_table_schema(*sid)?;
+            // todo : improve get table schema
+            // let schema: Vec<FieldInfo> = self.get_table_schema(*sid)?;
+            let schema: Vec<FieldInfo> = vec![];
             let field_id_code_type_map: HashMap<FieldId, u8> =
                 HashMap::from_iter(schema.iter().map(|f| (f.field_id(), f.code_type())));
             let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
@@ -358,7 +356,7 @@ impl FlushTask {
     }
 }
 
-pub async fn run_flush_memtable_job(
+pub fn run_flush_memtable_job(
     reqs: Arc<Mutex<Vec<FlushReq>>>,
     global_context: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
@@ -405,12 +403,10 @@ pub async fn run_flush_memtable_job(
                 path_tsm,
                 path_delta,
             )
-            .run(tsf.read().version(), &mut edits)
-            .await?;
+            .run(tsf.read().version(), &mut edits)?;
 
-            match compact_task_sender.send(*tsf_id) {
-                Err(e) => error!("{}", e),
-                _ => {}
+            if let Err(e) = compact_task_sender.send(*tsf_id) {
+                error!("{}", e);
             }
         }
     }
@@ -568,11 +564,11 @@ pub mod flush_tests {
         let version = Arc::new(Version {
             ts_family_id, database: database.clone(), storage_opt: options.storage.clone(),
             last_seq: 1, max_level_ts,
-            levels_info: LevelInfo::init_levels(database.clone(), options.storage.clone()),
+            levels_info: LevelInfo::init_levels(database, options.storage),
         });
         let flush_task = FlushTask::new(caches, None, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];
-        flush_task.run(version, &mut version_edits).await.unwrap();
+        flush_task.run(version, &mut version_edits).unwrap();
 
         assert_eq!(version_edits.len(), 1);
         let ve = version_edits.get(0).unwrap();

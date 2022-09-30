@@ -31,7 +31,7 @@ pub fn ts_without_compress_encode(
     for i in src.iter() {
         dst.extend_from_slice(i.to_be_bytes().as_slice());
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn ts_q_compress_encode(
@@ -45,8 +45,8 @@ pub fn ts_q_compress_encode(
 
     dst.push(Encoding::Quantile as u8);
 
-    dst.append(&mut auto_compress(&src, DEFAULT_COMPRESSION_LEVEL));
-    return Ok(());
+    dst.append(&mut auto_compress(src, DEFAULT_COMPRESSION_LEVEL));
+    Ok(())
 }
 
 /// encode encodes a vector of signed integers into a slice of bytes.
@@ -310,7 +310,7 @@ pub fn ts_without_compress_decode(
     for i in iter {
         dst.push(decode_be_i64(i))
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn ts_q_compress_decode(
@@ -324,7 +324,7 @@ pub fn ts_q_compress_decode(
     let src = &src[1..];
     let mut decode: Vec<i64> = auto_decompress(src)?;
     dst.append(&mut decode);
-    return Ok(());
+    Ok(())
 }
 
 #[cfg(test)]

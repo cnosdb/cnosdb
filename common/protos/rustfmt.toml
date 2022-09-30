@@ -1,0 +1,6 @@
+edition = "2021"
+
+# ignore dir
+ignore = [
+     "src/generated",
+]

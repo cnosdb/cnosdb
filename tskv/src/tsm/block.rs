@@ -58,7 +58,7 @@ impl PartialEq for DataBlock {
                 ..
             } => {
                 if let Self::U64 { ts, val, .. } = self {
-                    return ts.eq(ts_other) && val.eq(val_other);
+                    ts.eq(ts_other) && val.eq(val_other)
                 } else {
                     false
                 }
@@ -69,7 +69,7 @@ impl PartialEq for DataBlock {
                 ..
             } => {
                 if let Self::I64 { ts, val, .. } = self {
-                    return ts.eq(ts_other) && val.eq(val_other);
+                    ts.eq(ts_other) && val.eq(val_other)
                 } else {
                     false
                 }
@@ -80,7 +80,7 @@ impl PartialEq for DataBlock {
                 ..
             } => {
                 if let Self::Str { ts, val, .. } = self {
-                    return ts.eq(ts_other) && val.eq(val_other);
+                    ts.eq(ts_other) && val.eq(val_other)
                 } else {
                     false
                 }
@@ -91,7 +91,7 @@ impl PartialEq for DataBlock {
                 ..
             } => {
                 if let Self::F64 { ts, val, .. } = self {
-                    return ts.eq(ts_other) && val.eq(val_other);
+                    ts.eq(ts_other) && val.eq(val_other)
                 } else {
                     false
                 }
@@ -102,7 +102,7 @@ impl PartialEq for DataBlock {
                 ..
             } => {
                 if let Self::Bool { ts, val, .. } = self {
-                    return ts.eq(ts_other) && val.eq(val_other);
+                    ts.eq(ts_other) && val.eq(val_other)
                 } else {
                     false
                 }
@@ -664,8 +664,9 @@ pub mod test {
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
         assert_eq!(block.len(), pattern.len());
-        for j in 0..block.len() {
-            assert_eq!(block.get(j).unwrap(), pattern[j]);
+
+        for (j, item) in pattern.iter().enumerate().take(block.len()) {
+            assert_eq!(&block.get(j).unwrap(), item);
         }
     }
 

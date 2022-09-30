@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
 use datafusion::logical_plan::plan::Extension;
 use datafusion::logical_plan::{DFField, FileType, LogicalPlan, LogicalPlanBuilder};
+use datafusion::logical_plan::{DFSchema, DFSchemaRef};
 use datafusion::prelude::{cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
@@ -11,20 +13,29 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use datafusion::sql::TableReference;
 use hashbrown::HashMap;
 use snafu::ResultExt;
-use spi::query::ast::{DropObject, ExtStatement};
+use spi::query::ast::{ColumnOption, CreateTable as ASTCreateTable, DropObject, ExtStatement};
 use spi::query::logical_planner::{
-    self, affected_row_expr, CSVOptions, CreateExternalTable, DDLPlan, DropPlan, ExternalSnafu,
-    FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan, MISMATCHED_COLUMNS,
-    MISSING_COLUMN,
+    self, affected_row_expr, CSVOptions, CreateExternalTable, CreateTable, DDLPlan, DropPlan,
+    ExternalSnafu, FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
-use sqlparser::ast::{Ident, ObjectName, Query, Statement};
+use sqlparser::ast::{Ident, ObjectName, Query};
+use std::collections::HashMap as MetaDataHashmap;
 
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
+use sqlparser::ast::{DataType as SQLDataType, Statement};
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+
+const TIMESTAMP_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
+const BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
+const UNSIGNED_BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
+const DOUBLE_CODEC: [&str; 4] = ["DEFAULT", "NULL", "GORILLA", "QUANTILE"];
+const STRING_CODEC: [&str; 7] = ["DEFAULT", "NULL", "GZIP", "BZIP", "ZSTD", "SNAPPY", "ZLIB"];
+const BOOLEAN_CODEC: [&str; 3] = ["DEFAULT", "NULL", "BITPACK"];
 
 /// CnosDB SQL query planner
 #[derive(Debug)]
@@ -43,7 +54,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
-            ExtStatement::CreateTable(_) => todo!(),
+            ExtStatement::CreateTable(stmt) => self.table_to_plan(stmt),
             ExtStatement::CreateDatabase(_) => todo!(),
             ExtStatement::CreateUser(_) => todo!(),
             ExtStatement::Drop(s) => self.drop_object_to_plan(s),
@@ -236,6 +247,89 @@ impl<S: ContextProvider> SqlPlaner<S> {
             UNEXPECTED_EXTERNAL_PLAN.to_string(),
         ))
         .context(ExternalSnafu)
+    }
+
+    pub fn table_to_plan(&self, statement: ASTCreateTable) -> Result<Plan> {
+        let ASTCreateTable {
+            name,
+            if_not_exists,
+            columns,
+        } = statement;
+        let mut fields = vec![];
+        let mut tags_name = vec![];
+        let mut field_name_codec_algo = MetaDataHashmap::new();
+        for column in columns {
+            if column.is_tag {
+                tags_name.push(column.name.value);
+            } else {
+                fields.push(DFField::new(
+                    Some(&name),
+                    &column.name.value,
+                    self.make_data_type(&column.data_type)?,
+                    true,
+                ));
+                if field_name_codec_algo.get(&column.name.value) != None {
+                    return Err(LogicalPlannerError::External {
+                        source: DataFusionError::Internal(
+                            "column name should different from each other".to_string(),
+                        ),
+                    });
+                }
+                self.check_column(&column)?;
+                field_name_codec_algo.insert(column.name.value, column.codec);
+            }
+        }
+
+        let table_schema = DFSchemaRef::new(
+            DFSchema::new_with_metadata(fields, field_name_codec_algo).context(ExternalSnafu)?,
+        );
+
+        Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
+            schema: table_schema,
+            name,
+            if_not_exists,
+            tags: tags_name,
+        })))
+    }
+
+    fn make_data_type(&self, data_type: &SQLDataType) -> Result<DataType> {
+        match data_type {
+            // todo : should support get time unit for database
+            SQLDataType::Timestamp => Ok(DataType::Timestamp(TimeUnit::Nanosecond, None)),
+            SQLDataType::BigInt(_) => Ok(DataType::Int64),
+            SQLDataType::UnsignedBigInt(_) => Ok(DataType::UInt64),
+            SQLDataType::Double => Ok(DataType::Float64),
+            SQLDataType::String => Ok(DataType::Utf8),
+            SQLDataType::Boolean => Ok(DataType::Boolean),
+            _ => Err(LogicalPlannerError::External {
+                source: DataFusionError::Internal(format!("Unexpected data type {}", data_type)),
+            }),
+        }
+    }
+
+    fn check_column(&self, column: &ColumnOption) -> Result<()> {
+        let is_ok = match column.data_type {
+            SQLDataType::Timestamp => {
+                TIMESTAMP_CODEC.contains(&column.codec.to_uppercase().as_str())
+            }
+            SQLDataType::BigInt(_) => BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::UnsignedBigInt(_) => {
+                UNSIGNED_BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str())
+            }
+            SQLDataType::Double => DOUBLE_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::String => STRING_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::Boolean => BOOLEAN_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            _ => false,
+        };
+        if !is_ok {
+            return Err(LogicalPlannerError::External {
+                source: DataFusionError::Internal(format!(
+                    "Unsupported codec type {} for {}",
+                    column.codec, column.data_type
+                )),
+            });
+        }
+        Ok(())
     }
 
     fn extract_column_names(

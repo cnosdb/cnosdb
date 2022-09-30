@@ -2,18 +2,32 @@ use snafu::Backtrace;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 
-use crate::info;
-use config::Config;
 use snafu::Snafu;
-use spi::server::dbms::DBMSRef;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Please inject DBMS.\nBacktrace:\n{}", backtrace))]
     NotFoundDBMS { backtrace: Backtrace },
-    // #[snafu(display("Failed to start service. err: {}", source))]
-    // StartService { source: query::spi::server::ServerError },
+
+    #[snafu(display("Ensure the format of certificate and private_key is correct."))]
+    IdentityFormatError,
+
+    #[snafu(display("Ensure the TLS configuration is correct"))]
+    TLSConfigError, // #[snafu(display("Failed to start service. err: {}", source))]
+                    // StartService { source: query::spi::server::ServerError },
+}
+
+impl From<tonic::transport::Error> for Error {
+    fn from(_: tonic::transport::Error) -> Self {
+        Self::IdentityFormatError
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(_: std::io::Error) -> Self {
+        Self::TLSConfigError
+    }
 }
 
 pub type ServiceRef = Box<dyn Service + Send + Sync>;
@@ -66,39 +80,20 @@ impl Server {
     }
 }
 
+#[derive(Default)]
 pub struct Builder {
-    config: Config,
     // service
     services: Vec<ServiceRef>,
-    // todo node manager
-    // todo security(eg. ssl、kerberos、others)
-    // instance
-    dbms: Option<DBMSRef>,
 }
 
 impl Builder {
-    pub fn new(config: Config) -> Self {
-        Self {
-            config,
-            services: Vec::new(),
-            dbms: None,
-        }
-    }
-
     pub fn with_services(self, services: Vec<ServiceRef>) -> Self {
-        Self { services, ..self }
+        Self { services }
     }
 
     pub fn add_service(mut self, service: ServiceRef) -> Self {
         self.services.push(service);
         self
-    }
-
-    pub fn with_dbms(self, dbms: DBMSRef) -> Self {
-        Self {
-            dbms: Some(dbms),
-            ..self
-        }
     }
 
     pub fn build(self) -> Result<Server> {

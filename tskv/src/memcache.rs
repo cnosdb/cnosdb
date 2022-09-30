@@ -8,6 +8,7 @@ use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::iter::{FromIterator, Peekable};
+use std::ops::Index;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
@@ -175,11 +176,9 @@ impl SeriesData {
             }
 
             for row in group.rows.iter() {
-                if let Some(field) = row.fields.get(index) {
-                    if let Some(field) = field {
-                        entry.field_type = field.value_type();
-                        entry.cells.push(field.data_value(row.ts));
-                    }
+                if let Some(Some(field)) = row.fields.get(index) {
+                    entry.field_type = field.value_type();
+                    entry.cells.push(field.data_value(row.ts));
                 }
             }
         }
@@ -349,7 +348,7 @@ pub struct MemEntry {
 }
 
 impl MemEntry {
-    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
+    pub fn data_block(&self, time_range: &TimeRange) -> DataBlock {
         let mut data = DataBlock::new(0, self.field_type);
         if time_range.is_boundless() {
             for datum in self.cells.iter() {
@@ -364,7 +363,11 @@ impl MemEntry {
             }
         }
 
-        return vec![data];
+        data
+    }
+
+    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
+        vec![self.data_block(time_range)]
     }
 
     pub fn sort(&mut self) {
@@ -389,6 +392,16 @@ pub enum DataType {
 }
 
 impl DataType {
+    pub fn new(vtype: ValueType, ts: i64) -> Self {
+        match vtype {
+            ValueType::Unsigned => DataType::U64(ts, 0),
+            ValueType::Integer => DataType::I64(ts, 0),
+            ValueType::Float => DataType::F64(ts, 0.0),
+            ValueType::Boolean => DataType::Bool(ts, false),
+            ValueType::String => DataType::Str(ts, vec![]),
+            _ => todo!(),
+        }
+    }
     pub fn timestamp(&self) -> i64 {
         match *self {
             DataType::U64(ts, ..) => ts,

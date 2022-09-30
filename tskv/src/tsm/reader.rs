@@ -422,6 +422,7 @@ impl Iterator for BlockMetaIterator {
     }
 }
 
+#[derive(Clone)]
 pub struct TsmReader {
     reader: Arc<File>,
     index_reader: Arc<IndexReader>,
@@ -582,7 +583,7 @@ pub fn decode_data_block(
         ValueType::Float => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let val_encoding = get_encoding(&data);
+            let val_encoding = get_encoding(data);
             let val_codec = get_f64_codec(val_encoding);
             val_codec.decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::F64 {
@@ -594,7 +595,7 @@ pub fn decode_data_block(
         ValueType::Integer => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let val_encoding = get_encoding(&data);
+            let val_encoding = get_encoding(data);
             let val_codec = get_i64_codec(val_encoding);
             val_codec.decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::I64 {
@@ -606,7 +607,7 @@ pub fn decode_data_block(
         ValueType::Boolean => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let val_encoding = get_encoding(&data);
+            let val_encoding = get_encoding(data);
             let val_codec = get_bool_codec(val_encoding);
             val_codec.decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::Bool {
@@ -618,7 +619,7 @@ pub fn decode_data_block(
         ValueType::String => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let val_encoding = get_encoding(&data);
+            let val_encoding = get_encoding(data);
             let val_codec = get_str_codec(val_encoding);
             val_codec.decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::Str {
@@ -630,7 +631,7 @@ pub fn decode_data_block(
         ValueType::Unsigned => {
             // values will be same length as time-stamps.
             let mut val = Vec::with_capacity(ts.len());
-            let val_encoding = get_encoding(&data);
+            let val_encoding = get_encoding(data);
             let val_codec = get_u64_codec(val_encoding);
             val_codec.decode(data, &mut val).context(DecodeSnafu)?;
             Ok(DataBlock::U64 {

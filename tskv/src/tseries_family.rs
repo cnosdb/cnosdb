@@ -19,7 +19,6 @@ use tokio::sync::mpsc::UnboundedSender;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
-use crate::memcache::RowGroup;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     direct_io::{File, FileCursor},
@@ -32,6 +31,7 @@ use crate::{
     tsm::{ColumnReader, DataBlock, IndexReader, TsmReader, TsmTombstone},
     ColumnFileId, LevelId, TseriesFamilyId,
 };
+use crate::{memcache::RowGroup, tsm::BlockMetaIterator};
 
 lazy_static! {
     pub static ref FLUSH_REQ: Arc<Mutex<Vec<FlushReq>>> = Arc::new(Mutex::new(vec![]));
@@ -220,6 +220,36 @@ impl Drop for ColumnFile {
     }
 }
 
+pub struct FieldFileLocation {
+    field_id: u64,
+    file: Arc<ColumnFile>,
+    reader: TsmReader,
+    block_it: BlockMetaIterator,
+
+    read_index: usize,
+    data_block: DataBlock,
+}
+
+impl FieldFileLocation {
+    pub fn peek(&mut self) -> Result<Option<DataType>, Error> {
+        if self.read_index >= self.data_block.len() {
+            if let Some(meta) = self.block_it.next() {
+                let blk = self.reader.get_data_block(&meta)?;
+                self.read_index = 0;
+                self.data_block = blk;
+            } else {
+                return Ok(None);
+            }
+        }
+
+        Ok(self.data_block.get(self.read_index))
+    }
+
+    pub fn next(&mut self) {
+        self.read_index += 1;
+    }
+}
+
 #[derive(Debug)]
 pub struct LevelInfo {
     pub files: Vec<Arc<ColumnFile>>,
@@ -276,6 +306,8 @@ impl LevelInfo {
         self.cur_size += compact_meta.file_size;
         self.time_range.max_ts = self.time_range.max_ts.max(compact_meta.max_ts);
         self.time_range.min_ts = self.time_range.min_ts.min(compact_meta.min_ts);
+
+        self.sort_file_asc();
     }
 
     pub fn push_column_file(&mut self, file: Arc<ColumnFile>) {
@@ -283,6 +315,8 @@ impl LevelInfo {
         self.time_range.max_ts = self.time_range.max_ts.max(file.time_range.max_ts);
         self.time_range.min_ts = self.time_range.min_ts.min(file.time_range.min_ts);
         self.files.push(file);
+
+        self.sort_file_asc();
     }
 
     /// Update time_range by a scan with files.
@@ -325,6 +359,11 @@ impl LevelInfo {
             }
         }
         data
+    }
+
+    pub fn sort_file_asc(&mut self) {
+        self.files
+            .sort_by(|a, b| a.file_id.partial_cmp(&b.file_id).unwrap());
     }
 
     pub fn level(&self) -> u32 {
@@ -381,7 +420,7 @@ impl Version {
                 ve.del_files.into_iter().for_each(|f| {
                     deleted_files
                         .entry(f.level)
-                        .or_insert(HashSet::new())
+                        .or_insert_with(HashSet::new)
                         .insert(f.file_id);
                 });
             }
@@ -582,7 +621,7 @@ impl TseriesFamily {
         }
     }
 
-    pub async fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
+    pub fn switch_memcache(&mut self, cache: Arc<RwLock<MemCache>>) {
         self.immut_cache.push(self.mut_cache.clone());
         self.new_super_version(self.version.clone());
         self.mut_cache = cache;
@@ -613,7 +652,7 @@ impl TseriesFamily {
         self.version = version;
     }
 
-    pub async fn switch_to_immutable(&mut self) {
+    pub fn switch_to_immutable(&mut self) {
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
@@ -633,7 +672,7 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    async fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for i in self.immut_cache.iter() {
@@ -679,19 +718,19 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    pub async fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
+    pub fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
         for ((sid, schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
             mem.write_group(sid, seq, group);
         }
     }
 
-    pub async fn check_to_flush(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    pub fn check_to_flush(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!("mut_cache full,switch to immutable");
-            self.switch_to_immutable().await;
+            self.switch_to_immutable();
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req(sender.clone()).await;
+                self.wrap_flush_req(sender);
             }
         }
     }
@@ -976,7 +1015,7 @@ mod test {
                 database.clone(),
                 opt.storage.clone(),
                 0,
-                LevelInfo::init_levels(database.clone(), opt.storage.clone()),
+                LevelInfo::init_levels(database, opt.storage.clone()),
                 0,
             )),
             opt.cache.clone(),
@@ -1001,7 +1040,7 @@ mod test {
         };
         let mut points = HashMap::new();
         points.insert((0, 0), row_group);
-        tsf.put_points(0, points).await;
+        tsf.put_points(0, points);
 
         assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
         tsf.delete_cache(
@@ -1110,7 +1149,6 @@ mod test {
             summary_task_sender,
             compact_task_sender,
         )
-        .await
         .unwrap();
 
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;

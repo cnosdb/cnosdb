@@ -28,7 +28,7 @@ use libc::max_align_t;
 use std::error::Error;
 
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Encoding {
     Default = 0,
     Null = 1,
@@ -371,7 +371,7 @@ pub fn get_encoding(src: &[u8]) -> Encoding {
     if src.is_empty() {
         return Encoding::Unknown;
     }
-    return Encoding::from(src[0]);
+    Encoding::from(src[0])
 }
 
 pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec> {

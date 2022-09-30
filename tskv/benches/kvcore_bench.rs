@@ -3,7 +3,7 @@ use std::sync::Arc;
 use criterion::{criterion_group, criterion_main, Criterion};
 use parking_lot::Mutex;
 
-use tokio::runtime::Runtime;
+use tokio::runtime::{self, Runtime};
 
 use protos::{kv_service::WritePointsRpcRequest, models_helper};
 use tskv::{engine::Engine, TsKv};
@@ -13,7 +13,14 @@ async fn get_tskv() -> TsKv {
     global_config.wal.path = "/tmp/test_bench/wal".to_string();
     let opt = tskv::kv_option::Options::from(&global_config);
 
-    TsKv::open(opt).await.unwrap()
+    let runtime = Arc::new(
+        runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap(),
+    );
+
+    TsKv::open(opt, runtime).await.unwrap()
 }
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
@@ -55,6 +62,7 @@ fn big_write(c: &mut Criterion) {
     });
 }
 
+#[allow(dead_code)]
 fn run(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let tskv = Arc::new(Mutex::new(rt.block_on(get_tskv())));

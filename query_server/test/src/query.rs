@@ -40,14 +40,12 @@ impl Instruction {
 
     /// parse line to modify instruction
     pub fn parse(line: &str, old: &mut Self) {
-        const DATABASE: Lazy<Regex> =
+        static DATABASE: Lazy<Regex> =
             lazy_regex!(r##"--[\s]*#DATABASE[\s]*=[\s]*([a-zA-z][a-zA-Z0-9]*)"##);
 
-        const PRETTY: Lazy<Regex> = lazy_regex!(r##"--[\s]*#PRETTY[\s]*=[\s]*((true|false))"##);
+        static PRETTY: Lazy<Regex> = lazy_regex!(r##"--[\s]*#PRETTY[\s]*=[\s]*((true|false))"##);
 
-        const SORT: Lazy<Regex> = lazy_regex!(r##"--[\s]*#SORT[\s]*=[\s]*((true|false))"##);
-
-        let line = &line[..];
+        static SORT: Lazy<Regex> = lazy_regex!(r##"--[\s]*#SORT[\s]*=[\s]*((true|false))"##);
 
         // assert!(DATABASE.is_match(line));
         if let Some(captures) = DATABASE.captures(line) {
@@ -76,7 +74,6 @@ impl Instruction {
                 } else {
                     old.sort = false
                 }
-                return;
             }
         }
     }
@@ -90,10 +87,10 @@ fn test_parse_instruction() {
     assert_eq!(instruction.db_name, "abc");
     let line = r##"-- #SORT = true"##;
     Instruction::parse(line, &mut instruction);
-    assert_eq!(instruction.sort, true);
+    assert!(instruction.sort);
     let line = r##"-- #SORT = false"##;
     Instruction::parse(line, &mut instruction);
-    assert_eq!(instruction.sort, false);
+    assert!(!instruction.sort);
 }
 
 /// one Query
@@ -115,7 +112,7 @@ impl Query {
     pub fn parse_queries(lines: &str) -> Result<Vec<Query>> {
         let mut queries = Vec::new();
         let mut query_build = QueryBuild::new();
-        for line in lines.lines().into_iter() {
+        for line in lines.lines() {
             let line = line.trim();
             if line.is_empty() {
                 continue;

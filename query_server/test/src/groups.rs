@@ -51,7 +51,7 @@ impl Group {
         let mut failed_cases = Vec::new();
 
         for case in &self.cases {
-            if let Err(_) = case.run().await {
+            if (case.run().await).is_err() {
                 failed_cases.push(case.clone());
             }
         }
