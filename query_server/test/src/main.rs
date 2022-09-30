@@ -20,7 +20,12 @@ mod query;
 #[clap(author, version = "0.1.0", about, long_about = None)]
 pub struct Args {
     /// client url
-    #[clap(short, long, value_parser, default_value = "http://127.0.0.1:31007")]
+    #[clap(
+        short,
+        long,
+        value_parser,
+        default_value = "http://127.0.0.1:31007/api/v1/"
+    )]
     pub client_url: Url,
 
     /// work thread num

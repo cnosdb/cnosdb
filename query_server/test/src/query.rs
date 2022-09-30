@@ -5,6 +5,7 @@ use lazy_regex::{lazy_regex, Lazy, Regex};
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
+    user_name: String,
     db_name: String,
     sort: bool,
     pretty: bool,
@@ -13,6 +14,7 @@ pub struct Instruction {
 impl Default for Instruction {
     fn default() -> Self {
         Self {
+            user_name: "cnosdb".to_string(),
             db_name: "".to_string(),
             sort: false,
             pretty: true,
@@ -21,6 +23,10 @@ impl Default for Instruction {
 }
 
 impl Instruction {
+    pub fn user_name(&self) -> &str {
+        &self.user_name
+    }
+
     /// get database where sql is running
     pub fn db_name(&self) -> &str {
         &self.db_name
@@ -40,6 +46,9 @@ impl Instruction {
 
     /// parse line to modify instruction
     pub fn parse(line: &str, old: &mut Self) {
+        static USER_NAME: Lazy<Regex> =
+            lazy_regex!(r##"--[\s]*#USER_NAME[\s]*=[\s]*([a-zA-z][a-zA-Z0-9]*)"##);
+
         static DATABASE: Lazy<Regex> =
             lazy_regex!(r##"--[\s]*#DATABASE[\s]*=[\s]*([a-zA-z][a-zA-Z0-9]*)"##);
 
@@ -51,6 +60,14 @@ impl Instruction {
         if let Some(captures) = DATABASE.captures(line) {
             if let Some(matches) = captures.get(1) {
                 old.db_name = matches.as_str().to_string();
+            }
+            return;
+        }
+
+        // assert!(USER_NAME.is_match(line));
+        if let Some(captures) = USER_NAME.captures(line) {
+            if let Some(matches) = captures.get(1) {
+                old.user_name = matches.as_str().to_string();
             }
             return;
         }

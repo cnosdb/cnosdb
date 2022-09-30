@@ -1,102 +1,93 @@
 -- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (7, '7a', '7b', 7, 7); --
-+------+
-| rows |
-+------+
-| 1    |
-+------+
+200 OK
+rows
+1
+
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
-+----+----+----+----+------+
-| fa | fb | ta | tb | time |
-+----+----+----+----+------+
-| 1  | 2  | a1 | b1 | 3    |
-| 7  | 7  | 7a | 7b | 7    |
-+----+----+----+----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+
 
 -- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (8, '8a', '8b', 8, 8), (9, '9a', '9b', 9, 9), (10, '10a', '10b', 10, 10); --
-+------+
-| rows |
-+------+
-| 3    |
-+------+
+200 OK
+rows
+3
+
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
-+----+----+-----+-----+------+
-| fa | fb | ta  | tb  | time |
-+----+----+-----+-----+------+
-| 1  | 2  | a1  | b1  | 3    |
-| 7  | 7  | 7a  | 7b  | 7    |
-| 8  | 8  | 8a  | 8b  | 8    |
-| 9  | 9  | 9a  | 9b  | 9    |
-| 10 | 10 | 10a | 10b | 10   |
-+----+----+-----+-----+------+
+200 OK
+fa,fb,ta,tb,time
+1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
+7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+10.0,10.0,10a,10b,1970-01-01T00:00:00.000000010
+
 
 -- EXECUTE SQL: select time, ta, fa from public.test order by fa, fb; --
-+------+-----+----+
-| time | ta  | fa |
-+------+-----+----+
-| 3    | a1  | 1  |
-| 7    | 7a  | 7  |
-| 8    | 8a  | 8  |
-| 9    | 9a  | 9  |
-| 10   | 10a | 10 |
-+------+-----+----+
+200 OK
+time,ta,fa
+1970-01-01T00:00:00.000000003,a1,1.0
+1970-01-01T00:00:00.000000007,7a,7.0
+1970-01-01T00:00:00.000000008,8a,8.0
+1970-01-01T00:00:00.000000009,9a,9.0
+1970-01-01T00:00:00.000000010,10a,10.0
+
 
 -- EXECUTE SQL: select time, fa from public.test order by fa, fb; --
-+------+----+
-| time | fa |
-+------+----+
-| 3    | 1  |
-| 7    | 7  |
-| 8    | 8  |
-| 9    | 9  |
-| 10   | 10 |
-+------+----+
+200 OK
+time,fa
+1970-01-01T00:00:00.000000003,1.0
+1970-01-01T00:00:00.000000007,7.0
+1970-01-01T00:00:00.000000008,8.0
+1970-01-01T00:00:00.000000009,9.0
+1970-01-01T00:00:00.000000010,10.0
+
 
 -- EXECUTE SQL: select time, ta from public.test order by fa, fb; --
-+------+-----+
-| time | ta  |
-+------+-----+
-| 3    | a1  |
-| 7    | 7a  |
-| 8    | 8a  |
-| 9    | 9a  |
-| 10   | 10a |
-+------+-----+
+200 OK
+time,ta
+1970-01-01T00:00:00.000000003,a1
+1970-01-01T00:00:00.000000007,7a
+1970-01-01T00:00:00.000000008,8a
+1970-01-01T00:00:00.000000009,9a
+1970-01-01T00:00:00.000000010,10a
+
 
 -- EXECUTE SQL: select time from public.test order by fa, fb; --
-+------+
-| time |
-+------+
-| 3    |
-| 7    |
-| 8    |
-| 9    |
-| 10   |
-+------+
+200 OK
+time
+1970-01-01T00:00:00.000000003
+1970-01-01T00:00:00.000000007
+1970-01-01T00:00:00.000000008
+1970-01-01T00:00:00.000000009
+1970-01-01T00:00:00.000000010
+
 
 -- EXECUTE SQL: select ta from public.test order by fa, fb; --
-+-----+
-| ta  |
-+-----+
-| a1  |
-| 7a  |
-| 8a  |
-| 9a  |
-| 10a |
-+-----+
+200 OK
+ta
+a1
+7a
+8a
+9a
+10a
+
 
 -- EXECUTE SQL: select fa from public.test order by fa, fb; --
-+----+
-| fa |
-+----+
-| 1  |
-| 7  |
-| 8  |
-| 9  |
-| 10 |
-+----+
+200 OK
+fa
+1.0
+7.0
+8.0
+9.0
+10.0
+
 
 -- EXECUTE SQL: select time, ta, fa, * from public.test order by fa, fb; --
-{"code":500,"message":"TODO Wrap Error: Rejection(QueryFailed { reason: \"Query failed: Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \\\"#public.test.fa\\\" at position 2 and \\\"#public.test.fa\\\" at position 3 have the same name. Consider aliasing (\\\"AS\\\") one of them.\" })"}
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"#public.test.fa\" at position 2 and \"#public.test.fa\" at position 3 have the same name. Consider aliasing (\"AS\") one of them."}
 
