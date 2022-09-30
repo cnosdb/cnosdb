@@ -16,7 +16,6 @@ tskv = { path = "../tskv" }
 spi = { path = "../query_server/spi" }
 mem_allocator = { path = "../common/mem_allocator" }
 metrics = { path = "../common/metrics" }
-async-channel = "1.7.1"
 #datafusion = { version = "10.0.0", features = ["scheduler"] }
 datafusion = { path = "../common/datafusion_dep" }
 async-stream = "0.3"
