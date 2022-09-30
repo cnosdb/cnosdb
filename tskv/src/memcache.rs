@@ -2,7 +2,7 @@ use flatbuffers::Push;
 use futures::future::ok;
 
 use models::{utils, FieldId, RwLockRef, SeriesId, Timestamp, ValueType};
-use protos::models::{FieldType, Rows};
+use protos::models::FieldType;
 
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;

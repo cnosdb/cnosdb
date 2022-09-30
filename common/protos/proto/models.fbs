@@ -13,26 +13,6 @@ enum FieldType: int {
     String,
 }
 
-struct RowKey {
-    series_id: uint64;
-    timestamp: uint64;
-}
-
-table RowField {
-    field_id: uint64;
-    type: FieldType;
-    value: [ubyte];
-}
-
-table Row {
-    key: RowKey;
-    fields: [RowField];
-}
-
-table Rows {
-    rows: [Row];
-}
-
 table Tag {
     key: [ubyte];
     value: [ubyte];
@@ -57,17 +37,3 @@ table Points {
     points: [Point];
 }
 
-struct ColumnKey {
-    series_id: uint64;
-    field_id: uint64;
-}
-
-table ColumnKeys {
-    column_keys: [ColumnKey];
-}
-
-table ColumnKeysWithRange {
-    column_keys: [ColumnKey];
-    min: int64;
-    max: int64;
-}

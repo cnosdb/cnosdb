@@ -81,6 +81,7 @@ impl IndexEngine {
     }
 
     pub fn flush(&self) {
+        //todo:
         self.db.flush().unwrap();
     }
 }

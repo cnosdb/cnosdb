@@ -267,7 +267,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
     let mut fbb = FlatBufferBuilder::new();
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter() {
-        let mut tags = Vec::new();
+        let mut tags = Vec::with_capacity(line.tags.len());
         for (k, v) in line.tags.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
             let fbv = fbb.create_vector(v.as_bytes());
@@ -276,7 +276,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
             tag_builder.add_value(fbv);
             tags.push(tag_builder.finish());
         }
-        let mut fields = Vec::new();
+        let mut fields = Vec::with_capacity(line.fields.len());
         for (k, v) in line.fields.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
             let (fbv_type, fbv) = match v {

@@ -519,8 +519,6 @@ impl Version {
 
 #[derive(Debug)]
 pub struct CacheGroup {
-    pub delta_mut_cache: Arc<RwLock<MemCache>>,
-    pub delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
     pub mut_cache: Arc<RwLock<MemCache>>,
     pub immut_cache: Vec<Arc<RwLock<MemCache>>>,
 }
@@ -556,8 +554,6 @@ impl SuperVersion {
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
     database: String,
-    delta_mut_cache: Arc<RwLock<MemCache>>,
-    delta_immut_cache: Vec<Arc<RwLock<MemCache>>>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     // todo: need to del RwLock in memcache
@@ -596,16 +592,12 @@ impl TseriesFamily {
             tf_id,
             database,
             seq_no: seq,
-            delta_mut_cache: delta_mm.clone(),
-            delta_immut_cache: Default::default(),
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
                 tf_id,
                 storage_opt.clone(),
                 CacheGroup {
-                    delta_mut_cache: delta_mm,
-                    delta_immut_cache: Default::default(),
                     mut_cache: mm,
                     immut_cache: Default::default(),
                 },
@@ -634,8 +626,6 @@ impl TseriesFamily {
             self.tf_id,
             self.storage_opt.clone(),
             CacheGroup {
-                delta_mut_cache: self.delta_mut_cache.clone(),
-                delta_immut_cache: self.delta_immut_cache.clone(),
                 mut_cache: self.mut_cache.clone(),
                 immut_cache: self.immut_cache.clone(),
             },
@@ -656,16 +646,6 @@ impl TseriesFamily {
     pub fn switch_to_immutable(&mut self) {
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
-            self.tf_id,
-            self.cache_opt.max_buffer_size,
-            self.seq_no,
-        )));
-        self.new_super_version(self.version.clone());
-    }
-
-    pub async fn switch_to_delta_immutable(&mut self) {
-        self.delta_immut_cache.push(self.delta_mut_cache.clone());
-        self.delta_mut_cache = Arc::new(RwLock::new(MemCache::new(
             self.tf_id,
             self.cache_opt.max_buffer_size,
             self.seq_no,
@@ -706,10 +686,7 @@ impl TseriesFamily {
             i.1.write().flushing = true;
         }
 
-        FLUSH_REQ.lock().push(FlushReq {
-            mems: req_mem,
-            wait_req: 0,
-        });
+        FLUSH_REQ.lock().push(FlushReq { mems: req_mem });
         info!(
             "flush_req send,now req queue len : {}",
             FLUSH_REQ.lock().len()
@@ -738,10 +715,6 @@ impl TseriesFamily {
 
     pub fn delete_cache(&self, field_ids: &[FieldId], time_range: &TimeRange) {
         self.mut_cache.read().delete_data(field_ids, time_range);
-        self.delta_mut_cache
-            .read()
-            .delete_data(field_ids, time_range);
-
         for memcache in self.immut_cache.iter() {
             memcache.read().delete_data(field_ids, time_range);
         }
@@ -761,14 +734,6 @@ impl TseriesFamily {
 
     pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
         &self.mut_cache
-    }
-
-    pub fn delta_cache(&self) -> &Arc<RwLock<MemCache>> {
-        &self.delta_mut_cache
-    }
-
-    pub fn delta_immut_cache(&self) -> &Vec<Arc<RwLock<MemCache>>> {
-        &self.delta_immut_cache
     }
 
     pub fn im_cache(&self) -> &Vec<Arc<RwLock<MemCache>>> {
@@ -1122,10 +1087,7 @@ mod test {
 
         let mem = Arc::new(RwLock::new(mem));
         let req_mem = vec![(0, mem)];
-        let flush_seq = Arc::new(Mutex::new(vec![FlushReq {
-            mems: req_mem,
-            wait_req: 0,
-        }]));
+        let flush_seq = Arc::new(Mutex::new(vec![FlushReq { mems: req_mem }]));
 
         let base_dir = "/tmp/test/ts_family/test_read_with_tomb".to_string();
         let database = "test_db".to_string();
