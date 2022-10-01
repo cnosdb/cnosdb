@@ -27,7 +27,8 @@ function init() {
 }
 
 function test() {
-    cargo run --package test
+    cargo run --package test && \
+    cargo test --package e2e_test
 }
 
 echo "Starting cnosdb"

@@ -20,7 +20,7 @@ build:
 	cargo build --all-features --all-targets
 
 test:
-	cargo test --workspace --all-features
+	cargo test --workspace --all-features --exclude e2e_test
 
 check: fmt_check clippy_check build test docs_check
 
