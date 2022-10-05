@@ -11,10 +11,12 @@ use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use tskv::engine::EngineRef;
 
+use models::meta_data;
+
 use crate::server;
 use crate::server::{Service, ServiceHandle};
 
-use trace::{error, info};
+use trace::{debug, error, info};
 
 pub struct TcpService {
     addr: SocketAddr,
@@ -40,12 +42,14 @@ impl Service for TcpService {
         let (shutdown, rx) = oneshot::channel();
 
         let addr = self.addr.clone();
+        let dbms = self.dbms.clone();
+        let kv_inst = self.kv_inst.clone();
         let acceptor_fn = async move {
             let listener = TcpListener::bind(addr.to_string()).await.unwrap();
             info!("tcp server start addr: {}", addr);
 
             tokio::select! {
-                res = service_run(listener) => {
+                res = service_run(listener,dbms,kv_inst) => {
                     if let Err(err) = res {
                         error!(cause = %err, "failed to accept");
                     }
@@ -76,7 +80,11 @@ impl Service for TcpService {
     }
 }
 
-async fn service_run(listener: TcpListener) -> Result<(), Error> {
+async fn service_run(
+    listener: TcpListener,
+    dbms: DBMSRef,
+    kv_inst: EngineRef,
+) -> Result<(), Error> {
     let mut backoff = 1;
 
     loop {
@@ -84,8 +92,8 @@ async fn service_run(listener: TcpListener) -> Result<(), Error> {
             Ok((client, address)) => {
                 backoff = 1;
 
-                println!("client address: {}", address);
-                tokio::spawn(process_client(client));
+                debug!("client address: {}", address);
+                tokio::spawn(process_client(client, dbms.clone(), kv_inst.clone()));
             }
 
             Err(err) => {
@@ -102,23 +110,24 @@ async fn service_run(listener: TcpListener) -> Result<(), Error> {
     }
 }
 
-async fn process_client(mut client: TcpStream) -> Result<(), Error> {
-    let mut buffer = vec![0; 4096];
+async fn process_client(
+    mut client: TcpStream,
+    dbms: DBMSRef,
+    kv_inst: EngineRef,
+) -> Result<(), Error> {
     loop {
-        let len = client.read_u32().await?;
-        let size = client.read(&mut buffer).await?;
-        if size == 0 {
-            println!("{} 连接已关闭", client.peer_addr()?);
-            return Ok(());
+        let cmd_type = client.read_u32().await?;
+        let data_len = client.read_u32().await?;
+
+        let mut data_buf = vec![0; data_len as usize];
+        client.read_exact(&mut data_buf).await?;
+        if cmd_type == meta_data::WRITE_VNODE_POINT_COMMAND {
+            process_vnode_write_command();
         }
-
-        let str = std::str::from_utf8(&buffer[..size]).unwrap();
-        println!("收到数据：{}|{}", len, str);
-
-        client.write_u32(len + 100).await?;
-        client.write(str.to_uppercase().as_bytes()).await?;
     }
 }
+
+fn process_vnode_write_command() {}
 
 #[cfg(test)]
 mod test {

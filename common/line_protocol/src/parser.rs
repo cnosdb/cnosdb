@@ -1,4 +1,6 @@
 use crate::{Error, Result};
+use std::cmp::Ordering;
+use utils::BkdrHasher;
 
 pub struct Parser {
     default_time: i64,
@@ -73,6 +75,7 @@ impl Parser {
 
         Ok(Some((
             Line {
+                hash_id: 0,
                 measurement,
                 tags,
                 fields,
@@ -94,10 +97,31 @@ pub enum FieldValue {
 
 #[derive(Debug, PartialEq)]
 pub struct Line<'a> {
+    hash_id: u64,
     pub measurement: &'a str,
     pub tags: Vec<(&'a str, &'a str)>,
     pub fields: Vec<(&'a str, FieldValue)>,
     pub timestamp: i64,
+}
+
+impl Line<'_> {
+    pub fn hash_id(&mut self) -> u64 {
+        if self.hash_id == 0 {
+            self.tags
+                .sort_by(|a, b| -> Ordering { a.0.partial_cmp(&b.0).unwrap() });
+
+            let mut hasher = BkdrHasher::new();
+            hasher.hash_with(self.measurement.as_bytes());
+            for (k, v) in &self.tags {
+                hasher.hash_with(k.as_bytes());
+                hasher.hash_with(v.as_bytes());
+            }
+
+            self.hash_id = hasher.number()
+        }
+
+        return self.hash_id;
+    }
 }
 
 fn check_pos_valid(buf: &str, pos: usize) -> Result<()> {
@@ -554,6 +578,7 @@ mod test {
         assert_eq!(
             *data_1,
             Line {
+                hash_id: 0,
                 measurement: "ma",
                 tags: vec![("ta", "2\\\\"), ("tb", "1")],
                 fields: vec![
@@ -568,6 +593,7 @@ mod test {
         assert_eq!(
             *data_2,
             Line {
+                hash_id: 0,
                 measurement: "mb",
                 tags: vec![("tb", "2"), ("tc", "abc")],
                 fields: vec![("fa", FieldValue::F64(1.3)), ("fc", FieldValue::F64(0.9))],

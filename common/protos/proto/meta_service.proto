@@ -64,35 +64,7 @@ message VnodeInfo {
 	repeated uint64 owners = 2;
 }
 
-
 // **************Command********************
-// **    
-// **    pub struct CommandHeader {
-// **    	u32 typ,
-// **    	u32 len,
-// **    }
-
-enum CommandType {
-	CreateNodeCommand                = 1;
-	DeleteNodeCommand                = 2;
-	CreateDatabaseCommand            = 3;
-	DropDatabaseCommand              = 4;
-	UpdateRetentionPolicyCommand     = 5;
-	CreateBucketCommand         	 = 6;
-	DeleteBucketCommand          	 = 7;
-	CreateUserCommand                = 8;
-	DropUserCommand                  = 9;
-	UpdateUserCommand                = 10;
-	CreateDataNodeCommand            = 11;
-	UpdateDataNodeCommand            = 12;
-	DeleteDataNodeCommand            = 13;
-	CreateMetaNodeCommand            = 14;
-	UpdateMetaNodeCommand            = 15;
-	DeleteMetaNodeCommand            = 16;
-	DropVnodeCommand                 = 17;
-	UpdateVnodeOwnersCommand         = 18;
-}
-
 message CommonResponse {
 	required bool ok = 1;
 	required uint64 term = 2;

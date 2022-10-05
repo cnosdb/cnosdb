@@ -92,6 +92,8 @@ rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
 echo "Node 3 added as leaner"
 sleep 1
 
+sleep 100000000
+
 echo "Get metrics from the leader, after adding 2 learners"
 sleep 2
 echo

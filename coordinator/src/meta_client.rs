@@ -1,3 +1,5 @@
+use std::time::{self, SystemTime};
+
 use models::meta_data::*;
 
 use snafu::Snafu;
@@ -29,6 +31,7 @@ pub trait MetaClient {
 
     fn bucket_by_timestamp(&self, db: &String, ts: i64) -> Option<&BucketInfo>;
     fn databases(&self) -> Vec<String>;
+    fn database_min_ts(&self, db: &String) -> Option<i64>;
 
     fn alloc_data_resource(&mut self, res: &Resource) -> MetaResult<()>;
     fn release_data_resource(&mut self, id: u64) -> MetaResult<()>;
@@ -108,5 +111,16 @@ impl MetaClient for LocalMetaClient {
 
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
         todo!()
+    }
+
+    fn database_min_ts(&self, name: &String) -> Option<i64> {
+        for db in &self.data.dbs {
+            if db.name == *name {
+                let now = models::utils::now_timestamp();
+                return Some(now - db.policy.database_duration);
+            }
+        }
+
+        None
     }
 }

@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 snafu = "0.7"
+utils = { path = "../utils" }

@@ -31,7 +31,7 @@ pub struct TableSchema {
 
 impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let mut fields: Vec<Field> = self
+        let fields: Vec<Field> = self
             .fields
             .iter()
             .map(|(name, schema)| {

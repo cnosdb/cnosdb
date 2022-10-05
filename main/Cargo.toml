@@ -9,6 +9,7 @@ edition = "2021"
 config = { path = "../config" }
 line_protocol = { path = "../common/line_protocol" }
 protos = { path = "../common/protos" }
+models = { path = "../common/models" }
 query = { path = "../query_server/query" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }

@@ -1,7 +1,7 @@
 use clap::Parser;
+use config as global_config;
 use meta::service::connection::Connections;
 use meta::start_raft_node;
-use config as global_config;
 use meta::store::Store;
 use meta::ExampleTypeConfig;
 use openraft::Raft;
@@ -21,7 +21,6 @@ pub struct Option {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-
     let global_config = global_config::get_config("../config/config.toml");
     let mut _trace_guard = init_global_tracing(
         &global_config.log.path,
