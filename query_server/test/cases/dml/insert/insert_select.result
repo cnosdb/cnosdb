@@ -1,3 +1,8 @@
+-- WRITE LINE PROTOCOL --
+test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
+-- LINE PROTOCOL END --
+200 OK
+
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select column1, column2, column3, column4, column5 from (values (7, '7a', '7b', 7, 7)); --
 200 OK
 rows
