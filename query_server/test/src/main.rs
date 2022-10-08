@@ -12,9 +12,9 @@ use crate::error::{Error, Result};
 
 mod case;
 mod client;
+mod db_request;
 mod error;
 mod groups;
-mod query;
 
 #[derive(Parser, Debug)]
 #[clap(author, version = "0.1.0", about, long_about = None)]

@@ -16,16 +16,6 @@ function wait_start() {
     done
 }
 
-function init() {
-    curl -i -u "cnosdb:xx" \
-        -XPOST "http://${HTTP_HOST}/api/v1/write?db=public" \
-        -d 'test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3'
-
-    curl -i -u "cnosdb:xx" \
-        -XPOST "http://${HTTP_HOST}/api/v1/write?db=public" \
-        -d 'test,ta=a1,tb=b1 fa=1,fb=2 3'
-}
-
 function test() {
     cargo run --package test && \
     cargo test --package e2e_test
@@ -37,7 +27,7 @@ PID=$(start_cnosdb)
 
 echo "Wait for pid=${PID} startup to complete"
 
-(wait_start && init && test) || EXIT_CODE=$?
+(wait_start && test) || EXIT_CODE=$?
 
 echo "Test complete, killing ${PID}"
 
