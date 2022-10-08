@@ -1,24 +1,26 @@
+use std::{collections::HashMap, sync::Arc};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::ops::Index;
 use std::path::{self, Path, PathBuf};
-use std::{collections::HashMap, sync::Arc};
-
-use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
-use super::*;
 
 use bytes::BufMut;
 use chrono::format::format;
-use config::Config;
-use models::{utils, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+
+use config::Config;
 use datafusion::arrow::datatypes::ToByteSlice;
+use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, utils, ValueType};
+use models::schema::TableSchema;
 use protos::models::Point;
 use trace::warn;
+use crate::Error::IndexErr;
 
+use super::*;
 use super::{errors, IndexEngine, IndexError, IndexResult};
+use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
@@ -68,11 +70,10 @@ impl DbIndexMgr {
 #[derive(Debug)]
 pub struct DBIndex {
     path: PathBuf,
-
     storage: IndexEngine,
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
     schema_id: RwLock<HashMap<String, u32>>,
-    table_schema: RwLock<HashMap<String, Vec<FieldInfo>>>,
+    table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
 impl From<&str> for DBIndex {
@@ -128,7 +129,7 @@ impl DBIndex {
         }
 
         //if exist return series_id
-        if let Some(k) = keys.iter().find(|key| serides_key.eq(key)) {
+        if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
             return Ok(k.id());
         }
         //if not exist add it!
@@ -146,55 +147,40 @@ impl DBIndex {
         Ok(id)
     }
 
-    // fn check_field_type_from_cache(
-    //     &self,
-    //     series_id: u64,
-    //     info: &Point,
-    // ) -> IndexResult<()> {
-    //     if let Some(schema) = self.table_schema.read().get(info.table()) {
-    //         for field in info.field_infos() {
-    //             if let Some(v) = schema.iter().find(|item| field.eq(item)) {
-    //                 if field.value_type() == v.value_type() {
-    //                     field.set_field_id(utils::unite_id(v.field_id(), series_id));
-    //                 } else {
-    //                     return Err(IndexError::FieldType);
-    //                 }
-    //             } else {
-    //                 return Err(IndexError::NotFoundField);
-    //             }
-    //         }
-    //
-    //         for it in schema.iter() {
-    //             match info.field_infos().iter().find(|item| it.eq(item)) {
-    //                 Some(v) => {}
-    //                 None => {
-    //                     if !it.is_tag() {
-    //                         info.push_field_fill(it.clone())
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //
-    //         for tag in info.tags() {
-    //             let mut field = FieldInfo::from(tag);
-    //             if let Some(v) = schema.iter().find(|item| field.eq(item)) {
-    //                 if field.value_type() == v.value_type() {
-    //                     field.set_field_id(utils::unite_id(v.field_id(), series_id));
-    //                 } else {
-    //                     return Err(IndexError::FieldType);
-    //                 }
-    //             } else {
-    //                 return Err(IndexError::NotFoundField);
-    //             }
-    //         }
-    //
-    //         info.set_schema_id(self.table_schema_id(info.table()));
-    //
-    //         Ok(())
-    //     } else {
-    //         Err(IndexError::NotFoundField)
-    //     }
-    // }
+    fn check_field_type_from_cache(
+        &self,
+        series_id: u64,
+        info: &Point,
+    ) -> IndexResult<()> {
+        let mut table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        if let Some(schema) = self.table_schema.read().get(&table_name) {
+            for field in info.fields().unwrap() {
+                let field_name:String = String::from(field.name().unwrap().to_vec());
+                if let Some(v) = schema.fields.get(&field_name){
+                    if field.type_().0 != v.1.column_type{
+                        return Err(IndexError::FieldType);
+                    }
+                }else {
+                    return Err(IndexError::NotFoundField);
+                }
+
+            }
+            for tag in info.tags().unwrap() {
+                let tag_name :String = String::from(tag.name().unwrap().to_vec());
+                if let Some(v) = schema.fields.get(&tag_name){
+                    if field.type_().0 != v.1.column_type{
+                        return Err(IndexError::FieldType);
+                    }
+                }else {
+                    return Err(IndexError::NotFoundField);
+                }
+            }
+            // info.set_schema_id(self.table_schema_id(info.table()));
+            Ok(())
+        } else {
+            Err(IndexError::NotFoundField)
+        }
+    }
 
     fn check_field_type_or_else_add(
         &mut self,
@@ -203,7 +189,7 @@ impl DBIndex {
     ) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
         let mut schema: &mut Vec<FieldInfo> = &mut vec![];
-        let mut table_name = unsafe {String::from_utf8_unchecked(info.table().unwrap().to_vec())};
+        let mut table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
         match self.table_schema.write().get_mut(&table_name) {
             Some(fields) => schema = fields,
             None => {
@@ -360,7 +346,7 @@ impl DBIndex {
             .map(|keys| keys.iter().find(|k| k.id() == sid).cloned());
         drop(lock);
         match res {
-            Some(res)=> Ok(res),
+            Some(res) => Ok(res),
             None => {
                 if let Some(data) = self.storage.get(stroage_key.as_bytes())? {
                     if let Ok(v) = bincode::deserialize::<Vec<SeriesKey>>(&data) {
@@ -376,7 +362,7 @@ impl DBIndex {
                     });
                 }
                 Ok(None)
-            },
+            }
         }
     }
 

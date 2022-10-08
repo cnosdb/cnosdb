@@ -5,6 +5,7 @@ use datafusion::{
     physical_plan::RecordBatchStream,
 };
 use futures::Stream;
+use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
 
 use tskv::engine::EngineRef;
 

@@ -6,6 +6,7 @@ mod points;
 mod series_info;
 mod tag;
 pub mod utils;
+pub mod schema;
 
 use parking_lot::RwLock;
 use std::sync::Arc;
