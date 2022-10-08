@@ -10,6 +10,7 @@ use datafusion::{
     error::{DataFusionError, Result},
 };
 use parking_lot::RwLock;
+use models::schema::{TableFiled, TableSchema};
 
 use tskv::engine::EngineRef;
 
@@ -146,6 +147,7 @@ impl SchemaProvider for UserSchema {
             )));
         }
         let mut tables = self.tables.write();
+        // self.engine.create_table();
         Ok(tables.insert(name, table))
     }
 

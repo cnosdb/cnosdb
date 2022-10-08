@@ -8,6 +8,7 @@ use datafusion::{
     },
 };
 use futures::Stream;
+use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
 
 use tskv::engine::EngineRef;
 

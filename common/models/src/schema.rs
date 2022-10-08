@@ -11,8 +11,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
 use serde::{Deserialize, Serialize};
-
-use models::{FieldInfo, ValueType};
+use crate::ValueType;
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
@@ -26,6 +25,8 @@ pub const TIME_FIELD: &str = "time";
 pub struct TableSchema {
     pub db: String,
     pub name: String,
+    pub schema_id: u32,
+    pub location:
     pub fields: BTreeMap<String, TableFiled>,
 }
 
@@ -44,18 +45,14 @@ impl TableSchema {
             })
             .collect();
 
-        // let time_field = Field::new(
-        //     TIME_FIELD,
-        //     ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-        //     false,
-        // );
-        // fields.push(time_field);
-
         Arc::new(Schema::new(fields))
     }
 
     pub fn new(db: String, name: String, fields: BTreeMap<String, TableFiled>) -> Self {
-        Self { db, name, fields }
+        Self { db, name, schema_id: 0, fields }
+    }
+    pub fn fields(&self) -> &BTreeMap<String, TableFiled>{
+        &self.fields
     }
 }
 
@@ -88,20 +85,20 @@ impl TableFiled {
     }
 }
 
-impl From<&FieldInfo> for TableFiled {
-    fn from(info: &FieldInfo) -> Self {
-        let mut column = ColumnType::Field(info.value_type());
-        if info.is_tag() {
-            column = ColumnType::Tag;
-        }
-
-        TableFiled::new(
-            info.field_id(),
-            String::from_utf8(info.name().to_vec()).unwrap(),
-            column,
-        )
-    }
-}
+// impl From<&FieldInfo> for TableFiled {
+//     fn from(info: &FieldInfo) -> Self {
+//         let mut column = ColumnType::Field(info.value_type());
+//         if info.is_tag() {
+//             column = ColumnType::Tag;
+//         }
+//
+//         TableFiled::new(
+//             info.field_id(),
+//             String::from_utf8(info.name().to_vec()).unwrap(),
+//             column,
+//         )
+//     }
+// }
 
 impl From<ColumnType> for ArrowDataType {
     fn from(t: ColumnType) -> Self {
@@ -151,6 +148,18 @@ impl ColumnType {
             Self::Field(ValueType::Boolean) => "bool",
             Self::Field(ValueType::String) => "string",
             _ => "Error filed type not supported",
+        }
+    }
+    pub fn field_type(&self)-> u8{
+        match self {
+            Self::Field(ValueType::Integer) => ,
+            Self::Field(ValueType::Unsigned) => ,
+            Self::Field(ValueType::Float) => ,
+            Self::Field(ValueType::Boolean) => ,
+            Self::Field(ValueType::String) => ,
+            _ => {
+                0
+            }
         }
     }
 }
