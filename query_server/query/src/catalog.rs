@@ -15,7 +15,6 @@ use models::schema::{TableFiled, TableSchema};
 use tskv::engine::EngineRef;
 
 use crate::{
-    schema::{TableFiled, TableSchema},
     table::ClusterTable,
 };
 pub type CatalogRef = Arc<dyn CatalogProvider>;
@@ -122,8 +121,8 @@ impl SchemaProvider for UserSchema {
             let time_field = TableFiled::time_field();
             fields.insert(time_field.name.clone(), time_field);
 
-            for item in v {
-                let field = TableFiled::from(&item);
+            for item in v.fields {
+                let field = TableFiled::from(item.1);
                 fields.insert(field.name.clone(), field);
             }
             let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);

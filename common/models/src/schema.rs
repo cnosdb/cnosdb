@@ -26,7 +26,6 @@ pub struct TableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: u32,
-    pub location:
     pub fields: BTreeMap<String, TableFiled>,
 }
 
@@ -150,16 +149,28 @@ impl ColumnType {
             _ => "Error filed type not supported",
         }
     }
-    pub fn field_type(&self)-> u8{
+    pub fn field_type(&self)-> u8 {
         match self {
-            Self::Field(ValueType::Integer) => ,
-            Self::Field(ValueType::Unsigned) => ,
-            Self::Field(ValueType::Float) => ,
-            Self::Field(ValueType::Boolean) => ,
-            Self::Field(ValueType::String) => ,
+            Self::Field(ValueType::Float) => 0,
+            Self::Field(ValueType::Integer) => 1,
+            Self::Field(ValueType::Unsigned) => 2,
+            Self::Field(ValueType::Boolean) => 3,
+            Self::Field(ValueType::String) => 4,
             _ => {
                 0
             }
+        }
+    }
+
+    pub fn from_i32(field_type: i32) -> Self {
+        match field_type {
+            0 => Self::Field(ValueType::Float),
+            1 => Self::Field(ValueType::Integer),
+            2 => Self::Field(ValueType::Unsigned),
+            3 => Self::Field(ValueType::Boolean),
+            4 => Self::Field(ValueType::String),
+            5 => Self::Time,
+            _ => Self::Field(ValueType::Unknown)
         }
     }
 }

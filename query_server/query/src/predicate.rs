@@ -13,12 +13,12 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use models::{Error, Result};
+use models::schema::{TableFiled, TableSchema};
 
 use trace::info;
 
 use crate::{
     helper::RowExpressionToDomainsVisitor,
-    schema::{TableFiled, TableSchema},
 };
 
 pub type PredicateRef = Arc<Predicate>;
@@ -710,6 +710,14 @@ where
     // None means no matching record.
     // Empty map means match all records.
     column_to_domain: Option<HashMap<T, Domain>>,
+}
+
+impl<T: Eq + Hash + Clone> Default for ColumnDomains<T> {
+    fn default() -> Self {
+        ColumnDomains {
+            column_to_domain: None
+        }
+    }
 }
 
 impl<T: Eq + Hash + Clone> ColumnDomains<T> {

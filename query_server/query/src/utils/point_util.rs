@@ -1,4 +1,3 @@
-use crate::schema::{is_time_column, ColumnType, TableFiled, TableSchema, TIME_FIELD_NAME};
 use datafusion::arrow::{
     array::{
         Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
@@ -14,6 +13,7 @@ use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
+use models::schema::{ColumnType, is_time_column, TableSchema, TIME_FIELD_NAME, TableFiled};
 use trace::debug;
 
 define_result!(PointUtilError);

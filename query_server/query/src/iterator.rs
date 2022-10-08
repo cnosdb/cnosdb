@@ -26,7 +26,7 @@ use datafusion::arrow::{
     datatypes::SchemaRef,
     record_batch::RecordBatch,
 };
-use models::schema::TableSchema;
+use models::schema::{ColumnType, TableSchema, TIME_FIELD};
 
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;

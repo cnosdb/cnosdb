@@ -14,6 +14,7 @@ use datafusion::{
         SendableRecordBatchStream, Statistics,
     },
 };
+use models::schema::TableSchema;
 
 use crate::{
     predicate::PredicateRef,

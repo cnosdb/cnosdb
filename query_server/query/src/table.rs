@@ -9,12 +9,13 @@ use datafusion::{
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan},
 };
+use models::schema::TableSchema;
 use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
     extension::physical::plan_node::table_writer::TableWriterExec, predicate::Predicate,
-    schema::TableSchema, tskv_exec::TskvExec,
+    tskv_exec::TskvExec,
 };
 
 pub struct ClusterTable {
