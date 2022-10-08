@@ -160,11 +160,12 @@ impl Database {
                 let mut all_fileds = BTreeMap::new();
                 let fields = info.field_infos();
                 for (i, f) in row.fields.into_iter().enumerate() {
-                    all_fileds.insert(fields[i].field_id(), f);
+                    let (fid, _) = split_id(fields[i].field_id());
+                    all_fileds.insert(fid, f);
                 }
 
                 for field in info.field_fill() {
-                    all_fileds.insert(field.field_id(), None);
+                    all_fileds.insert(field.field_id() as u32, None);
                 }
                 all_fileds
             };
@@ -177,8 +178,7 @@ impl Database {
                 let schema_size = schema.capacity() * size_of::<u32>();
                 let mut row_size = all_row.capacity() * size_of::<Option<FieldVal>>();
 
-                for (k, field_val) in all_fileds {
-                    let (fid, _) = split_id(k);
+                for (fid, field_val) in all_fileds {
                     schema.push(fid);
 
                     row_size += size_of_val(&field_val);
