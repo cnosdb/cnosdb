@@ -1,11 +1,17 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use datafusion::{
     arrow::datatypes::SchemaRef,
     error::{DataFusionError, Result},
     execution::context::TaskContext,
     physical_expr::PhysicalSortExpr,
-    physical_plan::{ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics},
+    physical_plan::{
+        DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
+    },
 };
 
 use crate::{predicate::PredicateRef, schema::TableSchema, stream::TableScanStream};
@@ -89,7 +95,44 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default => {
+                let filter = self.filter();
+                let fields: Vec<_> = self
+                    .proj_schema
+                    .fields()
+                    .iter()
+                    .map(|x| x.name().to_owned())
+                    .collect::<Vec<String>>();
+                write!(
+                    f,
+                    "TskvExec: {}, projection=[{}]",
+                    PredicateDisplay(&filter),
+                    fields.join(","),
+                )
+            }
+        }
+    }
+
     fn statistics(&self) -> Statistics {
-        todo!()
+        // TODO
+        Statistics::default()
+    }
+}
+
+/// A wrapper to customize PredicateRef display
+#[derive(Debug)]
+struct PredicateDisplay<'a>(&'a PredicateRef);
+
+impl<'a> Display for PredicateDisplay<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let filter = self.0;
+        write!(
+            f,
+            "limit={:?}, predicate={:?}",
+            filter.limit(),
+            filter.domains(),
+        )
     }
 }
