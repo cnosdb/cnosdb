@@ -11,11 +11,12 @@ use std::{
     },
 };
 
-use config::get_config;
 use lazy_static::lazy_static;
-use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
+
+use config::get_config;
+use models::{FieldId, InMemPoint, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
@@ -790,13 +791,15 @@ impl TseriesFamily {
 #[cfg(test)]
 mod test {
     use std::collections::hash_map;
+    use std::mem::{size_of, size_of_val};
     use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-    use config::get_config;
-    use models::{Timestamp, ValueType};
     use parking_lot::{Mutex, RwLock};
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
+
+    use config::get_config;
+    use models::{Timestamp, ValueType};
     use trace::info;
 
     use crate::file_utils::{self, make_tsm_file_name};
@@ -1037,6 +1040,7 @@ mod test {
                     Some(FieldVal::Integer(13)),
                 ],
             }],
+            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
         points.insert((0, 0), row_group);
@@ -1112,6 +1116,7 @@ mod test {
                     Some(FieldVal::Integer(13)),
                 ],
             }],
+            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         mem.write_group(1, 0, row_group);
 

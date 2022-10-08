@@ -33,6 +33,7 @@ hashbrown = { version = "0.12", features = ["raw"] }
 
 priority-queue = "1.2.3"
 num_cpus = "1"
+minivec = "0.4.0"
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]
 version = "0.2"

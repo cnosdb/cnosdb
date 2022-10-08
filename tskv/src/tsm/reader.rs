@@ -1,3 +1,4 @@
+use minivec::MiniVec;
 use std::{
     borrow::Borrow,
     path::{Path, PathBuf},

@@ -8,10 +8,13 @@ use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::iter::{FromIterator, Peekable};
+use std::mem::size_of;
 use std::ops::Index;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{borrow::BorrowMut, collections::HashMap, mem::size_of_val, rc::Rc};
+
+use minivec::{mini_vec, MiniVec};
 use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
@@ -26,7 +29,7 @@ pub enum FieldVal {
     Integer(i64),
     Unsigned(u64),
     Boolean(bool),
-    Bytes(Vec<u8>),
+    Bytes(MiniVec<u8>),
 }
 
 impl FieldVal {
@@ -50,7 +53,7 @@ impl FieldVal {
         }
     }
 
-    pub fn new(val: Vec<u8>, vtype: ValueType) -> FieldVal {
+    pub fn new(val: MiniVec<u8>, vtype: ValueType) -> FieldVal {
         match vtype {
             ValueType::Unsigned => {
                 let val = byte_utils::decode_be_u64(&val);
@@ -73,6 +76,14 @@ impl FieldVal {
                 FieldVal::Bytes(val)
             }
             _ => todo!(),
+        }
+    }
+
+    pub fn heap_size(&self) -> usize {
+        if let FieldVal::Bytes(val) = self {
+            val.capacity()
+        } else {
+            0
         }
     }
 }
@@ -102,7 +113,7 @@ impl From<fb_models::Point<'_>> for RowData {
                 let mut fields = Vec::with_capacity(fields_inner.len());
                 for f in fields_inner.into_iter() {
                     let vtype = f.type_().into();
-                    let val = f.value().unwrap().to_vec();
+                    let val = MiniVec::from(f.value().unwrap());
                     fields.push(Some(FieldVal::new(val, vtype)));
                 }
                 fields
@@ -121,6 +132,8 @@ pub struct RowGroup {
     pub schema: Vec<u32>,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
+    /// total size in stack and heap
+    pub size: usize,
 }
 
 #[derive(Debug)]
@@ -257,7 +270,7 @@ impl MemCache {
     pub fn write_group(&self, sid: u64, seq: u64, group: RowGroup) {
         self.seq_no.store(seq, Ordering::Relaxed);
         self.cache_size
-            .fetch_add(size_of_val(&group) as u64, Ordering::Relaxed);
+            .fetch_add(group.size as u64, Ordering::Relaxed);
 
         let index = (sid as usize) % self.part_count;
         let entry = self.partions[index]
@@ -386,7 +399,7 @@ impl MemEntry {
 pub enum DataType {
     U64(i64, u64),
     I64(i64, i64),
-    Str(i64, Vec<u8>),
+    Str(i64, MiniVec<u8>),
     F64(i64, f64),
     Bool(i64, bool),
 }
@@ -398,7 +411,7 @@ impl DataType {
             ValueType::Integer => DataType::I64(ts, 0),
             ValueType::Float => DataType::F64(ts, 0.0),
             ValueType::Boolean => DataType::Bool(ts, false),
-            ValueType::String => DataType::Str(ts, vec![]),
+            ValueType::String => DataType::Str(ts, mini_vec![]),
             _ => todo!(),
         }
     }
@@ -439,6 +452,7 @@ impl Display for DataType {
 pub(crate) mod test {
     use bytes::buf;
     use models::{SeriesId, Timestamp};
+    use std::mem::{size_of, size_of_val};
 
     use crate::{tsm::DataBlock, TimeRange};
 
@@ -453,15 +467,19 @@ pub(crate) mod test {
         put_none: bool,
     ) {
         let mut rows = Vec::new();
+        let mut size: usize = schema_column_ids.capacity() * size_of::<Vec<u32>>();
         for ts in time_range.0..time_range.1 + 1 {
             let mut fields = Vec::new();
             for _ in 0..schema_column_ids.len() {
+                size += size_of::<Option<FieldVal>>();
                 if put_none {
                     fields.push(None);
                 } else {
                     fields.push(Some(FieldVal::Float(ts as f64)));
+                    size += 8;
                 }
             }
+            size += 8;
             rows.push(RowData { ts, fields });
         }
 
@@ -470,6 +488,7 @@ pub(crate) mod test {
             schema: schema_column_ids,
             range: TimeRange::from(time_range),
             rows,
+            size: size_of::<RowGroup>() + size,
         };
         cache.write_group(series_id, 1, row_group);
     }

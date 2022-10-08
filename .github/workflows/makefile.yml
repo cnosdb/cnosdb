@@ -39,6 +39,7 @@ jobs:
       run: |
         git clone https://github.com/google/flatbuffers.git
         cd flatbuffers
+        git checkout v2.0.6
         cmake .
         make
         sudo make install

@@ -565,6 +565,7 @@ fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
 #[cfg(test)]
 mod test {
     use core::panic;
+    use minivec::MiniVec;
     use std::{
         collections::HashMap,
         default,
@@ -867,9 +868,9 @@ mod test {
                 }
             }
             ValueType::String => {
-                let word = b"1".to_vec();
+                let word = MiniVec::from(&b"1"[..]);
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
-                let mut val_vec: Vec<Vec<u8>> = Vec::with_capacity(10000);
+                let mut val_vec: Vec<MiniVec<u8>> = Vec::with_capacity(10000);
                 for (min_ts, max_ts) in data_descriptors {
                     for ts in min_ts..max_ts + 1 {
                         ts_vec.push(ts);
