@@ -867,6 +867,15 @@ impl Predicate {
             timeframe,
         }
     }
+
+    pub fn limit(&self) -> Option<usize> {
+        self.limit
+    }
+
+    pub fn domains(&self) -> &Option<ColumnDomains<TableFiled>> {
+        &self.pushed_down_domains
+    }
+
     pub fn set_limit(mut self, limit: Option<usize>) -> Predicate {
         self.limit = limit;
         self
