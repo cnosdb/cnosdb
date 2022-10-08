@@ -14,12 +14,10 @@ use tskv::engine::EngineRef;
 
 use tskv::{Error, TimeRange};
 
-use crate::schema::TableSchema;
 use crate::{
     iterator::{QueryOption, RowIterator},
-    schema::{ColumnType, TableFiled},
 };
-use crate::{predicate::PredicateRef, schema::TIME_FIELD};
+use crate::predicate::PredicateRef;
 
 #[allow(dead_code)]
 pub struct TableScanStream {

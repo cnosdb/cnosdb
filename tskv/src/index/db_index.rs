@@ -4,16 +4,18 @@ use std::collections::HashSet;
 use std::mem::size_of;
 use std::ops::Index;
 use std::path::{self, Path, PathBuf};
+use std::string::FromUtf8Error;
 
 use bytes::BufMut;
 use chrono::format::format;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use snafu::ResultExt;
 
 use config::Config;
 use datafusion::arrow::datatypes::ToByteSlice;
 use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, utils, ValueType};
-use models::schema::TableSchema;
+use models::schema::{ColumnType, TableFiled, TableSchema};
 use protos::models::Point;
 use trace::warn;
 use crate::Error::IndexErr;
@@ -24,6 +26,7 @@ use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_seri
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
+const TIME_STAMP_NAME: &str = "TimeStamp";
 
 #[derive(Debug, Clone)]
 pub struct IndexConfig {
@@ -152,12 +155,12 @@ impl DBIndex {
         series_id: u64,
         info: &Point,
     ) -> IndexResult<()> {
-        let mut table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
         if let Some(schema) = self.table_schema.read().get(&table_name) {
             for field in info.fields().unwrap() {
-                let field_name:String = String::from(field.name().unwrap().to_vec());
+                let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
                 if let Some(v) = schema.fields.get(&field_name){
-                    if field.type_().0 != v.1.column_type{
+                    if field.type_().0 != v.column_type.field_type() as i32 {
                         return Err(IndexError::FieldType);
                     }
                 }else {
@@ -166,9 +169,9 @@ impl DBIndex {
 
             }
             for tag in info.tags().unwrap() {
-                let tag_name :String = String::from(tag.name().unwrap().to_vec());
+                let tag_name :String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
                 if let Some(v) = schema.fields.get(&tag_name){
-                    if field.type_().0 != v.1.column_type{
+                    if ColumnType::Tag != v.column_type {
                         return Err(IndexError::FieldType);
                     }
                 }else {
@@ -188,93 +191,83 @@ impl DBIndex {
         info: &Point,
     ) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
-        let mut schema: &mut Vec<FieldInfo> = &mut vec![];
-        let mut table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
-        match self.table_schema.write().get_mut(&table_name) {
+        let mut schema = &mut TableSchema {
+            db: "".to_string(),
+            name: "".to_string(),
+            schema_id: 0,
+            fields: Default::default()
+        };
+        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let mut fields = self.table_schema.write();
+        match fields.get_mut(&table_name) {
             Some(fields) => schema = fields,
             None => {
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
-                        self.table_schema.write().insert(table_name, list);
-                        schema = self.table_schema.write().get_mut(&table_name).unwrap();
+                        self.table_schema.write().insert(table_name.clone(), list);
+                        schema = fields.get_mut(&table_name).unwrap();
                     }
                 }
             }
         }
 
         let mut schema_change = false;
-        let mut check_fn = |field: &mut FieldInfo| -> IndexResult<()> {
-            match schema.iter().find(|item| field.eq(item)) {
+        let mut check_fn = |field: &mut TableFiled| -> IndexResult<()> {
+            match schema.fields.get(&field.name) {
                 Some(v) => {
-                    if field.value_type() != v.value_type() {
+                    if field.column_type != v.column_type {
                         return Err(IndexError::FieldType);
                     }
 
-                    field.set_field_id(utils::unite_id(v.field_id(), series_id));
+                    field.id = utils::unite_id(v.id, series_id);
                 }
                 None => {
                     schema_change = true;
 
-                    let index = (schema.len() + 1) as u64;
+                    let index = (schema.fields.len() + 1) as u64;
 
-                    let mut clone = field.clone();
-                    clone.set_field_id(index);
-                    schema.push(clone);
-
-                    field.set_field_id(utils::unite_id(index, series_id));
+                    field.id = utils::unite_id(index, series_id);
+                    schema.fields.insert(field.name.clone(), field.clone());
                 }
             }
             Ok(())
         };
 
         //check fields
-        for field in info.field_infos() {
-            check_fn(field)?
+        for field in info.fields().unwrap() {
+            check_fn(&mut TableFiled::new(0, String::from_utf8(field.name().unwrap().to_vec()).unwrap(), ColumnType::from_i32(field.type_().0)))?
         }
 
         //check tags
-        for tag in info.tags() {
-            check_fn(&mut FieldInfo::from(tag))?
+        for tag in info.tags().unwrap() {
+            check_fn(&mut TableFiled::new(0, String::from_utf8(tag.key().unwrap().to_vec()).unwrap(), ColumnType::Tag))?
         }
 
-        for it in schema.iter() {
-            match info.field_infos().iter().find(|item| it.eq(item)) {
-                Some(v) => {}
-                None => {
-                    if !it.is_tag() {
-                        info.push_field_fill(it.clone())
-                    }
-                }
-            }
-        }
+        //check timestamp
+        check_fn(&mut TableFiled::new(0, TIME_STAMP_NAME.to_string(), ColumnType::Time))?;
 
         //schema changed store it
         if schema_change {
-            let data = bincode::serialize(schema).unwrap();
-            let key = format!("{}{}", TABLE_SCHEMA_PREFIX, info.table());
-            self.storage.set(key.as_bytes(), &data)?;
-
-            info.set_schema_id(self.incr_schema_id(info.table()));
-        } else {
-            info.set_schema_id(self.table_schema_id(info.table()));
+            schema.schema_id = self.incr_schema_id(&table_name);
         }
-
+        let data = bincode::serialize(schema).unwrap();
+        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
+        self.storage.set(key.as_bytes(), &data)?;
         Ok(())
     }
 
-    pub fn get_table_schema(&self, tab: &str) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema(&self, tab: &str) -> IndexResult<Option<TableSchema>> {
         if let Some(fields) = self.table_schema.read().get(tab) {
-            return Ok(Some(fields.to_vec()));
+            return Ok(Some(fields.clone()));
         }
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
         if let Some(data) = self.storage.get(key.as_bytes())? {
-            if let Ok(list) = bincode::deserialize::<Vec<FieldInfo>>(&data) {
+            if let Ok(list) = bincode::deserialize::<TableSchema>(&data) {
                 //todo: remove copy
-                let clone = list.to_vec();
-                self.table_schema.write().insert(tab.to_string(), list);
-                return Ok(Some(clone));
+                self.table_schema.write().insert(tab.to_string(), list.clone());
+                return Ok(Some(list));
             }
         }
 
@@ -284,7 +277,7 @@ impl DBIndex {
     pub fn get_table_schema_by_series_id(
         &self,
         series_id: SeriesId,
-    ) -> IndexResult<Option<Vec<FieldInfo>>> {
+    ) -> IndexResult<Option<TableSchema>> {
         match self.get_series_key(series_id) {
             Ok(Some(key)) => match self.get_table_schema(key.table()) {
                 Ok(None) => {

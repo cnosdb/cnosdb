@@ -20,6 +20,7 @@ use models::{
     utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag,
     Timestamp, ValueType,
 };
+use models::schema::TableSchema;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -528,7 +529,7 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn get_table_schema(&self, name: &str, tab: &str) -> Result<Option<Vec<FieldInfo>>> {
+    fn get_table_schema(&self, name: &str, tab: &str) -> Result<Option<TableSchema>> {
         if let Some(db) = self.version_set.read().get_db(name) {
             let val = db
                 .read()
@@ -609,7 +610,7 @@ mod test {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
 
-            let field_ids: Vec<u32> = table_schema.iter().map(|f| f.field_id() as u32).collect();
+            let field_ids: Vec<u32> = table_schema.fields.iter().map(|f| f.1.id as u32).collect();
             let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
                 tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
@@ -617,6 +618,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn test_drop_table_database() {
         let base_dir = "/tmp/test/tskv/drop_table".to_string();
         let _ = std::fs::remove_dir_all(&base_dir);

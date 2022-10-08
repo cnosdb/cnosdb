@@ -21,11 +21,11 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use datafusion::error::Result;
 use futures::StreamExt;
+use models::schema::TableSchema;
 use trace::debug;
 
 use crate::{
     data_source::sink::{RecordBatchSink, RecordBatchSinkProvider},
-    schema::TableSchema,
 };
 
 pub struct TableWriterExec {

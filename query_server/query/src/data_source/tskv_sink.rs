@@ -4,10 +4,11 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
+use models::schema::TableSchema;
 use trace::debug;
 use tskv::engine::EngineRef;
 
-use crate::{schema::TableSchema, utils::point_util::record_batch_to_points_flat_buffer};
+use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
 

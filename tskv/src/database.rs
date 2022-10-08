@@ -20,6 +20,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::{debug, error, info};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
+use models::schema::TableSchema;
 
 use crate::index::IndexResult;
 use crate::tseries_family::LevelInfo;
@@ -225,11 +226,11 @@ impl Database {
         self.index.get_series_key(sid)
     }
 
-    pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<TableSchema>> {
         self.index.get_table_schema(table_name)
     }
 
-    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<Vec<FieldInfo>>> {
+    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {
         self.index.get_table_schema_by_series_id(sid)
     }
 
@@ -304,7 +305,7 @@ pub(crate) fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
-            let fids: Vec<u64> = fields.iter().map(|f| f.field_id()).collect();
+            let fids: Vec<u64> = fields.fields.iter().map(|f| f.1.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
                 .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
