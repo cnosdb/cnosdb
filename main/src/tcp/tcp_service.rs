@@ -122,12 +122,12 @@ async fn process_client(
         let mut data_buf = vec![0; data_len as usize];
         client.read_exact(&mut data_buf).await?;
         if cmd_type == meta_data::WRITE_VNODE_POINT_COMMAND {
-            process_vnode_write_command();
+            process_vnode_write_command(data_buf);
         }
     }
 }
 
-fn process_vnode_write_command() {}
+fn process_vnode_write_command(data: Vec<u8>) {}
 
 #[cfg(test)]
 mod test {

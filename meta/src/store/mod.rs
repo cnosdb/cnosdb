@@ -5,6 +5,8 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::ExampleTypeConfig;
+use crate::NodeId;
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
@@ -28,8 +30,6 @@ use serde::Serialize;
 use sled::{Db, IVec};
 use tokio::sync::RwLock;
 use tracing;
-use crate::NodeId;
-use crate::ExampleTypeConfig;
 pub mod config;
 pub mod store;
 
@@ -68,7 +68,6 @@ pub struct StateMachine {
 
 impl StateMachine {
     pub fn to_content(&self) -> StateMachineContent {
-        
         StateMachineContent {
             last_applied_log: self.last_applied_log,
             last_membership: self.last_membership.clone(),
@@ -192,9 +191,7 @@ impl Restore for Arc<Store> {
 #[async_trait]
 impl RaftLogReader<ExampleTypeConfig> for Arc<Store> {
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn get_log_state(
-        &mut self,
-    ) -> Result<LogState<ExampleTypeConfig>, StorageError<NodeId>> {
+    async fn get_log_state(&mut self) -> Result<LogState<ExampleTypeConfig>, StorageError<NodeId>> {
         let log = &self.log;
         let last = log
             .iter()
@@ -327,25 +324,18 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     type SnapshotBuilder = Self;
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn save_vote(
-        &mut self,
-        vote: &Vote<NodeId>,
-    ) -> Result<(), StorageError<NodeId>> {
+    async fn save_vote(&mut self, vote: &Vote<NodeId>) -> Result<(), StorageError<NodeId>> {
         self.vote
             .insert(b"vote", IVec::from(serde_json::to_vec(vote).unwrap()))
             .unwrap();
         Ok(())
     }
 
-    async fn read_vote(
-        &mut self,
-    ) -> Result<Option<Vote<NodeId>>, StorageError<NodeId>> {
+    async fn read_vote(&mut self) -> Result<Option<Vote<NodeId>>, StorageError<NodeId>> {
         let value = self.vote.get(b"vote").unwrap();
         match value {
             None => Ok(None),
-            Some(val) => Ok(Some(
-                serde_json::from_slice::<Vote<NodeId>>(&*val).unwrap(),
-            )),
+            Some(val) => Ok(Some(serde_json::from_slice::<Vote<NodeId>>(&*val).unwrap())),
         }
     }
 
@@ -389,10 +379,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    async fn purge_logs_upto(
-        &mut self,
-        log_id: LogId<NodeId>,
-    ) -> Result<(), StorageError<NodeId>> {
+    async fn purge_logs_upto(&mut self, log_id: LogId<NodeId>) -> Result<(), StorageError<NodeId>> {
         tracing::debug!("delete_log: [{:?}, +oo)", log_id);
 
         {
@@ -418,13 +405,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
 
     async fn last_applied_state(
         &mut self,
-    ) -> Result<
-        (
-            Option<LogId<NodeId>>,
-            EffectiveMembership<NodeId>,
-        ),
-        StorageError<NodeId>,
-    > {
+    ) -> Result<(Option<LogId<NodeId>>, EffectiveMembership<NodeId>), StorageError<NodeId>> {
         let state_machine = self.state_machine.read().await;
         Ok((
             state_machine.last_applied_log,
@@ -455,7 +436,6 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                             value: Some(value.clone()),
                         })
                     }
-
                 },
                 EntryPayload::Membership(ref mem) => {
                     sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
@@ -495,8 +475,8 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
 
         // Update the state machine.
         {
-            let updated_state_machine: StateMachine =
-                serde_json::from_slice(&new_snapshot.data).map_err(|e| {
+            let updated_state_machine: StateMachine = serde_json::from_slice(&new_snapshot.data)
+                .map_err(|e| {
                     StorageIOError::new(
                         ErrorSubject::Snapshot(new_snapshot.meta.clone()),
                         ErrorVerb::Read,
@@ -519,8 +499,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<ExampleTypeConfig, Self::SnapshotData>>, StorageError<NodeId>>
-    {
+    ) -> Result<Option<Snapshot<ExampleTypeConfig, Self::SnapshotData>>, StorageError<NodeId>> {
         tracing::debug!("get_current_snapshot: start");
 
         match &*self.current_snapshot.read().await {

@@ -5,6 +5,7 @@ use trace::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    pub cluster: ClusterConfig,
     pub storage: StorageConfig,
     pub wal: WalConfig,
     pub cache: CacheConfig,
@@ -13,6 +14,7 @@ pub struct Config {
 
 impl Config {
     pub fn override_by_env(&mut self) {
+        self.cluster.override_by_env();
         self.storage.override_by_env();
         self.wal.override_by_env();
         self.cache.override_by_env();
@@ -136,9 +138,34 @@ pub fn get_config(path: &str) -> Config {
     config
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterConfig {
+    pub node_id: u64,
+    pub name: String,
+    pub meta: String,
+}
+
+impl ClusterConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(name) = std::env::var("CNOSDB_CLUSTER_NAME") {
+            self.name = name;
+        }
+        if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
+            self.meta = meta;
+        }
+        if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
+            self.node_id = id.parse::<u64>().unwrap();
+        }
+    }
+}
+
 #[test]
 fn test() {
     let config_str = r#"
+[cluster]
+node_id = 100
+name = 'cluster_name'
+meta = '127.0.0.1:22000,127.0.0.1,22001'
 [storage]
 path = 'dev/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024

@@ -38,6 +38,8 @@ message NodeInfo {
 	required string rpc_addr = 2;
 	required string http_addr = 3;
 	required uint32 status = 4;
+    required Resource 
+	required Location
 }
 
 message DatabaseInfo {

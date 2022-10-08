@@ -19,12 +19,6 @@ pub const UPDATE_VNODE_OWNERS_COMMAND: u32 = 18;
 pub const WRITE_VNODE_POINT_COMMAND: u32 = 19;
 
 #[derive(Debug, Clone)]
-pub struct CommandHeader {
-    pub typ: u32,
-    pub len: u32,
-}
-
-#[derive(Debug, Clone)]
 pub struct Resource {
     pub id: u64,
     pub cpu: u64,
@@ -93,6 +87,16 @@ pub struct MetaData {
 }
 
 impl MetaData {
+    pub fn new() -> Self {
+        Self {
+            version: 0,
+            users: vec![],
+            dbs: vec![],
+            data_nodes: vec![],
+            meta_nodes: vec![],
+        }
+    }
+
     pub fn bucket_by_timestamp(&self, db_name: &String, ts: i64) -> Option<&BucketInfo> {
         if let Some(db) = self.dbs.iter().find(|db| db.name == *db_name) {
             if let Some(bucket) = db

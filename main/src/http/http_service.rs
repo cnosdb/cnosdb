@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, net::SocketAddr};
+use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
 
 use super::QuerySnafu;
 use crate::http::Error;
@@ -7,6 +7,8 @@ use crate::http::TskvSnafu;
 use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
+use coordinator::meta_client::MetaClientRef;
+use coordinator::writer::{PointWriter, VnodeMapping};
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
@@ -40,15 +42,22 @@ pub struct HttpService {
     addr: SocketAddr,
     dbms: DBMSRef,
     kv_inst: EngineRef,
+    writer: Arc<PointWriter>,
     handle: Option<ServiceHandle<()>>,
 }
 
 impl HttpService {
-    pub fn new(dbms: DBMSRef, kv_inst: EngineRef, addr: SocketAddr) -> Self {
+    pub fn new(
+        dbms: DBMSRef,
+        kv_inst: EngineRef,
+        writer: Arc<PointWriter>,
+        addr: SocketAddr,
+    ) -> Self {
         Self {
             addr,
             dbms,
             kv_inst,
+            writer,
             handle: None,
         }
     }
@@ -67,6 +76,12 @@ impl HttpService {
     fn with_kv_inst(&self) -> impl Filter<Extract = (EngineRef,), Error = Infallible> + Clone {
         let kv_inst = self.kv_inst.clone();
         warp::any().map(move || kv_inst.clone())
+    }
+    fn with_writer(
+        &self,
+    ) -> impl Filter<Extract = (Arc<PointWriter>,), Error = Infallible> + Clone {
+        let writer = self.writer.clone();
+        warp::any().map(move || writer.clone())
     }
 
     fn routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
@@ -113,13 +128,14 @@ impl HttpService {
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(self.with_kv_inst())
+            .and(self.with_writer())
             .and_then(
-                |req: Bytes, content: Context, kv_inst: EngineRef| async move {
+                |req: Bytes, content: Context, kv_inst: EngineRef, writer: Arc<PointWriter>| async move {
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_millis())
                             .context(ParseLineProtocolSnafu)?;
-                    let points = parse_lines_to_points(&content.schema, &line_protocol_lines)?;
+                    let (_, points) = parse_lines_to_points(writer.meta_client.clone(), &content.schema, &line_protocol_lines)?;
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
                     match resp {
@@ -161,8 +177,14 @@ impl Service for HttpService {
     }
 }
 
-fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
+fn parse_lines_to_points<'a>(
+    meta_client: MetaClientRef,
+    db: &'a str,
+    lines: &'a [Line],
+) -> Result<(VnodeMapping<'a>, Vec<u8>), Error> {
+    let db_str = db.clone().to_owned();
     let mut fbb = FlatBufferBuilder::new();
+    let mut mapping = VnodeMapping::new(db_str.clone());
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter() {
         let mut tags = Vec::new();
@@ -215,6 +237,8 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
             fields: Some(fbb.create_vector(&fields)),
             timestamp: line.timestamp,
         };
+
+        mapping.map_point(meta_client.clone(), &db_str, &point_args);
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
 
@@ -228,7 +252,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
         },
     );
     fbb.finish(points, None);
-    Ok(fbb.finished_data().to_vec())
+    Ok((mapping, fbb.finished_data().to_vec()))
 }
 
 /*************** top ****************/

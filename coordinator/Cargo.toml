@@ -9,6 +9,8 @@ models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+tskv = { path = "../tskv" }
 
 snafu = "0.7"
 flatbuffers = "2.1"
+async-trait = "0.1"

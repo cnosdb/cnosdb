@@ -13,10 +13,7 @@ use crate::store::KvReq;
 use crate::NodeId;
 
 #[post("/write")]
-pub async fn write(
-    app: Data<MetaApp>,
-    req: Json<KvReq>,
-) -> actix_web::Result<impl Responder> {
+pub async fn write(app: Data<MetaApp>, req: Json<KvReq>) -> actix_web::Result<impl Responder> {
     let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
     let response = app.raft.client_write(request).await;
     Ok(Json(response))
@@ -44,8 +41,7 @@ pub async fn consistent_read(
             let state_machine = app.store.state_machine.read().await;
             let key = req.0;
             let value = state_machine.data.get(&key).cloned();
-            let res: Result<String, CheckIsLeaderError<NodeId>> =
-                Ok(value.unwrap_or_default());
+            let res: Result<String, CheckIsLeaderError<NodeId>> = Ok(value.unwrap_or_default());
             Ok(Json(res))
         }
         Err(e) => Ok(Json(Err(e))),
