@@ -510,7 +510,7 @@ pub fn run_compaction_job(
                 }
                 tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-                    tsm_writer.flush().context(error::WriteTsmSnafu)?;
+                    tsm_writer.finish().context(error::WriteTsmSnafu)?;
                     info!(
                         "Compaction: File: {} write finished (level: {}, {} B).",
                         tsm_writer.sequence(),
@@ -522,12 +522,15 @@ pub fn run_compaction_job(
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                     info!("Compaction: File {} been created.", tsm_writer.sequence());
                 }
+                tsm::WriteTsmError::Finished { path } => {
+                    error!("Tsm writer finished: {}", path.display());
+                }
             }
         }
     }
 
     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-    tsm_writer.flush().context(error::WriteTsmSnafu)?;
+    tsm_writer.finish().context(error::WriteTsmSnafu)?;
     info!(
         "Compaction: File: {} write finished (level: {}, {} B).",
         tsm_writer.sequence(),
@@ -610,7 +613,7 @@ mod test {
                 }
             }
             writer.write_index().unwrap();
-            writer.flush().unwrap();
+            writer.finish().unwrap();
             cfs.push(Arc::new(ColumnFile::new(
                 file_seq,
                 2,
@@ -1021,7 +1024,7 @@ mod test {
                     .unwrap();
             }
             tsm_writer.write_index().unwrap();
-            tsm_writer.flush().unwrap();
+            tsm_writer.finish().unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
                 2,
@@ -1162,7 +1165,7 @@ mod test {
                     .unwrap();
             }
             tsm_writer.write_index().unwrap();
-            tsm_writer.flush().unwrap();
+            tsm_writer.finish().unwrap();
             let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence).unwrap();
             for t in tombstone_desc.iter().flatten() {
                 tsm_tombstone

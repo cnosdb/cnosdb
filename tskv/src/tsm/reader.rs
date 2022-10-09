@@ -700,7 +700,7 @@ pub mod tsm_reader_tests {
             }
         }
         writer.write_index().unwrap();
-        writer.flush().unwrap();
+        writer.finish().unwrap();
 
         let mut tombstone = TsmTombstone::with_path(&tombstone_file).unwrap();
         tombstone.add_range(&[1], &TimeRange::new(2, 4)).unwrap();
