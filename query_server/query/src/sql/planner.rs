@@ -52,7 +52,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
     }
 
     /// Generate a logical plan from an  Extent SQL statement
-    fn statement_to_plan(&self, statement: ExtStatement) -> Result<Plan> {
+    pub(crate) fn statement_to_plan(&self, statement: ExtStatement) -> Result<Plan> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
@@ -570,6 +570,28 @@ mod tests {
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
         println!("{:?}", plan);
+    }
+
+    #[test]
+    fn test_create_table() {
+        let sql = "CREATE TABLE IF NOT EXISTS test\
+            (column1 BIGINT CODEC(DELTA),\
+            column2 STRING CODEC(GZIP),\
+            column3 BIGINT UNSIGNED CODEC(NULL),\
+            column4 BOOLEAN,\
+            column5 DOUBLE CODEC(GORILLA),\
+            TAGS(column6, column7))";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+        let ans = format!("{:?}", plan);
+        let expected = r#"DDL(CreateTable(CreateTable { schema: DFSchema { fields: [DFField { qualifier: Some("test"), field: Field { name: "time", data_type: Timestamp(Nanosecond, None), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column1", data_type: Int64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column3", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column4", data_type: Boolean, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column5", data_type: Float64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }], metadata: {"column5": "GORILLA", "column3": "NULL", "column4": "DEFAULT", "column2": "GZIP", "column1": "DELTA", "time": "DEFAULT"} }, name: "test", if_not_exists: true, tags: ["column6", "column7"] }))"#;
+        assert_eq!(ans[0..1022], expected[0..1022]);
+        assert_eq!(ans[1186..1223], expected[1186..1223]);
     }
 
     #[test]
