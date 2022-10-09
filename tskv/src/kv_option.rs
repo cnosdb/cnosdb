@@ -41,6 +41,7 @@ pub struct StorageOptions {
     pub dio_max_resident: u64,
     pub dio_max_non_resident: u64,
     pub dio_page_len_scale: u64,
+    pub hard_write: bool,
 }
 
 impl StorageOptions {
@@ -97,6 +98,7 @@ impl From<&Config> for StorageOptions {
             dio_max_resident: config.storage.dio_max_resident,
             dio_max_non_resident: config.storage.dio_max_non_resident,
             dio_page_len_scale: config.storage.dio_page_len_scale,
+            hard_write: config.storage.hard_write
         }
     }
 }

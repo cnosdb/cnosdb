@@ -1,7 +1,7 @@
 use flatbuffers::Push;
 use futures::future::ok;
 
-use models::{utils, FieldId, RwLockRef, SeriesId, Timestamp, ValueType};
+use models::{utils, FieldId, RwLockRef, SeriesId, Timestamp, ValueType, SchemaId};
 use protos::models::FieldType;
 
 use std::cmp::Ordering as CmpOrdering;
@@ -128,7 +128,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema_id: u32,
+    pub schema_id: SchemaId,
     pub schema: Vec<u32>,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
@@ -205,7 +205,7 @@ impl SeriesData {
         Some(Arc::new(RwLock::new(entry)))
     }
 
-    pub fn flat_groups(&self) -> Vec<(u32, &Vec<u32>, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, &Vec<u32>, &Vec<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema_id, &g.schema, &g.rows))
@@ -451,7 +451,7 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use bytes::buf;
-    use models::{SeriesId, Timestamp};
+    use models::{SchemaId, SeriesId, Timestamp};
     use std::mem::{size_of, size_of_val};
 
     use crate::{tsm::DataBlock, TimeRange};
@@ -461,7 +461,7 @@ pub(crate) mod test {
     pub(crate) fn put_rows_to_cache(
         cache: &mut MemCache,
         series_id: SeriesId,
-        schema_id: u32,
+        schema_id: SchemaId,
         schema_column_ids: Vec<u32>,
         time_range: (Timestamp, Timestamp),
         put_none: bool,

@@ -150,7 +150,7 @@ impl DBIndex {
         Ok(id)
     }
 
-    fn check_field_type_from_cache(
+    pub fn check_field_type_from_cache(
         &self,
         series_id: u64,
         info: &Point,
@@ -185,8 +185,8 @@ impl DBIndex {
         }
     }
 
-    fn check_field_type_or_else_add(
-        &mut self,
+    pub fn check_field_type_or_else_add(
+        &self,
         series_id: u64,
         info: &Point,
     ) -> IndexResult<()> {
@@ -205,7 +205,7 @@ impl DBIndex {
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
-                        self.table_schema.write().insert(table_name.clone(), list);
+                        fields.insert(table_name.clone(), list);
                         schema = fields.get_mut(&table_name).unwrap();
                     }
                 }
