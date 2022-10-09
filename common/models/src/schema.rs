@@ -10,14 +10,16 @@
 use std::any::Any;
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::ValueType;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::ExecutionPlan;
-use serde::{Deserialize, Serialize};
+
+use crate::ValueType;
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
@@ -33,6 +35,17 @@ pub struct TableSchema {
     pub name: String,
     pub schema_id: u32,
     pub fields: BTreeMap<String, TableFiled>,
+}
+
+impl Default for TableSchema {
+    fn default() -> Self {
+        Self {
+            db: "".to_string(),
+            name: "".to_string(),
+            schema_id: 0,
+            fields: std::default::Default::default(),
+        }
+    }
 }
 
 impl TableSchema {
@@ -115,7 +128,14 @@ impl TableFiled {
             codec,
         }
     }
-
+    pub fn new_with_default(name: String, column_type: ColumnType) -> Self {
+        Self {
+            id: 0,
+            name,
+            column_type,
+            codec: 0,
+        }
+    }
     pub fn time_field(codec: u8) -> TableFiled {
         TableFiled {
             id: 0,

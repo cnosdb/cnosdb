@@ -75,7 +75,6 @@ pub struct DBIndex {
     path: PathBuf,
     storage: IndexEngine,
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
-    schema_id: RwLock<HashMap<String, u32>>,
     table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
@@ -92,8 +91,6 @@ impl DBIndex {
             storage: IndexEngine::new(path),
             series_cache: RwLock::new(HashMap::new()),
             table_schema: RwLock::new(HashMap::new()),
-            schema_id: RwLock::new(HashMap::new()),
-
             path: path.into(),
         }
     }
@@ -182,12 +179,7 @@ impl DBIndex {
 
     pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
-        let mut schema = &mut TableSchema {
-            db: "".to_string(),
-            name: "".to_string(),
-            schema_id: 0,
-            fields: Default::default(),
-        };
+        let mut schema = &mut TableSchema::default();
         let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
         match fields.get_mut(&table_name) {
@@ -216,50 +208,36 @@ impl DBIndex {
                     if field.column_type != v.column_type {
                         return Err(IndexError::FieldType);
                     }
-
-                    field.id = utils::unite_id(v.id, series_id);
+                    field.id = field.id;
                 }
                 None => {
                     schema_change = true;
-
-                    let index = (schema.fields.len() + 1) as u64;
-
-                    field.id = utils::unite_id(index, series_id);
+                    field.id = (schema.fields.len() + 1) as u64;
                     schema.fields.insert(field.name.clone(), field.clone());
                 }
             }
             Ok(())
         };
-
-        //check fields
-        for field in info.fields().unwrap() {
-            let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
-            check_fn(&mut TableFiled::new(
-                0,
-                field_name,
-                ColumnType::from_i32(field.type_().0),
-                0,
-            ))?
-        }
+        //check timestamp
+        check_fn(&mut TableFiled::new_with_default(
+            TIME_STAMP_NAME.to_string(),
+            ColumnType::Time,
+        ))?;
 
         //check tags
         for tag in info.tags().unwrap() {
-            check_fn(&mut TableFiled::new(
-                0,
-                String::from_utf8(tag.key().unwrap().to_vec()).unwrap(),
-                ColumnType::Tag,
-                0,
-            ))?
+            let tag_key = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+            check_fn(&mut TableFiled::new_with_default(tag_key, ColumnType::Tag))?
         }
 
-        //check timestamp
-        check_fn(&mut TableFiled::new(
-            0,
-            TIME_STAMP_NAME.to_string(),
-            ColumnType::Time,
-            0,
-        ))?;
-
+        //check fields
+        for field in info.fields().unwrap() {
+            let field_name = unsafe { String::from_utf8_unchecked(field.name().unwrap().to_vec()) };
+            check_fn(&mut TableFiled::new_with_default(
+                field_name,
+                ColumnType::from_i32(field.type_().0),
+            ))?
+        }
         //schema changed store it
         if schema_change {
             schema.schema_id = self.incr_schema_id(&table_name);
@@ -315,18 +293,15 @@ impl DBIndex {
         }
     }
 
-    pub fn table_schema_id(&self, tab: &str) -> u32 {
-        if let Some(v) = self.schema_id.read().get(tab) {
-            return *v;
-        }
-
-        1
-    }
-
     //todo: need to persistent
     pub fn incr_schema_id(&self, tab: &str) -> u32 {
-        let v = self.table_schema_id(tab);
-        v + 1
+        match self.table_schema.write().get_mut(tab) {
+            None => 0,
+            Some(schema) => {
+                schema.schema_id += 1;
+                schema.schema_id
+            }
+        }
     }
 
     pub fn del_table_schema(&self, tab: &String) -> IndexResult<()> {
@@ -452,9 +427,6 @@ impl DBIndex {
         self.table_schema
             .write()
             .insert(schema.name.clone(), schema.clone());
-        self.schema_id
-            .write()
-            .insert(schema.name.clone(), schema.schema_id);
         self.storage.set(key.as_bytes(), &data)?;
         self.flush()?;
         Ok(())

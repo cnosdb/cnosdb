@@ -4,26 +4,25 @@ use std::{
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
+use parking_lot::RwLock;
+use snafu::ResultExt;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
+
+use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
+use models::schema::TableSchema;
+use models::utils::{split_id, unite_id};
+use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
+use protos::models::{Point, Points};
+use trace::{debug, error, info};
+
+use crate::index::{IndexError, IndexResult};
+use crate::tseries_family::LevelInfo;
 use crate::{
     error::{self, Result},
     memcache::{RowData, RowGroup},
     version_set::VersionSet,
     Error, TimeRange, TseriesFamilyId,
 };
-use models::utils::{split_id, unite_id};
-use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
-
-use parking_lot::RwLock;
-use protos::models::{Point, Points};
-use snafu::ResultExt;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::{debug, error, info};
-
-use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::TableSchema;
-
-use crate::index::{IndexError, IndexResult};
-use crate::tseries_family::LevelInfo;
 use crate::{
     index::db_index,
     kv_option::Options,
@@ -147,14 +146,14 @@ impl Database {
         &self,
         points: FlatBufferPoint,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
-        if self.opt.storage.hard_write {
-            self.build_write_group_hard_interface(points)
+        if self.opt.storage.strict_write {
+            self.build_write_group_strict_mode(points)
         } else {
-            self.build_write_group_interface(points)
+            self.build_write_group_loose_mode(points)
         }
     }
 
-    pub fn build_write_group_hard_interface(
+    pub fn build_write_group_strict_mode(
         &self,
         points: FlatBufferPoint,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
@@ -162,17 +161,12 @@ impl Database {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
-            match self.index.check_field_type_from_cache(sid, &point) {
-                Ok(_) => {}
-                Err(e) => return Err(Error::IndexErr { source: e }),
-            }
-
             self.build_row_data(&mut map, point, sid)
         }
         Ok(map)
     }
 
-    pub fn build_write_group_interface(
+    pub fn build_write_group_loose_mode(
         &self,
         points: FlatBufferPoint,
     ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
