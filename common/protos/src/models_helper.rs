@@ -127,23 +127,45 @@ mod test {
             };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let tags = create_tags(
-                fbb,
-                vec![
-                    ("ta", &("a".to_string() + &tav)),
-                    ("tb", &("b".to_string() + &tbv)),
-                ],
-            );
+            let tags = if rand::random::<i64>() %2 ==0 {
+                create_tags(
+                    fbb,
+                    vec![
+                        ("ta", &("a".to_string() + &tav)),
+                        ("tb", &("b".to_string() + &tbv)),
+                    ],
+                )
+            } else {
+                create_tags(
+                    fbb,
+                    vec![
+                        ("ta", &("a".to_string() + &tav)),
+                        ("tb", &("b".to_string() + &tbv)),
+                        ("tc", &("c".to_string() + &tbv))
+                    ],
+                )
+            };
 
             let fav = rand::random::<f64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
-            let fields = create_fields(
-                fbb,
-                vec![
-                    ("fa", FieldType::Integer, fav.as_slice()),
-                    ("fb", FieldType::Float, fbv.as_slice()),
-                ],
-            );
+            let fields = if rand::random::<i64>()% 2 == 0 {
+                create_fields(
+                    fbb,
+                    vec![
+                        ("fa", FieldType::Integer, fav.as_slice()),
+                        ("fb", FieldType::Float, fbv.as_slice()),
+                    ],
+                )
+            } else {
+                create_fields(
+                    fbb,
+                    vec![
+                        ("fa", FieldType::Integer, fav.as_slice()),
+                        ("fb", FieldType::Float, fbv.as_slice()),
+                        ("fc", FieldType::Float, fbv.as_slice()),
+                    ],
+                )
+            };
 
             let table = fbb.create_vector("table".as_bytes());
             points.push(create_point(

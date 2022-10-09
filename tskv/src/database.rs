@@ -193,7 +193,24 @@ impl Database {
         point: Point,
         sid: u64,
     ) {
-        let row = RowData::from(point);
+        let table_name = String::from_utf8(point.table().unwrap().to_vec()).unwrap();
+        let table_schema = match self.index.get_table_schema(&table_name) {
+            Ok(schema) => {
+                match schema {
+                    None => {
+                        error!("failed get schema for table {}", table_name);
+                        return;
+                    }
+                    Some(schema) => schema
+                }
+            }
+            Err(_) => {
+                error!("failed get schema for table {}", table_name);
+                return;
+            }
+        };
+
+        let row = RowData::point_to_row_data(point, table_schema);
         let schema_id = 0;
         let schema = vec![];
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {

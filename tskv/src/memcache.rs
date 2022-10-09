@@ -1,8 +1,8 @@
-use flatbuffers::Push;
+use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 
 use models::{utils, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
-use protos::models::FieldType;
+use protos::models::{Field, FieldType};
 
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;
@@ -20,6 +20,8 @@ use trace::{error, info, warn};
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 use parking_lot::{RwLock, RwLockReadGuard};
+use snafu::OptionExt;
+use models::schema::{TableFiled, TableSchema};
 
 use protos::models as fb_models;
 
@@ -104,6 +106,45 @@ impl Display for FieldVal {
 pub struct RowData {
     pub ts: i64,
     pub fields: Vec<Option<FieldVal>>,
+}
+
+impl RowData {
+    pub fn point_to_row_data(p: fb_models::Point, schema: TableSchema) -> RowData {
+        let fields = match p.fields() {
+            None => {
+                let mut fields = Vec::with_capacity(schema.field_fields_num());
+                for i in 0..fields.capacity() {
+                    fields.push(None);
+                }
+                fields
+            }
+            Some(fields_inner) => {
+                let fields_id = schema.fields_id();
+                let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
+                for i in 0..fields.capacity() {
+                    fields.push(None);
+                }
+                for (i,f) in fields_inner.into_iter().enumerate() {
+                    let vtype = f.type_().into();
+                    let val = MiniVec::from(f.value().unwrap());
+                    match schema.fields.get(String::from_utf8(f.name().unwrap().to_vec()).unwrap().as_str()) {
+                        None => {}
+                        Some(field) => {
+                            match fields_id.get(&field.id) {
+                                None => {}
+                                Some(index) => {
+                                    fields[*index] = Some(FieldVal::new(val, vtype))
+                                }
+                            }
+                        }
+                    }
+                }
+                fields
+            }
+        };
+        let ts = p.timestamp();
+        RowData { ts, fields }
+    }
 }
 
 impl From<fb_models::Point<'_>> for RowData {

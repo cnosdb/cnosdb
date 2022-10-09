@@ -98,7 +98,7 @@ impl From<&Config> for StorageOptions {
             dio_max_resident: config.storage.dio_max_resident,
             dio_max_non_resident: config.storage.dio_max_non_resident,
             dio_page_len_scale: config.storage.dio_page_len_scale,
-            strict_write: config.storage.hard_write,
+            strict_write: config.storage.strict_write,
         }
     }
 }
