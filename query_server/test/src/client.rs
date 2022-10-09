@@ -109,7 +109,7 @@ impl Client {
         let mut url = self.url.join("sql").unwrap();
 
         let mut http_query = String::new();
-        http_query.push_str("db=");
+        http_query.push_str("target_partitions=8&db=");
 
         if instruction.db_name().is_empty() {
             http_query.push_str("public");

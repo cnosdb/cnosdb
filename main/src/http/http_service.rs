@@ -84,7 +84,6 @@ impl HttpService {
         header::optional::<String>(ACCEPT.as_str())
             .and(header::<String>(AUTHORIZATION.as_str()))
             .and_then(|accept, authorization| async move {
-                debug!("handle_header");
                 let res: Result<Header, warp::Rejection> = Ok(Header::with(accept, authorization));
                 res
             })
@@ -147,8 +146,8 @@ impl HttpService {
                             });
 
                             sample_query_read_latency(
-                                q.context().catalog.as_str(),
-                                q.context().database.as_str(),
+                                q.context().catalog(),
+                                q.context().database(),
                                 start.elapsed().as_millis() as f64,
                             );
 
@@ -339,6 +338,7 @@ fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query
 
     let context = ContextBuilder::new(user_info)
         .with_database(param.db)
+        .with_target_partitions(param.target_partitions)
         .build();
 
     Ok(Query::new(
@@ -348,7 +348,7 @@ fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query
 }
 
 async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Response, HttpError> {
-    debug!("prepare to execute: {:?}", query);
+    debug!("prepare to execute: {:?}", query.content());
 
     let fmt = ResultFormat::try_from(header.get_accept())?;
 

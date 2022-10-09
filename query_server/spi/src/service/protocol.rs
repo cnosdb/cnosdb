@@ -1,7 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::catalog::{DEFAULT_CATALOG, DEFAULT_SCHEMA};
+use crate::catalog::DEFAULT_SCHEMA;
 use crate::query::execution::Output;
+use crate::query::session::IsiphoSessionConfig;
 
 #[derive(Debug, Clone, Copy)]
 pub struct QueryId(u64);
@@ -14,59 +15,82 @@ impl QueryId {
     }
 }
 
+#[derive(Clone)]
 pub struct UserInfo {
     pub user: String,
     pub password: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Context {
     // todo
     // user info
     // security certification info
     // ...
-    pub catalog: String,
-    pub database: String,
+    user_info: UserInfo,
+    database: String,
+    session_config: IsiphoSessionConfig,
 }
 
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            catalog: DEFAULT_CATALOG.to_string(),
-            database: DEFAULT_SCHEMA.to_string(),
-        }
+impl Context {
+    pub fn catalog(&self) -> &str {
+        &self.user_info.user
+    }
+
+    pub fn database(&self) -> &str {
+        &self.database
+    }
+
+    pub fn user_info(&self) -> &UserInfo {
+        &self.user_info
+    }
+
+    pub fn session_config(&self) -> &IsiphoSessionConfig {
+        &self.session_config
     }
 }
 
 pub struct ContextBuilder {
     user_info: UserInfo,
     database: String,
+    session_config: IsiphoSessionConfig,
 }
 
 impl ContextBuilder {
-    pub fn new(user_info: UserInfo) -> ContextBuilder {
+    pub fn new(user_info: UserInfo) -> Self {
         Self {
             user_info,
             database: DEFAULT_SCHEMA.to_string(),
+            session_config: Default::default(),
         }
     }
 
-    pub fn with_database(mut self, database: Option<String>) -> ContextBuilder {
+    pub fn with_database(mut self, database: Option<String>) -> Self {
         if let Some(db) = database {
             self.database = db
         }
         self
     }
 
+    pub fn with_target_partitions(mut self, target_partitions: Option<usize>) -> Self {
+        if let Some(dbtarget_partitions) = target_partitions {
+            self.session_config = self
+                .session_config
+                .with_target_partitions(dbtarget_partitions);
+        }
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
-            catalog: self.user_info.user,
+            user_info: self.user_info,
             database: self.database,
+            session_config: self.session_config,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Query {
     context: Context,
     content: String,
