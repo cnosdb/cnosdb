@@ -11,7 +11,7 @@ use crate::{
     tseries_family::TimeRange,
     tsm::codec::{
         get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
-        DataBlockEncoding, Encoding,
+        DataBlockEncoding,
     },
 };
 

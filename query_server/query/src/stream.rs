@@ -14,9 +14,7 @@ use tskv::engine::EngineRef;
 
 use tskv::{Error, TimeRange};
 
-use crate::{
-    iterator::{QueryOption, RowIterator},
-};
+use crate::iterator::{QueryOption, RowIterator};
 use crate::predicate::PredicateRef;
 
 #[allow(dead_code)]
@@ -44,9 +42,13 @@ impl TableScanStream {
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD {
+                let codec = match table_schema.fields.get(TIME_FIELD) {
+                    None => 0,
+                    Some(v) => v.codec,
+                };
                 proj_fileds.insert(
                     TIME_FIELD.to_string(),
-                    TableFiled::new(0, TIME_FIELD.to_string(), ColumnType::Time),
+                    TableFiled::new(0, TIME_FIELD.to_string(), ColumnType::Time, codec),
                 );
                 continue;
             }

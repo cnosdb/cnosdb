@@ -23,8 +23,8 @@ use crate::{
     summary::{CompactMeta, VersionEdit},
     tseries_family::{ColumnFile, TimeRange},
     tsm::{
-        self, codec::Encoding, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index,
-        IndexIterator, IndexMeta, IndexReader, TsmReader, TsmWriter,
+        self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
+        IndexMeta, IndexReader, TsmReader, TsmWriter,
     },
     Error, LevelId,
 };

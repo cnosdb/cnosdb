@@ -9,14 +9,12 @@ use datafusion::{
     datasource::TableProvider,
     error::{DataFusionError, Result},
 };
+use models::schema::{TableFiled, TableSchema, TIME_FIELD};
 use parking_lot::RwLock;
-use models::schema::{TableFiled, TableSchema};
 
 use tskv::engine::EngineRef;
 
-use crate::{
-    table::ClusterTable,
-};
+use crate::table::ClusterTable;
 pub type CatalogRef = Arc<dyn CatalogProvider>;
 pub type SchemaRef = Arc<dyn SchemaProvider>;
 pub type UserCatalogRef = Arc<UserCatalog>;
@@ -117,8 +115,12 @@ impl SchemaProvider for UserSchema {
         let mut tables = self.tables.write();
         if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {
             let mut fields = BTreeMap::new();
+            let codec = match v.fields.get(TIME_FIELD) {
+                None => 0,
+                Some(v) => v.codec,
+            };
             // system field (time)
-            let time_field = TableFiled::time_field();
+            let time_field = TableFiled::time_field(codec);
             fields.insert(time_field.name.clone(), time_field);
 
             for item in v.fields {
@@ -146,6 +148,11 @@ impl SchemaProvider for UserSchema {
             )));
         }
         let mut tables = self.tables.write();
+        let table_schema = table.as_any().downcast_ref::<TableSchema>();
+        match table_schema {
+            None => {}
+            Some(schema) => self.engine.create_table(&schema),
+        }
         // self.engine.create_table();
         Ok(tables.insert(name, table))
     }

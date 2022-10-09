@@ -34,11 +34,7 @@ use crate::{
     memcache::{DataType, FieldVal, MemCache, MemEntry, SeriesData},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
-    tsm::{
-        self,
-        codec::{DataBlockEncoding, Encoding},
-        DataBlock, TsmWriter,
-    },
+    tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
     version_set::VersionSet,
     TseriesFamilyId,
 };

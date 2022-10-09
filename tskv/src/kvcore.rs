@@ -7,20 +7,19 @@ use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 use tokio::{
-    time::Instant,
     runtime::Runtime,
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
+    time::Instant,
 };
 
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
-use models::{
-    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag,
-    Timestamp, ValueType,
-};
 use models::schema::TableSchema;
+use models::{
+    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
+};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -476,6 +475,17 @@ impl Engine for TsKv {
         }
 
         Ok(())
+    }
+
+    fn create_table(&self, schema: &TableSchema) {
+        if let Some(db) = self.version_set.write().get_db(&schema.db) {
+            match db.read().get_index().create_table(schema) {
+                Ok(_) => {}
+                Err(e) => error!("failed create database '{}'", e),
+            }
+        } else {
+            error!("Database {}, not found", schema.db);
+        }
     }
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {

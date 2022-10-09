@@ -1,10 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::ops::Index;
 use std::path::{self, Path, PathBuf};
 use std::string::FromUtf8Error;
+use std::{collections::HashMap, sync::Arc};
 
 use bytes::BufMut;
 use chrono::format::format;
@@ -12,21 +12,21 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use snafu::ResultExt;
 
+use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::ToByteSlice;
-use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, utils, ValueType};
 use models::schema::{ColumnType, TableFiled, TableSchema};
+use models::{utils, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
 use protos::models::Point;
 use trace::warn;
-use crate::Error::IndexErr;
 
+use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 use super::*;
 use super::{errors, IndexEngine, IndexError, IndexResult};
-use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
-const TIME_STAMP_NAME: &str = "TimeStamp";
+const TIME_STAMP_NAME: &str = "time";
 
 #[derive(Debug, Clone)]
 pub struct IndexConfig {
@@ -150,31 +150,26 @@ impl DBIndex {
         Ok(id)
     }
 
-    pub fn check_field_type_from_cache(
-        &self,
-        series_id: u64,
-        info: &Point,
-    ) -> IndexResult<()> {
+    pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> IndexResult<()> {
         let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
         if let Some(schema) = self.table_schema.read().get(&table_name) {
             for field in info.fields().unwrap() {
                 let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
-                if let Some(v) = schema.fields.get(&field_name){
+                if let Some(v) = schema.fields.get(&field_name) {
                     if field.type_().0 != v.column_type.field_type() as i32 {
                         return Err(IndexError::FieldType);
                     }
-                }else {
+                } else {
                     return Err(IndexError::NotFoundField);
                 }
-
             }
             for tag in info.tags().unwrap() {
-                let tag_name :String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
-                if let Some(v) = schema.fields.get(&tag_name){
+                let tag_name: String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
+                if let Some(v) = schema.fields.get(&tag_name) {
                     if ColumnType::Tag != v.column_type {
                         return Err(IndexError::FieldType);
                     }
-                }else {
+                } else {
                     return Err(IndexError::NotFoundField);
                 }
             }
@@ -185,17 +180,13 @@ impl DBIndex {
         }
     }
 
-    pub fn check_field_type_or_else_add(
-        &self,
-        series_id: u64,
-        info: &Point,
-    ) -> IndexResult<()> {
+    pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
         let mut schema = &mut TableSchema {
             db: "".to_string(),
             name: "".to_string(),
             schema_id: 0,
-            fields: Default::default()
+            fields: Default::default(),
         };
         let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
@@ -214,6 +205,12 @@ impl DBIndex {
 
         let mut schema_change = false;
         let mut check_fn = |field: &mut TableFiled| -> IndexResult<()> {
+            let codec = match schema.fields.get(&field.name) {
+                None => 0,
+                Some(v) => v.codec,
+            };
+            field.codec = codec;
+
             match schema.fields.get(&field.name) {
                 Some(v) => {
                     if field.column_type != v.column_type {
@@ -236,16 +233,32 @@ impl DBIndex {
 
         //check fields
         for field in info.fields().unwrap() {
-            check_fn(&mut TableFiled::new(0, String::from_utf8(field.name().unwrap().to_vec()).unwrap(), ColumnType::from_i32(field.type_().0)))?
+            let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
+            check_fn(&mut TableFiled::new(
+                0,
+                field_name,
+                ColumnType::from_i32(field.type_().0),
+                0,
+            ))?
         }
 
         //check tags
         for tag in info.tags().unwrap() {
-            check_fn(&mut TableFiled::new(0, String::from_utf8(tag.key().unwrap().to_vec()).unwrap(), ColumnType::Tag))?
+            check_fn(&mut TableFiled::new(
+                0,
+                String::from_utf8(tag.key().unwrap().to_vec()).unwrap(),
+                ColumnType::Tag,
+                0,
+            ))?
         }
 
         //check timestamp
-        check_fn(&mut TableFiled::new(0, TIME_STAMP_NAME.to_string(), ColumnType::Time))?;
+        check_fn(&mut TableFiled::new(
+            0,
+            TIME_STAMP_NAME.to_string(),
+            ColumnType::Time,
+            0,
+        ))?;
 
         //schema changed store it
         if schema_change {
@@ -266,7 +279,9 @@ impl DBIndex {
         if let Some(data) = self.storage.get(key.as_bytes())? {
             if let Ok(list) = bincode::deserialize::<TableSchema>(&data) {
                 //todo: remove copy
-                self.table_schema.write().insert(tab.to_string(), list.clone());
+                self.table_schema
+                    .write()
+                    .insert(tab.to_string(), list.clone());
                 return Ok(Some(list));
             }
         }
@@ -429,5 +444,19 @@ impl DBIndex {
         }
 
         Ok(result)
+    }
+
+    pub fn create_table(&self, schema: &TableSchema) -> IndexResult<()> {
+        let data = bincode::serialize(schema).unwrap();
+        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, schema.name);
+        self.table_schema
+            .write()
+            .insert(schema.name.clone(), schema.clone());
+        self.schema_id
+            .write()
+            .insert(schema.name.clone(), schema.schema_id);
+        self.storage.set(key.as_bytes(), &data)?;
+        self.flush()?;
+        Ok(())
     }
 }
