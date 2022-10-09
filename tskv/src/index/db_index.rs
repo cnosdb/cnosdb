@@ -182,9 +182,11 @@ impl DBIndex {
         let mut schema = &mut TableSchema::default();
         let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
+        let mut new_schema = false;
         match fields.get_mut(&table_name) {
             Some(fields) => schema = fields,
             None => {
+                new_schema = true;
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
@@ -239,9 +241,15 @@ impl DBIndex {
             ))?
         }
         //schema changed store it
-        if schema_change {
-            schema.schema_id = self.incr_schema_id(&table_name);
+        if new_schema {
+            schema.schema_id = 0;
+        } else if schema_change {
+            schema.schema_id += 1;
         }
+        // case dead lock
+        // if schema_change {
+        //     schema.schema_id = self.incr_schema_id(&table_name);
+        // }
         let data = bincode::serialize(schema).unwrap();
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
         self.storage.set(key.as_bytes(), &data)?;

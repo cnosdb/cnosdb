@@ -9,6 +9,7 @@
 
 use std::any::Any;
 use std::{collections::BTreeMap, sync::Arc};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -76,6 +77,32 @@ impl TableSchema {
     }
     pub fn fields(&self) -> &BTreeMap<String, TableFiled> {
         &self.fields
+    }
+
+    pub fn field_fields_num(&self) -> usize {
+        let mut ans = 0;
+        for i in self.fields.iter() {
+            if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
+                ans += 1;
+            }
+        }
+        ans
+    }
+
+    // return (table_field_id, index)
+    pub fn fields_id(&self) -> HashMap<u64, usize> {
+        let mut ans = vec![];
+        for i in self.fields.iter() {
+            if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
+                ans.push(i.1.id);
+            }
+        }
+        ans.sort();
+        let mut map = HashMap::new();
+        for (i,id) in ans.iter().enumerate() {
+            map.insert(*id, i);
+        }
+        map
     }
 }
 
