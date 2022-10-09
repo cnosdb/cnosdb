@@ -143,7 +143,10 @@ impl Database {
         }
     }
 
-    pub fn build_write_group(&self , points: FlatBufferPoint) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
+    pub fn build_write_group(
+        &self,
+        points: FlatBufferPoint,
+    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         if self.opt.storage.hard_write {
             self.build_write_group_hard_interface(points)
         } else {
@@ -161,7 +164,7 @@ impl Database {
             let sid = self.build_index(&point)?;
             match self.index.check_field_type_from_cache(sid, &point) {
                 Ok(_) => {}
-                Err(e) => return Err(Error::IndexErr { source: e })
+                Err(e) => return Err(Error::IndexErr { source: e }),
             }
 
             self.build_row_data(&mut map, point, sid)
@@ -169,14 +172,19 @@ impl Database {
         Ok(map)
     }
 
-    pub fn build_write_group_interface(&self, points: FlatBufferPoint) ->  Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
+    pub fn build_write_group_interface(
+        &self,
+        points: FlatBufferPoint,
+    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
             match self.index.check_field_type_from_cache(sid, &point) {
                 Ok(_) => {}
                 Err(_) => {
-                    self.index.check_field_type_or_else_add(sid, &point).context(error::IndexErrSnafu)?;
+                    self.index
+                        .check_field_type_or_else_add(sid, &point)
+                        .context(error::IndexErrSnafu)?;
                 }
             }
 
@@ -185,7 +193,12 @@ impl Database {
         Ok(map)
     }
 
-    fn build_row_data(&self, map: &mut HashMap<(SeriesId, SchemaId), RowGroup>, point: Point, sid: u64) {
+    fn build_row_data(
+        &self,
+        map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
+        point: Point,
+        sid: u64,
+    ) {
         let row = RowData::from(point);
         let schema_id = 0;
         let schema = vec![];
@@ -197,7 +210,7 @@ impl Database {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
             },
-            size: 0
+            size: 0,
         });
 
         entry.range.merge(&TimeRange {

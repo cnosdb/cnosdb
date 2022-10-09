@@ -4,6 +4,7 @@ use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
+use models::schema::TableSchema;
 use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -14,8 +15,6 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use trace::debug;
 use tracing::log::info;
-use models::schema::TableSchema;
-use crate::tsm::codec::Encoding::Default;
 
 pub type EngineRef = Arc<dyn Engine>;
 
@@ -38,6 +37,8 @@ pub trait Engine: Send + Sync + Debug {
     ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>;
 
     fn drop_database(&self, database: &str) -> Result<()>;
+
+    fn create_table(&self, schema: &TableSchema);
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()>;
 
@@ -101,6 +102,10 @@ impl Engine for MockEngine {
         Ok(())
     }
 
+    fn create_table(&self, schema: &TableSchema) {
+        todo!()
+    }
+
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
         println!("drop_table db:{:?}, table:{:?}", database, table);
         Ok(())
@@ -118,7 +123,11 @@ impl Engine for MockEngine {
 
     fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
-        Ok(Some(TableSchema::new(db.to_string(), tab.to_string(), BTreeMap::default())))
+        Ok(Some(TableSchema::new(
+            db.to_string(),
+            tab.to_string(),
+            BTreeMap::default(),
+        )))
     }
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {

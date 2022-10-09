@@ -18,7 +18,7 @@ use crate::{
     tsm::{
         codec::{
             get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec,
-            get_ts_codec, get_u64_codec, DataBlockEncoding, Encoding,
+            get_ts_codec, get_u64_codec, DataBlockEncoding,
         },
         get_data_block_meta_unchecked, get_index_meta_unchecked,
         tombstone::TsmTombstone,
@@ -668,7 +668,7 @@ pub mod tsm_reader_tests {
         file_manager::{self, get_file_manager},
         file_utils,
         tseries_family::TimeRange,
-        tsm::{codec::Encoding, DataBlock, TsmReader, TsmTombstone, TsmWriter},
+        tsm::{DataBlock, TsmReader, TsmTombstone, TsmWriter},
     };
 
     fn prepare(path: impl AsRef<Path>) -> (PathBuf, PathBuf) {

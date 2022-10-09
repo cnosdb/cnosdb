@@ -12,14 +12,12 @@ use datafusion::{
     logical_plan::combine_filters,
     scalar::ScalarValue,
 };
-use models::{Error, Result};
 use models::schema::{TableFiled, TableSchema};
+use models::{Error, Result};
 
 use trace::info;
 
-use crate::{
-    helper::RowExpressionToDomainsVisitor,
-};
+use crate::helper::RowExpressionToDomainsVisitor;
 
 pub type PredicateRef = Arc<Predicate>;
 
@@ -715,7 +713,7 @@ where
 impl<T: Eq + Hash + Clone> Default for ColumnDomains<T> {
     fn default() -> Self {
         ColumnDomains {
-            column_to_domain: None
+            column_to_domain: None,
         }
     }
 }

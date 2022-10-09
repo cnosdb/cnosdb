@@ -1,14 +1,15 @@
+pub mod codec;
 mod consistency_level;
 mod errors;
 mod field_info;
 mod node_info;
 mod points;
+pub mod schema;
 mod series_info;
 mod tag;
 pub mod utils;
 #[macro_use]
 pub mod error_code;
-pub mod schema;
 
 use parking_lot::RwLock;
 use std::sync::Arc;

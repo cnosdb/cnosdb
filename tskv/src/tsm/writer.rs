@@ -13,8 +13,8 @@ use crate::{
     error::{self, Error, Result},
     file_manager, file_utils,
     tsm::{
-        codec::Encoding, BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry,
-        IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+        BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
+        BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
     },
 };
 
@@ -485,8 +485,8 @@ mod test {
         file_manager::{self, get_file_manager, FileManager},
         memcache::FieldVal,
         tsm::{
-            codec::{DataBlockEncoding, Encoding},
-            new_tsm_writer, ColumnReader, DataBlock, IndexReader, TsmReader, TsmWriter,
+            codec::DataBlockEncoding, new_tsm_writer, ColumnReader, DataBlock, IndexReader,
+            TsmReader, TsmWriter,
         },
     };
 

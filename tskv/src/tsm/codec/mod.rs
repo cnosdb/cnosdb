@@ -8,6 +8,7 @@ mod timestamp;
 mod unsigned;
 
 pub use instance::*;
+use models::codec::Encoding;
 
 /// Max number of bytes needed to store a varint-encoded 32-bit integer.
 const MAX_VAR_INT_32: usize = 5;

@@ -8,12 +8,12 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
+use models::schema::{is_time_column, ColumnType, TableFiled, TableSchema, TIME_FIELD_NAME};
 use models::{define_result, ValueType};
 use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
-use models::schema::{ColumnType, is_time_column, TableSchema, TIME_FIELD_NAME, TableFiled};
 use trace::debug;
 
 define_result!(PointUtilError);
@@ -275,7 +275,7 @@ macro_rules! define_extract_time_column_from_func {
                     },
                     ArrowDataType::Int64 => Ok(cast_arrow_array::<Int64Array>(array)?.iter().collect()),
                     other => Err(PointUtilError::InvalidArrayType {
-                        expected: ArrowDataType::from(TableFiled::time_field().column_type).to_string(),
+                        expected: ArrowDataType::from(TableFiled::time_field(0).column_type).to_string(),
                         found: other.to_string(),
                     }),
                 }

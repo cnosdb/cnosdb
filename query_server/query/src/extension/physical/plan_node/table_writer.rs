@@ -24,9 +24,7 @@ use futures::StreamExt;
 use models::schema::TableSchema;
 use trace::debug;
 
-use crate::{
-    data_source::sink::{RecordBatchSink, RecordBatchSinkProvider},
-};
+use crate::data_source::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 pub struct TableWriterExec {
     input: Arc<dyn ExecutionPlan>,
