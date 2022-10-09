@@ -16,7 +16,7 @@ use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
 
 use config::get_config;
-use models::{FieldId, InMemPoint, Timestamp, ValueType};
+use models::{FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
@@ -696,7 +696,7 @@ impl TseriesFamily {
             .expect("error send flush req to kvcore");
     }
 
-    pub fn put_points(&self, seq: u64, points: HashMap<(u64, u32), RowGroup>) {
+    pub fn put_points(&self, seq: u64, points: HashMap<(SeriesId, SchemaId), RowGroup>) {
         for ((sid, schema_id), group) in points {
             let mem = self.super_version.caches.mut_cache.read();
             mem.write_group(sid, seq, group);

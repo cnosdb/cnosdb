@@ -11,7 +11,7 @@ use crate::{
     Error, TimeRange, TseriesFamilyId,
 };
 use models::utils::{split_id, unite_id};
-use models::{SeriesKey, Timestamp};
+use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
 
 use parking_lot::RwLock;
 use protos::models::{Point, Points};
@@ -22,7 +22,7 @@ use trace::{debug, error, info};
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
 use models::schema::TableSchema;
 
-use crate::index::IndexResult;
+use crate::index::{IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
 use crate::{
     index::db_index,
@@ -143,38 +143,69 @@ impl Database {
         }
     }
 
-    pub fn build_write_group(
+    pub fn build_write_group(&self , points: FlatBufferPoint) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
+        if self.opt.storage.hard_write {
+            self.build_write_group_hard_interface(points)
+        } else {
+            self.build_write_group_interface(points)
+        }
+    }
+
+    pub fn build_write_group_hard_interface(
         &self,
         points: FlatBufferPoint,
-    ) -> Result<HashMap<(u64, u32), RowGroup>> {
+    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
-            //todo: check_field_type
+            match self.index.check_field_type_from_cache(sid, &point) {
+                Ok(_) => {}
+                Err(e) => return Err(Error::IndexErr { source: e })
+            }
 
-            let row = RowData::from(point);
-            let schema_id = 0;
-            let schema = vec![];
-            let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-                schema_id,
-                schema,
-                rows: vec![],
-                range: TimeRange {
-                    min_ts: i64::MAX,
-                    max_ts: i64::MIN,
-                },
-                size: 0
-            });
-
-            entry.range.merge(&TimeRange {
-                min_ts: row.ts,
-                max_ts: row.ts,
-            });
-            //todo: remove this copy
-            entry.rows.push(row);
+            self.build_row_data(&mut map, point, sid)
         }
         Ok(map)
+    }
+
+    pub fn build_write_group_interface(&self, points: FlatBufferPoint) ->  Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
+        let mut map = HashMap::new();
+        for point in points {
+            let sid = self.build_index(&point)?;
+            match self.index.check_field_type_from_cache(sid, &point) {
+                Ok(_) => {}
+                Err(_) => {
+                    self.index.check_field_type_or_else_add(sid, &point).context(error::IndexErrSnafu)?;
+                }
+            }
+
+            self.build_row_data(&mut map, point, sid)
+        }
+        Ok(map)
+    }
+
+    fn build_row_data(&self, map: &mut HashMap<(SeriesId, SchemaId), RowGroup>, point: Point, sid: u64) {
+        let row = RowData::from(point);
+        let schema_id = 0;
+        let schema = vec![];
+        let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
+            schema_id,
+            schema,
+            rows: vec![],
+            range: TimeRange {
+                min_ts: i64::MAX,
+                max_ts: i64::MIN,
+            },
+            size: 0
+        });
+
+        entry.range.merge(&TimeRange {
+            min_ts: row.ts,
+            max_ts: row.ts,
+        });
+        //todo: remove this copy
+        entry.rows.push(row);
     }
 
     fn build_index(&self, info: &Point) -> Result<u64> {
