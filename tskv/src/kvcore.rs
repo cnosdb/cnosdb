@@ -503,7 +503,6 @@ impl Engine for TsKv {
         };
 
         // TODO Release global DropTable flag.
-
         recv_ret
     }
 
