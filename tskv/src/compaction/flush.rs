@@ -292,7 +292,7 @@ impl FlushTask {
     ) -> Result<Vec<CompactMeta>> {
         if let Some(writer) = tsm_writer.as_mut() {
             writer.write_index().context(error::WriteTsmSnafu)?;
-            writer.flush().context(error::WriteTsmSnafu)?;
+            writer.finish().context(error::WriteTsmSnafu)?;
             info!(
                 "Flush: File: {} write finished ({} B).",
                 writer.sequence(),
@@ -301,7 +301,7 @@ impl FlushTask {
         }
         if let Some(writer) = delta_writer.as_mut() {
             writer.write_index().context(error::WriteTsmSnafu)?;
-            writer.flush().context(error::WriteTsmSnafu)?;
+            writer.finish().context(error::WriteTsmSnafu)?;
             info!(
                 "Flush: File: {} write finished ({} B).",
                 writer.sequence(),

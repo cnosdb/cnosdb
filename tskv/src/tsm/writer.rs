@@ -92,6 +92,9 @@ pub enum WriteTsmError {
 
     #[snafu(display("Max file size exceed: {}", source))]
     MaxFileSizeExceed { source: MaxFileSizeExceedError },
+
+    #[snafu(display("Tsm writer has been finished: {}", path.display()))]
+    Finished { path: PathBuf },
 }
 
 impl From<WriteTsmError> for Error {
@@ -161,7 +164,10 @@ impl IndexBuf {
 /// writer.flush().unwrap();
 /// ```
 pub struct TsmWriter {
-    path: PathBuf,
+    tmp_path: PathBuf,
+    final_path: PathBuf,
+    finished: bool,
+
     writer: FileCursor,
     /// Store tsm sequence for debug
     sequence: u64,
@@ -183,9 +189,16 @@ impl TsmWriter {
         is_delta: bool,
         max_size: u64,
     ) -> Result<Self> {
-        let writer = file_manager::create_file(&path)?.into_cursor();
+        let final_path: PathBuf = path.as_ref().into();
+        let mut tmp_path_str = final_path.as_os_str().to_os_string();
+        tmp_path_str.push(".tmp");
+        let tmp_path = PathBuf::from(tmp_path_str);
+
+        let writer = file_manager::create_file(&tmp_path)?.into_cursor();
         let mut w = Self {
-            path: path.as_ref().into(),
+            tmp_path,
+            final_path,
+            finished: false,
             writer,
             sequence,
             is_delta,
@@ -201,8 +214,16 @@ impl TsmWriter {
         Ok(w)
     }
 
+    pub fn finished(&self) -> bool {
+        self.finished
+    }
+
     pub fn path(&self) -> PathBuf {
-        self.path.clone()
+        if self.finished {
+            self.final_path.clone()
+        } else {
+            self.tmp_path.clone()
+        }
     }
 
     pub fn sequence(&self) -> u64 {
@@ -226,6 +247,11 @@ impl TsmWriter {
     }
 
     pub fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
+        if self.finished {
+            return Err(WriteTsmError::Finished {
+                path: self.final_path.clone(),
+            });
+        }
         let mut write_pos = self.writer.pos();
         if let Some(rg) = block.time_range() {
             self.min_ts = self.min_ts.min(rg.0);
@@ -245,6 +271,11 @@ impl TsmWriter {
     }
 
     pub fn write_raw(&mut self, block_meta: &BlockMeta, block: &[u8]) -> WriteTsmResult<usize> {
+        if self.finished {
+            return Err(WriteTsmError::Finished {
+                path: self.final_path.clone(),
+            });
+        }
         let mut write_pos = self.writer.pos();
         self.min_ts = self.min_ts.min(block_meta.min_ts());
         self.max_ts = self.max_ts.max(block_meta.max_ts());
@@ -262,6 +293,11 @@ impl TsmWriter {
     }
 
     pub fn write_index(&mut self) -> WriteTsmResult<usize> {
+        if self.finished {
+            return Err(WriteTsmError::Finished {
+                path: self.final_path.clone(),
+            });
+        }
         let mut size = 0_usize;
 
         self.index_buf.set_index_offset(self.writer.pos());
@@ -278,8 +314,16 @@ impl TsmWriter {
         Ok(size)
     }
 
-    pub fn flush(&self) -> WriteTsmResult<()> {
-        self.writer.sync_all(FileSync::Hard).context(IOSnafu)
+    pub fn finish(&mut self) -> WriteTsmResult<()> {
+        if self.finished {
+            return Err(WriteTsmError::Finished {
+                path: self.final_path.clone(),
+            });
+        }
+        self.writer.sync_all(FileSync::Hard).context(IOSnafu)?;
+        std::fs::rename(&self.tmp_path, &self.final_path).context(IOSnafu)?;
+        self.finished = true;
+        Ok(())
     }
 }
 
@@ -464,7 +508,7 @@ mod test {
             }
         }
         writer.write_index().unwrap();
-        writer.flush().unwrap();
+        writer.finish().unwrap();
     }
 
     fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, Vec<DataBlock>> {
