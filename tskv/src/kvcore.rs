@@ -478,6 +478,8 @@ impl Engine for TsKv {
     }
 
     fn create_table(&self, schema: &TableSchema) {
+        // todo : remove this create db after impl create db sql
+        self.version_set.write().create_db(&schema.db);
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
             match db.read().get_index().create_table(schema) {
                 Ok(_) => {}

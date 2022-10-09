@@ -153,7 +153,6 @@ impl SchemaProvider for UserSchema {
             None => {}
             Some(schema) => self.engine.create_table(&schema),
         }
-        // self.engine.create_table();
         Ok(tables.insert(name, table))
     }
 

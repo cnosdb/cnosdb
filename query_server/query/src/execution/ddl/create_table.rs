@@ -49,14 +49,14 @@ impl DDLDefinitionTask for CreateTableTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, Err(_)) => {
-                create_table(&self.stmt, catalog).await?;
+                create_table(&self.stmt, catalog)?;
                 Ok(Output::Nil(()))
             }
         }
     }
 }
 
-async fn create_table(stmt: &CreateTable, catalog: MetaDataRef) -> Result<(), ExecutionError> {
+fn create_table(stmt: &CreateTable, catalog: MetaDataRef) -> Result<Arc<TableSchema>, ExecutionError> {
     let CreateTable {
         schema, name, tags, ..
     } = stmt;
@@ -67,15 +67,16 @@ async fn create_table(stmt: &CreateTable, catalog: MetaDataRef) -> Result<(), Ex
         kv_fields.insert(tag.clone(), kv_field);
     }
 
+    let start = kv_fields.len();
     for (i, field) in schema.fields().iter().enumerate() {
         let field_name = field.name();
         let id = if field_name == TIME_FIELD {
             get_time = true;
             0
         } else if get_time == false {
-            kv_fields.len() + i + 1
+            start + i + 1
         } else {
-            kv_fields.len() + i
+            start + i
         };
         let kv_field = TableFiled::new(
             id as u64,
@@ -92,11 +93,12 @@ async fn create_table(stmt: &CreateTable, catalog: MetaDataRef) -> Result<(), Ex
     }
 
     let table_schema = TableSchema::new(catalog.schema_name(), name.clone(), kv_fields);
+    let table_schema = Arc::new(table_schema);
     catalog
-        .create_table(name, Arc::new(table_schema))
+        .create_table(name, table_schema.clone())
         .context(execution::MetadataSnafu)?;
 
-    Ok(())
+    Ok(table_schema)
 }
 
 fn data_type_to_column_type(data_type: &DataType) -> ColumnType {
@@ -127,3 +129,93 @@ fn codec_name_to_codec(codec_name: &str) -> u8 {
         _ => 15,
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::result;
+    use std::sync::Arc;
+    use tokio::runtime;
+    use config::get_config;
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::error::DataFusionError;
+    use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
+    use datafusion::sql::planner::ContextProvider;
+    use datafusion::sql::TableReference;
+    use spi::query::logical_planner::{DDLPlan, Plan};
+    use tskv::{kv_option, TsKv};
+    use tskv::engine::Engine;
+    use crate::execution::ddl::create_table::create_table;
+    use crate::extension::expr::load_all_functions;
+    use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+    use crate::metadata::{LocalCatalogMeta, MetaData};
+    use crate::sql::parser::ExtParser;
+    use crate::sql::planner::SqlPlaner;
+
+    pub type Result<T> = result::Result<T, DataFusionError>;
+
+
+    #[derive(Debug)]
+    struct MockContext {}
+
+    impl ContextProvider for MockContext {
+        fn get_table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>> {
+            unimplemented!()
+        }
+
+        fn get_function_meta(&self, _name: &str) -> Option<Arc<ScalarUDF>> {
+            unimplemented!()
+        }
+
+        fn get_aggregate_meta(&self, _name: &str) -> Option<Arc<AggregateUDF>> {
+            unimplemented!()
+        }
+
+        fn get_variable_type(&self, _: &[String]) -> Option<DataType> {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn test_create_table() {
+        let mut global_config = get_config("../../config/config.toml");
+        let opt = kv_option::Options::from(&global_config);
+        let rt = Arc::new(runtime::Runtime::new().unwrap());
+        let (rt, tskv) = rt.block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) });
+        let tskv = Arc::new(tskv);
+        let mut function_manager = SimpleFunctionMetadataManager::default();
+        load_all_functions(&mut function_manager).unwrap();
+        let meta = Arc::new(LocalCatalogMeta::new_with_default(
+            tskv.clone(),
+            Arc::new(function_manager),
+        ));
+        let sql = "CREATE TABLE IF NOT EXISTS test\
+            (column1 BIGINT CODEC(DELTA),\
+            column2 STRING CODEC(GZIP),\
+            column3 BIGINT UNSIGNED CODEC(NULL),\
+            column4 BOOLEAN,\
+            column5 DOUBLE CODEC(GORILLA),\
+            TAGS(column6, column7))";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+        let plan = match plan {
+            Plan::Query(_) => panic!("not possible"),
+            Plan::DDL(plan) => {plan}
+        };
+        let plan = match plan {
+            DDLPlan::Drop(_) => panic!("not possible"),
+            DDLPlan::CreateExternalTable(_) => panic!("not possible"),
+            DDLPlan::CreateTable(plan) => {plan}
+        };
+
+        create_table(&plan, meta.clone()).unwrap();
+        let ans = format!("{:?}",tskv.get_table_schema(&meta.schema_name(), "test"));
+        let expected = r#"Ok(Some(TableSchema { db: "public", name: "test", schema_id: 0, fields: {"column1": TableFiled { id: 3, name: "column1", column_type: Field(Integer), codec: 2 }, "column2": TableFiled { id: 4, name: "column2", column_type: Field(String), codec: 4 }, "column3": TableFiled { id: 5, name: "column3", column_type: Field(Unsigned), codec: 1 }, "column4": TableFiled { id: 6, name: "column4", column_type: Field(Boolean), codec: 0 }, "column5": TableFiled { id: 7, name: "column5", column_type: Field(Float), codec: 6 }, "column6": TableFiled { id: 1, name: "column6", column_type: Tag, codec: 0 }, "column7": TableFiled { id: 2, name: "column7", column_type: Tag, codec: 0 }, "time": TableFiled { id: 0, name: "time", column_type: Time, codec: 0 }} }))"#;
+        assert_eq!(ans, expected);
+    }
+}
+
