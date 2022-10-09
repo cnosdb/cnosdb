@@ -12,7 +12,7 @@ use spi::{
         logical_planner::LogicalPlanner,
         optimizer::Optimizer,
         parser::Parser,
-        session::{IsiphoSessionCtx, IsiphoSessionCtxFactory},
+        session::IsiphoSessionCtxFactory,
     },
     service::protocol::{Query, QueryId},
 };
@@ -57,11 +57,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     async fn execute_query(&self, _id: QueryId, query: &Query) -> Result<Vec<Output>> {
         let mut results = vec![];
 
-        let session = self.session_factory.default_isipho_session_ctx();
+        let session = self
+            .session_factory
+            .create_isipho_session_ctx(query.context().clone());
+
         let metadata = self
             .metadata
-            .with_catalog(&query.context().catalog)
-            .with_database(&query.context().database);
+            .with_catalog(session.catalog())
+            .with_database(session.database());
         let scheme_provider = MetadataProvider::new(metadata);
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
@@ -74,12 +77,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
                 Arc::new(QueryStateMachine::begin(query.clone(), session.clone()));
 
             let result = self
-                .execute_statement(
-                    stmt.clone(),
-                    &session,
-                    &logical_planner,
-                    query_state_machine,
-                )
+                .execute_statement(stmt.clone(), &logical_planner, query_state_machine)
                 .await?;
 
             results.push(result);
@@ -97,14 +95,13 @@ impl SimpleQueryDispatcher {
     async fn execute_statement<S: ContextProvider>(
         &self,
         stmt: ExtStatement,
-        session: &IsiphoSessionCtx,
         logical_planner: &DefaultLogicalPlanner<S>,
         query_state_machine: Arc<QueryStateMachine>,
     ) -> Result<Output> {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
-            .create_logical_plan(stmt.clone(), session)
+            .create_logical_plan(stmt.clone(), &query_state_machine.session)
             .context(LogicalPlannerSnafu)?;
         query_state_machine.end_analyze();
 

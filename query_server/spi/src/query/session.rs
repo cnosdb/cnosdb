@@ -1,14 +1,17 @@
-use std::sync::Arc;
-
 use datafusion::{
-    catalog::catalog::CatalogProvider,
     config::OPT_OPTIMIZER_SKIP_FAILED_RULES,
     execution::context,
     prelude::{SessionConfig, SessionContext},
 };
 
+use crate::service::protocol::Context;
+
 #[derive(Clone)]
 pub struct IsiphoSessionCtx {
+    // todo
+    // ...
+    catalog: String,
+    database: String,
     inner: SessionContext,
 }
 
@@ -16,67 +19,62 @@ impl IsiphoSessionCtx {
     pub fn inner(&self) -> &SessionContext {
         &self.inner
     }
-}
 
-pub struct IsiphoSessionCtxFactory {
-    default_session_config: SessionConfig,
-}
-
-impl Default for IsiphoSessionCtxFactory {
-    fn default() -> Self {
-        let mut default_session_config: SessionConfig = Default::default();
-
-        default_session_config
-            .config_options
-            .set_bool(OPT_OPTIMIZER_SKIP_FAILED_RULES, false);
-
-        Self {
-            default_session_config,
-        }
+    pub fn catalog(&self) -> &str {
+        &self.catalog
     }
+
+    pub fn database(&self) -> &str {
+        &self.database
+    }
+}
+
+#[derive(Default)]
+pub struct IsiphoSessionCtxFactory {
+    // TODO global config
 }
 
 impl IsiphoSessionCtxFactory {
-    pub fn new(default_session_config: SessionConfig) -> IsiphoSessionCtxFactory {
-        Self {
-            default_session_config,
-        }
-    }
-
-    pub fn create_isipho_session_ctx_with_config(
-        catalog_name: String,
-        catalog: Arc<dyn CatalogProvider>,
-        session_config: SessionConfig,
-    ) -> IsiphoSessionCtx {
-        let df_session_state = context::default_session_builder(session_config);
-        let df_session_ctx = SessionContext::with_state(df_session_state);
-
-        df_session_ctx.register_catalog(catalog_name, catalog);
-
-        IsiphoSessionCtx {
-            inner: df_session_ctx,
-        }
-    }
-
-    pub fn create_isipho_session_ctx(
-        &self,
-        catalog_name: String,
-        catalog: Arc<dyn CatalogProvider>,
-    ) -> IsiphoSessionCtx {
-        Self::create_isipho_session_ctx_with_config(
-            catalog_name,
-            catalog,
-            self.default_session_config.clone(),
-        )
-    }
-
-    pub fn default_isipho_session_ctx(&self) -> IsiphoSessionCtx {
-        let df_session_state =
-            context::default_session_builder(self.default_session_config.clone());
+    pub fn create_isipho_session_ctx(&self, context: Context) -> IsiphoSessionCtx {
+        let isipho_ctx = context.session_config().to_owned();
+        // TODO Use global configuration as the default configuration for session
+        let df_session_state = context::default_session_builder(isipho_ctx.inner);
         let df_session_ctx = SessionContext::with_state(df_session_state);
 
         IsiphoSessionCtx {
+            catalog: context.user_info().to_owned().user,
+            database: context.database().to_owned(),
             inner: df_session_ctx,
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct IsiphoSessionConfig {
+    inner: SessionConfig,
+}
+
+impl Default for IsiphoSessionConfig {
+    fn default() -> Self {
+        let mut inner: SessionConfig = Default::default();
+
+        inner
+            .config_options
+            .set_bool(OPT_OPTIMIZER_SKIP_FAILED_RULES, false);
+
+        Self { inner }
+    }
+}
+
+impl IsiphoSessionConfig {
+    pub fn to_df_config(&self) -> &SessionConfig {
+        &self.inner
+    }
+
+    /// Customize target_partitions
+    /// partition count must be greater than zero
+    pub fn with_target_partitions(mut self, n: usize) -> Self {
+        self.inner = self.inner.with_target_partitions(n);
+        self
     }
 }

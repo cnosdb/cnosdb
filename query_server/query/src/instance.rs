@@ -83,7 +83,11 @@ mod tests {
         datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
     };
     use futures::StreamExt;
-    use spi::query::execution::Output;
+    use spi::{
+        catalog::DEFAULT_CATALOG,
+        query::execution::Output,
+        service::protocol::{ContextBuilder, UserInfo},
+    };
     use tskv::engine::MockEngine;
 
     #[macro_export]
@@ -104,7 +108,11 @@ mod tests {
     }
 
     async fn exec_sql(db: &Cnosdbms, sql: &str) -> Vec<RecordBatch> {
-        let query = Query::new(Default::default(), sql.to_string());
+        let user = UserInfo {
+            user: DEFAULT_CATALOG.to_string(),
+            password: "todo".to_string(),
+        };
+        let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
 
         // let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
         let mut actual = vec![];
@@ -252,8 +260,13 @@ mod tests {
 
         let db = result_db.unwrap();
 
+        let user = UserInfo {
+            user: DEFAULT_CATALOG.to_string(),
+            password: "todo".to_string(),
+        };
+
         let query = Query::new(
-            Default::default(),
+            ContextBuilder::new(user).build(),
             "drop database if exists test; \
                     drop database test; \
                     drop table if exists test; \
