@@ -3,15 +3,17 @@ mod tests {
     use serial_test::serial;
     use std::sync::Arc;
     use std::time::Duration;
-    use snafu::ResultExt;
     use tokio::runtime;
     use tokio::runtime::Runtime;
 
     use config::get_config;
-    use protos::{kv_service, models_helper, models as fb_models};
+    use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
-    use tskv::{error, kv_option, TsKv};
+    use tskv::{kv_option, TsKv};
+    use tskv::{
+        file_manager::{self, list_file_names, FileManager},
+    };
 
     fn get_tskv() -> (Arc<Runtime>, TsKv) {
         let mut global_config = get_config("../config/config.toml");
@@ -48,6 +50,38 @@ mod tests {
         });
     }
 
+    // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
+    #[test]
+    #[serial]
+    fn test_kvcore_flush() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let (rt, tskv) = get_tskv();
+
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
+        fbb.finish(points, None);
+        let points = fbb.finished_data().to_vec();
+        let request = kv_service::WritePointsRpcRequest { version: 1, points };
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        });
+
+        assert!(file_manager::try_exists("dev/db/data/db/tsm/0"))
+    }
+
     #[test]
     #[ignore]
     fn test_kvcore_big_write() {
@@ -80,9 +114,25 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        });
+        rt.block_on(async {
+            tskv.write(request.clone()).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        });
+        rt.block_on(async {
             tskv.write(request).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
-        })
+        });
+
+        assert!(file_manager::try_exists("dev/db/data/db/tsm/0"));
+        assert!(file_manager::try_exists("dev/db/data/db/delta/0"));
+
     }
 
     #[tokio::test]

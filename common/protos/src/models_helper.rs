@@ -123,7 +123,7 @@ mod test {
             let timestamp = if i % 2 == 0 {
                 Local::now().timestamp_nanos()
             } else {
-                1
+                i64::MIN
             };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();

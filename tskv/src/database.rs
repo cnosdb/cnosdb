@@ -3,6 +3,8 @@ use std::{
     path::{self, Path},
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
+use std::mem::size_of;
+use std::mem::size_of_val;
 
 use parking_lot::RwLock;
 use snafu::ResultExt;
@@ -210,9 +212,13 @@ impl Database {
             }
         };
 
-        let row = RowData::point_to_row_data(point, table_schema);
+        let (row, schema) = RowData::point_to_row_data(point, table_schema, sid);
+        let schema_size = if !schema.is_empty() {
+            size_of_val(&schema) + schema.capacity() * size_of_val(&schema[0])
+        } else {
+            size_of_val(&schema)
+        };
         let schema_id = 0;
-        let schema = vec![];
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
             schema_id,
             schema,
@@ -221,13 +227,14 @@ impl Database {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
             },
-            size: 0,
+            size: size_of::<RowGroup>() + schema_size,
         });
 
         entry.range.merge(&TimeRange {
             min_ts: row.ts,
             max_ts: row.ts,
         });
+        entry.size += row.size();
         //todo: remove this copy
         entry.rows.push(row);
     }

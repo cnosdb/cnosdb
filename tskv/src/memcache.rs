@@ -2,7 +2,7 @@ use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 
 use models::{utils, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
-use protos::models::{Field, FieldType};
+use protos::models::{Field, FieldType, Point};
 
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;
@@ -22,6 +22,7 @@ use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
 use models::schema::{TableFiled, TableSchema};
+use models::utils::unite_id;
 
 use protos::models as fb_models;
 
@@ -109,12 +110,14 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(p: fb_models::Point, schema: TableSchema) -> RowData {
+    pub fn point_to_row_data(p: fb_models::Point, schema: TableSchema, sid: SeriesId) -> (RowData, Vec<u32>) {
+        let mut field_id = vec![];
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_fields_num());
                 for i in 0..fields.capacity() {
                     fields.push(None);
+                    field_id.push(0);
                 }
                 fields
             }
@@ -123,6 +126,7 @@ impl RowData {
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
                 for i in 0..fields.capacity() {
                     fields.push(None);
+                    field_id.push(0);
                 }
                 for (i,f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
@@ -133,7 +137,8 @@ impl RowData {
                             match fields_id.get(&field.id) {
                                 None => {}
                                 Some(index) => {
-                                    fields[*index] = Some(FieldVal::new(val, vtype))
+                                    fields[*index] = Some(FieldVal::new(val, vtype));
+                                    field_id[*index] = field.id as u32;
                                 }
                             }
                         }
@@ -143,7 +148,24 @@ impl RowData {
             }
         };
         let ts = p.timestamp();
-        RowData { ts, fields }
+        (RowData { ts, fields }, field_id)
+    }
+
+    pub fn size(&self) -> usize {
+        let mut size = 0;
+        for i in self.fields.iter() {
+            match i {
+                None => {
+                    size += size_of_val(i);
+                }
+                Some(v) => {
+                    size += size_of_val(i) + v.heap_size();
+                }
+            }
+        }
+        size += size_of_val(&self.ts);
+        size += size_of_val(&self.fields);
+        size
     }
 }
 
