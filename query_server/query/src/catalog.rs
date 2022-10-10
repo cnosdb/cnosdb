@@ -124,7 +124,7 @@ impl SchemaProvider for UserSchema {
             fields.insert(time_field.name.clone(), time_field);
 
             for item in v.fields {
-                let field = TableFiled::from(item.1);
+                let field = item.1;
                 fields.insert(field.name.clone(), field);
             }
             let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);
@@ -151,7 +151,7 @@ impl SchemaProvider for UserSchema {
         let table_schema = table.as_any().downcast_ref::<TableSchema>();
         match table_schema {
             None => {}
-            Some(schema) => self.engine.create_table(&schema),
+            Some(schema) => self.engine.create_table(schema),
         }
         Ok(tables.insert(name, table))
     }

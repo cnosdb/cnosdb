@@ -12,7 +12,7 @@ mod tests {
     use tskv::engine::Engine;
     use tskv::{kv_option, TsKv};
     use tskv::{
-        file_manager::{self, list_file_names, FileManager},
+        file_manager
     };
 
     fn get_tskv() -> (Arc<Runtime>, TsKv) {
