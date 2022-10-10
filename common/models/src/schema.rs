@@ -140,9 +140,6 @@ pub struct TableFiled {
     pub id: u64,
     pub name: String,
     pub column_type: ColumnType,
-
-    // high 4 bit for ts code type
-    // low 4 bit for val code type
     pub codec: u8,
 }
 
@@ -172,21 +169,6 @@ impl TableFiled {
         }
     }
 }
-
-// impl From<&FieldInfo> for TableFiled {
-//     fn from(info: &FieldInfo) -> Self {
-//         let mut column = ColumnType::Field(info.value_type());
-//         if info.is_tag() {
-//             column = ColumnType::Tag;
-//         }
-//
-//         TableFiled::new(
-//             info.field_id(),
-//             String::from_utf8(info.name().to_vec()).unwrap(),
-//             column,
-//         )
-//     }
-// }
 
 impl From<ColumnType> for ArrowDataType {
     fn from(t: ColumnType) -> Self {

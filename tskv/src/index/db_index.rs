@@ -210,7 +210,6 @@ impl DBIndex {
                     if field.column_type != v.column_type {
                         return Err(IndexError::FieldType);
                     }
-                    field.id = field.id;
                 }
                 None => {
                     schema_change = true;
@@ -246,10 +245,6 @@ impl DBIndex {
         } else if schema_change {
             schema.schema_id += 1;
         }
-        // case dead lock
-        // if schema_change {
-        //     schema.schema_id = self.incr_schema_id(&table_name);
-        // }
         let data = bincode::serialize(schema).unwrap();
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
         self.storage.set(key.as_bytes(), &data)?;
@@ -298,17 +293,6 @@ impl DBIndex {
                 Ok(None)
             }
             Err(e) => Err(e),
-        }
-    }
-
-    //todo: need to persistent
-    pub fn incr_schema_id(&self, tab: &str) -> u32 {
-        match self.table_schema.write().get_mut(tab) {
-            None => 0,
-            Some(schema) => {
-                schema.schema_id += 1;
-                schema.schema_id
-            }
         }
     }
 

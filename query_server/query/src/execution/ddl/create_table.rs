@@ -73,7 +73,7 @@ fn create_table(stmt: &CreateTable, catalog: MetaDataRef) -> Result<Arc<TableSch
         let id = if field_name == TIME_FIELD {
             get_time = true;
             0
-        } else if get_time == false {
+        } else if !get_time {
             start + i + 1
         } else {
             start + i
@@ -136,7 +136,7 @@ mod test {
     use std::sync::Arc;
     use tokio::runtime;
     use config::get_config;
-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::arrow::datatypes::{DataType};
     use datafusion::error::DataFusionError;
     use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
@@ -158,7 +158,7 @@ mod test {
     struct MockContext {}
 
     impl ContextProvider for MockContext {
-        fn get_table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>> {
+        fn get_table_provider(&self, _name: TableReference) -> Result<Arc<dyn TableSource>> {
             unimplemented!()
         }
 
@@ -177,10 +177,10 @@ mod test {
 
     #[test]
     fn test_create_table() {
-        let mut global_config = get_config("../../config/config.toml");
+        let global_config = get_config("../../config/config.toml");
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
-        let (rt, tskv) = rt.block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) });
+        let (_rt, tskv) = rt.block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) });
         let tskv = Arc::new(tskv);
         let mut function_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut function_manager).unwrap();
