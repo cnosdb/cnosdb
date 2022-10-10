@@ -8,8 +8,8 @@
 //!         - Column #4
 
 use std::any::Any;
-use std::{collections::BTreeMap, sync::Arc};
 use std::collections::HashMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,7 @@ impl TableSchema {
         }
         ans.sort();
         let mut map = HashMap::new();
-        for (i,id) in ans.iter().enumerate() {
+        for (i, id) in ans.iter().enumerate() {
             map.insert(*id, i);
         }
         map

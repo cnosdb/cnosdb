@@ -330,13 +330,12 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_cnos_column(&mut self) -> Result<Vec<ColumnOption>> {
-        let mut columns = vec![];
-        columns.push(ColumnOption {
+        let mut columns = vec![ColumnOption {
             name: Ident::from(TIME_FIELD_NAME),
             is_tag: false,
             data_type: DataType::Timestamp,
             codec: "DEFAULT".to_string(),
-        });
+        }];
         if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
             return Ok(columns);
         }
