@@ -1,10 +1,10 @@
+use std::mem::size_of;
+use std::mem::size_of_val;
 use std::{
     collections::{BTreeMap, HashMap},
     path::{self, Path},
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
-use std::mem::size_of;
-use std::mem::size_of_val;
 
 use parking_lot::RwLock;
 use snafu::ResultExt;
@@ -197,15 +197,13 @@ impl Database {
     ) {
         let table_name = String::from_utf8(point.table().unwrap().to_vec()).unwrap();
         let table_schema = match self.index.get_table_schema(&table_name) {
-            Ok(schema) => {
-                match schema {
-                    None => {
-                        error!("failed get schema for table {}", table_name);
-                        return;
-                    }
-                    Some(schema) => schema
+            Ok(schema) => match schema {
+                None => {
+                    error!("failed get schema for table {}", table_name);
+                    return;
                 }
-            }
+                Some(schema) => schema,
+            },
             Err(_) => {
                 error!("failed get schema for table {}", table_name);
                 return;

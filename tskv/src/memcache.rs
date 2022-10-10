@@ -19,10 +19,10 @@ use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
-use parking_lot::{RwLock, RwLockReadGuard};
-use snafu::OptionExt;
 use models::schema::{TableFiled, TableSchema};
 use models::utils::unite_id;
+use parking_lot::{RwLock, RwLockReadGuard};
+use snafu::OptionExt;
 
 use protos::models as fb_models;
 
@@ -110,7 +110,11 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(p: fb_models::Point, schema: TableSchema, sid: SeriesId) -> (RowData, Vec<u32>) {
+    pub fn point_to_row_data(
+        p: fb_models::Point,
+        schema: TableSchema,
+        sid: SeriesId,
+    ) -> (RowData, Vec<u32>) {
         let mut field_id = vec![];
         let fields = match p.fields() {
             None => {
@@ -128,20 +132,22 @@ impl RowData {
                     fields.push(None);
                     field_id.push(0);
                 }
-                for (i,f) in fields_inner.into_iter().enumerate() {
+                for (i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
                     let val = MiniVec::from(f.value().unwrap());
-                    match schema.fields.get(String::from_utf8(f.name().unwrap().to_vec()).unwrap().as_str()) {
+                    match schema.fields.get(
+                        String::from_utf8(f.name().unwrap().to_vec())
+                            .unwrap()
+                            .as_str(),
+                    ) {
                         None => {}
-                        Some(field) => {
-                            match fields_id.get(&field.id) {
-                                None => {}
-                                Some(index) => {
-                                    fields[*index] = Some(FieldVal::new(val, vtype));
-                                    field_id[*index] = field.id as u32;
-                                }
+                        Some(field) => match fields_id.get(&field.id) {
+                            None => {}
+                            Some(index) => {
+                                fields[*index] = Some(FieldVal::new(val, vtype));
+                                field_id[*index] = field.id as u32;
                             }
-                        }
+                        },
                     }
                 }
                 fields

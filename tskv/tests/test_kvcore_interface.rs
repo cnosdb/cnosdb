@@ -10,10 +10,8 @@ mod tests {
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
+    use tskv::file_manager;
     use tskv::{kv_option, TsKv};
-    use tskv::{
-        file_manager
-    };
 
     fn get_tskv() -> (Arc<Runtime>, TsKv) {
         let mut global_config = get_config("../config/config.toml");
@@ -132,7 +130,6 @@ mod tests {
 
         assert!(file_manager::try_exists("dev/db/data/db/tsm/0"));
         assert!(file_manager::try_exists("dev/db/data/db/delta/0"));
-
     }
 
     #[tokio::test]
@@ -159,6 +156,6 @@ mod tests {
         rt.block_on(async {
             tskv.write(request).await.unwrap();
         });
-         println!("{:?}",tskv)
+        println!("{:?}", tskv)
     }
 }

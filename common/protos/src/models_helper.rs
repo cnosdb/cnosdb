@@ -127,7 +127,7 @@ mod test {
             };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let tags = if rand::random::<i64>() %2 ==0 {
+            let tags = if rand::random::<i64>() % 2 == 0 {
                 create_tags(
                     fbb,
                     vec![
@@ -141,14 +141,14 @@ mod test {
                     vec![
                         ("ta", &("a".to_string() + &tav)),
                         ("tb", &("b".to_string() + &tbv)),
-                        ("tc", &("c".to_string() + &tbv))
+                        ("tc", &("c".to_string() + &tbv)),
                     ],
                 )
             };
 
             let fav = rand::random::<f64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
-            let fields = if rand::random::<i64>()% 2 == 0 {
+            let fields = if rand::random::<i64>() % 2 == 0 {
                 create_fields(
                     fbb,
                     vec![
