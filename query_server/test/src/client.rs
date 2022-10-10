@@ -1,5 +1,7 @@
-use reqwest::Url;
 use reqwest::{Method, Request};
+use reqwest::{Response, Url};
+use std::time::Duration;
+use tokio::time::timeout;
 
 use crate::db_request::{DBRequest, Instruction, LineProtocol, Query};
 
@@ -33,27 +35,28 @@ impl Client {
     /// execute one sql at http://domain/query
     pub async fn execute_query(&self, query: &Query, buffer: &mut String) {
         buffer.push_str(format!("-- EXECUTE SQL: {} --\n", query.as_str()).as_str());
-
+        if query.instruction().sort() && query.is_select() {
+            buffer.push_str("-- AFTER_SORT --\n")
+        }
         let request_build = self.build_query_request(query);
         if request_build.is_err() {
-            buffer.push_str("-- ERROR: request build fail --\n\n");
+            push_error(buffer, "request build fail");
             return;
         }
         let request = request_build.unwrap();
 
         if let Ok(resp) = self.client.execute(request).await {
-            let status_code = &resp.status();
-
-            if let Ok(text) = resp.text().await {
-                buffer.push_str(status_code.to_string().as_str());
-                buffer.push('\n');
-                buffer.push_str(text.as_str());
-                buffer.push_str("\n\n");
+            let status_code = resp.status();
+            buffer.push_str(status_code.to_string().as_str());
+            buffer.push('\n');
+            push_query_result(buffer, query, resp).await;
+            if !status_code.is_success() {
+                push_error(buffer, "");
             } else {
-                buffer.push_str("-- ERROR: --\n\n");
+                buffer.push('\n');
             }
         } else {
-            buffer.push_str("-- ERROR: --\n\n");
+            push_error(buffer, "");
         }
     }
 
@@ -67,35 +70,57 @@ impl Client {
         );
         let request_build = self.build_write_request(line_protocol);
         if request_build.is_err() {
-            buffer.push_str("-- ERROR: request build fail --\n\n");
+            push_error(buffer, "request build fail");
             return;
         }
 
         let request = request_build.unwrap();
 
         if let Ok(resp) = self.client.execute(request).await {
-            let status_code = &resp.status();
-            if status_code.is_success() {
-                buffer.push_str(status_code.to_string().as_str());
-                buffer.push_str("\n\n");
-            } else {
-                if let Ok(text) = resp.text().await {
+            let status_code = resp.status();
+            buffer.push_str(status_code.to_string().as_str());
+            buffer.push('\n');
+            if let Ok(text) = resp.text().await {
+                if !text.is_empty() {
                     buffer.push_str(text.as_str());
                     buffer.push('\n');
                 }
-                buffer.push_str("-- ERROR: --\n\n");
+            }
+            if !status_code.is_success() {
+                push_error(buffer, "");
+            } else {
+                buffer.push('\n');
             }
         } else {
-            buffer.push_str("-- ERROR: --\n\n");
+            push_error(buffer, "");
         }
     }
 
-    pub async fn execute_db_request(&self, db_requests: &Vec<DBRequest>) -> String {
+    pub async fn execute_db_request(
+        &self,
+        case_name: &str,
+        db_requests: &Vec<DBRequest>,
+    ) -> String {
         let mut buffer = String::new();
-        for request in db_requests {
+        for (i, request) in db_requests.iter().enumerate() {
+            if (i + 1) % 100 == 0 {
+                println!("\t{}: {}/{}", case_name, i + 1, db_requests.len());
+            }
             match request {
                 DBRequest::Query(query) => {
-                    self.execute_query(query, &mut buffer).await;
+                    if let Some(time) = query.instruction().time_out() {
+                        if (timeout(
+                            Duration::from_secs(time),
+                            self.execute_query(query, &mut buffer),
+                        )
+                        .await)
+                            .is_err()
+                        {
+                            push_error(&mut buffer, "TIMEOUT");
+                        }
+                    } else {
+                        self.execute_query(query, &mut buffer).await;
+                    }
                 }
                 DBRequest::LineProtocol(line_protocol) => {
                     self.execute_write(line_protocol, &mut buffer).await;
@@ -167,6 +192,29 @@ impl Client {
             .basic_auth::<&str, &str>(line_protocol.instruction().user_name(), None)
             .body(body)
             .build()?)
+    }
+}
+
+fn push_error(s: &mut String, error_message: &str) {
+    s.push_str(format!("-- ERROR: {} --\n\n", error_message).as_str());
+}
+
+async fn push_query_result(buffer: &mut String, query: &Query, resp: Response) {
+    let success = resp.status().is_success();
+    if let Ok(text) = resp.text().await {
+        if success && query.is_select() && query.instruction().sort() && !text.is_empty() {
+            let mut lines: Vec<&str> = text.lines().collect();
+            buffer.push_str(lines[0]);
+            buffer.push('\n');
+
+            let len = lines.len();
+            let result_lines = &mut lines[1..len];
+            result_lines.sort();
+            buffer.push_str(result_lines.join("\n").as_str());
+        } else {
+            buffer.push_str(text.as_str());
+        }
+        buffer.push('\n');
     }
 }
 

@@ -31,4 +31,5 @@ Hello World
 -- EXECUTE SQL: SELECT "Hello World"; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'Hello World'. Valid fields are ."}
+-- ERROR:  --
 

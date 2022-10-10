@@ -1,17 +1,23 @@
-use std::string::ToString;
+use std::str::FromStr;
 
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{alphanumeric1, space0};
-use nom::combinator::map_opt;
+use nom::combinator::map_res;
 use nom::sequence::{delimited, tuple};
 use nom::IResult;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
+    /// set the requested database
     db_name: String,
+    /// set sort or not
     sort: bool,
+    /// set pretty or not
     pretty: bool,
+    /// set user_name
     user_name: String,
+    /// set how long to timeout
+    time_out: Option<u64>,
 }
 
 impl Default for Instruction {
@@ -21,6 +27,7 @@ impl Default for Instruction {
             sort: false,
             pretty: true,
             user_name: "cnosdb".to_string(),
+            time_out: None,
         }
     }
 }
@@ -42,37 +49,33 @@ fn instruction_parse_str<'a>(
     )
 }
 
-fn instruction_parse_bool<'a>(
+fn instruction_parse_to<'a, T: FromStr>(
     instruction_name: &'a str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, bool> {
-    map_opt(instruction_parse_str(instruction_name), |s: &str| {
-        match s.to_lowercase().as_str() {
-            "t" | "true" => Some(true),
-            "f" | "false" => Some(false),
-            _ => None,
-        }
+) -> impl FnMut(&'a str) -> IResult<&'a str, T> {
+    map_res(instruction_parse_str(instruction_name), |s: &str| {
+        s.parse::<T>()
     })
 }
 
 impl Instruction {
-    /// get database where sql is running
     pub fn db_name(&self) -> &str {
         &self.db_name
     }
 
-    /// the result whether need sort
-    /// TODO
-    #[allow(dead_code)]
     pub fn sort(&self) -> bool {
         self.sort
     }
 
-    /// the result whether need pretty
     pub fn pretty(&self) -> bool {
         self.pretty
     }
+
     pub fn user_name(&self) -> &str {
         &self.user_name
+    }
+
+    pub fn time_out(&self) -> Option<u64> {
+        self.time_out
     }
 
     /// parse line to modify instruction
@@ -85,28 +88,18 @@ impl Instruction {
             self.user_name = user_name.to_string();
         }
 
-        if let Ok((_, pretty)) = instruction_parse_bool("PRETTY")(line) {
+        if let Ok((_, pretty)) = instruction_parse_to::<bool>("PRETTY")(line) {
             self.pretty = pretty;
         }
 
-        if let Ok((_, sort)) = instruction_parse_bool("SORT")(line) {
+        if let Ok((_, sort)) = instruction_parse_to::<bool>("SORT")(line) {
             self.sort = sort;
         }
-    }
-}
 
-#[test]
-fn test_parse_instruction() {
-    let line = r##"--#DATABASE    =   abc"##;
-    let mut instruction = Instruction::default();
-    instruction.parse_and_change(line);
-    assert_eq!(instruction.db_name, "abc");
-    let line = r##"--#SORT = true"##;
-    instruction.parse_and_change(line);
-    assert!(instruction.sort);
-    let line = r##"--#SORT = false"##;
-    instruction.parse_and_change(line);
-    assert!(!instruction.sort);
+        if let Ok((_, timeout)) = instruction_parse_to::<u64>("TIMEOUT")(line) {
+            self.time_out = Some(timeout)
+        }
+    }
 }
 
 /// one Query
@@ -228,6 +221,10 @@ impl Query {
     pub fn instruction(&self) -> &Instruction {
         &self.instruction
     }
+
+    pub fn is_select(&self) -> bool {
+        self.query.trim().to_lowercase().starts_with("select")
+    }
 }
 
 pub struct QueryBuild {
@@ -283,6 +280,32 @@ fn test_query_build() {
         .push_str("From table\n")
         .finish(Instruction::default());
     println!("{}", query.as_str());
+}
+
+#[test]
+fn test_parse_instruction() {
+    let mut instruction = Instruction::default();
+
+    let line = r##"--#DATABASE    =   abc"##;
+    instruction.parse_and_change(line);
+    assert_eq!(instruction.db_name, "abc");
+
+    let line = r##"--#USER_NAME = hello"##;
+    instruction.parse_and_change(line);
+    assert_eq!(instruction.user_name, "hello");
+
+    let line = r##"--#SORT = true"##;
+    instruction.parse_and_change(line);
+    assert!(instruction.sort);
+
+    let line = r##"--#SORT = false"##;
+    instruction.parse_and_change(line);
+    assert!(!instruction.sort);
+
+    assert_eq!(instruction.time_out, None);
+    let line = r##"--#TIMEOUT = 10"##;
+    instruction.parse_and_change(line);
+    assert_eq!(instruction.time_out, Some(10));
 }
 
 #[test]
