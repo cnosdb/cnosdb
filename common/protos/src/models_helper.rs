@@ -67,7 +67,7 @@ mod test {
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i <= num / 2 {
-                Local::now().timestamp_millis()
+                Local::now().timestamp_nanos()
             } else {
                 1
             };
@@ -121,7 +121,7 @@ mod test {
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i % 2 == 0 {
-                Local::now().timestamp_millis()
+                Local::now().timestamp_nanos()
             } else {
                 1
             };
@@ -172,7 +172,7 @@ mod test {
         let db = fbb.create_vector("db".as_bytes());
         let mut points = vec![];
         for _ in 0..num {
-            let timestamp = Local::now().timestamp_millis();
+            let timestamp = Local::now().timestamp_nanos();
             let mut tags = vec![];
             let tav = rand::random::<u8>().to_string();
             for _ in 0..19999 {
@@ -222,7 +222,7 @@ mod test {
         ];
         let field_keys = ["cpu", "mem"];
 
-        let now = Local::now().timestamp_millis();
+        let now = Local::now().timestamp_nanos();
         let database = fbb.create_vector(database.as_bytes());
         let table = fbb.create_vector(table.as_bytes());
         let mut points = vec![];

@@ -127,7 +127,7 @@ mod tests {
         let output = tskv.read(
             &database,
             sids,
-            &TimeRange::new(0, Local::now().timestamp_millis() + 100),
+            &TimeRange::new(0, Local::now().timestamp_nanos() + 100),
             fields_id,
         );
 
@@ -179,7 +179,7 @@ mod tests {
         tskv.read(
             &database,
             sids.clone(),
-            &TimeRange::new(0, Local::now().timestamp_millis() + 100),
+            &TimeRange::new(0, Local::now().timestamp_nanos() + 100),
             fields_id.clone(),
         );
 
@@ -189,7 +189,7 @@ mod tests {
         tskv.read(
             &database,
             sids.clone(),
-            &TimeRange::new(0, Local::now().timestamp_millis() + 100),
+            &TimeRange::new(0, Local::now().timestamp_nanos() + 100),
             fields_id,
         );
     }
