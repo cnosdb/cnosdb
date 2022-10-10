@@ -186,7 +186,7 @@ impl HttpService {
                     let start = Instant::now();
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let line_protocol_lines =
-                        line_protocol_to_lines(&lines, Local::now().timestamp_millis())
+                        line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
                             .context(ParseLineProtocolSnafu)?;
                     let points = parse_lines_to_points(&param.db, &line_protocol_lines)?;
                     let req = WritePointsRpcRequest { version: 1, points };
