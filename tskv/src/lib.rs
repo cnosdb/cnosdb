@@ -10,7 +10,7 @@ pub mod database;
 mod direct_io;
 pub mod engine;
 pub mod error;
-mod file_manager;
+pub mod file_manager;
 mod file_utils;
 pub mod index;
 pub mod kv_option;
