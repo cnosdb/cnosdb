@@ -118,10 +118,12 @@ physical_plan,"ProjectionExec: expr=[time@1 as time]
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '1997-01-31'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '1997-01-31' to value of Float64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= 'xxx'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between '12345678865' and 12345678869; --
 200 OK
@@ -154,6 +156,7 @@ physical_plan,"ProjectionExec: expr=[time@1 as time]
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 'xxx'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, '12345678869'); --
 200 OK
@@ -172,4 +175,5 @@ physical_plan,"ProjectionExec: expr=[time@1 as time]
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, 'xx'); --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string 'xx' to value of Float64 type"}
+-- ERROR:  --
 

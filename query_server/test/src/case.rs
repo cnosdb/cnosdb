@@ -89,7 +89,7 @@ impl Case {
 
         let result = fs::read_to_string(self.res_file()).await?;
 
-        let out = CLIENT.execute_db_request(&queries).await;
+        let out = CLIENT.execute_db_request(self.case_name(), &queries).await;
 
         let succeed = self.check(&result, &out).await;
 

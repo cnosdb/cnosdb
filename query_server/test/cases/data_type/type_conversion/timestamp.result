@@ -216,10 +216,12 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= '1997-01-31'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing '1997-01-31' as timestamp"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= 'xxx'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing 'xxx' as timestamp"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between '1997-01-31 09:26:56' and '1997-03-31T09:26:56.123Z'; --
 200 OK
@@ -266,10 +268,12 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between 12345678865 and '1997-03-31'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing '1997-03-31' as timestamp"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between 12345678865 and 'xxxxx'; --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing 'xxxxx' as timestamp"}
+-- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time in (12345678865, '1997-03-31T09:26:56.123Z'); --
 200 OK
@@ -288,4 +292,5 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time in (12345678865, 'xx'); --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing 'xx' as timestamp"}
+-- ERROR:  --
 

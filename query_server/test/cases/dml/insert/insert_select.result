@@ -48,6 +48,7 @@ fa,fb,ta,tb,time
 -- EXECUTE SQL: insert public.test_insert_subquery select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '9a' to value of Float64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
@@ -61,6 +62,7 @@ fa,fb,ta,tb,time
 -- EXECUTE SQL: insert public.test_insert_subquery select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Insert columns and Source columns not match"}
+-- ERROR:  --
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
@@ -74,6 +76,7 @@ fa,fb,ta,tb,time
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, fa) select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '10a' to value of Float64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
