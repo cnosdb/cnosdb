@@ -3,8 +3,10 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
-use datafusion::logical_plan::plan::Extension;
-use datafusion::logical_plan::{DFField, FileType, LogicalPlan, LogicalPlanBuilder};
+use datafusion::logical_plan::plan::{Analyze, Explain, Extension};
+use datafusion::logical_plan::{
+    DFField, FileType, LogicalPlan, LogicalPlanBuilder, PlanType, ToDFSchema, ToStringifiedPlan,
+};
 use datafusion::logical_plan::{DFSchema, DFSchemaRef};
 use datafusion::prelude::{cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
@@ -68,23 +70,72 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn df_sql_to_plan(&self, stmt: Statement) -> Result<Plan> {
         match stmt {
-            Statement::Query(_) | Statement::Explain { .. } => {
+            Statement::Query(_) => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
                 let df_plan = df_planner
                     .sql_statement_to_plan(stmt)
                     .context(ExternalSnafu)?;
                 Ok(Plan::Query(QueryPlan { df_plan }))
             }
+            Statement::Explain {
+                verbose,
+                statement,
+                analyze,
+                describe_alias: _,
+            } => self.explain_statement_to_plan(verbose, analyze, *statement),
             Statement::Insert {
                 table_name: ref sql_object_name,
                 columns: ref sql_column_names,
                 source,
                 ..
             } => self.insert_to_plan(sql_object_name, sql_column_names, source),
-            _ => {
-                unimplemented!()
-            }
+            _ => Err(LogicalPlannerError::NotImplemented {
+                err: stmt.to_string(),
+            }),
         }
+    }
+
+    /// Generate a plan for EXPLAIN ... that will print out a plan
+    ///
+    pub fn explain_statement_to_plan(
+        &self,
+        verbose: bool,
+        analyze: bool,
+        statement: Statement,
+    ) -> Result<Plan> {
+        let plan = self.df_sql_to_plan(statement)?;
+
+        let input_df_plan = match plan {
+            Plan::Query(query) => Arc::new(query.df_plan),
+            _ => {
+                return Err(LogicalPlannerError::NotImplemented {
+                    err: "explain non-query statement.".to_string(),
+                })
+            }
+        };
+
+        let schema = LogicalPlan::explain_schema()
+            .to_dfschema_ref()
+            .context(ExternalSnafu)?;
+
+        let df_plan = if analyze {
+            LogicalPlan::Analyze(Analyze {
+                verbose,
+                input: input_df_plan,
+                schema,
+            })
+        } else {
+            let stringified_plans =
+                vec![input_df_plan.to_stringified(PlanType::InitialLogicalPlan)];
+            LogicalPlan::Explain(Explain {
+                verbose,
+                plan: input_df_plan,
+                stringified_plans,
+                schema,
+            })
+        };
+
+        Ok(Plan::Query(QueryPlan { df_plan }))
     }
 
     /// Add a projection operation (if necessary)

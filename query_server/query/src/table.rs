@@ -7,7 +7,7 @@ use datafusion::{
     error::Result,
     execution::context::SessionState,
     logical_expr::{Expr, TableProviderFilterPushDown},
-    physical_plan::{project_schema, ExecutionPlan, PhysicalExpr},
+    physical_plan::{project_schema, ExecutionPlan},
 };
 use tskv::engine::EngineRef;
 
@@ -46,7 +46,6 @@ impl ClusterTable {
         &self,
         _state: &SessionState,
         input: Arc<dyn ExecutionPlan>,
-        output_physical_exprs: Vec<Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
             self.engine.clone(),
@@ -56,7 +55,6 @@ impl ClusterTable {
         Ok(Arc::new(TableWriterExec::new(
             input,
             self.schema.clone(),
-            output_physical_exprs,
             record_batch_sink_privider,
         )))
     }
