@@ -20,7 +20,7 @@ use trace::{error, info, warn};
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
 use models::schema::{TableFiled, TableSchema};
-use models::utils::unite_id;
+use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
 
@@ -219,6 +219,9 @@ impl SeriesData {
             if item.schema_id == group.schema_id {
                 item.range.merge(&group.range);
                 item.rows.append(&mut group.rows);
+                item.schema.append(&mut group.schema);
+                item.schema.sort();
+                item.schema.dedup();
                 return;
             }
         }
@@ -337,6 +340,7 @@ impl MemCache {
     }
 
     pub fn write_group(&self, sid: u64, seq: u64, group: RowGroup) {
+        let (_, sid) = split_id(sid);
         self.seq_no.store(seq, Ordering::Relaxed);
         self.cache_size
             .fetch_add(group.size as u64, Ordering::Relaxed);

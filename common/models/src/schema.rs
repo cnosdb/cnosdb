@@ -41,7 +41,7 @@ pub struct TableSchema {
 impl Default for TableSchema {
     fn default() -> Self {
         Self {
-            db: "".to_string(),
+            db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
             fields: std::default::Default::default(),

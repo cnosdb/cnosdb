@@ -343,7 +343,7 @@ pub fn run_flush_memtable_job(
     let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
     {
         info!("Flush: Running flush job on {} MemCaches", req.mems.len());
-        if req.mems.len() == 0 {
+        if req.mems.is_empty() {
             return Ok(());
         }
         for (tf, mem) in req.mems {

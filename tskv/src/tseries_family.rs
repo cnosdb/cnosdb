@@ -571,6 +571,7 @@ pub struct TseriesFamily {
 }
 
 impl TseriesFamily {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tf_id: TseriesFamilyId,
         database: String,
@@ -1024,7 +1025,7 @@ mod test {
             )),
             opt.cache.clone(),
             opt.storage.clone(),
-            flush_task_sender.clone(),
+            flush_task_sender,
         );
 
         let row_group = RowGroup {

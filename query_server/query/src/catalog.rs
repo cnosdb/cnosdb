@@ -149,11 +149,15 @@ impl SchemaProvider for UserSchema {
         }
         let mut tables = self.tables.write();
         let table_schema = table.as_any().downcast_ref::<TableSchema>();
-        match table_schema {
-            None => {}
-            Some(schema) => self.engine.create_table(schema),
-        }
-        Ok(tables.insert(name, table))
+        let cluster_table = match table_schema {
+            None => table,
+            Some(schema) => {
+                self.engine.create_table(schema);
+                let cluster_table = ClusterTable::new(self.engine.clone(), schema.clone());
+                Arc::new(cluster_table)
+            }
+        };
+        Ok(tables.insert(name, cluster_table))
     }
 
     fn deregister_table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
