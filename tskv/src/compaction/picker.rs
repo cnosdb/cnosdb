@@ -399,6 +399,7 @@ impl LevelCompatContext {
 
 mod test {
     use std::sync::Arc;
+    use tokio::sync::mpsc;
 
     use crate::{
         file_utils::make_tsm_file_name,
@@ -479,7 +480,7 @@ mod test {
             level_infos,
             1000,
         ));
-
+        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         TseriesFamily::new(
             1,
             "ts_family_1".to_string(),
@@ -487,6 +488,7 @@ mod test {
             version,
             opt.cache.clone(),
             opt.storage.clone(),
+            flush_task_sender,
         )
     }
 

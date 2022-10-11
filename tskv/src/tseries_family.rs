@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::{
     borrow::{Borrow, BorrowMut},
     cmp::{max, min},
@@ -14,6 +15,7 @@ use std::{
 use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::watch::Receiver;
 
 use config::get_config;
 use models::{FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
@@ -556,20 +558,18 @@ pub struct TseriesFamily {
     database: String,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
-    // todo: need to del RwLock in memcache
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
     version: Arc<Version>,
     cache_opt: Arc<CacheOptions>,
     storage_opt: Arc<StorageOptions>,
     compact_picker: Arc<dyn Picker>,
-    // min seq_no keep in the tsfam memcache
     seq_no: u64,
     immut_ts_min: AtomicI64,
     mut_ts_max: AtomicI64,
+    flush_task_sender: UnboundedSender<FlushReq>,
 }
 
-// todo: cal ref count
 impl TseriesFamily {
     pub fn new(
         tf_id: TseriesFamilyId,
@@ -578,15 +578,11 @@ impl TseriesFamily {
         version: Arc<Version>,
         cache_opt: Arc<CacheOptions>,
         storage_opt: Arc<StorageOptions>,
+        flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
         let max_level_ts = version.max_level_ts;
-        let delta_mm = Arc::new(RwLock::new(MemCache::new(
-            tf_id,
-            cache_opt.max_buffer_size,
-            seq,
-        )));
 
         Self {
             tf_id,
@@ -611,6 +607,7 @@ impl TseriesFamily {
             compact_picker: Arc::new(LevelCompactionPicker::new()),
             immut_ts_min: AtomicI64::new(max_level_ts),
             mut_ts_max: AtomicI64::new(i64::MIN),
+            flush_task_sender,
         }
     }
 
@@ -653,7 +650,7 @@ impl TseriesFamily {
         self.new_super_version(self.version.clone());
     }
 
-    fn wrap_flush_req(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    fn wrap_flush_req(&mut self) {
         let len = self.immut_cache.len();
         let mut imut = vec![];
         for i in self.immut_cache.iter() {
@@ -686,13 +683,9 @@ impl TseriesFamily {
             i.1.write().flushing = true;
         }
 
-        FLUSH_REQ.lock().push(FlushReq { mems: req_mem });
-        info!(
-            "flush_req send,now req queue len : {}",
-            FLUSH_REQ.lock().len()
-        );
-        sender
-            .send(FLUSH_REQ.clone())
+        info!("flush_req send,now req queue len : {}", req_mem.len());
+        self.flush_task_sender
+            .send(FlushReq { mems: req_mem })
             .expect("error send flush req to kvcore");
     }
 
@@ -703,16 +696,24 @@ impl TseriesFamily {
         }
     }
 
-    pub fn check_to_flush(&mut self, sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>) {
+    // pub async fn touch_flush(tsf: &mut TseriesFamily) {
+    //     tokio::spawn(|tsf:&mut TseriesFamily| async move {
+    //         while tsf.sub_receiver.changed().await.is_ok() {
+    //             tsf.check_to_flush()
+    //         }
+    //     }
+    //     );
+    // }
+
+    pub fn check_to_flush(&mut self) {
         if self.super_version.caches.mut_cache.read().is_full() {
             info!("mut_cache full,switch to immutable");
             self.switch_to_immutable();
             if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-                self.wrap_flush_req(sender);
+                self.wrap_flush_req();
             }
         }
     }
-
     pub fn delete_cache(&self, field_ids: &[FieldId], time_range: &TimeRange) {
         self.mut_cache.read().delete_data(field_ids, time_range);
         for memcache in self.immut_cache.iter() {
@@ -808,10 +809,12 @@ mod test {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-        let version = Version {
-            ts_family_id, database: database.clone(),
+            let version = Version {
+            ts_family_id,
+            database: database.clone(),
             storage_opt: opt.storage.clone(),
-            last_seq: 1, max_level_ts: 3100,
+            last_seq: 1,
+            max_level_ts: 3100,
             levels_info: [
                 LevelInfo::init(database.clone(), 0, opt.storage.clone()),
                 LevelInfo {
@@ -819,8 +822,11 @@ mod test {
                         Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
                     ],
                     database: database.clone(),
-                    tsf_id: 1, storage_opt: opt.storage.clone(),
-                    level: 1, cur_size: 100, max_size: 1000,
+                    tsf_id: 1,
+                    storage_opt: opt.storage.clone(),
+                    level: 1,
+                    cur_size: 100,
+                    max_size: 1000,
                     time_range: TimeRange::new(3001, 3100),
                 },
                 LevelInfo {
@@ -829,8 +835,11 @@ mod test {
                         Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
                     ],
                     database: database.clone(),
-                    tsf_id: 1, storage_opt: opt.storage.clone(),
-                    level: 2, cur_size: 2000, max_size: 10000,
+                    tsf_id: 1,
+                    storage_opt: opt.storage.clone(),
+                    level: 2,
+                    cur_size: 2000,
+                    max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(database.clone(), 3, opt.storage.clone()),
@@ -842,8 +851,14 @@ mod test {
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
-                file_id: 4, file_size: 100, tsf_id: 1, level: 1,
-                min_ts: 3051, max_ts: 3150, high_seq: 2, low_seq: 2,
+                file_id: 4,
+                file_size: 100,
+                tsf_id: 1,
+                level: 1,
+                min_ts: 3051,
+                max_ts: 3150,
+                high_seq: 2,
+                low_seq: 2,
                 is_delta: false,
             },
             3100,
@@ -888,10 +903,12 @@ mod test {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-        let version = Version {
-            ts_family_id: 1, database: database.clone(),
+            let version = Version {
+            ts_family_id: 1,
+            database: database.clone(),
             storage_opt: opt.storage.clone(),
-            last_seq: 1, max_level_ts: 3150,
+            last_seq: 1,
+            max_level_ts: 3150,
             levels_info: [
                 LevelInfo::init(database.clone(), 0, opt.storage.clone()),
                 LevelInfo {
@@ -900,8 +917,11 @@ mod test {
                         Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file_name(&tsm_dir, 4))),
                     ],
                     database: database.clone(),
-                    tsf_id: 1, storage_opt: opt.storage.clone(),
-                    level: 1, cur_size: 100, max_size: 1000,
+                    tsf_id: 1,
+                    storage_opt: opt.storage.clone(),
+                    level: 1,
+                    cur_size: 100,
+                    max_size: 1000,
                     time_range: TimeRange::new(3001, 3150),
                 },
                 LevelInfo {
@@ -910,8 +930,11 @@ mod test {
                         Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
                     ],
                     database: database.clone(),
-                    tsf_id: 1, storage_opt: opt.storage.clone(),
-                    level: 2, cur_size: 2000, max_size: 10000,
+                    tsf_id: 1,
+                    storage_opt: opt.storage.clone(),
+                    level: 2,
+                    cur_size: 2000,
+                    max_size: 10000,
                     time_range: TimeRange::new(1, 2000),
                 },
                 LevelInfo::init(database.clone(), 3, opt.storage.clone()),
@@ -923,8 +946,14 @@ mod test {
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
-                file_id: 5, file_size: 150, tsf_id: 1, level: 2,
-                min_ts: 3001, max_ts: 3150, high_seq: 2, low_seq: 2,
+                file_id: 5,
+                file_size: 150,
+                tsf_id: 1,
+                level: 2,
+                min_ts: 3001,
+                max_ts: 3150,
+                high_seq: 2,
+                low_seq: 2,
                 is_delta: false,
             },
             3150,
@@ -932,8 +961,14 @@ mod test {
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
-                file_id: 6, file_size: 2000, tsf_id: 1, level: 3,
-                min_ts: 1, max_ts: 2000, high_seq: 2, low_seq: 2,
+                file_id: 6,
+                file_size: 2000,
+                tsf_id: 1,
+                level: 3,
+                min_ts: 1,
+                max_ts: 2000,
+                high_seq: 2,
+                low_seq: 2,
                 is_delta: false,
             },
             3150,
@@ -971,6 +1006,7 @@ mod test {
 
     #[tokio::test]
     pub async fn test_tsf_delete() {
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let global_config = get_config("../config/config.toml");
         let opt = Arc::new(Options::from(&global_config));
         let database = "db".to_string();
@@ -988,6 +1024,7 @@ mod test {
             )),
             opt.cache.clone(),
             opt.storage.clone(),
+            flush_task_sender.clone(),
         );
 
         let row_group = RowGroup {
@@ -1087,7 +1124,7 @@ mod test {
 
         let mem = Arc::new(RwLock::new(mem));
         let req_mem = vec![(0, mem)];
-        let flush_seq = Arc::new(Mutex::new(vec![FlushReq { mems: req_mem }]));
+        let flush_seq = FlushReq { mems: req_mem };
 
         let base_dir = "/tmp/test/ts_family/test_read_with_tomb".to_string();
         let database = "test_db".to_string();
@@ -1097,15 +1134,24 @@ mod test {
         let opt = Arc::new(Options::from(&global_config));
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
-
-        let version_set: Arc<RwLock<VersionSet>> =
-            Arc::new(RwLock::new(VersionSet::new(opt.clone(), HashMap::new())));
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
+        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new(
+            opt.clone(),
+            HashMap::new(),
+            flush_task_sender.clone(),
+        )));
         version_set.write().create_db(&database);
         let db = version_set.write().get_db(&database).unwrap();
 
         let ts_family_id = db
             .write()
-            .add_tsfamily(0, 0, 0, summary_task_sender.clone())
+            .add_tsfamily(
+                0,
+                0,
+                0,
+                summary_task_sender.clone(),
+                flush_task_sender.clone(),
+            )
             .read()
             .tf_id();
 

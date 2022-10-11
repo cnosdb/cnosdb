@@ -317,7 +317,6 @@ impl WalManager {
         &self,
         engine: &impl engine::Engine,
         global_context: Arc<GlobalContext>,
-        flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     ) -> Result<()> {
         let min_log_seq = global_context.last_seq();
         warn!("recovering version set from seq '{}'", &min_log_seq);
