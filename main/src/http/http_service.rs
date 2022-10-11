@@ -1,11 +1,10 @@
 use std::{collections::HashMap, convert::Infallible, net::SocketAddr};
 
+use http_protocol::header::{ACCEPT, AUTHORIZATION};
+use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::response::ErrorResponse;
+
 use super::header::Header;
-use super::header::ACCEPT;
-use super::header::AUTHORIZATION;
-use super::parameter::SqlParam;
-use super::parameter::WriteParam;
-use super::response::ErrorResponse;
 use super::Error as HttpError;
 use super::QuerySnafu;
 use crate::http::response::ResponseBuilder;
