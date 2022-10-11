@@ -1,68 +1,14 @@
 #[cfg(test)]
 mod test {
-    use std::net::SocketAddr;
-
-    use reqwest::{
+    use http_protocol::{
         header::{HeaderValue, ACCEPT, CONTENT_TYPE},
-        RequestBuilder, Response, StatusCode,
+        http_client::HttpClient,
+        response::Response,
+        status_code,
     };
 
-    pub struct TestClient {
-        client: reqwest::Client,
-        addr: SocketAddr,
-    }
-
-    impl TestClient {
-        pub fn from_addr(addr: SocketAddr) -> TestClient {
-            TestClient {
-                addr,
-                client: reqwest::Client::new(),
-            }
-        }
-
-        /// Construct test server url
-        pub fn url(&self, uri: &str) -> String {
-            if uri.starts_with('/') {
-                format!("http://localhost:{}{}", self.addr.port(), uri)
-            } else {
-                format!("http://localhost:{}/{}", self.addr.port(), uri)
-            }
-        }
-
-        /// Create `GET` request
-        pub fn get<S: AsRef<str>>(&self, path: S) -> RequestBuilder {
-            self.client.get(self.url(path.as_ref()).as_str())
-        }
-
-        /// Create `POST` request
-        pub fn post<S: AsRef<str>>(&self, path: S) -> RequestBuilder {
-            self.client.post(self.url(path.as_ref()).as_str())
-        }
-
-        /// Create `HEAD` request
-        pub fn head<S: AsRef<str>>(&self, path: S) -> RequestBuilder {
-            self.client.head(self.url(path.as_ref()).as_str())
-        }
-
-        /// Create `PUT` request
-        pub fn put<S: AsRef<str>>(&self, path: S) -> RequestBuilder {
-            self.client.put(self.url(path.as_ref()).as_str())
-        }
-
-        /// Create `PATCH` request
-        pub fn patch<S: AsRef<str>>(&self, path: S) -> RequestBuilder {
-            self.client.patch(self.url(path.as_ref()).as_str())
-        }
-
-        /// Create `DELETE` request
-        pub fn delete<S: AsRef<str>>(&self, path: S) -> RequestBuilder {
-            self.client.delete(self.url(path.as_ref()).as_str())
-        }
-    }
-
-    fn client() -> TestClient {
-        let addr = "0.0.0.0:31007".parse::<SocketAddr>().unwrap();
-        TestClient::from_addr(addr)
+    fn client() -> HttpClient {
+        HttpClient::from_addr("0.0.0.0".to_string(), 31007)
     }
 
     #[tokio::test]
@@ -83,7 +29,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -99,7 +45,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // lost auth
         let body = "select 1;";
@@ -110,7 +56,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // accept: application/csv
         let body = "select 1;";
@@ -123,7 +69,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -140,7 +86,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/json")
@@ -157,7 +103,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/nd-json")
@@ -174,7 +120,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -191,7 +137,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -208,7 +154,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // accept: xx
         let body = "select 1;";
@@ -221,7 +167,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // lost param
         let body = "select 1;";
@@ -232,7 +178,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
 
         // path not found
         let body = "select 1;";
@@ -244,7 +190,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.status(), status_code::NOT_FOUND);
 
         // GET
         let body = "select 1;";
@@ -256,7 +202,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         // PUT
         let body = "select 1;";
@@ -268,7 +214,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         // PATCH
         let body = "select 1;";
@@ -280,7 +226,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         // DELETE
         let body = "select 1;";
@@ -292,7 +238,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         // HEAD
         let body = "select 1;";
@@ -304,7 +250,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]
@@ -325,7 +271,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
 
         // lost username
         let resp: Response = client
@@ -335,7 +281,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         let resp: Response = client
             .get(path)
@@ -345,7 +291,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client
             .head(path)
@@ -355,7 +301,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client
             .put(path)
@@ -365,7 +311,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client
             .patch(path)
@@ -375,7 +321,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client
             .delete(path)
@@ -385,7 +331,7 @@ mod test {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]
@@ -395,21 +341,21 @@ mod test {
         let client = client();
 
         let resp: Response = client.get(path).send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
 
         let resp: Response = client.head(path).send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), status_code::OK);
 
         let resp: Response = client.post(path).send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client.put(path).send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client.patch(path).send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
         let resp: Response = client.delete(path).send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
     }
 }

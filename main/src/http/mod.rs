@@ -10,15 +10,15 @@ use tokio::sync::oneshot::error::RecvError;
 use warp::reject;
 use warp::reply::Response;
 
-use self::response::{ErrorResponse, ResponseBuilder};
-use self::status_code::UNPROCESSABLE_ENTITY;
+use http_protocol::response::ErrorResponse;
+use http_protocol::status_code::UNPROCESSABLE_ENTITY;
+
+use self::response::ResponseBuilder;
 
 mod header;
 pub mod http_service;
-mod parameter;
 mod response;
 mod result_format;
-mod status_code;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -104,7 +104,7 @@ mod tests {
     use spi::query::QueryError;
     use warp::http::header::{HeaderValue, CONTENT_TYPE};
 
-    use crate::http::{header::APPLICATION_JSON, status_code::BAD_REQUEST};
+    use http_protocol::{header::APPLICATION_JSON, status_code::BAD_REQUEST};
 
     use super::*;
 
