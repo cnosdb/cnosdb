@@ -4,9 +4,11 @@ use std::{
 };
 
 use parking_lot::RwLock;
+use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use trace::error;
 
+use crate::compaction::FlushReq;
 use crate::{
     database::Database,
     error::Result,
@@ -21,23 +23,26 @@ use crate::{
 #[derive(Debug)]
 pub struct VersionSet {
     opt: Arc<Options>,
-
     dbs: HashMap<String, Arc<RwLock<Database>>>,
 }
 
 impl VersionSet {
-    pub fn new(opt: Arc<Options>, ver_set: HashMap<u32, Arc<Version>>) -> Self {
+    pub fn new(
+        opt: Arc<Options>,
+        ver_set: HashMap<u32, Arc<Version>>,
+        flush_task_sender: UnboundedSender<FlushReq>,
+    ) -> Self {
         let mut dbs = HashMap::new();
 
         for (id, ver) in ver_set {
             let name = ver.database().to_string();
             let seq = ver.last_seq;
 
-            let db = dbs
+            let db: &mut Arc<RwLock<Database>> = dbs
                 .entry(name.clone())
                 .or_insert_with(|| Arc::new(RwLock::new(Database::new(&name, opt.clone()))));
 
-            db.write().open_tsfamily(ver);
+            db.write().open_tsfamily(ver, flush_task_sender.clone());
         }
 
         Self { dbs, opt }

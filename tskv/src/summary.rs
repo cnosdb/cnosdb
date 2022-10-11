@@ -3,15 +3,18 @@ use std::fs::{remove_file, rename};
 use std::path::Path;
 use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
-use config::get_config;
 use futures::TryFutureExt;
 use libc::write;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
+
+use config::get_config;
 use trace::{debug, error, info};
 
+use crate::compaction::FlushReq;
 use crate::{
     context::GlobalContext,
     error::{Error, Result},
@@ -25,6 +28,7 @@ use crate::{
 };
 
 const MAX_BATCH_SIZE: usize = 64;
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
     pub file_id: u64,
@@ -203,7 +207,10 @@ pub struct Summary {
 
 impl Summary {
     // create a new summary file
-    pub async fn new(opt: Arc<Options>) -> Result<Self> {
+    pub async fn new(
+        opt: Arc<Options>,
+        flush_task_sender: UnboundedSender<FlushReq>,
+    ) -> Result<Self> {
         let db = VersionEdit::new();
         let mut w =
             Writer::new(&file_utils::make_summary_file(opt.storage.summary_dir(), 0)).unwrap();
@@ -218,19 +225,26 @@ impl Summary {
 
         Ok(Self {
             file_no: 0,
-            version_set: Arc::new(RwLock::new(VersionSet::new(opt.clone(), HashMap::new()))),
+            version_set: Arc::new(RwLock::new(VersionSet::new(
+                opt.clone(),
+                HashMap::new(),
+                flush_task_sender,
+            ))),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
         })
     }
 
-    pub async fn recover(opt: Arc<Options>) -> Result<Self> {
+    pub async fn recover(
+        opt: Arc<Options>,
+        flush_task_sender: UnboundedSender<FlushReq>,
+    ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
         let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(Reader::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap());
-        let vs = Self::recover_version(rd, &ctx, opt.clone()).await?;
+        let vs = Self::recover_version(rd, &ctx, opt.clone(), flush_task_sender).await?;
 
         Ok(Self {
             file_no: 0,
@@ -246,6 +260,7 @@ impl Summary {
         mut reader: Box<Reader>,
         ctx: &GlobalContext,
         opt: Arc<Options>,
+        flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<VersionSet> {
         let mut edits: HashMap<u32, Vec<VersionEdit>> = HashMap::default();
         let mut databases: HashMap<u32, String> = HashMap::default();
@@ -325,7 +340,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(opt.clone(), versions);
+        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender);
         Ok(vs)
     }
 
@@ -565,10 +580,12 @@ mod test {
     use std::fs;
     use std::sync::Arc;
 
-    use config::get_config;
     use snafu::ResultExt;
     use tokio::sync::mpsc;
+    use tokio::sync::mpsc::UnboundedSender;
     use tracing::debug;
+
+    use config::get_config;
 
     use crate::tseries_family::LevelInfo;
     use crate::{
@@ -607,38 +624,50 @@ mod test {
     }
 
     async fn test_summary_recover(opt: Arc<Options>) {
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone()).await.unwrap();
+        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
     }
 
     async fn test_tsf_num_recover(opt: Arc<Options>) {
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
 
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let mut summary = Summary::recover(opt.clone()).await.unwrap();
+        let mut summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
 
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone()).await.unwrap();
+        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
     }
 
@@ -661,6 +690,7 @@ mod test {
 
     // tips : we can use a small max_summary_size
     async fn test_recover_summary_with_roll_0(opt: Arc<Options>) {
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -668,15 +698,22 @@ mod test {
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
 
-        let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
-
+        let (summary_task_sender, _) = mpsc::unbounded_channel();
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let mut edits = vec![];
         let db = summary.version_set.write().create_db(&database);
         for i in 0..40 {
-            db.write()
-                .add_tsfamily(i, 0, 0, summary_task_sender.clone());
+            db.write().add_tsfamily(
+                i,
+                0,
+                0,
+                summary_task_sender.clone(),
+                flush_task_sender.clone(),
+            );
             let mut edit = VersionEdit::new();
             edit.add_tsfamily(i, database.clone());
             edits.push(edit.clone());
@@ -692,12 +729,15 @@ mod test {
         }
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone()).await.unwrap();
+        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
 
         assert_eq!(summary.version_set.read().tsf_num(), 20);
     }
 
     async fn test_recover_summary_with_roll_1(opt: Arc<Options>) {
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -705,13 +745,20 @@ mod test {
                 .context(error::IOSnafu)
                 .unwrap();
         }
-        let mut summary = Summary::new(opt.clone()).await.unwrap();
+        let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
 
-        let (summary_task_sender, _summary_task_receiver) = mpsc::unbounded_channel();
-
+        let (summary_task_sender, _) = mpsc::unbounded_channel();
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let db = summary.version_set.write().create_db(&database);
-        db.write()
-            .add_tsfamily(10, 0, 0, summary_task_sender.clone());
+        db.write().add_tsfamily(
+            10,
+            0,
+            0,
+            summary_task_sender.clone(),
+            flush_task_sender.clone(),
+        );
 
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
@@ -754,7 +801,9 @@ mod test {
 
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone()).await.unwrap();
+        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
 
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();

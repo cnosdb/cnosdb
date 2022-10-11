@@ -334,7 +334,7 @@ impl FlushTask {
 }
 
 pub fn run_flush_memtable_job(
-    reqs: Arc<Mutex<Vec<FlushReq>>>,
+    req: FlushReq,
     global_context: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
@@ -342,18 +342,14 @@ pub fn run_flush_memtable_job(
 ) -> Result<()> {
     let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
     {
-        let mut reqs = reqs.lock();
-        info!("Flush: Running flush job on {} MemCaches", reqs.len());
-        if reqs.len() == 0 {
+        info!("Flush: Running flush job on {} MemCaches", req.mems.len());
+        if req.mems.len() == 0 {
             return Ok(());
         }
-        for req in reqs.iter() {
-            for (tf, mem) in &req.mems {
-                let mem_vec = tsf_caches.entry(*tf).or_insert(Vec::new());
-                mem_vec.push(mem.clone());
-            }
+        for (tf, mem) in req.mems {
+            let mem_vec = tsf_caches.entry(tf).or_insert(Vec::new());
+            mem_vec.push(mem.clone());
         }
-        reqs.clear();
     }
 
     let mut edits: Vec<VersionEdit> = vec![];

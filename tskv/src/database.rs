@@ -8,6 +8,7 @@ use std::{
 
 use parking_lot::RwLock;
 use snafu::ResultExt;
+use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
@@ -17,6 +18,7 @@ use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
+use crate::compaction::FlushReq;
 use crate::index::{IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
 use crate::{
@@ -55,7 +57,11 @@ impl Database {
         }
     }
 
-    pub fn open_tsfamily(&mut self, ver: Arc<Version>) {
+    pub fn open_tsfamily(
+        &mut self,
+        ver: Arc<Version>,
+        flush_task_sender: UnboundedSender<FlushReq>,
+    ) {
         let opt = ver.storage_opt();
 
         let tf = TseriesFamily::new(
@@ -65,6 +71,7 @@ impl Database {
             ver.clone(),
             self.opt.cache.clone(),
             self.opt.storage.clone(),
+            flush_task_sender,
         );
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
@@ -90,6 +97,7 @@ impl Database {
         seq_no: u64,
         file_id: u64,
         summary_task_sender: UnboundedSender<SummaryTask>,
+        flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Arc<RwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
@@ -107,6 +115,7 @@ impl Database {
             ver,
             self.opt.cache.clone(),
             self.opt.storage.clone(),
+            flush_task_sender,
         );
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
