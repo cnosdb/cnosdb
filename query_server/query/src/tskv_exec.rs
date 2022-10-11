@@ -18,7 +18,6 @@ use models::schema::TableSchema;
 
 use crate::{
     predicate::PredicateRef,
-    schema::TableSchema,
     stream::{TableScanMetrics, TableScanStream},
 };
 use tskv::engine::EngineRef;

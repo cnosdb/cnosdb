@@ -11,6 +11,7 @@ use chrono::format::format;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use snafu::ResultExt;
+use tracing::info;
 
 use crate::Error::IndexErr;
 use config::Config;
@@ -187,6 +188,7 @@ impl DBIndex {
             Some(fields) => schema = fields,
             None => {
                 new_schema = true;
+                schema.name = table_name.clone();
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
@@ -227,7 +229,7 @@ impl DBIndex {
 
         //check tags
         for tag in info.tags().unwrap() {
-            let tag_key = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+            let tag_key = unsafe { String::from_utf8_unchecked(tag.key().unwrap().to_vec()) };
             check_fn(&mut TableFiled::new_with_default(tag_key, ColumnType::Tag))?
         }
 
@@ -377,6 +379,7 @@ impl DBIndex {
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
+            info!("{:?}", format!("{}.", tab).as_bytes());
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
             for kv in it.by_ref() {
                 if let Ok(kv) = kv {

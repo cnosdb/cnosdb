@@ -10,7 +10,6 @@ use models::ValueType;
 use snafu::ResultExt;
 use trace::debug;
 
-use crate::schema::{ColumnType, TableSchema, TIME_FIELD};
 use crate::stream::TskvSourceMetrics;
 
 use tskv::{
