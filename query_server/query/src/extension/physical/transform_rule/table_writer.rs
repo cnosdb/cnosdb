@@ -5,7 +5,6 @@ use datafusion::{
     error::DataFusionError,
     execution::context::SessionState,
     logical_plan::{source_as_provider, LogicalPlan, UserDefinedLogicalNode},
-    physical_expr::create_physical_expr,
     physical_plan::{displayable, planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
 };
 use trace::debug;
@@ -35,14 +34,11 @@ impl ExtensionPlanner for TableWriterPlanner {
             if let Some(TableWriterPlanNode {
                 target_table_name,
                 target_table,
-                input,
-                output_exprs,
+                ..
             }) = as_table_writer_plan_node(node)
             {
                 debug!("Input user defined logical node: TableWriterPlanNode");
                 trace!("Full input user defined logical plan:\n{:?}", node);
-
-                let input_schema = input.as_ref().schema();
 
                 let physical_input = physical_inputs[0].clone();
 
@@ -62,23 +58,7 @@ impl ExtensionPlanner for TableWriterPlanner {
 
                 debug!("Success to resolve table_writer.");
 
-                let output_physical_exprs = output_exprs
-                    .iter()
-                    .map(|e| {
-                        create_physical_expr(
-                            e,
-                            input_schema,
-                            &physical_input.schema(),
-                            &session_state.execution_props,
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-
-                debug!("Success to resolve output_physical_exprs.");
-
-                let result = table_writer
-                    .write(session_state, physical_input, output_physical_exprs)
-                    .await?;
+                let result = table_writer.write(session_state, physical_input).await?;
 
                 debug!(
                     "After Apply TableWriterPlanner. Transformed physical plan: {}",
