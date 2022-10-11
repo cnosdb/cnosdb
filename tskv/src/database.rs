@@ -219,7 +219,7 @@ impl Database {
             }
         };
 
-        let (row, schema) = RowData::point_to_row_data(point, table_schema, sid);
+        let (row, mut schema) = RowData::point_to_row_data(point, table_schema, sid);
         let schema_size = if !schema.is_empty() {
             size_of_val(&schema) + schema.capacity() * size_of_val(&schema[0])
         } else {
@@ -228,7 +228,7 @@ impl Database {
         let schema_id = 0;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
             schema_id,
-            schema,
+            schema: vec![],
             rows: vec![],
             range: TimeRange {
                 min_ts: i64::MAX,
@@ -237,6 +237,9 @@ impl Database {
             size: size_of::<RowGroup>() + schema_size,
         });
 
+        entry.schema.append(&mut schema);
+        entry.schema.sort();
+        entry.schema.dedup();
         entry.range.merge(&TimeRange {
             min_ts: row.ts,
             max_ts: row.ts,
