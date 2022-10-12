@@ -62,6 +62,20 @@ impl ConfigDefinition {
             ScalarValue::UInt64(Some(default_value)),
         )
     }
+
+    /// Create a configuration option definition with a u64 value
+    pub fn new_string(
+        key: impl Into<String>,
+        description: impl Into<String>,
+        default_value: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            key,
+            description,
+            DataType::UInt64,
+            ScalarValue::Utf8(Some(default_value.into())),
+        )
+    }
 }
 
 /// Contains definitions for all built-in configuration options
@@ -177,6 +191,14 @@ impl ConfigOptions {
     /// get a configuration option
     pub fn get(&self, key: &str) -> Option<ScalarValue> {
         self.options.get(key).cloned()
+    }
+
+    /// get a String configuration option
+    pub fn get_string(&self, key: &str) -> Option<String> {
+        match self.get(key) {
+            Some(ScalarValue::Utf8(b)) => b,
+            _ => None,
+        }
     }
 
     /// get a boolean configuration option
