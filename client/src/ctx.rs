@@ -17,6 +17,7 @@ pub struct SessionConfig {
     pub user_info: UserInfo,
     pub connection_info: ConnectionInfo,
     pub database: String,
+    pub target_partitions: Option<usize>,
     pub fmt: PrintFormat,
     pub config_options: ConfigOptions,
 }
@@ -30,6 +31,7 @@ impl SessionConfig {
             user_info: Default::default(),
             connection_info: Default::default(),
             database: DEFAULT_DATABASE.to_string(),
+            target_partitions: None,
             config_options,
             fmt: PrintFormat::Csv,
         }
@@ -44,13 +46,18 @@ impl SessionConfig {
         self
     }
 
-    pub fn with_password(mut self, password: String) -> Self {
+    pub fn with_password(mut self, password: Option<String>) -> Self {
         self.user_info.password = password;
         self
     }
 
     pub fn with_database(mut self, database: String) -> Self {
         self.database = database;
+        self
+    }
+
+    pub fn with_target_partitions(mut self, target_partitions: Option<usize>) -> Self {
+        self.target_partitions = target_partitions;
         self
     }
 
@@ -81,14 +88,14 @@ impl SessionConfig {
 
 pub struct UserInfo {
     pub user: String,
-    pub password: String,
+    pub password: Option<String>,
 }
 
 impl Default for UserInfo {
     fn default() -> Self {
         Self {
             user: DEFAULT_USER.to_string(),
-            password: DEFAULT_PASSWORD.to_string(),
+            password: None,
         }
     }
 }
@@ -127,10 +134,11 @@ impl SessionContext {
         let user_info = &self.session_config.user_info;
 
         let db = self.session_config.database.clone();
+        let target_partitions = self.session_config.target_partitions;
         let param = SqlParam {
             db: Some(db),
             chunked: None,
-            target_partitions: None,
+            target_partitions,
         };
 
         // let param = &[("db", &self.session_config.database)];
@@ -138,7 +146,7 @@ impl SessionContext {
         let resp = self
             .http_client
             .post(API_V1_SQL_PATH)
-            .basic_auth::<&str, &str>(&user_info.user, Some(&user_info.password))
+            .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref())
             .header(ACCEPT, self.session_config.fmt.get_http_content_type())
             .query(&param)
             .body(sql)
@@ -174,7 +182,7 @@ impl SessionContext {
         let resp = self
             .http_client
             .post(API_V1_WRITE_PATH)
-            .basic_auth::<&str, &str>(&user_info.user, Some(&user_info.password))
+            .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref())
             .query(&param)
             .body(body)
             .send()

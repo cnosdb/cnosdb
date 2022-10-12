@@ -39,13 +39,8 @@ struct Args {
     )]
     user: String,
 
-    #[clap(
-        short,
-        long,
-        help = "Password used to connect to the CnosDB",
-        default_value = ""
-    )]
-    password: String,
+    #[clap(short, long, help = "Password used to connect to the CnosDB")]
+    password: Option<String>,
 
     #[clap(
         short,
@@ -54,6 +49,14 @@ struct Args {
         default_value = "public"
     )]
     database: String,
+
+    #[clap(
+        short,
+        long,
+        help = "Number of partitions for query execution. Increasing partitions can increase concurrency.",
+        validator(is_valid_target_partitions)
+    )]
+    target_partitions: Option<usize>,
 
     #[clap(
         long,
@@ -118,6 +121,7 @@ pub async fn main() -> Result<()> {
         .with_user(args.user)
         .with_password(args.password)
         .with_database(args.database)
+        .with_target_partitions(args.target_partitions)
         .with_result_format(args.format);
 
     let mut ctx = SessionContext::new(session_config);
@@ -177,10 +181,10 @@ fn is_valid_data_dir(dir: &str) -> std::result::Result<(), String> {
     }
 }
 
-fn _is_valid_batch_size(size: &str) -> std::result::Result<(), String> {
+fn is_valid_target_partitions(size: &str) -> std::result::Result<(), String> {
     match size.parse::<usize>() {
         Ok(size) if size > 0 => Ok(()),
-        _ => Err(format!("Invalid batch size '{}'", size)),
+        _ => Err(format!("Invalid target partitions '{}'", size)),
     }
 }
 
