@@ -1,7 +1,9 @@
 use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 
-use models::{utils, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
+use models::{
+    utils, FieldId, RwLockRef, SchemaFieldId, SchemaId, SeriesId, TableId, Timestamp, ValueType,
+};
 use protos::models::{Field, FieldType, Point};
 
 use std::cmp::Ordering as CmpOrdering;
@@ -110,18 +112,12 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(
-        p: fb_models::Point,
-        schema: TableSchema,
-        sid: SeriesId,
-    ) -> (RowData, Vec<u32>) {
-        let mut field_id = vec![];
+    pub fn point_to_row_data(p: fb_models::Point, schema: &TableSchema) -> RowData {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_fields_num());
                 for i in 0..fields.capacity() {
                     fields.push(None);
-                    field_id.push(0);
                 }
                 fields
             }
@@ -130,7 +126,6 @@ impl RowData {
                 let mut fields: Vec<Option<FieldVal>> = Vec::with_capacity(fields_id.len());
                 for i in 0..fields.capacity() {
                     fields.push(None);
-                    field_id.push(0);
                 }
                 for (i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
@@ -145,7 +140,6 @@ impl RowData {
                             None => {}
                             Some(index) => {
                                 fields[*index] = Some(FieldVal::new(val, vtype));
-                                field_id[*index] = field.id as u32;
                             }
                         },
                     }
@@ -154,7 +148,7 @@ impl RowData {
             }
         };
         let ts = p.timestamp();
-        (RowData { ts, fields }, field_id)
+        RowData { ts, fields }
     }
 
     pub fn size(&self) -> usize {
@@ -198,7 +192,7 @@ impl From<fb_models::Point<'_>> for RowData {
 #[derive(Debug)]
 pub struct RowGroup {
     pub schema_id: SchemaId,
-    pub schema: Vec<u32>,
+    pub schema: TableSchema,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -219,9 +213,7 @@ impl SeriesData {
             if item.schema_id == group.schema_id {
                 item.range.merge(&group.range);
                 item.rows.append(&mut group.rows);
-                item.schema.append(&mut group.schema);
-                item.schema.sort();
-                item.schema.dedup();
+                item.schema = group.schema;
                 return;
             }
         }
@@ -240,7 +232,7 @@ impl SeriesData {
         }
     }
 
-    pub fn read_entry(&self, field_id: u32) -> Option<Arc<RwLock<MemEntry>>> {
+    pub fn read_entry(&self, field_id: SchemaFieldId) -> Option<Arc<RwLock<MemEntry>>> {
         let mut entry = MemEntry {
             ts_min: self.range.min_ts,
             ts_max: self.range.max_ts,
@@ -249,19 +241,13 @@ impl SeriesData {
         };
 
         for group in self.groups.iter() {
-            let mut index = usize::MAX;
-            for i in 0..group.schema.len() {
-                if field_id == group.schema[i] {
-                    index = i;
-                    break;
-                }
-            }
-            if index == usize::MAX {
-                continue;
-            }
-
+            let field_index = group.schema.fields_id();
+            let index = match field_index.get(&field_id) {
+                None => continue,
+                Some(v) => v,
+            };
             for row in group.rows.iter() {
-                if let Some(Some(field)) = row.fields.get(index) {
+                if let Some(Some(field)) = row.fields.get(*index) {
                     entry.field_type = field.value_type();
                     entry.cells.push(field.data_value(row.ts));
                 }
@@ -277,7 +263,7 @@ impl SeriesData {
         Some(Arc::new(RwLock::new(entry)))
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &Vec<u32>, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, &TableSchema, &Vec<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema_id, &g.schema, &g.rows))
@@ -524,6 +510,7 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use bytes::buf;
+    use models::schema::TableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use std::mem::{size_of, size_of_val};
 
@@ -535,15 +522,15 @@ pub(crate) mod test {
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
-        schema_column_ids: Vec<u32>,
+        schema: TableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {
         let mut rows = Vec::new();
-        let mut size: usize = schema_column_ids.capacity() * size_of::<Vec<u32>>();
+        let mut size: usize = schema.size();
         for ts in time_range.0..time_range.1 + 1 {
             let mut fields = Vec::new();
-            for _ in 0..schema_column_ids.len() {
+            for _ in 0..schema.fields.len() {
                 size += size_of::<Option<FieldVal>>();
                 if put_none {
                     fields.push(None);
@@ -558,7 +545,7 @@ pub(crate) mod test {
 
         let row_group = RowGroup {
             schema_id,
-            schema: schema_column_ids,
+            schema,
             range: TimeRange::from(time_range),
             rows,
             size: size_of::<RowGroup>() + size,

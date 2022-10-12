@@ -14,7 +14,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
 use models::schema::TableSchema;
 use models::utils::{split_id, unite_id};
-use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
+use models::{SchemaFieldId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
@@ -219,27 +219,21 @@ impl Database {
             }
         };
 
-        let (row, mut schema) = RowData::point_to_row_data(point, table_schema, sid);
-        let schema_size = if !schema.is_empty() {
-            size_of_val(&schema) + schema.capacity() * size_of_val(&schema[0])
-        } else {
-            size_of_val(&schema)
-        };
+        let row = RowData::point_to_row_data(point, &table_schema);
+        let schema_size = table_schema.size();
         let schema_id = 0;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
             schema_id,
-            schema: vec![],
+            schema: TableSchema::default(),
             rows: vec![],
             range: TimeRange {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
             },
-            size: size_of::<RowGroup>() + schema_size,
+            size: size_of::<RowGroup>(),
         });
-
-        entry.schema.append(&mut schema);
-        entry.schema.sort();
-        entry.schema.dedup();
+        entry.schema = table_schema;
+        entry.size += schema_size;
         entry.range.merge(&TimeRange {
             min_ts: row.ts,
             max_ts: row.ts,
@@ -377,10 +371,10 @@ pub(crate) fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
-            let fids: Vec<u64> = fields.fields.iter().map(|f| f.1.id).collect();
+            let fids: Vec<SchemaFieldId> = fields.fields.iter().map(|f| f.1.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
-                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
+                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid as u64, *sid)))
                 .collect();
             let time_range = &TimeRange {
                 min_ts: Timestamp::MIN,

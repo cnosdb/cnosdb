@@ -381,8 +381,12 @@ impl RowIterator {
                         | ValueType::Unsigned
                         | ValueType::Boolean
                         | ValueType::String => {
-                            let cursor =
-                                FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)?;
+                            let cursor = FieldCursor::new(
+                                unite_id(item.id as u64, id),
+                                field_name,
+                                vtype,
+                                self,
+                            )?;
                             Box::new(cursor)
                         }
                     },

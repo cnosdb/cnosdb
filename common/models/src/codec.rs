@@ -1,3 +1,10 @@
+pub const TIMESTAMP_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
+pub const BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
+pub const UNSIGNED_BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
+pub const DOUBLE_CODEC: [&str; 4] = ["DEFAULT", "NULL", "GORILLA", "QUANTILE"];
+pub const STRING_CODEC: [&str; 7] = ["DEFAULT", "NULL", "GZIP", "BZIP", "ZSTD", "SNAPPY", "ZLIB"];
+pub const BOOLEAN_CODEC: [&str; 3] = ["DEFAULT", "NULL", "BITPACK"];
+
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Encoding {
@@ -37,5 +44,22 @@ impl From<u8> for Encoding {
             10 => Encoding::BitPack,
             _ => Encoding::Unknown,
         }
+    }
+}
+
+pub fn codec_name_to_codec(codec_name: &str) -> u8 {
+    match codec_name {
+        "DEFAULT" => 0,
+        "NULL" => 1,
+        "DELTA" => 2,
+        "QUANTILE" => 3,
+        "GZIP" => 4,
+        "BZIP" => 5,
+        "GORILLA" => 6,
+        "SNAPPY" => 7,
+        "ZSTD" => 8,
+        "ZLIB" => 9,
+        "BITPACK" => 10,
+        _ => 15,
     }
 }
