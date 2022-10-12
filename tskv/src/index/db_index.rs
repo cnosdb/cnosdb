@@ -17,7 +17,7 @@ use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::ToByteSlice;
 use models::schema::{ColumnType, TableFiled, TableSchema};
-use models::{utils, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
+use models::{utils, FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, ValueType};
 use protos::models::Point;
 use trace::warn;
 
@@ -215,7 +215,7 @@ impl DBIndex {
                 }
                 None => {
                     schema_change = true;
-                    field.id = (schema.fields.len() + 1) as u64;
+                    field.id = (schema.fields.len() + 1) as SchemaFieldId;
                     schema.fields.insert(field.name.clone(), field.clone());
                 }
             }

@@ -3,6 +3,7 @@ use datafusion::arrow::csv::writer::WriterBuilder;
 use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::arrow::json::{ArrayWriter, LineDelimitedWriter};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::arrow::util::pretty::pretty_format_batches;
 use futures::TryStreamExt;
 use spi::query::execution::Output;
 use spi::service::protocol::QueryHandle;
@@ -11,11 +12,11 @@ use warp::reply::Response;
 
 use crate::http::response::ResponseBuilder;
 
-use super::header::{
+use http_protocol::header::{
     APPLICATION_CSV, APPLICATION_JSON, APPLICATION_NDJSON, APPLICATION_PREFIX, APPLICATION_STAR,
-    APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,
+    APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,
 };
-use super::status_code::OK;
+use http_protocol::status_code::OK;
 
 macro_rules! batches_to_json {
     ($WRITER: ident, $batches: expr) => {{
@@ -50,6 +51,7 @@ pub enum ResultFormat {
     Tsv,
     Json,
     NdJson,
+    Table,
 }
 
 impl ResultFormat {
@@ -59,6 +61,7 @@ impl ResultFormat {
             Self::Tsv => APPLICATION_TSV,
             Self::Json => APPLICATION_JSON,
             Self::NdJson => APPLICATION_NDJSON,
+            Self::Table => APPLICATION_TABLE,
         }
     }
 
@@ -70,6 +73,7 @@ impl ResultFormat {
             Self::NdJson => {
                 batches_to_json!(LineDelimitedWriter, batches)
             }
+            Self::Table => Ok(pretty_format_batches(batches)?.to_string().into_bytes()),
         }
     }
 

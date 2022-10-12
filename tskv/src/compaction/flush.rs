@@ -8,8 +8,11 @@ use std::{
     sync::Arc,
 };
 
+use models::schema::TableSchema;
+use models::utils::split_id;
 use models::{
-    utils as model_utils, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp, ValueType,
+    utils as model_utils, FieldId, FieldInfo, RwLockRef, SchemaFieldId, SeriesId, SeriesKey,
+    Timestamp, ValueType,
 };
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
@@ -138,11 +141,7 @@ impl FlushTask {
         let mut tsm_writer: Option<TsmWriter> = None;
 
         for (sid, series_datas) in caches_data.iter_mut() {
-            // todo : improve get table schema
-            // let schema: Vec<FieldInfo> = self.get_table_schema(*sid)?;
-            let schema: Vec<FieldInfo> = vec![];
-            let field_id_code_type_map: HashMap<FieldId, u8> =
-                HashMap::from_iter(schema.iter().map(|f| (f.field_id(), f.code_type())));
+            let mut field_id_code_type_map = HashMap::new();
             let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
             let mut column_values_map: HashMap<u32, Vec<(Timestamp, FieldVal)>> = HashMap::new();
 
@@ -150,16 +149,17 @@ impl FlushTask {
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
                 for (sch_id, sch_cols, rows) in series_data.read().flat_groups() {
+                    self.build_codec_map(sch_cols, &mut field_id_code_type_map);
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
-                        for (val, col) in row.fields.iter().zip(sch_cols.iter()) {
+                        for (val, col) in row.fields.iter().zip(sch_cols.fields.iter()) {
                             if let Some(v) = val {
                                 schema_columns_value_type_map
-                                    .entry(*col)
+                                    .entry(col.1.id)
                                     .or_insert_with(|| v.value_type());
                                 column_values_map
-                                    .entry(*col)
+                                    .entry(col.1.id)
                                     .or_insert_with(Vec::new)
                                     .push((row.ts, v.clone()));
                             }
@@ -179,8 +179,13 @@ impl FlushTask {
 
             // Write the merged data into files.
             for (field_id, dlt_blks, tsm_blks) in merged_series_data {
-                let encoding =
-                    DataBlockEncoding(field_id_code_type_map.get(&field_id).copied().unwrap_or(0));
+                let (table_field_id, _) = split_id(field_id);
+                let encoding = DataBlockEncoding(
+                    field_id_code_type_map
+                        .get(&table_field_id)
+                        .copied()
+                        .unwrap_or(0),
+                );
                 if !dlt_blks.is_empty() {
                     if delta_writer.is_none() {
                         let writer = self.new_writer(true)?;
@@ -214,6 +219,12 @@ impl FlushTask {
 
         // Flush the wrote files.
         self.finish_flush_mem_caches(delta_writer, tsm_writer)
+    }
+
+    fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<SchemaFieldId, u8>) {
+        for (_, i) in schema.fields.iter() {
+            map.insert(i.id, i.codec);
+        }
     }
 
     /// For the collected data, sort and dedup by timestamp, and then split by max_level_ts.
@@ -399,12 +410,13 @@ pub fn run_flush_memtable_job(
 
 #[cfg(test)]
 pub mod flush_tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use models::{utils as model_utils, FieldId, Timestamp};
+    use models::schema::{ColumnType, TableFiled, TableSchema};
+    use models::{utils as model_utils, FieldId, SchemaFieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
@@ -425,6 +437,27 @@ pub mod flush_tests {
     };
 
     use super::FlushTask;
+
+    pub fn default_with_field_id(ids: Vec<SchemaFieldId>) -> TableSchema {
+        let mut map = BTreeMap::new();
+        for i in ids.iter() {
+            map.insert(
+                i.to_string(),
+                TableFiled {
+                    id: *i,
+                    name: i.to_string(),
+                    column_type: ColumnType::Field(ValueType::Unknown),
+                    codec: 0,
+                },
+            );
+        }
+        TableSchema {
+            db: "public".to_string(),
+            name: "".to_string(),
+            schema_id: 0,
+            fields: map,
+        }
+    }
 
     #[test]
     fn test_sort_dedup() {
@@ -459,20 +492,105 @@ pub mod flush_tests {
             MemCache::new(1, 16, 0),
             MemCache::new(1, 16, 0),
         ];
-        put_rows_to_cache(&mut caches[0], 1, 1, vec![0, 1, 2], (3, 4), false);
-        put_rows_to_cache(&mut caches[0], 1, 2, vec![0, 1, 3], (1, 2), false);
-        put_rows_to_cache(&mut caches[0], 1, 3, vec![0, 1, 2, 3], (5, 5), true);
-        put_rows_to_cache(&mut caches[0], 1, 3, vec![0, 1, 2, 3], (5, 6), false);
 
-        put_rows_to_cache(&mut caches[1], 2, 1, vec![0, 1, 2], (9, 10), false);
-        put_rows_to_cache(&mut caches[1], 2, 2, vec![0, 1, 3], (7, 8), false);
-        put_rows_to_cache(&mut caches[1], 2, 3, vec![0, 1, 2, 3], (11, 11), true);
-        put_rows_to_cache(&mut caches[1], 2, 3, vec![0, 1, 2, 3], (11, 12), false);
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            1,
+            default_with_field_id(vec![0, 1, 2]),
+            (3, 4),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            2,
+            default_with_field_id(vec![0, 1, 3]),
+            (1, 2),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (5, 5),
+            true,
+        );
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (5, 6),
+            false,
+        );
 
-        put_rows_to_cache(&mut caches[2], 3, 1, vec![0, 1, 2], (15, 16), false);
-        put_rows_to_cache(&mut caches[2], 3, 2, vec![0, 1, 3], (13, 14), false);
-        put_rows_to_cache(&mut caches[2], 3, 3, vec![0, 1, 2, 3], (17, 17), true);
-        put_rows_to_cache(&mut caches[2], 3, 3, vec![0, 1, 2, 3], (17, 18), false);
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            1,
+            default_with_field_id(vec![0, 1, 2]),
+            (9, 10),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            2,
+            default_with_field_id(vec![0, 1, 3]),
+            (7, 8),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (11, 11),
+            true,
+        );
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (11, 12),
+            false,
+        );
+
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            1,
+            default_with_field_id(vec![0, 1, 2]),
+            (15, 16),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            2,
+            default_with_field_id(vec![0, 1, 3]),
+            (13, 14),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (17, 17),
+            true,
+        );
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (17, 18),
+            false,
+        );
 
         let max_level_ts = 10;
 

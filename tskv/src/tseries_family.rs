@@ -768,8 +768,8 @@ mod test {
     use config::get_config;
     use models::{Timestamp, ValueType};
     use trace::info;
-
     use crate::file_system::file_manager;
+    use crate::compaction::flush_tests::default_with_field_id;
     use crate::file_utils::{self, make_tsm_file_name};
     use crate::memcache::{FieldVal, RowData, RowGroup};
     use crate::summary::SummaryTask;
@@ -1030,7 +1030,7 @@ mod test {
 
         let row_group = RowGroup {
             schema_id: 0,
-            schema: vec![0, 1, 2],
+            schema: default_with_field_id(vec![0, 1, 2]),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
@@ -1106,7 +1106,7 @@ mod test {
         let mem = MemCache::new(0, 1000, 0);
         let row_group = RowGroup {
             schema_id: 0,
-            schema: vec![0, 1, 2],
+            schema: default_with_field_id(vec![0, 1, 2]),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,

@@ -1,39 +1,19 @@
-use models::error_code::ErrorCode;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use warp::http::header::HeaderMap;
-use warp::http::header::CONTENT_TYPE;
 use warp::http::HeaderValue;
 use warp::http::StatusCode;
 use warp::reply::Response;
 use warp::Reply;
 
 use super::header::IntoHeaderPair;
-use super::header::APPLICATION_JSON;
-use super::status_code::BAD_REQUEST;
-use super::status_code::INTERNAL_SERVER_ERROR;
-use super::status_code::METHOD_NOT_ALLOWED;
-use super::status_code::NOT_FOUND;
-use super::status_code::OK;
-use super::status_code::PAYLOAD_TOO_LARGE;
-
-#[derive(Debug, Serialize)]
-pub struct EmptyResponse {}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ErrorResponse {
-    error_code: String,
-    error_message: String,
-}
-
-impl ErrorResponse {
-    pub fn new(error_code: ErrorCode, error_message: String) -> ErrorResponse {
-        Self {
-            error_code: error_code.as_str().to_string(),
-            error_message,
-        }
-    }
-}
+use http_protocol::header::APPLICATION_JSON;
+use http_protocol::header::CONTENT_TYPE;
+use http_protocol::status_code::BAD_REQUEST;
+use http_protocol::status_code::INTERNAL_SERVER_ERROR;
+use http_protocol::status_code::METHOD_NOT_ALLOWED;
+use http_protocol::status_code::NOT_FOUND;
+use http_protocol::status_code::OK;
+use http_protocol::status_code::PAYLOAD_TOO_LARGE;
 
 #[derive(Default)]
 pub struct ResponseBuilder {
@@ -115,6 +95,8 @@ impl ResponseBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_protocol::response::ErrorResponse;
+    use models::error_code::ErrorCode;
 
     #[test]
     fn test_simple_response() {
