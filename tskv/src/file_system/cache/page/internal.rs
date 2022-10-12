@@ -9,7 +9,7 @@ use std::{
 use lock::*;
 use parking_lot::{RwLock, RwLockWriteGuard};
 
-use crate::direct_io::cache::{page::*, scope::*};
+use crate::file_system::cache::{page::*, scope::*};
 
 #[repr(transparent)]
 pub struct PagePtr<T: Scope>(NonNull<Page_<T>>);

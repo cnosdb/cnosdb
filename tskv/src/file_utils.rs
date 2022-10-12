@@ -4,7 +4,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use snafu::ResultExt;
 
-use crate::{error, file_manager, Error, Result};
+use crate::file_system::file_manager;
+use crate::{error, Error, Result};
 
 lazy_static! {
     static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();

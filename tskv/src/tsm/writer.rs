@@ -8,10 +8,11 @@ use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
 use utils::{BkdrHasher, BloomFilter};
 
+use crate::file_system::file_manager;
 use crate::{
-    direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
-    file_manager, file_utils,
+    file_system::{DmaFile, FileCursor, FileSync},
+    file_utils,
     tsm::{
         BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
         BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
@@ -480,9 +481,9 @@ mod test {
 
     use models::{FieldId, ValueType};
 
+    use crate::file_system::file_manager::{self, get_file_manager, FileManager};
     use crate::{
-        direct_io::FileSync,
-        file_manager::{self, get_file_manager, FileManager},
+        file_system::FileSync,
         memcache::FieldVal,
         tsm::{
             codec::DataBlockEncoding, new_tsm_writer, ColumnReader, DataBlock, IndexReader,

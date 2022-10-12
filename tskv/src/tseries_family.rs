@@ -22,11 +22,11 @@ use models::{FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType};
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
+use crate::file_system::file_manager;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
-    direct_io::{File, FileCursor},
     error::{Error, Result},
-    file_manager,
+    file_system::{DmaFile, FileCursor},
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache},
@@ -769,13 +769,13 @@ mod test {
     use models::{Timestamp, ValueType};
     use trace::info;
 
+    use crate::file_system::file_manager;
     use crate::file_utils::{self, make_tsm_file_name};
     use crate::memcache::{FieldVal, RowData, RowGroup};
     use crate::summary::SummaryTask;
     use crate::{
         compaction::{run_flush_memtable_job, FlushReq},
         context::GlobalContext,
-        file_manager,
         kv_option::Options,
         memcache::MemCache,
         summary::{CompactMeta, VersionEdit},

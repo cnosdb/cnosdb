@@ -9,7 +9,7 @@ use std::{
 
 use async_recursion::async_recursion;
 use bytes::{Buf, BufMut};
-use direct_io::File;
+use file_system::DmaFile;
 use futures::future::ok;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
@@ -19,7 +19,7 @@ use super::*;
 
 pub struct Reader {
     path: PathBuf,
-    file: Mutex<File>,
+    file: Mutex<DmaFile>,
     buf: Vec<u8>,
     pos: usize,
     buf_len: usize,

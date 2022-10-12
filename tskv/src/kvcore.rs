@@ -29,13 +29,13 @@ use protos::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
     database,
     engine::Engine,
     error::{self, Result},
-    file_manager::{self, FileManager},
     file_utils,
     index::{db_index, IndexResult},
     kv_option::Options,

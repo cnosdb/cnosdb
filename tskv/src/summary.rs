@@ -15,10 +15,10 @@ use config::get_config;
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
+use crate::file_system::file_manager::try_exists;
 use crate::{
     context::GlobalContext,
     error::{Error, Result},
-    file_manager::try_exists,
     file_utils,
     kv_option::{Options, StorageOptions},
     record_file::{Reader, RecordFileError, Writer},
@@ -587,9 +587,10 @@ mod test {
 
     use config::get_config;
 
+    use crate::file_system::file_manager;
     use crate::tseries_family::LevelInfo;
     use crate::{
-        error, file_manager,
+        error,
         kv_option::{Options, StorageOptions},
         summary::{CompactMeta, EditType, Summary, VersionEdit},
     };

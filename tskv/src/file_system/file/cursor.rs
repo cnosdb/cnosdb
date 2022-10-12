@@ -4,16 +4,16 @@ use std::{
     ops::Deref,
 };
 
-use super::File;
+use super::DmaFile;
 
 #[derive(Clone)]
 pub struct FileCursor {
-    file: File,
+    file: DmaFile,
     pos: u64,
 }
 
 impl FileCursor {
-    pub fn into_file(self) -> File {
+    pub fn into_file(self) -> DmaFile {
         self.file
     }
 
@@ -62,14 +62,14 @@ impl FileCursor {
     }
 }
 
-impl From<File> for FileCursor {
-    fn from(file: File) -> Self {
+impl From<DmaFile> for FileCursor {
+    fn from(file: DmaFile) -> Self {
         FileCursor { file, pos: 0 }
     }
 }
 
 impl Deref for FileCursor {
-    type Target = File;
+    type Target = DmaFile;
 
     fn deref(&self) -> &Self::Target {
         &self.file
@@ -82,11 +82,11 @@ mod test {
 
     use tempfile::NamedTempFile;
 
-    use crate::direct_io::*;
+    use crate::file_system::*;
 
     #[test]
     fn copy() {
-        let fs = FileSystem::new(Options::default().max_resident(2).max_non_resident(2));
+        let fs = FileSystemCache::new(Options::default().max_resident(2).max_non_resident(2));
 
         let file_len: usize = (fs.max_page_len() as f64 * 5.3) as usize;
 
