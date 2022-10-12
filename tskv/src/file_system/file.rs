@@ -73,6 +73,9 @@ impl DmaFile {
     pub fn len(&self) -> u64 {
         self.scope.get().len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.scope.get().len() == 0
+    }
 
     pub fn set_len(&self, len: u64) {
         self.scope.get().set_len(len);

@@ -136,7 +136,7 @@ impl WalWriter {
         let mut new_file = false;
         let file = if file_manager::try_exists(path) {
             let f = file_manager::get_file_manager().open_file(path)?;
-            if f.len() == 0 {
+            if f.is_empty() {
                 new_file = true;
             }
             f

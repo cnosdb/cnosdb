@@ -186,7 +186,7 @@ impl TsmTombstone {
                 Some(file_manager::get_file_manager().open_create_file(&self.path)?);
         }
         let writer = self.tomb_accessor.as_ref().expect("initialized file");
-        if writer.len() == 0 {
+        if writer.is_empty() {
             Self::write_header_to(writer)?;
             writer.sync_data(FileSync::Hard).context(error::IOSnafu)?;
         }

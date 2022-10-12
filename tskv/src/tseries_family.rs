@@ -765,11 +765,8 @@ mod test {
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
 
-    use config::get_config;
-    use models::{Timestamp, ValueType};
-    use trace::info;
-    use crate::file_system::file_manager;
     use crate::compaction::flush_tests::default_with_field_id;
+    use crate::file_system::file_manager;
     use crate::file_utils::{self, make_tsm_file_name};
     use crate::memcache::{FieldVal, RowData, RowGroup};
     use crate::summary::SummaryTask;
@@ -784,6 +781,9 @@ mod test {
         version_set::VersionSet,
         TseriesFamilyId,
     };
+    use config::get_config;
+    use models::{Timestamp, ValueType};
+    use trace::info;
 
     use super::{ColumnFile, LevelInfo};
 
