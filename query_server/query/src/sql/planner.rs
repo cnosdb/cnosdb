@@ -25,19 +25,15 @@ use spi::query::session::IsiphoSessionCtx;
 use sqlparser::ast::{Ident, ObjectName, Query};
 use std::collections::HashMap as MetaDataHashmap;
 
+use models::codec::{
+    BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC, UNSIGNED_BIGINT_CODEC,
+};
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use sqlparser::ast::{DataType as SQLDataType, Statement};
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
-
-const TIMESTAMP_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
-const BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
-const UNSIGNED_BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
-const DOUBLE_CODEC: [&str; 4] = ["DEFAULT", "NULL", "GORILLA", "QUANTILE"];
-const STRING_CODEC: [&str; 7] = ["DEFAULT", "NULL", "GZIP", "BZIP", "ZSTD", "SNAPPY", "ZLIB"];
-const BOOLEAN_CODEC: [&str; 3] = ["DEFAULT", "NULL", "BITPACK"];
 
 /// CnosDB SQL query planner
 #[derive(Debug)]

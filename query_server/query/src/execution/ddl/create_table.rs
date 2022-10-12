@@ -3,8 +3,9 @@ use crate::metadata::MetaDataRef;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::sql::TableReference;
+use models::codec::codec_name_to_codec;
 use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
-use models::ValueType;
+use models::{SchemaFieldId, ValueType};
 use snafu::ResultExt;
 use spi::catalog::MetadataError;
 use spi::query::execution;
@@ -66,7 +67,7 @@ fn create_table(
     let mut kv_fields = BTreeMap::new();
     let mut get_time = false;
     for (i, tag) in tags.iter().enumerate() {
-        let kv_field = TableFiled::new((i + 1) as u64, tag.clone(), ColumnType::Tag, 0);
+        let kv_field = TableFiled::new((i + 1) as SchemaFieldId, tag.clone(), ColumnType::Tag, 0);
         kv_fields.insert(tag.clone(), kv_field);
     }
 
@@ -82,7 +83,7 @@ fn create_table(
             start + i
         };
         let kv_field = TableFiled::new(
-            id as u64,
+            id as SchemaFieldId,
             field_name.clone(),
             data_type_to_column_type(field.data_type()),
             codec_name_to_codec(
@@ -113,23 +114,6 @@ fn data_type_to_column_type(data_type: &DataType) -> ColumnType {
         DataType::Utf8 => ColumnType::Field(ValueType::String),
         DataType::Boolean => ColumnType::Field(ValueType::Boolean),
         _ => ColumnType::Field(ValueType::Unknown),
-    }
-}
-
-fn codec_name_to_codec(codec_name: &str) -> u8 {
-    match codec_name {
-        "DEFAULT" => 0,
-        "NULL" => 1,
-        "DELTA" => 2,
-        "QUANTILE" => 3,
-        "GZIP" => 4,
-        "BZIP" => 5,
-        "GORILLA" => 6,
-        "SNAPPY" => 7,
-        "ZSTD" => 8,
-        "ZLIB" => 9,
-        "BITPACK" => 10,
-        _ => 15,
     }
 }
 

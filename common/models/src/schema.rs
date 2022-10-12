@@ -11,6 +11,8 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::{collections::BTreeMap, sync::Arc};
 
+use std::mem::size_of_val;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +22,7 @@ use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::ExecutionPlan;
 
-use crate::ValueType;
+use crate::{SchemaFieldId, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
@@ -89,8 +91,8 @@ impl TableSchema {
         ans
     }
 
-    // return (table_field_id, index)
-    pub fn fields_id(&self) -> HashMap<u64, usize> {
+    // return (table_field_id, index), index mean field location which column
+    pub fn fields_id(&self) -> HashMap<SchemaFieldId, usize> {
         let mut ans = vec![];
         for i in self.fields.iter() {
             if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
@@ -103,6 +105,15 @@ impl TableSchema {
             map.insert(*id, i);
         }
         map
+    }
+
+    pub fn size(&self) -> usize {
+        let mut size = 0;
+        for i in self.fields.iter() {
+            size += i.0.capacity() + size_of_val(&i.1) + size_of_val(&i);
+        }
+        size += size_of_val(&self);
+        size
     }
 }
 
@@ -137,14 +148,14 @@ pub fn is_time_column(field: &Field) -> bool {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TableFiled {
-    pub id: u64,
+    pub id: SchemaFieldId,
     pub name: String,
     pub column_type: ColumnType,
     pub codec: u8,
 }
 
 impl TableFiled {
-    pub fn new(id: u64, name: String, column_type: ColumnType, codec: u8) -> Self {
+    pub fn new(id: SchemaFieldId, name: String, column_type: ColumnType, codec: u8) -> Self {
         Self {
             id,
             name,
