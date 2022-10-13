@@ -420,6 +420,8 @@ pub mod flush_tests {
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
+    use crate::file_system::file_manager;
+    use crate::file_utils;
     use crate::memcache::test::put_rows_to_cache;
     use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{LevelInfo, Version};
@@ -433,7 +435,6 @@ pub mod flush_tests {
         tseries_family::FLUSH_REQ,
         version_set::VersionSet,
     };
-    use crate::{file_manager, file_utils};
 
     use super::FlushTask;
 

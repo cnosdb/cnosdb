@@ -11,12 +11,12 @@ use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
 
+use crate::file_system::file_manager::{self, get_file_manager};
 use crate::{
     compaction::CompactReq,
     context::GlobalContext,
-    direct_io::File,
     error::{self, Result},
-    file_manager::{self, get_file_manager},
+    file_system::DmaFile,
     file_utils,
     kv_option::Options,
     memcache::DataType,
@@ -582,10 +582,11 @@ mod test {
     use models::{FieldId, Timestamp, ValueType};
     use utils::BloomFilter;
 
+    use crate::file_system::file_manager;
     use crate::{
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
-        file_manager, file_utils,
+        file_utils,
         kv_option::Options,
         summary::VersionEdit,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},

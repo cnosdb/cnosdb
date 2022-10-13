@@ -10,7 +10,7 @@ mod tests {
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
-    use tskv::file_manager;
+    use tskv::file_system::file_manager;
     use tskv::{kv_option, TsKv};
 
     fn get_tskv() -> (Arc<Runtime>, TsKv) {

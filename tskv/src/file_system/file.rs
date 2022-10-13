@@ -19,7 +19,7 @@ use os::*;
 use scope::FileScope;
 use static_assertions::*;
 
-use crate::direct_io::cache::{self, PageId, Scope};
+use crate::file_system::cache::{self, PageId, Scope};
 
 type CacheHandle = cache::CacheHandle<FileScope>;
 type ScopeHandle = cache::ScopeHandle<FileScope>;
@@ -40,17 +40,17 @@ pub enum FileSync {
 }
 
 #[derive(Clone)]
-pub struct File {
+pub struct DmaFile {
     scope: ScopeHandle,
 }
 
-unsafe impl Send for File {}
-unsafe impl Sync for File {}
+unsafe impl Send for DmaFile {}
+unsafe impl Sync for DmaFile {}
 
 // assert_impl_all!(File: Send);
 // assert_not_impl_any!(File: Sync);
 
-impl File {
+impl DmaFile {
     fn new(scope: ScopeHandle) -> Self {
         Self { scope }
     }
@@ -72,6 +72,9 @@ impl File {
 
     pub fn len(&self) -> u64 {
         self.scope.get().len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.scope.get().len() == 0
     }
 
     pub fn set_len(&self, len: u64) {
@@ -132,15 +135,15 @@ impl File {
     }
 }
 
-impl PartialEq for File {
+impl PartialEq for DmaFile {
     fn eq(&self, other: &Self) -> bool {
         self.scope.get().id() == other.scope.get().id()
     }
 }
 
-impl Eq for File {}
+impl Eq for DmaFile {}
 
-impl From<FileCursor> for File {
+impl From<FileCursor> for DmaFile {
     fn from(v: FileCursor) -> Self {
         v.into_file()
     }
@@ -299,10 +302,10 @@ mod test {
 
     use tempfile::NamedTempFile;
 
-    use crate::direct_io::*;
+    use crate::file_system::*;
 
-    fn new(max_resident: usize, max_non_resident: usize, page_len_scale: usize) -> FileSystem {
-        FileSystem::new(
+    fn new(max_resident: usize, max_non_resident: usize, page_len_scale: usize) -> FileSystemCache {
+        FileSystemCache::new(
             Options::default()
                 .max_resident(max_resident)
                 .max_non_resident(max_non_resident)
@@ -327,7 +330,7 @@ mod test {
         r
     }
 
-    fn read_vec_at(file: &File, pos: u64, len: usize) -> Vec<u8> {
+    fn read_vec_at(file: &DmaFile, pos: u64, len: usize) -> Vec<u8> {
         let mut r = Vec::new();
         r.resize(len, 0);
         let read = file.read_at(pos, &mut r).unwrap();

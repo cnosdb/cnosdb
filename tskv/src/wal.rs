@@ -18,13 +18,13 @@ use protos::models as fb_models;
 use trace::{debug, error, info, warn};
 
 use crate::engine;
+use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     byte_utils,
     compaction::FlushReq,
     context::GlobalContext,
-    direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
-    file_manager::{self, FileManager},
+    file_system::{DmaFile, FileCursor, FileSync},
     file_utils,
     kv_option::WalOptions,
     memcache::MemCache,
@@ -106,7 +106,7 @@ impl WalEntryBlock {
 
 struct WalWriter {
     id: u64,
-    file: File,
+    file: DmaFile,
     size: u64,
     path: PathBuf,
     config: Arc<WalOptions>,
@@ -136,7 +136,7 @@ impl WalWriter {
         let mut new_file = false;
         let file = if file_manager::try_exists(path) {
             let f = file_manager::get_file_manager().open_file(path)?;
-            if f.len() == 0 {
+            if f.is_empty() {
                 new_file = true;
             }
             f
@@ -361,7 +361,7 @@ impl WalManager {
     }
 }
 
-pub fn reader(f: File) -> Result<WalReader> {
+pub fn reader(f: DmaFile) -> Result<WalReader> {
     WalReader::new(f.into_cursor())
 }
 
@@ -450,9 +450,9 @@ mod test {
     use protos::{models as fb_models, models_helper};
     use trace::init_default_global_tracing;
 
+    use crate::file_system::file_manager::{self, list_file_names, FileManager};
     use crate::{
-        direct_io::{File, FileCursor, FileSync},
-        file_manager::{self, list_file_names, FileManager},
+        file_system::{DmaFile, FileCursor, FileSync},
         kv_option::WalOptions,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };

@@ -20,8 +20,8 @@ use tracing::info;
 
 use crate::{
     compaction::CompactReq,
-    direct_io::File,
     error::Result,
+    file_system::DmaFile,
     kv_option::{Options, StorageOptions},
     tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
     LevelId, TimeRange, TseriesFamilyId,

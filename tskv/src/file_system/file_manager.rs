@@ -11,8 +11,9 @@ use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
 use crate::{
-    direct_io::{self},
-    error, Error, Result,
+    error,
+    file_system::{self},
+    Error, Result,
 };
 
 #[derive(Snafu, Debug)]
@@ -40,7 +41,7 @@ pub enum FileError {
 }
 
 pub struct FileManager {
-    file_system: Arc<direct_io::FileSystem>,
+    file_system: Arc<file_system::FileSystemCache>,
 }
 
 pub fn get_file_manager() -> &'static FileManager {
@@ -50,9 +51,9 @@ pub fn get_file_manager() -> &'static FileManager {
 
 impl FileManager {
     fn new() -> Self {
-        let fs_options = direct_io::Options::default();
+        let fs_options = file_system::Options::default();
         Self {
-            file_system: Arc::new(direct_io::FileSystem::new(&fs_options)),
+            file_system: Arc::new(file_system::FileSystemCache::new(&fs_options)),
         }
     }
 
@@ -60,7 +61,7 @@ impl FileManager {
         &self,
         path: impl AsRef<Path>,
         options: &fs::OpenOptions,
-    ) -> Result<direct_io::File> {
+    ) -> Result<file_system::DmaFile> {
         self.file_system
             .open_with(&path, options)
             .context(error::OpenFileSnafu {
@@ -68,13 +69,13 @@ impl FileManager {
             })
     }
 
-    pub fn open_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
+    pub fn open_file(&self, path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
         self.file_system.open(&path).context(error::OpenFileSnafu {
             path: path.as_ref(),
         })
     }
 
-    pub fn create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
+    pub fn create_file(&self, path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
         if let Some(p) = path.as_ref().parent() {
             if !try_exists(p) {
                 std::fs::create_dir_all(p).context(error::IOSnafu)?;
@@ -87,7 +88,7 @@ impl FileManager {
             })
     }
 
-    pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<direct_io::File> {
+    pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
         if try_exists(path.as_ref()) {
             self.open_file(path)
         } else {
@@ -95,13 +96,13 @@ impl FileManager {
         }
     }
 
-    pub async fn sync_all(&self, sync: direct_io::FileSync) -> Result<()> {
+    pub async fn sync_all(&self, sync: file_system::FileSync) -> Result<()> {
         self.file_system
             .sync_all(sync)
             .context(error::SyncFileSnafu)
     }
 
-    pub async fn sync_data(&self, sync: direct_io::FileSync) -> Result<()> {
+    pub async fn sync_data(&self, sync: file_system::FileSync) -> Result<()> {
         self.file_system
             .sync_data(sync)
             .context(error::SyncFileSnafu)
@@ -143,17 +144,17 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
 }
 
 #[inline(always)]
-pub fn open_file(path: impl AsRef<Path>) -> Result<direct_io::File> {
+pub fn open_file(path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
     get_file_manager().open_file(path)
 }
 
 #[inline(always)]
-pub fn create_file(path: impl AsRef<Path>) -> Result<direct_io::File> {
+pub fn create_file(path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
     get_file_manager().create_file(path)
 }
 
 #[inline(always)]
-pub fn open_create_file(path: impl AsRef<Path>) -> Result<direct_io::File> {
+pub fn open_create_file(path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
     get_file_manager().open_create_file(path)
 }
 
@@ -166,7 +167,8 @@ mod test {
     use trace::info;
 
     use super::FileManager;
-    use crate::{direct_io::FileSync, file_manager};
+    use crate::file_system::file_manager;
+    use crate::file_system::FileSync;
 
     #[test]
     fn test_get_instance() {

@@ -5,7 +5,7 @@ use std::{
     sync::{atomic::*, Arc, Weak},
 };
 
-use crate::direct_io::file::*;
+use crate::file_system::file::*;
 
 pub struct FileScope {
     scope_map: Weak<ScopeMap>,

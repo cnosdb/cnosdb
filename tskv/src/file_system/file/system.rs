@@ -1,4 +1,4 @@
-use crate::direct_io::file::*;
+use crate::file_system::file::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Options {
@@ -35,14 +35,14 @@ impl Default for Options {
 }
 
 #[derive(Clone)]
-pub struct FileSystem {
+pub struct FileSystemCache {
     cache: CacheHandle,
     scope_map: Arc<ScopeMap>,
 }
 
-assert_impl_all!(FileSystem: Send, Sync);
+assert_impl_all!(FileSystemCache: Send, Sync);
 
-impl FileSystem {
+impl FileSystemCache {
     pub fn new(options: &Options) -> Self {
         let os_page_len = page_size::get();
         Self {
@@ -84,7 +84,7 @@ impl FileSystem {
         self.cache.write_count()
     }
 
-    pub fn open_with(&self, path: impl AsRef<Path>, options: &OpenOptions) -> Result<File> {
+    pub fn open_with(&self, path: impl AsRef<Path>, options: &OpenOptions) -> Result<DmaFile> {
         // TODO on Linux can use stat(path) to get the file id and avoid open/close calls for
         // already cached files.
         let file = open(path, options)?;
@@ -92,19 +92,19 @@ impl FileSystem {
 
         if let Some(scope) = self.scope_map.get(&id) {
             if let Some(scope) = scope.value().upgrade() {
-                return Ok(File::new(scope));
+                return Ok(DmaFile::new(scope));
             }
         }
 
         let scope = FileScope::new(&self.cache, &self.scope_map, file, id, len)?;
-        Ok(File::new(scope))
+        Ok(DmaFile::new(scope))
     }
 
-    pub fn open(&self, path: impl AsRef<Path>) -> Result<File> {
+    pub fn open(&self, path: impl AsRef<Path>) -> Result<DmaFile> {
         self.open_with(path, OpenOptions::new().read(true).write(true))
     }
 
-    pub fn create(&self, path: impl AsRef<Path>) -> Result<File> {
+    pub fn create(&self, path: impl AsRef<Path>) -> Result<DmaFile> {
         self.open_with(
             path,
             OpenOptions::new()
