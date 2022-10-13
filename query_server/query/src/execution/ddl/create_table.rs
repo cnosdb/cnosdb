@@ -1,5 +1,4 @@
 use crate::execution::ddl::DDLDefinitionTask;
-use crate::metadata::MetaDataRef;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::sql::TableReference;
@@ -7,7 +6,7 @@ use models::codec::codec_name_to_codec;
 use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
 use models::{SchemaFieldId, ValueType};
 use snafu::ResultExt;
-use spi::catalog::MetadataError;
+use spi::catalog::{MetaDataRef, MetadataError};
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTable;
@@ -28,8 +27,7 @@ impl CreateTableTask {
 impl DDLDefinitionTask for CreateTableTask {
     async fn execute(
         &self,
-        catalog: MetaDataRef,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateTable {
             ref name,
@@ -38,7 +36,7 @@ impl DDLDefinitionTask for CreateTableTask {
         } = self.stmt;
 
         let table_ref: TableReference = name.as_str().into();
-        let table = catalog.table_provider(table_ref);
+        let table = query_state_machine.catalog.table_provider(table_ref);
 
         match (if_not_exists, table) {
             // do not create if exists
@@ -50,7 +48,7 @@ impl DDLDefinitionTask for CreateTableTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, Err(_)) => {
-                create_table(&self.stmt, catalog)?;
+                create_table(&self.stmt, query_state_machine.catalog.clone())?;
                 Ok(Output::Nil(()))
             }
         }
@@ -96,7 +94,16 @@ fn create_table(
         kv_fields.insert(field_name.clone(), kv_field);
     }
 
-    let table_schema = TableSchema::new(catalog.schema_name(), name.clone(), kv_fields);
+    let table: TableReference = name.as_str().into();
+    let catalog_name = catalog.catalog_name();
+    let schema_name = catalog.schema_name();
+    let table_ref = table.resolve(&catalog_name, &schema_name);
+
+    let table_schema = TableSchema::new(
+        table_ref.schema.to_string(),
+        table.table().to_string(),
+        kv_fields,
+    );
     let table_schema = Arc::new(table_schema);
     catalog
         .create_table(name, table_schema.clone())
@@ -122,7 +129,7 @@ mod test {
     use crate::execution::ddl::create_table::create_table;
     use crate::extension::expr::load_all_functions;
     use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
-    use crate::metadata::{LocalCatalogMeta, MetaData};
+    use crate::metadata::LocalCatalogMeta;
     use crate::sql::parser::ExtParser;
     use crate::sql::planner::SqlPlaner;
     use config::get_config;
@@ -131,7 +138,10 @@ mod test {
     use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
+    use spi::query::execution::QueryStateMachine;
     use spi::query::logical_planner::{DDLPlan, Plan};
+    use spi::query::session::IsiphoSessionCtxFactory;
+    use spi::service::protocol::{ContextBuilder, Query, UserInfo};
     use std::result;
     use std::sync::Arc;
     use tokio::runtime;
@@ -175,6 +185,16 @@ mod test {
             tskv.clone(),
             Arc::new(function_manager),
         ));
+        let context = ContextBuilder::new(UserInfo {
+            user: "".to_string(),
+            password: "".to_string(),
+        })
+        .with_database(Some("public".to_string()))
+        .build();
+        let query = Query::new(context, "1".to_string());
+        let factory = IsiphoSessionCtxFactory::default();
+        let session = factory.create_isipho_session_ctx(query.context().clone());
+        let query_state_machine = Arc::new(QueryStateMachine::begin(query, session, meta));
         let sql = "CREATE TABLE IF NOT EXISTS test\
             (column1 BIGINT CODEC(DELTA),\
             column2 STRING CODEC(GZIP),\
@@ -199,8 +219,11 @@ mod test {
             DDLPlan::CreateTable(plan) => plan,
         };
 
-        create_table(&plan, meta.clone()).unwrap();
-        let ans = format!("{:?}", tskv.get_table_schema(&meta.schema_name(), "test"));
+        create_table(&plan, query_state_machine.catalog.clone()).unwrap();
+        let ans = format!(
+            "{:?}",
+            tskv.get_table_schema(&query_state_machine.catalog.schema_name(), "test")
+        );
         let expected = r#"Ok(Some(TableSchema { db: "public", name: "test", schema_id: 0, fields: {"column1": TableFiled { id: 3, name: "column1", column_type: Field(Integer), codec: 2 }, "column2": TableFiled { id: 4, name: "column2", column_type: Field(String), codec: 4 }, "column3": TableFiled { id: 5, name: "column3", column_type: Field(Unsigned), codec: 1 }, "column4": TableFiled { id: 6, name: "column4", column_type: Field(Boolean), codec: 0 }, "column5": TableFiled { id: 7, name: "column5", column_type: Field(Float), codec: 6 }, "column6": TableFiled { id: 1, name: "column6", column_type: Tag, codec: 0 }, "column7": TableFiled { id: 2, name: "column7", column_type: Tag, codec: 0 }, "time": TableFiled { id: 0, name: "time", column_type: Time, codec: 0 }} }))"#;
         assert_eq!(ans, expected);
     }

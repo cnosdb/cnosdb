@@ -1,4 +1,4 @@
-use crate::catalog::{CatalogRef, UserCatalog, UserCatalogRef};
+use crate::catalog::{UserCatalog, UserCatalogRef};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::datasource::TableProvider;
@@ -8,28 +8,15 @@ use datafusion::{
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
+
 use snafu::ResultExt;
-use spi::catalog::{ExternalSnafu, MetadataError, DEFAULT_CATALOG, DEFAULT_SCHEMA};
+use spi::catalog::{
+    CatalogRef, ExternalSnafu, MetaData, MetaDataRef, MetadataError, Result, DEFAULT_CATALOG,
+    DEFAULT_SCHEMA,
+};
 use spi::query::function::FuncMetaManagerRef;
 use std::sync::Arc;
 use tskv::engine::EngineRef;
-
-pub type MetaDataRef = Arc<dyn MetaData + Send + Sync>;
-
-pub type Result<T> = std::result::Result<T, MetadataError>;
-
-pub trait MetaData: Send + Sync {
-    fn with_catalog(&self, catalog: &str) -> Arc<dyn MetaData + Send + Sync>;
-    fn with_database(&self, database: &str) -> Arc<dyn MetaData + Send + Sync>;
-    fn catalog_name(&self) -> String;
-    fn schema_name(&self) -> String;
-    fn table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>>;
-    fn catalog(&self) -> CatalogRef;
-    fn function(&self) -> FuncMetaManagerRef;
-    fn drop_table(&self, name: &str) -> Result<()>;
-    fn drop_database(&self, name: &str) -> Result<()>;
-    fn create_table(&self, name: &str, table: Arc<dyn TableProvider>) -> Result<()>;
-}
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
