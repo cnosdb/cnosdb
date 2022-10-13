@@ -5,7 +5,7 @@ use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
 use models::schema::TableSchema;
-use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use models::{FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -33,8 +33,8 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>;
+        fields: Vec<SchemaFieldId>,
+    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>>;
 
     fn drop_database(&self, database: &str) -> Result<()>;
 
@@ -53,7 +53,7 @@ pub trait Engine: Send + Sync + Debug {
     fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>>;
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
-    fn get_series_key(&self, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>>;
+    fn get_series_key(&self, db: &str, sid: SeriesId) -> IndexResult<Option<SeriesKey>>;
     fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>>;
 }
 
@@ -92,8 +92,8 @@ impl Engine for MockEngine {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
+        fields: Vec<SchemaFieldId>,
+    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
         HashMap::new()
     }
 

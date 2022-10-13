@@ -6,7 +6,7 @@ use tokio::time::Instant;
 
 use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
 use models::utils::{min_num, unite_id};
-use models::ValueType;
+use models::{FieldId, SeriesId, ValueType};
 use snafu::ResultExt;
 use trace::debug;
 
@@ -176,7 +176,7 @@ pub struct FieldCursor {
 
 impl FieldCursor {
     pub fn new(
-        field_id: u64,
+        field_id: FieldId,
         name: String,
         vtype: ValueType,
         iterator: &mut RowIterator,
@@ -352,7 +352,7 @@ impl RowIterator {
         Ok(tsm_reader)
     }
 
-    fn build_series_columns(&mut self, id: u64) -> Result<(), Error> {
+    fn build_series_columns(&mut self, id: SeriesId) -> Result<(), Error> {
         let start = Instant::now();
 
         if let Some(key) = self
