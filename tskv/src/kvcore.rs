@@ -21,7 +21,8 @@ use tokio::{
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::schema::TableSchema;
 use models::{
-    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
+    utils::unite_id, FieldId, FieldInfo, InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Tag,
+    Timestamp, ValueType,
 };
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -435,26 +436,26 @@ impl Engine for TsKv {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
+        fields: Vec<SchemaFieldId>,
+    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
         // get data block
-        let mut ans = HashMap::new();
+        let mut ans: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
-            for field_id in fields.iter() {
-                let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
-                let fid = unite_id((*field_id).into(), sid);
+            for sch_fid in fields.iter() {
+                let field_id_entry = sid_entry.entry(*sch_fid).or_insert(vec![]);
+                let fid = unite_id((*sch_fid).into(), sid);
                 field_id_entry.append(&mut self.read_point(db, time_range, fid));
             }
         }
 
         // sort data block, max block size 1000
         let mut final_ans = HashMap::new();
-        for i in ans {
-            let sid_entry = final_ans.entry(i.0).or_insert_with(HashMap::new);
-            for j in i.1 {
-                let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
-                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, MAX_BLOCK_VALUES));
+        for (sid, map) in ans {
+            let sid_entry = final_ans.entry(sid).or_insert_with(HashMap::new);
+            for (sch_fid, blks) in map {
+                let field_id_entry = sid_entry.entry(sch_fid).or_insert(vec![]);
+                field_id_entry.append(&mut DataBlock::merge_blocks(blks, MAX_BLOCK_VALUES));
             }
         }
 
@@ -595,7 +596,7 @@ mod test {
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::utils::now_timestamp;
-    use models::{InMemPoint, SeriesId, SeriesKey, Timestamp};
+    use models::{InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
     use std::collections::HashMap;
     use std::sync::{atomic, Arc};
@@ -633,8 +634,9 @@ mod test {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
 
-            let field_ids: Vec<u32> = table_schema.fields.iter().map(|f| f.1.id as u32).collect();
-            let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
+            let field_ids: Vec<SchemaFieldId> =
+                table_schema.fields.iter().map(|f| f.1.id).collect();
+            let result: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> =
                 tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
         }

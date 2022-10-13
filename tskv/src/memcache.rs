@@ -325,7 +325,7 @@ impl MemCache {
         }
     }
 
-    pub fn write_group(&self, sid: u64, seq: u64, group: RowGroup) {
+    pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) {
         let (_, sid) = split_id(sid);
         self.seq_no.store(seq, Ordering::Relaxed);
         self.cache_size
@@ -341,7 +341,7 @@ impl MemCache {
         entry.write().write(group);
     }
 
-    pub fn get(&self, field_id: &u64) -> Option<Arc<RwLock<MemEntry>>> {
+    pub fn get(&self, field_id: &FieldId) -> Option<Arc<RwLock<MemEntry>>> {
         let (field_id, sid) = utils::split_id(*field_id);
 
         let index = (sid as usize) % self.part_count;
