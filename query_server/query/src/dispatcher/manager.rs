@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
 use snafu::ResultExt;
+use spi::catalog::MetaDataRef;
 use spi::query::execution::Output;
 use spi::{
     query::{
@@ -20,7 +21,7 @@ use spi::{
 use spi::query::QueryError::BuildQueryDispatcher;
 use spi::query::{LogicalPlannerSnafu, Result};
 
-use crate::metadata::{MetaDataRef, MetadataProvider};
+use crate::metadata::MetadataProvider;
 use crate::{
     execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
 };
@@ -65,7 +66,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             .metadata
             .with_catalog(session.catalog())
             .with_database(session.database());
-        let scheme_provider = MetadataProvider::new(metadata);
+        let scheme_provider = MetadataProvider::new(metadata.clone());
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
 
@@ -73,8 +74,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         for stmt in statements.iter() {
             // TODO save query_state_machine，track query state
-            let query_state_machine =
-                Arc::new(QueryStateMachine::begin(query.clone(), session.clone()));
+            let query_state_machine = Arc::new(QueryStateMachine::begin(
+                query.clone(),
+                session.clone(),
+                metadata.clone(),
+            ));
 
             let result = self
                 .execute_statement(stmt.clone(), &logical_planner, query_state_machine)
@@ -170,11 +174,7 @@ impl SimpleQueryDispatcherBuilder {
             err: "lost of scheduler".to_string(),
         })?;
 
-        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
-            metadata.clone(),
-            optimizer,
-            scheduler,
-        ));
+        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(optimizer, scheduler));
 
         Ok(SimpleQueryDispatcher {
             metadata,

@@ -8,8 +8,6 @@ use spi::query::{
 use spi::query::execution;
 use spi::query::execution::ExecutionError;
 
-use crate::metadata::MetaDataRef;
-
 use super::DDLDefinitionTask;
 
 use snafu::ResultExt;
@@ -29,8 +27,7 @@ impl DropObjectTask {
 impl DDLDefinitionTask for DropObjectTask {
     async fn execute(
         &self,
-        catalog: MetaDataRef,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let DropPlan {
             ref object_name,
@@ -39,8 +36,8 @@ impl DDLDefinitionTask for DropObjectTask {
         } = self.stmt;
 
         let res = match obj_type {
-            ObjectType::Table => catalog.drop_table(object_name),
-            ObjectType::Database => catalog.drop_database(object_name),
+            ObjectType::Table => query_state_machine.catalog.drop_table(object_name),
+            ObjectType::Database => query_state_machine.catalog.drop_database(object_name),
         };
 
         if *if_exist {

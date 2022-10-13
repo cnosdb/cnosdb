@@ -11,14 +11,12 @@ use datafusion::{
 };
 use models::schema::{TableFiled, TableSchema, TIME_FIELD};
 use parking_lot::RwLock;
+use spi::catalog::TableRef;
 
 use tskv::engine::EngineRef;
 
 use crate::table::ClusterTable;
-pub type CatalogRef = Arc<dyn CatalogProvider>;
-pub type SchemaRef = Arc<dyn SchemaProvider>;
 pub type UserCatalogRef = Arc<UserCatalog>;
-pub type TableRef = Arc<dyn TableProvider>;
 
 pub struct UserCatalog {
     engine: EngineRef,

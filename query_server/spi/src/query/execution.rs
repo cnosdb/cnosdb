@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use datafusion::{error::DataFusionError, physical_plan::SendableRecordBatchStream};
 use snafu::Snafu;
 
+use crate::catalog::{MetaData, MetaDataRef};
 use crate::{catalog::MetadataError, service::protocol::Query};
 
 use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};
@@ -52,11 +53,20 @@ pub type QueryStateMachineRef = Arc<QueryStateMachine>;
 pub struct QueryStateMachine {
     pub session: IsiphoSessionCtx,
     pub query: Query,
+    pub catalog: MetaDataRef,
 }
 
 impl QueryStateMachine {
-    pub fn begin(query: Query, session: IsiphoSessionCtx) -> Self {
-        Self { session, query }
+    pub fn begin(
+        query: Query,
+        session: IsiphoSessionCtx,
+        catalog: Arc<dyn MetaData + Send + Sync>,
+    ) -> Self {
+        Self {
+            session,
+            query,
+            catalog,
+        }
     }
 
     pub fn begin_analyze(&self) {
