@@ -1,10 +1,11 @@
 use async_channel as channel;
 use flatbuffers::FlatBufferBuilder;
-use models::meta_data::VnodeInfo;
+use models::meta_data::*;
 use models::RwLockRef;
 use parking_lot::{RwLock, RwLockReadGuard};
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use snafu::ResultExt;
 use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -21,19 +22,19 @@ pub struct WritePointsRequest {
 }
 
 pub struct VnodePoints<'a> {
-    pub db: String,
-    pub fbb: FlatBufferBuilder<'a>,
-    pub offset: Vec<flatbuffers::WIPOffset<Point<'a>>>,
+    db: String,
+    fbb: FlatBufferBuilder<'a>,
+    offset: Vec<flatbuffers::WIPOffset<Point<'a>>>,
 
     pub data: Vec<u8>,
-    pub vnode: VnodeInfo,
+    pub repl_set: ReplcationSet,
 }
 
 impl VnodePoints<'_> {
-    pub fn new(db: String, vnode: VnodeInfo) -> Self {
+    pub fn new(db: String, repl_set: ReplcationSet) -> Self {
         Self {
             db,
-            vnode,
+            repl_set,
             fbb: FlatBufferBuilder::new(),
             offset: Vec::new(),
             data: vec![],
@@ -61,27 +62,26 @@ impl VnodePoints<'_> {
 }
 
 pub struct VnodeMapping<'a> {
-    pub db: String,
     pub points: HashMap<u64, VnodePoints<'a>>,
-    pub vnodes: HashMap<u64, VnodeInfo>,
+    pub sets: HashMap<u64, ReplcationSet>,
 }
 
 impl<'a> VnodeMapping<'a> {
-    pub fn new(db: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            db,
             points: HashMap::new(),
-            vnodes: HashMap::new(),
+            sets: HashMap::new(),
         }
     }
 
     pub fn map_point(&mut self, meta_client: MetaClientRef, db: &String, point: &PointArgs) {
         if let Ok(info) = meta_client.locate_db_ts_for_write(db, point.timestamp) {
-            self.vnodes.insert(info.id, info.clone());
+            let full_name = format!("{}.{}", meta_client.tenant_name(), db);
+            self.sets.insert(info.id, info.clone());
             let entry = self
                 .points
                 .entry(info.id)
-                .or_insert(VnodePoints::new(db.clone(), info));
+                .or_insert(VnodePoints::new(full_name, info));
 
             entry.add_point(point);
         }
@@ -111,8 +111,8 @@ impl PointWriter {
         for (id, points) in mapping.points.iter_mut() {
             points.finish();
 
-            for owner in points.vnode.owners.iter() {
-                let request = self.write_to_node(points.vnode.id, *owner, points);
+            for vnode in points.repl_set.vnodes.iter() {
+                let request = self.write_to_node(vnode.id, vnode.node_id, points);
                 requests.push(request);
             }
         }
@@ -124,10 +124,23 @@ impl PointWriter {
 
     async fn write_to_node(
         &self,
-        vnode_id: u64,
+        vnode_id: u32,
         node_id: u64,
         points: &VnodePoints<'_>,
     ) -> CoordinatorResult<()> {
+        if node_id == self.self_id {
+            let req = WritePointsRpcRequest {
+                version: 1,
+                points: points.data.clone(),
+            };
+
+            if let Err(err) = self.kv_inst.write(req).await {
+                return Err(CoordinatorError::TskvWrite { source: err });
+            } else {
+                return Ok(());
+            }
+        }
+
         let mut conn = self.get_node_conn(node_id).await?;
 
         let req_cmd = WriteVnodeRequest::new(vnode_id, points.db.clone(), points.data.len() as u32);

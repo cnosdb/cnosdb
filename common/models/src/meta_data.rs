@@ -47,31 +47,44 @@ pub struct RetentionPolicyInfo {
     pub bucket_duration: i64,
     pub replications: u32,
 }
+// CREATE DATABASE <database_name>
+// [WITH [TTL <duration>]
+// [SHARD <n>]
+// [VNODE_DURATION <duration>]
+// [REPLICA <n>]
+// [PRECISION {'ms' | 'us' | 'ns'}]]
 
 #[derive(Debug, Clone)]
 pub struct BucketInfo {
     pub id: u64,
     pub start_time: i64,
     pub end_time: i64,
-    pub vnodes: Vec<VnodeInfo>,
+    pub shard_group: Vec<ReplcationSet>,
 }
 
 impl BucketInfo {
-    pub fn vnode_for(&self, id: u64) -> VnodeInfo {
-        let index = id as usize % self.vnodes.len();
-        return self.vnodes[index].clone();
+    pub fn vnode_for(&self, id: u64) -> ReplcationSet {
+        let index = id as usize % self.shard_group.len();
+        return self.shard_group[index].clone();
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct VnodeInfo {
+pub struct ReplcationSet {
     pub id: u64,
-    pub owners: Vec<u64>,
+    pub vnodes: Vec<VnodeInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VnodeInfo {
+    pub id: u32,
+    pub node_id: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct DatabaseInfo {
     pub name: String,
+    pub shard: u32,
     pub policy: RetentionPolicyInfo,
     pub buckets: Vec<BucketInfo>,
 }

@@ -31,6 +31,7 @@ pub trait AdminMetaClient {
 
 #[async_trait::async_trait]
 pub trait MetaClient {
+    fn tenant_name(&self) -> &str;
     fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
     fn drop_user(&self, name: &String) -> MetaResult<()>;
 
@@ -50,7 +51,7 @@ pub trait MetaClient {
     fn tenant_node(&self) -> Vec<NodeInfo>;
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
 
-    fn locate_db_ts_for_write(&self, db: &String, ts: i64) -> MetaResult<VnodeInfo>;
+    fn locate_db_ts_for_write(&self, db: &String, ts: i64) -> MetaResult<ReplcationSet>;
 
     fn create_table(&self);
     fn drop_table(&self);
@@ -76,6 +77,10 @@ impl LocalMetaClient {
 
 #[async_trait::async_trait]
 impl MetaClient for LocalMetaClient {
+    fn tenant_name(&self) -> &str {
+        return &self.tenant;
+    }
+
     fn create_user(&self, user: &UserInfo) -> MetaResult<()> {
         todo!()
     }
@@ -124,7 +129,7 @@ impl MetaClient for LocalMetaClient {
         todo!()
     }
 
-    fn locate_db_ts_for_write(&self, db: &String, ts: i64) -> MetaResult<VnodeInfo> {
+    fn locate_db_ts_for_write(&self, db: &String, ts: i64) -> MetaResult<ReplcationSet> {
         todo!()
     }
 

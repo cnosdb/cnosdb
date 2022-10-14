@@ -64,13 +64,13 @@ impl CommonResponse {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WriteVnodeRequest {
-    pub vnode_id: u64,
+    pub vnode_id: u32,
     pub db_name: String,
     pub data_len: u32,
 }
 
 impl WriteVnodeRequest {
-    pub fn new(vnode_id: u64, db_name: String, data_len: u32) -> Self {
+    pub fn new(vnode_id: u32, db_name: String, data_len: u32) -> Self {
         Self {
             vnode_id,
             db_name,

@@ -3,6 +3,7 @@ use snafu::Snafu;
 use tokio::io;
 
 #[derive(Snafu, Debug)]
+#[snafu(visibility(pub))]
 pub enum CoordinatorError {
     #[snafu(display("Not Found Field"))]
     NotFoundField,
@@ -26,6 +27,9 @@ pub enum CoordinatorError {
 
     #[snafu(display("write vnode error: {}", msg))]
     WriteVnode { msg: String },
+
+    #[snafu(display("Error from tskv: {}", source))]
+    TskvWrite { source: tskv::Error },
 }
 
 impl From<meta_client::MetaError> for CoordinatorError {

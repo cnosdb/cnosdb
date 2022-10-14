@@ -199,8 +199,12 @@ impl HttpService {
                  param: WriteParam,
                  kv_inst: EngineRef,
                  writer: Arc<PointWriter>| async move {
-                    ///////////
                     let start = Instant::now();
+                    let user_info = match header.try_get_basic_auth() {
+                        Ok(u) => u,
+                        Err(e) => return Err(reject::custom(e)),
+                    };
+
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
@@ -208,6 +212,7 @@ impl HttpService {
 
                     let (mut mapping, points) = parse_lines_to_points(
                         writer.meta_client.clone(),
+                        &user_info.user,
                         &param.db,
                         &line_protocol_lines,
                     )?;
@@ -216,11 +221,6 @@ impl HttpService {
 
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
-
-                    let user_info = match header.try_get_basic_auth() {
-                        Ok(u) => u,
-                        Err(e) => return Err(reject::custom(e)),
-                    };
 
                     sample_point_write_latency(
                         &user_info.user,
@@ -290,12 +290,13 @@ impl Service for HttpService {
 
 fn parse_lines_to_points<'a>(
     meta_client: MetaClientRef,
+    tenant: &'a str,
     db: &'a str,
     lines: &'a [Line],
 ) -> Result<(VnodeMapping<'a>, Vec<u8>), Error> {
-    let db_str = db.clone().to_owned();
     let mut fbb = FlatBufferBuilder::new();
-    let mut mapping = VnodeMapping::new(db_str.clone());
+    let mut mapping = VnodeMapping::new();
+    let full_name = format!("{}.{}", tenant, db);
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter() {
         let mut tags = Vec::with_capacity(line.tags.len());
@@ -342,18 +343,18 @@ fn parse_lines_to_points<'a>(
             fields.push(field_builder.finish());
         }
         let point_args = PointArgs {
-            db: Some(fbb.create_vector(db.as_bytes())),
+            db: Some(fbb.create_vector(full_name.as_bytes())),
             table: Some(fbb.create_vector(line.measurement.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
             timestamp: line.timestamp,
         };
 
-        mapping.map_point(meta_client.clone(), &db_str, &point_args);
+        mapping.map_point(meta_client.clone(), &db.to_string(), &point_args);
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
 
-    let fbb_db = fbb.create_vector(db.as_bytes());
+    let fbb_db = fbb.create_vector(full_name.as_bytes());
     let points_raw = fbb.create_vector(&point_offsets);
     let points = Points::create(
         &mut fbb,
