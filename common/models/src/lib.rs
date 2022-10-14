@@ -10,6 +10,7 @@ mod tag;
 pub mod utils;
 #[macro_use]
 pub mod error_code;
+pub mod predicate;
 
 use parking_lot::RwLock;
 use std::sync::Arc;

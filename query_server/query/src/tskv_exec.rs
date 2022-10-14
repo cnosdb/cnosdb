@@ -14,12 +14,9 @@ use datafusion::{
         SendableRecordBatchStream, Statistics,
     },
 };
-use models::schema::TableSchema;
+use models::{predicate::domain::PredicateRef, schema::TableSchema};
 
-use crate::{
-    predicate::PredicateRef,
-    stream::{TableScanMetrics, TableScanStream},
-};
+use crate::stream::{TableScanMetrics, TableScanStream};
 use tskv::engine::EngineRef;
 
 #[derive(Debug, Clone)]
