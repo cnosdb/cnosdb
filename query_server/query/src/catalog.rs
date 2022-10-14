@@ -59,9 +59,13 @@ impl CatalogProvider for UserCatalog {
         }
 
         let mut schemas = self.schemas.write();
-        let v = schemas
-            .entry(name.to_owned())
-            .or_insert_with(|| Arc::new(UserSchema::new(name.to_owned(), self.engine.clone())));
+        let v = schemas.entry(name.to_owned()).or_insert_with(|| {
+            Arc::new(UserSchema::new(
+                name.to_owned(),
+                self.engine.clone(),
+                DatabaseSchema::new(name),
+            ))
+        });
 
         Some(v.clone())
     }
@@ -72,20 +76,18 @@ impl CatalogProvider for UserCatalog {
         schema: Arc<dyn SchemaProvider>,
     ) -> Result<Option<Arc<dyn SchemaProvider>>> {
         let mut schemas = self.schemas.write();
-        let schema_opt = schema.as_any().downcast_ref::<DatabaseSchema>();
-        let options = match schema_opt {
+        let schema_opt = schema.as_any().downcast_ref::<UserSchema>();
+        let user_schema = match schema_opt {
             None => {
-                return Err(DataFusionError::Execution(format!(
-                    "wrong schema '{:?}'",
-                    schema_opt
-                )))
+                return Err(DataFusionError::Execution(
+                    "failed to register schema".to_string(),
+                ))
             }
             Some(v) => v,
         };
-        self.engine.create_database(options);
-        let schema = UserSchema::new(options.name.clone(), self.engine.clone());
+        self.engine.create_database(&user_schema.database_schema);
 
-        Ok(schemas.insert(name.into(), Arc::new(schema)))
+        Ok(schemas.insert(name.into(), schema))
     }
 }
 
@@ -93,14 +95,16 @@ pub struct UserSchema {
     db_name: String,
     engine: EngineRef,
     tables: RwLock<HashMap<String, TableRef>>,
+    database_schema: DatabaseSchema,
 }
 
 impl UserSchema {
-    pub fn new(db: String, engine: EngineRef) -> Self {
+    pub fn new(db: String, engine: EngineRef, database_schema: DatabaseSchema) -> Self {
         Self {
             db_name: db,
             tables: RwLock::new(HashMap::new()),
             engine,
+            database_schema,
         }
     }
 }

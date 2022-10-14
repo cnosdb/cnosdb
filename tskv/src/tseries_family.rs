@@ -782,6 +782,7 @@ mod test {
         TseriesFamilyId,
     };
     use config::get_config;
+    use models::schema::DatabaseSchema;
     use models::{Timestamp, ValueType};
     use trace::info;
 
@@ -1141,7 +1142,9 @@ mod test {
             HashMap::new(),
             flush_task_sender.clone(),
         )));
-        version_set.write().create_db(&database);
+        version_set
+            .write()
+            .create_db(DatabaseSchema::new(&database));
         let db = version_set.write().get_db(&database).unwrap();
 
         let ts_family_id = db

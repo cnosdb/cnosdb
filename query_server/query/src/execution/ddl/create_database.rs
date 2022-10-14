@@ -29,7 +29,7 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             ..
         } = self.stmt;
 
-        let db = query_state_machine.catalog.schema_names().contains(name);
+        let db = query_state_machine.catalog.database_names().contains(name);
 
         match (if_not_exists, db) {
             // do not create if exists

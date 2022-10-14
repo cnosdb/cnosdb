@@ -40,9 +40,12 @@ impl VersionSet {
             let name = ver.database().to_string();
             let seq = ver.last_seq;
 
-            let db: &mut Arc<RwLock<Database>> = dbs
-                .entry(name.clone())
-                .or_insert_with(|| Arc::new(RwLock::new(Database::new(&name, opt.clone()))));
+            let db: &mut Arc<RwLock<Database>> = dbs.entry(name.clone()).or_insert_with(|| {
+                Arc::new(RwLock::new(Database::new(
+                    DatabaseSchema::new(&name),
+                    opt.clone(),
+                )))
+            });
 
             db.write().open_tsfamily(ver, flush_task_sender.clone());
         }
@@ -54,22 +57,10 @@ impl VersionSet {
         self.opt.clone()
     }
 
-    pub fn create_db(&mut self, name: &String) -> Arc<RwLock<Database>> {
-        self.dbs
-            .entry(name.clone())
-            .or_insert_with(|| Arc::new(RwLock::new(Database::new(name, self.opt.clone()))))
-            .clone()
-    }
-
-    pub fn create_db_with_schema(&mut self, schema: DatabaseSchema) -> Arc<RwLock<Database>> {
+    pub fn create_db(&mut self, schema: DatabaseSchema) -> Arc<RwLock<Database>> {
         self.dbs
             .entry(schema.name.clone())
-            .or_insert_with(|| {
-                Arc::new(RwLock::new(Database::new_with_schema(
-                    schema,
-                    self.opt.clone(),
-                )))
-            })
+            .or_insert_with(|| Arc::new(RwLock::new(Database::new(schema, self.opt.clone()))))
             .clone()
     }
 

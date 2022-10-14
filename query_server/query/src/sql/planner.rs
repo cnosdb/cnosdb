@@ -320,10 +320,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     true,
                 ));
                 if field_name_codec_algo.get(&column.name.value) != None {
-                    return Err(LogicalPlannerError::External {
-                        source: DataFusionError::Internal(
-                            "column name should different from each other".to_string(),
-                        ),
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "column name should different from each other".to_string(),
                     });
                 }
                 self.check_column(&column)?;
@@ -359,26 +357,26 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn make_database_option(&self, options: ASTDatabaseOptions) -> Result<DatabaseOptions> {
         let mut plan_options = DatabaseOptions::default();
-        if options.ttl != String::default() {
-            plan_options.ttl = self.str_to_duration(&options.ttl)?;
+        if let Some(ttl) = options.ttl {
+            plan_options.ttl = self.str_to_duration(&ttl)?;
         }
-        if options.replica != u64::MAX {
-            plan_options.replica = options.replica;
+        if let Some(replica) = options.replica {
+            plan_options.replica = replica
         }
-        if options.shard_num != u64::MAX {
-            plan_options.shard_num = options.shard_num
+        if let Some(shard_num) = options.shard_num {
+            plan_options.shard_num = shard_num
         }
-        if options.vnode_duration != String::default() {
-            plan_options.vnode_duration = self.str_to_duration(&options.vnode_duration)?;
+        if let Some(vnode_duration) = options.vnode_duration {
+            plan_options.vnode_duration = self.str_to_duration(&vnode_duration)?
         }
-        if options.precision != String::default() {
-            plan_options.precision = match Precision::new(&options.precision) {
+        if let Some(precision) = options.precision {
+            plan_options.precision = match Precision::new(&precision) {
                 None => {
-                    return Err(LogicalPlannerError::External {
-                        source: DataFusionError::Internal(format!(
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!(
                             "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                            options.precision
-                        )),
+                            precision
+                        ),
                     })
                 }
                 Some(v) => v,
@@ -390,11 +388,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn str_to_duration(&self, text: &str) -> Result<Duration> {
         let duration = match Duration::new(text) {
             None => {
-                return Err(LogicalPlannerError::External {
-                    source: DataFusionError::Internal(format!(
-                        "failed parser duration '{}', use like '1d','2h','20m'",
+                return Err(LogicalPlannerError::Semantic {
+                    err: format!(
+                        "{} is not a valid precision, use like 'ms', 'us', 'ns'",
                         text
-                    )),
+                    ),
                 })
             }
             Some(v) => v,
@@ -411,8 +409,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
             SQLDataType::Double => Ok(DataType::Float64),
             SQLDataType::String => Ok(DataType::Utf8),
             SQLDataType::Boolean => Ok(DataType::Boolean),
-            _ => Err(LogicalPlannerError::External {
-                source: DataFusionError::Internal(format!("Unexpected data type {}", data_type)),
+            _ => Err(LogicalPlannerError::Semantic {
+                err: format!("Unexpected data type {}", data_type),
             }),
         }
     }
@@ -432,11 +430,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
             _ => false,
         };
         if !is_ok {
-            return Err(LogicalPlannerError::External {
-                source: DataFusionError::Internal(format!(
+            return Err(LogicalPlannerError::Semantic {
+                err: format!(
                     "Unsupported codec type {} for {}",
                     column.codec, column.data_type
-                )),
+                ),
             });
         }
         Ok(())

@@ -62,30 +62,18 @@ pub struct ColumnOption {
     pub codec: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseOptions {
     // data keep time
-    pub ttl: String,
+    pub ttl: Option<String>,
 
-    pub shard_num: u64,
+    pub shard_num: Option<u64>,
     // shard coverage time range
-    pub vnode_duration: String,
+    pub vnode_duration: Option<String>,
 
-    pub replica: u64,
+    pub replica: Option<u64>,
     // timestamp percision
-    pub precision: String,
-}
-
-impl Default for DatabaseOptions {
-    fn default() -> Self {
-        Self {
-            ttl: String::default(),
-            shard_num: u64::MAX,
-            vnode_duration: String::default(),
-            replica: u64::MAX,
-            precision: String::default(),
-        }
-    }
+    pub precision: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

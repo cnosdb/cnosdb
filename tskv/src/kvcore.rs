@@ -363,7 +363,10 @@ impl Engine for TsKv {
         let db_warp = self.version_set.read().get_db(&db_name);
         let db = match db_warp {
             Some(database) => database,
-            None => self.version_set.write().create_db(&db_name),
+            None => self
+                .version_set
+                .write()
+                .create_db(DatabaseSchema::new(&db_name)),
         };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -408,7 +411,10 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self.version_set.write().create_db(&db_name);
+        let db = self
+            .version_set
+            .write()
+            .create_db(DatabaseSchema::new(&db_name));
 
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -464,9 +470,7 @@ impl Engine for TsKv {
     }
 
     fn create_database(&self, schema: &DatabaseSchema) {
-        self.version_set
-            .write()
-            .create_db_with_schema(schema.clone());
+        self.version_set.write().create_db(schema.clone());
     }
 
     fn drop_database(&self, database: &str) -> Result<()> {

@@ -293,11 +293,20 @@ impl<'a> ExtParser<'a> {
             loop {
                 match self.parser.next_token().to_string().to_uppercase().as_str() {
                     TTL => {
-                        options.ttl = self.parser.next_token().to_string();
+                        let value = match self.parser.next_token() {
+                            Token::SingleQuotedString(s) => s,
+                            unexpected => {
+                                return parser_err!(format!(
+                                    "single quote is needed!, but got : {}",
+                                    unexpected,
+                                ))
+                            }
+                        };
+                        options.ttl = Some(value);
                     }
                     SHARD => {
                         let num = self.parser.next_token().to_string();
-                        options.shard_num = match num.parse::<u64>() {
+                        options.shard_num = Some(match num.parse::<u64>() {
                             Ok(v) => v,
                             Err(_) => {
                                 return parser_err!(format!(
@@ -305,14 +314,23 @@ impl<'a> ExtParser<'a> {
                                     num
                                 ))
                             }
-                        }
+                        })
                     }
                     VNODE_DURATION => {
-                        options.vnode_duration = self.parser.next_token().to_string();
+                        let value = match self.parser.next_token() {
+                            Token::SingleQuotedString(s) => s,
+                            unexpected => {
+                                return parser_err!(format!(
+                                    "single quote is needed!, but got : {}",
+                                    unexpected,
+                                ))
+                            }
+                        };
+                        options.vnode_duration = Some(value);
                     }
                     REPLICA => {
                         let num = self.parser.next_token();
-                        options.replica = match num.to_string().parse::<u64>() {
+                        options.replica = Some(match num.to_string().parse::<u64>() {
                             Ok(v) => v,
                             Err(_) => {
                                 return parser_err!(format!(
@@ -320,10 +338,19 @@ impl<'a> ExtParser<'a> {
                                     num
                                 ))
                             }
-                        }
+                        })
                     }
                     PRECISION => {
-                        options.precision = self.parser.next_token().to_string();
+                        let value = match self.parser.next_token() {
+                            Token::SingleQuotedString(s) => s,
+                            unexpected => {
+                                return parser_err!(format!(
+                                    "single quote is needed!, but got : {}",
+                                    unexpected,
+                                ))
+                            }
+                        };
+                        options.precision = Some(value);
                     }
                     _ => {
                         let end = self.parser.next_token();
@@ -814,7 +841,7 @@ mod tests {
         match statements[0] {
             ExtStatement::CreateDatabase(ref stmt) => {
                 let ans = format!("{:?}", stmt);
-                let expectd = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: "'10d'", shard_num: 5, vnode_duration: "'3d'", replica: 10, precision: "'us'" } }"#;
+                let expectd = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10), precision: Some("us") } }"#;
                 assert_eq!(ans, expectd);
             }
             _ => panic!("impossible"),

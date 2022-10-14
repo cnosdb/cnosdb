@@ -46,23 +46,12 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(name: &String, opt: Arc<Options>) -> Self {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
         Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(name),
-            name: name.to_string(),
-            ts_families: HashMap::new(),
-            opt,
-        }
-    }
-
-    pub fn new_with_schema(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
-        Self {
-            index: db_index::index_manger(opt.storage.index_base_dir())
-                .write()
-                .get_db_index_with_schema(&schema.name, schema.clone()),
-            name: schema.name.clone(),
+                .get_db_index(schema.clone()),
+            name: schema.name,
             ts_families: HashMap::new(),
             opt,
         }
