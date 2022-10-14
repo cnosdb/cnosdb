@@ -43,7 +43,6 @@ pub struct Database {
     index: Arc<db_index::DBIndex>,
     ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
-    db_schema: DatabaseSchema,
 }
 
 impl Database {
@@ -55,7 +54,6 @@ impl Database {
             name: name.to_string(),
             ts_families: HashMap::new(),
             opt,
-            db_schema: DatabaseSchema::new(name),
         }
     }
 
@@ -63,11 +61,10 @@ impl Database {
         Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(&schema.name),
+                .get_db_index_with_schema(&schema.name, schema.clone()),
             name: schema.name.clone(),
             ts_families: HashMap::new(),
             opt,
-            db_schema: schema,
         }
     }
 

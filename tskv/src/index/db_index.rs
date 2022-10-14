@@ -10,13 +10,14 @@ use bytes::BufMut;
 use chrono::format::format;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use sled::Error;
 use snafu::ResultExt;
 use tracing::info;
 
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::ToByteSlice;
-use models::schema::{ColumnType, TableFiled, TableSchema};
+use models::schema::{ColumnType, DatabaseSchema, TableFiled, TableSchema};
 use models::{utils, FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, ValueType};
 use protos::models::Point;
 use trace::warn;
@@ -28,6 +29,7 @@ use super::{errors, IndexEngine, IndexError, IndexResult};
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
 const TIME_STAMP_NAME: &str = "time";
+const DATABASE_SCHEMA_PREFIX: &str = "_database_schema_";
 
 #[derive(Debug, Clone)]
 pub struct IndexConfig {
@@ -62,11 +64,24 @@ impl DbIndexMgr {
     }
 
     pub fn get_db_index(&mut self, db: &String) -> Arc<DBIndex> {
+        let index = self.indexs.entry(db.clone()).or_insert_with(|| {
+            Arc::new(DBIndex::new(
+                self.base_path.join(db),
+                DatabaseSchema::new(db),
+            ))
+        });
+        index.clone()
+    }
+
+    pub fn get_db_index_with_schema(
+        &mut self,
+        db: &String,
+        schema: DatabaseSchema,
+    ) -> Arc<DBIndex> {
         let index = self
             .indexs
             .entry(db.clone())
-            .or_insert_with(|| Arc::new(DBIndex::new(self.base_path.join(db))));
-
+            .or_insert_with(|| Arc::new(DBIndex::new(self.base_path.join(db), schema)));
         index.clone()
     }
 }
@@ -75,21 +90,36 @@ impl DbIndexMgr {
 pub struct DBIndex {
     path: PathBuf,
     storage: IndexEngine,
+    db_schema: DatabaseSchema,
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
     table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
-impl From<&str> for DBIndex {
-    fn from(path: &str) -> Self {
-        DBIndex::new(path)
-    }
-}
-
 impl DBIndex {
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new(path: impl AsRef<Path>, db_schema: DatabaseSchema) -> Self {
         let path = path.as_ref();
+        let storage = IndexEngine::new(path);
+        let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
+        let schema = match storage.get(key.as_bytes()) {
+            Ok(v) => match v {
+                None => {
+                    let data = bincode::serialize(&db_schema).unwrap();
+                    storage.set(key.as_bytes(), &data).unwrap();
+                    storage.flush();
+                    db_schema
+                }
+                Some(v) => bincode::deserialize::<DatabaseSchema>(&v).unwrap(),
+            },
+            Err(_) => {
+                let data = bincode::serialize(&db_schema).unwrap();
+                storage.set(key.as_bytes(), &data).unwrap();
+                storage.flush();
+                db_schema
+            }
+        };
         Self {
-            storage: IndexEngine::new(path),
+            storage,
+            db_schema: schema,
             series_cache: RwLock::new(HashMap::new()),
             table_schema: RwLock::new(HashMap::new()),
             path: path.into(),

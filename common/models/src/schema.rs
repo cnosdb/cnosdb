@@ -269,7 +269,7 @@ impl ColumnType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseSchema {
     pub name: String,
     pub config: DatabaseOptions,
@@ -302,7 +302,7 @@ impl DatabaseSchema {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseOptions {
     // data keep time
     pub ttl: Duration,
@@ -334,7 +334,7 @@ impl Default for DatabaseOptions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Precision {
     MS,
     US,
@@ -352,14 +352,14 @@ impl Precision {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DurationUnit {
     Minutes,
     Hour,
     Day,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Duration {
     pub time_num: u64,
     pub unit: DurationUnit,
