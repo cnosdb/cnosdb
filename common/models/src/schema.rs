@@ -344,9 +344,9 @@ pub enum Precision {
 impl Precision {
     pub fn new(text: &str) -> Option<Self> {
         match text.to_uppercase().as_str() {
-            "'MS'" => Some(Precision::MS),
-            "'US'" => Some(Precision::US),
-            "'NS'" => Some(Precision::NS),
+            "MS" => Some(Precision::MS),
+            "US" => Some(Precision::US),
+            "NS" => Some(Precision::NS),
             _ => None,
         }
     }
@@ -366,14 +366,13 @@ pub struct Duration {
 }
 
 impl Duration {
-    // text should have ', such as '10d', the len of '10d' is 5
     pub fn new(text: &str) -> Option<Self> {
         let len = text.len();
-        if len < 4 {
+        if len < 2 {
             return None;
         }
-        let time = &text[1..len - 2];
-        let unit = &text[len - 2..len - 1];
+        let time = &text[..len - 1];
+        let unit = &text[len - 1..];
         let time_num = match time.parse::<u64>() {
             Ok(v) => v,
             Err(_) => {

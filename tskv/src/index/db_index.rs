@@ -63,25 +63,13 @@ impl DbIndexMgr {
         }
     }
 
-    pub fn get_db_index(&mut self, db: &String) -> Arc<DBIndex> {
-        let index = self.indexs.entry(db.clone()).or_insert_with(|| {
+    pub fn get_db_index(&mut self, schema: DatabaseSchema) -> Arc<DBIndex> {
+        let index = self.indexs.entry(schema.name.clone()).or_insert_with(|| {
             Arc::new(DBIndex::new(
-                self.base_path.join(db),
-                DatabaseSchema::new(db),
+                self.base_path.join(schema.name.clone()),
+                schema,
             ))
         });
-        index.clone()
-    }
-
-    pub fn get_db_index_with_schema(
-        &mut self,
-        db: &String,
-        schema: DatabaseSchema,
-    ) -> Arc<DBIndex> {
-        let index = self
-            .indexs
-            .entry(db.clone())
-            .or_insert_with(|| Arc::new(DBIndex::new(self.base_path.join(db), schema)));
         index.clone()
     }
 }
@@ -212,6 +200,7 @@ impl DBIndex {
         //load schema first from cache,or else from storage and than cache it!
         let mut schema = &mut TableSchema::default();
         let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
         let mut new_schema = false;
         match fields.get_mut(&table_name) {
@@ -219,6 +208,7 @@ impl DBIndex {
             None => {
                 new_schema = true;
                 schema.name = table_name.clone();
+                schema.db = db_name;
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {

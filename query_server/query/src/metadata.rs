@@ -1,4 +1,4 @@
-use crate::catalog::{UserCatalog, UserCatalogRef};
+use crate::catalog::{UserCatalog, UserCatalogRef, UserSchema};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::datasource::TableProvider;
@@ -27,6 +27,7 @@ pub struct RemoteCatalogMeta {}
 pub struct LocalCatalogMeta {
     catalog_name: String,
     database_name: String,
+    engine: EngineRef,
     catalog: UserCatalogRef,
     func_manager: FuncMetaManagerRef,
 }
@@ -36,6 +37,7 @@ impl LocalCatalogMeta {
         Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
             database_name: DEFAULT_SCHEMA.to_string(),
+            engine: engine.clone(),
             catalog: Arc::new(UserCatalog::new(engine)),
             func_manager,
         }
@@ -139,14 +141,15 @@ impl MetaData for LocalCatalogMeta {
     }
 
     fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()> {
+        let user_schema = UserSchema::new(name.to_string(), self.engine.clone(), database);
         self.catalog
-            .register_schema(name, Arc::new(database))
+            .register_schema(name, Arc::new(user_schema))
             .map(|_| ())
             .context(ExternalSnafu)?;
         Ok(())
     }
 
-    fn schema_names(&self) -> Vec<String> {
+    fn database_names(&self) -> Vec<String> {
         self.catalog.schema_names()
     }
 }

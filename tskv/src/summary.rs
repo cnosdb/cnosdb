@@ -586,6 +586,7 @@ mod test {
     use tracing::debug;
 
     use config::get_config;
+    use models::schema::DatabaseSchema;
 
     use crate::file_system::file_manager;
     use crate::tseries_family::LevelInfo;
@@ -706,7 +707,10 @@ mod test {
         let (summary_task_sender, _) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let mut edits = vec![];
-        let db = summary.version_set.write().create_db(&database);
+        let db = summary
+            .version_set
+            .write()
+            .create_db(DatabaseSchema::new(&database));
         for i in 0..40 {
             db.write().add_tsfamily(
                 i,
@@ -752,7 +756,10 @@ mod test {
 
         let (summary_task_sender, _) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let db = summary.version_set.write().create_db(&database);
+        let db = summary
+            .version_set
+            .write()
+            .create_db(DatabaseSchema::new(&database));
         db.write().add_tsfamily(
             10,
             0,

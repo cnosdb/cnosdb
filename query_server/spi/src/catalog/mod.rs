@@ -31,7 +31,7 @@ pub trait MetaData: Send + Sync {
     fn drop_database(&self, name: &str) -> Result<()>;
     fn create_table(&self, name: &str, table: Arc<dyn TableProvider>) -> Result<()>;
     fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()>;
-    fn schema_names(&self) -> Vec<String>;
+    fn database_names(&self) -> Vec<String>;
 }
 
 #[derive(Debug, Snafu)]
