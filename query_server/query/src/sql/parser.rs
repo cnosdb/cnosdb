@@ -4,9 +4,12 @@ use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
 use models::schema::TIME_FIELD_NAME;
 use snafu::ResultExt;
-use spi::query::ast::{ColumnOption, CreateTable, DropObject, ExtStatement, ObjectType};
+use spi::query::ast::{
+    ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DropObject, ExtStatement,
+    ObjectType,
+};
 use spi::query::parser::Parser as CnosdbParser;
-use spi::query::ParserSnafu;
+use spi::query::{Duration, ParserSnafu, Precision};
 use sqlparser::ast::{DataType, Ident};
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -18,6 +21,12 @@ use trace::debug;
 // support tag token
 const TAGS: &str = "TAGS";
 const CODEC: &str = "CODEC";
+
+const TTL: &str = "TTL";
+const SHARD: &str = "SHARD";
+const VNODE_DURATION: &str = "VNODE_DURATION";
+const REPLICA: &str = "REPLICA";
+const PRECISION: &str = "PRECISION";
 
 pub type Result<T, E = ParserError> = std::result::Result<T, E>;
 
@@ -278,6 +287,88 @@ impl<'a> ExtParser<'a> {
         Ok(ExtStatement::CreateTable(create))
     }
 
+    fn parse_database_options(&mut self) -> Result<DatabaseOptions> {
+        if self.parser.parse_keyword(Keyword::WITH) {
+            let mut options = DatabaseOptions::default();
+            loop {
+                match self.parser.next_token().to_string().to_uppercase().as_str() {
+                    TTL => {
+                        options.ttl = self.parse_duration()?;
+                    }
+                    SHARD => {
+                        let num = self.parser.next_token();
+                        options.shard_num = match num.to_string().parse::<u64>() {
+                            Ok(v) => v,
+                            Err(_) => {
+                                return parser_err!(format!("{} is not a unsigned number", num))
+                            }
+                        }
+                    }
+                    VNODE_DURATION => {
+                        options.vnode_duration = self.parse_duration()?;
+                    }
+                    REPLICA => {
+                        let num = self.parser.next_token();
+                        options.replica = match num.to_string().parse::<u64>() {
+                            Ok(v) => v,
+                            Err(_) => {
+                                return parser_err!(format!("{} is not a unsigned number", num))
+                            }
+                        }
+                    }
+                    PRECISION => {
+                        let precision = self.parser.next_token().to_string();
+                        options.precision = match Precision::new(&precision) {
+                            None => {
+                                return parser_err!(format!(
+                                    "{} is not a valid precision, use like 'ms', 'us', 'ns'",
+                                    precision
+                                ))
+                            }
+                            Some(v) => v,
+                        }
+                    }
+                    _ => {
+                        let end = self.parser.next_token();
+                        if end != Token::EOF {
+                            return parser_err!(format!("'{}' unknown option or empty", end));
+                        } else {
+                            return Ok(options);
+                        }
+                    }
+                };
+            }
+        }
+        Ok(DatabaseOptions::default())
+    }
+
+    fn parse_duration(&mut self) -> Result<Duration> {
+        let text = self.parser.next_token().to_string();
+        let duration = match Duration::new(&text) {
+            None => {
+                return parser_err!(format!(
+                    "failed parser duration '{}', use like '1d','2h','20m'",
+                    text
+                ))
+            }
+            Some(v) => v,
+        };
+        Ok(duration)
+    }
+
+    fn parse_create_database(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let database_name = self.parser.parse_object_name()?;
+        let options = self.parse_database_options()?;
+        Ok(ExtStatement::CreateDatabase(CreateDatabase {
+            name: database_name.to_string(),
+            if_not_exists,
+            options,
+        }))
+    }
+
     /// Parse a SQL CREATE statement
     fn parse_create(&mut self) -> Result<ExtStatement> {
         // Currently only supports the creation of external tables
@@ -286,7 +377,7 @@ impl<'a> ExtParser<'a> {
         } else if self.parser.parse_keyword(Keyword::TABLE) {
             self.parse_create_table()
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
-            todo!()
+            self.parse_create_database()
         } else {
             self.expected("an object type after CREATE", self.parser.peek_token())
         }
@@ -729,6 +820,21 @@ mod tests {
                 _ => panic!("failed"),
             },
             _ => panic!("failed"),
+        }
+    }
+
+    #[test]
+    fn test_create_database() {
+        let sql = "CREATE DATABASE test WITH TTL '10d' SHARD 5 VNODE_DURATION '3d' REPLICA 10 PRECISION 'us';";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match statements[0] {
+            ExtStatement::CreateDatabase(ref stmt) => {
+                let ans = format!("{:?}", stmt);
+                let expectd = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }"#;
+                assert_eq!(ans, expectd);
+            }
+            _ => panic!("impossible"),
         }
     }
 }
