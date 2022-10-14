@@ -15,10 +15,13 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use datafusion::sql::TableReference;
 use hashbrown::HashMap;
 use snafu::ResultExt;
-use spi::query::ast::{ColumnOption, CreateTable as ASTCreateTable, DropObject, ExtStatement};
+use spi::query::ast::{
+    ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
+    DatabaseOptions as ASTDatabaseOptions, DropObject, ExtStatement,
+};
 use spi::query::logical_planner::{
-    self, affected_row_expr, CSVOptions, CreateExternalTable, CreateTable, DDLPlan, DropPlan,
-    ExternalSnafu, FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    self, affected_row_expr, CSVOptions, CreateDatabase, CreateExternalTable, CreateTable, DDLPlan,
+    DropPlan, ExternalSnafu, FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
     MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
@@ -28,6 +31,7 @@ use std::collections::HashMap as MetaDataHashmap;
 use models::codec::{
     BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC, UNSIGNED_BIGINT_CODEC,
 };
+use models::schema::{DatabaseOptions, Duration, Precision};
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use sqlparser::ast::{DataType as SQLDataType, Statement};
@@ -53,7 +57,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
             ExtStatement::CreateTable(stmt) => self.table_to_plan(stmt),
-            ExtStatement::CreateDatabase(_) => todo!(),
+            ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt),
             ExtStatement::CreateUser(_) => todo!(),
             ExtStatement::Drop(s) => self.drop_object_to_plan(s),
             ExtStatement::DropUser(_) => todo!(),
@@ -339,6 +343,65 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })))
     }
 
+    fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<Plan> {
+        let ASTCreateDatabase {
+            name,
+            if_not_exists,
+            options,
+        } = stmt;
+        let options = self.make_database_option(options)?;
+        Ok(Plan::DDL(DDLPlan::CreateDatabase(CreateDatabase {
+            name,
+            if_not_exists,
+            options,
+        })))
+    }
+
+    fn make_database_option(&self, options: ASTDatabaseOptions) -> Result<DatabaseOptions> {
+        let mut plan_options = DatabaseOptions::default();
+        if options.ttl != String::default() {
+            plan_options.ttl = self.str_to_duration(&options.ttl)?;
+        }
+        if options.replica != u64::MAX {
+            plan_options.replica = options.replica;
+        }
+        if options.shard_num != u64::MAX {
+            plan_options.shard_num = options.shard_num
+        }
+        if options.vnode_duration != String::default() {
+            plan_options.vnode_duration = self.str_to_duration(&options.vnode_duration)?;
+        }
+        if options.precision != String::default() {
+            plan_options.precision = match Precision::new(&options.precision) {
+                None => {
+                    return Err(LogicalPlannerError::External {
+                        source: DataFusionError::Internal(format!(
+                            "{} is not a valid precision, use like 'ms', 'us', 'ns'",
+                            options.precision
+                        )),
+                    })
+                }
+                Some(v) => v,
+            }
+        }
+        Ok(plan_options)
+    }
+
+    fn str_to_duration(&self, text: &str) -> Result<Duration> {
+        let duration = match Duration::new(text) {
+            None => {
+                return Err(LogicalPlannerError::External {
+                    source: DataFusionError::Internal(format!(
+                        "failed parser duration '{}', use like '1d','2h','20m'",
+                        text
+                    )),
+                })
+            }
+            Some(v) => v,
+        };
+        Ok(duration)
+    }
+
     fn make_data_type(&self, data_type: &SQLDataType) -> Result<DataType> {
         match data_type {
             // todo : should support get time unit for database
@@ -588,6 +651,21 @@ mod tests {
         let expected = r#"DDL(CreateTable(CreateTable { schema: DFSchema { fields: [DFField { qualifier: Some("test"), field: Field { name: "time", data_type: Timestamp(Nanosecond, None), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column1", data_type: Int64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column3", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column4", data_type: Boolean, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column5", data_type: Float64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }], metadata: {"column5": "GORILLA", "column3": "NULL", "column4": "DEFAULT", "column2": "GZIP", "column1": "DELTA", "time": "DEFAULT"} }, name: "test", if_not_exists: true, tags: ["column6", "column7"] }))"#;
         assert_eq!(ans[0..1022], expected[0..1022]);
         assert_eq!(ans[1186..1223], expected[1186..1223]);
+    }
+
+    #[test]
+    fn test_create_database() {
+        let sql = "CREATE DATABASE test WITH TTL '10d' SHARD 5 VNODE_DURATION '3d' REPLICA 10 PRECISION 'us';";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+        let ans = format!("{:?}", plan);
+        let expected = r#"DDL(CreateDatabase(CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }))"#;
+        assert_eq!(ans, expected);
     }
 
     #[test]

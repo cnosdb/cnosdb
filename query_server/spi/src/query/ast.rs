@@ -1,6 +1,5 @@
 use std::fmt;
 
-use crate::query::{Duration, DurationUnit, Precision};
 use datafusion::sql::sqlparser::ast::{DataType, Ident};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 
@@ -66,31 +65,25 @@ pub struct ColumnOption {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseOptions {
     // data keep time
-    pub ttl: Duration,
+    pub ttl: String,
 
     pub shard_num: u64,
     // shard coverage time range
-    pub vnode_duration: Duration,
+    pub vnode_duration: String,
 
     pub replica: u64,
     // timestamp percision
-    pub precision: Precision,
+    pub precision: String,
 }
 
 impl Default for DatabaseOptions {
     fn default() -> Self {
         Self {
-            ttl: Duration {
-                time_num: 365,
-                unit: DurationUnit::Day,
-            },
-            shard_num: 1,
-            vnode_duration: Duration {
-                time_num: 365,
-                unit: DurationUnit::Day,
-            },
-            replica: 1,
-            precision: Precision::NS,
+            ttl: String::default(),
+            shard_num: u64::MAX,
+            vnode_duration: String::default(),
+            replica: u64::MAX,
+            precision: String::default(),
         }
     }
 }

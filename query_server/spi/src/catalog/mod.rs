@@ -5,6 +5,7 @@ use datafusion::catalog::TableReference;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
+use models::schema::DatabaseSchema;
 use snafu::Snafu;
 use std::sync::Arc;
 
@@ -29,6 +30,8 @@ pub trait MetaData: Send + Sync {
     fn drop_table(&self, name: &str) -> Result<()>;
     fn drop_database(&self, name: &str) -> Result<()>;
     fn create_table(&self, name: &str, table: Arc<dyn TableProvider>) -> Result<()>;
+    fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()>;
+    fn schema_names(&self) -> Vec<String>;
 }
 
 #[derive(Debug, Snafu)]
@@ -42,6 +45,9 @@ pub enum MetadataError {
 
     #[snafu(display("Table {} not exists.", table_name))]
     TableNotExists { table_name: String },
+
+    #[snafu(display("Database {} already exists.", database_name))]
+    DatabaseAlreadyExists { database_name: String },
 
     #[snafu(display("Database {} not exists.", database_name))]
     DatabaseNotExists { database_name: String },

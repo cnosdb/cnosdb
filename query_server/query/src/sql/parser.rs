@@ -9,7 +9,7 @@ use spi::query::ast::{
     ObjectType,
 };
 use spi::query::parser::Parser as CnosdbParser;
-use spi::query::{Duration, ParserSnafu, Precision};
+use spi::query::ParserSnafu;
 use sqlparser::ast::{DataType, Ident};
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -293,40 +293,37 @@ impl<'a> ExtParser<'a> {
             loop {
                 match self.parser.next_token().to_string().to_uppercase().as_str() {
                     TTL => {
-                        options.ttl = self.parse_duration()?;
+                        options.ttl = self.parser.next_token().to_string();
                     }
                     SHARD => {
-                        let num = self.parser.next_token();
-                        options.shard_num = match num.to_string().parse::<u64>() {
+                        let num = self.parser.next_token().to_string();
+                        options.shard_num = match num.parse::<u64>() {
                             Ok(v) => v,
                             Err(_) => {
-                                return parser_err!(format!("{} is not a unsigned number", num))
+                                return parser_err!(format!(
+                                    "shard should be a unsigned number, but get {}",
+                                    num
+                                ))
                             }
                         }
                     }
                     VNODE_DURATION => {
-                        options.vnode_duration = self.parse_duration()?;
+                        options.vnode_duration = self.parser.next_token().to_string();
                     }
                     REPLICA => {
                         let num = self.parser.next_token();
                         options.replica = match num.to_string().parse::<u64>() {
                             Ok(v) => v,
                             Err(_) => {
-                                return parser_err!(format!("{} is not a unsigned number", num))
+                                return parser_err!(format!(
+                                    "replica should be a unsigned number, but get {}",
+                                    num
+                                ))
                             }
                         }
                     }
                     PRECISION => {
-                        let precision = self.parser.next_token().to_string();
-                        options.precision = match Precision::new(&precision) {
-                            None => {
-                                return parser_err!(format!(
-                                    "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                                    precision
-                                ))
-                            }
-                            Some(v) => v,
-                        }
+                        options.precision = self.parser.next_token().to_string();
                     }
                     _ => {
                         let end = self.parser.next_token();
@@ -340,20 +337,6 @@ impl<'a> ExtParser<'a> {
             }
         }
         Ok(DatabaseOptions::default())
-    }
-
-    fn parse_duration(&mut self) -> Result<Duration> {
-        let text = self.parser.next_token().to_string();
-        let duration = match Duration::new(&text) {
-            None => {
-                return parser_err!(format!(
-                    "failed parser duration '{}', use like '1d','2h','20m'",
-                    text
-                ))
-            }
-            Some(v) => v,
-        };
-        Ok(duration)
     }
 
     fn parse_create_database(&mut self) -> Result<ExtStatement> {
@@ -831,7 +814,7 @@ mod tests {
         match statements[0] {
             ExtStatement::CreateDatabase(ref stmt) => {
                 let ans = format!("{:?}", stmt);
-                let expectd = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }"#;
+                let expectd = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: "'10d'", shard_num: 5, vnode_duration: "'3d'", replica: 10, precision: "'us'" } }"#;
                 assert_eq!(ans, expectd);
             }
             _ => panic!("impossible"),
