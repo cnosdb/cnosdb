@@ -1,10 +1,17 @@
+use async_channel as channel;
 use flatbuffers::FlatBufferBuilder;
 use models::meta_data::VnodeInfo;
+use models::RwLockRef;
+use parking_lot::{RwLock, RwLockReadGuard};
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
 use std::collections::HashMap;
+use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpListener, TcpStream};
 use tskv::engine::EngineRef;
 
+use crate::command::*;
+use crate::errors::*;
 use crate::meta_client::MetaClientRef;
 
 pub struct WritePointsRequest {
@@ -82,34 +89,89 @@ impl<'a> VnodeMapping<'a> {
 }
 
 pub struct PointWriter {
-    pub node_id: u64,
-    pub kv_inst: EngineRef,
+    self_id: u64,
+    kv_inst: EngineRef,
+    conn_map: RwLock<HashMap<u64, Vec<TcpStream>>>,
+
     pub meta_client: MetaClientRef,
 }
 
 impl PointWriter {
-    pub fn new(node_id: u64, kv_inst: EngineRef, meta_client: MetaClientRef) -> Self {
+    pub fn new(node_id: u64, kv_inst: EngineRef, client: MetaClientRef) -> Self {
         Self {
-            node_id,
+            self_id: node_id,
             kv_inst,
-            meta_client,
+            meta_client: client,
+            conn_map: RwLock::new(HashMap::new()),
         }
     }
 
-    pub fn write_points(&self, mapping: &mut VnodeMapping) {
+    pub async fn write_points(&self, mapping: &mut VnodeMapping<'_>) -> CoordinatorResult<()> {
+        let mut requests = vec![];
         for (id, points) in mapping.points.iter_mut() {
             points.finish();
-            self.write_to_vnode(points)
+
+            for owner in points.vnode.owners.iter() {
+                let request = self.write_to_node(points.vnode.id, *owner, points);
+                requests.push(request);
+            }
+        }
+
+        futures::future::try_join_all(requests).await?;
+
+        Ok(())
+    }
+
+    async fn write_to_node(
+        &self,
+        vnode_id: u64,
+        node_id: u64,
+        points: &VnodePoints<'_>,
+    ) -> CoordinatorResult<()> {
+        let mut conn = self.get_node_conn(node_id).await?;
+
+        let req_cmd = WriteVnodeRequest::new(vnode_id, points.db.clone(), points.data.len() as u32);
+        let cmd_data = req_cmd.encode();
+        conn.write_u32(WRITE_VNODE_REQUEST_COMMAND).await?;
+        conn.write_u32(cmd_data.len().try_into().unwrap()).await?;
+
+        conn.write_all(&cmd_data).await?;
+
+        conn.write_all(&points.data).await?;
+
+        match CommonResponse::recv(&mut conn).await {
+            Ok(msg) => {
+                self.put_node_conn(node_id, conn);
+                if msg.code == 0 {
+                    return Ok(());
+                } else {
+                    return Err(CoordinatorError::WriteVnode {
+                        msg: format!("code: {}, msg: {}", msg.code, msg.data),
+                    });
+                }
+            }
+            Err(err) => Err(err),
         }
     }
 
-    pub fn write_to_vnode(&self, points: &VnodePoints) {
-        for owner in points.vnode.owners.iter() {
-            self.write_to_node(points.vnode.id, *owner, points);
+    async fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
+        {
+            let mut write = self.conn_map.write();
+            let entry = write.entry(node_id).or_insert(Vec::with_capacity(32));
+            if let Some(val) = entry.pop() {
+                return Ok(val);
+            }
         }
+
+        let info = self.meta_client.node_info_by_id(node_id)?;
+        let client = TcpStream::connect(info.tcp_addr).await?;
+
+        return Ok(client);
     }
 
-    pub fn write_to_node(&self, vnode_id: u64, node_id: u64, points: &VnodePoints) {
-        let info = self.meta_client.node_info_by_id(node_id).unwrap();
+    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
+        let mut write = self.conn_map.write();
+        let entry = write.entry(node_id).or_insert(Vec::with_capacity(32));
+        entry.push(conn);
     }
 }

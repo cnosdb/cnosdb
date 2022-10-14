@@ -1,3 +1,5 @@
+use futures::future::ok;
+use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -11,9 +13,13 @@ use std::net::SocketAddr;
 use tokio::sync::oneshot;
 use tskv::engine::EngineRef;
 
+use coordinator::command::*;
+use coordinator::errors::*;
+
 use models::meta_data;
 
 use crate::server;
+
 use crate::server::{Service, ServiceHandle};
 
 use trace::{debug, error, info};
@@ -114,20 +120,33 @@ async fn process_client(
     mut client: TcpStream,
     dbms: DBMSRef,
     kv_inst: EngineRef,
-) -> Result<(), Error> {
+) -> CoordinatorResult<()> {
     loop {
         let cmd_type = client.read_u32().await?;
         let data_len = client.read_u32().await?;
 
-        let mut data_buf = vec![0; data_len as usize];
-        client.read_exact(&mut data_buf).await?;
+        let mut cmd_buf = vec![0; data_len as usize];
+        client.read_exact(&mut cmd_buf).await?;
         if cmd_type == meta_data::WRITE_VNODE_POINT_COMMAND {
-            process_vnode_write_command(data_buf);
+            process_vnode_write_command(&mut client, cmd_buf, kv_inst.clone()).await?;
         }
     }
 }
 
-fn process_vnode_write_command(data: Vec<u8>) {}
+async fn process_vnode_write_command(
+    client: &mut TcpStream,
+    cmd_buf: Vec<u8>,
+    kv_inst: EngineRef,
+) -> CoordinatorResult<()> {
+    let cmd = WriteVnodeRequest::decode(&cmd_buf)?;
+
+    let mut points = vec![0; request.data_len as usize];
+    (*client).read_exact(&mut points).await?;
+
+    CommonResponse::send(client, 0, "".to_owned()).await?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod test {

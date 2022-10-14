@@ -135,7 +135,10 @@ impl HttpService {
                     let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_millis())
                             .context(ParseLineProtocolSnafu)?;
-                    let (_, points) = parse_lines_to_points(writer.meta_client.clone(), &content.schema, &line_protocol_lines)?;
+                    let (mut mapping, points) = parse_lines_to_points(writer.meta_client.clone(), &content.schema, &line_protocol_lines)?;
+
+                    writer.write_points(&mut mapping).await;
+
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
                     match resp {

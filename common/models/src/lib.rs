@@ -1,5 +1,5 @@
 pub mod consistency_level;
-mod errors;
+pub mod errors;
 mod field_info;
 pub mod meta_data;
 mod node_info;

@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use models::meta_data::*;
-
 use snafu::Snafu;
+use std::sync::Arc;
 
 #[derive(Snafu, Debug)]
 pub enum MetaError {
