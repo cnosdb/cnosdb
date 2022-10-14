@@ -9,7 +9,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 
-use crate::predicate::{ColumnDomains, Domain, Range};
+use super::domain::{ColumnDomains, Domain, Range};
 
 type Result<T> = result::Result<T, DataFusionError>;
 
@@ -473,8 +473,8 @@ mod tests {
     ///   i1: (_, -1000000)
     ///   i2: [2147483647, 2147483647]
     ///   i3: (3333333333333333, _)
-    #[tokio::test]
-    async fn test_simple_and_to_domain_1() {
+    #[test]
+    fn test_simple_and_to_domain_1() {
         let (and, except_column_domains) = get_tuple_int_and_expr_with_except_column_domains();
 
         let result = get_domains(&and);
@@ -509,8 +509,8 @@ mod tests {
     ///   f1: (_, -1000000.1)
     ///   f2: [2.2, 2.2]
     ///   f3: (3333333333333333.3, _)
-    #[tokio::test]
-    async fn test_simple_and_to_domain_2() {
+    #[test]
+    fn test_simple_and_to_domain_2() {
         let (and_i, ref mut except_column_domains) =
             get_tuple_int_and_expr_with_except_column_domains();
         let (and_f, and_f_except_column_domains) =
@@ -557,8 +557,8 @@ mod tests {
     ///   b1: [true, true]
     ///   b2: [true, true]
     ///   b3: [true, true]
-    #[tokio::test]
-    async fn test_simple_and_to_domain_3() {
+    #[test]
+    fn test_simple_and_to_domain_3() {
         let (and_i, ref mut except_column_domains) =
             get_tuple_int_and_expr_with_except_column_domains();
         let (and_f, and_f_except_column_domains) =
@@ -612,8 +612,8 @@ mod tests {
     ///   s1: (_, true)
     ///   s2: [" 99 0 _ *", " 99 0 _ *"]
     ///   s3: ("", _)
-    #[tokio::test]
-    async fn test_simple_and_to_domain_4() {
+    #[test]
+    fn test_simple_and_to_domain_4() {
         let (and_i, ref mut except_column_domains) =
             get_tuple_int_and_expr_with_except_column_domains();
         let (and_f, and_f_except_column_domains) =
@@ -674,8 +674,8 @@ mod tests {
     ///   d1: (_, Date64(946688462))
     ///   d2: [Date64(1672448462000000), Date64(1672448462000000)]
     ///   d3: (Date64(3662000), _)
-    #[tokio::test]
-    async fn test_simple_and_to_domain_5() {
+    #[test]
+    fn test_simple_and_to_domain_5() {
         let (and_i, ref mut except_column_domains) =
             get_tuple_int_and_expr_with_except_column_domains();
         let (and_f, and_f_except_column_domains) =
@@ -724,8 +724,8 @@ mod tests {
     ///   i1: (_, 1)
     ///   i2: [2, 2], [3, 3]
     ///   i3: (_, _)
-    #[tokio::test]
-    async fn test_and_or_to_domain_1() {
+    #[test]
+    fn test_and_or_to_domain_1() {
         let filter1_1 = binary_expr(col("i1"), Operator::Lt, lit(1));
         let filter2_1 = binary_expr(col("i2"), Operator::Eq, lit(2));
         let filter3_1 = binary_expr(col("i3"), Operator::Gt, lit(-3));
@@ -784,8 +784,8 @@ mod tests {
     ///   i1: (-10, _)
     ///   i2: [2, 2], [3, 3]
     ///   i3: (_, -3), (3, _)
-    #[tokio::test]
-    async fn test_and_or_to_domain_1_reverse() {
+    #[test]
+    fn test_and_or_to_domain_1_reverse() {
         let filter1_1 = binary_expr(lit(1), Operator::Lt, col("i1"));
         let filter2_1 = binary_expr(lit(2), Operator::Eq, col("i2"));
         let filter3_1 = binary_expr(lit(-3), Operator::Gt, col("i3"));
@@ -846,8 +846,8 @@ mod tests {
     ///   i1: (_, 1)
     ///   i2: [2, 2]
     ///   i3: [1, 1], [2, 2]
-    #[tokio::test]
-    async fn test_simplify_expr_to_domain() {
+    #[test]
+    fn test_simplify_expr_to_domain() {
         // and
         let filter1_1 = binary_expr(col("i1"), Operator::Lt, lit(1));
         let filter1_2 = binary_expr(col("i1"), Operator::Lt, lit(2));
@@ -913,8 +913,8 @@ mod tests {
     ///   host: "192.168.1.222"
     ///   port: [10000, 20000]
     ///   time: ["1970/01/01 01:01:01", "2022/12/31 01:01:01")
-    #[tokio::test]
-    async fn test_complex_application_to_domain_1() {
+    #[test]
+    fn test_complex_application_to_domain_1() {
         let host = binary_expr(col("host"), Operator::Eq, lit("192.168.1.222"));
         let port_low = binary_expr(col("port"), Operator::LtEq, lit(20000));
         let port_high = binary_expr(col("port"), Operator::GtEq, lit(10000));
@@ -995,8 +995,8 @@ mod tests {
     ///   region: "hangzhou"
     ///   host: (_, host099], [host200, _)
     ///   time: ["1970/01/01 01:01:01", "2022/12/31 01:01:01")
-    #[tokio::test]
-    async fn test_complex_application_to_domain_2() {
+    #[test]
+    fn test_complex_application_to_domain_2() {
         let region = binary_expr(col("region"), Operator::Eq, lit("hangzhou"));
         let host_low = binary_expr(col("host"), Operator::LtEq, lit("host099"));
         let host_high = binary_expr(col("host"), Operator::GtEq, lit("host200"));
@@ -1082,8 +1082,8 @@ mod tests {
     ///   c1 > -1
     ///   ===>
     ///   c1: (-1, _)
-    #[tokio::test]
-    async fn test_partial_support_expr_to_domain_1() {
+    #[test]
+    fn test_partial_support_expr_to_domain_1() {
         let c1_1 = binary_expr(col("c1"), Operator::Gt, lit(1));
         let c2_1 = binary_expr(col("c2"), Operator::Gt, lit(1));
 
@@ -1126,8 +1126,8 @@ mod tests {
     ///   c2 > 1
     ///   ===>
     ///   All
-    #[tokio::test]
-    async fn test_not_support_expr_to_domain_1() {
+    #[test]
+    fn test_not_support_expr_to_domain_1() {
         let c1 = binary_expr(col("c1"), Operator::Gt, lit(1));
         let c2 = binary_expr(col("c2"), Operator::Gt, lit(1));
 
@@ -1158,8 +1158,8 @@ mod tests {
     ///   c1 in Values(1), (2), (3)
     ///   ===>
     ///   All
-    #[tokio::test]
-    async fn test_not_support_expr_to_domain_2() {
+    #[test]
+    fn test_not_support_expr_to_domain_2() {
         let list = vec![lit(1), lit(2), lit(3)];
 
         let in_list = in_list(col("c1"), list, false);
@@ -1188,8 +1188,8 @@ mod tests {
     ///   not c1 > 1
     ///   ===>
     ///   All
-    #[tokio::test]
-    async fn test_not_support_expr_to_domain_3() {
+    #[test]
+    fn test_not_support_expr_to_domain_3() {
         let c1 = binary_expr(col("c1"), Operator::Gt, lit(1));
 
         let not = Expr::Not(Box::new(c1));
@@ -1218,8 +1218,8 @@ mod tests {
     ///   c1 is null
     ///   ===>
     ///   All
-    #[tokio::test]
-    async fn test_not_support_expr_to_domain_4() {
+    #[test]
+    fn test_not_support_expr_to_domain_4() {
         let is_null = Expr::IsNull(Box::new(col("c1")));
 
         let result = get_domains(&is_null);
@@ -1247,8 +1247,8 @@ mod tests {
     ///   c1 > random()
     ///   ===>
     ///   All
-    #[tokio::test]
-    async fn test_not_support_expr_to_domain_5() {
+    #[test]
+    fn test_not_support_expr_to_domain_5() {
         let with_func = binary_expr(col("c1"), Operator::Gt, random());
 
         let result = get_domains(&with_func);
@@ -1275,8 +1275,8 @@ mod tests {
     mod test_normalized_simple_comparison {
         use super::*;
 
-        #[tokio::test]
-        async fn test_of() {
+        #[test]
+        fn test_of() {
             let c1 = "c1";
             let val = 1_i32;
             let nsc_option = NormalizedSimpleComparison::of(col(c1), Operator::Gt, lit(val));
@@ -1298,8 +1298,8 @@ mod tests {
             assert_eq!(nsc.value, ScalarValue::Int32(Some(val)));
         }
 
-        #[tokio::test]
-        async fn test_reverse() {
+        #[test]
+        fn test_reverse() {
             let wait_reverse = vec![
                 Operator::Lt,
                 Operator::LtEq,

@@ -9,13 +9,15 @@ use datafusion::{
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan},
 };
-use models::schema::TableSchema;
+use models::{
+    predicate::domain::{Predicate, PredicateRef},
+    schema::TableSchema,
+};
 use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
-    extension::physical::plan_node::table_writer::TableWriterExec, predicate::Predicate,
-    tskv_exec::TskvExec,
+    extension::physical::plan_node::table_writer::TableWriterExec, tskv_exec::TskvExec,
 };
 
 pub struct ClusterTable {
@@ -27,7 +29,7 @@ impl ClusterTable {
     pub(crate) async fn create_physical_plan(
         &self,
         projections: &Option<Vec<usize>>,
-        predicate: Arc<Predicate>,
+        predicate: PredicateRef,
         schema: SchemaRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
@@ -85,8 +87,7 @@ impl TableProvider for ClusterTable {
         let filter = Arc::new(
             Predicate::default()
                 .set_limit(limit)
-                .extract_pushed_down_domains(filters, &self.schema)
-                .pushdown_exprs(filters),
+                .push_down_filter(filters, &self.schema),
         );
 
         return self

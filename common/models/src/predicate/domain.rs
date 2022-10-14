@@ -5,19 +5,14 @@ use std::{
     sync::Arc,
 };
 
+use crate::schema::{TableFiled, TableSchema};
+use crate::{Error, Result};
 use datafusion::{
-    arrow::datatypes::DataType,
-    error::DataFusionError,
-    logical_expr::{utils::expr_to_columns, Expr, Operator},
-    logical_plan::combine_filters,
-    scalar::ScalarValue,
+    arrow::datatypes::DataType, error::DataFusionError, logical_expr::Expr,
+    logical_plan::combine_filters, scalar::ScalarValue,
 };
-use models::schema::{TableFiled, TableSchema};
-use models::{Error, Result};
 
-use trace::info;
-
-use crate::helper::RowExpressionToDomainsVisitor;
+use super::transformation::RowExpressionToDomainsVisitor;
 
 pub type PredicateRef = Arc<Predicate>;
 
@@ -853,27 +848,11 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
 
 #[derive(Debug, Default)]
 pub struct Predicate {
-    filters: Vec<Expr>,
     pushed_down_domains: Option<ColumnDomains<TableFiled>>,
     limit: Option<usize>,
-    timeframe: TimeRange,
 }
 
 impl Predicate {
-    pub fn new(
-        filters: Vec<Expr>,
-        pushed_down_domains: Option<ColumnDomains<TableFiled>>,
-        limit: Option<usize>,
-        timeframe: TimeRange,
-    ) -> Self {
-        Self {
-            filters,
-            pushed_down_domains,
-            limit,
-            timeframe,
-        }
-    }
-
     pub fn limit(&self) -> Option<usize> {
         self.limit
     }
@@ -886,117 +865,16 @@ impl Predicate {
         self.limit = limit;
         self
     }
-    pub fn combine_expr(&self) -> Option<Expr> {
-        let mut res: Option<Expr> = None;
-        for i in &self.filters {
-            if let Some(e) = res {
-                res = Some(e.and(i.clone()))
-            } else {
-                res = Some(i.clone())
-            }
-        }
-        res
-    }
-
-    pub fn split_expr(predicate: &Expr, predicates: &mut Vec<Expr>) {
-        match predicate {
-            Expr::BinaryExpr {
-                right,
-                op: Operator::And,
-                left,
-            } => {
-                Self::split_expr(left, predicates);
-                Self::split_expr(right, predicates);
-            }
-            other => predicates.push(other.clone()),
-        }
-    }
-    pub fn primitive_binary_expr(expr: &Expr) -> bool {
-        match expr {
-            Expr::BinaryExpr { left, op, right } => {
-                matches!(
-                    (&**left, &**right),
-                    (Expr::Column(_), Expr::Literal(_)) | (Expr::Literal(_), Expr::Column(_))
-                ) && matches!(
-                    op,
-                    Operator::Eq
-                        | Operator::NotEq
-                        | Operator::Lt
-                        | Operator::LtEq
-                        | Operator::Gt
-                        | Operator::GtEq
-                )
-            }
-            _ => false,
-        }
-    }
-    pub fn pushdown_exprs(mut self, filters: &[Expr]) -> Predicate {
-        let mut exprs = vec![];
-        filters
-            .iter()
-            .for_each(|expr| Self::split_expr(expr, &mut exprs));
-
-        let mut pushdown: Vec<Expr> = vec![];
-        let exprs_result = exprs
-            .into_iter()
-            .try_for_each::<_, Result<_, DataFusionError>>(|expr| {
-                let mut columns = HashSet::new();
-                expr_to_columns(&expr, &mut columns)?;
-
-                if columns.len() == 1 && Self::primitive_binary_expr(&expr) {
-                    pushdown.push(expr);
-                }
-                Ok(())
-            });
-
-        match exprs_result {
-            Ok(()) => {
-                self.filters.append(&mut pushdown);
-            }
-            Err(e) => {
-                info!(
-                    "Error, {}, building push-down predicates for filters: {:#?}. No
-                predicates are pushed down",
-                    e, filters
-                );
-            }
-        }
-        self
-    }
 
     /// resolve and extract supported filter
     /// convert filter to ColumnDomains and set self
-    pub fn extract_pushed_down_domains(
-        mut self,
-        filters: &[Expr],
-        table_schema: &TableSchema,
-    ) -> Predicate {
+    pub fn push_down_filter(mut self, filters: &[Expr], table_schema: &TableSchema) -> Predicate {
         if let Some(ref expr) = combine_filters(filters) {
-            let domains_result = expr_to_domains(expr, table_schema);
-            match domains_result {
-                Ok(domains) => {
-                    self.pushed_down_domains = Some(domains);
-                }
-                Err(e) => {
-                    info!(
-                        "Error, {}, building push-down predicates for filters: {:#?}. No
-                    predicates are pushed down",
-                        e, filters
-                    );
-                }
+            if let Ok(domains) = expr_to_domains(expr, table_schema) {
+                self.pushed_down_domains = Some(domains);
             }
         }
         self
-    }
-
-    /// resolve the time range based on the input expression
-    pub fn with_time_frame(mut self, max_ts: i64, min_ts: i64) -> Self {
-        self.timeframe = TimeRange::new(max_ts, min_ts);
-        self
-    }
-
-    pub fn get_time_range(&self) -> (i64, i64) {
-        (self.timeframe.min_ts, self.timeframe.max_ts)
     }
 }
 
@@ -1015,8 +893,8 @@ pub fn expr_to_domains(
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_of_ranges() {
+    #[test]
+    fn test_of_ranges() {
         let f1 = Range::lt(&DataType::Float64, &ScalarValue::Float64(Some(-1000000.1)));
         let f2 = Range::gt(&DataType::Float64, &ScalarValue::Float64(Some(2.2)));
         let f3 = Range::eq(
@@ -1038,8 +916,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn test_of_values() {
+    #[test]
+    fn test_of_values() {
         let val = ScalarValue::Int32(Some(10_i32));
 
         let elementss = &[&val, &val];

@@ -8,14 +8,16 @@ use datafusion::{
     },
 };
 use futures::Stream;
-use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
+use models::{
+    predicate::domain::PredicateRef,
+    schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD},
+};
 
 use tskv::engine::EngineRef;
 
 use tskv::{Error, TimeRange};
 
 use crate::iterator::{QueryOption, RowIterator};
-use crate::predicate::PredicateRef;
 
 #[allow(dead_code)]
 pub struct TableScanStream {
