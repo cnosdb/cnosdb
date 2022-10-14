@@ -156,7 +156,7 @@ pub fn get_config(path: &str) -> Config {
 fn test() {
     let config_str = r#"
 [storage]
-path = 'dev/db'
+path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
@@ -169,7 +169,7 @@ strict_write = true
 
 [wal]
 enabled = true
-path = 'dev/wal'
+path = 'data/wal'
 sync = true
 
 [cache]
@@ -178,7 +178,7 @@ max_immutable_number = 4
 
 [log]
 level = 'info'
-path = 'dev/log'
+path = 'data/log'
 
 [security]
 

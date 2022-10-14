@@ -1099,7 +1099,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let dir = PathBuf::from("dev/db".to_string());
+        let dir = PathBuf::from("data/db".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
