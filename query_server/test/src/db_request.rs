@@ -1,9 +1,11 @@
+use nom::branch::alt;
 use std::str::FromStr;
 
 use nom::bytes::complete::{tag, tag_no_case};
-use nom::character::complete::{alphanumeric1, space0};
-use nom::combinator::map_res;
-use nom::sequence::{delimited, tuple};
+use nom::character::complete::{alpha1, alphanumeric1, none_of, space0};
+use nom::combinator::{map_parser, map_res, recognize};
+use nom::multi::{many0_count, many1};
+use nom::sequence::{delimited, pair, tuple};
 use nom::IResult;
 
 #[derive(Debug, Clone)]
@@ -44,8 +46,20 @@ fn instruction_parse_str<'a>(
             tag("="),
             space0,
         )),
-        alphanumeric1,
+        recognize(many1(none_of(" \t\n\r"))),
         space0,
+    )
+}
+
+fn instruction_parse_identity<'a>(
+    instruction_name: &'a str,
+) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
+    map_parser(
+        instruction_parse_str(instruction_name),
+        recognize(pair(
+            alt((alpha1, tag("_"))),
+            many0_count(alt((alphanumeric1, tag("_")))),
+        )),
     )
 }
 
@@ -80,11 +94,11 @@ impl Instruction {
 
     /// parse line to modify instruction
     pub fn parse_and_change(&mut self, line: &str) {
-        if let Ok((_, dbname)) = instruction_parse_str("DATABASE")(line) {
+        if let Ok((_, dbname)) = instruction_parse_identity("DATABASE")(line) {
             self.db_name = dbname.to_string();
         }
 
-        if let Ok((_, user_name)) = instruction_parse_str("USER_NAME")(line) {
+        if let Ok((_, user_name)) = instruction_parse_identity("USER_NAME")(line) {
             self.user_name = user_name.to_string();
         }
 
@@ -286,9 +300,9 @@ fn test_query_build() {
 fn test_parse_instruction() {
     let mut instruction = Instruction::default();
 
-    let line = r##"--#DATABASE    =   abc"##;
+    let line = r##"--#DATABASE = _abc_"##;
     instruction.parse_and_change(line);
-    assert_eq!(instruction.db_name, "abc");
+    assert_eq!(instruction.db_name, "_abc_");
 
     let line = r##"--#USER_NAME = hello"##;
     instruction.parse_and_change(line);
