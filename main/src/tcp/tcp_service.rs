@@ -140,7 +140,7 @@ async fn process_vnode_write_command(
 ) -> CoordinatorResult<()> {
     let cmd = WriteVnodeRequest::decode(&cmd_buf)?;
 
-    let mut points = vec![0; request.data_len as usize];
+    let mut points = vec![0; cmd.data_len as usize];
     (*client).read_exact(&mut points).await?;
 
     CommonResponse::send(client, 0, "".to_owned()).await?;

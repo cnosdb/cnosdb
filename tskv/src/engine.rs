@@ -4,16 +4,18 @@ use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
-use models::{FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use models::schema::TableSchema;
+use models::{FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
 use trace::debug;
 use tracing::log::info;
+
 pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
@@ -31,10 +33,12 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>>;
+        fields: Vec<SchemaFieldId>,
+    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>>;
 
     fn drop_database(&self, database: &str) -> Result<()>;
+
+    fn create_table(&self, schema: &TableSchema);
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()>;
 
@@ -46,10 +50,10 @@ pub trait Engine: Send + Sync + Debug {
         time_range: &TimeRange,
     ) -> Result<()>;
 
-    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<Vec<FieldInfo>>>;
+    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>>;
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
-    fn get_series_key(&self, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>>;
+    fn get_series_key(&self, db: &str, sid: SeriesId) -> IndexResult<Option<SeriesKey>>;
     fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>>;
 }
 
@@ -88,14 +92,18 @@ impl Engine for MockEngine {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
+        fields: Vec<SchemaFieldId>,
+    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
         HashMap::new()
     }
 
     fn drop_database(&self, database: &str) -> Result<()> {
         println!("drop_database {:?}", database);
         Ok(())
+    }
+
+    fn create_table(&self, schema: &TableSchema) {
+        todo!()
     }
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
@@ -113,25 +121,13 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<Vec<FieldInfo>>> {
+    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
-
-        let types = vec![
-            ValueType::Unknown,
-            ValueType::Float,
-            ValueType::Integer,
-            ValueType::Unsigned,
-            ValueType::Boolean,
-            ValueType::String,
-        ];
-
-        let fields: Vec<FieldInfo> = types
-            .iter()
-            .enumerate()
-            .map(|(i, e)| FieldInfo::new(i as u64, Vec::from(e.to_string()), e.to_owned(), 0_u8))
-            .collect();
-
-        Ok(Some(fields))
+        Ok(Some(TableSchema::new(
+            db.to_string(),
+            tab.to_string(),
+            BTreeMap::default(),
+        )))
     }
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {

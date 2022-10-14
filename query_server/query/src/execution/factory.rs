@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use crate::execution::ddl::DDLExecution;
-use crate::metadata::MetaDataRef;
 use datafusion::scheduler::Scheduler;
 use spi::query::{
     execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef},
@@ -12,7 +11,6 @@ use spi::query::{
 use super::query::SqlQueryExecution;
 
 pub struct SqlQueryExecutionFactory {
-    catalog: MetaDataRef,
     optimizer: Arc<dyn Optimizer + Send + Sync>,
     // TODO 需要封装 scheduler
     scheduler: Arc<Scheduler>,
@@ -20,13 +18,8 @@ pub struct SqlQueryExecutionFactory {
 
 impl SqlQueryExecutionFactory {
     #[inline(always)]
-    pub fn new(
-        catalog: MetaDataRef,
-        optimizer: Arc<dyn Optimizer + Send + Sync>,
-        scheduler: Arc<Scheduler>,
-    ) -> Self {
+    pub fn new(optimizer: Arc<dyn Optimizer + Send + Sync>, scheduler: Arc<Scheduler>) -> Self {
         Self {
-            catalog,
             optimizer,
             scheduler,
         }
@@ -46,11 +39,7 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 self.optimizer.clone(),
                 self.scheduler.clone(),
             )),
-            Plan::DDL(ddl_plan) => Box::new(DDLExecution::new(
-                state_machine,
-                ddl_plan,
-                self.catalog.clone(),
-            )),
+            Plan::DDL(ddl_plan) => Box::new(DDLExecution::new(state_machine, ddl_plan)),
         }
     }
 }

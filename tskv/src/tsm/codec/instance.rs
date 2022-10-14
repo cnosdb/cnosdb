@@ -24,50 +24,11 @@ use crate::tsm::codec::unsigned::{
     u64_q_compress_decode, u64_q_compress_encode, u64_without_compress_decode,
     u64_without_compress_encode, u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
 };
+use datafusion::physical_plan::expressions::Min;
 use libc::max_align_t;
+use minivec::MiniVec;
+use models::codec::Encoding;
 use std::error::Error;
-
-#[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Encoding {
-    Default = 0,
-    Null = 1,
-    Delta = 2,
-    Quantile = 3,
-    Gzip = 4,
-    Bzip = 5,
-    Gorilla = 6,
-    Snappy = 7,
-    Zstd = 8,
-    Zlib = 9,
-    BitPack = 10,
-    Unknown = 15,
-}
-
-impl Default for Encoding {
-    fn default() -> Self {
-        Encoding::Default
-    }
-}
-
-impl From<u8> for Encoding {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Encoding::Default,
-            1 => Encoding::Null,
-            2 => Encoding::Delta,
-            3 => Encoding::Quantile,
-            4 => Encoding::Gzip,
-            5 => Encoding::Bzip,
-            6 => Encoding::Gorilla,
-            7 => Encoding::Snappy,
-            8 => Encoding::Zstd,
-            9 => Encoding::Zlib,
-            10 => Encoding::BitPack,
-            _ => Encoding::Unknown,
-        }
-    }
-}
 
 pub trait TimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>>;
@@ -267,7 +228,7 @@ pub trait StringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
@@ -281,7 +242,7 @@ impl StringCodec for NullStringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_without_compress_decode(src, dst)
     }
@@ -297,7 +258,7 @@ impl StringCodec for SnappyStringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_snappy_decode(src, dst)
     }
@@ -313,7 +274,7 @@ impl StringCodec for GzipStringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_gzip_decode(src, dst)
     }
@@ -329,7 +290,7 @@ impl StringCodec for BzipStringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_bzip_decode(src, dst)
     }
@@ -345,7 +306,7 @@ impl StringCodec for ZstdStringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_zstd_decode(src, dst)
     }
@@ -361,7 +322,7 @@ impl StringCodec for ZlibStringCodec {
     fn decode(
         &self,
         src: &[u8],
-        dst: &mut Vec<Vec<u8>>,
+        dst: &mut Vec<MiniVec<u8>>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         str_zlib_decode(src, dst)
     }

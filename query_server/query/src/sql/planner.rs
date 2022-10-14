@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
-use datafusion::logical_plan::plan::Extension;
-use datafusion::logical_plan::{DFField, FileType, LogicalPlan, LogicalPlanBuilder};
+use datafusion::logical_plan::plan::{Analyze, Explain, Extension};
+use datafusion::logical_plan::{
+    DFField, FileType, LogicalPlan, LogicalPlanBuilder, PlanType, ToDFSchema, ToStringifiedPlan,
+};
+use datafusion::logical_plan::{DFSchema, DFSchemaRef};
 use datafusion::prelude::{cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
@@ -11,17 +15,22 @@ use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use datafusion::sql::TableReference;
 use hashbrown::HashMap;
 use snafu::ResultExt;
-use spi::query::ast::{DropObject, ExtStatement};
+use spi::query::ast::{ColumnOption, CreateTable as ASTCreateTable, DropObject, ExtStatement};
 use spi::query::logical_planner::{
-    self, affected_row_expr, CSVOptions, CreateExternalTable, DDLPlan, DropPlan, ExternalSnafu,
-    FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan, MISMATCHED_COLUMNS,
-    MISSING_COLUMN,
+    self, affected_row_expr, CSVOptions, CreateExternalTable, CreateTable, DDLPlan, DropPlan,
+    ExternalSnafu, FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
-use sqlparser::ast::{Ident, ObjectName, Query, Statement};
+use sqlparser::ast::{Ident, ObjectName, Query};
+use std::collections::HashMap as MetaDataHashmap;
 
+use models::codec::{
+    BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC, UNSIGNED_BIGINT_CODEC,
+};
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
+use sqlparser::ast::{DataType as SQLDataType, Statement};
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
@@ -39,11 +48,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
     }
 
     /// Generate a logical plan from an  Extent SQL statement
-    fn statement_to_plan(&self, statement: ExtStatement) -> Result<Plan> {
+    pub(crate) fn statement_to_plan(&self, statement: ExtStatement) -> Result<Plan> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
-            ExtStatement::CreateTable(_) => todo!(),
+            ExtStatement::CreateTable(stmt) => self.table_to_plan(stmt),
             ExtStatement::CreateDatabase(_) => todo!(),
             ExtStatement::CreateUser(_) => todo!(),
             ExtStatement::Drop(s) => self.drop_object_to_plan(s),
@@ -57,23 +66,72 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn df_sql_to_plan(&self, stmt: Statement) -> Result<Plan> {
         match stmt {
-            Statement::Query(_) | Statement::Explain { .. } => {
+            Statement::Query(_) => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
                 let df_plan = df_planner
                     .sql_statement_to_plan(stmt)
                     .context(ExternalSnafu)?;
                 Ok(Plan::Query(QueryPlan { df_plan }))
             }
+            Statement::Explain {
+                verbose,
+                statement,
+                analyze,
+                describe_alias: _,
+            } => self.explain_statement_to_plan(verbose, analyze, *statement),
             Statement::Insert {
                 table_name: ref sql_object_name,
                 columns: ref sql_column_names,
                 source,
                 ..
             } => self.insert_to_plan(sql_object_name, sql_column_names, source),
-            _ => {
-                unimplemented!()
-            }
+            _ => Err(LogicalPlannerError::NotImplemented {
+                err: stmt.to_string(),
+            }),
         }
+    }
+
+    /// Generate a plan for EXPLAIN ... that will print out a plan
+    ///
+    pub fn explain_statement_to_plan(
+        &self,
+        verbose: bool,
+        analyze: bool,
+        statement: Statement,
+    ) -> Result<Plan> {
+        let plan = self.df_sql_to_plan(statement)?;
+
+        let input_df_plan = match plan {
+            Plan::Query(query) => Arc::new(query.df_plan),
+            _ => {
+                return Err(LogicalPlannerError::NotImplemented {
+                    err: "explain non-query statement.".to_string(),
+                })
+            }
+        };
+
+        let schema = LogicalPlan::explain_schema()
+            .to_dfschema_ref()
+            .context(ExternalSnafu)?;
+
+        let df_plan = if analyze {
+            LogicalPlan::Analyze(Analyze {
+                verbose,
+                input: input_df_plan,
+                schema,
+            })
+        } else {
+            let stringified_plans =
+                vec![input_df_plan.to_stringified(PlanType::InitialLogicalPlan)];
+            LogicalPlan::Explain(Explain {
+                verbose,
+                plan: input_df_plan,
+                stringified_plans,
+                schema,
+            })
+        };
+
+        Ok(Plan::Query(QueryPlan { df_plan }))
     }
 
     /// Add a projection operation (if necessary)
@@ -236,6 +294,89 @@ impl<S: ContextProvider> SqlPlaner<S> {
             UNEXPECTED_EXTERNAL_PLAN.to_string(),
         ))
         .context(ExternalSnafu)
+    }
+
+    pub fn table_to_plan(&self, statement: ASTCreateTable) -> Result<Plan> {
+        let ASTCreateTable {
+            name,
+            if_not_exists,
+            columns,
+        } = statement;
+        let mut fields = vec![];
+        let mut tags_name = vec![];
+        let mut field_name_codec_algo = MetaDataHashmap::new();
+        for column in columns {
+            if column.is_tag {
+                tags_name.push(column.name.value);
+            } else {
+                fields.push(DFField::new(
+                    Some(&name),
+                    &column.name.value,
+                    self.make_data_type(&column.data_type)?,
+                    true,
+                ));
+                if field_name_codec_algo.get(&column.name.value) != None {
+                    return Err(LogicalPlannerError::External {
+                        source: DataFusionError::Internal(
+                            "column name should different from each other".to_string(),
+                        ),
+                    });
+                }
+                self.check_column(&column)?;
+                field_name_codec_algo.insert(column.name.value, column.codec);
+            }
+        }
+
+        let table_schema = DFSchemaRef::new(
+            DFSchema::new_with_metadata(fields, field_name_codec_algo).context(ExternalSnafu)?,
+        );
+
+        Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
+            schema: table_schema,
+            name,
+            if_not_exists,
+            tags: tags_name,
+        })))
+    }
+
+    fn make_data_type(&self, data_type: &SQLDataType) -> Result<DataType> {
+        match data_type {
+            // todo : should support get time unit for database
+            SQLDataType::Timestamp => Ok(DataType::Timestamp(TimeUnit::Nanosecond, None)),
+            SQLDataType::BigInt(_) => Ok(DataType::Int64),
+            SQLDataType::UnsignedBigInt(_) => Ok(DataType::UInt64),
+            SQLDataType::Double => Ok(DataType::Float64),
+            SQLDataType::String => Ok(DataType::Utf8),
+            SQLDataType::Boolean => Ok(DataType::Boolean),
+            _ => Err(LogicalPlannerError::External {
+                source: DataFusionError::Internal(format!("Unexpected data type {}", data_type)),
+            }),
+        }
+    }
+
+    fn check_column(&self, column: &ColumnOption) -> Result<()> {
+        let is_ok = match column.data_type {
+            SQLDataType::Timestamp => {
+                TIMESTAMP_CODEC.contains(&column.codec.to_uppercase().as_str())
+            }
+            SQLDataType::BigInt(_) => BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::UnsignedBigInt(_) => {
+                UNSIGNED_BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str())
+            }
+            SQLDataType::Double => DOUBLE_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::String => STRING_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::Boolean => BOOLEAN_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            _ => false,
+        };
+        if !is_ok {
+            return Err(LogicalPlannerError::External {
+                source: DataFusionError::Internal(format!(
+                    "Unsupported codec type {} for {}",
+                    column.codec, column.data_type
+                )),
+            });
+        }
+        Ok(())
     }
 
     fn extract_column_names(
@@ -425,6 +566,28 @@ mod tests {
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
         println!("{:?}", plan);
+    }
+
+    #[test]
+    fn test_create_table() {
+        let sql = "CREATE TABLE IF NOT EXISTS test\
+            (column1 BIGINT CODEC(DELTA),\
+            column2 STRING CODEC(GZIP),\
+            column3 BIGINT UNSIGNED CODEC(NULL),\
+            column4 BOOLEAN,\
+            column5 DOUBLE CODEC(GORILLA),\
+            TAGS(column6, column7))";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        let plan = planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+        let ans = format!("{:?}", plan);
+        let expected = r#"DDL(CreateTable(CreateTable { schema: DFSchema { fields: [DFField { qualifier: Some("test"), field: Field { name: "time", data_type: Timestamp(Nanosecond, None), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column1", data_type: Int64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column3", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column4", data_type: Boolean, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column5", data_type: Float64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }], metadata: {"column5": "GORILLA", "column3": "NULL", "column4": "DEFAULT", "column2": "GZIP", "column1": "DELTA", "time": "DEFAULT"} }, name: "test", if_not_exists: true, tags: ["column6", "column7"] }))"#;
+        assert_eq!(ans[0..1022], expected[0..1022]);
+        assert_eq!(ans[1186..1223], expected[1186..1223]);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 [package]
-name = "rpctests"
+name = "e2e_test"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,6 +11,7 @@ protos = { path = "../common/protos", features = ["test"] }
 
 [dev-dependencies]
 flatbuffers = "2.1"
-tonic = "0.7"
+tonic = {version = "0.7", features = ["tls", "transport"]}
 tokio = { version = "1.21", features = ["full"] }
 tokio-stream = "0.1"
+http_protocol = { path = "../common/http_protocol", features = ["http_client"] }

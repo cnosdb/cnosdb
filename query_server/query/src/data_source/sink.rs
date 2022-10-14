@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::{
+    arrow::record_batch::RecordBatch, physical_plan::metrics::ExecutionPlanMetricsSet,
+};
 
 use super::Result;
 
@@ -9,5 +11,9 @@ pub trait RecordBatchSink: Send + Sync {
 }
 
 pub trait RecordBatchSinkProvider: Send + Sync {
-    fn create_batch_sink(&self, partition: usize) -> Box<dyn RecordBatchSink>;
+    fn create_batch_sink(
+        &self,
+        metrics: &ExecutionPlanMetricsSet,
+        partition: usize,
+    ) -> Box<dyn RecordBatchSink>;
 }

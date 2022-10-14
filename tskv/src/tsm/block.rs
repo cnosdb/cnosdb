@@ -1,3 +1,4 @@
+use minivec::MiniVec;
 use std::{fmt::Display, mem::size_of, ops::Index};
 
 use models::{Timestamp, ValueType};
@@ -10,7 +11,7 @@ use crate::{
     tseries_family::TimeRange,
     tsm::codec::{
         get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
-        DataBlockEncoding, Encoding,
+        DataBlockEncoding,
     },
 };
 
@@ -34,7 +35,7 @@ pub enum DataBlock {
     },
     Str {
         ts: Vec<i64>,
-        val: Vec<Vec<u8>>,
+        val: Vec<MiniVec<u8>>,
         enc: DataBlockEncoding,
     },
     F64 {
@@ -641,7 +642,7 @@ fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize)
     }
 }
 
-fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
+fn exclude_slow(v: &mut Vec<MiniVec<u8>>, min_idx: usize, max_idx: usize) {
     if min_idx == max_idx {
         v.remove(min_idx);
     }
@@ -654,6 +655,7 @@ fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
+    use minivec::mini_vec;
     use std::mem::size_of;
 
     use crate::{
@@ -725,7 +727,8 @@ pub mod test {
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]],
+            val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
+                      mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
             enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((2, 3)));
@@ -734,14 +737,14 @@ pub mod test {
             DataBlock::Str {
                 ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
                 val: vec![
-                    vec![10],
-                    vec![11],
-                    vec![14],
-                    vec![15],
-                    vec![16],
-                    vec![17],
-                    vec![18],
-                    vec![19]
+                    mini_vec![10],
+                    mini_vec![11],
+                    mini_vec![14],
+                    mini_vec![15],
+                    mini_vec![16],
+                    mini_vec![17],
+                    mini_vec![18],
+                    mini_vec![19]
                 ],
                 enc: DataBlockEncoding::default()
             }
@@ -750,7 +753,8 @@ pub mod test {
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            val: vec![vec![10], vec![11], vec![12], vec![13], vec![14], vec![15], vec![16], vec![17], vec![18], vec![19]],
+            val: vec![mini_vec![10], mini_vec![11], mini_vec![12], mini_vec![13], mini_vec![14],
+                      mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
             enc: DataBlockEncoding::default()
         };
         blk.exclude(&TimeRange::from((2, 8)));
@@ -758,7 +762,7 @@ pub mod test {
             blk,
             DataBlock::Str {
                 ts: vec![0, 1, 9],
-                val: vec![vec![10], vec![11], vec![19]],
+                val: vec![mini_vec![10], mini_vec![11], mini_vec![19]],
                 enc: DataBlockEncoding::default()
             }
         )

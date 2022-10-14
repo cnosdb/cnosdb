@@ -1,28 +1,32 @@
+use std::mem::size_of;
+use std::mem::size_of_val;
 use std::{
     collections::{BTreeMap, HashMap},
     path::{self, Path},
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
+use parking_lot::RwLock;
+use snafu::ResultExt;
+use tokio::sync::watch::Receiver;
+use tokio::sync::{mpsc::UnboundedSender, oneshot};
+
+use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
+use models::schema::TableSchema;
+use models::utils::{split_id, unite_id};
+use models::{SchemaFieldId, SchemaId, SeriesId, SeriesKey, Timestamp};
+use protos::models::{Point, Points};
+use trace::{debug, error, info};
+
+use crate::compaction::FlushReq;
+use crate::index::{IndexError, IndexResult};
+use crate::tseries_family::LevelInfo;
 use crate::{
     error::{self, Result},
     memcache::{RowData, RowGroup},
     version_set::VersionSet,
-    TimeRange, TseriesFamilyId,
+    Error, TimeRange, TseriesFamilyId,
 };
-use models::utils::{split_id, unite_id};
-use models::{SeriesKey, Timestamp};
-
-use parking_lot::RwLock;
-use protos::models::{Point, Points};
-use snafu::ResultExt;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::{debug, error, info};
-
-use ::models::{FieldInfo, InMemPoint, SeriesInfo, Tag, ValueType};
-
-use crate::index::IndexResult;
-use crate::tseries_family::LevelInfo;
 use crate::{
     index::db_index,
     kv_option::Options,
@@ -31,10 +35,12 @@ use crate::{
     tseries_family::{TseriesFamily, Version},
 };
 
+pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
+
 #[derive(Debug)]
 pub struct Database {
     name: String,
-    index: Arc<RwLock<db_index::DBIndex>>,
+    index: Arc<db_index::DBIndex>,
     ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
 }
@@ -51,7 +57,11 @@ impl Database {
         }
     }
 
-    pub fn open_tsfamily(&mut self, ver: Arc<Version>) {
+    pub fn open_tsfamily(
+        &mut self,
+        ver: Arc<Version>,
+        flush_task_sender: UnboundedSender<FlushReq>,
+    ) {
         let opt = ver.storage_opt();
 
         let tf = TseriesFamily::new(
@@ -61,6 +71,7 @@ impl Database {
             ver.clone(),
             self.opt.cache.clone(),
             self.opt.storage.clone(),
+            flush_task_sender,
         );
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
@@ -86,6 +97,7 @@ impl Database {
         seq_no: u64,
         file_id: u64,
         summary_task_sender: UnboundedSender<SummaryTask>,
+        flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Arc<RwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
@@ -103,6 +115,7 @@ impl Database {
             ver,
             self.opt.cache.clone(),
             self.opt.storage.clone(),
+            flush_task_sender,
         );
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
@@ -142,71 +155,105 @@ impl Database {
 
     pub fn build_write_group(
         &self,
-        points: flatbuffers::Vector<flatbuffers::ForwardsUOffset<Point>>,
-    ) -> Result<HashMap<(u64, u32), RowGroup>> {
+        points: FlatBufferPoint,
+    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
+        if self.opt.storage.strict_write {
+            self.build_write_group_strict_mode(points)
+        } else {
+            self.build_write_group_loose_mode(points)
+        }
+    }
+
+    pub fn build_write_group_strict_mode(
+        &self,
+        points: FlatBufferPoint,
+    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for point in points {
-            let mut info =
-                SeriesInfo::from_flatbuffers(&point).context(error::InvalidModelSnafu)?;
-
-            let sid = self.build_index_and_check_type(&mut info)?;
-
-            let row = RowData::from(point);
-            let mut all_fileds = BTreeMap::new();
-            let fields = info.field_infos();
-            for (i, f) in row.fields.into_iter().enumerate() {
-                all_fileds.insert(fields[i].field_id(), f);
-            }
-
-            let fields = info.field_fill();
-            for item in fields {
-                all_fileds.insert(item.field_id(), None);
-            }
-
-            let ts = row.ts;
-            let schema_id = info.get_schema_id();
-            let mut schema = Vec::with_capacity(all_fileds.len());
-            let mut all_row = Vec::with_capacity(all_fileds.len());
-            for (k, v) in all_fileds {
-                let (fid, _) = split_id(k);
-
-                all_row.push(v);
-                schema.push(fid);
-            }
-
-            let (_, sid) = split_id(sid);
-            let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-                schema_id,
-                schema,
-                rows: vec![],
-                range: TimeRange {
-                    min_ts: i64::MAX,
-                    max_ts: i64::MIN,
-                },
-            });
-
-            entry.range.merge(&TimeRange {
-                min_ts: ts,
-                max_ts: ts,
-            });
-            entry.rows.push(RowData {
-                ts,
-                fields: all_row,
-            });
+            let sid = self.build_index(&point)?;
+            self.build_row_data(&mut map, point, sid)
         }
-
         Ok(map)
     }
 
-    fn build_index_and_check_type(&self, info: &mut SeriesInfo) -> Result<u64> {
-        if let Some(id) = self.index.read().get_from_cache(info) {
+    pub fn build_write_group_loose_mode(
+        &self,
+        points: FlatBufferPoint,
+    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
+        let mut map = HashMap::new();
+        for point in points {
+            let sid = self.build_index(&point)?;
+            match self.index.check_field_type_from_cache(sid, &point) {
+                Ok(_) => {}
+                Err(_) => {
+                    self.index
+                        .check_field_type_or_else_add(sid, &point)
+                        .context(error::IndexErrSnafu)?;
+                }
+            }
+
+            self.build_row_data(&mut map, point, sid)
+        }
+        Ok(map)
+    }
+
+    fn build_row_data(
+        &self,
+        map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
+        point: Point,
+        sid: u64,
+    ) {
+        let table_name = String::from_utf8(point.table().unwrap().to_vec()).unwrap();
+        let table_schema = match self.index.get_table_schema(&table_name) {
+            Ok(schema) => match schema {
+                None => {
+                    error!("failed get schema for table {}", table_name);
+                    return;
+                }
+                Some(schema) => schema,
+            },
+            Err(_) => {
+                error!("failed get schema for table {}", table_name);
+                return;
+            }
+        };
+
+        let row = RowData::point_to_row_data(point, &table_schema);
+        let schema_size = table_schema.size();
+        let schema_id = 0;
+        let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
+            schema_id,
+            schema: TableSchema::default(),
+            rows: vec![],
+            range: TimeRange {
+                min_ts: i64::MAX,
+                max_ts: i64::MIN,
+            },
+            size: size_of::<RowGroup>(),
+        });
+        entry.schema = table_schema;
+        entry.size += schema_size;
+        entry.range.merge(&TimeRange {
+            min_ts: row.ts,
+            max_ts: row.ts,
+        });
+        entry.size += row.size();
+        //todo: remove this copy
+        entry.rows.push(row);
+    }
+
+    fn build_index(&self, info: &Point) -> Result<u64> {
+        if let Some(id) = self
+            .index
+            .get_sid_from_cache(info)
+            .context(error::IndexErrSnafu)?
+        {
             return Ok(id);
         }
 
         let id = self
             .index
-            .write()
             .add_series_if_not_exists(info)
             .context(error::IndexErrSnafu)?;
 
@@ -242,15 +289,15 @@ impl Database {
     }
 
     pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
-        self.index.write().get_series_key(sid)
+        self.index.get_series_key(sid)
     }
 
-    pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<Vec<FieldInfo>>> {
-        self.index.write().get_table_schema(table_name)
+    pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<TableSchema>> {
+        self.index.get_table_schema(table_name)
     }
 
-    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<Vec<FieldInfo>>> {
-        self.index.write().get_table_schema_by_series_id(sid)
+    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {
+        self.index.get_table_schema_by_series_id(sid)
     }
 
     pub fn get_tsfamily(&self, id: u32) -> Option<&Arc<RwLock<TseriesFamily>>> {
@@ -272,7 +319,7 @@ impl Database {
         self.ts_families.iter().for_each(func);
     }
 
-    pub fn get_index(&self) -> Arc<RwLock<db_index::DBIndex>> {
+    pub fn get_index(&self) -> Arc<db_index::DBIndex> {
         self.index.clone()
     }
 
@@ -300,42 +347,34 @@ pub(crate) fn delete_table_async(
     if let Some(db) = db_instance {
         let index = db.read().get_index();
         let sids = index
-            .read()
             .get_series_id_list(&table, &[])
             .context(error::IndexErrSnafu)?;
-
-        let mut index_wlock = index.write();
-
         debug!(
             "Drop table: deleting index in table: {}.{}",
             &database, &table
         );
-        let field_infos = index_wlock
+        let field_infos = index
             .get_table_schema(&table)
             .context(error::IndexErrSnafu)?;
-        index_wlock
+        index
             .del_table_schema(&table)
             .context(error::IndexErrSnafu)?;
 
         println!("{:?}", &sids);
         for sid in sids.iter() {
-            index_wlock
-                .del_series_info(*sid)
-                .context(error::IndexErrSnafu)?;
+            index.del_series_info(*sid).context(error::IndexErrSnafu)?;
         }
-        index_wlock.flush().context(error::IndexErrSnafu)?;
-
-        drop(index_wlock);
+        index.flush().context(error::IndexErrSnafu)?;
 
         if let Some(fields) = field_infos {
             debug!(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
-            let fids: Vec<u64> = fields.iter().map(|f| f.field_id()).collect();
+            let fids: Vec<SchemaFieldId> = fields.fields.iter().map(|f| f.1.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
-                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid, *sid)))
+                .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid as u64, *sid)))
                 .collect();
             let time_range = &TimeRange {
                 min_ts: Timestamp::MIN,

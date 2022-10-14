@@ -67,7 +67,7 @@ mod test {
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i <= num / 2 {
-                Local::now().timestamp_millis()
+                Local::now().timestamp_nanos()
             } else {
                 1
             };
@@ -121,29 +121,51 @@ mod test {
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i % 2 == 0 {
-                Local::now().timestamp_millis()
+                Local::now().timestamp_nanos()
             } else {
-                1
+                i64::MIN
             };
             let tav = area[rand::random::<usize>() % 3].clone();
             let tbv = area[rand::random::<usize>() % 3].clone();
-            let tags = create_tags(
-                fbb,
-                vec![
-                    ("ta", &("a".to_string() + &tav)),
-                    ("tb", &("b".to_string() + &tbv)),
-                ],
-            );
+            let tags = if rand::random::<i64>() % 2 == 0 {
+                create_tags(
+                    fbb,
+                    vec![
+                        ("ta", &("a".to_string() + &tav)),
+                        ("tb", &("b".to_string() + &tbv)),
+                    ],
+                )
+            } else {
+                create_tags(
+                    fbb,
+                    vec![
+                        ("ta", &("a".to_string() + &tav)),
+                        ("tb", &("b".to_string() + &tbv)),
+                        ("tc", &("c".to_string() + &tbv)),
+                    ],
+                )
+            };
 
             let fav = rand::random::<f64>().to_be_bytes();
             let fbv = rand::random::<i64>().to_be_bytes();
-            let fields = create_fields(
-                fbb,
-                vec![
-                    ("fa", FieldType::Integer, fav.as_slice()),
-                    ("fb", FieldType::Float, fbv.as_slice()),
-                ],
-            );
+            let fields = if rand::random::<i64>() % 2 == 0 {
+                create_fields(
+                    fbb,
+                    vec![
+                        ("fa", FieldType::Integer, fav.as_slice()),
+                        ("fb", FieldType::Float, fbv.as_slice()),
+                    ],
+                )
+            } else {
+                create_fields(
+                    fbb,
+                    vec![
+                        ("fa", FieldType::Integer, fav.as_slice()),
+                        ("fb", FieldType::Float, fbv.as_slice()),
+                        ("fc", FieldType::Float, fbv.as_slice()),
+                    ],
+                )
+            };
 
             let table = fbb.create_vector("table".as_bytes());
             points.push(create_point(
@@ -172,7 +194,7 @@ mod test {
         let db = fbb.create_vector("db".as_bytes());
         let mut points = vec![];
         for _ in 0..num {
-            let timestamp = Local::now().timestamp_millis();
+            let timestamp = Local::now().timestamp_nanos();
             let mut tags = vec![];
             let tav = rand::random::<u8>().to_string();
             for _ in 0..19999 {
@@ -222,7 +244,7 @@ mod test {
         ];
         let field_keys = ["cpu", "mem"];
 
-        let now = Local::now().timestamp_millis();
+        let now = Local::now().timestamp_nanos();
         let database = fbb.create_vector(database.as_bytes());
         let table = fbb.create_vector(table.as_bytes());
         let mut points = vec![];

@@ -1,0 +1,9 @@
+ARG RUST_VERSION=1.62.1
+FROM rust:${RUST_VERSION}-slim-bullseye
+
+RUN apt update \
+    && apt install --yes pkg-config openssl libssl-dev g++ cmake git
+
+RUN git clone -b v2.0.6 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers \
+    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
+    && make install

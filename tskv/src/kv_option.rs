@@ -5,7 +5,7 @@ use std::{path::PathBuf, sync::Arc};
 use config::Config;
 use serde::{Deserialize, Serialize};
 
-use crate::{direct_io, index::IndexConfig, summary};
+use crate::{file_system, index::IndexConfig, summary};
 
 const SUMMARY_PATH: &str = "summary";
 const INDEX_PATH: &str = "index";
@@ -41,6 +41,7 @@ pub struct StorageOptions {
     pub dio_max_resident: u64,
     pub dio_max_non_resident: u64,
     pub dio_page_len_scale: u64,
+    pub strict_write: bool,
 }
 
 impl StorageOptions {
@@ -76,8 +77,8 @@ impl StorageOptions {
             .join(ts_family_id.to_string())
     }
 
-    pub fn direct_io_options(&self) -> direct_io::Options {
-        let mut opt = direct_io::Options::default();
+    pub fn direct_io_options(&self) -> file_system::Options {
+        let mut opt = file_system::Options::default();
         opt.max_resident(self.dio_max_resident as usize)
             .max_non_resident(self.dio_max_non_resident as usize)
             .page_len_scale(self.dio_page_len_scale as usize);
@@ -97,6 +98,7 @@ impl From<&Config> for StorageOptions {
             dio_max_resident: config.storage.dio_max_resident,
             dio_max_non_resident: config.storage.dio_max_non_resident,
             dio_page_len_scale: config.storage.dio_page_len_scale,
+            strict_write: config.storage.strict_write,
         }
     }
 }

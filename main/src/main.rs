@@ -98,6 +98,7 @@ use crate::http::http_service::HttpService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::tcp::tcp_service::TcpService;
 use mem_allocator::Jemalloc;
+use metrics::{init_query_metrics_recorder, init_tskv_metrics_recorder};
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;
@@ -136,6 +137,8 @@ fn main() -> Result<(), std::io::Error> {
         .tcp_host
         .parse::<SocketAddr>()
         .expect("Invalid http_host");
+    init_tskv_metrics_recorder();
+    init_query_metrics_recorder();
 
     runtime.clone().block_on(async move {
         match &cli.subcmd {
@@ -157,17 +160,22 @@ fn main() -> Result<(), std::io::Error> {
                     meta_client.clone(),
                 ));
 
+                let tcp_service =
+                    Box::new(TcpService::new(dbms.clone(), kv_inst.clone(), tcp_host));
+
                 let http_service = Box::new(HttpService::new(
                     dbms.clone(),
                     kv_inst.clone(),
                     point_writer,
                     http_host,
+                    global_config.security.tls_config.clone(),
                 ));
-                let grpc_service =
-                    Box::new(GrpcService::new(dbms.clone(), kv_inst.clone(), grpc_host));
-                let tcp_service =
-                    Box::new(TcpService::new(dbms.clone(), kv_inst.clone(), tcp_host));
-
+                let grpc_service = Box::new(GrpcService::new(
+                    dbms.clone(),
+                    kv_inst.clone(),
+                    grpc_host,
+                    global_config.security.tls_config.clone(),
+                ));
                 let mut server = server::Builder::default()
                     .add_service(http_service)
                     .add_service(grpc_service)

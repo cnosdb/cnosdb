@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
 use snafu::ResultExt;
+use spi::catalog::MetaDataRef;
 use spi::query::execution::Output;
 use spi::{
     query::{
@@ -12,7 +13,7 @@ use spi::{
         logical_planner::LogicalPlanner,
         optimizer::Optimizer,
         parser::Parser,
-        session::{IsiphoSessionCtx, IsiphoSessionCtxFactory},
+        session::IsiphoSessionCtxFactory,
     },
     service::protocol::{Query, QueryId},
 };
@@ -20,7 +21,7 @@ use spi::{
 use spi::query::QueryError::BuildQueryDispatcher;
 use spi::query::{LogicalPlannerSnafu, Result};
 
-use crate::metadata::{MetaDataRef, MetadataProvider};
+use crate::metadata::MetadataProvider;
 use crate::{
     execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
 };
@@ -57,8 +58,15 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     async fn execute_query(&self, _id: QueryId, query: &Query) -> Result<Vec<Output>> {
         let mut results = vec![];
 
-        let session = self.session_factory.default_isipho_session_ctx();
-        let scheme_provider = MetadataProvider::new(self.metadata.clone());
+        let session = self
+            .session_factory
+            .create_isipho_session_ctx(query.context().clone());
+
+        let metadata = self
+            .metadata
+            .with_catalog(session.catalog())
+            .with_database(session.database());
+        let scheme_provider = MetadataProvider::new(metadata.clone());
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
 
@@ -66,16 +74,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         for stmt in statements.iter() {
             // TODO save query_state_machine，track query state
-            let query_state_machine =
-                Arc::new(QueryStateMachine::begin(query.clone(), session.clone()));
+            let query_state_machine = Arc::new(QueryStateMachine::begin(
+                query.clone(),
+                session.clone(),
+                metadata.clone(),
+            ));
 
             let result = self
-                .execute_statement(
-                    stmt.clone(),
-                    &session,
-                    &logical_planner,
-                    query_state_machine,
-                )
+                .execute_statement(stmt.clone(), &logical_planner, query_state_machine)
                 .await?;
 
             results.push(result);
@@ -93,14 +99,13 @@ impl SimpleQueryDispatcher {
     async fn execute_statement<S: ContextProvider>(
         &self,
         stmt: ExtStatement,
-        session: &IsiphoSessionCtx,
         logical_planner: &DefaultLogicalPlanner<S>,
         query_state_machine: Arc<QueryStateMachine>,
     ) -> Result<Output> {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
-            .create_logical_plan(stmt.clone(), session)
+            .create_logical_plan(stmt.clone(), &query_state_machine.session)
             .context(LogicalPlannerSnafu)?;
         query_state_machine.end_analyze();
 
@@ -169,11 +174,7 @@ impl SimpleQueryDispatcherBuilder {
             err: "lost of scheduler".to_string(),
         })?;
 
-        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
-            metadata.clone(),
-            optimizer,
-            scheduler,
-        ));
+        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(optimizer, scheduler));
 
         Ok(SimpleQueryDispatcher {
             metadata,

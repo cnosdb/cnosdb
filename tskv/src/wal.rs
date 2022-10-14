@@ -7,25 +7,24 @@ use std::{
 
 use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock};
-use protos::models as fb_models;
 use regex::Regex;
 use snafu::prelude::*;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
-use trace::{debug, error, info, warn};
 use walkdir::IntoIter;
 
 use engine::EngineRef;
-
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
+use protos::models as fb_models;
+use trace::{debug, error, info, warn};
 
 use crate::engine;
+use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     byte_utils,
     compaction::FlushReq,
     context::GlobalContext,
-    direct_io::{File, FileCursor, FileSync},
     error::{self, Error, Result},
-    file_manager::{self, FileManager},
+    file_system::{DmaFile, FileCursor, FileSync},
     file_utils,
     kv_option::WalOptions,
     memcache::MemCache,
@@ -107,7 +106,7 @@ impl WalEntryBlock {
 
 struct WalWriter {
     id: u64,
-    file: File,
+    file: DmaFile,
     size: u64,
     path: PathBuf,
     config: Arc<WalOptions>,
@@ -137,7 +136,7 @@ impl WalWriter {
         let mut new_file = false;
         let file = if file_manager::try_exists(path) {
             let f = file_manager::get_file_manager().open_file(path)?;
-            if f.len() == 0 {
+            if f.is_empty() {
                 new_file = true;
             }
             f
@@ -252,6 +251,7 @@ pub struct WalManager {
 }
 
 unsafe impl Send for WalManager {}
+
 unsafe impl Sync for WalManager {}
 
 impl WalManager {
@@ -317,7 +317,6 @@ impl WalManager {
         &self,
         engine: &impl engine::Engine,
         global_context: Arc<GlobalContext>,
-        flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
     ) -> Result<()> {
         let min_log_seq = global_context.last_seq();
         warn!("recovering version set from seq '{}'", &min_log_seq);
@@ -362,7 +361,7 @@ impl WalManager {
     }
 }
 
-pub fn reader(f: File) -> Result<WalReader> {
+pub fn reader(f: DmaFile) -> Result<WalReader> {
     WalReader::new(f.into_cursor())
 }
 
@@ -444,15 +443,16 @@ mod test {
     use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
 
     use chrono::Utc;
-    use config::get_config;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
+
+    use config::get_config;
     use protos::{models as fb_models, models_helper};
     use trace::init_default_global_tracing;
 
+    use crate::file_system::file_manager::{self, list_file_names, FileManager};
     use crate::{
-        direct_io::{File, FileCursor, FileSync},
-        file_manager::{self, list_file_names, FileManager},
+        file_system::{DmaFile, FileCursor, FileSync},
         kv_option::WalOptions,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
@@ -469,37 +469,10 @@ mod test {
         }
     }
 
-    impl From<&fb_models::ColumnKeys<'_>> for WalEntryBlock {
-        fn from(cols: &fb_models::ColumnKeys<'_>) -> Self {
-            Self::new(WalEntryType::Delete, cols._tab.buf)
-        }
-    }
-
-    impl<'a> From<&'a WalEntryBlock> for fb_models::ColumnKeys<'a> {
-        fn from(block: &'a WalEntryBlock) -> Self {
-            flatbuffers::root::<fb_models::ColumnKeys<'a>>(&block.buf[0..block.len as usize])
-                .unwrap()
-        }
-    }
-
-    impl From<&fb_models::ColumnKeysWithRange<'_>> for WalEntryBlock {
-        fn from(cols: &fb_models::ColumnKeysWithRange<'_>) -> Self {
-            Self::new(WalEntryType::DeleteRange, cols._tab.buf)
-        }
-    }
-
-    impl<'a> From<&'a WalEntryBlock> for fb_models::ColumnKeysWithRange<'a> {
-        fn from(block: &'a WalEntryBlock) -> Self {
-            flatbuffers::root::<fb_models::ColumnKeysWithRange<'a>>(
-                &block.buf[0..block.len as usize],
-            )
-            .unwrap()
-        }
-    }
-
     fn random_series_id() -> u64 {
         rand::random::<u64>()
     }
+
     fn random_field_id() -> u64 {
         rand::random::<u64>()
     }
@@ -520,73 +493,11 @@ mod test {
         models_helper::create_random_points_with_delta(fbb, 5)
     }
 
-    fn random_delete_wal_entry_item() -> fb_models::ColumnKey {
-        fb_models::ColumnKey::new(random_series_id(), random_field_id())
-    }
-
-    fn random_delete_wal_entry<'a>(
-        _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<fb_models::ColumnKeys<'a>> {
-        let fbb = _fbb.borrow_mut();
-
-        let mut items: Vec<fb_models::ColumnKey> = vec![];
-        for _ in 0..10 {
-            items.push(random_delete_wal_entry_item());
-        }
-
-        let vec = fbb.create_vector(&items);
-
-        fb_models::ColumnKeys::create(
-            fbb,
-            &fb_models::ColumnKeysArgs {
-                column_keys: Some(vec),
-            },
-        )
-    }
-
-    fn random_delete_range_wal_entry<'a>(
-        _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
-    ) -> WIPOffset<fb_models::ColumnKeysWithRange<'a>> {
-        let fbb = _fbb.borrow_mut();
-        let mut items: Vec<fb_models::ColumnKey> = vec![];
-        for _ in 0..10 {
-            items.push(random_delete_wal_entry_item());
-        }
-
-        let vec = fbb.create_vector(&items);
-
-        fb_models::ColumnKeysWithRange::create(
-            fbb,
-            &fb_models::ColumnKeysWithRangeArgs {
-                column_keys: Some(vec),
-                min: 1,
-                max: 100,
-            },
-        )
-    }
-
     fn random_wal_entry_block(_fbb: &mut flatbuffers::FlatBufferBuilder) -> WalEntryBlock {
         let fbb = _fbb.borrow_mut();
-
-        let entry_type = random_wal_entry_type();
-        match entry_type {
-            WalEntryType::Write => {
-                let ptr = random_write_wal_entry(fbb);
-                fbb.finish(ptr, None);
-                WalEntryBlock::new(WalEntryType::Write, fbb.finished_data())
-            }
-            WalEntryType::Delete => {
-                let ptr = random_delete_wal_entry(fbb);
-                fbb.finish(ptr, None);
-                WalEntryBlock::new(WalEntryType::Delete, fbb.finished_data())
-            }
-            WalEntryType::DeleteRange => {
-                let ptr = random_delete_range_wal_entry(fbb);
-                fbb.finish(ptr, None);
-                WalEntryBlock::new(WalEntryType::DeleteRange, fbb.finished_data())
-            }
-            _ => panic!("Invalid entry type"),
-        }
+        let ptr = random_write_wal_entry(fbb);
+        fbb.finish(ptr, None);
+        WalEntryBlock::new(WalEntryType::Write, fbb.finished_data())
     }
 
     fn check_wal_files(wal_dir: PathBuf) {
@@ -601,26 +512,10 @@ mod test {
             let mut wrote_crcs = Vec::<u32>::new();
             let mut read_crcs = Vec::<u32>::new();
             while let Some(entry) = reader.next_wal_entry() {
-                match entry.typ {
-                    WalEntryType::Write => {
-                        let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                        wrote_crcs.push(entry.crc);
-                        read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
-                    }
-                    WalEntryType::Delete => {
-                        let de_block =
-                            flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                        wrote_crcs.push(entry.crc);
-                        read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
-                    }
-                    WalEntryType::DeleteRange => {
-                        let de_block =
-                            flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf)
-                                .unwrap();
-                        wrote_crcs.push(entry.crc);
-                        read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
-                    }
-                    _ => {}
+                if entry.typ == WalEntryType::Write {
+                    let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
+                    wrote_crcs.push(entry.crc);
+                    read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
                 };
             }
             assert_eq!(wrote_crcs, read_crcs);
@@ -645,23 +540,9 @@ mod test {
             let bytes = fbb.finished_data();
             println!("WAL write entry length: {}", bytes.len());
 
-            match entry.typ {
-                WalEntryType::Write => {
-                    let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
-                }
-                WalEntryType::Delete => {
-                    let de_block = flatbuffers::root::<fb_models::ColumnKeys>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::Delete, &entry.buf).await.unwrap();
-                }
-                WalEntryType::DeleteRange => {
-                    let de_block =
-                        flatbuffers::root::<fb_models::ColumnKeysWithRange>(&entry.buf).unwrap();
-                    mgr.write(WalEntryType::DeleteRange, &entry.buf)
-                        .await
-                        .unwrap();
-                }
-                _ => {}
+            if entry.typ == WalEntryType::Write {
+                let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
+                mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
             };
         }
 

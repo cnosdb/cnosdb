@@ -9,18 +9,14 @@ use datafusion::{
     datasource::TableProvider,
     error::{DataFusionError, Result},
 };
+use models::schema::{TableFiled, TableSchema, TIME_FIELD};
 use parking_lot::RwLock;
+use spi::catalog::TableRef;
 
 use tskv::engine::EngineRef;
 
-use crate::{
-    schema::{TableFiled, TableSchema},
-    table::ClusterTable,
-};
-pub type CatalogRef = Arc<dyn CatalogProvider>;
-pub type SchemaRef = Arc<dyn SchemaProvider>;
+use crate::table::ClusterTable;
 pub type UserCatalogRef = Arc<UserCatalog>;
-pub type TableRef = Arc<dyn TableProvider>;
 
 pub struct UserCatalog {
     engine: EngineRef,
@@ -117,12 +113,16 @@ impl SchemaProvider for UserSchema {
         let mut tables = self.tables.write();
         if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {
             let mut fields = BTreeMap::new();
+            let codec = match v.fields.get(TIME_FIELD) {
+                None => 0,
+                Some(v) => v.codec,
+            };
             // system field (time)
-            let time_field = TableFiled::time_field();
+            let time_field = TableFiled::time_field(codec);
             fields.insert(time_field.name.clone(), time_field);
 
-            for item in v {
-                let field = TableFiled::from(&item);
+            for item in v.fields {
+                let field = item.1;
                 fields.insert(field.name.clone(), field);
             }
             let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);
@@ -146,7 +146,16 @@ impl SchemaProvider for UserSchema {
             )));
         }
         let mut tables = self.tables.write();
-        Ok(tables.insert(name, table))
+        let table_schema = table.as_any().downcast_ref::<TableSchema>();
+        let cluster_table = match table_schema {
+            None => table,
+            Some(schema) => {
+                self.engine.create_table(schema);
+                let cluster_table = ClusterTable::new(self.engine.clone(), schema.clone());
+                Arc::new(cluster_table)
+            }
+        };
+        Ok(tables.insert(name, cluster_table))
     }
 
     fn deregister_table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {

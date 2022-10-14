@@ -6,8 +6,8 @@ use prettydiff::diff_lines;
 use tokio::fs;
 use walkdir::WalkDir;
 
+use crate::db_request::DBRequest;
 use crate::error::{Error, Result};
-use crate::query::*;
 use crate::CLIENT;
 
 #[derive(Clone, Debug)]
@@ -30,7 +30,7 @@ impl Case {
     }
 
     pub fn case_name(&self) -> &str {
-        &self.name
+        self.name.as_str()
     }
 
     fn sql_file(&self) -> PathBuf {
@@ -54,10 +54,11 @@ impl Case {
         res
     }
 
-    pub async fn get_queries(&self) -> Result<Vec<Query>> {
-        let sqls = fs::read_to_string(self.sql_file()).await?;
-        Query::parse_queries(&sqls)
+    pub async fn get_queries(&self) -> Result<Vec<DBRequest>> {
+        let content = fs::read_to_string(self.sql_file()).await?;
+        Ok(DBRequest::parse_requests(&content))
     }
+
     /// check out and expected result
     pub async fn check(&self, result: &str, out: &str) -> bool {
         let diff = diff_lines(result, out)
@@ -87,7 +88,9 @@ impl Case {
         let before = Instant::now();
 
         let result = fs::read_to_string(self.res_file()).await?;
-        let out = CLIENT.execute_queries(&queries).await;
+
+        let out = CLIENT.execute_db_request(self.case_name(), &queries).await;
+
         let succeed = self.check(&result, &out).await;
 
         let after = Instant::now();

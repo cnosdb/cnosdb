@@ -11,20 +11,20 @@ use models::{FieldId, Timestamp, ValueType};
 use snafu::ResultExt;
 use trace::{debug, error, info, trace};
 
+use crate::file_system::file_manager::{self, get_file_manager};
 use crate::{
     compaction::CompactReq,
     context::GlobalContext,
-    direct_io::File,
     error::{self, Result},
-    file_manager::{self, get_file_manager},
+    file_system::DmaFile,
     file_utils,
     kv_option::Options,
     memcache::DataType,
     summary::{CompactMeta, VersionEdit},
     tseries_family::{ColumnFile, TimeRange},
     tsm::{
-        self, codec::Encoding, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index,
-        IndexIterator, IndexMeta, IndexReader, TsmReader, TsmWriter,
+        self, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index, IndexIterator,
+        IndexMeta, IndexReader, TsmReader, TsmWriter,
     },
     Error, LevelId,
 };
@@ -510,7 +510,7 @@ pub fn run_compaction_job(
                 }
                 tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-                    tsm_writer.flush().context(error::WriteTsmSnafu)?;
+                    tsm_writer.finish().context(error::WriteTsmSnafu)?;
                     info!(
                         "Compaction: File: {} write finished (level: {}, {} B).",
                         tsm_writer.sequence(),
@@ -522,12 +522,15 @@ pub fn run_compaction_job(
                     tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
                     info!("Compaction: File {} been created.", tsm_writer.sequence());
                 }
+                tsm::WriteTsmError::Finished { path } => {
+                    error!("Tsm writer finished: {}", path.display());
+                }
             }
         }
     }
 
     tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-    tsm_writer.flush().context(error::WriteTsmSnafu)?;
+    tsm_writer.finish().context(error::WriteTsmSnafu)?;
     info!(
         "Compaction: File: {} write finished (level: {}, {} B).",
         tsm_writer.sequence(),
@@ -565,6 +568,7 @@ fn new_compact_meta(tsm_writer: &TsmWriter, level: LevelId) -> CompactMeta {
 #[cfg(test)]
 mod test {
     use core::panic;
+    use minivec::MiniVec;
     use std::{
         collections::HashMap,
         default,
@@ -578,10 +582,11 @@ mod test {
     use models::{FieldId, Timestamp, ValueType};
     use utils::BloomFilter;
 
+    use crate::file_system::file_manager;
     use crate::{
         compaction::{run_compaction_job, CompactReq},
         context::GlobalContext,
-        file_manager, file_utils,
+        file_utils,
         kv_option::Options,
         summary::VersionEdit,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
@@ -609,7 +614,7 @@ mod test {
                 }
             }
             writer.write_index().unwrap();
-            writer.flush().unwrap();
+            writer.finish().unwrap();
             cfs.push(Arc::new(ColumnFile::new(
                 file_seq,
                 2,
@@ -867,9 +872,9 @@ mod test {
                 }
             }
             ValueType::String => {
-                let word = b"1".to_vec();
+                let word = MiniVec::from(&b"1"[..]);
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
-                let mut val_vec: Vec<Vec<u8>> = Vec::with_capacity(10000);
+                let mut val_vec: Vec<MiniVec<u8>> = Vec::with_capacity(10000);
                 for (min_ts, max_ts) in data_descriptors {
                     for ts in min_ts..max_ts + 1 {
                         ts_vec.push(ts);
@@ -1020,7 +1025,7 @@ mod test {
                     .unwrap();
             }
             tsm_writer.write_index().unwrap();
-            tsm_writer.flush().unwrap();
+            tsm_writer.finish().unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
                 2,
@@ -1161,7 +1166,7 @@ mod test {
                     .unwrap();
             }
             tsm_writer.write_index().unwrap();
-            tsm_writer.flush().unwrap();
+            tsm_writer.finish().unwrap();
             let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence).unwrap();
             for t in tombstone_desc.iter().flatten() {
                 tsm_tombstone

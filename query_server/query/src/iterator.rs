@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 
+use minivec::MiniVec;
 use std::sync::Arc;
+use tokio::time::Instant;
 
 use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
 use models::utils::{min_num, unite_id};
-use models::ValueType;
+use models::{FieldId, SeriesId, ValueType};
 use snafu::ResultExt;
 use trace::debug;
 
-use crate::schema::{ColumnType, TableSchema, TIME_FIELD};
+use crate::stream::TskvSourceMetrics;
 
 use tskv::{
     engine::EngineRef,
@@ -23,6 +25,7 @@ use datafusion::arrow::{
     datatypes::SchemaRef,
     record_batch::RecordBatch,
 };
+use models::schema::{ColumnType, TableSchema, TIME_FIELD};
 
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
@@ -144,7 +147,7 @@ impl Cursor for TagCursor {
     }
 
     fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        let data = DataType::Str(0, self.value.as_bytes().to_vec());
+        let data = DataType::Str(0, MiniVec::from(self.value.as_bytes()));
 
         Ok(Some(data))
     }
@@ -173,7 +176,7 @@ pub struct FieldCursor {
 
 impl FieldCursor {
     pub fn new(
-        field_id: u64,
+        field_id: FieldId,
         name: String,
         vtype: ValueType,
         iterator: &mut RowIterator,
@@ -301,10 +304,17 @@ pub struct RowIterator {
     version: Arc<SuperVersion>,
 
     open_files: HashMap<ColumnFileId, TsmReader>,
+
+    metrics: TskvSourceMetrics,
 }
 
 impl RowIterator {
-    pub fn new(engine: EngineRef, option: QueryOption, batch_size: usize) -> Result<Self, Error> {
+    pub fn new(
+        metrics: TskvSourceMetrics,
+        engine: EngineRef,
+        option: QueryOption,
+        batch_size: usize,
+    ) -> Result<Self, Error> {
         let version =
             engine
                 .get_db_version(&option.table_schema.db)
@@ -326,6 +336,8 @@ impl RowIterator {
             columns: vec![],
             series_index: usize::MAX,
             open_files: HashMap::new(),
+
+            metrics,
         })
     }
 
@@ -340,7 +352,9 @@ impl RowIterator {
         Ok(tsm_reader)
     }
 
-    fn build_series_columns(&mut self, id: u64) -> Result<(), Error> {
+    fn build_series_columns(&mut self, id: SeriesId) -> Result<(), Error> {
+        let start = Instant::now();
+
         if let Some(key) = self
             .engine
             .get_series_key(&self.option.table_schema.db, id)
@@ -367,8 +381,12 @@ impl RowIterator {
                         | ValueType::Unsigned
                         | ValueType::Boolean
                         | ValueType::String => {
-                            let cursor =
-                                FieldCursor::new(unite_id(item.id, id), field_name, vtype, self)?;
+                            let cursor = FieldCursor::new(
+                                unite_id(item.id as u64, id),
+                                field_name,
+                                vtype,
+                                self,
+                            )?;
                             Box::new(cursor)
                         }
                     },
@@ -377,6 +395,10 @@ impl RowIterator {
                 self.columns.push(column);
             }
         }
+
+        self.metrics
+            .elapsed_series_scan()
+            .add_duration(Instant::now() - start);
 
         Ok(())
     }
@@ -399,6 +421,8 @@ impl RowIterator {
 
     fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
         debug!("======collect_row_data=========");
+        let timer = self.metrics.elapsed_field_scan().timer();
+
         let mut min_time = i64::MAX;
         let mut values = Vec::with_capacity(self.columns.len());
         for column in self.columns.iter_mut() {
@@ -434,11 +458,15 @@ impl RowIterator {
             }
         }
 
+        timer.done();
+
         debug!("min time {}", min_time);
         if min_time == i64::MAX {
             self.columns.clear();
             return Ok(None);
         }
+
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
         for i in 0..values.len() {
             if self.columns[i].name() == TIME_FIELD {
@@ -515,6 +543,8 @@ impl RowIterator {
             }
         }
 
+        timer.done();
+
         Ok(Some(()))
     }
 
@@ -588,7 +618,10 @@ impl Iterator for RowIterator {
             return None;
         }
 
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
         let mut builder = self.record_builder();
+        timer.done();
+
         for _ in 0..self.batch_size {
             debug!("========next_row");
             match self.next_row(&mut builder) {
@@ -601,16 +634,22 @@ impl Iterator for RowIterator {
             }
         }
 
-        let mut cols = vec![];
-        for item in builder.iter_mut() {
-            cols.push(item.finish())
-        }
+        let timer = self.metrics.elapsed_point_to_record_batch().timer();
+        let result = {
+            let mut cols = vec![];
+            for item in builder.iter_mut() {
+                cols.push(item.finish())
+            }
 
-        match RecordBatch::try_new(self.option.datafusion_schema.clone(), cols) {
-            Ok(batch) => Some(Ok(batch)),
-            Err(err) => Some(Err(Error::DataFusionNew {
-                reason: err.to_string(),
-            })),
-        }
+            match RecordBatch::try_new(self.option.datafusion_schema.clone(), cols) {
+                Ok(batch) => Some(Ok(batch)),
+                Err(err) => Some(Err(Error::DataFusionNew {
+                    reason: err.to_string(),
+                })),
+            }
+        };
+        timer.done();
+
+        result
     }
 }

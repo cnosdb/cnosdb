@@ -14,10 +14,11 @@ use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
 use super::DataBlock;
+use crate::file_system::file_manager;
 use crate::{
-    byte_utils,
-    direct_io::{File, FileCursor, FileSync},
-    error, file_manager, file_utils,
+    byte_utils, error,
+    file_system::{DmaFile, FileCursor, FileSync},
+    file_utils,
     tseries_family::{ColumnFile, TimeRange},
     Error, Result,
 };
@@ -45,7 +46,7 @@ pub struct TsmTombstone {
     tomb_size: u64,
 
     path: PathBuf,
-    tomb_accessor: Option<File>,
+    tomb_accessor: Option<DmaFile>,
 }
 
 impl TsmTombstone {
@@ -135,7 +136,7 @@ impl TsmTombstone {
         Ok(())
     }
 
-    fn load_all(reader: &File, tombstones: &mut HashMap<FieldId, Vec<TimeRange>>) -> Result<()> {
+    fn load_all(reader: &DmaFile, tombstones: &mut HashMap<FieldId, Vec<TimeRange>>) -> Result<()> {
         const HEADER_SIZE: usize = 4;
         let file_len = reader.len() as usize;
         let mut header = vec![0_u8; HEADER_SIZE];
@@ -185,7 +186,7 @@ impl TsmTombstone {
                 Some(file_manager::get_file_manager().open_create_file(&self.path)?);
         }
         let writer = self.tomb_accessor.as_ref().expect("initialized file");
-        if writer.len() == 0 {
+        if writer.is_empty() {
             Self::write_header_to(writer)?;
             writer.sync_data(FileSync::Hard).context(error::IOSnafu)?;
         }
@@ -206,13 +207,13 @@ impl TsmTombstone {
         Ok(())
     }
 
-    fn write_header_to(writer: &File) -> Result<usize> {
+    fn write_header_to(writer: &DmaFile) -> Result<usize> {
         writer
             .write_at(0, &TOMBSTONE_MAGIC.to_be_bytes()[..])
             .context(error::IOSnafu)
     }
 
-    fn write_to(writer: &File, pos: u64, tombstone: &Tombstone) -> Result<usize> {
+    fn write_to(writer: &DmaFile, pos: u64, tombstone: &Tombstone) -> Result<usize> {
         let mut size = 0_usize;
 
         writer
@@ -313,7 +314,8 @@ mod test {
     };
 
     use super::TsmTombstone;
-    use crate::{byte_utils, file_manager, file_utils, tseries_family::TimeRange};
+    use crate::file_system::file_manager;
+    use crate::{byte_utils, file_utils, tseries_family::TimeRange};
 
     #[test]
     fn test_write_read_1() {

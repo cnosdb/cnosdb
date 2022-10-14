@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use snafu::{self, Snafu};
 
-use crate::file_manager;
+use crate::file_system::file_manager;
 
 #[derive(Snafu, Debug)]
 pub enum RecordFileError {

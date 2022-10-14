@@ -8,8 +8,11 @@ use std::{
     sync::Arc,
 };
 
+use models::schema::TableSchema;
+use models::utils::split_id;
 use models::{
-    utils as model_utils, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp, ValueType,
+    utils as model_utils, FieldId, FieldInfo, RwLockRef, SchemaFieldId, SeriesId, SeriesKey,
+    Timestamp, ValueType,
 };
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
@@ -34,11 +37,7 @@ use crate::{
     memcache::{DataType, FieldVal, MemCache, MemEntry, SeriesData},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
-    tsm::{
-        self,
-        codec::{DataBlockEncoding, Encoding},
-        DataBlock, TsmWriter,
-    },
+    tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
     version_set::VersionSet,
     TseriesFamilyId,
 };
@@ -51,7 +50,6 @@ struct FlushingBlock {
 
 pub struct FlushTask {
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
-    database: Option<Arc<RwLock<Database>>>,
     ts_family_id: TseriesFamilyId,
     global_context: Arc<GlobalContext>,
     path_tsm: PathBuf,
@@ -61,7 +59,6 @@ pub struct FlushTask {
 impl FlushTask {
     pub fn new(
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
-        database: Option<Arc<RwLock<Database>>>,
         ts_family_id: TseriesFamilyId,
         global_context: Arc<GlobalContext>,
         path_tsm: impl AsRef<Path>,
@@ -69,7 +66,6 @@ impl FlushTask {
     ) -> Self {
         Self {
             mem_caches,
-            database,
             ts_family_id,
             global_context,
             path_tsm: path_tsm.as_ref().into(),
@@ -145,11 +141,7 @@ impl FlushTask {
         let mut tsm_writer: Option<TsmWriter> = None;
 
         for (sid, series_datas) in caches_data.iter_mut() {
-            // todo : improve get table schema
-            // let schema: Vec<FieldInfo> = self.get_table_schema(*sid)?;
-            let schema: Vec<FieldInfo> = vec![];
-            let field_id_code_type_map: HashMap<FieldId, u8> =
-                HashMap::from_iter(schema.iter().map(|f| (f.field_id(), f.code_type())));
+            let mut field_id_code_type_map = HashMap::new();
             let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
             let mut column_values_map: HashMap<u32, Vec<(Timestamp, FieldVal)>> = HashMap::new();
 
@@ -157,16 +149,17 @@ impl FlushTask {
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
                 for (sch_id, sch_cols, rows) in series_data.read().flat_groups() {
+                    self.build_codec_map(sch_cols, &mut field_id_code_type_map);
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
-                        for (val, col) in row.fields.iter().zip(sch_cols.iter()) {
+                        for (val, col) in row.fields.iter().zip(sch_cols.fields.iter()) {
                             if let Some(v) = val {
                                 schema_columns_value_type_map
-                                    .entry(*col)
+                                    .entry(col.1.id)
                                     .or_insert_with(|| v.value_type());
                                 column_values_map
-                                    .entry(*col)
+                                    .entry(col.1.id)
                                     .or_insert_with(Vec::new)
                                     .push((row.ts, v.clone()));
                             }
@@ -186,8 +179,13 @@ impl FlushTask {
 
             // Write the merged data into files.
             for (field_id, dlt_blks, tsm_blks) in merged_series_data {
-                let encoding =
-                    DataBlockEncoding(field_id_code_type_map.get(&field_id).copied().unwrap_or(0));
+                let (table_field_id, _) = split_id(field_id);
+                let encoding = DataBlockEncoding(
+                    field_id_code_type_map
+                        .get(&table_field_id)
+                        .copied()
+                        .unwrap_or(0),
+                );
                 if !dlt_blks.is_empty() {
                     if delta_writer.is_none() {
                         let writer = self.new_writer(true)?;
@@ -221,6 +219,12 @@ impl FlushTask {
 
         // Flush the wrote files.
         self.finish_flush_mem_caches(delta_writer, tsm_writer)
+    }
+
+    fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<SchemaFieldId, u8>) {
+        for (_, i) in schema.fields.iter() {
+            map.insert(i.id, i.codec);
+        }
     }
 
     /// For the collected data, sort and dedup by timestamp, and then split by max_level_ts.
@@ -292,7 +296,7 @@ impl FlushTask {
     ) -> Result<Vec<CompactMeta>> {
         if let Some(writer) = tsm_writer.as_mut() {
             writer.write_index().context(error::WriteTsmSnafu)?;
-            writer.flush().context(error::WriteTsmSnafu)?;
+            writer.finish().context(error::WriteTsmSnafu)?;
             info!(
                 "Flush: File: {} write finished ({} B).",
                 writer.sequence(),
@@ -301,7 +305,7 @@ impl FlushTask {
         }
         if let Some(writer) = delta_writer.as_mut() {
             writer.write_index().context(error::WriteTsmSnafu)?;
-            writer.flush().context(error::WriteTsmSnafu)?;
+            writer.finish().context(error::WriteTsmSnafu)?;
             info!(
                 "Flush: File: {} write finished ({} B).",
                 writer.sequence(),
@@ -338,26 +342,10 @@ impl FlushTask {
 
         Ok(compact_metas)
     }
-
-    fn get_table_schema(&self, series_id: SeriesId) -> Result<Vec<FieldInfo>> {
-        match self.database.as_ref() {
-            None => {
-                warn!("database not found, get empty schema",);
-                Ok(Vec::with_capacity(0))
-            }
-            Some(db) => {
-                let schema_opt = db
-                    .read()
-                    .get_table_schema_by_series_id(series_id)
-                    .context(error::IndexErrSnafu)?;
-                Ok(schema_opt.unwrap_or_else(|| Vec::with_capacity(0)))
-            }
-        }
-    }
 }
 
 pub fn run_flush_memtable_job(
-    reqs: Arc<Mutex<Vec<FlushReq>>>,
+    req: FlushReq,
     global_context: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
     summary_task_sender: UnboundedSender<SummaryTask>,
@@ -365,45 +353,40 @@ pub fn run_flush_memtable_job(
 ) -> Result<()> {
     let mut tsf_caches: HashMap<TseriesFamilyId, Vec<Arc<RwLock<MemCache>>>> = HashMap::new();
     {
-        let mut reqs = reqs.lock();
-        info!("Flush: Running flush job on {} MemCaches", reqs.len());
-        if reqs.len() == 0 {
+        info!("Flush: Running flush job on {} MemCaches", req.mems.len());
+        if req.mems.is_empty() {
             return Ok(());
         }
-        for req in reqs.iter() {
-            for (tf, mem) in &req.mems {
-                let mem_vec = tsf_caches.entry(*tf).or_insert(Vec::new());
-                mem_vec.push(mem.clone());
-            }
+        for (tf, mem) in req.mems {
+            let mem_vec = tsf_caches.entry(tf).or_insert(Vec::new());
+            mem_vec.push(mem.clone());
         }
-        reqs.clear();
     }
 
     let mut edits: Vec<VersionEdit> = vec![];
     for (tsf_id, caches) in tsf_caches.iter() {
-        if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(*tsf_id) {
-            if caches.is_empty() {
-                continue;
-            }
-
+        if caches.is_empty() {
+            continue;
+        }
+        let tsf_warp = version_set.read().get_tsfamily_by_tf_id(*tsf_id);
+        if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
             let tsf_rlock = tsf.read();
             let storage_opt = tsf_rlock.storage_opt();
+            let version = tsf_rlock.version();
             let database = tsf_rlock.database();
-            let db_instance = version_set.read().get_db(&database);
+            drop(tsf_rlock);
             let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
             let path_delta = storage_opt.delta_dir(&database, *tsf_id);
-            drop(tsf_rlock);
 
             FlushTask::new(
                 caches.clone(),
-                db_instance,
                 *tsf_id,
                 global_context.clone(),
                 path_tsm,
                 path_delta,
             )
-            .run(tsf.read().version(), &mut edits)?;
+            .run(version, &mut edits)?;
 
             if let Err(e) = compact_task_sender.send(*tsf_id) {
                 error!("{}", e);
@@ -427,15 +410,18 @@ pub fn run_flush_memtable_job(
 
 #[cfg(test)]
 pub mod flush_tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use models::{utils as model_utils, FieldId, Timestamp};
+    use models::schema::{ColumnType, TableFiled, TableSchema};
+    use models::{utils as model_utils, FieldId, SchemaFieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
+    use crate::file_system::file_manager;
+    use crate::file_utils;
     use crate::memcache::test::put_rows_to_cache;
     use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{LevelInfo, Version};
@@ -449,9 +435,29 @@ pub mod flush_tests {
         tseries_family::FLUSH_REQ,
         version_set::VersionSet,
     };
-    use crate::{file_manager, file_utils};
 
     use super::FlushTask;
+
+    pub fn default_with_field_id(ids: Vec<SchemaFieldId>) -> TableSchema {
+        let mut map = BTreeMap::new();
+        for i in ids.iter() {
+            map.insert(
+                i.to_string(),
+                TableFiled {
+                    id: *i,
+                    name: i.to_string(),
+                    column_type: ColumnType::Field(ValueType::Unknown),
+                    codec: 0,
+                },
+            );
+        }
+        TableSchema {
+            db: "public".to_string(),
+            name: "".to_string(),
+            schema_id: 0,
+            fields: map,
+        }
+    }
 
     #[test]
     fn test_sort_dedup() {
@@ -486,20 +492,105 @@ pub mod flush_tests {
             MemCache::new(1, 16, 0),
             MemCache::new(1, 16, 0),
         ];
-        put_rows_to_cache(&mut caches[0], 1, 1, vec![0, 1, 2], (3, 4), false);
-        put_rows_to_cache(&mut caches[0], 1, 2, vec![0, 1, 3], (1, 2), false);
-        put_rows_to_cache(&mut caches[0], 1, 3, vec![0, 1, 2, 3], (5, 5), true);
-        put_rows_to_cache(&mut caches[0], 1, 3, vec![0, 1, 2, 3], (5, 6), false);
 
-        put_rows_to_cache(&mut caches[1], 2, 1, vec![0, 1, 2], (9, 10), false);
-        put_rows_to_cache(&mut caches[1], 2, 2, vec![0, 1, 3], (7, 8), false);
-        put_rows_to_cache(&mut caches[1], 2, 3, vec![0, 1, 2, 3], (11, 11), true);
-        put_rows_to_cache(&mut caches[1], 2, 3, vec![0, 1, 2, 3], (11, 12), false);
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            1,
+            default_with_field_id(vec![0, 1, 2]),
+            (3, 4),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            2,
+            default_with_field_id(vec![0, 1, 3]),
+            (1, 2),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (5, 5),
+            true,
+        );
+        put_rows_to_cache(
+            &mut caches[0],
+            1,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (5, 6),
+            false,
+        );
 
-        put_rows_to_cache(&mut caches[2], 3, 1, vec![0, 1, 2], (15, 16), false);
-        put_rows_to_cache(&mut caches[2], 3, 2, vec![0, 1, 3], (13, 14), false);
-        put_rows_to_cache(&mut caches[2], 3, 3, vec![0, 1, 2, 3], (17, 17), true);
-        put_rows_to_cache(&mut caches[2], 3, 3, vec![0, 1, 2, 3], (17, 18), false);
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            1,
+            default_with_field_id(vec![0, 1, 2]),
+            (9, 10),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            2,
+            default_with_field_id(vec![0, 1, 3]),
+            (7, 8),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (11, 11),
+            true,
+        );
+        put_rows_to_cache(
+            &mut caches[1],
+            2,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (11, 12),
+            false,
+        );
+
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            1,
+            default_with_field_id(vec![0, 1, 2]),
+            (15, 16),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            2,
+            default_with_field_id(vec![0, 1, 3]),
+            (13, 14),
+            false,
+        );
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (17, 17),
+            true,
+        );
+        put_rows_to_cache(
+            &mut caches[2],
+            3,
+            3,
+            default_with_field_id(vec![0, 1, 2, 3]),
+            (17, 18),
+            false,
+        );
 
         let max_level_ts = 10;
 
@@ -566,7 +657,7 @@ pub mod flush_tests {
             last_seq: 1, max_level_ts,
             levels_info: LevelInfo::init_levels(database, options.storage),
         });
-        let flush_task = FlushTask::new(caches, None, 1, global_context, &tsm_dir, &delta_dir);
+        let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];
         flush_task.run(version, &mut version_edits).unwrap();
 

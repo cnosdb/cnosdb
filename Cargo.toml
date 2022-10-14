@@ -5,9 +5,11 @@ members = [
     "common/protos",
     "common/line_protocol",
     "common/datafusion_dep",
+    "common/metrics",
     "common/trace",
     "common/utils",
     "common/mem_allocator",
+    "common/http_protocol",
     "query_server/spi",
     "query_server/query",
     "query_server/test",
@@ -17,9 +19,12 @@ members = [
     "meta",
     "tskv",
     "main",
+    "client",
 ]
 
 default-members = ["main"]
+
+# exclude = ["client"]
 
 [profile.dev]
 lto = false

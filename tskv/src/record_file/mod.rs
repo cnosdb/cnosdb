@@ -10,7 +10,8 @@ pub use reader::*;
 pub use record::*;
 pub use writer::*;
 
-use crate::{direct_io, file_manager};
+use crate::file_system;
+use crate::file_system::file_manager;
 
 // record
 // |      4       |     4     |       1      |     1     | len  |      4       |

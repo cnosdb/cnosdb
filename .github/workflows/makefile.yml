@@ -39,6 +39,7 @@ jobs:
       run: |
         git clone https://github.com/google/flatbuffers.git
         cd flatbuffers
+        git checkout v2.0.6
         cmake .
         make
         sudo make install
@@ -50,3 +51,27 @@ jobs:
 
     - name: clean
       run: make clean
+
+  integration-test:
+    name: "Integration Test"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Setup timezone
+        uses: zcong1993/setup-timezone@master
+        with:
+          timezone: Asia/Shanghai
+      - name: Prepare Rust Builder
+        uses: ./.github/actions/setup-builder
+        with:
+          rust-version: ${{ matrix.rust }}
+      - name: Test
+        shell: bash
+        run: |
+          bash ./query_server/test/script/start_and_test.sh
+

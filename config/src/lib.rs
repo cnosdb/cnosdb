@@ -10,6 +10,7 @@ pub struct Config {
     pub wal: WalConfig,
     pub cache: CacheConfig,
     pub log: LogConfig,
+    pub security: SecurityConfig,
 }
 
 impl Config {
@@ -32,6 +33,7 @@ pub struct StorageConfig {
     pub dio_max_resident: u64,
     pub dio_max_non_resident: u64,
     pub dio_page_len_scale: u64,
+    pub strict_write: bool,
 }
 
 impl StorageConfig {
@@ -62,6 +64,9 @@ impl StorageConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_PAGE_LEN_SCALE") {
             self.dio_page_len_scale = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
+            self.strict_write = size.parse::<bool>().unwrap();
         }
     }
 }
@@ -121,6 +126,17 @@ impl LogConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    pub tls_config: Option<TLSConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TLSConfig {
+    pub certificate: String,
+    pub private_key: String,
+}
+
 pub fn get_config(path: &str) -> Config {
     let mut file = match File::open(path) {
         Ok(file) => file,
@@ -176,6 +192,7 @@ max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
 dio_max_resident = 1024
 dio_max_non_resident = 1024
 dio_page_len_scale = 1
+strict_write = true
 
 [wal]
 enabled = true
@@ -189,6 +206,9 @@ max_immutable_number = 4
 [log]
 level = 'info'
 path = 'dev/log'
+
+[security]
+
 "#;
 
     let config: Config = toml::from_str(config_str).unwrap();
