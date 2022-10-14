@@ -1,0 +1,41 @@
+FROM centos:7.6.1810
+
+RUN yum install -y epel-release && \
+    yum clean all && \
+    yum makecache
+
+RUN yum install -y centos-release-scl &&  \
+    yum install -y pkg-config \
+       openssl \
+       libssl-dev \
+       openssl-devel \
+       gcc-c++ \
+       wget \
+       git \
+       gcc && \
+    yum clean all
+
+# Install Cmake 3.16
+RUN wget https://cmake.org/files/v3.16/cmake-3.16.5.tar.gz --no-check-certificate && \
+    tar -zxvf cmake-3.16.5.tar.gz && \
+    cd cmake-3.16.5 && \
+    ./bootstrap && \
+    make install 
+
+# Install flatbuffers
+RUN git clone https://github.com/google/flatbuffers.git && \
+    cd flatbuffers && \
+    git checkout -b v2.0.6 v2.0.6 && \
+    cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release && \
+    make install
+
+# Install Rust
+RUN curl https://sh.rustup.rs -sSf | sh -s -- --no-modify-path --default-toolchain none -y
+ENV PATH /root/.cargo/bin/:$PATH
+
+# Install the Rust toolchain
+RUN rustup self update \
+  && rustup set profile minimal \
+  && rustup default nightly-2022-07-31
+
+WORKDIR /cnosdb
