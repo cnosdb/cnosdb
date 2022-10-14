@@ -9,7 +9,7 @@ use datafusion::{
     datasource::TableProvider,
     error::{DataFusionError, Result},
 };
-use models::schema::{TableFiled, TableSchema, TIME_FIELD};
+use models::schema::{DatabaseSchema, TableFiled, TableSchema, TIME_FIELD};
 use parking_lot::RwLock;
 use spi::catalog::TableRef;
 
@@ -72,7 +72,20 @@ impl CatalogProvider for UserCatalog {
         schema: Arc<dyn SchemaProvider>,
     ) -> Result<Option<Arc<dyn SchemaProvider>>> {
         let mut schemas = self.schemas.write();
-        Ok(schemas.insert(name.into(), schema))
+        let schema_opt = schema.as_any().downcast_ref::<DatabaseSchema>();
+        let options = match schema_opt {
+            None => {
+                return Err(DataFusionError::Execution(format!(
+                    "wrong schema '{:?}'",
+                    schema_opt
+                )))
+            }
+            Some(v) => v,
+        };
+        self.engine.create_database(options);
+        let schema = UserSchema::new(options.name.clone(), self.engine.clone());
+
+        Ok(schemas.insert(name.into(), Arc::new(schema)))
     }
 }
 
@@ -150,7 +163,9 @@ impl SchemaProvider for UserSchema {
         let cluster_table = match table_schema {
             None => table,
             Some(schema) => {
-                self.engine.create_table(schema);
+                self.engine
+                    .create_table(schema)
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?;
                 let cluster_table = ClusterTable::new(self.engine.clone(), schema.clone());
                 Arc::new(cluster_table)
             }

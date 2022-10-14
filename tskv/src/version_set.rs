@@ -3,6 +3,7 @@ use std::{
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
+use models::schema::DatabaseSchema;
 use parking_lot::RwLock;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
@@ -57,6 +58,18 @@ impl VersionSet {
         self.dbs
             .entry(name.clone())
             .or_insert_with(|| Arc::new(RwLock::new(Database::new(name, self.opt.clone()))))
+            .clone()
+    }
+
+    pub fn create_db_with_schema(&mut self, schema: DatabaseSchema) -> Arc<RwLock<Database>> {
+        self.dbs
+            .entry(schema.name.clone())
+            .or_insert_with(|| {
+                Arc::new(RwLock::new(Database::new_with_schema(
+                    schema,
+                    self.opt.clone(),
+                )))
+            })
             .clone()
     }
 

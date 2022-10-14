@@ -4,7 +4,7 @@ use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
-use models::schema::TableSchema;
+use models::schema::{DatabaseSchema, TableSchema};
 use models::{FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -36,9 +36,11 @@ pub trait Engine: Send + Sync + Debug {
         fields: Vec<SchemaFieldId>,
     ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>>;
 
+    fn create_database(&self, schema: &DatabaseSchema);
+
     fn drop_database(&self, database: &str) -> Result<()>;
 
-    fn create_table(&self, schema: &TableSchema);
+    fn create_table(&self, schema: &TableSchema) -> Result<()>;
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()>;
 
@@ -102,7 +104,11 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) {
+    fn create_table(&self, schema: &TableSchema) -> Result<()> {
+        todo!()
+    }
+
+    fn create_database(&self, schema: &DatabaseSchema) {
         todo!()
     }
 

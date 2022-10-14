@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
-use models::schema::TableSchema;
+use models::schema::{DatabaseSchema, TableSchema};
 use models::{
     utils::unite_id, FieldId, FieldInfo, InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Tag,
     Timestamp, ValueType,
@@ -30,6 +30,7 @@ use protos::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::database::Database;
 use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
@@ -462,6 +463,12 @@ impl Engine for TsKv {
         final_ans
     }
 
+    fn create_database(&self, schema: &DatabaseSchema) {
+        self.version_set
+            .write()
+            .create_db_with_schema(schema.clone());
+    }
+
     fn drop_database(&self, database: &str) -> Result<()> {
         let database = database.to_string();
 
@@ -489,16 +496,20 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) {
-        // todo : remove this create db after impl create db sql
-        self.version_set.write().create_db(&schema.db);
+    fn create_table(&self, schema: &TableSchema) -> Result<()> {
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
             match db.read().get_index().create_table(schema) {
-                Ok(_) => {}
-                Err(e) => error!("failed create database '{}'", e),
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    error!("failed create database '{}'", e);
+                    Err(Error::IndexErr { source: e })
+                }
             }
         } else {
             error!("Database {}, not found", schema.db);
+            Err(Error::DatabaseNotFound {
+                database: schema.db.clone(),
+            })
         }
     }
 

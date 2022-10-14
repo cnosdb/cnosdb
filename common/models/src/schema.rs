@@ -17,6 +17,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
+use datafusion::catalog::schema::SchemaProvider;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
@@ -265,5 +266,129 @@ impl std::fmt::Display for ColumnType {
 impl ColumnType {
     pub fn is_tag(&self) -> bool {
         matches!(self, ColumnType::Tag)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DatabaseSchema {
+    pub name: String,
+    pub config: DatabaseOptions,
+}
+
+impl SchemaProvider for DatabaseSchema {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn table_names(&self) -> Vec<String> {
+        todo!()
+    }
+
+    fn table(&self, _name: &str) -> Option<Arc<dyn TableProvider>> {
+        todo!()
+    }
+
+    fn table_exist(&self, _name: &str) -> bool {
+        todo!()
+    }
+}
+
+impl DatabaseSchema {
+    pub fn new(name: &str) -> Self {
+        DatabaseSchema {
+            name: name.to_string(),
+            config: DatabaseOptions::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseOptions {
+    // data keep time
+    pub ttl: Duration,
+
+    pub shard_num: u64,
+    // shard coverage time range
+    pub vnode_duration: Duration,
+
+    pub replica: u64,
+    // timestamp percision
+    pub precision: Precision,
+}
+
+impl Default for DatabaseOptions {
+    fn default() -> Self {
+        Self {
+            ttl: Duration {
+                time_num: 365,
+                unit: DurationUnit::Day,
+            },
+            shard_num: 1,
+            vnode_duration: Duration {
+                time_num: 365,
+                unit: DurationUnit::Day,
+            },
+            replica: 1,
+            precision: Precision::NS,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Precision {
+    MS,
+    US,
+    NS,
+}
+
+impl Precision {
+    pub fn new(text: &str) -> Option<Self> {
+        match text.to_uppercase().as_str() {
+            "'MS'" => Some(Precision::MS),
+            "'US'" => Some(Precision::US),
+            "'NS'" => Some(Precision::NS),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DurationUnit {
+    Minutes,
+    Hour,
+    Day,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Duration {
+    pub time_num: u64,
+    pub unit: DurationUnit,
+}
+
+impl Duration {
+    // text should have ', such as '10d', the len of '10d' is 5
+    pub fn new(text: &str) -> Option<Self> {
+        let len = text.len();
+        if len < 4 {
+            return None;
+        }
+        let time = &text[1..len - 2];
+        let unit = &text[len - 2..len - 1];
+        let time_num = match time.parse::<u64>() {
+            Ok(v) => v,
+            Err(_) => {
+                return None;
+            }
+        };
+        let time_unit = match unit.to_uppercase().as_str() {
+            "D" => DurationUnit::Day,
+            "H" => DurationUnit::Hour,
+            "M" => DurationUnit::Minutes,
+            _ => return None,
+        };
+        Some(Duration {
+            time_num,
+            unit: time_unit,
+        })
     }
 }

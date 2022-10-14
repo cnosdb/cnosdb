@@ -138,6 +138,7 @@ mod test {
     use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
+    use models::schema::DatabaseSchema;
     use spi::query::execution::QueryStateMachine;
     use spi::query::logical_planner::{DDLPlan, Plan};
     use spi::query::session::IsiphoSessionCtxFactory;
@@ -214,11 +215,14 @@ mod test {
             Plan::DDL(plan) => plan,
         };
         let plan = match plan {
-            DDLPlan::Drop(_) => panic!("not possible"),
-            DDLPlan::CreateExternalTable(_) => panic!("not possible"),
             DDLPlan::CreateTable(plan) => plan,
+            _ => panic!("not possible"),
         };
 
+        tskv.create_database(&DatabaseSchema {
+            name: "public".to_string(),
+            config: Default::default(),
+        });
         create_table(&plan, query_state_machine.catalog.clone()).unwrap();
         let ans = format!(
             "{:?}",

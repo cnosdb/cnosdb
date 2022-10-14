@@ -1,4 +1,5 @@
 --#DATABASE=createtable
+CREATE DATABASE createtable;
 
 CREATE TABLE test0(
     column1 BIGINT CODEC(DELTA),

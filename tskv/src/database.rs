@@ -12,7 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::TableSchema;
+use models::schema::{DatabaseSchema, TableSchema};
 use models::utils::{split_id, unite_id};
 use models::{SchemaFieldId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
@@ -43,6 +43,7 @@ pub struct Database {
     index: Arc<db_index::DBIndex>,
     ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
+    db_schema: DatabaseSchema,
 }
 
 impl Database {
@@ -54,6 +55,19 @@ impl Database {
             name: name.to_string(),
             ts_families: HashMap::new(),
             opt,
+            db_schema: DatabaseSchema::new(name),
+        }
+    }
+
+    pub fn new_with_schema(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
+        Self {
+            index: db_index::index_manger(opt.storage.index_base_dir())
+                .write()
+                .get_db_index(&schema.name),
+            name: schema.name.clone(),
+            ts_families: HashMap::new(),
+            opt,
+            db_schema: schema,
         }
     }
 

@@ -12,6 +12,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 use models::define_result;
+use models::schema::DatabaseOptions;
 use snafu::Snafu;
 
 define_result!(LogicalPlannerError);
@@ -56,6 +57,8 @@ pub enum DDLPlan {
     CreateExternalTable(CreateExternalTable),
 
     CreateTable(CreateTable),
+
+    CreateDatabase(CreateDatabase),
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +117,15 @@ pub struct CreateTable {
     pub if_not_exists: bool,
     /// The table tags
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateDatabase {
+    pub name: String,
+
+    pub if_not_exists: bool,
+
+    pub options: DatabaseOptions,
 }
 
 pub trait LogicalPlanner {

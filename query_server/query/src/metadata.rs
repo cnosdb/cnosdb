@@ -9,6 +9,7 @@ use datafusion::{
     sql::{planner::ContextProvider, TableReference},
 };
 
+use models::schema::DatabaseSchema;
 use snafu::ResultExt;
 use spi::catalog::{
     CatalogRef, ExternalSnafu, MetaData, MetaDataRef, MetadataError, Result, DEFAULT_CATALOG,
@@ -135,6 +136,18 @@ impl MetaData for LocalCatalogMeta {
             .register_table(table.table().to_owned(), table_provider)
             .map(|_| ())
             .context(ExternalSnafu)
+    }
+
+    fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()> {
+        self.catalog
+            .register_schema(name, Arc::new(database))
+            .map(|_| ())
+            .context(ExternalSnafu)?;
+        Ok(())
+    }
+
+    fn schema_names(&self) -> Vec<String> {
+        self.catalog.schema_names()
     }
 }
 
