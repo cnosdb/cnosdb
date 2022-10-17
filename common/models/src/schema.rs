@@ -366,11 +366,19 @@ pub struct Duration {
 }
 
 impl Duration {
+    // with default DurationUnit day
     pub fn new(text: &str) -> Option<Self> {
-        let len = text.len();
-        if len < 2 {
+        if text.is_empty() {
             return None;
         }
+        let len = text.len();
+        if let Ok(v) = text.parse::<u64>() {
+            return Some(Duration {
+                time_num: v,
+                unit: DurationUnit::Day,
+            });
+        };
+
         let time = &text[..len - 1];
         let unit = &text[len - 1..];
         let time_num = match time.parse::<u64>() {

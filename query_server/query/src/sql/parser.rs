@@ -10,7 +10,7 @@ use spi::query::ast::{
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
-use sqlparser::ast::{DataType, Ident};
+use sqlparser::ast::{DataType, Ident, Value};
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
@@ -291,79 +291,43 @@ impl<'a> ExtParser<'a> {
         if self.parser.parse_keyword(Keyword::WITH) {
             let mut options = DatabaseOptions::default();
             loop {
-                match self.parser.next_token().to_string().to_uppercase().as_str() {
-                    TTL => {
-                        let value = match self.parser.next_token() {
-                            Token::SingleQuotedString(s) => s,
-                            unexpected => {
-                                return parser_err!(format!(
-                                    "single quote is needed!, but got : {}",
-                                    unexpected,
-                                ))
-                            }
-                        };
-                        options.ttl = Some(value);
-                    }
-                    SHARD => {
-                        let num = self.parser.next_token().to_string();
-                        options.shard_num = Some(match num.parse::<u64>() {
-                            Ok(v) => v,
-                            Err(_) => {
-                                return parser_err!(format!(
-                                    "shard should be a unsigned number, but get {}",
-                                    num
-                                ))
-                            }
-                        })
-                    }
-                    VNODE_DURATION => {
-                        let value = match self.parser.next_token() {
-                            Token::SingleQuotedString(s) => s,
-                            unexpected => {
-                                return parser_err!(format!(
-                                    "single quote is needed!, but got : {}",
-                                    unexpected,
-                                ))
-                            }
-                        };
-                        options.vnode_duration = Some(value);
-                    }
-                    REPLICA => {
-                        let num = self.parser.next_token();
-                        options.replica = Some(match num.to_string().parse::<u64>() {
-                            Ok(v) => v,
-                            Err(_) => {
-                                return parser_err!(format!(
-                                    "replica should be a unsigned number, but get {}",
-                                    num
-                                ))
-                            }
-                        })
-                    }
-                    PRECISION => {
-                        let value = match self.parser.next_token() {
-                            Token::SingleQuotedString(s) => s,
-                            unexpected => {
-                                return parser_err!(format!(
-                                    "single quote is needed!, but got : {}",
-                                    unexpected,
-                                ))
-                            }
-                        };
-                        options.precision = Some(value);
-                    }
-                    _ => {
-                        let end = self.parser.next_token();
-                        if end != Token::EOF {
-                            return parser_err!(format!("'{}' unknown option or empty", end));
-                        } else {
-                            return Ok(options);
-                        }
-                    }
-                };
+                if self.consume_cnos_token(TTL) {
+                    options.ttl = Some(self.parse_string_value()?);
+                } else if self.consume_cnos_token(SHARD) {
+                    options.shard_num = Some(self.parse_u64()?);
+                } else if self.consume_cnos_token(VNODE_DURATION) {
+                    options.vnode_duration = Some(self.parse_string_value()?);
+                } else if self.consume_cnos_token(REPLICA) {
+                    options.replica = Some(self.parse_u64()?);
+                } else if self.consume_cnos_token(PRECISION) {
+                    options.precision = Some(self.parse_string_value()?);
+                } else {
+                    return Ok(options);
+                }
             }
         }
         Ok(DatabaseOptions::default())
+    }
+
+    fn parse_u64(&mut self) -> Result<u64> {
+        let num = self.parser.parse_number_value()?.to_string();
+        match num.parse::<u64>() {
+            Ok(v) => Ok(v),
+            Err(_) => {
+                parser_err!(format!(
+                    "this option should be a unsigned number, but get {}",
+                    num
+                ))
+            }
+        }
+    }
+
+    fn parse_string_value(&mut self) -> Result<String> {
+        let value = self.parser.parse_value()?;
+        match value {
+            Value::SingleQuotedString(s) => Ok(s),
+            _ => parser_err!(format!("expected value, but found : {}", value)),
+        }
     }
 
     fn parse_create_database(&mut self) -> Result<ExtStatement> {
@@ -835,7 +799,7 @@ mod tests {
 
     #[test]
     fn test_create_database() {
-        let sql = "CREATE DATABASE test WITH TTL '10d' SHARD 5 VNODE_DURATION '3d' REPLICA 10 PRECISION 'us';";
+        let sql = "CREATE DATABASE test WITH TTl '10d' SHARD 5 VNOdE_DURATiON '3d' REPLICA 10 pRECISIOn 'us';";
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match statements[0] {

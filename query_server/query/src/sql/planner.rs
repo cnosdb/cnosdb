@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn test_create_database() {
-        let sql = "CREATE DATABASE test WITH TTL '10d' SHARD 5 VNODE_DURATION '3d' REPLICA 10 PRECISION 'us';";
+        let sql = "CREATE DATABASE test WITH TTL '10' SHARD 5 VNODE_DURATION '3d' REPLICA 10 PRECISION 'us';";
         let mut statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         let test = MockContext {};

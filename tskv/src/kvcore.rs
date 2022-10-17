@@ -473,6 +473,10 @@ impl Engine for TsKv {
         self.version_set.write().create_db(schema.clone());
     }
 
+    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
+        self.version_set.read().get_db_schema(name)
+    }
+
     fn drop_database(&self, database: &str) -> Result<()> {
         let database = database.to_string();
 

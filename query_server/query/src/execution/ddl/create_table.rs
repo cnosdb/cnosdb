@@ -59,6 +59,16 @@ fn create_table(
     stmt: &CreateTable,
     catalog: MetaDataRef,
 ) -> Result<Arc<TableSchema>, ExecutionError> {
+    let CreateTable { name, .. } = stmt;
+    let table_schema = Arc::new(build_schema(stmt, catalog.clone()));
+    catalog
+        .create_table(name, table_schema.clone())
+        .context(execution::MetadataSnafu)?;
+
+    Ok(table_schema)
+}
+
+fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TableSchema {
     let CreateTable {
         schema, name, tags, ..
     } = stmt;
@@ -99,17 +109,11 @@ fn create_table(
     let schema_name = catalog.schema_name();
     let table_ref = table.resolve(&catalog_name, &schema_name);
 
-    let table_schema = TableSchema::new(
+    TableSchema::new(
         table_ref.schema.to_string(),
         table.table().to_string(),
         kv_fields,
-    );
-    let table_schema = Arc::new(table_schema);
-    catalog
-        .create_table(name, table_schema.clone())
-        .context(execution::MetadataSnafu)?;
-
-    Ok(table_schema)
+    )
 }
 
 fn data_type_to_column_type(data_type: &DataType) -> ColumnType {

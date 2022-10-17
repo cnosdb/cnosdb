@@ -51,23 +51,28 @@ impl CatalogProvider for UserCatalog {
     }
 
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
-        {
-            let schemas = self.schemas.read();
-            if let Some(v) = schemas.get(name) {
-                return Some(v.clone());
+        let schemas = self.schemas.read();
+        return if let Some(v) = schemas.get(name) {
+            Some(v.clone())
+        } else {
+            drop(schemas);
+            match self.engine.get_db_schema(name) {
+                None => return None,
+                Some(schema) => {
+                    let mut schemas = self.schemas.write();
+                    schemas.insert(
+                        name.to_string(),
+                        Arc::new(UserSchema::new(
+                            name.to_string(),
+                            self.engine.clone(),
+                            schema,
+                        )),
+                    );
+                    let v = schemas.get(name).unwrap();
+                    return Some(v.clone());
+                }
             }
-        }
-
-        let mut schemas = self.schemas.write();
-        let v = schemas.entry(name.to_owned()).or_insert_with(|| {
-            Arc::new(UserSchema::new(
-                name.to_owned(),
-                self.engine.clone(),
-                DatabaseSchema::new(name),
-            ))
-        });
-
-        Some(v.clone())
+        };
     }
 
     fn register_schema(
@@ -120,12 +125,13 @@ impl SchemaProvider for UserSchema {
     }
 
     fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
-        {
-            let tables = self.tables.read();
-            if let Some(v) = tables.get(name) {
-                return Some(v.clone());
-            }
-        }
+        // table schema may be changed after write, so get from storage engine directly
+        // {
+        //     let tables = self.tables.read();
+        //     if let Some(v) = tables.get(name) {
+        //         return Some(v.clone());
+        //     }
+        // }
 
         let mut tables = self.tables.write();
         if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {

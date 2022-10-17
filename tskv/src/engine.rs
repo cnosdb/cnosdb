@@ -38,6 +38,8 @@ pub trait Engine: Send + Sync + Debug {
 
     fn create_database(&self, schema: &DatabaseSchema);
 
+    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema>;
+
     fn drop_database(&self, database: &str) -> Result<()>;
 
     fn create_table(&self, schema: &TableSchema) -> Result<()>;
@@ -110,6 +112,10 @@ impl Engine for MockEngine {
 
     fn create_database(&self, schema: &DatabaseSchema) {
         todo!()
+    }
+
+    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
+        Some(DatabaseSchema::new(name))
     }
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
