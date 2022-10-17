@@ -370,8 +370,8 @@ impl RowIterator {
             .context(error::IndexErrSnafu)?
         {
             self.columns.clear();
-            let fields = self.option.table_schema.fields.clone();
-            for (_, item) in fields {
+            let fields = self.option.table_schema.columns().clone();
+            for item in fields {
                 let field_name = item.name.clone();
                 debug!("build series columns id:{:02X}, {:?}", id, item);
                 let column: CursorPtr = match item.column_type {
@@ -577,8 +577,8 @@ impl RowIterator {
 
     fn record_builder(&self) -> Vec<ArrayBuilderPtr> {
         let mut builders: Vec<ArrayBuilderPtr> =
-            Vec::with_capacity(self.option.table_schema.fields.len());
-        for (_, item) in self.option.table_schema.fields.iter() {
+            Vec::with_capacity(self.option.table_schema.columns().len());
+        for item in self.option.table_schema.columns().iter() {
             debug!("schema info {:02X} {}", item.id, item.name);
 
             match item.column_type {

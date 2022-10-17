@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::catalog::DEFAULT_SCHEMA;
+use crate::catalog::DEFAULT_DATABASE;
 use crate::query::execution::Output;
 use crate::query::session::IsiphoSessionConfig;
 
@@ -60,7 +60,7 @@ impl ContextBuilder {
     pub fn new(user_info: UserInfo) -> Self {
         Self {
             user_info,
-            database: DEFAULT_SCHEMA.to_string(),
+            database: DEFAULT_DATABASE.to_string(),
             session_config: Default::default(),
         }
     }

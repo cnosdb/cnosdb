@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, task::Poll};
+use std::task::Poll;
 
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
@@ -10,7 +10,7 @@ use datafusion::{
 use futures::Stream;
 use models::{
     predicate::domain::PredicateRef,
-    schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD},
+    schema::{ColumnType, TableColumn, TableSchema, TIME_FIELD},
 };
 
 use tskv::engine::EngineRef;
@@ -40,23 +40,25 @@ impl TableScanStream {
         store_engine: EngineRef,
         metrics: TableScanMetrics,
     ) -> Result<Self, Error> {
-        let mut proj_fileds = BTreeMap::new();
+        let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD {
-                let codec = match table_schema.fields.get(TIME_FIELD) {
+                let codec = match table_schema.column(TIME_FIELD) {
                     None => 0,
                     Some(v) => v.codec,
                 };
-                proj_fileds.insert(
+                proj_fileds.push(TableColumn::new(
+                    0,
                     TIME_FIELD.to_string(),
-                    TableFiled::new(0, TIME_FIELD.to_string(), ColumnType::Time, codec),
-                );
+                    ColumnType::Time,
+                    codec,
+                ));
                 continue;
             }
 
-            if let Some(v) = table_schema.fields.get(field_name) {
-                proj_fileds.insert(field_name.clone(), v.clone());
+            if let Some(v) = table_schema.column(field_name) {
+                proj_fileds.push(v.clone());
             } else {
                 return Err(Error::NotFoundField {
                     reason: field_name.clone(),

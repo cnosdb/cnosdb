@@ -21,8 +21,8 @@ use tokio::{
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::schema::{DatabaseSchema, TableSchema};
 use models::{
-    utils::unite_id, FieldId, FieldInfo, InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Tag,
-    Timestamp, ValueType,
+    utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
+    ValueType,
 };
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -444,10 +444,10 @@ impl Engine for TsKv {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<SchemaFieldId>,
-    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
+        fields: Vec<ColumnId>,
+    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
         // get data block
-        let mut ans: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> = HashMap::new();
+        let mut ans: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
             for sch_fid in fields.iter() {
@@ -630,7 +630,7 @@ mod test {
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::utils::now_timestamp;
-    use models::{InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Timestamp};
+    use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
     use std::collections::HashMap;
     use std::sync::{atomic, Arc};
@@ -668,9 +668,8 @@ mod test {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
 
-            let field_ids: Vec<SchemaFieldId> =
-                table_schema.fields.iter().map(|f| f.1.id).collect();
-            let result: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> =
+            let field_ids: Vec<ColumnId> = table_schema.columns().iter().map(|f| f.id).collect();
+            let result: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> =
                 tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
         }

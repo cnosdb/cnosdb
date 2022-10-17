@@ -610,15 +610,21 @@ mod tests {
             }) => {
                 assert_eq!(name.to_string(), "test".to_string());
                 assert_eq!(if_not_exists.to_string(), "true".to_string());
-                assert_eq!(columns.len(), 8);
+                assert_eq!(columns.len(), 7);
                 assert_eq!(
                     *columns,
                     vec![
                         ColumnOption {
-                            name: Ident::from("time"),
-                            is_tag: false,
-                            data_type: DataType::Timestamp,
-                            codec: "DEFAULT".to_string()
+                            name: Ident::from("column6"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            codec: "UNKNOWN".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column7"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            codec: "UNKNOWN".to_string()
                         },
                         ColumnOption {
                             name: Ident::from("column1"),
@@ -649,18 +655,6 @@ mod tests {
                             is_tag: false,
                             data_type: DataType::Double,
                             codec: "GORILLA".to_string()
-                        },
-                        ColumnOption {
-                            name: Ident::from("column6"),
-                            is_tag: true,
-                            data_type: DataType::String,
-                            codec: "UNKNOWN".to_string()
-                        },
-                        ColumnOption {
-                            name: Ident::from("column7"),
-                            is_tag: true,
-                            data_type: DataType::String,
-                            codec: "UNKNOWN".to_string()
                         }
                     ]
                 );

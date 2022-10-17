@@ -26,7 +26,7 @@ pub type CatalogId = u64;
 pub type SchemaId = u64;
 pub type SeriesId = u64;
 pub type TableId = u64;
-pub type SchemaFieldId = u32;
+pub type ColumnId = u32;
 
 pub type TagKey = Vec<u8>;
 pub type TagValue = Vec<u8>;

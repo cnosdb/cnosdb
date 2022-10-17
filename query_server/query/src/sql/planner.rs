@@ -646,9 +646,8 @@ mod tests {
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
         let ans = format!("{:?}", plan);
-        let expected = r#"DDL(CreateTable(CreateTable { schema: DFSchema { fields: [DFField { qualifier: Some("test"), field: Field { name: "time", data_type: Timestamp(Nanosecond, None), nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column1", data_type: Int64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column2", data_type: Utf8, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column3", data_type: UInt64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column4", data_type: Boolean, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }, DFField { qualifier: Some("test"), field: Field { name: "column5", data_type: Float64, nullable: true, dict_id: 0, dict_is_ordered: false, metadata: None } }], metadata: {"column5": "GORILLA", "column3": "NULL", "column4": "DEFAULT", "column2": "GZIP", "column1": "DELTA", "time": "DEFAULT"} }, name: "test", if_not_exists: true, tags: ["column6", "column7"] }))"#;
-        assert_eq!(ans[0..1022], expected[0..1022]);
-        assert_eq!(ans[1186..1223], expected[1186..1223]);
+        let expected = "DDL(CreateTable(CreateTable { schema: [TableColumn { id: 0, name: \"time\", column_type: Time, codec: 0 }, TableColumn { id: 1, name: \"column6\", column_type: Tag, codec: 0 }, TableColumn { id: 2, name: \"column7\", column_type: Tag, codec: 0 }, TableColumn { id: 3, name: \"column1\", column_type: Field(Integer), codec: 2 }, TableColumn { id: 4, name: \"column2\", column_type: Field(String), codec: 4 }, TableColumn { id: 5, name: \"column3\", column_type: Field(Unsigned), codec: 1 }, TableColumn { id: 6, name: \"column4\", column_type: Field(Boolean), codec: 0 }, TableColumn { id: 7, name: \"column5\", column_type: Field(Float), codec: 6 }], name: \"test\", if_not_exists: true }))";
+        assert_eq!(ans, expected);
     }
 
     #[test]

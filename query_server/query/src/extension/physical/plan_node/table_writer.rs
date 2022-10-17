@@ -133,9 +133,9 @@ impl ExecutionPlan for TableWriterExec {
             DisplayFormatType::Default => {
                 let schemas: Vec<String> = self
                     .schema
-                    .fields
+                    .columns()
                     .iter()
-                    .map(|(k, v)| format!("{} := {}", k, v.column_type))
+                    .map(|v| format!("{} := {}", v.name, v.column_type))
                     .collect();
 
                 write!(f, "TableWriterExec: schema=[{}]", schemas.join(", "),)?;

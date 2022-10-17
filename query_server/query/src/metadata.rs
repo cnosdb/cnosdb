@@ -13,7 +13,7 @@ use models::schema::DatabaseSchema;
 use snafu::ResultExt;
 use spi::catalog::{
     CatalogRef, ExternalSnafu, MetaData, MetaDataRef, MetadataError, Result, DEFAULT_CATALOG,
-    DEFAULT_SCHEMA,
+    DEFAULT_DATABASE,
 };
 use spi::query::function::FuncMetaManagerRef;
 use std::sync::Arc;
@@ -36,7 +36,7 @@ impl LocalCatalogMeta {
     pub fn new_with_default(engine: EngineRef, func_manager: FuncMetaManagerRef) -> Result<Self> {
         let meta = Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
-            database_name: DEFAULT_SCHEMA.to_string(),
+            database_name: DEFAULT_DATABASE.to_string(),
             engine: engine.clone(),
             catalog: Arc::new(UserCatalog::new(engine)),
             func_manager,
@@ -49,7 +49,7 @@ impl LocalCatalogMeta {
                 MetadataError::External { ref source } => {
                     if !source
                         .to_string()
-                        .eq(&format!("database '{}' already exists", DEFAULT_SCHEMA))
+                        .eq(&format!("database '{}' already exists", DEFAULT_DATABASE))
                     {
                         return Err(e);
                     }
