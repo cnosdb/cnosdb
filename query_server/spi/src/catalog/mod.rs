@@ -16,7 +16,7 @@ pub type SchemaRef = Arc<dyn SchemaProvider>;
 pub type TableRef = Arc<dyn TableProvider>;
 
 #[allow(dead_code)]
-pub const DEFAULT_SCHEMA: &str = "public";
+pub const DEFAULT_DATABASE: &str = "public";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 
 pub trait MetaData: Send + Sync {

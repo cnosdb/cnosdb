@@ -17,8 +17,8 @@ use tracing::{error, info};
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::ToByteSlice;
-use models::schema::{ColumnType, DatabaseSchema, TableFiled, TableSchema};
-use models::{utils, FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, ValueType};
+use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema};
+use models::{utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
 use protos::models::Point;
 use trace::warn;
 
@@ -138,7 +138,10 @@ impl DBIndex {
     }
 
     pub fn add_series_if_not_exists(&self, info: &Point) -> IndexResult<u64> {
+        trace::debug!("-------- add_series_if_not_exists");
         let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
+        trace::debug!("-------- add_series_if_not_exists {:?}", &series_key);
+
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
@@ -181,8 +184,13 @@ impl DBIndex {
         if let Some(schema) = self.table_schema.read().get(&table_name) {
             for field in info.fields().unwrap() {
                 let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
-                if let Some(v) = schema.fields.get(&field_name) {
+                if let Some(v) = schema.column(&field_name) {
                     if field.type_().0 != v.column_type.field_type() as i32 {
+                        trace::debug!(
+                            "type mismatch, point: {}, schema: {}",
+                            field.type_().0,
+                            v.column_type.field_type()
+                        );
                         return Err(IndexError::FieldType);
                     }
                 } else {
@@ -191,8 +199,9 @@ impl DBIndex {
             }
             for tag in info.tags().unwrap() {
                 let tag_name: String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
-                if let Some(v) = schema.fields.get(&tag_name) {
+                if let Some(v) = schema.column(&tag_name) {
                     if ColumnType::Tag != v.column_type {
+                        trace::debug!("type mismatch, point: tag, schema: {}", &v.column_type);
                         return Err(IndexError::FieldType);
                     }
                 } else {
@@ -230,29 +239,35 @@ impl DBIndex {
         }
 
         let mut schema_change = false;
-        let mut check_fn = |field: &mut TableFiled| -> IndexResult<()> {
-            let codec = match schema.fields.get(&field.name) {
+        let mut check_fn = |field: &mut TableColumn| -> IndexResult<()> {
+            let codec = match schema.column(&field.name) {
                 None => 0,
                 Some(v) => v.codec,
             };
             field.codec = codec;
 
-            match schema.fields.get(&field.name) {
+            match schema.column(&field.name) {
                 Some(v) => {
                     if field.column_type != v.column_type {
+                        trace::debug!(
+                            "type mismatch, point: {}, schema: {}",
+                            &field.column_type,
+                            &v.column_type
+                        );
+                        trace::debug!("type mismatch, schema: {:?}", &schema);
                         return Err(IndexError::FieldType);
                     }
                 }
                 None => {
                     schema_change = true;
-                    field.id = (schema.fields.len() + 1) as SchemaFieldId;
-                    schema.fields.insert(field.name.clone(), field.clone());
+                    field.id = (schema.columns().len() + 1) as ColumnId;
+                    schema.add_column(field.clone());
                 }
             }
             Ok(())
         };
         //check timestamp
-        check_fn(&mut TableFiled::new_with_default(
+        check_fn(&mut TableColumn::new_with_default(
             TIME_STAMP_NAME.to_string(),
             ColumnType::Time,
         ))?;
@@ -260,13 +275,13 @@ impl DBIndex {
         //check tags
         for tag in info.tags().unwrap() {
             let tag_key = unsafe { String::from_utf8_unchecked(tag.key().unwrap().to_vec()) };
-            check_fn(&mut TableFiled::new_with_default(tag_key, ColumnType::Tag))?
+            check_fn(&mut TableColumn::new_with_default(tag_key, ColumnType::Tag))?
         }
 
         //check fields
         for field in info.fields().unwrap() {
             let field_name = unsafe { String::from_utf8_unchecked(field.name().unwrap().to_vec()) };
-            check_fn(&mut TableFiled::new_with_default(
+            check_fn(&mut TableColumn::new_with_default(
                 field_name,
                 ColumnType::from_i32(field.type_().0),
             ))?

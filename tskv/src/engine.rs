@@ -5,7 +5,7 @@ use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
 use models::schema::{DatabaseSchema, TableSchema};
-use models::{FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -33,8 +33,8 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<SchemaFieldId>,
-    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>>;
+        fields: Vec<ColumnId>,
+    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>>;
 
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
@@ -96,8 +96,8 @@ impl Engine for MockEngine {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<SchemaFieldId>,
-    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
+        fields: Vec<ColumnId>,
+    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
         HashMap::new()
     }
 
@@ -138,7 +138,7 @@ impl Engine for MockEngine {
         Ok(Some(TableSchema::new(
             db.to_string(),
             tab.to_string(),
-            BTreeMap::default(),
+            Default::default(),
         )))
     }
 

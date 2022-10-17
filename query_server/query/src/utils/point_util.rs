@@ -8,7 +8,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::schema::{is_time_column, ColumnType, TableFiled, TableSchema, TIME_FIELD_NAME};
+use models::schema::{is_time_column, ColumnType, TableColumn, TableSchema, TIME_FIELD_NAME};
 use models::{define_result, ValueType};
 use paste::paste;
 use protos::models::Point;
@@ -169,8 +169,7 @@ fn construct_row_based_points(
             let name = df_field.name();
 
             let field = schema
-                .fields
-                .get(name)
+                .column(name)
                 .ok_or_else(|| PointUtilError::ColumnNotFound {
                     col: name.to_owned(),
                 })?;
@@ -275,7 +274,7 @@ macro_rules! define_extract_time_column_from_func {
                     },
                     ArrowDataType::Int64 => Ok(cast_arrow_array::<Int64Array>(array)?.iter().collect()),
                     other => Err(PointUtilError::InvalidArrayType {
-                        expected: ArrowDataType::from(TableFiled::time_field(0).column_type).to_string(),
+                        expected: ArrowDataType::from(TableColumn::time_field(0).column_type).to_string(),
                         found: other.to_string(),
                     }),
                 }

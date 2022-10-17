@@ -8,21 +8,23 @@
 //!         - Column #4
 
 use std::any::Any;
-use std::collections::HashMap;
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use std::mem::size_of_val;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
+use datafusion::arrow::datatypes::{
+    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
+};
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::ExecutionPlan;
 
-use crate::{SchemaFieldId, ValueType};
+use crate::{ColumnId, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
@@ -37,8 +39,9 @@ pub struct TableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: u32,
-    /// columnName -> TableFiled
-    pub fields: BTreeMap<String, TableFiled>,
+
+    columns: Vec<TableColumn>,
+    columns_index: HashMap<String, usize>,
 }
 
 impl Default for TableSchema {
@@ -47,45 +50,62 @@ impl Default for TableSchema {
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
-            fields: std::default::Default::default(),
+            columns: Default::default(),
+            columns_index: Default::default(),
         }
     }
 }
 
 impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<Field> = self
-            .fields
-            .iter()
-            .map(|(name, schema)| {
-                let mut f = Field::new(name, schema.column_type.into(), true);
-                let mut map = BTreeMap::new();
-                map.insert(FIELD_ID.to_string(), schema.id.to_string());
-                map.insert(TAG.to_string(), schema.column_type.is_tag().to_string());
-                f.set_metadata(Some(map));
-                f
-            })
-            .collect();
+        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
 
         Arc::new(Schema::new(fields))
     }
 
-    pub fn new(db: String, name: String, fields: BTreeMap<String, TableFiled>) -> Self {
+    pub fn new(db: String, name: String, columns: Vec<TableColumn>) -> Self {
+        let columns_index = columns
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| (e.name.clone(), idx))
+            .collect();
+
         Self {
             db,
             name,
             schema_id: 0,
-            fields,
+            columns,
+            columns_index,
         }
     }
-    pub fn fields(&self) -> &BTreeMap<String, TableFiled> {
-        &self.fields
+
+    /// add column
+    /// not add if exists
+    pub fn add_column(&mut self, col: TableColumn) {
+        self.columns_index
+            .entry(col.name.clone())
+            .or_insert_with(|| {
+                self.columns.push(col);
+                self.columns.len() - 1
+            });
     }
 
-    pub fn field_fields_num(&self) -> usize {
+    /// Get the metadata of the column according to the column name
+    pub fn column(&self, name: &str) -> Option<&TableColumn> {
+        self.columns_index
+            .get(name)
+            .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
+    }
+
+    pub fn columns(&self) -> &Vec<TableColumn> {
+        &self.columns
+    }
+
+    /// Number of columns of ColumnType is Field
+    pub fn field_num(&self) -> usize {
         let mut ans = 0;
-        for i in self.fields.iter() {
-            if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
+        for i in self.columns.iter() {
+            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
                 ans += 1;
             }
         }
@@ -93,11 +113,11 @@ impl TableSchema {
     }
 
     // return (table_field_id, index), index mean field location which column
-    pub fn fields_id(&self) -> HashMap<SchemaFieldId, usize> {
+    pub fn fields_id(&self) -> HashMap<ColumnId, usize> {
         let mut ans = vec![];
-        for i in self.fields.iter() {
-            if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
-                ans.push(i.1.id);
+        for i in self.columns.iter() {
+            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
+                ans.push(i.id);
             }
         }
         ans.sort();
@@ -110,8 +130,8 @@ impl TableSchema {
 
     pub fn size(&self) -> usize {
         let mut size = 0;
-        for i in self.fields.iter() {
-            size += i.0.capacity() + size_of_val(&i.1) + size_of_val(&i);
+        for i in self.columns.iter() {
+            size += size_of_val(&i);
         }
         size += size_of_val(&self);
         size
@@ -143,20 +163,37 @@ impl TableProvider for TableSchema {
     }
 }
 
-pub fn is_time_column(field: &Field) -> bool {
+pub fn is_time_column(field: &ArrowField) -> bool {
     TIME_FIELD_NAME == field.name()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TableFiled {
-    pub id: SchemaFieldId,
+pub struct TableColumn {
+    pub id: ColumnId,
     pub name: String,
     pub column_type: ColumnType,
     pub codec: u8,
 }
 
-impl TableFiled {
-    pub fn new(id: SchemaFieldId, name: String, column_type: ColumnType, codec: u8) -> Self {
+impl From<&TableColumn> for ArrowField {
+    fn from(column: &TableColumn) -> Self {
+        let mut f = ArrowField::new(&column.name, column.column_type.into(), column.nullable());
+        let mut map = BTreeMap::new();
+        map.insert(FIELD_ID.to_string(), column.id.to_string());
+        map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
+        f.set_metadata(Some(map));
+        f
+    }
+}
+
+impl From<TableColumn> for ArrowField {
+    fn from(field: TableColumn) -> Self {
+        (&field).into()
+    }
+}
+
+impl TableColumn {
+    pub fn new(id: ColumnId, name: String, column_type: ColumnType, codec: u8) -> Self {
         Self {
             id,
             name,
@@ -172,13 +209,18 @@ impl TableFiled {
             codec: 0,
         }
     }
-    pub fn time_field(codec: u8) -> TableFiled {
-        TableFiled {
+    pub fn time_field(codec: u8) -> TableColumn {
+        TableColumn {
             id: 0,
             name: TIME_FIELD_NAME.to_string(),
             column_type: ColumnType::Time,
             codec,
         }
+    }
+
+    pub fn nullable(&self) -> bool {
+        // The time column cannot be empty
+        !matches!(self.column_type, ColumnType::Time)
     }
 }
 

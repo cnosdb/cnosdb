@@ -5,11 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::schema::{TableFiled, TableSchema};
+use crate::schema::TableSchema;
 use crate::{Error, Result};
 use datafusion::{
-    arrow::datatypes::DataType, error::DataFusionError, logical_expr::Expr,
-    logical_plan::combine_filters, scalar::ScalarValue,
+    arrow::datatypes::DataType, logical_expr::Expr, logical_plan::combine_filters, prelude::Column,
+    scalar::ScalarValue,
 };
 
 use super::transformation::RowExpressionToDomainsVisitor;
@@ -848,7 +848,7 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
 
 #[derive(Debug, Default)]
 pub struct Predicate {
-    pushed_down_domains: Option<ColumnDomains<TableFiled>>,
+    pushed_down_domains: Option<ColumnDomains<Column>>,
     limit: Option<usize>,
 }
 
@@ -857,7 +857,7 @@ impl Predicate {
         self.limit
     }
 
-    pub fn domains(&self) -> &Option<ColumnDomains<TableFiled>> {
+    pub fn domains(&self) -> &Option<ColumnDomains<Column>> {
         &self.pushed_down_domains
     }
 
@@ -868,25 +868,14 @@ impl Predicate {
 
     /// resolve and extract supported filter
     /// convert filter to ColumnDomains and set self
-    pub fn push_down_filter(mut self, filters: &[Expr], table_schema: &TableSchema) -> Predicate {
+    pub fn push_down_filter(mut self, filters: &[Expr], _table_schema: &TableSchema) -> Predicate {
         if let Some(ref expr) = combine_filters(filters) {
-            if let Ok(domains) = expr_to_domains(expr, table_schema) {
+            if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
                 self.pushed_down_domains = Some(domains);
             }
         }
         self
     }
-}
-
-pub fn expr_to_domains(
-    expr: &Expr,
-    table_schema: &TableSchema,
-) -> Result<ColumnDomains<TableFiled>, DataFusionError> {
-    let fields = &table_schema.fields;
-    let column_domains = RowExpressionToDomainsVisitor::expr_to_column_domains(expr)?;
-    let resutl = column_domains.translate_column(|col| fields.get(&col.name).cloned());
-
-    Ok(resutl)
 }
 
 #[cfg(test)]

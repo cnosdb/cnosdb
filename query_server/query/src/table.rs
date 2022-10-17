@@ -30,9 +30,9 @@ impl ClusterTable {
         &self,
         projections: &Option<Vec<usize>>,
         predicate: PredicateRef,
-        schema: SchemaRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let proj_schema = project_schema(&schema, projections.as_ref()).unwrap();
+        let proj_schema = project_schema(&self.schema.to_arrow_schema(), projections.as_ref())?;
+
         Ok(Arc::new(TskvExec::new(
             self.schema.clone(),
             proj_schema,
@@ -90,9 +90,7 @@ impl TableProvider for ClusterTable {
                 .push_down_filter(filters, &self.schema),
         );
 
-        return self
-            .create_physical_plan(projection, filter.clone(), self.schema())
-            .await;
+        return self.create_physical_plan(projection, filter).await;
     }
     fn supports_filter_pushdown(&self, _: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Inexact)

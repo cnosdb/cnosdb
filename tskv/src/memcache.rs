@@ -2,7 +2,7 @@ use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 
 use models::{
-    utils, FieldId, RwLockRef, SchemaFieldId, SchemaId, SeriesId, TableId, Timestamp, ValueType,
+    utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
 use protos::models::{Field, FieldType, Point};
 
@@ -21,7 +21,7 @@ use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange};
-use models::schema::{TableFiled, TableSchema};
+use models::schema::{TableColumn, TableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
@@ -115,7 +115,7 @@ impl RowData {
     pub fn point_to_row_data(p: fb_models::Point, schema: &TableSchema) -> RowData {
         let fields = match p.fields() {
             None => {
-                let mut fields = Vec::with_capacity(schema.field_fields_num());
+                let mut fields = Vec::with_capacity(schema.field_num());
                 for i in 0..fields.capacity() {
                     fields.push(None);
                 }
@@ -130,7 +130,7 @@ impl RowData {
                 for (i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
                     let val = MiniVec::from(f.value().unwrap());
-                    match schema.fields.get(
+                    match schema.column(
                         String::from_utf8(f.name().unwrap().to_vec())
                             .unwrap()
                             .as_str(),
@@ -232,7 +232,7 @@ impl SeriesData {
         }
     }
 
-    pub fn read_entry(&self, field_id: SchemaFieldId) -> Option<Arc<RwLock<MemEntry>>> {
+    pub fn read_entry(&self, field_id: ColumnId) -> Option<Arc<RwLock<MemEntry>>> {
         let mut entry = MemEntry {
             ts_min: self.range.min_ts,
             ts_max: self.range.max_ts,
@@ -530,7 +530,7 @@ pub(crate) mod test {
         let mut size: usize = schema.size();
         for ts in time_range.0..time_range.1 + 1 {
             let mut fields = Vec::new();
-            for _ in 0..schema.fields.len() {
+            for _ in 0..schema.columns().len() {
                 size += size_of::<Option<FieldVal>>();
                 if put_none {
                     fields.push(None);

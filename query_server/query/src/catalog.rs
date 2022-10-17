@@ -1,8 +1,4 @@
-use std::{
-    any::Any,
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use datafusion::{
     catalog::{catalog::CatalogProvider, schema::SchemaProvider},
@@ -151,14 +147,7 @@ impl SchemaProvider for UserSchema {
         // }
 
         let mut tables = self.tables.write();
-        if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {
-            let mut fields = BTreeMap::new();
-
-            for item in v.fields {
-                let field = item.1;
-                fields.insert(field.name.clone(), field);
-            }
-            let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);
+        if let Ok(Some(schema)) = self.engine.get_table_schema(&self.db_name, name) {
             let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
             tables.insert(name.to_owned(), table.clone());
             return Some(table);

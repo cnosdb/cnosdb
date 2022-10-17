@@ -14,7 +14,7 @@ use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
 use models::schema::{DatabaseSchema, TableSchema};
 use models::utils::{split_id, unite_id};
-use models::{SchemaFieldId, SchemaId, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
@@ -375,7 +375,7 @@ pub(crate) fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
-            let fids: Vec<SchemaFieldId> = fields.fields.iter().map(|f| f.1.id).collect();
+            let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
                 .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid as u64, *sid)))
