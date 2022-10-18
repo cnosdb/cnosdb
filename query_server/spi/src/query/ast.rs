@@ -17,8 +17,10 @@ pub enum ExtStatement {
     Drop(DropObject),
     DropUser(DropUser),
 
-    DescribeTable(DescribeObject),
-    DescribeDatabase(DescribeObject),
+    DescribeTable(DescribeTable),
+    DescribeDatabase(DescribeDatabase),
+    // ShowDatabases(String),
+    // ShowTables(String, String),
     ShowDatabases,
     ShowTables,
     //todo:  insert/update/alter
@@ -74,6 +76,16 @@ pub struct DatabaseOptions {
     pub replica: Option<u64>,
     // timestamp percision
     pub precision: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeTable {
+    pub table_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeDatabase {
+    pub database_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

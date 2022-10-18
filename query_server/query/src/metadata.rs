@@ -1,13 +1,23 @@
 use crate::catalog::{UserCatalog, UserCatalogRef, UserSchema};
-use datafusion::arrow::datatypes::DataType;
+use datafusion::arrow::array::{BooleanArray, StringArray};
+use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::datasource::TableProvider;
+use datafusion::physical_plan::common::SizedRecordBatchStream;
+use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MemTrackingMetrics};
+use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::{
     datasource::DefaultTableSource,
     error::DataFusionError,
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
+use models::codec::Encoding;
+use models::schema::ColumnType;
+use models::ValueType;
+use spi::query::execution::Output;
+
+use datafusion::arrow::record_batch::RecordBatch;
 
 use models::schema::DatabaseSchema;
 use snafu::ResultExt;
@@ -166,6 +176,143 @@ impl MetaData for LocalCatalogMeta {
         Ok(())
     }
 
+    fn describe_database(&self, name: &str) -> Result<Output> {
+        match self.engine.get_db_schema(name) {
+            None => {
+                return Err(MetadataError::DatabaseNotExists {
+                    database_name: name.to_string(),
+                })
+            }
+            Some(db_cfg) => {
+                let schema = Arc::new(Schema::new(vec![
+                    Field::new("TTL", DataType::Utf8, false),
+                    Field::new("SHARD", DataType::Utf8, false),
+                    Field::new("VNODE_DURATION", DataType::Utf8, false),
+                    Field::new("REPLICA", DataType::Utf8, false),
+                    Field::new("PRECISION", DataType::Utf8, false),
+                ]));
+
+                let ttl = db_cfg.config.ttl.to_string();
+                let shard = db_cfg.config.shard_num.to_string();
+                let vnode_duration = db_cfg.config.vnode_duration.to_string();
+                let replica = db_cfg.config.replica.to_string();
+                let precision = db_cfg.config.precision.to_string();
+                let batch = RecordBatch::try_new(
+                    schema,
+                    vec![
+                        Arc::new(StringArray::from(vec![ttl.as_str()])),
+                        Arc::new(StringArray::from(vec![shard.as_str()])),
+                        Arc::new(StringArray::from(vec![vnode_duration.as_str()])),
+                        Arc::new(StringArray::from(vec![replica.as_str()])),
+                        Arc::new(StringArray::from(vec![precision.as_str()])),
+                    ],
+                )
+                .unwrap();
+
+                let batches = vec![Arc::new(batch)];
+
+                Ok(Output::StreamData(stream_from_batches(batches)))
+                // Ok(batches)
+            }
+        }
+    }
+
+    fn describe_table(&self, table: &str) -> Result<Output> {
+        let table_name;
+        let database_name;
+
+        if table.contains(".") {
+            (database_name, table_name) = table.split_once('.').unwrap();
+        } else {
+            table_name = table;
+            database_name = self.database_name.as_str();
+        }
+
+        match self
+            .engine
+            .get_table_schema(database_name, table_name)
+            .unwrap()
+        {
+            None => {
+                return Err(MetadataError::TableNotExists {
+                    table_name: table.to_string(),
+                })
+            }
+            Some(table_schema) => {
+                let schema = Arc::new(Schema::new(vec![
+                    Field::new("fieldname", DataType::Utf8, false),
+                    Field::new("type", DataType::Utf8, false),
+                    Field::new("istag", DataType::Boolean, false),
+                    Field::new("compression", DataType::Utf8, false),
+                ]));
+                // fieldname, type, istag, compression
+                //      time, Time,  No,
+                //      c1,   String, No,
+                //      c2,   uint64,
+                let fields = table_schema.fields.clone();
+
+                let mut name_column = vec![];
+                let mut type_column = vec![];
+                let mut tags = vec![];
+                let mut compressions = vec![];
+
+                for (_, item) in &fields {
+                    let field_name = item.name.as_str();
+                    let field_type;
+                    let mut tag = false;
+                    let compression;
+                    match item.column_type {
+                        ColumnType::Tag => {
+                            field_type = "STRING";
+                            tag = true;
+                        }
+                        ColumnType::Time => field_type = "TIMESTAMP",
+                        ColumnType::Field(ValueType::Float) => field_type = "DOUBLE",
+                        ColumnType::Field(ValueType::Integer) => field_type = "BIGINT",
+                        ColumnType::Field(ValueType::Unsigned) => field_type = "UNSIGNED",
+                        ColumnType::Field(ValueType::String) => field_type = "STRING",
+                        ColumnType::Field(ValueType::Boolean) => field_type = "BOOLEAN",
+                        ColumnType::Field(ValueType::Unknown) => field_type = "UNKNOW",
+                    }
+
+                    match Encoding::from(item.codec) {
+                        Encoding::Default => compression = "Default",
+                        Encoding::Null => compression = "Null",
+                        Encoding::Delta => compression = "Delta",
+                        Encoding::Quantile => compression = "Quantile",
+                        Encoding::Gzip => compression = "Gzip",
+                        Encoding::Bzip => compression = "Bzip",
+                        Encoding::Gorilla => compression = "Gorilla",
+                        Encoding::Snappy => compression = "Snappy",
+                        Encoding::Zstd => compression = "Zstd",
+                        Encoding::Zlib => compression = "Zlib",
+                        Encoding::BitPack => compression = "BitPack",
+                        Encoding::Unknown => compression = "Unknown",
+                    }
+                    name_column.push(field_name);
+                    type_column.push(field_type);
+                    tags.push(tag);
+                    compressions.push(compression);
+                }
+
+                let batch = RecordBatch::try_new(
+                    schema,
+                    vec![
+                        Arc::new(StringArray::from(name_column)),
+                        Arc::new(StringArray::from(type_column)),
+                        Arc::new(BooleanArray::from(tags)),
+                        Arc::new(StringArray::from(compressions)),
+                    ],
+                )
+                .unwrap();
+
+                let batches = vec![Arc::new(batch)];
+
+                Ok(Output::StreamData(stream_from_batches(batches)))
+            }
+        }
+    }
+
     fn database_names(&self) -> Vec<String> {
         self.catalog.schema_names()
     }
@@ -212,4 +359,11 @@ impl ContextProvider for MetadataProvider {
         // TODO
         None
     }
+}
+
+pub fn stream_from_batches(batches: Vec<Arc<RecordBatch>>) -> SendableRecordBatchStream {
+    let dummy_metrics = ExecutionPlanMetricsSet::new();
+    let mem_metrics = MemTrackingMetrics::new(&dummy_metrics, 0);
+    let stream = SizedRecordBatchStream::new(batches[0].schema(), batches, mem_metrics);
+    Box::pin(stream)
 }

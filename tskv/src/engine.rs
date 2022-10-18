@@ -4,10 +4,8 @@ use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
-use datafusion::prelude::Column;
-use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableColumn, TableSchema};
-use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use models::schema::{DatabaseSchema, TableSchema};
+use models::{FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -148,15 +146,6 @@ impl Engine for MockEngine {
             tab.to_string(),
             Default::default(),
         )))
-    }
-
-    fn get_series_id_by_filter(
-        &self,
-        db: &str,
-        tab: &str,
-        filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u64>> {
-        Ok(vec![])
     }
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {

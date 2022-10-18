@@ -14,17 +14,21 @@ pub enum Function {
     Show,
     CreateTable,
     CreateTableAs,
+    DescribeTable,
+    DescribeDatabase,
     Insert,
     DropTable,
 }
 
-const ALL_FUNCTIONS: [Function; 7] = [
+const ALL_FUNCTIONS: [Function; 9] = [
     Function::CreateTable,
     Function::CreateTableAs,
     Function::DropTable,
     Function::Explain,
     Function::Insert,
     Function::Select,
+    Function::DescribeTable,
+    Function::DescribeDatabase,
     Function::Show,
 ];
 
@@ -112,6 +116,22 @@ CREATE TABLE table_name
     [ WITH [ NO ] DATA ]
 "#
             }
+            Function::DescribeDatabase => {
+                r#"
+Command:     Describe
+Description: describe database
+Syntax:
+DESCRIBE DATABASE database_name
+"#
+            }
+            Function::DescribeTable => {
+                r#"
+Command:     Describe
+Description: describe table
+Syntax:
+DESCRIBE TABLE [database_name.] table_name
+"#
+            }
             Function::Insert => {
                 r#"
 Command:     INSERT
@@ -159,6 +179,8 @@ impl fmt::Display for Function {
             Function::Show => write!(f, "SHOW"),
             Function::CreateTable => write!(f, "CREATE TABLE"),
             Function::CreateTableAs => write!(f, "CREATE TABLE AS"),
+            Function::DescribeTable => write!(f, "DESCRIBE TABLE"),
+            Function::DescribeDatabase => write!(f, "DESCRIBE DATABASE"),
             Function::Insert => write!(f, "INSERT"),
             Function::DropTable => write!(f, "DROP TABLE"),
         }

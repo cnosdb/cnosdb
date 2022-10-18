@@ -1,3 +1,4 @@
+use crate::query::execution::Output;
 use crate::query::function::FuncMetaManagerRef;
 use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::catalog::schema::SchemaProvider;
@@ -32,6 +33,12 @@ pub trait MetaData: Send + Sync {
     fn create_table(&self, name: &str, table: Arc<dyn TableProvider>) -> Result<()>;
     fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()>;
     fn database_names(&self) -> Vec<String>;
+    // fn show_database(&self) -> Result<()>;
+    // fn show_tables(&self, database: &str) ->Result<()>;
+    // fn show_tags(&self, database: &str, table: &str) -> Result<()>;
+    // fn show_series(&self, database: &str, table: &str) ->Result<()>;
+    fn describe_database(&self, name: &str) -> Result<Output>;
+    fn describe_table(&self, table_name: &str) -> Result<Output>;
 }
 
 #[derive(Debug, Snafu)]
