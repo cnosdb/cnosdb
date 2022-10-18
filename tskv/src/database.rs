@@ -331,6 +331,10 @@ impl Database {
 
         None
     }
+
+    pub fn get_schema(&self) -> DatabaseSchema {
+        self.index.db_schema()
+    }
 }
 
 pub(crate) fn delete_table_async(

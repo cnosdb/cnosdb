@@ -68,6 +68,17 @@ impl VersionSet {
         self.dbs.remove(name)
     }
 
+    pub fn db_exists(&self, name: &str) -> bool {
+        match self.dbs.get(name) {
+            None => false,
+            Some(_) => true,
+        }
+    }
+
+    pub fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
+        self.dbs.get(name).map(|db| db.read().get_schema())
+    }
+
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
         &self.dbs
     }

@@ -12,7 +12,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use sled::Error;
 use snafu::ResultExt;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::Error::IndexErr;
 use config::Config;
@@ -91,17 +91,22 @@ impl DBIndex {
         let schema = match storage.get(key.as_bytes()) {
             Ok(v) => match v {
                 None => {
-                    let data = bincode::serialize(&db_schema).unwrap();
-                    storage.set(key.as_bytes(), &data).unwrap();
-                    storage.flush();
+                    store_db_schema(&key, &db_schema, &storage);
                     db_schema
                 }
-                Some(v) => bincode::deserialize::<DatabaseSchema>(&v).unwrap(),
+                Some(v) => match bincode::deserialize::<DatabaseSchema>(&v) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!(
+                            "failed to deserialize db schema, because {}, maybe file damage",
+                            e
+                        );
+                        db_schema
+                    }
+                },
             },
             Err(_) => {
-                let data = bincode::serialize(&db_schema).unwrap();
-                storage.set(key.as_bytes(), &data).unwrap();
-                storage.flush();
+                store_db_schema(&key, &db_schema, &storage);
                 db_schema
             }
         };
@@ -446,4 +451,23 @@ impl DBIndex {
         self.flush()?;
         Ok(())
     }
+
+    pub fn db_schema(&self) -> DatabaseSchema {
+        self.db_schema.clone()
+    }
+}
+
+fn store_db_schema(key: &str, db_schema: &DatabaseSchema, storage: &IndexEngine) {
+    match bincode::serialize(db_schema) {
+        Ok(v) => match storage.set(key.as_bytes(), &v) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("failed storage db schema, because : {:?}", e);
+            }
+        },
+        Err(e) => {
+            error!("failed serialize data : {:?}, because : {:?}", db_schema, e);
+        }
+    };
+    storage.flush();
 }
