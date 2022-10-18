@@ -1,7 +1,3 @@
--- EXECUTE SQL: CREATE DATABASE IF NOT EXISTS public; --
-200 OK
-
-
 -- EXECUTE SQL: SELECT 2 + 2 * 5; --
 200 OK
 Int64(2) + Int64(2) * Int64(5)

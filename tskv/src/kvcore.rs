@@ -469,8 +469,14 @@ impl Engine for TsKv {
         final_ans
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) {
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
+        if self.version_set.read().db_exists(&schema.name) {
+            return Err(Error::DatabaseAlreadyExists {
+                database: schema.name.clone(),
+            });
+        }
         self.version_set.write().create_db(schema.clone());
+        Ok(())
     }
 
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {

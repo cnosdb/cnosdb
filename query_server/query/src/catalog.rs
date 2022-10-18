@@ -90,7 +90,9 @@ impl CatalogProvider for UserCatalog {
             }
             Some(v) => v,
         };
-        self.engine.create_database(&user_schema.database_schema);
+        self.engine
+            .create_database(&user_schema.database_schema)
+            .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
 
         Ok(schemas.insert(name.into(), schema))
     }

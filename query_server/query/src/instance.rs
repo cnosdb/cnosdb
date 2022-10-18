@@ -7,7 +7,7 @@ use spi::{
     server::dbms::DatabaseManagerSystem,
     server::BuildSnafu,
     server::Result,
-    server::{LoadFunctionSnafu, QuerySnafu},
+    server::{LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
     service::protocol::{Query, QueryHandle},
 };
 
@@ -46,10 +46,10 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
 
-    let meta = Arc::new(LocalCatalogMeta::new_with_default(
-        engine,
-        Arc::new(function_manager),
-    ));
+    let meta = Arc::new(
+        LocalCatalogMeta::new_with_default(engine, Arc::new(function_manager))
+            .context(MetaDataSnafu)?,
+    );
 
     // TODO session config need load global system config
     let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
