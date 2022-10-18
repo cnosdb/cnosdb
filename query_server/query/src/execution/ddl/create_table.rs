@@ -1,10 +1,7 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::sql::TableReference;
-use models::codec::codec_name_to_codec;
-use models::schema::{ColumnType, TableColumn, TableSchema, TIME_FIELD};
-use models::{ColumnId, ValueType};
+use models::schema::TableSchema;
 use snafu::ResultExt;
 use spi::catalog::{MetaDataRef, MetadataError};
 use spi::query::execution;
@@ -68,40 +65,7 @@ fn create_table(
 }
 
 fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TableSchema {
-    let CreateTable {
-        schema, name, tags, ..
-    } = stmt;
-    let mut kv_fields = vec![];
-    let mut get_time = false;
-    for (i, tag) in tags.iter().enumerate() {
-        let kv_field = TableColumn::new((i + 1) as ColumnId, tag.to_owned(), ColumnType::Tag, 0);
-        kv_fields.push(kv_field);
-    }
-
-    let start = kv_fields.len();
-    for (i, field) in schema.fields().iter().enumerate() {
-        let field_name = field.name();
-        let id = if field_name == TIME_FIELD {
-            get_time = true;
-            0
-        } else if !get_time {
-            start + i + 1
-        } else {
-            start + i
-        };
-        let kv_field = TableColumn::new(
-            id as ColumnId,
-            field_name.clone(),
-            data_type_to_column_type(field.data_type()),
-            codec_name_to_codec(
-                schema
-                    .metadata()
-                    .get(field_name)
-                    .unwrap_or(&"DEFAULT".to_string()),
-            ),
-        );
-        kv_fields.push(kv_field);
-    }
+    let CreateTable { schema, name, .. } = stmt;
 
     let table: TableReference = name.as_str().into();
     let catalog_name = catalog.catalog_name();
@@ -111,20 +75,8 @@ fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TableSchema {
     TableSchema::new(
         table_ref.schema.to_string(),
         table.table().to_string(),
-        kv_fields,
+        schema.to_owned(),
     )
-}
-
-fn data_type_to_column_type(data_type: &DataType) -> ColumnType {
-    match data_type {
-        DataType::Timestamp(TimeUnit::Nanosecond, None) => ColumnType::Time,
-        DataType::Int64 => ColumnType::Field(ValueType::Integer),
-        DataType::UInt64 => ColumnType::Field(ValueType::Unsigned),
-        DataType::Float64 => ColumnType::Field(ValueType::Float),
-        DataType::Utf8 => ColumnType::Field(ValueType::String),
-        DataType::Boolean => ColumnType::Field(ValueType::Boolean),
-        _ => ColumnType::Field(ValueType::Unknown),
-    }
 }
 
 #[cfg(test)]

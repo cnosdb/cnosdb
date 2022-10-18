@@ -11,8 +11,8 @@ use datafusion::{
     prelude::{lit, Expr},
     scalar::ScalarValue,
 };
-use models::define_result;
 use models::schema::DatabaseOptions;
+use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
 
 define_result!(LogicalPlannerError);
@@ -110,13 +110,11 @@ pub struct CSVOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTable {
     /// The table schema
-    pub schema: DFSchemaRef,
+    pub schema: Vec<TableColumn>,
     /// The table name
     pub name: String,
     /// Option to not error if table already exists
     pub if_not_exists: bool,
-    /// The table tags
-    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

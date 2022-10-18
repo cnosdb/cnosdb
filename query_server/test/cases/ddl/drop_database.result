@@ -31,6 +31,6 @@ rows
 
 -- EXECUTE SQL: select ALL * from test0; --
 200 OK
-column1,column2,column3,column4,column5,column6,column7,time
+time,column6,column7,column1,column2,column3,column4,column5
 
 

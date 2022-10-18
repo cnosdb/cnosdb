@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    sync::atomic::AtomicU64,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -105,5 +106,23 @@ pub fn max_num<T: std::cmp::PartialOrd>(a: T, b: T) -> T {
         a
     } else {
         b
+    }
+}
+
+#[derive(Default)]
+pub struct SeqIdGenerator {
+    next_id: AtomicU64,
+}
+
+impl SeqIdGenerator {
+    pub fn new(start: u64) -> Self {
+        Self {
+            next_id: AtomicU64::new(start),
+        }
+    }
+
+    pub fn next_id(&self) -> u64 {
+        self.next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }

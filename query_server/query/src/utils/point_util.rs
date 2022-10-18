@@ -274,7 +274,7 @@ macro_rules! define_extract_time_column_from_func {
                     },
                     ArrowDataType::Int64 => Ok(cast_arrow_array::<Int64Array>(array)?.iter().collect()),
                     other => Err(PointUtilError::InvalidArrayType {
-                        expected: ArrowDataType::from(TableColumn::time_field(0).column_type).to_string(),
+                        expected: ArrowDataType::from(TableColumn::new_time_column(0).column_type).to_string(),
                         found: other.to_string(),
                     }),
                 }
