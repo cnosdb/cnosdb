@@ -11,9 +11,9 @@ rows
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
 
 
 -- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (8, '8a', '8b', 8, 8), (9, '9a', '9b', 9, 9), (10, '10a', '10b', 10, 10); --
@@ -24,12 +24,12 @@ rows
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
-8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
-9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
-10.0,10.0,10a,10b,1970-01-01T00:00:00.000000010
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
+1970-01-01T00:00:00.000000008,8a,8b,8.0,8.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
+1970-01-01T00:00:00.000000010,10a,10b,10.0,10.0
 
 
 -- EXECUTE SQL: select time, ta, fa from public.test order by fa, fb; --
@@ -94,6 +94,6 @@ fa
 
 -- EXECUTE SQL: select time, ta, fa, * from public.test order by fa, fb; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"#public.test.fa\" at position 2 and \"#public.test.fa\" at position 3 have the same name. Consider aliasing (\"AS\") one of them."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"#public.test.time\" at position 0 and \"#public.test.time\" at position 3 have the same name. Consider aliasing (\"AS\") one of them."}
 -- ERROR:  --
 

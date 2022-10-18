@@ -11,9 +11,9 @@ rows
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
 
 
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select TIME, ta, tb, fa, fb from (values (8, '8a', '8b', 8, 8)) as t (TIME, ta, tb, fa, fb); --
@@ -24,10 +24,10 @@ rows
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
-8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
+1970-01-01T00:00:00.000000008,8a,8b,8.0,8.0
 
 
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, ta, tb, fa, fb) select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
@@ -38,25 +38,27 @@ rows
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
-8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
-9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
+1970-01-01T00:00:00.000000008,8a,8b,8.0,8.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
 
 
 -- EXECUTE SQL: insert public.test_insert_subquery select * from (values (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb); --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '9a' to value of Float64 type"}
--- ERROR:  --
+200 OK
+rows
+1
+
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
-8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
-9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
+1970-01-01T00:00:00.000000008,8a,8b,8.0,8.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
 
 
 -- EXECUTE SQL: insert public.test_insert_subquery select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
@@ -66,11 +68,12 @@ fa,fb,ta,tb,time
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
-8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
-9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
+1970-01-01T00:00:00.000000008,8a,8b,8.0,8.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
 
 
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, fa) select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
@@ -80,10 +83,11 @@ fa,fb,ta,tb,time
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
 200 OK
-fa,fb,ta,tb,time
-1.0,2.0,a1,b1,1970-01-01T00:00:00.000000003
-7.0,7.0,7a,7b,1970-01-01T00:00:00.000000007
-8.0,8.0,8a,8b,1970-01-01T00:00:00.000000008
-9.0,9.0,9a,9b,1970-01-01T00:00:00.000000009
+time,ta,tb,fa,fb
+1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
+1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
+1970-01-01T00:00:00.000000008,8a,8b,8.0,8.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
+1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
 
 
