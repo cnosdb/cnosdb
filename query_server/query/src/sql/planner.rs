@@ -1,19 +1,20 @@
 use std::sync::Arc;
 
-use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
 use datafusion::logical_plan::plan::{Analyze, Explain, Extension};
 use datafusion::logical_plan::{
     DFField, FileType, LogicalPlan, LogicalPlanBuilder, PlanType, ToDFSchema, ToStringifiedPlan,
 };
-use datafusion::logical_plan::{DFSchema, DFSchemaRef};
 use datafusion::prelude::{cast, col, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{ContextProvider, SqlToRel};
 use datafusion::sql::TableReference;
 use hashbrown::HashMap;
+use models::schema::{ColumnType, TableColumn};
+use models::utils::SeqIdGenerator;
+use models::{ColumnId, ValueType};
 use snafu::ResultExt;
 use spi::query::ast::{
     ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
@@ -26,10 +27,10 @@ use spi::query::logical_planner::{
 };
 use spi::query::session::IsiphoSessionCtx;
 use sqlparser::ast::{Ident, ObjectName, Query};
-use std::collections::HashMap as MetaDataHashmap;
 
 use models::codec::{
-    BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC, UNSIGNED_BIGINT_CODEC,
+    codec_name_to_codec, BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC,
+    UNSIGNED_BIGINT_CODEC,
 };
 use models::schema::{DatabaseOptions, Duration, Precision};
 use spi::query::logical_planner::Result;
@@ -306,38 +307,38 @@ impl<S: ContextProvider> SqlPlaner<S> {
             if_not_exists,
             columns,
         } = statement;
-        let mut fields = vec![];
-        let mut tags_name = vec![];
-        let mut field_name_codec_algo = MetaDataHashmap::new();
-        for column in columns {
-            if column.is_tag {
-                tags_name.push(column.name.value);
+        let id_generator = SeqIdGenerator::default();
+        // all col: time col, tag col, field col
+        // sys inner time column
+        let mut schema: Vec<TableColumn> = Vec::with_capacity(columns.len() + 1);
+
+        let time_col = TableColumn::new_time_column(id_generator.next_id() as ColumnId);
+        // Append time column at the start
+        schema.push(time_col);
+
+        for column_opt in columns {
+            self.check_column(&column_opt)?;
+
+            let col_id = id_generator.next_id() as ColumnId;
+
+            let col = if column_opt.is_tag {
+                TableColumn::new_tag_column(col_id, normalize_ident(&column_opt.name))
             } else {
-                fields.push(DFField::new(
-                    Some(&name),
-                    &column.name.value,
-                    self.make_data_type(&column.data_type)?,
-                    true,
-                ));
-                if field_name_codec_algo.get(&column.name.value) != None {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "column name should different from each other".to_string(),
-                    });
-                }
-                self.check_column(&column)?;
-                field_name_codec_algo.insert(column.name.value, column.codec);
-            }
+                TableColumn::new(
+                    col_id,
+                    normalize_ident(&column_opt.name),
+                    self.make_data_type(&column_opt.data_type)?,
+                    codec_name_to_codec(&column_opt.codec),
+                )
+            };
+
+            schema.push(col)
         }
 
-        let table_schema = DFSchemaRef::new(
-            DFSchema::new_with_metadata(fields, field_name_codec_algo).context(ExternalSnafu)?,
-        );
-
         Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
-            schema: table_schema,
+            schema,
             name,
             if_not_exists,
-            tags: tags_name,
         })))
     }
 
@@ -400,15 +401,15 @@ impl<S: ContextProvider> SqlPlaner<S> {
         Ok(duration)
     }
 
-    fn make_data_type(&self, data_type: &SQLDataType) -> Result<DataType> {
+    fn make_data_type(&self, data_type: &SQLDataType) -> Result<ColumnType> {
         match data_type {
             // todo : should support get time unit for database
-            SQLDataType::Timestamp => Ok(DataType::Timestamp(TimeUnit::Nanosecond, None)),
-            SQLDataType::BigInt(_) => Ok(DataType::Int64),
-            SQLDataType::UnsignedBigInt(_) => Ok(DataType::UInt64),
-            SQLDataType::Double => Ok(DataType::Float64),
-            SQLDataType::String => Ok(DataType::Utf8),
-            SQLDataType::Boolean => Ok(DataType::Boolean),
+            SQLDataType::Timestamp => Ok(ColumnType::Time),
+            SQLDataType::BigInt(_) => Ok(ColumnType::Field(ValueType::Integer)),
+            SQLDataType::UnsignedBigInt(_) => Ok(ColumnType::Field(ValueType::Unsigned)),
+            SQLDataType::Double => Ok(ColumnType::Field(ValueType::Float)),
+            SQLDataType::String => Ok(ColumnType::Field(ValueType::String)),
+            SQLDataType::Boolean => Ok(ColumnType::Field(ValueType::Boolean)),
             _ => Err(LogicalPlannerError::Semantic {
                 err: format!("Unexpected data type {}", data_type),
             }),
@@ -416,6 +417,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
     }
 
     fn check_column(&self, column: &ColumnOption) -> Result<()> {
+        // tag无压缩，直接返回
+        if column.is_tag {
+            return Ok(());
+        }
+        // 数据类型 -> 压缩方式 校验
         let is_ok = match column.data_type {
             SQLDataType::Timestamp => {
                 TIMESTAMP_CODEC.contains(&column.codec.to_uppercase().as_str())

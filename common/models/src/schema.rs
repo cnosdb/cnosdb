@@ -209,12 +209,22 @@ impl TableColumn {
             codec: 0,
         }
     }
-    pub fn time_field(codec: u8) -> TableColumn {
+
+    pub fn new_time_column(id: ColumnId) -> TableColumn {
         TableColumn {
-            id: 0,
+            id,
             name: TIME_FIELD_NAME.to_string(),
             column_type: ColumnType::Time,
-            codec,
+            codec: 0,
+        }
+    }
+
+    pub fn new_tag_column(id: ColumnId, name: String) -> TableColumn {
+        TableColumn {
+            id,
+            name,
+            column_type: ColumnType::Tag,
+            codec: 0,
         }
     }
 

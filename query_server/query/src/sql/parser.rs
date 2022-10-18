@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 
 use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
-use models::schema::TIME_FIELD_NAME;
 use snafu::ResultExt;
 use spi::query::ast::{
     ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DropObject, ExtStatement,
@@ -10,7 +9,7 @@ use spi::query::ast::{
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
-use sqlparser::ast::{DataType, Ident, Value};
+use sqlparser::ast::{DataType, Value};
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
@@ -395,20 +394,18 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_cnos_column(&mut self) -> Result<Vec<ColumnOption>> {
-        let mut columns = vec![ColumnOption {
-            name: Ident::from(TIME_FIELD_NAME),
-            is_tag: false,
-            data_type: DataType::Timestamp,
-            codec: "DEFAULT".to_string(),
-        }];
+        // -- Parse as is without adding any semantics
+        let mut all_columns: Vec<ColumnOption> = vec![];
+        let mut field_columns: Vec<ColumnOption> = vec![];
+
         if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
-            return Ok(columns);
+            return Ok(field_columns);
         }
         loop {
             let name = self.parser.parse_identifier()?;
             let column_type = self.parse_column_type()?;
             let codec_type = self.parse_codec_type()?;
-            columns.push(ColumnOption {
+            field_columns.push(ColumnOption {
                 name,
                 is_tag: false,
                 data_type: column_type,
@@ -425,13 +422,15 @@ impl<'a> ExtParser<'a> {
                 );
             }
             if self.consume_cnos_token(TAGS) {
-                self.parse_tag_columns(&mut columns)?;
+                self.parse_tag_columns(&mut all_columns)?;
                 self.parser.expect_token(&Token::RParen)?;
                 break;
             }
         }
+        // tag1, tag2, ..., field1, field2, ...
+        all_columns.append(&mut field_columns);
 
-        Ok(columns)
+        Ok(all_columns)
     }
 
     fn parse_tag_columns(&mut self, columns: &mut Vec<ColumnOption>) -> Result<()> {

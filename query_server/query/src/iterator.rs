@@ -335,6 +335,8 @@ impl RowIterator {
             .get_series_id_list(&option.table_schema.db, &option.table_schema.name, &[])
             .context(error::IndexErrSnafu)?;
 
+        debug!("series number: {}", series.len());
+
         Ok(Self {
             series,
             engine,
