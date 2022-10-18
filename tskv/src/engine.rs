@@ -36,7 +36,7 @@ pub trait Engine: Send + Sync + Debug {
         fields: Vec<SchemaFieldId>,
     ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>>;
 
-    fn create_database(&self, schema: &DatabaseSchema);
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema>;
 
@@ -110,8 +110,8 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) {
-        todo!()
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
+        Ok(())
     }
 
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {

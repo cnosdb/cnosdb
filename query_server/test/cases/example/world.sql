@@ -1,5 +1,3 @@
-CREATE DATABASE IF NOT EXISTS public;
-
 SELECT 2 + 2 * 5;
 
 SELECT (2 + 2) * 5;

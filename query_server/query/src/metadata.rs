@@ -33,14 +33,31 @@ pub struct LocalCatalogMeta {
 }
 
 impl LocalCatalogMeta {
-    pub fn new_with_default(engine: EngineRef, func_manager: FuncMetaManagerRef) -> Self {
-        Self {
+    pub fn new_with_default(engine: EngineRef, func_manager: FuncMetaManagerRef) -> Result<Self> {
+        let meta = Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
             database_name: DEFAULT_SCHEMA.to_string(),
             engine: engine.clone(),
             catalog: Arc::new(UserCatalog::new(engine)),
             func_manager,
-        }
+        };
+        if let Err(e) = meta.create_database(
+            &meta.database_name,
+            DatabaseSchema::new(&meta.database_name),
+        ) {
+            match e {
+                MetadataError::External { ref source } => {
+                    if !source
+                        .to_string()
+                        .eq(&format!("database '{}' already exists", DEFAULT_SCHEMA))
+                    {
+                        return Err(e);
+                    }
+                }
+                _ => return Err(e),
+            }
+        };
+        Ok(meta)
     }
 }
 
