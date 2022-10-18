@@ -18,12 +18,13 @@ use models::{ColumnId, ValueType};
 use snafu::ResultExt;
 use spi::query::ast::{
     ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
-    DatabaseOptions as ASTDatabaseOptions, DropObject, ExtStatement,
+    DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
+    DescribeTable as DescribeTableOptions, DropObject, ExtStatement,
 };
 use spi::query::logical_planner::{
     self, affected_row_expr, CSVOptions, CreateDatabase, CreateExternalTable, CreateTable, DDLPlan,
-    DropPlan, ExternalSnafu, FileDescriptor, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
-    MISMATCHED_COLUMNS, MISSING_COLUMN,
+    DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu, FileDescriptor, LogicalPlanner,
+    LogicalPlannerError, Plan, QueryPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 use sqlparser::ast::{Ident, ObjectName, Query};
@@ -62,8 +63,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::CreateUser(_) => todo!(),
             ExtStatement::Drop(s) => self.drop_object_to_plan(s),
             ExtStatement::DropUser(_) => todo!(),
-            ExtStatement::DescribeTable(_) => todo!(),
-            ExtStatement::DescribeDatabase(_) => todo!(),
+            ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt),
+            ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt),
             ExtStatement::ShowDatabases => todo!(),
             ExtStatement::ShowTables => todo!(),
         }
@@ -339,6 +340,18 @@ impl<S: ContextProvider> SqlPlaner<S> {
             schema,
             name,
             if_not_exists,
+        })))
+    }
+
+    fn database_to_describe(&self, statement: DescribeDatabaseOptions) -> Result<Plan> {
+        Ok(Plan::DDL(DDLPlan::DescribeDatabase(DescribeDatabase {
+            database_name: statement.database_name,
+        })))
+    }
+
+    fn table_to_describe(&self, opts: DescribeTableOptions) -> Result<Plan> {
+        Ok(Plan::DDL(DDLPlan::DescribeTable(DescribeTable {
+            table_name: opts.table_name,
         })))
     }
 

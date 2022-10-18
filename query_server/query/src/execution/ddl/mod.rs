@@ -8,6 +8,8 @@ use spi::query::execution::ExecutionError;
 
 use self::create_table::CreateTableTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
+use crate::execution::ddl::describe_database::DescribeDatabaseTask;
+use crate::execution::ddl::describe_table::DescribeTableTask;
 use snafu::ResultExt;
 
 use self::create_external_table::CreateExternalTableTask;
@@ -16,6 +18,8 @@ use self::drop_object::DropObjectTask;
 mod create_database;
 mod create_external_table;
 mod create_table;
+mod describe_database;
+mod describe_table;
 mod drop_object;
 
 /// Traits that DDL tasks should implement
@@ -71,6 +75,8 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::Drop(stmt) => Box::new(DropObjectTask::new(stmt.clone())),
             DDLPlan::CreateTable(stmt) => Box::new(CreateTableTask::new(stmt.clone())),
             DDLPlan::CreateDatabase(stmt) => Box::new(CreateDatabaseTask::new(stmt.clone())),
+            DDLPlan::DescribeDatabase(stmt) => Box::new(DescribeDatabaseTask::new(stmt.clone())),
+            DDLPlan::DescribeTable(stmt) => Box::new(DescribeTableTask::new(stmt.clone())),
         }
     }
 }

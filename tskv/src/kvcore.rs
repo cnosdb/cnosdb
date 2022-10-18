@@ -1,7 +1,6 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
-use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;

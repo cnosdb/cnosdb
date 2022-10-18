@@ -4,8 +4,8 @@ use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
 use snafu::ResultExt;
 use spi::query::ast::{
-    ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DropObject, ExtStatement,
-    ObjectType,
+    ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DescribeDatabase, DescribeTable,
+    DropObject, ExtStatement, ObjectType,
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
@@ -114,7 +114,6 @@ impl<'a> ExtParser<'a> {
                     self.parser.next_token();
                     self.parse_describe()
                 }
-
                 Keyword::SHOW => {
                     self.parser.next_token();
                     self.parse_show()
@@ -152,9 +151,37 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    /// Parse a SQL DESCRIBE statement
+    /// Parse a SQL DESCRIBE DATABASE statement
+    fn parse_describe_database(&mut self) -> Result<ExtStatement> {
+        debug!("Parse Describe DATABASE statement");
+        let database_name = self.parser.parse_object_name()?;
+
+        let describe = DescribeDatabase {
+            database_name: database_name.to_string(),
+        };
+
+        Ok(ExtStatement::DescribeDatabase(describe))
+    }
+
+    /// Parse a SQL DESCRIBE TABLE statement
+    fn parse_describe_table(&mut self) -> Result<ExtStatement> {
+        let table_name = self.parser.parse_object_name()?;
+
+        let describe = DescribeTable {
+            table_name: table_name.to_string(),
+        };
+
+        Ok(ExtStatement::DescribeTable(describe))
+    }
+
     fn parse_describe(&mut self) -> Result<ExtStatement> {
-        todo!()
+        if self.consume_cnos_token("TABLE") {
+            self.parse_describe_table()
+        } else if self.consume_cnos_token("DATABASE") {
+            self.parse_describe_database()
+        } else {
+            self.expected("tables/databases", self.parser.peek_token())
+        }
     }
 
     /// Parse a SQL ALTER statement

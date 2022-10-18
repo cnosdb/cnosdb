@@ -8,8 +8,8 @@
 //!         - Column #4
 
 use std::any::Any;
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
 
@@ -394,6 +394,16 @@ impl Precision {
     }
 }
 
+impl fmt::Display for Precision {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Precision::MS => f.write_str("MS"),
+            Precision::US => f.write_str("US"),
+            Precision::NS => f.write_str("NS"),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DurationUnit {
     Minutes,
@@ -405,6 +415,16 @@ pub enum DurationUnit {
 pub struct Duration {
     pub time_num: u64,
     pub unit: DurationUnit,
+}
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.unit {
+            DurationUnit::Minutes => write!(f, "{} Minutes", self.time_num),
+            DurationUnit::Hour => write!(f, "{} Hours", self.time_num),
+            DurationUnit::Day => write!(f, "{} Days", self.time_num),
+        }
+    }
 }
 
 impl Duration {

@@ -20,6 +20,7 @@ pub enum Command {
     Help,
     ListTables,
     DescribeTable(String),
+    DescribeDatabase(String),
     ListFunctions,
     SearchFunctions(String),
     QuietMode(Option<bool>),
@@ -45,7 +46,11 @@ impl Command {
                 print_options.print_batches(&results, now)
             }
             Self::DescribeTable(name) => {
-                let results = ctx.sql(format!("SHOW COLUMNS FROM {}", name)).await?;
+                let results = ctx.sql(format!("DESCRIBE TABLE {}", name)).await?;
+                print_options.print_batches(&results, now)
+            }
+            Self::DescribeDatabase(name) => {
+                let results = ctx.sql(format!("DESCRIBE DATABASE {}", name)).await?;
                 print_options.print_batches(&results, now)
             }
             Self::QuietMode(quiet) => {
@@ -90,6 +95,7 @@ impl Command {
             Self::Quit => ("\\q", "quit cnosdb-cli"),
             Self::ListTables => ("\\d", "list tables"),
             Self::DescribeTable(_) => ("\\d name", "describe table"),
+            Self::DescribeDatabase(_) => ("\\db name", "describe database"),
             Self::Help => ("\\?", "help"),
             Self::ListFunctions => ("\\h", "function list"),
             Self::SearchFunctions(_) => ("\\h function", "search function"),
@@ -100,9 +106,10 @@ impl Command {
     }
 }
 
-const ALL_COMMANDS: [Command; 9] = [
+const ALL_COMMANDS: [Command; 10] = [
     Command::ListTables,
     Command::DescribeTable(String::new()),
+    Command::DescribeDatabase(String::new()),
     Command::Quit,
     Command::Help,
     Command::ListFunctions,
