@@ -15,14 +15,13 @@ use models::{
 
 use tskv::engine::EngineRef;
 
-use tskv::{Error, TimeRange};
+use tskv::Error;
 
 use crate::iterator::{QueryOption, RowIterator};
 
 #[allow(dead_code)]
 pub struct TableScanStream {
     proj_schema: SchemaRef,
-    filter: PredicateRef,
     batch_size: usize,
     store_engine: EngineRef,
 
@@ -69,12 +68,29 @@ impl TableScanStream {
         let proj_table_schema =
             TableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
-        //let (min_ts, max_ts) = filter.get_time_range();
-        let (min_ts, max_ts) = (i64::MIN, i64::MAX);
+        let filter = filter
+            .filter()
+            .translate_column(|c| proj_table_schema.column(&c.name).cloned());
+
+        // 提取过滤条件
+        let time_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Time => Some(e.name.clone()),
+            _ => None,
+        });
+        let tags_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Tag => Some(e.name.clone()),
+            _ => None,
+        });
+        let fields_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Field(_) => Some(e.name.clone()),
+            _ => None,
+        });
         let option = QueryOption {
-            time_range: TimeRange { min_ts, max_ts },
             table_schema: proj_table_schema,
             datafusion_schema: proj_schema.clone(),
+            time_filter,
+            tags_filter,
+            fields_filter,
         };
 
         let iterator = match RowIterator::new(
@@ -89,7 +105,6 @@ impl TableScanStream {
 
         Ok(Self {
             proj_schema,
-            filter,
             batch_size,
             store_engine,
             iterator,

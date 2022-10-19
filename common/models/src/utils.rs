@@ -16,10 +16,12 @@ pub fn unite_id(hash_id: u64, incr_id: u64) -> u64 {
 }
 
 pub fn and_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
-    let mut len = arr1.len();
-    if len > arr2.len() {
-        len = arr2.len();
-    }
+    // let mut len = arr1.len();
+    // if len > arr2.len() {
+    //     len = arr2.len();
+    // }
+
+    let len = min_num(arr1.len(), arr2.len());
 
     let mut i = 0;
     let mut j = 0;

@@ -153,7 +153,7 @@ impl<'a> Display for PredicateDisplay<'a> {
             f,
             "limit={:?}, predicate={:?}",
             filter.limit(),
-            filter.domains(),
+            filter.filter(),
         )
     }
 }

@@ -4,7 +4,9 @@ use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
-use models::schema::{DatabaseSchema, TableSchema};
+use datafusion::prelude::Column;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -56,6 +58,12 @@ pub trait Engine: Send + Sync + Debug {
 
     fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>>;
 
+    fn get_series_id_by_filter(
+        &self,
+        db: &str,
+        tab: &str,
+        filter: &ColumnDomains<String>,
+    ) -> IndexResult<Vec<u64>>;
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
     fn get_series_key(&self, db: &str, sid: SeriesId) -> IndexResult<Option<SeriesKey>>;
     fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>>;
@@ -140,6 +148,15 @@ impl Engine for MockEngine {
             tab.to_string(),
             Default::default(),
         )))
+    }
+
+    fn get_series_id_by_filter(
+        &self,
+        db: &str,
+        tab: &str,
+        filter: &ColumnDomains<String>,
+    ) -> IndexResult<Vec<u64>> {
+        Ok(vec![])
     }
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {

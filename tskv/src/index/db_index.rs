@@ -1,26 +1,34 @@
 use std::borrow::Borrow;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::mem::size_of;
-use std::ops::Index;
+use std::ops::{Bound, Index, RangeBounds};
 use std::path::{self, Path, PathBuf};
 use std::string::FromUtf8Error;
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::BufMut;
 use chrono::format::format;
+use datafusion::prelude::Column;
+use datafusion::scalar::ScalarValue;
+use lazy_static::__Deref;
+use models::predicate::domain::{utf8_from, Domain, Marker, Range, ValueEntry};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use sled::Error;
 use snafu::ResultExt;
+use tracing::field::debug;
 use tracing::{error, info};
 
 use crate::Error::IndexErr;
 use config::Config;
-use datafusion::arrow::datatypes::ToByteSlice;
+use datafusion::arrow::datatypes::{DataType, ToByteSlice};
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema};
-use models::{utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType};
+use models::{
+    tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
+};
 use protos::models::Point;
-use trace::warn;
+use trace::{debug, warn};
 
 use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 use super::*;
@@ -138,9 +146,7 @@ impl DBIndex {
     }
 
     pub fn add_series_if_not_exists(&self, info: &Point) -> IndexResult<u64> {
-        trace::debug!("-------- add_series_if_not_exists");
         let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
-        trace::debug!("-------- add_series_if_not_exists {:?}", &series_key);
 
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
@@ -421,6 +427,30 @@ impl DBIndex {
         Ok(())
     }
 
+    pub fn get_series_ids_by_domains(
+        &self,
+        tab: &str,
+        tag_domains: &HashMap<String, Domain>,
+    ) -> IndexResult<Vec<u64>> {
+        debug!("pushed tags: {:?}", tag_domains);
+
+        let mut series_ids: Vec<Vec<u64>> = vec![vec![]; tag_domains.len()];
+
+        for (idx, (tag_key, v)) in tag_domains.iter().enumerate() {
+            series_ids[idx] = self.get_series_ids_by_domain(tab, tag_key, v)?;
+        }
+
+        debug!("filter scan all series_ids: {:?}", series_ids);
+
+        let result = series_ids
+            .into_iter()
+            // The relationship between multiple tags is 'and', so use and
+            .reduce(|p, c| utils::and_u64(&p, &c))
+            .unwrap_or_default();
+
+        Ok(result)
+    }
+
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
@@ -476,6 +506,64 @@ impl DBIndex {
         self.db_schema.clone()
     }
 
+    pub fn get_series_ids_by_domain(
+        &self,
+        tab: &str,
+        tag_key: &str,
+        v: &Domain,
+    ) -> IndexResult<Vec<u64>> {
+        let mut series_ids: Vec<u64> = vec![];
+
+        match v {
+            Domain::Range(range_set) => {
+                for (_, range) in range_set.low_indexed_ranges().into_iter() {
+                    let key_range = filter_range_to_index_key_range(tab, tag_key, range);
+
+                    // Search the sid list corresponding to qualified tags in the range
+                    let iter = self.storage.range(key_range).collect::<Vec<_>>();
+
+                    // Save all sids
+                    for kv in iter {
+                        let (idx_key, ori_sid_list) = kv?;
+                        let sid_list = decode_series_id_list(&ori_sid_list)?;
+                        series_ids = utils::or_u64(&series_ids, &sid_list);
+                    }
+
+                    debug!("range scan series_ids[{}]: {:?}", tag_key, series_ids);
+                }
+            }
+            Domain::Equtable(val) => {
+                if val.is_white_list() {
+                    // Contains the given value
+                    for entry in val.entries().into_iter() {
+                        let index_key = tag_value_to_index_key(tab, tag_key, entry.value());
+
+                        if let Some(data) = self.storage.get(&index_key)? {
+                            let id_list = decode_series_id_list(&data)?;
+                            series_ids = utils::or_u64(&series_ids, &id_list);
+                        };
+                    }
+                } else {
+                    // Does not contain a given value, that is, a value other than a given value
+                    // TODO will not deal with this situation for the time being
+                    series_ids = self.get_series_id_list(tab, &[])?;
+                }
+            }
+            Domain::None => {
+                // Normally, it will not go here unless no judgment is made at the ColumnDomains level
+                // If you go here, you will directly return an empty series, because the tag condition in the map is' and '
+                return Ok(vec![]);
+            }
+            Domain::All => {
+                // Normally, it will not go here unless no judgment is made at the ColumnDomains level
+                // The current tag is not filtered, all series are obtained, and the next tag is processed
+                series_ids = self.get_series_id_list(tab, &[])?;
+            }
+        };
+
+        Ok(series_ids)
+    }
+
     pub fn path(&self) -> PathBuf {
         self.path.clone()
     }
@@ -494,4 +582,38 @@ fn store_db_schema(key: &str, db_schema: &DatabaseSchema, storage: &IndexEngine)
         }
     };
     storage.flush();
+}
+
+pub fn filter_range_to_index_key_range(
+    tab: &str,
+    tag_key: &str,
+    range: &Range,
+) -> impl RangeBounds<Vec<u8>> {
+    let start_bound = range.start_bound();
+    let end_bound = range.end_bound();
+
+    // Convert ScalarValue value to inverted index key
+    let generate_index_key = |v: &ScalarValue| tag_value_to_index_key(tab, tag_key, v);
+
+    // Convert the tag value in Bound to the inverted index key
+    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
+        Bound::Unbounded => Bound::Unbounded,
+        Bound::Included(v) => Bound::Included(generate_index_key(v)),
+        Bound::Excluded(v) => Bound::Excluded(generate_index_key(v)),
+    };
+
+    (translate_bound(start_bound), translate_bound(end_bound))
+}
+
+pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<u8> {
+    // Tag can only be of string type
+    assert_eq!(DataType::Utf8, v.get_datatype());
+
+    // Convert a string to an inverted index key
+    let generate_index_key = |tag_val| {
+        let tag = Tag::from_parts(tag_key, tag_val);
+        encode_inverted_index_key(tab, &tag.key, &tag.value)
+    };
+
+    unsafe { utf8_from(v).map(generate_index_key).unwrap_unchecked() }
 }

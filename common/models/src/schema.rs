@@ -319,6 +319,14 @@ impl ColumnType {
     pub fn is_tag(&self) -> bool {
         matches!(self, ColumnType::Tag)
     }
+
+    pub fn is_time(&self) -> bool {
+        matches!(self, ColumnType::Time)
+    }
+
+    pub fn is_field(&self) -> bool {
+        matches!(self, ColumnType::Field(_))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]

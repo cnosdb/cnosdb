@@ -1,3 +1,4 @@
+use std::ops::Bound;
 use std::time::Duration;
 use std::{
     borrow::{Borrow, BorrowMut},
@@ -46,9 +47,32 @@ pub struct TimeRange {
     pub max_ts: i64,
 }
 
+impl From<(Bound<i64>, Bound<i64>)> for TimeRange {
+    /// TODO 目前TimeRange只支持闭区间
+    fn from(range: (Bound<i64>, Bound<i64>)) -> Self {
+        let min_ts = match range.0 {
+            Bound::Excluded(v) | Bound::Included(v) => v,
+            _ => Timestamp::MIN,
+        };
+        let max_ts = match range.1 {
+            Bound::Excluded(v) | Bound::Included(v) => v,
+            _ => Timestamp::MAX,
+        };
+
+        TimeRange { min_ts, max_ts }
+    }
+}
+
 impl TimeRange {
     pub fn new(min_ts: i64, max_ts: i64) -> Self {
         Self { min_ts, max_ts }
+    }
+
+    pub fn all() -> Self {
+        Self {
+            min_ts: Timestamp::MIN,
+            max_ts: Timestamp::MAX,
+        }
     }
 
     #[inline(always)]
