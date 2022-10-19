@@ -6,7 +6,7 @@ mod node_info;
 mod points;
 pub mod schema;
 mod series_info;
-mod tag;
+pub mod tag;
 pub mod utils;
 #[macro_use]
 pub mod error_code;

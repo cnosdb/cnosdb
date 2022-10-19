@@ -2,6 +2,7 @@ use std::{
     cmp::{self, Ordering},
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
+    ops::RangeBounds,
     sync::Arc,
 };
 
@@ -50,6 +51,26 @@ pub struct Marker {
     data_type: DataType,
     value: Option<ScalarValue>,
     bound: Bound,
+}
+
+impl<'a> From<&'a Marker> for std::ops::Bound<&'a ScalarValue> {
+    fn from(marker: &'a Marker) -> Self {
+        if marker.is_lower_unbound() || marker.is_upper_unbound() {
+            return std::ops::Bound::Unbounded;
+        }
+
+        match marker.bound {
+            Bound::Below => unsafe {
+                std::ops::Bound::Excluded(marker.value.as_ref().unwrap_unchecked())
+            },
+            Bound::Exactly => unsafe {
+                std::ops::Bound::Included(marker.value.as_ref().unwrap_unchecked())
+            },
+            Bound::Above => unsafe {
+                std::ops::Bound::Excluded(marker.value.as_ref().unwrap_unchecked())
+            },
+        }
+    }
 }
 
 impl Marker {
@@ -178,6 +199,16 @@ impl Ord for Marker {
 pub struct Range {
     low: Marker,
     high: Marker,
+}
+
+impl RangeBounds<ScalarValue> for Range {
+    fn start_bound(&self) -> std::ops::Bound<&ScalarValue> {
+        self.low_ref().into()
+    }
+
+    fn end_bound(&self) -> std::ops::Bound<&ScalarValue> {
+        self.high_ref().into()
+    }
 }
 
 impl Range {
@@ -369,6 +400,20 @@ pub struct ValueEntry {
     value: ScalarValue,
 }
 
+impl ValueEntry {
+    pub fn value(&self) -> &ScalarValue {
+        &self.value
+    }
+}
+
+/// 获取utf8类型的值，如果不是utf8类型或值为null，则返回None
+pub fn utf8_from(val: &ScalarValue) -> Option<&str> {
+    match &val {
+        ScalarValue::Utf8(v) => v.as_deref(),
+        _ => None,
+    }
+}
+
 /// A set containing zero or more Ranges of the same type over a continuous space of possible values.
 ///
 /// Ranges are coalesced into the most compact representation of non-overlapping Ranges.
@@ -380,6 +425,12 @@ pub struct RangeValueSet {
     low_indexed_ranges: BTreeMap<Marker, Range>,
 }
 
+impl RangeValueSet {
+    pub fn low_indexed_ranges(&self) -> impl IntoIterator<Item = (&Marker, &Range)> {
+        &self.low_indexed_ranges
+    }
+}
+
 /// A set containing values that are uniquely identifiable.
 ///
 /// Assumes an infinite number of possible values.
@@ -389,6 +440,16 @@ pub struct EqutableValueSet {
     data_type: DataType,
     white_list: bool,
     entries: HashSet<ValueEntry>,
+}
+
+impl EqutableValueSet {
+    pub fn is_white_list(&self) -> bool {
+        self.white_list
+    }
+
+    pub fn entries(&self) -> impl IntoIterator<Item = &ValueEntry> {
+        &self.entries
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -707,9 +768,7 @@ where
 
 impl<T: Eq + Hash + Clone> Default for ColumnDomains<T> {
     fn default() -> Self {
-        ColumnDomains {
-            column_to_domain: None,
-        }
+        ColumnDomains::all()
     }
 }
 
@@ -844,11 +903,29 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
                 .or_insert_with(|| domain.clone());
         }
     }
+
+    /// Returns the contained column_to_domain value,
+    /// without checking that the value is not None
+    ///
+    /// # Safety
+    ///
+    /// Calling this method on self.is_none() == true is *[undefined behavior]*.
+    pub unsafe fn domains_unsafe(&self) -> &HashMap<T, Domain> {
+        self.column_to_domain.as_ref().unwrap_unchecked()
+    }
+
+    /// Returns the contained column_to_domain value
+    ///
+    /// None means no matching record.
+    /// Empty map means match all records.
+    pub fn domains(&self) -> Option<&HashMap<T, Domain>> {
+        self.column_to_domain.as_ref()
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct Predicate {
-    pushed_down_domains: Option<ColumnDomains<Column>>,
+    pushed_down_domains: ColumnDomains<Column>,
     limit: Option<usize>,
 }
 
@@ -857,7 +934,7 @@ impl Predicate {
         self.limit
     }
 
-    pub fn domains(&self) -> &Option<ColumnDomains<Column>> {
+    pub fn filter(&self) -> &ColumnDomains<Column> {
         &self.pushed_down_domains
     }
 
@@ -871,7 +948,7 @@ impl Predicate {
     pub fn push_down_filter(mut self, filters: &[Expr], _table_schema: &TableSchema) -> Predicate {
         if let Some(ref expr) = combine_filters(filters) {
             if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
-                self.pushed_down_domains = Some(domains);
+                self.pushed_down_domains = domains;
             }
         }
         self

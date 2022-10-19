@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::ops::{Bound, RangeBounds};
 
+use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
 use std::sync::Arc;
 use tokio::time::Instant;
 
 use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
+use datafusion::arrow::datatypes::DataType as ArrowDataType;
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, ValueType};
 use snafu::ResultExt;
@@ -25,8 +28,8 @@ use datafusion::arrow::{
     datatypes::SchemaRef,
     record_batch::RecordBatch,
 };
-use models::schema::{ColumnType, TableSchema, TIME_FIELD};
-
+use models::predicate::domain::{ColumnDomains, Domain, Range, ValueEntry};
+use models::schema::{ColumnType, TableSchema, TIME_FIELD, TIME_FIELD_NAME};
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 
@@ -45,9 +48,11 @@ pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 pub struct QueryOption {
-    pub time_range: TimeRange,
     pub table_schema: TableSchema,
     pub datafusion_schema: SchemaRef,
+    pub time_filter: ColumnDomains<String>,
+    pub tags_filter: ColumnDomains<String>,
+    pub fields_filter: ColumnDomains<String>,
 }
 
 pub struct FieldFileLocation {
@@ -196,7 +201,7 @@ impl FieldCursor {
             None => return Ok(Self::empty(vtype, name)),
         };
 
-        let time_range = iterator.option.time_range;
+        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&iterator.option.time_filter);
 
         // get data from im_memcache and memcache
         let mut blocks = vec![];
@@ -205,12 +210,16 @@ impl FieldCursor {
                 continue;
             }
             if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                blocks.append(&mut mem_entry.read().read_cell(&time_range));
+                time_ranges.iter().for_each(|time_range| {
+                    blocks.append(&mut mem_entry.read().read_cell(time_range));
+                });
             }
         }
 
         if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
-            blocks.append(&mut mem_entry.read().read_cell(&time_range));
+            time_ranges.iter().for_each(|time_range| {
+                blocks.append(&mut mem_entry.read().read_cell(time_range));
+            });
         }
 
         let cache_block = match DataBlock::merge_blocks(blocks, 0).pop() {
@@ -227,21 +236,27 @@ impl FieldCursor {
         let mut locations = vec![];
         for level in version.version.levels_info.iter().rev() {
             for file in level.files.iter() {
-                if file.is_deleted() || !file.overlap(&time_range) {
+                if file.is_deleted() {
                     continue;
                 }
 
-                debug!(
-                    "build file data block id: {:02X}, len: {}",
-                    field_id,
-                    file.file_path().display()
-                );
+                for time_range in time_ranges.iter() {
+                    if !file.overlap(time_range) {
+                        continue;
+                    }
 
-                let tsm_reader = iterator.get_tsm_reader(file.clone())?;
-                for idx in tsm_reader.index_iterator_opt(field_id) {
-                    let block_it = idx.block_iterator_opt(&time_range);
-                    let location = FieldFileLocation::new(tsm_reader.clone(), block_it, vtype);
-                    locations.push(location);
+                    debug!(
+                        "build file data block id: {:02X}, len: {}",
+                        field_id,
+                        file.file_path().display()
+                    );
+
+                    let tsm_reader = iterator.get_tsm_reader(file.clone())?;
+                    for idx in tsm_reader.index_iterator_opt(field_id) {
+                        let block_it = idx.block_iterator_opt(time_range);
+                        let location = FieldFileLocation::new(tsm_reader.clone(), block_it, vtype);
+                        locations.push(location);
+                    }
                 }
             }
         }
@@ -308,6 +323,74 @@ impl Cursor for FieldCursor {
     }
 }
 
+pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRange> {
+    if time_domain.is_none() {
+        // Does not contain any data, and returns an empty array directly
+        return vec![];
+    }
+
+    let mut time_ranges: Vec<TimeRange> = vec![];
+
+    if time_domain.is_all() {
+        // Include all data
+        time_ranges.push(TimeRange::all());
+    } else {
+        // Include some data
+        if let Some(time_domain) = time_domain.domains() {
+            assert!(time_domain.contains_key(TIME_FIELD_NAME));
+
+            let domain = unsafe { time_domain.get(TIME_FIELD_NAME).unwrap_unchecked() };
+
+            // Convert ScalarValue value to nanosecond timestamp
+            let valid_and_generate_index_key = |v: &ScalarValue| {
+                // Time can only be of type Timestamp
+                assert!(matches!(v.get_datatype(), ArrowDataType::Timestamp(_, _)));
+                unsafe { i64::try_from(v.clone()).unwrap_unchecked() }
+            };
+
+            match domain {
+                Domain::Range(range_set) => {
+                    for (_, range) in range_set.low_indexed_ranges().into_iter() {
+                        let range: &Range = range;
+
+                        let start_bound = range.start_bound();
+                        let end_bound = range.end_bound();
+
+                        // Convert the time value in Bound to timestamp
+                        let translate_bound = |bound: Bound<&ScalarValue>| match bound {
+                            Bound::Unbounded => Bound::Unbounded,
+                            Bound::Included(v) => Bound::Included(valid_and_generate_index_key(v)),
+                            Bound::Excluded(v) => Bound::Excluded(valid_and_generate_index_key(v)),
+                        };
+
+                        let range = (translate_bound(start_bound), translate_bound(end_bound));
+                        time_ranges.push(range.into());
+                    }
+                }
+                Domain::Equtable(vals) => {
+                    if !vals.is_white_list() {
+                        // eg. time != xxx
+                        time_ranges.push(TimeRange::all());
+                    } else {
+                        // Contains the given value
+                        for entry in vals.entries().into_iter() {
+                            let entry: &ValueEntry = entry;
+
+                            let ts = valid_and_generate_index_key(entry.value());
+
+                            time_ranges.push(TimeRange::new(ts, ts));
+                        }
+                    }
+                }
+                Domain::All => time_ranges.push(TimeRange::all()),
+                Domain::None => return vec![],
+            }
+        }
+    }
+
+    time_ranges
+}
+
 pub struct RowIterator {
     batch_size: usize,
     series_index: usize,
@@ -332,7 +415,11 @@ impl RowIterator {
         let version = engine.get_db_version(&option.table_schema.db)?;
 
         let series = engine
-            .get_series_id_list(&option.table_schema.db, &option.table_schema.name, &[])
+            .get_series_id_by_filter(
+                &option.table_schema.db,
+                &option.table_schema.name,
+                &option.tags_filter,
+            )
             .context(error::IndexErrSnafu)?;
 
         debug!("series number: {}", series.len());

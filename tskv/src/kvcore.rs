@@ -1,10 +1,12 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 use tokio::sync::watch;
@@ -19,7 +21,7 @@ use tokio::{
 };
 
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
     ValueType,
@@ -599,6 +601,36 @@ impl Engine for TsKv {
         }
 
         Ok(vec![])
+    }
+
+    fn get_series_id_by_filter(
+        &self,
+        name: &str,
+        tab: &str,
+        filter: &ColumnDomains<String>,
+    ) -> IndexResult<Vec<u64>> {
+        let result = if let Some(db) = self.version_set.read().get_db(name) {
+            if filter.is_all() {
+                // Match all records
+                debug!("pushed tags filter is All.");
+                db.read().get_index().get_series_id_list(tab, &[])
+            } else if filter.is_none() {
+                // Does not match any record, return null
+                debug!("pushed tags filter is None.");
+                Ok(vec![])
+            } else {
+                // No error will be reported here
+                debug!("pushed tags filter is {:?}.", filter);
+                let domains = unsafe { filter.domains_unsafe() };
+                db.read()
+                    .get_index()
+                    .get_series_ids_by_domains(tab, domains)
+            }
+        } else {
+            Ok(vec![])
+        };
+
+        result
     }
 
     fn get_series_key(&self, name: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {

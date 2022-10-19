@@ -1,5 +1,7 @@
 use std::fs;
 use std::io;
+use std::ops::Range;
+use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 
 use sled;
@@ -35,6 +37,23 @@ impl IndexEngine {
         self.db.insert(key, value)?;
 
         Ok(())
+    }
+
+    /// Create a double-ended iterator over tuples of keys and values,
+    /// where the keys fall within the specified range.
+    ///
+    /// by range syntax like `..`, `a..`, `..b`, `..=c`, `d..e`, or `f..=g`.
+    pub fn range<K, R>(
+        &self,
+        range: R,
+    ) -> impl Iterator<Item = Result<(Vec<u8>, Vec<u8>), sled::Error>>
+    where
+        K: AsRef<[u8]>,
+        R: RangeBounds<K>,
+    {
+        self.db
+            .range(range)
+            .map(|e| e.map(|(k, v)| (k.to_vec(), v.to_vec())))
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, sled::Error> {
