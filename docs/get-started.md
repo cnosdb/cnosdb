@@ -71,12 +71,14 @@
 ## Compile
 
 ```sh
-$ git clone https://github.com/cnosdb/cnosdb.git && cd cnosdb 
-$ cargo build
+$ git clone https://github.com/cnosdb/cnosdb.git 
+$ make build
 ```
 
 ## Run
 
 ```shell
-$ cargo run -- tskv --cpu 1 --memory 64 debug
+$ make run  
+or 
+$ cargo run -- run 
 ```
