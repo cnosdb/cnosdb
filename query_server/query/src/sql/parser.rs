@@ -405,14 +405,6 @@ impl<'a> ExtParser<'a> {
             return Ok(columns);
         }
         loop {
-            if self.consume_cnos_token(TAGS) {
-                self.parse_tag_columns(&mut columns)?;
-                if self.consume_token(&Token::RParen) {
-                    break;
-                } else {
-                    return parser_err!(format!(") after column definition"));
-                }
-            }
             let name = self.parser.parse_identifier()?;
             let column_type = self.parse_column_type()?;
             let codec_type = self.parse_codec_type()?;
@@ -431,6 +423,14 @@ impl<'a> ExtParser<'a> {
                     "',' or ')' after column definition",
                     self.parser.peek_token(),
                 );
+            }
+            if self.consume_cnos_token(TAGS) {
+                self.parse_tag_columns(&mut columns)?;
+                if self.consume_token(&Token::RParen) {
+                    break;
+                } else {
+                    return parser_err!(format!(") after column definition"));
+                }
             }
         }
 
@@ -810,5 +810,11 @@ mod tests {
             }
             _ => panic!("impossible"),
         }
+    }
+    #[test]
+    #[should_panic]
+    fn test_create_table_without_fields() {
+        let sql = "CREATE TABLE test0(TAGS(column6, column7));";
+        ExtParser::parse_sql(sql).unwrap();
     }
 }
