@@ -175,13 +175,27 @@ pub struct FieldCursor {
 }
 
 impl FieldCursor {
+    pub fn empty(value_type: ValueType, name: String) -> Self {
+        Self {
+            name,
+            value_type,
+            cache_index: 0,
+            cache_block: DataBlock::new(0, value_type),
+            locations: Vec::new(),
+        }
+    }
+
     pub fn new(
         field_id: FieldId,
         name: String,
         vtype: ValueType,
         iterator: &mut RowIterator,
     ) -> Result<Self, Error> {
-        let version = iterator.version.clone();
+        let version = match iterator.version.clone() {
+            Some(v) => v,
+            None => return Ok(Self::empty(vtype, name)),
+        };
+
         let time_range = iterator.option.time_range;
 
         // get data from im_memcache and memcache
@@ -301,7 +315,7 @@ pub struct RowIterator {
     engine: EngineRef,
     option: QueryOption,
     columns: Vec<CursorPtr>,
-    version: Arc<SuperVersion>,
+    version: Option<Arc<SuperVersion>>,
 
     open_files: HashMap<ColumnFileId, TsmReader>,
 
@@ -315,12 +329,7 @@ impl RowIterator {
         option: QueryOption,
         batch_size: usize,
     ) -> Result<Self, Error> {
-        let version =
-            engine
-                .get_db_version(&option.table_schema.db)
-                .ok_or(Error::DatabaseNotFound {
-                    database: option.table_schema.db.clone(),
-                })?;
+        let version = engine.get_db_version(&option.table_schema.db)?;
 
         let series = engine
             .get_series_id_list(&option.table_schema.db, &option.table_schema.name, &[])

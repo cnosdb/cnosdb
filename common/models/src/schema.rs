@@ -17,7 +17,6 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
-use datafusion::catalog::schema::SchemaProvider;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
@@ -38,6 +37,7 @@ pub struct TableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: u32,
+    /// columnName -> TableFiled
     pub fields: BTreeMap<String, TableFiled>,
 }
 
@@ -273,24 +273,6 @@ impl ColumnType {
 pub struct DatabaseSchema {
     pub name: String,
     pub config: DatabaseOptions,
-}
-
-impl SchemaProvider for DatabaseSchema {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn table_names(&self) -> Vec<String> {
-        todo!()
-    }
-
-    fn table(&self, _name: &str) -> Option<Arc<dyn TableProvider>> {
-        todo!()
-    }
-
-    fn table_exist(&self, _name: &str) -> bool {
-        todo!()
-    }
 }
 
 impl DatabaseSchema {
