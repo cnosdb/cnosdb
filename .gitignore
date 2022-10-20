@@ -11,6 +11,7 @@ Cargo.lock
 
 # Developing
 **/dev/
+**/data/
 **/tskv_log/
 **/data/
 
