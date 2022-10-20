@@ -25,6 +25,7 @@ use crate::{
 #[derive(Debug)]
 pub struct VersionSet {
     opt: Arc<Options>,
+    // DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
 }
 

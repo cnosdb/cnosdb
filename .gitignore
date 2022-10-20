@@ -12,6 +12,7 @@ Cargo.lock
 # Developing
 **/dev/
 **/tskv_log/
+**/data/
 
 # tmpfile
 trace.log.*

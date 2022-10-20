@@ -20,6 +20,7 @@ pub type UserCatalogRef = Arc<UserCatalog>;
 
 pub struct UserCatalog {
     engine: EngineRef,
+    /// DBName -> DB
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
 }
 
@@ -50,6 +51,7 @@ impl CatalogProvider for UserCatalog {
         schemas.keys().cloned().collect()
     }
 
+    // get db_schema
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
         let schemas = self.schemas.read();
         return if let Some(v) = schemas.get(name) {

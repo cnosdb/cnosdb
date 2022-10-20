@@ -605,13 +605,18 @@ impl Engine for TsKv {
         Ok(None)
     }
 
-    fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>> {
+    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
         let version_set = self.version_set.read();
+        if !version_set.db_exists(db) {
+            return Err(Error::DatabaseNotFound {
+                database: db.to_string(),
+            });
+        }
         if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
-            return Some(tsf.read().super_version());
+            Ok(Some(tsf.read().super_version()))
         } else {
             warn!("ts_family with db name '{}' not found.", db);
-            None
+            Ok(None)
         }
     }
 }

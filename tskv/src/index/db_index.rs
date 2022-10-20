@@ -80,6 +80,7 @@ pub struct DBIndex {
     storage: IndexEngine,
     db_schema: DatabaseSchema,
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
+    // TableName -> TableSchema
     table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
