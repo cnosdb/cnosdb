@@ -1,4 +1,5 @@
 --#DATABASE=createtable
+DROP DATABASE IF EXISTS createtable;
 CREATE DATABASE createtable;
 
 CREATE TABLE test0(

@@ -119,7 +119,6 @@ type GetRangeFromDataTypeAndValue = fn(data_type: &DataType, scalar_value: &Scal
 fn get_get_range_fn(op: &Operator) -> Option<GetRangeFromDataTypeAndValue> {
     match op {
         Operator::Eq => Some(Range::eq),
-        Operator::NotEq => Some(Range::ne),
         Operator::Lt => Some(Range::lt),
         Operator::LtEq => Some(Range::le),
         Operator::Gt => Some(Range::gt),

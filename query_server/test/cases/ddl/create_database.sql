@@ -1,4 +1,5 @@
 --#DATABASE=createdatabase
+DROP DATABASE IF EXISTS createdatabase;
 
 CREATE TABLE test0(
     column1 BIGINT CODEC(DELTA),

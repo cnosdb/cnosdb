@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS sqlancer3; --
+200 OK
+
+
 -- EXECUTE SQL: CREATE DATABASE sqlancer3; --
 200 OK
 
