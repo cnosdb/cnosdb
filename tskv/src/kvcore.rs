@@ -32,6 +32,7 @@ use trace::{debug, error, info, trace, warn};
 
 use crate::database::Database;
 use crate::file_system::file_manager::{self, FileManager};
+use crate::index::index_manger;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -496,6 +497,9 @@ impl Engine for TsKv {
             for ts_family_id in ts_family_ids {
                 db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
             }
+            index_manger(db_wlock.get_index().path())
+                .write()
+                .remove_db_index(&database);
         }
 
         let idx_dir = self.options.storage.index_dir(&database);

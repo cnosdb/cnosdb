@@ -426,11 +426,8 @@ impl<'a> ExtParser<'a> {
             }
             if self.consume_cnos_token(TAGS) {
                 self.parse_tag_columns(&mut columns)?;
-                if self.consume_token(&Token::RParen) {
-                    break;
-                } else {
-                    return parser_err!(format!(") after column definition"));
-                }
+                self.parser.expect_token(&Token::RParen)?;
+                break;
             }
         }
 

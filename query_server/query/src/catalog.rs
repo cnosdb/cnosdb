@@ -9,7 +9,7 @@ use datafusion::{
     datasource::TableProvider,
     error::{DataFusionError, Result},
 };
-use models::schema::{DatabaseSchema, TableFiled, TableSchema, TIME_FIELD};
+use models::schema::{DatabaseSchema, TableSchema};
 use parking_lot::RwLock;
 use spi::catalog::TableRef;
 
@@ -32,10 +32,23 @@ impl UserCatalog {
         }
     }
     pub fn deregister_schema(&self, db_name: &str) -> Result<()> {
+        let mut schema = self.schemas.write();
+        match schema.get(db_name) {
+            None => {
+                return Err(DataFusionError::Execution(
+                    "database not exists".to_string(),
+                ))
+            }
+            Some(db) => {
+                let tables = db.table_names();
+                for i in tables {
+                    db.deregister_table(&i)?;
+                }
+            }
+        }
         self.engine
             .drop_database(db_name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut schema = self.schemas.write();
         schema.remove(db_name);
         Ok(())
     }
@@ -140,13 +153,6 @@ impl SchemaProvider for UserSchema {
         let mut tables = self.tables.write();
         if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {
             let mut fields = BTreeMap::new();
-            let codec = match v.fields.get(TIME_FIELD) {
-                None => 0,
-                Some(v) => v.codec,
-            };
-            // system field (time)
-            let time_field = TableFiled::time_field(codec);
-            fields.insert(time_field.name.clone(), time_field);
 
             for item in v.fields {
                 let field = item.1;
