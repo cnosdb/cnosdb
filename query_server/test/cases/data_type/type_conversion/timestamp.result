@@ -27,7 +27,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 12345678865
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above } }} })}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time]
 "
 
 
@@ -41,7 +41,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 12345678865
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above } }} })}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time]
 "
 
 
@@ -139,7 +139,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 854674016123000000
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above } }} })}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time]
 "
 
 
@@ -153,7 +153,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 854674016123000000
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Below }, high: Marker { data_type: Timestamp(Nanosecond, None), value: None, bound: Above } }} })}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: All}) }, projection=[time]
 "
 
 

@@ -27,7 +27,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: fa@1 != 12345678865
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Below }: Range { low: Marker { data_type: Float64, value: None, bound: Below }, high: Marker { data_type: Float64, value: None, bound: Above } }} })}) }, projection=[time,fa]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
 
 
@@ -41,7 +41,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: fa@1 != 12345678865
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: None, bound: Below }: Range { low: Marker { data_type: Float64, value: None, bound: Below }, high: Marker { data_type: Float64, value: None, bound: Above } }} })}) }, projection=[time,fa]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""fa"" }: All}) }, projection=[time,fa]
 "
 
 

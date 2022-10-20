@@ -1,5 +1,6 @@
 --#DATABASE=sqlancer3
 --#SORT=true
+DROP DATABASE IF EXISTS sqlancer3;
 CREATE DATABASE sqlancer3;
 
 CREATE TABLE IF NOT EXISTS m0(f0 DOUBLE , TAGS(t0) ); -- 4ms;
