@@ -300,8 +300,12 @@ impl Database {
         self.index.get_table_schema_by_series_id(sid)
     }
 
-    pub fn get_tsfamily(&self, id: u32) -> Option<&Arc<RwLock<TseriesFamily>>> {
-        self.ts_families.get(&id)
+    pub fn get_tsfamily(&self, id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
+        if let Some(v) = self.ts_families.get(&id) {
+            return Some(v.clone());
+        }
+
+        None
     }
 
     pub fn tsf_num(&self) -> usize {

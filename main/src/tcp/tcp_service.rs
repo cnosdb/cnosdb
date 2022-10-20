@@ -15,6 +15,7 @@ use tskv::engine::EngineRef;
 
 use coordinator::command::*;
 use coordinator::errors::*;
+use protos::kv_service::WritePointsRpcRequest;
 
 use models::meta_data;
 
@@ -140,12 +141,21 @@ async fn process_vnode_write_command(
 ) -> CoordinatorResult<()> {
     let cmd = WriteVnodeRequest::decode(&cmd_buf)?;
 
-    let mut points = vec![0; cmd.data_len as usize];
-    (*client).read_exact(&mut points).await?;
+    let mut points_data = vec![0; cmd.data_len as usize];
+    (*client).read_exact(&mut points_data).await?;
 
-    CommonResponse::send(client, 0, "".to_owned()).await?;
+    let req = WritePointsRpcRequest {
+        version: 1,
+        points: points_data,
+    };
 
-    Ok(())
+    if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
+        CommonResponse::send(client, -1, err.to_string()).await?;
+        return Err(CoordinatorError::TskvWrite { source: err });
+    } else {
+        CommonResponse::send(client, 0, "".to_owned()).await?;
+        return Ok(());
+    }
 }
 
 #[cfg(test)]

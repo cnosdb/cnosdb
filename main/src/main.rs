@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use coordinator::meta_client::{LocalMetaClient, MetaClientRef};
+use coordinator::meta_client::{LocalMetaClient, MetaClientManager, MetaClientRef};
 use coordinator::writer::PointWriter;
 use once_cell::sync::Lazy;
 use query::instance::make_cnosdbms;
@@ -150,14 +150,11 @@ fn main() -> Result<(), std::io::Error> {
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
                 let dbms = Arc::new(make_cnosdbms(kv_inst.clone()).expect("make dbms"));
 
-                let meta_client: MetaClientRef = Arc::new(Box::new(LocalMetaClient::new(
-                    global_config.cluster.name,
-                    global_config.cluster.meta,
-                )));
+                let meta_manager = Arc::new(MetaClientManager::new(global_config.cluster.clone()));
                 let point_writer = Arc::new(PointWriter::new(
                     global_config.cluster.node_id,
                     kv_inst.clone(),
-                    meta_client.clone(),
+                    meta_manager,
                 ));
 
                 let tcp_service =

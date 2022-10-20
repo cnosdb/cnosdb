@@ -123,7 +123,7 @@ impl TskvService for TskvServiceImpl {
                     //     .map_err(|err| Status::internal(err.to_string()));
                     let ret = self
                         .kv_engine
-                        .write(req)
+                        .write(0, req)
                         .await
                         .map_err(|err| Status::internal(err.to_string()));
                     // 2. if something wrong when sending Request

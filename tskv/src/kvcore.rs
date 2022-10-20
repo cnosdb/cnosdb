@@ -351,7 +351,11 @@ impl TsKv {
 
 #[async_trait::async_trait]
 impl Engine for TsKv {
-    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
+    async fn write(
+        &self,
+        id: u32,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse> {
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
@@ -375,11 +379,11 @@ impl Engine for TsKv {
             (seq, _) = rx.await.context(error::ReceiveSnafu)??;
         }
 
-        let opt_tsf = db.read().get_tsfamily_random();
+        let opt_tsf = db.read().get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
-                0,
+                id,
                 seq,
                 self.global_ctx.file_id_next(),
                 self.summary_task_sender.clone(),
@@ -628,7 +632,7 @@ mod test {
             version: 1,
             points: points_data.to_vec(),
         };
-        tskv.write(write_batch).await.unwrap();
+        tskv.write(0, write_batch).await.unwrap();
 
         {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();

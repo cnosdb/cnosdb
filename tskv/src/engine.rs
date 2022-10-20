@@ -20,7 +20,11 @@ pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
-    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse>;
+    async fn write(
+        &self,
+        id: u32,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse>;
 
     async fn write_from_wal(
         &self,
@@ -62,7 +66,11 @@ pub struct MockEngine {}
 
 #[async_trait]
 impl Engine for MockEngine {
-    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
+    async fn write(
+        &self,
+        id: u32,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse> {
         debug!("writing point");
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points).unwrap();

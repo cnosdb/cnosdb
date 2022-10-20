@@ -7,13 +7,17 @@ use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::ResultExt;
 use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tskv::engine::EngineRef;
 
 use crate::command::*;
 use crate::errors::*;
-use crate::meta_client::MetaClientRef;
+use crate::meta_client::{MetaClientManager, MetaClientRef};
+use trace::debug;
+use trace::info;
 
 pub struct WritePointsRequest {
     db: String,
@@ -74,10 +78,17 @@ impl<'a> VnodeMapping<'a> {
         }
     }
 
-    pub fn map_point(&mut self, meta_client: MetaClientRef, db: &String, point: &PointArgs) {
-        if let Ok(info) = meta_client.locate_db_ts_for_write(db, point.timestamp) {
+    pub fn map_point(
+        &mut self,
+        meta_client: MetaClientRef,
+        db: &String,
+        point: &PointArgs,
+        hash_id: u64,
+    ) {
+        if let Ok(info) = meta_client.locate_replcation_set_for_write(db, hash_id, point.timestamp)
+        {
             let full_name = format!("{}.{}", meta_client.tenant_name(), db);
-            self.sets.insert(info.id, info.clone());
+            self.sets.entry(info.id).or_insert(info.clone());
             let entry = self
                 .points
                 .entry(info.id)
@@ -91,19 +102,23 @@ impl<'a> VnodeMapping<'a> {
 pub struct PointWriter {
     self_id: u64,
     kv_inst: EngineRef,
-    conn_map: RwLock<HashMap<u64, Vec<TcpStream>>>,
+    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 
-    pub meta_client: MetaClientRef,
+    meta_manager: Arc<MetaClientManager>,
 }
 
 impl PointWriter {
-    pub fn new(node_id: u64, kv_inst: EngineRef, client: MetaClientRef) -> Self {
+    pub fn new(node_id: u64, kv_inst: EngineRef, manager: Arc<MetaClientManager>) -> Self {
         Self {
             self_id: node_id,
             kv_inst,
-            meta_client: client,
+            meta_manager: manager,
             conn_map: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn tenant_meta_client(&self, tenant: &String) -> Option<MetaClientRef> {
+        self.meta_manager.get_meta_client(tenant)
     }
 
     pub async fn write_points(&self, mapping: &mut VnodeMapping<'_>) -> CoordinatorResult<()> {
@@ -128,13 +143,40 @@ impl PointWriter {
         node_id: u64,
         points: &VnodePoints<'_>,
     ) -> CoordinatorResult<()> {
+        match self.warp_write_to_node(vnode_id, node_id, points).await {
+            Ok(_) => {
+                debug!(
+                    "write data to node: {}[vnode: {}] success!",
+                    node_id, vnode_id
+                );
+                return Ok(());
+            }
+            Err(err) => {
+                debug!(
+                    "write data to node: {} [vnode: {}] failed; {}!",
+                    node_id,
+                    vnode_id,
+                    err.to_string()
+                );
+
+                return Err(err);
+            }
+        }
+    }
+
+    async fn warp_write_to_node(
+        &self,
+        vnode_id: u32,
+        node_id: u64,
+        points: &VnodePoints<'_>,
+    ) -> CoordinatorResult<()> {
         if node_id == self.self_id {
             let req = WritePointsRpcRequest {
                 version: 1,
                 points: points.data.clone(),
             };
 
-            if let Err(err) = self.kv_inst.write(req).await {
+            if let Err(err) = self.kv_inst.write(vnode_id, req).await {
                 return Err(CoordinatorError::TskvWrite { source: err });
             } else {
                 return Ok(());
@@ -170,13 +212,16 @@ impl PointWriter {
     async fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
         {
             let mut write = self.conn_map.write();
-            let entry = write.entry(node_id).or_insert(Vec::with_capacity(32));
-            if let Some(val) = entry.pop() {
+            let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
+            if let Some(val) = entry.pop_front() {
                 return Ok(val);
             }
         }
 
-        let info = self.meta_client.node_info_by_id(node_id)?;
+        let info = self
+            .meta_manager
+            .get_admin_meta_client()
+            .node_info_by_id(node_id)?;
         let client = TcpStream::connect(info.tcp_addr).await?;
 
         return Ok(client);
@@ -184,7 +229,11 @@ impl PointWriter {
 
     fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
         let mut write = self.conn_map.write();
-        let entry = write.entry(node_id).or_insert(Vec::with_capacity(32));
-        entry.push(conn);
+        let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
+
+        // close too more idle connection
+        if entry.len() < 32 {
+            entry.push_back(conn);
+        }
     }
 }

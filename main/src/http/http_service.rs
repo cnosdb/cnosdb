@@ -12,7 +12,7 @@ use crate::http::result_format::fetch_record_batches;
 use crate::http::result_format::ResultFormat;
 use crate::http::Error;
 use crate::http::ParseLineProtocolSnafu;
-use crate::http::TskvSnafu;
+use crate::http::{CoordinatorSnafu, TskvSnafu};
 use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
@@ -205,29 +205,41 @@ impl HttpService {
                         Err(e) => return Err(reject::custom(e)),
                     };
 
+                    let meta_client = match writer.tenant_meta_client(&user_info.user) {
+                        Some(client) => client,
+                        None => {
+                            return Err(reject::custom(HttpError::NotFoundTenant {
+                                name: user_info.user,
+                            }));
+                        }
+                    };
+
                     let lines = String::from_utf8_lossy(req.as_ref());
-                    let line_protocol_lines =
+                    let mut line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
                             .context(ParseLineProtocolSnafu)?;
 
                     let (mut mapping, points) = parse_lines_to_points(
-                        writer.meta_client.clone(),
+                        meta_client,
                         &user_info.user,
                         &param.db,
-                        &line_protocol_lines,
+                        &mut line_protocol_lines,
                     )?;
 
-                    writer.write_points(&mut mapping).await;
+                    let result = writer
+                        .write_points(&mut mapping)
+                        .await
+                        .context(CoordinatorSnafu);
 
-                    let req = WritePointsRpcRequest { version: 1, points };
-                    let resp = kv_inst.write(req).await.context(TskvSnafu);
+                    // let req = WritePointsRpcRequest { version: 1, points };
+                    // let resp = kv_inst.write(0, req).await.context(TskvSnafu);
 
                     sample_point_write_latency(
                         &user_info.user,
                         &param.db,
                         start.elapsed().as_millis() as f64,
                     );
-                    match resp {
+                    match result {
                         Ok(_) => {
                             incr_point_write_success();
                             Ok(ResponseBuilder::ok())
@@ -292,13 +304,13 @@ fn parse_lines_to_points<'a>(
     meta_client: MetaClientRef,
     tenant: &'a str,
     db: &'a str,
-    lines: &'a [Line],
+    lines: &'a mut [Line],
 ) -> Result<(VnodeMapping<'a>, Vec<u8>), Error> {
     let mut fbb = FlatBufferBuilder::new();
     let mut mapping = VnodeMapping::new();
     let full_name = format!("{}.{}", tenant, db);
     let mut point_offsets = Vec::with_capacity(lines.len());
-    for line in lines.iter() {
+    for line in lines.iter_mut() {
         let mut tags = Vec::with_capacity(line.tags.len());
         for (k, v) in line.tags.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
@@ -350,7 +362,12 @@ fn parse_lines_to_points<'a>(
             timestamp: line.timestamp,
         };
 
-        mapping.map_point(meta_client.clone(), &db.to_string(), &point_args);
+        mapping.map_point(
+            meta_client.clone(),
+            &db.to_string(),
+            &point_args,
+            line.hash_id(),
+        );
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
 

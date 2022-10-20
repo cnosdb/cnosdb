@@ -41,7 +41,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
         let req = WritePointsRpcRequest { version: 0, points };
-        let _ = self.engine.write(req).await.context(TskvSnafu)?;
+        let _ = self.engine.write(0, req).await.context(TskvSnafu)?;
         timer.done();
 
         Ok(())

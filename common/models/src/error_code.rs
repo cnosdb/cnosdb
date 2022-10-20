@@ -67,4 +67,8 @@ define_error_codes! {
     /// The sql state code needs to be developed later
     /// and is currently used as a placeholder
     (TskvUnknown, b"0200000");
+    /// The sql state code needs to be developed later
+    /// and is currently used as a placeholder
+    (CoordinatorUnknown, b"0300000");
+    (TenantNotFound, b"0300001");
 }

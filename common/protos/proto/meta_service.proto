@@ -3,6 +3,7 @@ package meta_service;
 
 // *********************Tenant Meta Data**************  
 // **    /cluster_name -> [vector<NodeInfo>] 集群、数据节点等信息
+//       /cluster_name/incr_id -> id
 // **    /cluster_name/tenant_name -> [vector<Resource>] 租户资源相关配置
 // **    /cluster_name/tenant_name/users -> [vector<UserInfo>] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/db_name -> [RetentionPolicyInfo] db相关信息、保留策略等
