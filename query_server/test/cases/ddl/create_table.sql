@@ -96,4 +96,4 @@ CREATE TABLE IF NOT EXISTS test7(
     column5 DOUBLE CODEC(GORILLA),
     TAGS(column6, column7));
 
-
+DROP DATABASE IF EXISTS createtable;

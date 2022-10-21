@@ -5,24 +5,24 @@ use spi::catalog::MetaDataRef;
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 
-pub struct ShowDatabaseTask {}
+pub struct ShowDatabasesTask {}
 
-impl ShowDatabaseTask {
+impl ShowDatabasesTask {
     pub fn new() -> Self {
-        ShowDatabaseTask {}
+        ShowDatabasesTask {}
     }
 }
 
 #[async_trait]
-impl DDLDefinitionTask for ShowDatabaseTask {
+impl DDLDefinitionTask for ShowDatabasesTask {
     async fn execute(
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        return show_database(query_state_machine.catalog.clone());
+        show_databases(query_state_machine.catalog.clone())
     }
 }
 
-fn show_database(catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    return catalog.show_database().context(execution::MetadataSnafu);
+fn show_databases(catalog: MetaDataRef) -> Result<Output, ExecutionError> {
+    catalog.show_databases().context(execution::MetadataSnafu)
 }

@@ -356,11 +356,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
     }
 
     fn database_to_show(&self) -> Result<Plan> {
-        Ok(Plan::DDL(DDLPlan::ShowDatabase()))
+        Ok(Plan::DDL(DDLPlan::ShowDatabases()))
     }
 
     fn table_to_show(&self, database: String) -> Result<Plan> {
-        Ok(Plan::DDL(DDLPlan::ShowTable(database)))
+        Ok(Plan::DDL(DDLPlan::ShowTables(database)))
     }
 
     fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<Plan> {

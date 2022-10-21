@@ -12,7 +12,9 @@ use datafusion::{
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
-use models::codec::Encoding;
+
+use models::codec::codec_to_codec_name;
+
 use models::schema::ColumnType;
 use models::ValueType;
 use spi::query::execution::Output;
@@ -176,61 +178,71 @@ impl MetaData for LocalCatalogMeta {
         Ok(())
     }
 
-    fn show_database(&self) -> Result<Output> {
-        let dbs = self.catalog.schema_names();
+    fn show_databases(&self) -> Result<Output> {
+        let dbs = self.engine.list_databases();
 
-        let schema = Arc::new(Schema::new(vec![Field::new(
-            "Database",
-            DataType::Utf8,
-            false,
-        )]));
+        match dbs {
+            Ok(databases) => {
+                let schema = Arc::new(Schema::new(vec![Field::new(
+                    "Database",
+                    DataType::Utf8,
+                    false,
+                )]));
 
-        let batch = RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(dbs))]).unwrap();
+                let batch =
+                    RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(databases))])
+                        .unwrap();
 
-        let batches = vec![Arc::new(batch)];
+                let batches = vec![Arc::new(batch)];
 
-        Ok(Output::StreamData(stream_from_batches(batches)))
+                Ok(Output::StreamData(stream_from_batches(batches)))
+            }
+            Err(err) => Err(MetadataError::InternalError {
+                error_msg: err.to_string(),
+            }),
+        }
     }
 
-    fn show_table(&self, name: &str) -> Result<Output> {
+    fn show_tables(&self, name: &str) -> Result<Output> {
         let mut database_name = name;
-        if database_name == "" {
+        if database_name.is_empty() {
             database_name = self.database_name.as_str()
         }
 
         match self.catalog.schema(database_name) {
-            None => {
-                return Err(MetadataError::DatabaseNotExists {
-                    database_name: database_name.to_string(),
-                })
-            }
-            Some(db_cfgs) => {
+            None => Err(MetadataError::DatabaseNotExists {
+                database_name: database_name.to_string(),
+            }),
+            Some(_db_cfgs) => {
                 let schema = Arc::new(Schema::new(vec![Field::new(
                     "Table",
                     DataType::Utf8,
                     false,
                 )]));
 
-                let batch = RecordBatch::try_new(
-                    schema,
-                    vec![Arc::new(StringArray::from(db_cfgs.table_names()))],
-                )
-                .unwrap();
+                match self.engine.list_tables(database_name) {
+                    Ok(tables) => {
+                        let batch =
+                            RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(tables))])
+                                .unwrap();
 
-                let batches = vec![Arc::new(batch)];
+                        let batches = vec![Arc::new(batch)];
 
-                Ok(Output::StreamData(stream_from_batches(batches)))
+                        Ok(Output::StreamData(stream_from_batches(batches)))
+                    }
+                    Err(err) => Err(MetadataError::InternalError {
+                        error_msg: err.to_string(),
+                    }),
+                }
             }
         }
     }
 
     fn describe_database(&self, name: &str) -> Result<Output> {
         match self.engine.get_db_schema(name) {
-            None => {
-                return Err(MetadataError::DatabaseNotExists {
-                    database_name: name.to_string(),
-                })
-            }
+            None => Err(MetadataError::DatabaseNotExists {
+                database_name: name.to_string(),
+            }),
             Some(db_cfg) => {
                 let schema = Arc::new(Schema::new(vec![
                     Field::new("TTL", DataType::Utf8, false),
@@ -265,50 +277,45 @@ impl MetaData for LocalCatalogMeta {
         }
     }
 
-    fn describe_table(&self, table: &str) -> Result<Output> {
-        let table_name;
-        let database_name;
+    fn describe_table(&self, name: &str) -> Result<Output> {
+        let table: TableReference = name.into();
+        let table_ref = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
 
-        if table.contains(".") {
-            (database_name, table_name) = table.split_once('.').unwrap();
-        } else {
-            table_name = table;
-            database_name = self.database_name.as_str();
-        }
+        // let table_ref = table.resolve(&catalog.catalog_name(), &catalog.schema_name());
+        let database_name = table_ref.schema.to_string();
+        let table_name = table.table().to_string();
 
         match self
             .engine
-            .get_table_schema(database_name, table_name)
+            .get_table_schema(database_name.as_str(), table_name.as_str())
             .unwrap()
         {
-            None => {
-                return Err(MetadataError::TableNotExists {
-                    table_name: table.to_string(),
-                })
-            }
+            None => Err(MetadataError::TableNotExists {
+                table_name: name.to_string(),
+            }),
             Some(table_schema) => {
                 let schema = Arc::new(Schema::new(vec![
-                    Field::new("fieldname", DataType::Utf8, false),
-                    Field::new("type", DataType::Utf8, false),
-                    Field::new("istag", DataType::Boolean, false),
-                    Field::new("compression", DataType::Utf8, false),
+                    Field::new("FIELDNAME", DataType::Utf8, false),
+                    Field::new("TYPE", DataType::Utf8, false),
+                    Field::new("ISTAG", DataType::Boolean, false),
+                    Field::new("COMPRESSION", DataType::Utf8, false),
                 ]));
                 // fieldname    type        istag       compression
                 //      time    Time,       No          codec
                 //      c1      String      No          codec
                 //      c2      uint64      No          default
-                let columns = table_schema.columns().clone();
+                let columns = table_schema.columns();
 
                 let mut name_column = vec![];
                 let mut type_column = vec![];
                 let mut tags = vec![];
                 let mut compressions = vec![];
 
-                for item in &columns {
+                for item in columns {
                     let field_name = item.name.as_str();
                     let field_type;
                     let mut tag = false;
-                    let compression;
+
                     match item.column_type {
                         ColumnType::Tag => {
                             field_type = "STRING";
@@ -323,20 +330,7 @@ impl MetaData for LocalCatalogMeta {
                         ColumnType::Field(ValueType::Unknown) => field_type = "UNKNOW",
                     }
 
-                    match Encoding::from(item.codec) {
-                        Encoding::Default => compression = "Default",
-                        Encoding::Null => compression = "Null",
-                        Encoding::Delta => compression = "Delta",
-                        Encoding::Quantile => compression = "Quantile",
-                        Encoding::Gzip => compression = "Gzip",
-                        Encoding::Bzip => compression = "Bzip",
-                        Encoding::Gorilla => compression = "Gorilla",
-                        Encoding::Snappy => compression = "Snappy",
-                        Encoding::Zstd => compression = "Zstd",
-                        Encoding::Zlib => compression = "Zlib",
-                        Encoding::BitPack => compression = "BitPack",
-                        Encoding::Unknown => compression = "Unknown",
-                    }
+                    let compression = codec_to_codec_name(item.codec);
                     name_column.push(field_name);
                     type_column.push(field_type);
                     tags.push(tag);

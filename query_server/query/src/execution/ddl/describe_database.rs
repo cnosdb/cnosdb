@@ -22,15 +22,15 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        return describe_database(
+        describe_database(
             self.stmt.database_name.as_str(),
             query_state_machine.catalog.clone(),
-        );
+        )
     }
 }
 
 fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    return catalog
+    catalog
         .describe_database(database_name)
-        .context(execution::MetadataSnafu);
+        .context(execution::MetadataSnafu)
 }

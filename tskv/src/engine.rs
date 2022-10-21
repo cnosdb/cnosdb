@@ -48,6 +48,10 @@ pub trait Engine: Send + Sync + Debug {
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()>;
 
+    fn list_databases(&self) -> Result<Vec<String>>;
+
+    fn list_tables(&self, database: &str) -> Result<Vec<String>>;
+
     fn delete_series(
         &self,
         db: &str,
@@ -120,6 +124,14 @@ impl Engine for MockEngine {
 
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
         Ok(())
+    }
+
+    fn list_databases(&self) -> Result<Vec<String>> {
+        todo!()
+    }
+
+    fn list_tables(&self, database: &str) -> Result<Vec<String>> {
+        todo!()
     }
 
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {

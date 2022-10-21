@@ -22,15 +22,15 @@ impl DDLDefinitionTask for DescribeTableTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        return describe_table(
+        describe_table(
             self.stmt.table_name.as_str(),
             query_state_machine.catalog.clone(),
-        );
+        )
     }
 }
 
 fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    return catalog
+    catalog
         .describe_table(table_name)
-        .context(execution::MetadataSnafu);
+        .context(execution::MetadataSnafu)
 }

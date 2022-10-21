@@ -117,3 +117,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: ) is not a codec"}
 -- ERROR:  --
 
+-- EXECUTE SQL: DROP DATABASE IF EXISTS createtable; --
+200 OK
+
+

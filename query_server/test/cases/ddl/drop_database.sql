@@ -33,5 +33,4 @@ CREATE TABLE test0(
 
 select ALL * from test0;
 
-
-
+DROP DATABASE dropdatabase;
