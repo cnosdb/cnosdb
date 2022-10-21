@@ -176,6 +176,54 @@ impl MetaData for LocalCatalogMeta {
         Ok(())
     }
 
+    fn show_database(&self) -> Result<Output> {
+        let dbs = self.catalog.schema_names();
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "Database",
+            DataType::Utf8,
+            false,
+        )]));
+
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(dbs))]).unwrap();
+
+        let batches = vec![Arc::new(batch)];
+
+        Ok(Output::StreamData(stream_from_batches(batches)))
+    }
+
+    fn show_table(&self, name: &str) -> Result<Output> {
+        let mut database_name = name;
+        if database_name == "" {
+            database_name = self.database_name.as_str()
+        }
+
+        match self.catalog.schema(database_name) {
+            None => {
+                return Err(MetadataError::DatabaseNotExists {
+                    database_name: database_name.to_string(),
+                })
+            }
+            Some(db_cfgs) => {
+                let schema = Arc::new(Schema::new(vec![Field::new(
+                    "Table",
+                    DataType::Utf8,
+                    false,
+                )]));
+
+                let batch = RecordBatch::try_new(
+                    schema,
+                    vec![Arc::new(StringArray::from(db_cfgs.table_names()))],
+                )
+                .unwrap();
+
+                let batches = vec![Arc::new(batch)];
+
+                Ok(Output::StreamData(stream_from_batches(batches)))
+            }
+        }
+    }
+
     fn describe_database(&self, name: &str) -> Result<Output> {
         match self.engine.get_db_schema(name) {
             None => {
@@ -197,6 +245,7 @@ impl MetaData for LocalCatalogMeta {
                 let vnode_duration = db_cfg.config.vnode_duration.to_string();
                 let replica = db_cfg.config.replica.to_string();
                 let precision = db_cfg.config.precision.to_string();
+
                 let batch = RecordBatch::try_new(
                     schema,
                     vec![
@@ -212,7 +261,6 @@ impl MetaData for LocalCatalogMeta {
                 let batches = vec![Arc::new(batch)];
 
                 Ok(Output::StreamData(stream_from_batches(batches)))
-                // Ok(batches)
             }
         }
     }
@@ -245,18 +293,18 @@ impl MetaData for LocalCatalogMeta {
                     Field::new("istag", DataType::Boolean, false),
                     Field::new("compression", DataType::Utf8, false),
                 ]));
-                // fieldname, type, istag, compression
-                //      time, Time,  No,
-                //      c1,   String, No,
-                //      c2,   uint64,
-                let fields = table_schema.fields.clone();
+                // fieldname    type        istag       compression
+                //      time    Time,       No          codec
+                //      c1      String      No          codec
+                //      c2      uint64      No          default
+                let columns = table_schema.columns().clone();
 
                 let mut name_column = vec![];
                 let mut type_column = vec![];
                 let mut tags = vec![];
                 let mut compressions = vec![];
 
-                for (_, item) in &fields {
+                for item in &columns {
                     let field_name = item.name.as_str();
                     let field_type;
                     let mut tag = false;

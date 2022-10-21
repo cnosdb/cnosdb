@@ -142,12 +142,28 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a SQL SHOW statement
     fn parse_show(&mut self) -> Result<ExtStatement> {
-        if self.consume_token(&Token::make_keyword("TABLES")) {
-            Ok(ExtStatement::ShowTables)
-        } else if self.consume_token(&Token::make_keyword("DATABASES")) {
-            Ok(ExtStatement::ShowDatabases)
+        if self.consume_cnos_token("TABLES") {
+            self.parse_show_table()
+        } else if self.consume_cnos_token("DATABASES") {
+            self.parse_show_database()
         } else {
             self.expected("tables/databases", self.parser.peek_token())
+        }
+    }
+
+    fn parse_show_database(&mut self) -> Result<ExtStatement> {
+        Ok(ExtStatement::ShowDatabases())
+    }
+
+    fn parse_show_table(&mut self) -> Result<ExtStatement> {
+        if self.consume_token(&Token::make_keyword("ON")) {
+            let database_name = self.parser.parse_object_name()?;
+
+            Ok(ExtStatement::ShowTables(database_name.to_string()))
+        } else {
+            let database_name = "";
+
+            Ok(ExtStatement::ShowTables(database_name.to_string()))
         }
     }
 
