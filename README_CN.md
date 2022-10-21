@@ -1,41 +1,40 @@
 <img alt="" src="docs/source/_static/img/cnosdb_logo_white.svg" width="360"/>
 
 <a href="https://codebeat.co/projects/github-com-cnosdatabase-cnosdb-main"><img alt="codebeat badge"
-                                                                                src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9"/></a>
+src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9"/></a>
 ![GitHub](https://img.shields.io/github/license/cnosdb/cnosdb)
 
 [English](./README.md) | 简体中文
 
-
-CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序数据库；CnosDB依托于Rust, [Apache Arrow](https://arrow.apache.org/) 与 [DataFusion](https://github.com/apache/arrow-datafusion) 进行构建。
-
-## CnosDB Isipho的设计目标
+## CnosDB2.0 的设计目标
 
 设计并开发一个高性能、高压缩比、高可用的分布式云原生时间序列数据库，满足以下目标：
 
-### 存储
+> 时序数据库
 
-- 存算分离，时间序列膨胀（理论无上限 ）支持横/纵向扩展；
-- 性能和成本，高性能io，Run-to-Completion调度模型，支持使用对象存储进行分级存储；
-- 有损压缩，在用户可选择的情况下实现降精度的有损压缩；
+1. 扩展性，理论上支持的时间序列无上限，彻底解决时间序列膨胀问题，支持横/纵向扩展。
+2. 计算存储分离，计算节点和存储节点，可以独立扩缩容，秒级伸缩。
+3. 高性能存储和低成本，利用高性能io栈，支持利用云盘和对象存储进行分级存储。
+4. 查询引擎支持矢量化查询。
+5. 支持多种时序协议写入和查询，提供外部组件导入数据。
 
-### 查询
+> 云原生
 
-- 使用Apache Arrow及Datafusion实现查询引擎；
-- 支持查询引擎矢量化的执行，执行复杂的查询语句；
-- 支持标准SQL，Flux，支持丰富的聚合查询及算子。
+1. 支持云原生，支持充分利用云基础设施带来的便捷，融入云原生生态。
+2. 高可用性，秒级故障恢复，支持多云，跨区容灾备灾。
+3. 原生支持多租户，按量付费。
+4. CDC,日志可以提供订阅和分发到其他节点。
+5. 为用户提供更多可配置项，来满足公有云用户的多场景复杂需求。
+6. 云边端协同，提供边端与公有云融合的能力
+7. 融合云上OLAP/CloudAI 数据生态系统。
 
-### 生态
+## CnosDB 整体架构
 
-- 面向多租设计，提供更多的配置参数，能够提供资源更加灵活的配置；
-- cdc、WAL可以提供订阅和分发到其他节点，更加灵活的部署和支持；
-- 生态型兼容K8s生态，减少共享内存；
-- 与其他数据生态系统相结合，支持导入/导出parquet文件；
-- 兼容国际与国内主要公有云生态。
+![整体架构](./docs/source/_static/img/arch.jpg)
 
 ## 路线图
 
-* [路线图](https://github.com/cnosdb/cnosdb/issues/483)
+* [路线图](./docs/roadmap/ROADMAP_CN.md)
 
 ## 加入社区
 
@@ -71,6 +70,7 @@ CnosDB是一款高性能、高压缩率、高易用性的开源分布式时序�
 * [简书](https://www.jianshu.com/u/745811688e9e)
 
 ## 我们正在招聘
+
 * 如果您对全职、兼职或者实习工作感兴趣，请发简历到 hr@cnosdb.com
 
 ## 许可证
