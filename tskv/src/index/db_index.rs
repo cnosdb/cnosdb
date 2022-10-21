@@ -72,6 +72,10 @@ impl DbIndexMgr {
         });
         index.clone()
     }
+
+    pub fn remove_db_index(&mut self, db_name: &str) {
+        self.indexs.remove(db_name);
+    }
 }
 
 #[derive(Debug)]
@@ -324,7 +328,7 @@ impl DBIndex {
         }
     }
 
-    pub fn del_table_schema(&self, tab: &String) -> IndexResult<()> {
+    pub fn del_table_schema(&self, tab: &str) -> IndexResult<()> {
         self.table_schema.write().remove(tab);
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
@@ -455,6 +459,10 @@ impl DBIndex {
 
     pub fn db_schema(&self) -> DatabaseSchema {
         self.db_schema.clone()
+    }
+
+    pub fn path(&self) -> PathBuf {
+        self.path.clone()
     }
 }
 

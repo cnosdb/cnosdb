@@ -102,7 +102,7 @@ impl Engine for MockEngine {
     }
 
     fn drop_database(&self, database: &str) -> Result<()> {
-        println!("drop_database {:?}", database);
+        println!("drop_database.sql {:?}", database);
         Ok(())
     }
 

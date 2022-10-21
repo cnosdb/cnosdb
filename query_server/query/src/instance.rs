@@ -255,39 +255,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_drop() {
-        let result_db = make_cnosdbms(Arc::new(MockEngine::default()));
-
-        let db = result_db.unwrap();
-
-        let user = UserInfo {
-            user: DEFAULT_CATALOG.to_string(),
-            password: "todo".to_string(),
-        };
-
-        let query = Query::new(
-            ContextBuilder::new(user).build(),
-            "drop database if exists test; \
-                    drop database test; \
-                    drop table if exists test; \
-                    drop table test; \
-                    "
-            .to_string(),
-        );
-        let mut result = db.execute(&query).await.unwrap();
-        for ele in result.result().iter_mut() {
-            match ele {
-                Output::StreamData(_data) => {
-                    panic!("should not happen");
-                }
-                Output::Nil(_res) => {
-                    println!("sql excuted ok")
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
     async fn test_explain() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
 

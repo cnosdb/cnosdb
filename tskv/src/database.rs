@@ -19,7 +19,7 @@ use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
-use crate::index::{IndexError, IndexResult};
+use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
 use crate::{
     error::{self, Result},
