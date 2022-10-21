@@ -35,8 +35,8 @@ pub trait MetaData: Send + Sync {
     fn database_names(&self) -> Vec<String>;
     fn describe_database(&self, name: &str) -> Result<Output>;
     fn describe_table(&self, table_name: &str) -> Result<Output>;
-    fn show_database(&self) -> Result<Output>;
-    fn show_table(&self, database_name: &str) -> Result<Output>;
+    fn show_databases(&self) -> Result<Output>;
+    fn show_tables(&self, database_name: &str) -> Result<Output>;
 }
 
 #[derive(Debug, Snafu)]
@@ -56,4 +56,7 @@ pub enum MetadataError {
 
     #[snafu(display("Database {} not exists.", database_name))]
     DatabaseNotExists { database_name: String },
+
+    #[snafu(display("Internal Error: {}.", error_msg))]
+    InternalError { error_msg: String },
 }

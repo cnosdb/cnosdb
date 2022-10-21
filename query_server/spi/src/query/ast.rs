@@ -87,7 +87,7 @@ pub struct DescribeDatabase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShowTable {
+pub struct ShowTables {
     pub database_name: String,
 }
 

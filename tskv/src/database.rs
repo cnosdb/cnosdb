@@ -296,10 +296,6 @@ impl Database {
         self.index.get_table_schema(table_name)
     }
 
-    // pub fn get_database_schema(&self) -> IndexResult<Option<DatabaseSchema>> {
-    //     self.index.get_database_schema()
-    // }
-
     pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {
         self.index.get_table_schema_by_series_id(sid)
     }

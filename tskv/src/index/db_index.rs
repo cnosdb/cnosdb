@@ -214,7 +214,6 @@ impl DBIndex {
                     return Err(IndexError::NotFoundField);
                 }
             }
-            // info.set_schema_id(self.table_schema_id(info.table()));
             Ok(())
         } else {
             Err(IndexError::NotFoundField)
@@ -321,6 +320,15 @@ impl DBIndex {
         }
 
         Ok(None)
+    }
+
+    pub fn list_tables(&self) -> Vec<String> {
+        let mut tables = Vec::new();
+        for (table, _) in self.table_schema.read().iter() {
+            tables.push(table.clone())
+        }
+
+        tables
     }
 
     pub fn get_table_schema_by_series_id(

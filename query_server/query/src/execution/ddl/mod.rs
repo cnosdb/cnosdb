@@ -10,8 +10,8 @@ use self::create_table::CreateTableTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
 use crate::execution::ddl::describe_database::DescribeDatabaseTask;
 use crate::execution::ddl::describe_table::DescribeTableTask;
-use crate::execution::ddl::show_database::ShowDatabaseTask;
-use crate::execution::ddl::show_table::ShowTableTask;
+use crate::execution::ddl::show_database::ShowDatabasesTask;
+use crate::execution::ddl::show_table::ShowTablesTask;
 use snafu::ResultExt;
 
 use self::create_external_table::CreateExternalTableTask;
@@ -81,8 +81,8 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CreateDatabase(stmt) => Box::new(CreateDatabaseTask::new(stmt.clone())),
             DDLPlan::DescribeDatabase(stmt) => Box::new(DescribeDatabaseTask::new(stmt.clone())),
             DDLPlan::DescribeTable(stmt) => Box::new(DescribeTableTask::new(stmt.clone())),
-            DDLPlan::ShowTable(stmt) => Box::new(ShowTableTask::new(stmt.to_string())),
-            DDLPlan::ShowDatabase() => Box::new(ShowDatabaseTask::new()),
+            DDLPlan::ShowTables(stmt) => Box::new(ShowTablesTask::new(stmt.to_string())),
+            DDLPlan::ShowDatabases() => Box::new(ShowDatabasesTask::new()),
         }
     }
 }

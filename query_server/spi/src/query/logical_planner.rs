@@ -64,9 +64,9 @@ pub enum DDLPlan {
 
     DescribeDatabase(DescribeDatabase),
 
-    ShowTable(String),
+    ShowTables(String),
 
-    ShowDatabase(),
+    ShowDatabases(),
 }
 
 #[derive(Debug, Clone)]
@@ -145,7 +145,7 @@ pub struct DescribeTable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShowTable {
+pub struct ShowTables {
     pub database_name: String,
 }
 

@@ -20,3 +20,7 @@
 200 OK
 
 
+-- EXECUTE SQL: DROP DATABASE IF EXISTS createdatabase; --
+200 OK
+
+
