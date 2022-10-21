@@ -19,10 +19,8 @@ pub enum ExtStatement {
 
     DescribeTable(DescribeTable),
     DescribeDatabase(DescribeDatabase),
-    // ShowDatabases(String),
-    // ShowTables(String, String),
-    ShowDatabases,
-    ShowTables,
+    ShowDatabases(),
+    ShowTables(String),
     //todo:  insert/update/alter
 }
 
@@ -85,6 +83,11 @@ pub struct DescribeTable {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeDatabase {
+    pub database_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowTable {
     pub database_name: String,
 }
 

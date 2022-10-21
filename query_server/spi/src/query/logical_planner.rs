@@ -63,22 +63,11 @@ pub enum DDLPlan {
     DescribeTable(DescribeTable),
 
     DescribeDatabase(DescribeDatabase),
+
+    ShowTable(String),
+
+    ShowDatabase(),
 }
-
-// #[derive(Debug, Clone)]
-// pub enum ShowPlan {
-//     ShowTable(ShowTable),
-//     ShowDatabase(ShowDatabase),
-//     ShowTag(ShowTag),
-//     ShowSeries(ShowSeries),
-// }
-
-// #[derive(Debug, Clone)]
-// pub enum DescribePlan {
-//     DescribeTable(DescribeTable),
-
-//     DescribeDatabase(DescribeDatabase),
-// }
 
 #[derive(Debug, Clone)]
 pub struct DropPlan {
@@ -153,6 +142,11 @@ pub struct DescribeDatabase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeTable {
     pub table_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowTable {
+    pub database_name: String,
 }
 
 pub trait LogicalPlanner {

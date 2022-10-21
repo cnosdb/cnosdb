@@ -323,10 +323,6 @@ impl DBIndex {
         Ok(None)
     }
 
-    // pub fn get_database_schema(&self) -> IndexResult<Option<DatabaseSchema>> {
-    //     return Ok(self.database_schema)
-    // }
-
     pub fn get_table_schema_by_series_id(
         &self,
         series_id: SeriesId,

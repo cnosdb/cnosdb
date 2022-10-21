@@ -65,8 +65,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::DropUser(_) => todo!(),
             ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt),
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt),
-            ExtStatement::ShowDatabases => todo!(),
-            ExtStatement::ShowTables => todo!(),
+            ExtStatement::ShowDatabases() => self.database_to_show(),
+            ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
         }
     }
 
@@ -353,6 +353,14 @@ impl<S: ContextProvider> SqlPlaner<S> {
         Ok(Plan::DDL(DDLPlan::DescribeTable(DescribeTable {
             table_name: opts.table_name,
         })))
+    }
+
+    fn database_to_show(&self) -> Result<Plan> {
+        Ok(Plan::DDL(DDLPlan::ShowDatabase()))
+    }
+
+    fn table_to_show(&self, database: String) -> Result<Plan> {
+        Ok(Plan::DDL(DDLPlan::ShowTable(database)))
     }
 
     fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<Plan> {

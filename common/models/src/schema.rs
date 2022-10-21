@@ -9,6 +9,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::fmt;
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
