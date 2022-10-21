@@ -236,8 +236,9 @@ impl Query {
         &self.instruction
     }
 
-    pub fn is_select(&self) -> bool {
-        self.query.trim().to_lowercase().starts_with("select")
+    pub fn is_return_result_set(&self) -> bool {
+        let lowercase = self.query.trim().to_lowercase();
+        lowercase.starts_with("select") || lowercase.starts_with("show")
     }
 }
 

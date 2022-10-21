@@ -1,4 +1,5 @@
 --#DATABASE=createtable
+--#SORT = true
 DROP DATABASE IF EXISTS createtable;
 CREATE DATABASE createtable;
 CREATE TABLE createtable."tesT";

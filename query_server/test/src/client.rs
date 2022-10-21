@@ -35,7 +35,7 @@ impl Client {
     /// execute one sql at http://domain/query
     pub async fn execute_query(&self, query: &Query, buffer: &mut String) {
         buffer.push_str(format!("-- EXECUTE SQL: {} --\n", query.as_str()).as_str());
-        if query.instruction().sort() && query.is_select() {
+        if query.instruction().sort() && query.is_return_result_set() {
             buffer.push_str("-- AFTER_SORT --\n")
         }
         let request_build = self.build_query_request(query);
@@ -202,7 +202,8 @@ fn push_error(s: &mut String, error_message: &str) {
 async fn push_query_result(buffer: &mut String, query: &Query, resp: Response) {
     let success = resp.status().is_success();
     if let Ok(text) = resp.text().await {
-        if success && query.is_select() && query.instruction().sort() && !text.is_empty() {
+        if success && query.is_return_result_set() && query.instruction().sort() && !text.is_empty()
+        {
             let mut lines: Vec<&str> = text.lines().collect();
             buffer.push_str(lines[0]);
             buffer.push('\n');
