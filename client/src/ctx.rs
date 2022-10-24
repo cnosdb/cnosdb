@@ -130,7 +130,15 @@ impl SessionContext {
         }
     }
 
-    pub async fn sql(&self, sql: String) -> std::result::Result<ResultSet, String> {
+    pub fn set_database(&mut self, name: &str) {
+        self.session_config.database = name.to_string();
+    }
+
+    pub fn get_database(&self) -> &str {
+        self.session_config.database.as_str()
+    }
+
+    pub async fn sql(&self, sql: String) -> Result<ResultSet, String> {
         let user_info = &self.session_config.user_info;
 
         let db = self.session_config.database.clone();
@@ -168,7 +176,7 @@ impl SessionContext {
         }
     }
 
-    pub async fn write(&self, path: &str) -> std::result::Result<ResultSet, String> {
+    pub async fn write(&self, path: &str) -> Result<ResultSet, String> {
         let body = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
 
         let user_info = &self.session_config.user_info;
@@ -211,15 +219,16 @@ pub enum ResultSet {
 }
 
 impl ResultSet {
-    pub fn print_fmt(&self, print: &PrintFormat) -> std::result::Result<(), String> {
+    pub fn print_fmt(&self, print: &PrintFormat) -> Result<(), String> {
         match self {
             Self::RecordBatches(batches) => {
                 print.print_batches(batches).map_err(|e| e.to_string())?;
             }
             Self::Bytes((r, _)) => {
                 let str = String::from_utf8(r.to_owned()).map_err(|e| e.to_string())?;
-
-                println!("{}", str);
+                if !str.is_empty() {
+                    println!("{}", str);
+                }
             }
         }
 
