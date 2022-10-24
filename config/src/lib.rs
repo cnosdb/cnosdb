@@ -11,6 +11,7 @@ pub struct Config {
     pub cache: CacheConfig,
     pub log: LogConfig,
     pub security: SecurityConfig,
+    pub hintedoff: HintedOffConfig,
 }
 
 impl Config {
@@ -171,6 +172,23 @@ impl ClusterConfig {
         }
         if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
             self.node_id = id.parse::<u64>().unwrap();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HintedOffConfig {
+    pub enable: bool,
+    pub path: String,
+}
+
+impl HintedOffConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
+            self.enable = enable.parse::<bool>().unwrap();
+        }
+        if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
+            self.path = path;
         }
     }
 }

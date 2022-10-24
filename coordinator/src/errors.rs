@@ -29,7 +29,7 @@ pub enum CoordinatorError {
     WriteVnode { msg: String },
 
     #[snafu(display("Error from tskv: {}", source))]
-    TskvWrite { source: tskv::Error },
+    TskvError { source: tskv::Error },
 }
 
 impl From<meta_client::MetaError> for CoordinatorError {
@@ -45,6 +45,12 @@ impl From<io::Error> for CoordinatorError {
         CoordinatorError::IOErrors {
             msg: err.to_string(),
         }
+    }
+}
+
+impl From<tskv::Error> for CoordinatorError {
+    fn from(err: tskv::Error) -> Self {
+        CoordinatorError::TskvError { source: err }
     }
 }
 

@@ -12,6 +12,7 @@ lazy_static! {
     static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.wal").unwrap();
     static ref TSM_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.tsm").unwrap();
     static ref SCHEMA_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.schema").unwrap();
+    static ref HINTEDOFF_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.hh").unwrap();
 }
 
 // Summary file.
@@ -43,6 +44,33 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
         .map_err(|_| Error::InvalidFileName {
             file_name: file_name.to_string(),
             message: "summary file name contains an invalid id".to_string(),
+        })
+}
+
+// hinted off files.
+
+pub fn make_hinted_off_file(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
+    let p = format!("_{:06}.hh", sequence);
+    path.as_ref().join(p)
+}
+
+pub fn check_hinted_off_file_name(file_name: &str) -> bool {
+    HINTEDOFF_FILE_NAME_PATTERN.is_match(file_name)
+}
+
+pub fn get_hinted_off_file_id(file_name: &str) -> Result<u64> {
+    if !check_hinted_off_file_name(file_name) {
+        return Err(Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "hh file name does not contain an id".to_string(),
+        });
+    }
+    let file_number = &file_name[1..7];
+    file_number
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidFileName {
+            file_name: file_name.to_string(),
+            message: "hh file name contains an invalid id".to_string(),
         })
 }
 

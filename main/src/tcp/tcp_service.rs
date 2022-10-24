@@ -151,7 +151,7 @@ async fn process_vnode_write_command(
 
     if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
         CommonResponse::send(client, -1, err.to_string()).await?;
-        return Err(CoordinatorError::TskvWrite { source: err });
+        return Err(err.into());
     } else {
         CommonResponse::send(client, 0, "".to_owned()).await?;
         return Ok(());

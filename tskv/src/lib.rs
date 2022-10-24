@@ -3,14 +3,14 @@
 #![allow(unreachable_patterns)]
 #![allow(unused_imports, unused_variables)]
 
-mod byte_utils;
+pub mod byte_utils;
 mod compaction;
 mod context;
 pub mod database;
 pub mod engine;
 pub mod error;
 pub mod file_system;
-mod file_utils;
+pub mod file_utils;
 pub mod index;
 pub mod kv_option;
 mod kvcore;

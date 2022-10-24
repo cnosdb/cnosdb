@@ -177,7 +177,7 @@ impl PointWriter {
             };
 
             if let Err(err) = self.kv_inst.write(vnode_id, req).await {
-                return Err(CoordinatorError::TskvWrite { source: err });
+                return Err(err.into());
             } else {
                 return Ok(());
             }
