@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::metadata::MetaDataRef;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::datasource::file_format::avro::{AvroFormat, DEFAULT_AVRO_EXTENSION};
@@ -38,7 +37,6 @@ impl CreateExternalTableTask {
 impl DDLDefinitionTask for CreateExternalTableTask {
     async fn execute(
         &self,
-        catalog: MetaDataRef,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateExternalTable {
@@ -48,7 +46,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
         } = self.stmt;
 
         let table_ref: TableReference = name.as_str().into();
-        let table = catalog.table_provider(table_ref);
+        let table = query_state_machine.catalog.table_provider(table_ref);
 
         match (if_not_exists, table) {
             // do not create if exists
@@ -60,7 +58,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, Err(_)) => {
-                create_exernal_table(&self.stmt, catalog, query_state_machine).await?;
+                create_exernal_table(&self.stmt, query_state_machine).await?;
                 Ok(Output::Nil(()))
             }
         }
@@ -69,7 +67,6 @@ impl DDLDefinitionTask for CreateExternalTableTask {
 
 async fn create_exernal_table(
     stmt: &CreateExternalTable,
-    catalog: MetaDataRef,
     query_state_machine: QueryStateMachineRef,
 ) -> Result<(), ExecutionError> {
     let CreateExternalTable {
@@ -84,7 +81,8 @@ async fn create_exernal_table(
 
     let listing_table = construct_listing_table(location, options, provided_schema, &state).await?;
 
-    catalog
+    query_state_machine
+        .catalog
         .create_table(name, Arc::new(listing_table))
         .context(execution::MetadataSnafu)?;
 

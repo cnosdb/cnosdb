@@ -18,6 +18,7 @@ use snafu::ResultExt;
 use spi::query::LogicalOptimizeSnafu;
 
 use crate::extension::logical::optimizer_rule::{
+    implicit_type_conversion::ImplicitTypeConversion,
     merge_limit_with_sort::MergeLimitWithSortRule,
     transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule,
     transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule,
@@ -45,6 +46,8 @@ impl Default for DefaultLogicalOptimizer {
     fn default() -> Self {
         // additional optimizer rule
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
+            // data type conv
+            Arc::new(ImplicitTypeConversion {}),
             // df default rules
             Arc::new(SimplifyExpressions::new()),
             Arc::new(SubqueryFilterToJoin::new()),

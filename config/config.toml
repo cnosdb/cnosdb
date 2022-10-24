@@ -12,6 +12,7 @@ max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
 dio_max_resident = 1024
 dio_max_non_resident = 1024
 dio_page_len_scale = 1
+strict_write = false
 
 [wal]
 enabled = true

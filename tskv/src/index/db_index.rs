@@ -3,23 +3,31 @@ use std::collections::HashSet;
 use std::mem::size_of;
 use std::ops::Index;
 use std::path::{self, Path, PathBuf};
+use std::string::FromUtf8Error;
 use std::{collections::HashMap, sync::Arc};
-
-use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
-use super::*;
 
 use bytes::BufMut;
 use chrono::format::format;
-use config::Config;
-use models::{utils, FieldId, FieldInfo, SeriesId, SeriesInfo, SeriesKey, Tag, ValueType};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use snafu::ResultExt;
+use tracing::info;
+
+use crate::Error::IndexErr;
+use config::Config;
+use datafusion::arrow::datatypes::ToByteSlice;
+use models::schema::{ColumnType, TableFiled, TableSchema};
+use models::{utils, FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, ValueType};
+use protos::models::Point;
 use trace::warn;
 
+use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
+use super::*;
 use super::{errors, IndexEngine, IndexError, IndexResult};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
+const TIME_STAMP_NAME: &str = "time";
 
 #[derive(Debug, Clone)]
 pub struct IndexConfig {
@@ -42,7 +50,7 @@ pub fn index_manger(path: impl AsRef<Path>) -> &'static Arc<RwLock<DbIndexMgr>> 
 #[derive(Debug)]
 pub struct DbIndexMgr {
     base_path: PathBuf,
-    indexs: HashMap<String, Arc<RwLock<DBIndex>>>,
+    indexs: HashMap<String, Arc<DBIndex>>,
 }
 
 impl DbIndexMgr {
@@ -53,11 +61,11 @@ impl DbIndexMgr {
         }
     }
 
-    pub fn get_db_index(&mut self, db: &String) -> Arc<RwLock<DBIndex>> {
+    pub fn get_db_index(&mut self, db: &String) -> Arc<DBIndex> {
         let index = self
             .indexs
             .entry(db.clone())
-            .or_insert_with(|| Arc::new(RwLock::new(DBIndex::new(self.base_path.join(db)))));
+            .or_insert_with(|| Arc::new(DBIndex::new(self.base_path.join(db))));
 
         index.clone()
     }
@@ -66,12 +74,9 @@ impl DbIndexMgr {
 #[derive(Debug)]
 pub struct DBIndex {
     path: PathBuf,
-
     storage: IndexEngine,
-    series_cache: HashMap<u32, Vec<SeriesKey>>,
-
-    schema_id: HashMap<String, u32>,
-    table_schema: HashMap<String, Vec<FieldInfo>>,
+    series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
+    table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
 impl From<&str> for DBIndex {
@@ -85,221 +90,182 @@ impl DBIndex {
         let path = path.as_ref();
         Self {
             storage: IndexEngine::new(path),
-            series_cache: HashMap::new(),
-            table_schema: HashMap::new(),
-            schema_id: HashMap::new(),
-
+            series_cache: RwLock::new(HashMap::new()),
+            table_schema: RwLock::new(HashMap::new()),
             path: path.into(),
         }
     }
 
-    pub fn get_from_cache(&self, info: &mut SeriesInfo) -> Option<u64> {
-        let series_key = SeriesKey::from(info.borrow());
+    pub fn get_sid_from_cache(&self, info: &Point) -> IndexResult<Option<u64>> {
+        let series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
         let (hash_id, _) = utils::split_id(series_key.hash());
-        let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
-        if let Some(keys) = self.series_cache.get(&hash_id) {
+        if let Some(keys) = self.series_cache.read().get(&hash_id) {
             if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
                 let id = k.id();
-                if let Ok(()) = self.chech_field_type_from_cache(id, info) {
-                    return Some(id);
-                }
+                return Ok(Some(id));
             }
         }
-
-        None
+        Ok(None)
     }
 
-    pub fn add_series_if_not_exists(&mut self, info: &mut SeriesInfo) -> errors::IndexResult<u64> {
-        let mut series_key = SeriesKey::from(info.borrow());
+    pub fn add_series_if_not_exists(&self, info: &Point) -> IndexResult<u64> {
+        let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
         // load index first from cache,or else from storage and than cache it!
         let mut keys: &mut Vec<SeriesKey> = &mut vec![];
-        match self.series_cache.get_mut(&hash_id) {
+        let mut series_cache = self.series_cache.write();
+        match series_cache.get_mut(&hash_id) {
             Some(v) => keys = v,
             None => {
                 if let Some(data) = self.storage.get(stroage_key.as_bytes())? {
                     if let Ok(v) = bincode::deserialize(&data) {
-                        self.series_cache.insert(hash_id, v);
-                        keys = self.series_cache.get_mut(&hash_id).unwrap();
+                        series_cache.insert(hash_id, v);
+                        keys = series_cache.get_mut(&hash_id).unwrap();
                     }
                 }
             }
         }
 
-        let mut found = false;
-        let mut id = 0_u64;
         //if exist return series_id
         if let Some(k) = keys.iter().find(|key| series_key.eq(key)) {
-            id = k.id();
-            found = true;
+            return Ok(k.id());
         }
-
-        if found {
-            self.check_field_type_or_else_add(id, info)?;
-            return Ok(id);
-        }
-
         //if not exist add it!
         let id = utils::unite_id(hash_id as u64, self.storage.incr_id()?);
         series_key.set_id(id);
+        keys.push(series_key.clone());
+        self.storage
+            .set(stroage_key.as_bytes(), &bincode::serialize(&keys).unwrap())?;
+        drop(series_cache);
+
         for tag in series_key.tags() {
             let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
             self.storage.push(&key, id.to_be_bytes().as_ref())?;
         }
-
-        keys.push(series_key);
-        self.storage
-            .set(stroage_key.as_bytes(), &bincode::serialize(&keys).unwrap())?;
-
-        self.check_field_type_or_else_add(id, info)?;
-
         Ok(id)
     }
 
-    fn chech_field_type_from_cache(
-        &self,
-        series_id: u64,
-        info: &mut SeriesInfo,
-    ) -> IndexResult<()> {
-        if let Some(schema) = self.table_schema.get(info.table()) {
-            for field in info.field_infos() {
-                if let Some(v) = schema.iter().find(|item| field.eq(item)) {
-                    if field.value_type() == v.value_type() {
-                        field.set_field_id(utils::unite_id(v.field_id(), series_id));
-                    } else {
+    pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> IndexResult<()> {
+        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        if let Some(schema) = self.table_schema.read().get(&table_name) {
+            for field in info.fields().unwrap() {
+                let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
+                if let Some(v) = schema.fields.get(&field_name) {
+                    if field.type_().0 != v.column_type.field_type() as i32 {
                         return Err(IndexError::FieldType);
                     }
                 } else {
                     return Err(IndexError::NotFoundField);
                 }
             }
-
-            for it in schema.iter() {
-                match info.field_infos().iter().find(|item| it.eq(item)) {
-                    Some(v) => {}
-                    None => {
-                        if !it.is_tag() {
-                            info.push_field_fill(it.clone())
-                        }
-                    }
-                }
-            }
-
-            for tag in info.tags() {
-                let mut field = FieldInfo::from(tag);
-                if let Some(v) = schema.iter().find(|item| field.eq(item)) {
-                    if field.value_type() == v.value_type() {
-                        field.set_field_id(utils::unite_id(v.field_id(), series_id));
-                    } else {
+            for tag in info.tags().unwrap() {
+                let tag_name: String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
+                if let Some(v) = schema.fields.get(&tag_name) {
+                    if ColumnType::Tag != v.column_type {
                         return Err(IndexError::FieldType);
                     }
                 } else {
                     return Err(IndexError::NotFoundField);
                 }
             }
-
-            info.set_schema_id(self.table_schema_id(info.table()));
-
+            // info.set_schema_id(self.table_schema_id(info.table()));
             Ok(())
         } else {
             Err(IndexError::NotFoundField)
         }
     }
 
-    fn check_field_type_or_else_add(
-        &mut self,
-        series_id: u64,
-        info: &mut SeriesInfo,
-    ) -> IndexResult<()> {
+    pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
-        let mut schema: &mut Vec<FieldInfo> = &mut vec![];
-        match self.table_schema.get_mut(info.table()) {
+        let mut schema = &mut TableSchema::default();
+        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let mut fields = self.table_schema.write();
+        let mut new_schema = false;
+        match fields.get_mut(&table_name) {
             Some(fields) => schema = fields,
             None => {
-                let key = format!("{}{}", TABLE_SCHEMA_PREFIX, info.table());
+                new_schema = true;
+                schema.name = table_name.clone();
+                let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
-                        self.table_schema.insert(info.table().to_string(), list);
-                        schema = self.table_schema.get_mut(info.table()).unwrap();
+                        fields.insert(table_name.clone(), list);
+                        schema = fields.get_mut(&table_name).unwrap();
                     }
                 }
             }
         }
 
         let mut schema_change = false;
-        let mut check_fn = |field: &mut FieldInfo| -> IndexResult<()> {
-            match schema.iter().find(|item| field.eq(item)) {
+        let mut check_fn = |field: &mut TableFiled| -> IndexResult<()> {
+            let codec = match schema.fields.get(&field.name) {
+                None => 0,
+                Some(v) => v.codec,
+            };
+            field.codec = codec;
+
+            match schema.fields.get(&field.name) {
                 Some(v) => {
-                    if field.value_type() != v.value_type() {
+                    if field.column_type != v.column_type {
                         return Err(IndexError::FieldType);
                     }
-
-                    field.set_field_id(utils::unite_id(v.field_id(), series_id));
                 }
                 None => {
                     schema_change = true;
-
-                    let index = (schema.len() + 1) as u64;
-
-                    let mut clone = field.clone();
-                    clone.set_field_id(index);
-                    schema.push(clone);
-
-                    field.set_field_id(utils::unite_id(index, series_id));
+                    field.id = (schema.fields.len() + 1) as SchemaFieldId;
+                    schema.fields.insert(field.name.clone(), field.clone());
                 }
             }
             Ok(())
         };
-
-        //check fields
-        for field in info.field_infos() {
-            check_fn(field)?
-        }
+        //check timestamp
+        check_fn(&mut TableFiled::new_with_default(
+            TIME_STAMP_NAME.to_string(),
+            ColumnType::Time,
+        ))?;
 
         //check tags
-        for tag in info.tags() {
-            check_fn(&mut FieldInfo::from(tag))?
+        for tag in info.tags().unwrap() {
+            let tag_key = unsafe { String::from_utf8_unchecked(tag.key().unwrap().to_vec()) };
+            check_fn(&mut TableFiled::new_with_default(tag_key, ColumnType::Tag))?
         }
 
-        for it in schema.iter() {
-            match info.field_infos().iter().find(|item| it.eq(item)) {
-                Some(v) => {}
-                None => {
-                    if !it.is_tag() {
-                        info.push_field_fill(it.clone())
-                    }
-                }
-            }
+        //check fields
+        for field in info.fields().unwrap() {
+            let field_name = unsafe { String::from_utf8_unchecked(field.name().unwrap().to_vec()) };
+            check_fn(&mut TableFiled::new_with_default(
+                field_name,
+                ColumnType::from_i32(field.type_().0),
+            ))?
         }
-
         //schema changed store it
-        if schema_change {
-            let data = bincode::serialize(schema).unwrap();
-            let key = format!("{}{}", TABLE_SCHEMA_PREFIX, info.table());
-            self.storage.set(key.as_bytes(), &data)?;
-
-            info.set_schema_id(self.incr_schema_id(info.table()));
-        } else {
-            info.set_schema_id(self.table_schema_id(info.table()));
+        if new_schema {
+            schema.schema_id = 0;
+        } else if schema_change {
+            schema.schema_id += 1;
         }
-
+        let data = bincode::serialize(schema).unwrap();
+        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
+        self.storage.set(key.as_bytes(), &data)?;
         Ok(())
     }
 
-    pub fn get_table_schema(&mut self, tab: &str) -> IndexResult<Option<Vec<FieldInfo>>> {
-        if let Some(fields) = self.table_schema.get(tab) {
-            return Ok(Some(fields.to_vec()));
+    pub fn get_table_schema(&self, tab: &str) -> IndexResult<Option<TableSchema>> {
+        if let Some(fields) = self.table_schema.read().get(tab) {
+            return Ok(Some(fields.clone()));
         }
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
         if let Some(data) = self.storage.get(key.as_bytes())? {
-            if let Ok(list) = bincode::deserialize::<Vec<FieldInfo>>(&data) {
-                let clone = list.to_vec();
-                self.table_schema.insert(tab.to_string(), list);
-                return Ok(Some(clone));
+            if let Ok(list) = bincode::deserialize::<TableSchema>(&data) {
+                //todo: remove copy
+                self.table_schema
+                    .write()
+                    .insert(tab.to_string(), list.clone());
+                return Ok(Some(list));
             }
         }
 
@@ -307,9 +273,9 @@ impl DBIndex {
     }
 
     pub fn get_table_schema_by_series_id(
-        &mut self,
+        &self,
         series_id: SeriesId,
-    ) -> IndexResult<Option<Vec<FieldInfo>>> {
+    ) -> IndexResult<Option<TableSchema>> {
         match self.get_series_key(series_id) {
             Ok(Some(key)) => match self.get_table_schema(key.table()) {
                 Ok(None) => {
@@ -332,24 +298,8 @@ impl DBIndex {
         }
     }
 
-    pub fn table_schema_id(&self, tab: &String) -> u32 {
-        if let Some(v) = self.schema_id.get(tab) {
-            return *v;
-        }
-
-        1
-    }
-
-    pub fn incr_schema_id(&mut self, tab: &str) -> u32 {
-        let v = self.schema_id.entry(tab.to_owned()).or_insert(1);
-
-        *v += 1;
-
-        *v
-    }
-
-    pub fn del_table_schema(&mut self, tab: &String) -> IndexResult<()> {
-        self.table_schema.remove(tab);
+    pub fn del_table_schema(&self, tab: &String) -> IndexResult<()> {
+        self.table_schema.write().remove(tab);
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
         self.storage.delete(key.as_bytes())?;
@@ -357,36 +307,45 @@ impl DBIndex {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> IndexResult<()> {
+    pub fn flush(&self) -> IndexResult<()> {
         self.storage.flush();
         Ok(())
     }
 
-    pub fn get_series_key(&mut self, sid: u64) -> IndexResult<Option<SeriesKey>> {
+    pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         let (hash_id, _) = utils::split_id(sid);
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
         // load index first from cache,or else from storage and than cache it!
-        let mut keys: &mut Vec<SeriesKey> = &mut vec![];
-        if let Some(v) = self.series_cache.get_mut(&hash_id) {
-            keys = v;
-        } else if let Some(data) = self.storage.get(stroage_key.as_bytes())? {
-            if let Ok(v) = bincode::deserialize(&data) {
-                self.series_cache.insert(hash_id, v);
-                keys = self.series_cache.get_mut(&hash_id).unwrap();
+        let lock = self.series_cache.read();
+        let res = lock
+            .get(&hash_id)
+            .map(|keys| keys.iter().find(|k| k.id() == sid).cloned());
+        drop(lock);
+        match res {
+            Some(res) => Ok(res),
+            None => {
+                if let Some(data) = self.storage.get(stroage_key.as_bytes())? {
+                    if let Ok(v) = bincode::deserialize::<Vec<SeriesKey>>(&data) {
+                        let res = v.clone();
+                        self.series_cache.write().entry(hash_id).or_insert(v);
+                        let res = res.iter().find(|k| k.id() == sid);
+                        if let Some(k) = res {
+                            return Ok(Some(k.clone()));
+                        }
+                    }
+                    return Err(IndexError::IndexStroage {
+                        msg: "deserialize failed".to_string(),
+                    });
+                }
+                Ok(None)
             }
         }
-
-        if let Some(k) = keys.iter().find(|key| key.id() == sid) {
-            return Ok(Some(k.clone()));
-        }
-
-        Ok(None)
     }
 
-    pub fn del_series_info(&mut self, sid: u64) -> IndexResult<()> {
+    pub fn del_series_info(&self, sid: u64) -> IndexResult<()> {
         let (hash_id, _) = utils::split_id(sid);
-        self.series_cache.remove(&hash_id);
+        self.series_cache.write().remove(&hash_id);
 
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
         if let Some(data) = self.storage.get(stroage_key.as_bytes())? {
@@ -420,6 +379,7 @@ impl DBIndex {
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
+            info!("{:?}", format!("{}.", tab).as_bytes());
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
             for kv in it.by_ref() {
                 if let Ok(kv) = kv {
@@ -454,5 +414,16 @@ impl DBIndex {
         }
 
         Ok(result)
+    }
+
+    pub fn create_table(&self, schema: &TableSchema) -> IndexResult<()> {
+        let data = bincode::serialize(schema).unwrap();
+        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, schema.name);
+        self.table_schema
+            .write()
+            .insert(schema.name.clone(), schema.clone());
+        self.storage.set(key.as_bytes(), &data)?;
+        self.flush()?;
+        Ok(())
     }
 }

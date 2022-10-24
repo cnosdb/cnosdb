@@ -1,3 +1,4 @@
+use reqwest::header::InvalidHeaderValue;
 use snafu::Snafu;
 #[derive(Clone, Debug, Snafu)]
 pub enum Error {
@@ -9,8 +10,8 @@ pub enum Error {
     CaseNotMatch,
     #[snafu(display("Case path not found\n"))]
     CasePathNotFound,
-
     CaseFail,
+    HttpRequestBuildFail,
     IO,
 }
 
@@ -23,6 +24,18 @@ impl From<walkdir::Error> for Error {
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
         Error::IO
+    }
+}
+
+impl From<InvalidHeaderValue> for Error {
+    fn from(_: InvalidHeaderValue) -> Self {
+        Self::HttpRequestBuildFail
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(_: reqwest::Error) -> Self {
+        Self::HttpRequestBuildFail
     }
 }
 

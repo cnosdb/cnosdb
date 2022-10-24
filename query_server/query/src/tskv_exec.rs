@@ -1,14 +1,25 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use datafusion::{
     arrow::datatypes::SchemaRef,
     error::{DataFusionError, Result},
     execution::context::TaskContext,
     physical_expr::PhysicalSortExpr,
-    physical_plan::{ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics},
+    physical_plan::{
+        metrics::ExecutionPlanMetricsSet, DisplayFormatType, ExecutionPlan, Partitioning,
+        SendableRecordBatchStream, Statistics,
+    },
 };
+use models::schema::TableSchema;
 
-use crate::{predicate::PredicateRef, schema::TableSchema, stream::TableScanStream};
+use crate::{
+    predicate::PredicateRef,
+    stream::{TableScanMetrics, TableScanStream},
+};
 use tskv::engine::EngineRef;
 
 #[derive(Debug, Clone)]
@@ -19,6 +30,9 @@ pub struct TskvExec {
     proj_schema: SchemaRef,
     filter: PredicateRef,
     engine: EngineRef,
+
+    /// Execution metrics
+    metrics: ExecutionPlanMetricsSet,
 }
 
 impl TskvExec {
@@ -28,11 +42,14 @@ impl TskvExec {
         filter: PredicateRef,
         engine: EngineRef,
     ) -> Self {
+        let metrics = ExecutionPlanMetricsSet::new();
+
         Self {
             table_schema,
             proj_schema,
             filter,
             engine,
+            metrics,
         }
     }
     pub fn filter(&self) -> PredicateRef {
@@ -65,15 +82,23 @@ impl ExecutionPlan for TskvExec {
         self: Arc<Self>,
         _: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        Ok(self)
+        Ok(Arc::new(TskvExec {
+            table_schema: self.table_schema.clone(),
+            proj_schema: self.proj_schema.clone(),
+            filter: self.filter.clone(),
+            engine: self.engine.clone(),
+            metrics: self.metrics.clone(),
+        }))
     }
 
     fn execute(
         &self,
-        _partition: usize,
+        partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let batch_size = context.session_config().batch_size();
+
+        let metrics = TableScanMetrics::new(&self.metrics, partition);
 
         let table_stream = match TableScanStream::new(
             self.table_schema.clone(),
@@ -81,6 +106,7 @@ impl ExecutionPlan for TskvExec {
             self.filter(),
             batch_size,
             self.engine.clone(),
+            metrics,
         ) {
             Ok(s) => s,
             Err(err) => return Err(DataFusionError::Internal(err.to_string())),
@@ -89,7 +115,48 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default => {
+                let filter = self.filter();
+                let fields: Vec<_> = self
+                    .proj_schema
+                    .fields()
+                    .iter()
+                    .map(|x| x.name().to_owned())
+                    .collect::<Vec<String>>();
+                write!(
+                    f,
+                    "TskvExec: {}, projection=[{}]",
+                    PredicateDisplay(&filter),
+                    fields.join(","),
+                )
+            }
+        }
+    }
+
     fn statistics(&self) -> Statistics {
-        todo!()
+        // TODO
+        Statistics::default()
+    }
+
+    fn metrics(&self) -> Option<datafusion::physical_plan::metrics::MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+}
+
+/// A wrapper to customize PredicateRef display
+#[derive(Debug)]
+struct PredicateDisplay<'a>(&'a PredicateRef);
+
+impl<'a> Display for PredicateDisplay<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let filter = self.0;
+        write!(
+            f,
+            "limit={:?}, predicate={:?}",
+            filter.limit(),
+            filter.domains(),
+        )
     }
 }

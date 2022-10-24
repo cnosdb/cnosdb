@@ -1,9 +1,9 @@
 -- normal
 -- public.test(time i64, ta utf8, tb utf8, fa , fb)
--- curl -i -H "user_id: cnosdb" -H "database: public"  -XPOST 'http://127.0.0.1:31007/write/line_protocol' \
--- -d 'test,ta=a1,tb=b1 fa=1,fb=2 3'
-
 -- insert all columns with single record
+--#LP_BEGIN
+test,ta=a1,tb=b1 fa=1,fb=2 3
+--#LP_END
 insert public.test(TIME, ta, tb, fa, fb)
 values
     (7, '7a', '7b', 7, 7);

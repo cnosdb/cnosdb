@@ -43,7 +43,7 @@
     * Build it from source
 
         ```shell
-        $ git clone https://github.com/google/flatbuffers.git && cd flatbuffers
+        $ git clone https://github.com/google/flatbuffers.git && cd flatbuffers && git checkout -b v2.0.6 v2.0.6
 
         # Execute one of the following commands depending on your OS
         $ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release

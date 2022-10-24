@@ -24,8 +24,8 @@ use datafusion::{
         common::{batch_byte_size, SizedRecordBatchStream},
         metrics::{BaselineMetrics, CompositeMetricsSet, MemTrackingMetrics, MetricsSet},
         stream::RecordBatchStreamAdapter,
-        DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
-        Statistics,
+        DisplayFormatType, Distribution, EmptyRecordBatchStream, ExecutionPlan, Partitioning,
+        SendableRecordBatchStream, Statistics,
     },
 };
 
@@ -354,6 +354,11 @@ where
         let schema = self.schema.clone();
         let col_number = self.schema.fields().len();
         let record_batch_number = self.record_batch_references.len();
+
+        // No result directly returns EmptyRecordBatchStream
+        if record_batch_number == 0 {
+            return Ok(Box::pin(EmptyRecordBatchStream::new(schema)));
+        }
 
         // 1. Construct the mapping relationship of id -> record_batch's rank_number
         // 2. And according to the rank order, save the ArrayData of each column in each RecordBatch in the form of col_N -> [record_batch_1_N, record_batch_2_N, ...] to facilitate the subsequent construction of MutArrayData

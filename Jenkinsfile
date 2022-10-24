@@ -34,7 +34,7 @@ pipeline {
 
                 sh """
 		cd $WORKSPACE
-		cargo test
+		cargo test --workspace --all-features --exclude e2e_test
                 """
             }
 	    }

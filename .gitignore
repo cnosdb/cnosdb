@@ -17,6 +17,7 @@ Cargo.lock
 trace.log.*
 test_*.log
 *.out
+*.history
 
 #generated files
 **/protos/src/generated/

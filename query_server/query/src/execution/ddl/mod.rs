@@ -1,4 +1,3 @@
-use crate::metadata::MetaDataRef;
 use async_trait::async_trait;
 
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
@@ -22,26 +21,19 @@ mod drop_object;
 trait DDLDefinitionTask: Send + Sync {
     async fn execute(
         &self,
-        catalog: MetaDataRef,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError>;
 }
 
 pub struct DDLExecution {
     task_factory: DDLDefinitionTaskFactory,
-    catalog: MetaDataRef,
     query_state_machine: QueryStateMachineRef,
 }
 
 impl DDLExecution {
-    pub fn new(
-        query_state_machine: QueryStateMachineRef,
-        plan: DDLPlan,
-        catalog: MetaDataRef,
-    ) -> Self {
+    pub fn new(query_state_machine: QueryStateMachineRef, plan: DDLPlan) -> Self {
         Self {
             task_factory: DDLDefinitionTaskFactory { plan },
-            catalog,
             query_state_machine,
         }
     }
@@ -52,12 +44,11 @@ impl QueryExecution for DDLExecution {
     // execute ddl task
     // This logic usually does not change
     async fn start(&self) -> Result<Output, QueryError> {
-        let catalog = self.catalog.clone();
         let query_state_machine = self.query_state_machine.clone();
 
         self.task_factory
             .create_task()
-            .execute(catalog, query_state_machine)
+            .execute(query_state_machine)
             .await
             .context(query::ExecutionSnafu)
     }

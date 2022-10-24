@@ -31,6 +31,9 @@ pub enum LogicalPlannerError {
 
     #[snafu(display("Metadata err: {}", source))]
     Metadata { source: MetadataError },
+
+    #[snafu(display("This feature is not implemented: {}", err))]
+    NotImplemented { err: String },
 }
 
 #[derive(Debug, Clone)]

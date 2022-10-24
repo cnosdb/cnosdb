@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
 use flatbuffers::FlatBufferBuilder;
@@ -7,18 +7,21 @@ use futures::FutureExt;
 use libc::printf;
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
+use tokio::sync::watch;
+use tokio::sync::watch::{Receiver, Sender};
 use tokio::{
     runtime::Runtime,
     sync::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
+    time::Instant,
 };
 
-use async_channel as channel;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
+use models::schema::TableSchema;
 use models::{
-    utils::unite_id, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesInfo, SeriesKey, Tag,
+    utils::unite_id, FieldId, FieldInfo, InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Tag,
     Timestamp, ValueType,
 };
 use protos::{
@@ -27,13 +30,13 @@ use protos::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
     database,
     engine::Engine,
     error::{self, Result},
-    file_manager::{self, FileManager},
     file_utils,
     index::{db_index, IndexResult},
     kv_option::Options,
@@ -49,10 +52,6 @@ use crate::{
     Error, Task, TseriesFamilyId,
 };
 
-pub struct Entry {
-    pub series_id: u64,
-}
-
 #[derive(Debug)]
 pub struct TsKv {
     options: Arc<Options>,
@@ -61,7 +60,7 @@ pub struct TsKv {
 
     runtime: Arc<Runtime>,
     wal_sender: UnboundedSender<WalTask>,
-    flush_task_sender: UnboundedSender<Arc<Mutex<Vec<FlushReq>>>>,
+    flush_task_sender: UnboundedSender<FlushReq>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
     summary_task_sender: UnboundedSender<SummaryTask>,
 }
@@ -71,20 +70,18 @@ impl TsKv {
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
-
-        let (version_set, summary) = Self::recover_summary(shared_options.clone()).await;
-
-        let wal_cfg = shared_options.wal.clone();
-
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (version_set, summary) =
+            Self::recover_summary(shared_options.clone(), flush_task_sender.clone()).await;
+        let wal_cfg = shared_options.wal.clone();
         let core = Self {
             version_set,
             global_ctx: summary.global_context(),
             runtime,
             wal_sender,
-            flush_task_sender,
             options: shared_options,
+            flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
         };
@@ -104,12 +101,14 @@ impl TsKv {
             summary.version_set(),
             summary_task_sender.clone(),
         );
-        core.run_summary_job(summary, summary_task_receiver, summary_task_sender);
-
+        core.run_summary_job(summary, summary_task_receiver);
         Ok(core)
     }
 
-    async fn recover_summary(opt: Arc<Options>) -> (Arc<RwLock<VersionSet>>, Summary) {
+    async fn recover_summary(
+        opt: Arc<Options>,
+        flush_task_sender: UnboundedSender<FlushReq>,
+    ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir)
@@ -118,9 +117,11 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(opt.clone()).await.unwrap()
+            Summary::recover(opt.clone(), flush_task_sender)
+                .await
+                .unwrap()
         } else {
-            Summary::new(opt.clone()).await.unwrap()
+            Summary::new(opt.clone(), flush_task_sender).await.unwrap()
         };
         let version_set = summary.version_set();
 
@@ -131,11 +132,7 @@ impl TsKv {
         let wal_manager = WalManager::new(self.options.wal.clone());
 
         wal_manager
-            .recover(
-                self,
-                self.global_ctx.clone(),
-                self.flush_task_sender.clone(),
-            )
+            .recover(self, self.global_ctx.clone())
             .await
             .unwrap();
     }
@@ -160,21 +157,6 @@ impl TsKv {
         // get data from memcache
         if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
             data.append(&mut mem_entry.read().read_cell(time_range));
-        }
-
-        // get data from delta_memcache
-        if let Some(mem_entry) = version.caches.delta_mut_cache.read().get(&field_id) {
-            data.append(&mut mem_entry.read().read_cell(time_range));
-        }
-
-        // get data from immut_delta_memcache
-        for mem_cache in version.caches.delta_immut_cache.iter() {
-            if mem_cache.read().flushed {
-                continue;
-            }
-            if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                data.append(&mut mem_entry.read().read_cell(time_range));
-            }
         }
 
         // get data from im_memcache
@@ -237,7 +219,7 @@ impl TsKv {
 
     fn run_flush_job(
         &self,
-        mut receiver: UnboundedReceiver<Arc<Mutex<Vec<FlushReq>>>>,
+        mut receiver: UnboundedReceiver<FlushReq>,
         ctx: Arc<GlobalContext>,
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: UnboundedSender<SummaryTask>,
@@ -246,7 +228,7 @@ impl TsKv {
         let f = async move {
             while let Some(x) = receiver.recv().await {
                 run_flush_memtable_job(
-                    x.clone(),
+                    x,
                     ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
@@ -309,10 +291,9 @@ impl TsKv {
         &self,
         summary: Summary,
         mut summary_task_receiver: UnboundedReceiver<SummaryTask>,
-        summary_task_sender: UnboundedSender<SummaryTask>,
     ) {
         let f = async move {
-            let mut summary_processor = summary::SummaryProcessor::new(Box::new(summary));
+            let mut summary_processor = SummaryProcessor::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
                 debug!("Apply Summary task");
                 summary_processor.batch(x);
@@ -323,33 +304,17 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    pub fn start(tskv: Arc<TsKv>, req_rx: channel::Receiver<Task>) {
-        warn!("job 'main' starting.");
-        let tskv_ref = tskv.clone();
-        let f = async move {
-            while let Ok(command) = req_rx.recv().await {
-                match command {
-                    Task::WritePoints { req, tx } => {
-                        debug!("writing points.");
-                        match tskv_ref.write(req).await {
-                            Ok(resp) => {
-                                let _ret = tx.send(Ok(resp));
-                            }
-                            Err(err) => {
-                                info!("write points error {}", err);
-                                let _ret = tx.send(Err(err));
-                            }
-                        }
-                        debug!("write points completed.");
-                    }
-                    _ => panic!("unimplemented."),
-                }
-            }
-        };
-
-        tskv.runtime.spawn(f);
-        warn!("job 'main' started.");
-    }
+    // fn run_timer_job(&self, pub_sender: Sender<()>) {
+    //     let f = async move {
+    //         let interval = Duration::from_secs(1);
+    //         let ticker = crossbeam_channel::tick(interval);
+    //         loop {
+    //             ticker.recv().unwrap();
+    //             let _ = pub_sender.send(());
+    //         }
+    //     };
+    //     self.runtime.spawn(f);
+    // }
 
     // pub async fn query(&self, _opt: QueryOption) -> Result<Option<Entry>> {
     //     Ok(None)
@@ -359,7 +324,6 @@ impl TsKv {
     pub fn compact(&self, database: &str) {
         if let Some(db) = self.version_set.read().get_db(database) {
             // TODO: stop current and prevent next flush and compaction.
-
             for (ts_family_id, ts_family) in db.read().ts_families() {
                 if let Some(compact_req) = ts_family.read().pick_compaction() {
                     match compaction::run_compaction_job(compact_req, self.global_ctx.clone()) {
@@ -395,7 +359,11 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self.version_set.write().create_db(&db_name);
+        let db_warp = self.version_set.read().get_db(&db_name);
+        let db = match db_warp {
+            Some(database) => database,
+            None => self.version_set.write().create_db(&db_name),
+        };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
         let mut seq = 0;
@@ -415,12 +383,12 @@ impl Engine for TsKv {
                 seq,
                 self.global_ctx.file_id_next(),
                 self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
             ),
         };
 
         tsf.read().put_points(seq, write_group);
-        tsf.write().check_to_flush(self.flush_task_sender.clone());
-
+        tsf.write().check_to_flush();
         Ok(WritePointsRpcResponse {
             version: 1,
             points: vec![],
@@ -451,11 +419,11 @@ impl Engine for TsKv {
                 seq,
                 self.global_ctx.file_id_next(),
                 self.summary_task_sender.clone(),
+                self.flush_task_sender.clone(),
             ),
         };
 
         tsf.read().put_points(seq, write_group);
-        tsf.write().check_to_flush(self.flush_task_sender.clone());
 
         return Ok(WritePointsRpcResponse {
             version: 1,
@@ -468,26 +436,26 @@ impl Engine for TsKv {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<u32>,
-    ) -> HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> {
+        fields: Vec<SchemaFieldId>,
+    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
         // get data block
-        let mut ans = HashMap::new();
+        let mut ans: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
-            for field_id in fields.iter() {
-                let field_id_entry = sid_entry.entry(*field_id).or_insert(vec![]);
-                let fid = unite_id((*field_id).into(), sid);
+            for sch_fid in fields.iter() {
+                let field_id_entry = sid_entry.entry(*sch_fid).or_insert(vec![]);
+                let fid = unite_id((*sch_fid).into(), sid);
                 field_id_entry.append(&mut self.read_point(db, time_range, fid));
             }
         }
 
         // sort data block, max block size 1000
         let mut final_ans = HashMap::new();
-        for i in ans {
-            let sid_entry = final_ans.entry(i.0).or_insert_with(HashMap::new);
-            for j in i.1 {
-                let field_id_entry = sid_entry.entry(j.0).or_insert(vec![]);
-                field_id_entry.append(&mut DataBlock::merge_blocks(j.1, MAX_BLOCK_VALUES));
+        for (sid, map) in ans {
+            let sid_entry = final_ans.entry(sid).or_insert_with(HashMap::new);
+            for (sch_fid, blks) in map {
+                let field_id_entry = sid_entry.entry(sch_fid).or_insert(vec![]);
+                field_id_entry.append(&mut DataBlock::merge_blocks(blks, MAX_BLOCK_VALUES));
             }
         }
 
@@ -521,6 +489,19 @@ impl Engine for TsKv {
         Ok(())
     }
 
+    fn create_table(&self, schema: &TableSchema) {
+        // todo : remove this create db after impl create db sql
+        self.version_set.write().create_db(&schema.db);
+        if let Some(db) = self.version_set.write().get_db(&schema.db) {
+            match db.read().get_index().create_table(schema) {
+                Ok(_) => {}
+                Err(e) => error!("failed create database '{}'", e),
+            }
+        } else {
+            error!("Database {}, not found", schema.db);
+        }
+    }
+
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
 
@@ -536,7 +517,6 @@ impl Engine for TsKv {
         };
 
         // TODO Release global DropTable flag.
-
         recv_ret
     }
 
@@ -572,7 +552,7 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn get_table_schema(&self, name: &str, tab: &str) -> Result<Option<Vec<FieldInfo>>> {
+    fn get_table_schema(&self, name: &str, tab: &str) -> Result<Option<TableSchema>> {
         if let Some(db) = self.version_set.read().get_db(name) {
             let val = db
                 .read()
@@ -586,7 +566,7 @@ impl Engine for TsKv {
 
     fn get_series_id_list(&self, name: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         if let Some(db) = self.version_set.read().get_db(name) {
-            return db.read().get_index().write().get_series_id_list(tab, tags);
+            return db.read().get_index().get_series_id_list(tab, tags);
         }
 
         Ok(vec![])
@@ -613,57 +593,18 @@ impl Engine for TsKv {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-    use std::sync::{atomic, Arc};
-
-    use async_channel as channel;
-
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::utils::now_timestamp;
-    use models::{InMemPoint, SeriesId, SeriesInfo, SeriesKey, Timestamp};
+    use models::{InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
+    use std::collections::HashMap;
+    use std::sync::{atomic, Arc};
     use tokio::runtime::{self, Runtime};
 
     use crate::{engine::Engine, error, tsm::DataBlock, Options, TimeRange, TsKv};
     use std::sync::atomic::{AtomicI64, Ordering};
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_async_chan() {
-        let atomic = Arc::new(AtomicI64::new(0));
-        let (sender, receiver) = channel::unbounded();
-        for i in 0..60 {
-            consumer(atomic.clone(), receiver.clone());
-        }
-
-        let mut start = now_timestamp();
-        for i in 0..100000000 {
-            let _ = sender.send(i).await;
-
-            if i % 1000000 == 0 {
-                println!(
-                    "{} {} {}",
-                    now_timestamp() - start,
-                    i,
-                    atomic.load(Ordering::SeqCst)
-                );
-                start = now_timestamp();
-            }
-        }
-    }
-
-    fn consumer(atomic: Arc<AtomicI64>, req_rx: channel::Receiver<u64>) {
-        let f = async move {
-            println!(" 111111");
-            while req_rx.recv().await.is_ok() {
-                println!(" ====");
-                atomic.fetch_add(1, Ordering::SeqCst);
-            }
-        };
-
-        tokio::spawn(f);
-    }
+    use tokio::sync::watch;
 
     #[tokio::test]
     #[ignore]
@@ -693,14 +634,15 @@ mod test {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
 
-            let field_ids: Vec<u32> = table_schema.iter().map(|f| f.field_id() as u32).collect();
-            let result: HashMap<SeriesId, HashMap<u32, Vec<DataBlock>>> =
+            let field_ids: Vec<SchemaFieldId> =
+                table_schema.fields.iter().map(|f| f.1.id).collect();
+            let result: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> =
                 tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
         }
     }
-
     #[test]
+    #[ignore]
     fn test_drop_table_database() {
         let base_dir = "/tmp/test/tskv/drop_table".to_string();
         let _ = std::fs::remove_dir_all(&base_dir);

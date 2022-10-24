@@ -1,11 +1,11 @@
 -- normal
 -- public.test_insert_subquery(time i64, ta utf8, tb utf8, fa , fb)
--- curl -i -H "user_id: cnosdb" -H "database: public"  -XPOST 'http://127.0.0.1:31007/write/line_protocol' \
--- -d 'test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3'
-
 -- insert all columns
 --   1. single record
 --   2. column name not match
+--#LP_BEGIN
+test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
+--#LP_END
 insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
 select column1, column2, column3, column4, column5
 from

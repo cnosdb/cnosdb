@@ -9,14 +9,12 @@ use parking_lot::Mutex;
 use trace::error;
 
 use super::*;
-use crate::{
-    direct_io::{File, FileSync},
-    file_manager,
-};
+use crate::file_system::file_manager;
+use crate::file_system::{DmaFile, FileSync};
 
 pub struct Writer {
     path: PathBuf,
-    file: Mutex<File>,
+    file: Mutex<DmaFile>,
 }
 
 impl Writer {

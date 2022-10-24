@@ -2,11 +2,12 @@ use std::collections::VecDeque;
 
 use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
+use models::schema::TIME_FIELD_NAME;
 use snafu::ResultExt;
 use spi::query::ast::{ColumnOption, CreateTable, DropObject, ExtStatement, ObjectType};
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
-use sqlparser::ast::DataType;
+use sqlparser::ast::{DataType, Ident};
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
@@ -329,7 +330,12 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_cnos_column(&mut self) -> Result<Vec<ColumnOption>> {
-        let mut columns = vec![];
+        let mut columns = vec![ColumnOption {
+            name: Ident::from(TIME_FIELD_NAME),
+            is_tag: false,
+            data_type: DataType::Timestamp,
+            codec: "DEFAULT".to_string(),
+        }];
         if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
             return Ok(columns);
         }
@@ -393,7 +399,7 @@ impl<'a> ExtParser<'a> {
         let token = self.parser.next_token();
         match token {
             Token::Word(w) => match w.keyword {
-                Keyword::TIMESTAMP => Ok(DataType::Timestamp),
+                Keyword::TIMESTAMP => parser_err!(format!("already have timestamp column")),
                 Keyword::BIGINT => Ok(if self.parser.parse_keyword(Keyword::UNSIGNED) {
                     DataType::UnsignedBigInt(None)
                 } else {
@@ -542,10 +548,16 @@ mod tests {
             }) => {
                 assert_eq!(name.to_string(), "test".to_string());
                 assert_eq!(if_not_exists.to_string(), "true".to_string());
-                assert_eq!(columns.len(), 7);
+                assert_eq!(columns.len(), 8);
                 assert_eq!(
                     *columns,
                     vec![
+                        ColumnOption {
+                            name: Ident::from("time"),
+                            is_tag: false,
+                            data_type: DataType::Timestamp,
+                            codec: "DEFAULT".to_string()
+                        },
                         ColumnOption {
                             name: Ident::from("column1"),
                             is_tag: false,

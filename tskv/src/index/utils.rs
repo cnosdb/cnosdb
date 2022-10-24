@@ -1,6 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::BufMut;
+use tracing::log::info;
 
 use models::FieldId;
 
@@ -10,13 +11,8 @@ use super::*;
 
 pub fn encode_inverted_index_key(tab: &str, tag_key: &[u8], tag_val: &[u8]) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::with_capacity(tab.len() + 1 + tag_key.len() + 1 + tag_val.len());
-
-    buf.put_slice(tab.as_bytes());
-    buf.push(b'.');
-    buf.put_slice(tag_key);
-    buf.push(b'=');
-    buf.put_slice(tag_val);
-
+    let str = format!("{}.{:?}={:?}", tab, tag_key, tag_val);
+    buf.put_slice(str.as_bytes());
     buf
 }
 
