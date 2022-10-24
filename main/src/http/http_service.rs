@@ -108,7 +108,7 @@ impl HttpService {
             .and(warp::get().or(warp::head()))
             .map(|_| {
                 let mut resp = HashMap::new();
-                resp.insert("version", "0.1.0");
+                resp.insert("version", "2.0.0");
                 resp.insert("status", "healthy");
                 warp::reply::json(&resp)
             })

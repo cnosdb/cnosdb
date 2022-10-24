@@ -24,7 +24,7 @@ use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::ExecutionPlan;
 
-use crate::{ColumnId, ValueType};
+use crate::{ColumnId, SchemaId, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
@@ -38,7 +38,7 @@ pub const TIME_FIELD: &str = "time";
 pub struct TableSchema {
     pub db: String,
     pub name: String,
-    pub schema_id: u32,
+    pub schema_id: SchemaId,
 
     columns: Vec<TableColumn>,
     columns_index: HashMap<String, usize>,

@@ -191,7 +191,6 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema_id: SchemaId,
     pub schema: TableSchema,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
@@ -210,7 +209,7 @@ impl SeriesData {
         self.range.merge(&group.range);
 
         for item in self.groups.iter_mut() {
-            if item.schema_id == group.schema_id {
+            if item.schema.schema_id == group.schema.schema_id {
                 item.range.merge(&group.range);
                 item.rows.append(&mut group.rows);
                 item.schema = group.schema;
@@ -266,7 +265,7 @@ impl SeriesData {
     pub fn flat_groups(&self) -> Vec<(SchemaId, &TableSchema, &Vec<RowData>)> {
         self.groups
             .iter()
-            .map(|g| (g.schema_id, &g.schema, &g.rows))
+            .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
             .collect()
     }
 }
@@ -522,7 +521,7 @@ pub(crate) mod test {
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
-        schema: TableSchema,
+        mut schema: TableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {
@@ -543,8 +542,8 @@ pub(crate) mod test {
             rows.push(RowData { ts, fields });
         }
 
+        schema.schema_id = schema_id;
         let row_group = RowGroup {
-            schema_id,
             schema,
             range: TimeRange::from(time_range),
             rows,

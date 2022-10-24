@@ -221,9 +221,8 @@ impl Database {
 
         let row = RowData::point_to_row_data(point, &table_schema);
         let schema_size = table_schema.size();
-        let schema_id = 0;
+        let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-            schema_id,
             schema: TableSchema::default(),
             rows: vec![],
             range: TimeRange {
