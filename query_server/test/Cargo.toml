@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 tokio = {version = "1.21.1", features = ["full"]}
-clap = { version = "3.2.22", features = ["derive"] }
+clap = { version = "3", features = ["derive"] }
 serde = {version = "1.0.144", features = ["derive"]}
 prettydiff = "0.6.1"
 lazy_static = "1.4.0"
