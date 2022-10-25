@@ -203,11 +203,11 @@ impl MetaData for LocalCatalogMeta {
         }
     }
 
-    fn show_tables(&self, name: &str) -> Result<Output> {
-        let mut database_name = name;
-        if database_name.is_empty() {
-            database_name = self.database_name.as_str()
-        }
+    fn show_tables(&self, name: &Option<String>) -> Result<Output> {
+        let database_name = match name {
+            None => self.database_name.as_str(),
+            Some(v) => v.as_str(),
+        };
 
         match self.catalog.schema(database_name) {
             None => Err(MetadataError::DatabaseNotExists {

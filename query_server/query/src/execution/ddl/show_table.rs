@@ -6,11 +6,11 @@ use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 
 pub struct ShowTablesTask {
-    database_name: String,
+    database_name: Option<String>,
 }
 
 impl ShowTablesTask {
-    pub fn new(database_name: String) -> Self {
+    pub fn new(database_name: Option<String>) -> Self {
         Self { database_name }
     }
 }
@@ -21,14 +21,14 @@ impl DDLDefinitionTask for ShowTablesTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        show_tables(
-            self.database_name.as_str(),
-            query_state_machine.catalog.clone(),
-        )
+        show_tables(&self.database_name, query_state_machine.catalog.clone())
     }
 }
 
-fn show_tables(database_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
+fn show_tables(
+    database_name: &Option<String>,
+    catalog: MetaDataRef,
+) -> Result<Output, ExecutionError> {
     catalog
         .show_tables(database_name)
         .context(execution::MetadataSnafu)

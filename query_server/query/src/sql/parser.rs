@@ -9,7 +9,7 @@ use spi::query::ast::{
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
-use sqlparser::ast::{DataType, Value};
+use sqlparser::ast::{DataType, Ident, ObjectName, Value};
 use sqlparser::{
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
@@ -158,12 +158,9 @@ impl<'a> ExtParser<'a> {
     fn parse_show_tables(&mut self) -> Result<ExtStatement> {
         if self.consume_token(&Token::make_keyword("ON")) {
             let database_name = self.parser.parse_object_name()?;
-
-            Ok(ExtStatement::ShowTables(database_name.to_string()))
+            Ok(ExtStatement::ShowTables(Some(database_name)))
         } else {
-            let database_name = "";
-
-            Ok(ExtStatement::ShowTables(database_name.to_string()))
+            Ok(ExtStatement::ShowTables(None))
         }
     }
 
@@ -172,9 +169,7 @@ impl<'a> ExtParser<'a> {
         debug!("Parse Describe DATABASE statement");
         let database_name = self.parser.parse_object_name()?;
 
-        let describe = DescribeDatabase {
-            database_name: database_name.to_string(),
-        };
+        let describe = DescribeDatabase { database_name };
 
         Ok(ExtStatement::DescribeDatabase(describe))
     }
@@ -183,9 +178,7 @@ impl<'a> ExtParser<'a> {
     fn parse_describe_table(&mut self) -> Result<ExtStatement> {
         let table_name = self.parser.parse_object_name()?;
 
-        let describe = DescribeTable {
-            table_name: table_name.to_string(),
-        };
+        let describe = DescribeTable { table_name };
 
         Ok(ExtStatement::DescribeTable(describe))
     }
@@ -302,7 +295,7 @@ impl<'a> ExtParser<'a> {
         let location = self.parser.parse_literal_string()?;
 
         let create = CreateExternalTable {
-            name: table_name.to_string(),
+            name: normalize_sql_object_name(&table_name),
             columns,
             file_type,
             has_header,
@@ -322,7 +315,7 @@ impl<'a> ExtParser<'a> {
         let columns = self.parse_cnos_column()?;
 
         let create = CreateTable {
-            name: table_name.to_string(),
+            name: table_name,
             if_not_exists,
             columns,
         };
@@ -379,7 +372,7 @@ impl<'a> ExtParser<'a> {
         let database_name = self.parser.parse_object_name()?;
         let options = self.parse_database_options()?;
         Ok(ExtStatement::CreateDatabase(CreateDatabase {
-            name: database_name.to_string(),
+            name: database_name,
             if_not_exists,
             options,
         }))
@@ -409,7 +402,7 @@ impl<'a> ExtParser<'a> {
             return self.expected("TABLE,DATABASE after DROP", self.parser.peek_token());
         };
         let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-        let object_name = self.parser.parse_object_name()?.to_string();
+        let object_name = self.parser.parse_object_name()?;
 
         Ok(ExtStatement::Drop(DropObject {
             object_name,
@@ -554,6 +547,24 @@ fn parse_file_type(s: &str) -> Result<FileType, ParserError> {
             "expect one of PARQUET, AVRO, NDJSON, or CSV, found: {}",
             other
         )),
+    }
+}
+
+/// Normalize a SQL object name
+pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+    sql_object_name
+        .0
+        .iter()
+        .map(normalize_ident)
+        .collect::<Vec<String>>()
+        .join(".")
+}
+
+// Normalize an identifier to a lowercase string unless the identifier is quoted.
+pub fn normalize_ident(id: &Ident) -> String {
+    match id.quote_style {
+        Some(_) => id.value.clone(),
+        None => id.value.to_ascii_lowercase(),
     }
 }
 
@@ -838,7 +849,8 @@ mod tests {
         match statements[0] {
             ExtStatement::CreateDatabase(ref stmt) => {
                 let ans = format!("{:?}", stmt);
-                let expectd = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10), precision: Some("us") } }"#;
+                println!("{ans}");
+                let expectd = r#"CreateDatabase { name: ObjectName([Ident { value: "test", quote_style: None }]), if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10), precision: Some("us") } }"#;
                 assert_eq!(ans, expectd);
             }
             _ => panic!("impossible"),

@@ -64,7 +64,7 @@ pub enum DDLPlan {
 
     DescribeDatabase(DescribeDatabase),
 
-    ShowTables(String),
+    ShowTables(Option<String>),
 
     ShowDatabases(),
 }

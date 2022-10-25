@@ -81,7 +81,7 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CreateDatabase(stmt) => Box::new(CreateDatabaseTask::new(stmt.clone())),
             DDLPlan::DescribeDatabase(stmt) => Box::new(DescribeDatabaseTask::new(stmt.clone())),
             DDLPlan::DescribeTable(stmt) => Box::new(DescribeTableTask::new(stmt.clone())),
-            DDLPlan::ShowTables(stmt) => Box::new(ShowTablesTask::new(stmt.to_string())),
+            DDLPlan::ShowTables(stmt) => Box::new(ShowTablesTask::new(stmt.clone())),
             DDLPlan::ShowDatabases() => Box::new(ShowDatabasesTask::new()),
         }
     }

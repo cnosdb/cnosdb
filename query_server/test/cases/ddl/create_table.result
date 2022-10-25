@@ -6,6 +6,21 @@
 200 OK
 
 
+-- EXECUTE SQL: CREATE TABLE createtable."tesT"; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE createtable.tesT; --
+200 OK
+
+
+-- EXECUTE SQL: SHOW TABLES; --
+200 OK
+Table
+test
+tesT
+
+
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 200 OK
 

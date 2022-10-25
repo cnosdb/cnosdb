@@ -1,3 +1,4 @@
+use std::option::Option;
 use std::sync::Arc;
 
 use datafusion::error::DataFusionError;
@@ -40,6 +41,7 @@ use sqlparser::ast::{DataType as SQLDataType, Statement};
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+use crate::sql::parser::{normalize_ident, normalize_sql_object_name};
 
 /// CnosDB SQL query planner
 #[derive(Debug)]
@@ -250,7 +252,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn drop_object_to_plan(&self, stmt: DropObject) -> Result<Plan> {
         Ok(Plan::DDL(DDLPlan::Drop(DropPlan {
             if_exist: stmt.if_exist,
-            object_name: stmt.object_name,
+            object_name: normalize_sql_object_name(&stmt.object_name),
             obj_type: stmt.obj_type,
         })))
     }
@@ -335,23 +337,22 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
             schema.push(col)
         }
-
         Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
             schema,
-            name,
+            name: normalize_sql_object_name(&name),
             if_not_exists,
         })))
     }
 
     fn database_to_describe(&self, statement: DescribeDatabaseOptions) -> Result<Plan> {
         Ok(Plan::DDL(DDLPlan::DescribeDatabase(DescribeDatabase {
-            database_name: statement.database_name,
+            database_name: normalize_sql_object_name(&statement.database_name),
         })))
     }
 
     fn table_to_describe(&self, opts: DescribeTableOptions) -> Result<Plan> {
         Ok(Plan::DDL(DDLPlan::DescribeTable(DescribeTable {
-            table_name: opts.table_name,
+            table_name: normalize_sql_object_name(&opts.table_name),
         })))
     }
 
@@ -359,8 +360,10 @@ impl<S: ContextProvider> SqlPlaner<S> {
         Ok(Plan::DDL(DDLPlan::ShowDatabases()))
     }
 
-    fn table_to_show(&self, database: String) -> Result<Plan> {
-        Ok(Plan::DDL(DDLPlan::ShowTables(database)))
+    fn table_to_show(&self, database: Option<ObjectName>) -> Result<Plan> {
+        Ok(Plan::DDL(DDLPlan::ShowTables(
+            database.map(|db_name| normalize_sql_object_name(&db_name)),
+        )))
     }
 
     fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<Plan> {
@@ -371,7 +374,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         } = stmt;
         let options = self.make_database_option(options)?;
         Ok(Plan::DDL(DDLPlan::CreateDatabase(CreateDatabase {
-            name,
+            name: normalize_sql_object_name(&name),
             if_not_exists,
             options,
         })))
@@ -535,24 +538,6 @@ fn semantic_check(
     }
 
     Ok(())
-}
-
-/// Normalize a SQL object name
-fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
-    sql_object_name
-        .0
-        .iter()
-        .map(normalize_ident)
-        .collect::<Vec<String>>()
-        .join(".")
-}
-
-// Normalize an identifier to a lowercase string unless the identifier is quoted.
-pub fn normalize_ident(id: &Ident) -> String {
-    match id.quote_style {
-        Some(_) => id.value.clone(),
-        None => id.value.to_ascii_lowercase(),
-    }
 }
 
 impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
