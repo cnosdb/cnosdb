@@ -1,6 +1,10 @@
 --#DATABASE=createtable
+--#SORT = true
 DROP DATABASE IF EXISTS createtable;
 CREATE DATABASE createtable;
+CREATE TABLE createtable."tesT";
+CREATE TABLE createtable.tesT;
+SHOW TABLES;
 
 CREATE TABLE test0(
     column1 BIGINT CODEC(DELTA),

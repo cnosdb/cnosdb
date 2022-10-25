@@ -1,6 +1,6 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{DataType, Ident};
+use datafusion::sql::sqlparser::ast::{DataType, Ident, ObjectName};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 
 /// Statement representations
@@ -20,20 +20,20 @@ pub enum ExtStatement {
     DescribeTable(DescribeTable),
     DescribeDatabase(DescribeDatabase),
     ShowDatabases(),
-    ShowTables(String),
+    ShowTables(Option<ObjectName>),
     //todo:  insert/update/alter
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropObject {
-    pub object_name: String,
+    pub object_name: ObjectName,
     pub if_exist: bool,
     pub obj_type: ObjectType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeObject {
-    pub object_name: String,
+    pub object_name: ObjectName,
     pub obj_type: ObjectType,
 }
 
@@ -43,13 +43,13 @@ pub struct DropUser {}
 pub struct CreateUser {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateDatabase {
-    pub name: String,
+    pub name: ObjectName,
     pub if_not_exists: bool,
     pub options: DatabaseOptions,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTable {
-    pub name: String,
+    pub name: ObjectName,
     pub if_not_exists: bool,
     pub columns: Vec<ColumnOption>,
 }
@@ -78,17 +78,17 @@ pub struct DatabaseOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeTable {
-    pub table_name: String,
+    pub table_name: ObjectName,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescribeDatabase {
-    pub database_name: String,
+    pub database_name: ObjectName,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowTables {
-    pub database_name: String,
+    pub database_name: ObjectName,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
