@@ -50,6 +50,9 @@ pub enum Error {
         source: flatbuffers::InvalidFlatbuffer,
     },
 
+    #[snafu(display("wal truncated"))]
+    WalTruncated,
+
     #[snafu(display("read record file block: {}", source))]
     LogRecordErr {
         source: crate::record_file::RecordFileError,

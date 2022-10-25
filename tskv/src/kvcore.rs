@@ -14,6 +14,7 @@ use tokio::sync::watch::{Receiver, Sender};
 use tokio::{
     runtime::Runtime,
     sync::{
+        broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender},
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
@@ -67,6 +68,7 @@ pub struct TsKv {
     flush_task_sender: UnboundedSender<FlushReq>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
     summary_task_sender: UnboundedSender<SummaryTask>,
+    close_sender: BroadcastSender<UnboundedSender<()>>,
 }
 
 impl TsKv {
@@ -76,6 +78,7 @@ impl TsKv {
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) =
             Self::recover_summary(shared_options.clone(), flush_task_sender.clone()).await;
         let wal_cfg = shared_options.wal.clone();
@@ -88,10 +91,11 @@ impl TsKv {
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
+            close_sender,
         };
 
-        core.recover_wal().await;
-        core.run_wal_job(wal_receiver);
+        let wal_manager = core.recover_wal().await;
+        core.run_wal_job(wal_manager, wal_receiver);
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
@@ -107,6 +111,17 @@ impl TsKv {
         );
         core.run_summary_job(summary, summary_task_receiver);
         Ok(core)
+    }
+
+    pub async fn close(&self) {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        if let Err(e) = self.close_sender.send(tx) {
+            error!("Failed to broadcast close signal: {:?}", e);
+        }
+        while let Some(_x) = rx.recv().await {
+            continue;
+        }
+        info!("TsKv closed");
     }
 
     async fn recover_summary(
@@ -132,13 +147,15 @@ impl TsKv {
         (version_set, summary)
     }
 
-    async fn recover_wal(&self) {
+    async fn recover_wal(&self) -> WalManager {
         let wal_manager = WalManager::new(self.options.wal.clone());
 
         wal_manager
             .recover(self, self.global_ctx.clone())
             .await
             .unwrap();
+
+        wal_manager
     }
 
     pub fn read_point(
@@ -196,23 +213,42 @@ impl TsKv {
         data
     }
 
-    fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
+    fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: UnboundedReceiver<WalTask>) {
         warn!("job 'WAL' starting.");
-        let wal_opt = self.options.wal.clone();
-        let mut wal_manager = WalManager::new(wal_opt);
+        let mut close_receiver = self.close_sender.subscribe();
         let f = async move {
-            while let Some(x) = receiver.recv().await {
-                match x {
-                    WalTask::Write { points, cb } => {
-                        // write wal
-                        let ret = wal_manager.write(WalEntryType::Write, &points).await;
-                        let send_ret = cb.send(ret);
-                        match send_ret {
-                            Ok(wal_result) => {}
-                            Err(err) => {
-                                warn!("send WAL write result failed.")
+            loop {
+                tokio::select! {
+                    wal_task = receiver.recv() => {
+                        match wal_task {
+                            Some(WalTask::Write { points, cb }) => {
+                                // write wal
+                                let ret = wal_manager.write(WalEntryType::Write, &points).await;
+                                let send_ret = cb.send(ret);
+                                match send_ret {
+                                    Ok(wal_result) => {}
+                                    Err(err) => {
+                                        warn!("send WAL write result failed.")
+                                    }
+                                }
+                            }
+                            _ => {
+                                break;
                             }
                         }
+                    }
+                    close_task = close_receiver.recv() => {
+                        info!("job 'WAL' closing.");
+                        if let Err(e) = wal_manager.close().await {
+                            error!("Failed to close wal: {:?}", e);
+                        }
+                        info!("job 'WAL' closed.");
+                        if let Ok(tx) = close_task {
+                            if let Err(e) = tx.send(()) {
+                                error!("Failed to send wal closed signal: {:?}", e);
+                            }
+                        }
+                        break;
                     }
                 }
             }

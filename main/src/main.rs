@@ -154,6 +154,8 @@ fn main() -> Result<(), std::io::Error> {
                 server.start().expect("server start.");
                 signal::block_waiting_ctrl_c();
                 server.stop(true).await;
+                kv_inst.close().await;
+                println!("CnosDB is stopped.");
             }
         }
     });
