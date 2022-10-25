@@ -4,6 +4,7 @@ pub fn block_waiting_ctrl_c() {
         .expect("error setting Ctrl-C handler");
     println!("blocking waiting for Ctrl-C...");
     rx.recv().expect("could not receive from channel.");
+    println!("\nreceived Ctrl-C, CnosDB is stoping...");
 }
 
 pub fn install_crash_handler() {
