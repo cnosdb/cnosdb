@@ -20,7 +20,7 @@ use minivec::{mini_vec, MiniVec};
 use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
-use crate::{byte_utils, error::Result, tseries_family::TimeRange};
+use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
 use models::schema::{TableColumn, TableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
@@ -297,11 +297,12 @@ pub struct MemCache {
     cache_size: AtomicU64,
 
     part_count: usize,
+    // This u64 comes from the last 40 bits of FieldId. split_id(field_id)
     partions: Vec<RwLock<HashMap<u64, RwLockRef<SeriesData>>>>,
 }
 
 impl MemCache {
-    pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
+    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64) -> Self {
         let parts = 16;
         let mut partions = Vec::with_capacity(parts);
         for _i in 0..parts {
@@ -388,7 +389,7 @@ impl MemCache {
         self.cache_size.load(Ordering::Relaxed) >= self.max_size
     }
 
-    pub fn tf_id(&self) -> u32 {
+    pub fn tf_id(&self) -> TseriesFamilyId {
         self.tf_id
     }
 

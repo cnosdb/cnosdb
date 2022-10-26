@@ -86,7 +86,8 @@ impl FlushTask {
         for mem in self.mem_caches.iter() {
             flushing_mems.push(mem.write());
         }
-        let mut flushing_mems_data: HashMap<u64, Vec<Arc<RwLock<SeriesData>>>> = HashMap::new();
+        let mut flushing_mems_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
+            HashMap::new();
         for mem in flushing_mems.iter() {
             let seq_no = mem.seq_no();
             high_seq = seq_no.max(high_seq);
@@ -142,8 +143,9 @@ impl FlushTask {
 
         for (sid, series_datas) in caches_data.iter_mut() {
             let mut field_id_code_type_map = HashMap::new();
-            let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
-            let mut column_values_map: HashMap<u32, Vec<(Timestamp, FieldVal)>> = HashMap::new();
+            let mut schema_columns_value_type_map: HashMap<ColumnId, ValueType> = HashMap::new();
+            let mut column_values_map: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>> =
+                HashMap::new();
 
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas.iter_mut() {
@@ -231,8 +233,8 @@ impl FlushTask {
     /// Returns [ ( FieldId, Delta_DataBlocks, Tsm_DataBlocks) ]
     fn merge_series_data(
         series_id: SeriesId,
-        column_values: HashMap<u32, Vec<(Timestamp, FieldVal)>>,
-        column_types: HashMap<u32, ValueType>,
+        column_values: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>>,
+        column_types: HashMap<ColumnId, ValueType>,
         max_level_ts: Timestamp,
         data_block_size: usize,
     ) -> Vec<(FieldId, Vec<DataBlock>, Vec<DataBlock>)> {

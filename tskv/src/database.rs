@@ -41,7 +41,7 @@ pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 pub struct Database {
     name: String,
     index: Arc<db_index::DBIndex>,
-    ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
+    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
 }
 
@@ -307,7 +307,7 @@ impl Database {
         self.ts_families.len()
     }
 
-    pub fn ts_families(&self) -> &HashMap<u32, Arc<RwLock<TseriesFamily>>> {
+    pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>> {
         &self.ts_families
     }
 

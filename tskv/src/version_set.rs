@@ -19,7 +19,7 @@ use crate::{
     memcache::MemCache,
     summary::{SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, TseriesFamily, Version},
-    Options,
+    Options, TseriesFamilyId,
 };
 
 #[derive(Debug)]
@@ -32,7 +32,7 @@ pub struct VersionSet {
 impl VersionSet {
     pub fn new(
         opt: Arc<Options>,
-        ver_set: HashMap<u32, Arc<Version>>,
+        ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Self {
         let mut dbs = HashMap::new();
