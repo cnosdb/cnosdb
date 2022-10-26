@@ -1,0 +1,82 @@
+-- EXECUTE SQL: drop database if exists bottom_func; --
+200 OK
+
+
+-- EXECUTE SQL: create database bottom_func; --
+200 OK
+
+
+-- EXECUTE SQL: drop table if exists m2; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) ); -- 1ms; --
+200 OK
+
+
+-- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(101, 111, 444, 'tag11', 'tag21'); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(102, 222, 333, 'tag12', 'tag22'); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(103, 333, 222, 'tag13', 'tag23'); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(104, 444, 111, 'tag14', 'tag24'); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: select bottom(time, 2), * from m2; --
+200 OK
+time,time,t0,t1,t2,f0,f1
+1970-01-01T00:00:00.000000101,1970-01-01T00:00:00.000000101,tag11,tag21,,111,444.0
+1970-01-01T00:00:00.000000102,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
+
+
+-- EXECUTE SQL: select bottom(t0, 3), * from m2; --
+200 OK
+t0,time,t0,t1,t2,f0,f1
+tag11,1970-01-01T00:00:00.000000101,tag11,tag21,,111,444.0
+tag12,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
+tag13,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
+
+
+-- EXECUTE SQL: select bottom(t1, 2), * from m2; --
+200 OK
+t1,time,t0,t1,t2,f0,f1
+tag21,1970-01-01T00:00:00.000000101,tag11,tag21,,111,444.0
+tag22,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
+
+
+-- EXECUTE SQL: select bottom(f0, 2), * from m2; --
+200 OK
+f0,time,t0,t1,t2,f0,f1
+111,1970-01-01T00:00:00.000000101,tag11,tag21,,111,444.0
+222,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
+
+
+-- EXECUTE SQL: select bottom(f1, 3), * from m2; --
+200 OK
+f1,time,t0,t1,t2,f0,f1
+111.0,1970-01-01T00:00:00.000000104,tag14,tag24,,444,111.0
+222.0,1970-01-01T00:00:00.000000103,tag13,tag23,,333,222.0
+333.0,1970-01-01T00:00:00.000000102,tag12,tag22,,222,333.0
+
+
+-- EXECUTE SQL: select bottom(time, 2), topk(t0, 3) from m2; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'transform_bottom_func_to_topk_node' failed due to unexpected error: Error during planning: 1. There cannot be nested selection functions. 2. There cannot be multiple selection functions., found: [\n    BOTTOM(m2.time, Int64(2)),\n    TOPK(m2.t0, Int64(3)),\n]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+-- ERROR:  --
+
