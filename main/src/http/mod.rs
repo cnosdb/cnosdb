@@ -1,7 +1,7 @@
 use std::net::AddrParseError;
 
 use models::error_code::ErrorCode;
-use snafu::Snafu;
+use snafu::{Backtrace, Snafu};
 use spi::server::ServerError;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError;
@@ -24,22 +24,34 @@ mod result_format;
 #[snafu(visibility(pub))]
 pub enum Error {
     #[snafu(display("Failed to parse address. err: {}", source))]
-    AddrParse { source: AddrParseError },
+    AddrParse {
+        source: AddrParseError,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Body oversize: {}", size))]
-    BodyOversize { size: usize },
+    BodyOversize { size: usize, backtrace: Backtrace },
 
     #[snafu(display("Message is not valid UTF-8"))]
-    NotUtf8,
+    NotUtf8 { backtrace: Backtrace },
 
     #[snafu(display("Error parsing message: {}", source))]
-    ParseLineProtocol { source: line_protocol::Error },
+    ParseLineProtocol {
+        source: line_protocol::Error,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Error sending to channel receiver: {}", source))]
-    ChannelSend { source: SendError<tskv::Task> },
+    ChannelSend {
+        source: SendError<tskv::Task>,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Error receiving from channel receiver: {}", source))]
-    ChannelReceive { source: RecvError },
+    ChannelReceive {
+        source: RecvError,
+        backtrace: Backtrace,
+    },
 
     // #[snafu(display("Error sending to channel receiver: {}", source))]
     // AsyncChanSend {
@@ -52,13 +64,22 @@ pub enum Error {
     Tskv { source: tskv::Error },
 
     #[snafu(display("Invalid header: {}", reason))]
-    InvalidHeader { reason: String },
+    InvalidHeader {
+        reason: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Parse auth, malformed basic auth encoding: {}", reason))]
-    ParseAuth { reason: String },
+    ParseAuth {
+        reason: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Fetch result: {}", reason))]
-    FetchResult { reason: String },
+    FetchResult {
+        reason: String,
+        backtrace: Backtrace,
+    },
 }
 
 impl reject::Reject for Error {}
@@ -73,7 +94,10 @@ impl From<&Error> for Response {
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
-            Error::FetchResult { reason: _ } => {
+            Error::FetchResult {
+                reason: _,
+                backtrace: _,
+            } => {
                 let error_resp = ErrorResponse::new(ErrorCode::QueryUnknown, error_message);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
@@ -83,7 +107,14 @@ impl From<&Error> for Response {
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
-            Error::InvalidHeader { reason: _ } | Error::ParseAuth { reason: _ } => {
+            Error::InvalidHeader {
+                reason: _,
+                backtrace: _,
+            }
+            | Error::ParseAuth {
+                reason: _,
+                backtrace: _,
+            } => {
                 let error_resp = ErrorResponse::new(ErrorCode::Unknown, error_message);
 
                 ResponseBuilder::bad_request(&error_resp)
@@ -101,6 +132,7 @@ impl From<Error> for Response {
 
 #[cfg(test)]
 mod tests {
+    use snafu::{Backtrace, GenerateImplicitData};
     use spi::query::QueryError;
     use warp::http::header::{HeaderValue, CONTENT_TYPE};
 
@@ -113,7 +145,10 @@ mod tests {
         let q_err = QueryError::BuildQueryDispatcher {
             err: "test".to_string(),
         };
-        let s_err = ServerError::Query { source: q_err };
+        let s_err = ServerError::Query {
+            source: q_err,
+            backtrace: Backtrace::generate(),
+        };
 
         let resp: Response = Error::Query { source: s_err }.into();
 
@@ -128,6 +163,7 @@ mod tests {
     fn test_fetch_result_error() {
         let resp: Response = Error::FetchResult {
             reason: "test".to_string(),
+            backtrace: Backtrace::generate(),
         }
         .into();
 
@@ -141,7 +177,9 @@ mod tests {
     #[test]
     fn test_tskv_error() {
         let resp: Response = Error::Tskv {
-            source: tskv::Error::Cancel,
+            source: tskv::Error::Cancel {
+                backtrace: Backtrace::generate(),
+            },
         }
         .into();
 
@@ -156,6 +194,7 @@ mod tests {
     fn test_invalid_header_error() {
         let resp: Response = Error::InvalidHeader {
             reason: "test".to_string(),
+            backtrace: Backtrace::generate(),
         }
         .into();
 
@@ -170,6 +209,7 @@ mod tests {
     fn test_parse_auth_error() {
         let resp: Response = Error::ParseAuth {
             reason: "test".to_string(),
+            backtrace: Backtrace::generate(),
         }
         .into();
 

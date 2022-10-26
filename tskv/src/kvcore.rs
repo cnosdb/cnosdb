@@ -8,7 +8,7 @@ use futures::FutureExt;
 use libc::printf;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use parking_lot::{Mutex, RwLock};
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, OptionExt, ResultExt};
 use tokio::sync::watch;
 use tokio::sync::watch::{Receiver, Sender};
 use tokio::{
@@ -36,12 +36,16 @@ use trace::{debug, error, info, trace, warn};
 use crate::database::Database;
 use crate::file_system::file_manager::{self, FileManager};
 use crate::index::index_manger;
+use crate::Error::{CreateTable, DatabaseNotFound, ErrCharacterSet};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
     database,
     engine::Engine,
-    error::{self, Result},
+    error::{
+        self, CreateTableSnafu, DatabaseNotFoundSnafu, ErrCharacterSetSnafu, IndexErrSnafu,
+        NotFoundFieldSnafu, ReceiveSnafu, Result, SendSnafu,
+    },
     file_utils,
     index::{db_index, IndexResult},
     kv_option::Options,
@@ -397,7 +401,7 @@ impl Engine for TsKv {
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
-            .map_err(|err| Error::ErrCharacterSet)?;
+            .context(ErrCharacterSetSnafu)?;
 
         let db_warp = self.version_set.read().get_db(&db_name);
         let db = match db_warp {
@@ -414,8 +418,10 @@ impl Engine for TsKv {
             let (cb, rx) = oneshot::channel();
             self.wal_sender
                 .send(WalTask::Write { cb, points })
-                .map_err(|err| Error::Send)?;
-            (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+                .ok()
+                .context(SendSnafu)?;
+            // .map_err(|err| SendSnafu)?;
+            (seq, _) = rx.await.context(ReceiveSnafu)??;
         }
 
         let opt_tsf = db.read().get_tsfamily_random();
@@ -448,7 +454,7 @@ impl Engine for TsKv {
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
-            .map_err(|err| Error::ErrCharacterSet)?;
+            .context(ErrCharacterSetSnafu)?;
 
         let db = self
             .version_set
@@ -512,6 +518,7 @@ impl Engine for TsKv {
         if self.version_set.read().db_exists(&schema.name) {
             return Err(Error::DatabaseAlreadyExists {
                 database: schema.name.clone(),
+                backtrace: Backtrace::generate(),
             });
         }
         self.version_set.write().create_db(schema.clone());
@@ -531,14 +538,18 @@ impl Engine for TsKv {
     }
 
     fn list_tables(&self, database: &str) -> Result<Vec<String>> {
-        if let Some(db) = self.version_set.read().get_db(database) {
-            Ok(db.read().get_index().list_tables())
-        } else {
-            error!("Database {}, not found", database);
-            Err(Error::DatabaseNotFound {
+        let res = self
+            .version_set
+            .read()
+            .get_db(database)
+            .context(DatabaseNotFoundSnafu {
                 database: database.to_string(),
-            })
-        }
+            })?
+            .read()
+            .get_index()
+            .list_tables();
+
+        Ok(res)
     }
 
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
@@ -577,18 +588,24 @@ impl Engine for TsKv {
 
     fn create_table(&self, schema: &TableSchema) -> Result<()> {
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
-            match db.read().get_index().create_table(schema) {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    error!("failed create database '{}'", e);
-                    Err(Error::IndexErr { source: e })
-                }
-            }
+            db.read()
+                .get_index()
+                .create_table(schema)
+                .context(CreateTableSnafu {
+                    db: schema.db.clone(),
+                    table: schema.name.clone(),
+                })
+                .map_err(|e| {
+                    error!("{}", e);
+                    e
+                })
         } else {
-            error!("Database {}, not found", schema.db);
-            Err(Error::DatabaseNotFound {
+            let err = Error::DatabaseNotFound {
                 database: schema.db.clone(),
-            })
+                backtrace: Backtrace::generate(),
+            };
+            error!("{}", err);
+            Err(err)
         }
     }
 
@@ -705,6 +722,7 @@ impl Engine for TsKv {
         if !version_set.db_exists(db) {
             return Err(Error::DatabaseNotFound {
                 database: db.to_string(),
+                backtrace: Backtrace::generate(),
             });
         }
         if let Some(tsf) = version_set.get_tsfamily_by_name(db) {

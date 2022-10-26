@@ -8,6 +8,7 @@ use libc::write;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
@@ -16,6 +17,7 @@ use models::Timestamp;
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
+use crate::error::{DecodeSnafu, EncodeSnafu, ErrApplyEditSnafu, LogRecordErrSnafu};
 use crate::file_system::file_manager::try_exists;
 use crate::{
     context::GlobalContext,
@@ -141,10 +143,10 @@ impl VersionEdit {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| Error::Encode { source: (e) })
+        bincode::serialize(self).context(EncodeSnafu)
     }
     pub fn decode(buf: &[u8]) -> Result<Self> {
-        bincode::deserialize(buf).map_err(|e| Error::Decode { source: (e) })
+        bincode::deserialize(buf).context(DecodeSnafu)
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
@@ -218,11 +220,9 @@ impl Summary {
         let buf = db.encode()?;
         let _ = w
             .write_record(1, EditType::SummaryEdit.into(), &buf)
-            .map_err(|e| Error::LogRecordErr { source: (e) })
-            .await?;
-        w.hard_sync()
-            .map_err(|e| Error::LogRecordErr { source: e })
-            .await?;
+            .await
+            .context(LogRecordErrSnafu)?;
+        w.hard_sync().await.context(LogRecordErrSnafu)?;
 
         Ok(Self {
             file_no: 0,
@@ -267,10 +267,7 @@ impl Summary {
         let mut databases: HashMap<TseriesFamilyId, String> = HashMap::default();
 
         loop {
-            let res = reader
-                .read_record()
-                .await
-                .map_err(|e| Error::LogRecordErr { source: (e) });
+            let res = reader.read_record().await;
             match res {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
@@ -360,12 +357,9 @@ impl Summary {
             let _ = self
                 .writer
                 .write_record(1, EditType::SummaryEdit.into(), &buf)
-                .map_err(|e| Error::LogRecordErr { source: (e) })
-                .await?;
-            self.writer
-                .hard_sync()
-                .map_err(|e| Error::LogRecordErr { source: e })
-                .await?;
+                .await
+                .context(LogRecordErrSnafu)?;
+            self.writer.hard_sync().await.context(LogRecordErrSnafu)?;
 
             tsf_version_edits
                 .entry(edit.tsf_id)
@@ -504,7 +498,7 @@ pub fn print_summary_statistics(path: impl AsRef<Path>) {
                     }
                 }
                 Err(err) => match err {
-                    RecordFileError::Eof => break,
+                    RecordFileError::Eof { backtrace } => break,
                     _ => panic!("Errors when read summary file: {}", err),
                 },
             }

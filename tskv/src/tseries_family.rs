@@ -15,6 +15,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock};
+use snafu::ResultExt;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch::Receiver;
 
@@ -26,7 +27,7 @@ use utils::BloomFilter;
 use crate::file_system::file_manager;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
-    error::{Error, Result},
+    error::{Error, ReadTsmSnafu, Result},
     file_system::{DmaFile, FileCursor},
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
@@ -261,7 +262,7 @@ impl FieldFileLocation {
     pub fn peek(&mut self) -> Result<Option<DataType>, Error> {
         if self.read_index >= self.data_block.len() {
             if let Some(meta) = self.block_it.next() {
-                let blk = self.reader.get_data_block(&meta)?;
+                let blk = self.reader.get_data_block(&meta).context(ReadTsmSnafu)?;
                 self.read_index = 0;
                 self.data_block = blk;
             } else {

@@ -98,12 +98,6 @@ pub enum WriteTsmError {
     Finished { path: PathBuf },
 }
 
-impl From<WriteTsmError> for Error {
-    fn from(wtr: WriteTsmError) -> Self {
-        Error::WriteTsm { source: wtr }
-    }
-}
-
 struct IndexBuf {
     index_offset: u64,
     buf: BTreeMap<FieldId, IndexEntry>,

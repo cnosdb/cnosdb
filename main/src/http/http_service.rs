@@ -29,7 +29,7 @@ use models::error_code::ErrorCode;
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
 use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::ContextBuilder;
 use spi::service::protocol::Query;
@@ -357,6 +357,7 @@ async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Resp
         .await
         .map_err(|e| HttpError::FetchResult {
             reason: format!("{}", e),
+            backtrace: Backtrace::generate(),
         })?;
 
     fmt.wrap_batches_to_response(&batches)

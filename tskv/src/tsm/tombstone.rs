@@ -14,6 +14,7 @@ use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
 use super::DataBlock;
+use crate::error::IOSnafu;
 use crate::file_system::file_manager;
 use crate::{
     byte_utils, error,
@@ -239,8 +240,9 @@ impl TsmTombstone {
             .map_err(|e| {
                 // Write fail, recover writer offset
                 writer.set_len(pos);
-                Error::IO { source: e }
+                e
             })
+            .context(IOSnafu)
     }
 
     pub fn flush(&self) -> Result<()> {

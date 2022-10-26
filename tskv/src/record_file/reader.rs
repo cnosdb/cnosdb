@@ -7,12 +7,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::record_file::error::{EofSnafu, InvalidPosSnafu, InvalidTryIntoSnafu, ReadFileSnafu};
 use async_recursion::async_recursion;
 use bytes::{Buf, BufMut};
 use file_system::DmaFile;
 use futures::future::ok;
+use futures::{TryFutureExt, TryStreamExt};
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
+use std::mem::size_of;
 use trace::{error, info};
 
 use super::*;
@@ -57,7 +61,9 @@ impl Reader {
             Some(v) => v,
         };
         if pos > len {
-            return Err(RecordFileError::InvalidPos);
+            return Err(RecordFileError::InvalidPos {
+                backtrace: Backtrace::generate(),
+            });
         }
         match self.pos.cmp(&pos) {
             Ordering::Greater => {
@@ -93,7 +99,9 @@ impl Reader {
                 Ok(v) => v,
                 Err(_) => {
                     error!("failed data try into");
-                    return Err(RecordFileError::InvalidTryInto);
+                    return Err(RecordFileError::InvalidTryInto {
+                        backtrace: Backtrace::generate(),
+                    });
                 }
             };
             let magic_number = u32::from_le_bytes(data_bytes);
@@ -169,7 +177,7 @@ impl Reader {
             .file
             .lock()
             .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
-            .map_err(|err| RecordFileError::ReadFile { source: err })?;
+            .context(ReadFileSnafu)?;
         self.buf_use = 0;
         Ok(())
     }
@@ -189,7 +197,9 @@ impl Reader {
 
             Ok((origin_pos, data))
         } else {
-            Err(RecordFileError::Eof)
+            Err(RecordFileError::Eof {
+                backtrace: Backtrace::generate(),
+            })
         }
     }
 
@@ -204,16 +214,21 @@ impl Reader {
             .file
             .lock()
             .read_at(pos.to_u64().unwrap(), &mut head_buf)
-            .map_err(|err| RecordFileError::ReadFile { source: err })?;
+            .context(ReadFileSnafu)?;
+
         if len != head_len {
-            return Err(RecordFileError::InvalidPos);
+            return Err(RecordFileError::InvalidPos {
+                backtrace: Backtrace::generate(),
+            });
         }
 
         let mut p = 0;
         let magic_number =
             u32::from_le_bytes(head_buf[p..p + RECORD_MAGIC_NUMBER_LEN].try_into().unwrap());
         if magic_number != MAGIC_NUMBER {
-            return Err(RecordFileError::InvalidPos);
+            return Err(RecordFileError::InvalidPos {
+                backtrace: Backtrace::generate(),
+            });
         }
         p += RECORD_MAGIC_NUMBER_LEN;
         let data_size =
@@ -234,9 +249,11 @@ impl Reader {
                 pos.to_u64().unwrap() + head_len.to_u64().unwrap(),
                 &mut data,
             )
-            .map_err(|err| RecordFileError::ReadFile { source: err })?;
+            .context(ReadFileSnafu)?;
         if read_data_len != data_size as usize {
-            return Err(RecordFileError::InvalidPos);
+            return Err(RecordFileError::InvalidPos {
+                backtrace: Backtrace::generate(),
+            });
         }
 
         Ok(Record {

@@ -14,6 +14,7 @@ use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
+use snafu::{Backtrace, GenerateImplicitData};
 use trace::debug;
 
 define_result!(PointUtilError);
@@ -21,19 +22,23 @@ define_result!(PointUtilError);
 #[derive(Debug, Snafu)]
 pub enum PointUtilError {
     #[snafu(display("Failed to write points flat buffer, err: {}", err))]
-    ToPointsFlatBuffer { err: String },
+    ToPointsFlatBuffer { err: String, backtrace: Backtrace },
 
     #[snafu(display("Invalid array type, expected: {}, found: {}", expected, found))]
-    InvalidArrayType { expected: String, found: String },
+    InvalidArrayType {
+        expected: String,
+        found: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Column {} not found.", col))]
-    ColumnNotFound { col: String },
+    ColumnNotFound { col: String, backtrace: Backtrace },
 
     #[snafu(display("Data type {} not support.", type_))]
-    DataTypeNotSupport { type_: String },
+    DataTypeNotSupport { type_: String, backtrace: Backtrace },
 
     #[snafu(display("Column {} cannot be null.", col))]
-    NotNullConstraint { col: String },
+    NotNullConstraint { col: String, backtrace: Backtrace },
 }
 
 type Datum<'fbb> = WIPOffset<Vector<'fbb, u8>>;
@@ -92,6 +97,7 @@ macro_rules! arrow_array_to_offset_array {
                 .collect()),
             other => Err(PointUtilError::DataTypeNotSupport {
                 type_: other.to_string(),
+                backtrace: Backtrace::generate(),
             }),
         }
     }};
@@ -129,6 +135,7 @@ pub fn record_batch_to_points_flat_buffer(
     // must contain the time column
     let time_col_array = time_col_array.ok_or_else(|| PointUtilError::ColumnNotFound {
         col: TIME_FIELD_NAME.to_string(),
+        backtrace: Backtrace::generate(),
     })?;
 
     debug!(
@@ -172,6 +179,7 @@ fn construct_row_based_points(
                 .column(name)
                 .ok_or_else(|| PointUtilError::ColumnNotFound {
                     col: name.to_owned(),
+                    backtrace: Backtrace::generate(),
                 })?;
 
             let value = unsafe { columns_datum.get_unchecked(col_idx).get_unchecked(row_idx) };
@@ -213,6 +221,7 @@ fn construct_row_based_points(
 
         let time = time.ok_or_else(|| PointUtilError::ColumnNotFound {
             col: TIME_FIELD_NAME.to_string(),
+            backtrace: Backtrace::generate(),
         })?;
 
         let point_args = PointArgs {
@@ -247,6 +256,7 @@ fn cast_arrow_array<T: 'static>(array: &ArrayRef) -> Result<&T> {
         .ok_or_else(|| PointUtilError::InvalidArrayType {
             expected: "UNKNOWN".to_string(),
             found: array.data_type().to_string(),
+            backtrace: Backtrace::generate(),
         })
 }
 
@@ -263,6 +273,7 @@ macro_rules! define_extract_time_column_from_func {
                 if array.null_count() > 0 {
                     return Err(PointUtilError::NotNullConstraint {
                         col: col.name().clone(),
+                        backtrace: Backtrace::generate()
                     });
                 }
 
@@ -276,6 +287,7 @@ macro_rules! define_extract_time_column_from_func {
                     other => Err(PointUtilError::InvalidArrayType {
                         expected: ArrowDataType::from(TableColumn::new_time_column(0).column_type).to_string(),
                         found: other.to_string(),
+                        backtrace: Backtrace::generate()
                     }),
                 }
             }

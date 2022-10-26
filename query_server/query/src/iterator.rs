@@ -10,8 +10,9 @@ use datafusion::arrow::array::{ArrayBuilder, TimestampNanosecondBuilder};
 use datafusion::arrow::datatypes::DataType as ArrowDataType;
 use models::utils::{min_num, unite_id};
 use models::{FieldId, SeriesId, ValueType};
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
 use trace::debug;
+use tskv::error::ReadTsmSnafu;
 
 use crate::stream::TskvSourceMetrics;
 
@@ -77,7 +78,7 @@ impl FieldFileLocation {
         if self.read_index >= self.data_block.len() {
             if let Some(meta) = self.block_it.next() {
                 self.read_index = 0;
-                self.data_block = self.reader.get_data_block(&meta)?;
+                self.data_block = self.reader.get_data_block(&meta).context(ReadTsmSnafu)?;
             } else {
                 return Ok(None);
             }
@@ -747,6 +748,7 @@ impl Iterator for RowIterator {
                 Ok(batch) => Some(Ok(batch)),
                 Err(err) => Some(Err(Error::DataFusionNew {
                     reason: err.to_string(),
+                    backtrace: Backtrace::generate(),
                 })),
             }
         };

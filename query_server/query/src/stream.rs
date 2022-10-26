@@ -12,9 +12,10 @@ use models::{
     predicate::domain::PredicateRef,
     schema::{ColumnType, TableColumn, TableSchema, TIME_FIELD},
 };
+use snafu::OptionExt;
 
 use tskv::engine::EngineRef;
-
+use tskv::error::NotFoundFieldSnafu;
 use tskv::Error;
 
 use crate::iterator::{QueryOption, RowIterator};
@@ -56,13 +57,12 @@ impl TableScanStream {
                 continue;
             }
 
-            if let Some(v) = table_schema.column(field_name) {
-                proj_fileds.push(v.clone());
-            } else {
-                return Err(Error::NotFoundField {
-                    reason: field_name.clone(),
-                });
-            }
+            table_schema
+                .column(field_name)
+                .map(|v| proj_fileds.push(v.clone()))
+                .context(NotFoundFieldSnafu {
+                    field_name: field_name.clone(),
+                })?;
         }
 
         let proj_table_schema =

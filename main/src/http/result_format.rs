@@ -5,6 +5,7 @@ use datafusion::arrow::json::{ArrayWriter, LineDelimitedWriter};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use futures::TryStreamExt;
+use snafu::{Backtrace, GenerateImplicitData};
 use spi::query::execution::Output;
 use spi::service::protocol::QueryHandle;
 use std::str::FromStr;
@@ -85,6 +86,7 @@ impl ResultFormat {
             .format_batches(batches)
             .map_err(|e| HttpError::FetchResult {
                 reason: format!("{}", e),
+                backtrace: Backtrace::generate(),
             })?;
 
         let resp = ResponseBuilder::new(OK)
@@ -104,12 +106,15 @@ impl TryFrom<&str> for ResultFormat {
         }
 
         if let Some(fmt) = s.strip_prefix(APPLICATION_PREFIX) {
-            return ResultFormat::from_str(fmt)
-                .map_err(|reason| HttpError::InvalidHeader { reason });
+            return ResultFormat::from_str(fmt).map_err(|reason| HttpError::InvalidHeader {
+                reason,
+                backtrace: Backtrace::generate(),
+            });
         }
 
         Err(HttpError::InvalidHeader {
             reason: format!("accept type not support: {}", s),
+            backtrace: Backtrace::generate(),
         })
     }
 }

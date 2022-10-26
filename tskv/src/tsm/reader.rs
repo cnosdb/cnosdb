@@ -7,7 +7,7 @@ use std::{
 
 use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
-use snafu::{ResultExt, Snafu};
+use snafu::{Backtrace, GenerateImplicitData, ResultExt, Snafu};
 
 use crate::file_system::file_manager;
 use crate::{
@@ -34,21 +34,22 @@ pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 pub enum ReadTsmError {
     #[snafu(display("IO error: {}", source))]
-    IO { source: std::io::Error },
+    IO {
+        source: std::io::Error,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Decode error: {}", source))]
     Decode {
         source: Box<dyn std::error::Error + Send + Sync>,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("TSM file is invalid: {}", reason))]
-    Invalid { reason: String },
-}
-
-impl From<ReadTsmError> for Error {
-    fn from(rte: ReadTsmError) -> Self {
-        Error::ReadTsm { source: rte }
-    }
+    Invalid {
+        reason: String,
+        backtrace: Backtrace,
+    },
 }
 
 /// Disk-based index reader
@@ -214,6 +215,7 @@ pub fn load_index(reader: Arc<DmaFile>) -> ReadTsmResult<Index> {
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
             reason: format!("TSM file size less than FOOTER_SIZE({})", FOOTER_SIZE),
+            backtrace: Backtrace::generate(),
         });
     }
     let mut buf = [0u8; 8];
@@ -224,6 +226,7 @@ pub fn load_index(reader: Arc<DmaFile>) -> ReadTsmResult<Index> {
     if offset > len - FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
             reason: format!("TSM file size less than index offset({})", offset),
+            backtrace: Backtrace::generate(),
         });
     }
     let data_len = (len - offset - FOOTER_SIZE as u64) as usize;
@@ -568,6 +571,7 @@ pub fn decode_data_block(
     if buf.len() < 8 {
         return Err(ReadTsmError::Decode {
             source: "buffer too short".into(),
+            backtrace: Backtrace::generate(),
         });
     }
 
@@ -647,6 +651,7 @@ pub fn decode_data_block(
                 "cannot decode block {:?} with no unknown value type",
                 field_type
             )),
+            backtrace: Backtrace::generate(),
         }),
     }
 }

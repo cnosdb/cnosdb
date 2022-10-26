@@ -1,4 +1,5 @@
 use crate::catalog::MetadataError;
+use snafu::Backtrace;
 
 use super::{
     ast::{ExtStatement, ObjectType},
@@ -25,16 +26,22 @@ pub const MISMATCHED_COLUMNS: &str = "Insert columns and Source columns not matc
 #[snafu(visibility(pub))]
 pub enum LogicalPlannerError {
     #[snafu(display("External err: {}", source))]
-    External { source: DataFusionError },
+    External {
+        source: DataFusionError,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Semantic err: {}", err))]
-    Semantic { err: String },
+    Semantic { err: String, backtrace: Backtrace },
 
     #[snafu(display("Metadata err: {}", source))]
-    Metadata { source: MetadataError },
+    Metadata {
+        source: MetadataError,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("This feature is not implemented: {}", err))]
-    NotImplemented { err: String },
+    NotImplemented { err: String, backtrace: Backtrace },
 }
 
 #[derive(Clone)]

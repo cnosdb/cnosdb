@@ -17,7 +17,7 @@ use datafusion::sql::TableReference;
 use models::schema::{ColumnType, TableColumn};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
 use spi::query::ast::{
     ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
     DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
@@ -95,6 +95,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             } => self.insert_to_plan(sql_object_name, sql_column_names, source),
             _ => Err(LogicalPlannerError::NotImplemented {
                 err: stmt.to_string(),
+                backtrace: Backtrace::generate(),
             }),
         }
     }
@@ -114,6 +115,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             _ => {
                 return Err(LogicalPlannerError::NotImplemented {
                     err: "explain non-query statement.".to_string(),
+                    backtrace: Backtrace::generate(),
                 })
             }
         };
@@ -379,6 +381,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                             "{} is not a valid precision, use like 'ms', 'us', 'ns'",
                             precision
                         ),
+                        backtrace: Backtrace::generate(),
                     })
                 }
                 Some(v) => v,
@@ -395,6 +398,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                         "{} is not a valid precision, use like 'ms', 'us', 'ns'",
                         text
                     ),
+                    backtrace: Backtrace::generate(),
                 })
             }
             Some(v) => v,
@@ -413,6 +417,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             SQLDataType::Boolean => Ok(ColumnType::Field(ValueType::Boolean)),
             _ => Err(LogicalPlannerError::Semantic {
                 err: format!("Unexpected data type {}", data_type),
+                backtrace: Backtrace::generate(),
             }),
         }
     }
@@ -442,6 +447,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     "Unsupported codec type {} for {}",
                     column.codec, column.data_type
                 ),
+                backtrace: Backtrace::generate(),
             });
         }
         Ok(())
@@ -487,12 +493,14 @@ fn semantic_check(
     if insert_field_num > source_field_num {
         return Err(LogicalPlannerError::Semantic {
             err: MISMATCHED_COLUMNS.to_string(),
+            backtrace: Backtrace::generate(),
         });
     }
 
     if insert_field_num == 0 && source_field_num != target_table_field_num {
         return Err(LogicalPlannerError::Semantic {
             err: MISMATCHED_COLUMNS.to_string(),
+            backtrace: Backtrace::generate(),
         });
     }
     // The target table must contain all insert fields
@@ -511,6 +519,7 @@ fn semantic_check(
                         .collect::<Vec<&str>>()
                         .join(",")
                 ),
+                backtrace: Backtrace::generate(),
             })?;
     }
 

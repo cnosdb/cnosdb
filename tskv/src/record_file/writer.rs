@@ -6,11 +6,14 @@ use std::{
 
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+use snafu::ResultExt;
 use trace::error;
 
 use super::*;
 use crate::file_system::file_manager;
 use crate::file_system::{DmaFile, FileSync};
+use crate::record_file::error::SyncFileSnafu;
+use crate::record_file::error::WriteFileSnafu;
 
 pub struct Writer {
     path: PathBuf,
@@ -85,13 +88,10 @@ impl Writer {
                 write_len = buf.len() - p;
             }
 
-            match self
-                .file
+            self.file
                 .lock()
                 .write_at(pos, &buf[p..p + write_len])
-                .map_err(|err| RecordFileError::WriteFile { source: err })
-            {
-                Ok(_) => {
+                .map(|_| {
                     p += write_len;
                     pos += match write_len.to_u64() {
                         None => {
@@ -99,12 +99,9 @@ impl Writer {
                             0
                         }
                         Some(v) => v,
-                    };
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
+                    }
+                })
+                .context(WriteFileSnafu)?;
         }
 
         Ok(origin_pos)
@@ -114,21 +111,21 @@ impl Writer {
         self.file
             .lock()
             .sync_all(FileSync::Soft)
-            .map_err(|err| RecordFileError::SyncFile { source: err })
+            .context(SyncFileSnafu)
     }
 
     pub async fn hard_sync(&self) -> RecordFileResult<()> {
         self.file
             .lock()
             .sync_all(FileSync::Hard)
-            .map_err(|err| RecordFileError::SyncFile { source: err })
+            .context(SyncFileSnafu)
     }
 
     pub async fn close(&mut self) -> RecordFileResult<()> {
         self.file
             .lock()
             .sync_all(FileSync::Hard)
-            .map_err(|err| RecordFileError::SyncFile { source: err })
+            .context(SyncFileSnafu)
     }
 
     pub fn file_size(&self) -> u64 {

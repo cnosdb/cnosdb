@@ -22,7 +22,7 @@ use spi::query::execution::Output;
 use datafusion::arrow::record_batch::RecordBatch;
 
 use models::schema::DatabaseSchema;
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
 use spi::catalog::{
     CatalogRef, ExternalSnafu, MetaData, MetaDataRef, MetadataError, Result, DEFAULT_CATALOG,
     DEFAULT_DATABASE,
@@ -58,7 +58,10 @@ impl LocalCatalogMeta {
             DatabaseSchema::new(&meta.database_name),
         ) {
             match e {
-                MetadataError::External { ref source } => {
+                MetadataError::External {
+                    ref source,
+                    backtrace: _,
+                } => {
                     if !source.to_string().eq(&format!(
                         "Execution error: database '{}' already exists",
                         DEFAULT_DATABASE
@@ -108,6 +111,7 @@ impl MetaData for LocalCatalogMeta {
             None => {
                 return Err(MetadataError::DatabaseNotExists {
                     database_name: name.schema.to_string(),
+                    backtrace: Backtrace::generate(),
                 });
             }
             Some(s) => s,
@@ -116,6 +120,7 @@ impl MetaData for LocalCatalogMeta {
             None => {
                 return Err(MetadataError::TableNotExists {
                     table_name: name.table.to_string(),
+                    backtrace: Backtrace::generate(),
                 });
             }
             Some(t) => t,
@@ -144,6 +149,7 @@ impl MetaData for LocalCatalogMeta {
 
         Err(MetadataError::DatabaseNotExists {
             database_name: name.schema.to_string(),
+            backtrace: Backtrace::generate(),
         })
     }
 
@@ -162,6 +168,7 @@ impl MetaData for LocalCatalogMeta {
             .schema(table_ref.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: table_ref.schema.to_string(),
+                backtrace: Backtrace::generate(),
             })?
             // Currently the SchemaProvider creates a temporary table
             .register_table(table.table().to_owned(), table_provider)
@@ -199,6 +206,7 @@ impl MetaData for LocalCatalogMeta {
             }
             Err(err) => Err(MetadataError::InternalError {
                 error_msg: err.to_string(),
+                backtrace: Backtrace::generate(),
             }),
         }
     }
@@ -212,6 +220,7 @@ impl MetaData for LocalCatalogMeta {
         match self.catalog.schema(database_name) {
             None => Err(MetadataError::DatabaseNotExists {
                 database_name: database_name.to_string(),
+                backtrace: Backtrace::generate(),
             }),
             Some(_db_cfgs) => {
                 let schema = Arc::new(Schema::new(vec![Field::new(
@@ -232,6 +241,7 @@ impl MetaData for LocalCatalogMeta {
                     }
                     Err(err) => Err(MetadataError::InternalError {
                         error_msg: err.to_string(),
+                        backtrace: Backtrace::generate(),
                     }),
                 }
             }
@@ -242,6 +252,7 @@ impl MetaData for LocalCatalogMeta {
         match self.engine.get_db_schema(name) {
             None => Err(MetadataError::DatabaseNotExists {
                 database_name: name.to_string(),
+                backtrace: Backtrace::generate(),
             }),
             Some(db_cfg) => {
                 let schema = Arc::new(Schema::new(vec![
@@ -292,6 +303,7 @@ impl MetaData for LocalCatalogMeta {
         {
             None => Err(MetadataError::TableNotExists {
                 table_name: name.to_string(),
+                backtrace: Backtrace::generate(),
             }),
             Some(table_schema) => {
                 let schema = Arc::new(Schema::new(vec![

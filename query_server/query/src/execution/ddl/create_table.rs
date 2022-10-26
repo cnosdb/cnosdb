@@ -2,7 +2,7 @@ use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use datafusion::sql::TableReference;
 use models::schema::TableSchema;
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
 use spi::catalog::{MetaDataRef, MetadataError};
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
@@ -40,6 +40,7 @@ impl DDLDefinitionTask for CreateTableTask {
             // Report an error if it exists
             (false, Ok(_)) => Err(MetadataError::TableAlreadyExists {
                 table_name: name.clone(),
+                backtrace: Backtrace::generate(),
             })
             .context(execution::MetadataSnafu),
             // does not exist, create

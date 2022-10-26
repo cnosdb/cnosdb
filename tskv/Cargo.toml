@@ -41,7 +41,7 @@ regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 serial_test = "0.8.0"
 sled = "0.34.7"
-snafu = "0.7"
+snafu = {version = "0.7", features = ["backtraces"]}
 snap = "1.0.0"
 static_assertions = "1.1"
 tokio = { version = "1.21", features = ["full"] }

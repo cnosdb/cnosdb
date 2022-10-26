@@ -7,7 +7,7 @@ use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
 use models::schema::DatabaseSchema;
-use snafu::Snafu;
+use snafu::{Backtrace, Snafu};
 use std::sync::Arc;
 
 pub type MetaDataRef = Arc<dyn MetaData + Send + Sync>;
@@ -43,20 +43,38 @@ pub trait MetaData: Send + Sync {
 #[snafu(visibility(pub))]
 pub enum MetadataError {
     #[snafu(display("External err: {}", source))]
-    External { source: DataFusionError },
+    External {
+        source: DataFusionError,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Table {} already exists.", table_name))]
-    TableAlreadyExists { table_name: String },
+    TableAlreadyExists {
+        table_name: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Table {} not exists.", table_name))]
-    TableNotExists { table_name: String },
+    TableNotExists {
+        table_name: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Database {} already exists.", database_name))]
-    DatabaseAlreadyExists { database_name: String },
+    DatabaseAlreadyExists {
+        database_name: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Database {} not exists.", database_name))]
-    DatabaseNotExists { database_name: String },
+    DatabaseNotExists {
+        database_name: String,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Internal Error: {}.", error_msg))]
-    InternalError { error_msg: String },
+    InternalError {
+        error_msg: String,
+        backtrace: Backtrace,
+    },
 }

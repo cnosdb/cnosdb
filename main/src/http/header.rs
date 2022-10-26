@@ -1,4 +1,5 @@
 use super::Error as HttpError;
+use snafu::{Backtrace, GenerateImplicitData};
 use spi::service::protocol::UserInfo;
 use warp::http::header::{HeaderName, HeaderValue};
 
@@ -25,20 +26,19 @@ impl Header {
     pub fn try_get_basic_auth(&self) -> Result<UserInfo, HttpError> {
         let auth = &self.authorization;
 
-        let get_err = || {
-            Err(HttpError::ParseAuth {
-                reason: auth.to_string(),
-            })
-        };
+        let err = Err(HttpError::ParseAuth {
+            reason: auth.to_string(),
+            backtrace: Backtrace::generate(),
+        });
 
         if auth.len() < BASIC_PREFIX.len() {
-            return get_err();
+            return err;
         }
 
         let basic_in_auth = &auth[0..BASIC_PREFIX.len()];
 
         if basic_in_auth != BASIC_PREFIX {
-            return get_err();
+            return err;
         }
 
         let content_in_auth = &auth[BASIC_PREFIX.len()..];
@@ -54,7 +54,7 @@ impl Header {
             }
         }
 
-        get_err()
+        err
     }
 }
 

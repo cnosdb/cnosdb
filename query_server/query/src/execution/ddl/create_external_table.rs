@@ -15,7 +15,7 @@ use datafusion::execution::context::SessionState;
 use datafusion::logical_plan::CreateExternalTable;
 use datafusion::prelude::SessionConfig;
 use datafusion::sql::TableReference;
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, ResultExt};
 use spi::catalog::MetadataError;
 use spi::query::execution::ExecutionError;
 use spi::query::execution::{self, ExternalSnafu};
@@ -55,6 +55,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             // Report an error if it exists
             (false, Ok(_)) => Err(MetadataError::TableAlreadyExists {
                 table_name: name.clone(),
+                backtrace: Backtrace::generate(),
             })
             .context(execution::MetadataSnafu),
             // does not exist, create

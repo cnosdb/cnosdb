@@ -2,9 +2,12 @@ use std::path::{Path, PathBuf};
 
 use lazy_static::lazy_static;
 use regex::Regex;
-use snafu::ResultExt;
+use snafu::{Backtrace, GenerateImplicitData, NoneError, OptionExt, ResultExt};
 
+use crate::error::InvalidFileNameSnafu;
 use crate::file_system::file_manager;
+use crate::record_file::RecordFileError::InvalidPos;
+use crate::Error::{InvalidFileName, InvalidFlatbuffer};
 use crate::{error, Error, Result};
 
 lazy_static! {
@@ -31,16 +34,18 @@ pub fn check_summary_file_name(file_name: &str) -> bool {
 }
 
 pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
-    if !check_summary_file_name(file_name) {
-        return Err(Error::InvalidFileName {
+    check_summary_file_name(file_name)
+        .then(|| {})
+        .context(InvalidFileNameSnafu {
             file_name: file_name.to_string(),
             message: "summary file name does not contain an id".to_string(),
-        });
-    }
+        })?;
+
     let (_, file_number) = file_name.split_at(8);
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .ok()
+        .context(InvalidFileNameSnafu {
             file_name: file_name.to_string(),
             message: "summary file name contains an invalid id".to_string(),
         })
@@ -62,12 +67,14 @@ pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
         return Err(Error::InvalidFileName {
             file_name: file_name.to_string(),
             message: "wal file name does not contain an id".to_string(),
+            backtrace: Backtrace::generate(),
         });
     }
     let file_number = &file_name[1..7];
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .ok()
+        .context(InvalidFileNameSnafu {
             file_name: file_name.to_string(),
             message: "wal file name contains an invalid id".to_string(),
         })
@@ -91,6 +98,7 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
         return Err(Error::InvalidFileName {
             file_name: file_name.to_string(),
             message: "tsm file name contains an invalid id".to_string(),
+            backtrace: Backtrace::generate(),
         });
     }
     let start = file_name.find('_').unwrap_or(0_usize) + 1;
@@ -98,7 +106,8 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
     let file_number = &file_name[start..end];
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .ok()
+        .context(InvalidFileNameSnafu {
             file_name: file_name.to_string(),
             message: "tsm file name contains an invalid id".to_string(),
         })
@@ -134,12 +143,14 @@ pub fn get_schema_file_id(file_name: &str) -> Result<u64> {
         return Err(Error::InvalidFileName {
             file_name: file_name.to_string(),
             message: "schema file name does not contain an id".to_string(),
+            backtrace: Backtrace::generate(),
         });
     }
     let file_number = &file_name[1..7];
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .ok()
+        .context(InvalidFileNameSnafu {
             file_name: file_name.to_string(),
             message: "schema file name contains an invalid id".to_string(),
         })

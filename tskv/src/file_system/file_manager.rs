@@ -8,7 +8,7 @@ use std::{
 use futures::channel::oneshot::{self, Sender};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use snafu::{ResultExt, Snafu};
+use snafu::{Backtrace, ResultExt, Snafu};
 
 use crate::{
     error,
@@ -22,22 +22,25 @@ pub enum FileError {
     UnableToOpenFile {
         path: PathBuf,
         source: std::io::Error,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Unable to write file '{}': {}", path.display(), source))]
     UnableToWriteBytes {
         path: PathBuf,
         source: std::io::Error,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Unable to sync file '{}': {}", path.display(), source))]
     UnableToSyncFile {
         path: PathBuf,
         source: std::io::Error,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("async file system stopped"))]
-    Cancel,
+    Cancel { backtrace: Backtrace },
 }
 
 pub struct FileManager {
