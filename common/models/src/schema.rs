@@ -42,6 +42,7 @@ pub struct TableSchema {
     pub schema_id: SchemaId,
 
     columns: Vec<TableColumn>,
+    //ColumnName -> ColumnsIndex
     columns_index: HashMap<String, usize>,
 }
 

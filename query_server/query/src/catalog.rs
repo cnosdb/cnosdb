@@ -112,6 +112,7 @@ impl CatalogProvider for UserCatalog {
 pub struct UserSchema {
     db_name: String,
     engine: EngineRef,
+    // table_name -> TableRef
     tables: RwLock<HashMap<String, TableRef>>,
     database_schema: DatabaseSchema,
 }

@@ -12,6 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use config::get_config;
+use models::Timestamp;
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
@@ -33,10 +34,10 @@ const MAX_BATCH_SIZE: usize = 64;
 pub struct CompactMeta {
     pub file_id: u64,
     pub file_size: u64,
-    pub tsf_id: u32,
-    pub level: u32,
-    pub min_ts: i64,
-    pub max_ts: i64,
+    pub tsf_id: TseriesFamilyId,
+    pub level: LevelId,
+    pub min_ts: Timestamp,
+    pub max_ts: Timestamp,
     pub high_seq: u64,
     pub low_seq: u64,
     pub is_delta: bool,
@@ -47,10 +48,10 @@ impl CompactMeta {
     pub fn new(
         file_id: u64,
         file_size: u64,
-        tsf_id: u32,
-        level: u32,
-        min_ts: i64,
-        max_ts: i64,
+        tsf_id: TseriesFamilyId,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
         is_delta: bool,
     ) -> Self {
         Self {
@@ -73,8 +74,8 @@ impl Default for CompactMeta {
             file_size: 0,
             tsf_id: 0,
             level: 0,
-            min_ts: i64::MAX,
-            max_ts: i64::MIN,
+            min_ts: Timestamp::MAX,
+            max_ts: Timestamp::MIN,
             high_seq: u64::MIN,
             low_seq: u64::MIN,
             is_delta: false,
@@ -106,13 +107,13 @@ pub struct VersionEdit {
     pub seq_no: u64,
     pub has_file_id: bool,
     pub file_id: u64,
-    pub max_level_ts: i64,
+    pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
 
     pub del_tsf: bool,
     pub add_tsf: bool,
-    pub tsf_id: u32,
+    pub tsf_id: TseriesFamilyId,
     pub tsf_name: String,
 }
 
@@ -262,8 +263,8 @@ impl Summary {
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<VersionSet> {
-        let mut edits: HashMap<u32, Vec<VersionEdit>> = HashMap::default();
-        let mut databases: HashMap<u32, String> = HashMap::default();
+        let mut edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::default();
+        let mut databases: HashMap<TseriesFamilyId, String> = HashMap::default();
 
         loop {
             let res = reader

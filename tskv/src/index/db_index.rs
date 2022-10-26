@@ -60,6 +60,7 @@ pub fn index_manger(path: impl AsRef<Path>) -> &'static Arc<RwLock<DbIndexMgr>> 
 #[derive(Debug)]
 pub struct DbIndexMgr {
     base_path: PathBuf,
+    //db_name -> DBIndex
     indexs: HashMap<String, Arc<DBIndex>>,
 }
 
@@ -91,6 +92,7 @@ pub struct DBIndex {
     path: PathBuf,
     storage: IndexEngine,
     db_schema: DatabaseSchema,
+    //The u32 comes from split(SeriesKey.hash())
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
     // TableName -> TableSchema
     table_schema: RwLock<HashMap<String, TableSchema>>,
