@@ -1,6 +1,7 @@
 use async_channel as channel;
 use flatbuffers::FlatBufferBuilder;
 use models::meta_data::*;
+use models::utils::now_timestamp;
 use models::RwLockRef;
 use parking_lot::{RwLock, RwLockReadGuard};
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
@@ -15,6 +16,8 @@ use tskv::engine::EngineRef;
 
 use crate::command::*;
 use crate::errors::*;
+use crate::hh_queue::HintedOffBlock;
+use crate::hh_queue::HintedOffManager;
 use crate::meta_client::{MetaClientManager, MetaClientRef};
 use trace::debug;
 use trace::info;
@@ -100,19 +103,26 @@ impl<'a> VnodeMapping<'a> {
 }
 
 pub struct PointWriter {
-    self_id: u64,
+    node_id: u64,
     kv_inst: EngineRef,
     conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 
+    hh_manager: Arc<HintedOffManager>,
     meta_manager: Arc<MetaClientManager>,
 }
 
 impl PointWriter {
-    pub fn new(node_id: u64, kv_inst: EngineRef, manager: Arc<MetaClientManager>) -> Self {
+    pub fn new(
+        node_id: u64,
+        kv_inst: EngineRef,
+        meta_manager: Arc<MetaClientManager>,
+        hh_manager: Arc<HintedOffManager>,
+    ) -> Self {
         Self {
-            self_id: node_id,
+            node_id,
             kv_inst,
-            meta_manager: manager,
+            hh_manager,
+            meta_manager,
             conn_map: RwLock::new(HashMap::new()),
         }
     }
@@ -127,7 +137,7 @@ impl PointWriter {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
-                let request = self.write_to_node(vnode.id, vnode.node_id, points);
+                let request = self.write_to_node(vnode.id, vnode.node_id, points.data.clone());
                 requests.push(request);
             }
         }
@@ -141,9 +151,12 @@ impl PointWriter {
         &self,
         vnode_id: u32,
         node_id: u64,
-        points: &VnodePoints<'_>,
+        data: Vec<u8>,
     ) -> CoordinatorResult<()> {
-        match self.warp_write_to_node(vnode_id, node_id, points).await {
+        match self
+            .warp_write_to_node(vnode_id, node_id, data.clone())
+            .await
+        {
             Ok(_) => {
                 debug!(
                     "write data to node: {}[vnode: {}] success!",
@@ -159,6 +172,10 @@ impl PointWriter {
                     err.to_string()
                 );
 
+                let block = HintedOffBlock::new(now_timestamp(), vnode_id, data);
+                let queue = self.hh_manager.get_or_create_queue(node_id, self);
+                queue.write().write(&block);
+
                 return Err(err);
             }
         }
@@ -168,12 +185,12 @@ impl PointWriter {
         &self,
         vnode_id: u32,
         node_id: u64,
-        points: &VnodePoints<'_>,
+        data: Vec<u8>,
     ) -> CoordinatorResult<()> {
-        if node_id == self.self_id {
+        if node_id == self.node_id {
             let req = WritePointsRpcRequest {
                 version: 1,
-                points: points.data.clone(),
+                points: data.clone(),
             };
 
             if let Err(err) = self.kv_inst.write(vnode_id, req).await {
@@ -185,14 +202,14 @@ impl PointWriter {
 
         let mut conn = self.get_node_conn(node_id).await?;
 
-        let req_cmd = WriteVnodeRequest::new(vnode_id, points.db.clone(), points.data.len() as u32);
+        let req_cmd = WriteVnodeRequest::new(vnode_id, data.len() as u32);
         let cmd_data = req_cmd.encode();
         conn.write_u32(WRITE_VNODE_REQUEST_COMMAND).await?;
         conn.write_u32(cmd_data.len().try_into().unwrap()).await?;
 
         conn.write_all(&cmd_data).await?;
 
-        conn.write_all(&points.data).await?;
+        conn.write_all(&data).await?;
 
         match CommonResponse::recv(&mut conn).await {
             Ok(msg) => {

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::SeekFrom,
     marker::PhantomData,
     path::{Path, PathBuf},
@@ -6,6 +7,7 @@ use std::{
 };
 
 use config::HintedOffConfig;
+use parking_lot::RwLock;
 use protos::models as fb_models;
 use snafu::prelude::*;
 use trace::{debug, error, info, warn};
@@ -14,6 +16,7 @@ use tskv::file_system::{DmaFile, FileCursor, FileSync};
 use tskv::{byte_utils, file_utils};
 
 use crate::errors::*;
+use crate::writer::PointWriter;
 
 const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x54];
@@ -23,16 +26,31 @@ const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 16;
 #[derive(Debug)]
 pub struct HintedOffBlock {
     pub ts: i64,
-    pub vnod_id: u32,
+    pub vnode_id: u32,
     pub data_len: u32,
     pub data: Vec<u8>,
 }
 
+#[derive(Debug)]
+pub struct HintedOffOption {
+    pub enable: bool,
+    pub path: String,
+}
+
+impl HintedOffOption {
+    pub fn new(config: &HintedOffConfig, node_id: u64) -> Self {
+        Self {
+            enable: config.enable,
+            path: format!("{}/{}", config.path, node_id),
+        }
+    }
+}
+
 impl HintedOffBlock {
-    pub fn new(ts: i64, vnod_id: u32, data: Vec<u8>) -> Self {
+    pub fn new(ts: i64, vnode_id: u32, data: Vec<u8>) -> Self {
         Self {
             ts,
-            vnod_id,
+            vnode_id,
             data_len: data.len() as u32,
             data,
         }
@@ -42,7 +60,7 @@ impl HintedOffBlock {
         format!(
             "ts:{}, id: {}, data: {}",
             self.ts,
-            self.vnod_id,
+            self.vnode_id,
             String::from_utf8(self.data.clone()).unwrap()
         )
     }
@@ -53,20 +71,47 @@ impl HintedOffBlock {
 }
 
 pub struct HintedOffManager {
-    config: Arc<HintedOffConfig>,
+    config: HintedOffConfig,
 
-    data_dir: PathBuf,
+    nodes: RwLock<HashMap<u64, Arc<RwLock<HintedOffQueue>>>>,
+}
+
+impl HintedOffManager {
+    pub fn new(config: HintedOffConfig) -> Self {
+        Self {
+            config,
+            nodes: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub fn get_or_create_queue(
+        &self,
+        id: u64,
+        writer: &PointWriter,
+    ) -> Arc<RwLock<HintedOffQueue>> {
+        self.nodes
+            .write()
+            .entry(id)
+            .or_insert_with(|| {
+                Arc::new(RwLock::new(HintedOffQueue::new(HintedOffOption::new(
+                    &self.config,
+                    id,
+                ))))
+            })
+            .clone()
+    }
+}
+
+pub struct HintedOffQueue {
+    option: HintedOffOption,
+
     writer_file: HintedOffWriter,
     reader_file: HintedOffReader,
 }
 
-unsafe impl Send for HintedOffManager {}
-
-unsafe impl Sync for HintedOffManager {}
-
-impl HintedOffManager {
-    pub fn new(config: Arc<HintedOffConfig>) -> Self {
-        let data_dir = PathBuf::from(config.path.clone());
+impl HintedOffQueue {
+    pub fn new(option: HintedOffOption) -> Self {
+        let data_dir = PathBuf::from(option.path.clone());
         let (last, seq) = match file_utils::get_max_sequence_file_name(
             data_dir.clone(),
             file_utils::get_hinted_off_file_id,
@@ -90,9 +135,8 @@ impl HintedOffManager {
         let tmp_file = HintedOffWriter::open(read_fileid, data_dir.join(read_filename)).unwrap();
         let reader_file = HintedOffReader::new(read_fileid, tmp_file.file.into()).unwrap();
 
-        HintedOffManager {
-            config,
-            data_dir,
+        HintedOffQueue {
+            option,
             writer_file,
             reader_file,
         }
@@ -106,7 +150,7 @@ impl HintedOffManager {
             );
 
             let new_file_id = self.writer_file.id + 1;
-            let new_file_name = file_utils::make_hinted_off_file(&self.config.path, new_file_id);
+            let new_file_name = file_utils::make_hinted_off_file(&self.option.path, new_file_id);
             let new_file = HintedOffWriter::open(new_file_id, new_file_name)?;
             let mut old_file = std::mem::replace(&mut self.writer_file, new_file);
             old_file.flush()?;
@@ -121,7 +165,7 @@ impl HintedOffManager {
             debug!("Read Hinted Off is read over '{}'", self.reader_file.id);
 
             let new_file_id = self.reader_file.id + 1;
-            let new_file_name = file_utils::make_hinted_off_file(&self.config.path, new_file_id);
+            let new_file_name = file_utils::make_hinted_off_file(&self.option.path, new_file_id);
             if !file_manager::try_exists(&PathBuf::from(new_file_name.clone())) {
                 debug!("Read new hinted off file is not create ");
 
@@ -136,6 +180,10 @@ impl HintedOffManager {
     }
 
     pub fn write(&mut self, block: &HintedOffBlock) -> CoordinatorResult<usize> {
+        if !self.option.enable {
+            return Ok(0);
+        }
+
         self.roll_hinted_off_write_file()?;
 
         self.writer_file.write(block)
@@ -164,9 +212,9 @@ impl HintedOffManager {
 
 struct HintedOffWriter {
     id: u64,
+
     file: DmaFile,
     size: u64,
-    path: PathBuf,
 }
 
 impl HintedOffWriter {
@@ -192,12 +240,7 @@ impl HintedOffWriter {
         }
         let size = file.len();
 
-        Ok(Self {
-            id,
-            file,
-            size,
-            path: PathBuf::from(path),
-        })
+        Ok(Self { id, file, size })
     }
 
     pub fn write_header(file: &DmaFile, offset: u32) -> CoordinatorResult<()> {
@@ -227,7 +270,7 @@ impl HintedOffWriter {
             .write_at(pos, &block.ts.to_be_bytes())
             .and_then(|size| {
                 pos += size as u64;
-                self.file.write_at(pos, &block.vnod_id.to_be_bytes())
+                self.file.write_at(pos, &block.vnode_id.to_be_bytes())
             })
             .and_then(|size| {
                 // write crc
@@ -340,7 +383,7 @@ impl HintedOffReader {
 
         Some(HintedOffBlock {
             ts,
-            vnod_id: id,
+            vnode_id: id,
             data_len,
             data: buf.to_vec(),
         })
@@ -364,19 +407,22 @@ mod test {
         let dir = "/tmp/cnosdb/hh".to_string();
         //let _ = std::fs::remove_dir_all(dir.clone());
 
-        let config = HintedOffConfig {
-            enable: true,
-            path: dir,
-        };
-        let manager = HintedOffManager::new(Arc::new(config));
-        let manager = Arc::new(RwLock::new(manager));
+        let option = HintedOffOption::new(
+            &HintedOffConfig {
+                enable: true,
+                path: dir,
+            },
+            1,
+        );
+        let queue = HintedOffQueue::new(option);
+        let queue = Arc::new(RwLock::new(queue));
 
-        tokio::spawn(read_hinted_off_file(manager.clone()));
+        tokio::spawn(read_hinted_off_file(queue.clone()));
 
         for i in 1..100 {
             let data = format!("aaa-datadfdsag{}ffdffdfedata-aaa", i);
             let block = HintedOffBlock::new(1000 + i, 123, data.as_bytes().to_vec());
-            manager.write().write(&block).unwrap();
+            queue.write().write(&block).unwrap();
 
             //time::sleep(Duration::from_secs(3)).await;
         }
@@ -384,12 +430,12 @@ mod test {
         time::sleep(Duration::from_secs(3)).await;
     }
 
-    async fn read_hinted_off_file(manager: Arc<RwLock<HintedOffManager>>) {
+    async fn read_hinted_off_file(queue: Arc<RwLock<HintedOffQueue>>) {
         debug!("read file started.");
         time::sleep(Duration::from_secs(1)).await;
         let mut count = 0;
         loop {
-            match manager.write().read() {
+            match queue.write().read() {
                 Ok(block) => {
                     //debug!("==== got data {:#?}", block.debug());
                     count = count + 1;
@@ -400,7 +446,7 @@ mod test {
                     break;
                 }
             }
-            manager.write().advance_read_offset(0).unwrap();
+            queue.write().advance_read_offset(0).unwrap();
 
             //time::sleep(Duration::from_secs(2)).await;
         }
