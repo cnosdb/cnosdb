@@ -56,10 +56,11 @@ pub struct IsiphoSessionConfig {
 
 impl Default for IsiphoSessionConfig {
     fn default() -> Self {
-        let mut inner: SessionConfig = Default::default();
+        let inner: SessionConfig = Default::default();
 
         inner
             .config_options
+            .write()
             .set_bool(OPT_OPTIMIZER_SKIP_FAILED_RULES, false);
 
         Self { inner }

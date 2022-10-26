@@ -3,7 +3,7 @@ use std::sync::Arc;
 use datafusion::{
     error::DataFusionError,
     logical_plan::{
-        plan::{Extension, Projection},
+        plan::{Projection, Sort},
         LogicalPlan,
     },
     optimizer::{OptimizerConfig, OptimizerRule},
@@ -11,10 +11,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 
-use crate::extension::{
-    expr::{expr_utils, selector_function::BOTTOM},
-    logical::plan_node::topk::TopKPlanNode,
-};
+use crate::extension::expr::{expr_utils, selector_function::BOTTOM};
 
 use datafusion::error::Result;
 
@@ -78,13 +75,10 @@ impl TransformBottomFuncToTopkNodeRule {
             nulls_first: false,
         };
 
-        let topk_node = LogicalPlan::Extension(Extension {
-            node: Arc::new(TopKPlanNode::new(
-                vec![sort_expr],
-                Arc::new(self.optimize(input.as_ref(), optimizer_config)?),
-                None,
-                k,
-            )),
+        let topk_node = LogicalPlan::Sort(Sort {
+            expr: vec![sort_expr],
+            input: Arc::new(self.optimize(input.as_ref(), optimizer_config)?),
+            fetch: Some(k),
         });
 
         // 2. construct a new projection node

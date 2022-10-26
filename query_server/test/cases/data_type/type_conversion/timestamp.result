@@ -6,9 +6,9 @@ test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time = 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time = TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time = TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time = TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time = TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 = 12345678865
@@ -20,9 +20,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time <> 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time != TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time != TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time != TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time != TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 12345678865
@@ -34,9 +34,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time != 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time != TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time != TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time != TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time != TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 12345678865
@@ -48,9 +48,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time < 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time < TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time < TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time < TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time < TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 < 12345678865
@@ -62,9 +62,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time <= 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time <= TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time <= TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time <= TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time <= TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 <= 12345678865
@@ -76,9 +76,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time > 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time > TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time > TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time > TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time > TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 > 12345678865
@@ -90,9 +90,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 >= 12345678865
@@ -104,9 +104,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= 12345678865; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 >= 12345678865
@@ -118,9 +118,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time = '1997-01-31 09:26:56'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time = TimestampNanosecond(854674016000000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time = TimestampNanosecond(854674016000000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time = TimestampNanosecond(854674016000000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time = TimestampNanosecond(854674016000000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 = 854674016000000000
@@ -132,9 +132,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time <> '1997-01-31 09:26:56.123'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 854674016123000000
@@ -146,9 +146,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time != '1997-01-31T09:26:56.123'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time != TimestampNanosecond(854674016123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 != 854674016123000000
@@ -160,9 +160,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time < '1997-01-31 09:26:56.123-05:00'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time < TimestampNanosecond(854720816123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time < TimestampNanosecond(854720816123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time < TimestampNanosecond(854720816123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time < TimestampNanosecond(854720816123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 < 854720816123000000
@@ -174,9 +174,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time <= '1997-01-31T09:26:56.123-05:00'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time <= TimestampNanosecond(854720816123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time <= TimestampNanosecond(854720816123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time <= TimestampNanosecond(854720816123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time <= TimestampNanosecond(854720816123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 <= 854720816123000000
@@ -188,9 +188,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time > '1997-01-31T09:26:56.123Z'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time > TimestampNanosecond(854702816123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time > TimestampNanosecond(854702816123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time > TimestampNanosecond(854702816123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time > TimestampNanosecond(854702816123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 > 854702816123000000
@@ -202,9 +202,9 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= '1997-01-31 09:26:56'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time >= TimestampNanosecond(854674016000000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time >= TimestampNanosecond(854674016000000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time >= TimestampNanosecond(854674016000000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time >= TimestampNanosecond(854674016000000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 >= 854674016000000000
@@ -215,72 +215,72 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= '1997-01-31'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing '1997-01-31' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing '1997-01-31' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time >= 'xxx'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing 'xxx' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xxx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between '1997-01-31 09:26:56' and '1997-03-31T09:26:56.123Z'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time BETWEEN TimestampNanosecond(854674016000000000, None) AND TimestampNanosecond(859800416123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time BETWEEN TimestampNanosecond(854674016000000000, None) AND TimestampNanosecond(859800416123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time >= TimestampNanosecond(854674016000000000, None) AND test_timestamp_conv.time <= TimestampNanosecond(859800416123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time >= TimestampNanosecond(854674016000000000, None), test_timestamp_conv.time <= TimestampNanosecond(859800416123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 >= 854674016000000000 AND time@0 <= 859800416123000000
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854674016000000000, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(854674016000000000, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859800416123000000, None)), bound: Exactly } }} })}) }, projection=[time]
 "
 
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between 12345678865 and 12345678869; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time BETWEEN TimestampNanosecond(12345678865, None) AND TimestampNanosecond(12345678869, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time BETWEEN TimestampNanosecond(12345678865, None) AND TimestampNanosecond(12345678869, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time >= TimestampNanosecond(12345678865, None) AND test_timestamp_conv.time <= TimestampNanosecond(12345678869, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None), test_timestamp_conv.time <= TimestampNanosecond(12345678869, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 >= 12345678865 AND time@0 <= 12345678869
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678869, None)), bound: Exactly } }} })}) }, projection=[time]
 "
 
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between 12345678865 and '1997-03-31T09:26:56.123Z'; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time BETWEEN TimestampNanosecond(12345678865, None) AND TimestampNanosecond(859800416123000000, None)
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time BETWEEN TimestampNanosecond(12345678865, None) AND TimestampNanosecond(859800416123000000, None)]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time >= TimestampNanosecond(12345678865, None) AND test_timestamp_conv.time <= TimestampNanosecond(859800416123000000, None)
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time >= TimestampNanosecond(12345678865, None), test_timestamp_conv.time <= TimestampNanosecond(859800416123000000, None)]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 >= 12345678865 AND time@0 <= 859800416123000000
       RepartitionExec: partitioning=RoundRobinBatch(8)
-        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time]
+        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""time"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }: Range { low: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(12345678865, None)), bound: Exactly }, high: Marker { data_type: Timestamp(Nanosecond, None), value: Some(TimestampNanosecond(859800416123000000, None)), bound: Exactly } }} })}) }, projection=[time]
 "
 
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between 12345678865 and '1997-03-31'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing '1997-03-31' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing '1997-03-31' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time between 12345678865 and 'xxxxx'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing 'xxxxx' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xxxxx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time in (12345678865, '1997-03-31T09:26:56.123Z'); --
 200 OK
 plan_type,plan
-logical_plan,"Projection: #test_timestamp_conv.time
-  Filter: #test_timestamp_conv.time IN ([TimestampNanosecond(12345678865, None), TimestampNanosecond(859800416123000000, None)])
-    TableScan: test_timestamp_conv projection=[time], partial_filters=[#test_timestamp_conv.time IN ([TimestampNanosecond(12345678865, None), TimestampNanosecond(859800416123000000, None)])]"
+logical_plan,"Projection: test_timestamp_conv.time
+  Filter: test_timestamp_conv.time IN ([TimestampNanosecond(12345678865, None), TimestampNanosecond(859800416123000000, None)])
+    TableScan: test_timestamp_conv projection=[time], partial_filters=[test_timestamp_conv.time IN ([TimestampNanosecond(12345678865, None), TimestampNanosecond(859800416123000000, None)])]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
     FilterExec: time@0 IN ([Literal { value: TimestampNanosecond(12345678865, None) }, Literal { value: TimestampNanosecond(859800416123000000, None) }])
@@ -291,6 +291,6 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 
 -- EXECUTE SQL: explain select time from test_timestamp_conv where time in (12345678865, 'xx'); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Error parsing 'xx' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Error parsing 'xx' as timestamp. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 

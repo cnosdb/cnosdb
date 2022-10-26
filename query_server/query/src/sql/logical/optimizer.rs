@@ -3,12 +3,17 @@ use std::sync::Arc;
 use datafusion::{
     logical_plan::LogicalPlan,
     optimizer::{
-        common_subexpr_eliminate::CommonSubexprEliminate, eliminate_filter::EliminateFilter,
-        eliminate_limit::EliminateLimit, filter_null_join_keys::FilterNullJoinKeys,
-        filter_push_down::FilterPushDown, limit_push_down::LimitPushDown,
-        projection_push_down::ProjectionPushDown, simplify_expressions::SimplifyExpressions,
+        common_subexpr_eliminate::CommonSubexprEliminate,
+        decorrelate_where_exists::DecorrelateWhereExists, decorrelate_where_in::DecorrelateWhereIn,
+        eliminate_filter::EliminateFilter, eliminate_limit::EliminateLimit,
+        filter_null_join_keys::FilterNullJoinKeys, filter_push_down::FilterPushDown,
+        limit_push_down::LimitPushDown, projection_push_down::ProjectionPushDown,
+        reduce_cross_join::ReduceCrossJoin, reduce_outer_join::ReduceOuterJoin,
+        rewrite_disjunctive_predicate::RewriteDisjunctivePredicate,
+        scalar_subquery_to_join::ScalarSubqueryToJoin, simplify_expressions::SimplifyExpressions,
         single_distinct_to_groupby::SingleDistinctToGroupBy,
-        subquery_filter_to_join::SubqueryFilterToJoin, OptimizerRule,
+        subquery_filter_to_join::SubqueryFilterToJoin, type_coercion::TypeCoercion,
+        unwrap_cast_in_comparison::UnwrapCastInComparison, OptimizerRule,
     },
 };
 
@@ -19,7 +24,6 @@ use spi::query::LogicalOptimizeSnafu;
 
 use crate::extension::logical::optimizer_rule::{
     implicit_type_conversion::ImplicitTypeConversion,
-    merge_limit_with_sort::MergeLimitWithSortRule,
     transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule,
     transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule,
 };
@@ -49,18 +53,25 @@ impl Default for DefaultLogicalOptimizer {
             // data type conv
             Arc::new(ImplicitTypeConversion {}),
             // df default rules
+            Arc::new(TypeCoercion::new()),
             Arc::new(SimplifyExpressions::new()),
+            Arc::new(UnwrapCastInComparison::new()),
+            Arc::new(DecorrelateWhereExists::new()),
+            Arc::new(DecorrelateWhereIn::new()),
+            Arc::new(ScalarSubqueryToJoin::new()),
             Arc::new(SubqueryFilterToJoin::new()),
             Arc::new(EliminateFilter::new()),
+            Arc::new(ReduceCrossJoin::new()),
             Arc::new(CommonSubexprEliminate::new()),
             Arc::new(EliminateLimit::new()),
             Arc::new(ProjectionPushDown::new()),
+            Arc::new(RewriteDisjunctivePredicate::new()),
             Arc::new(FilterNullJoinKeys::default()),
+            Arc::new(ReduceOuterJoin::new()),
             Arc::new(FilterPushDown::new()),
             Arc::new(LimitPushDown::new()),
             Arc::new(SingleDistinctToGroupBy::new()),
             // cnosdb rules
-            Arc::new(MergeLimitWithSortRule {}),
             Arc::new(TransformBottomFuncToTopkNodeRule {}),
             Arc::new(TransformTopkFuncToTopkNodeRule {}),
         ];

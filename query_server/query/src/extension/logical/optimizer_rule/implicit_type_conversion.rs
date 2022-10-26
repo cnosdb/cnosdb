@@ -86,6 +86,7 @@ impl OptimizerRule for ImplicitTypeConversion {
             | LogicalPlan::CrossJoin { .. }
             | LogicalPlan::CreateMemoryTable { .. }
             | LogicalPlan::DropTable { .. }
+            | LogicalPlan::DropView { .. }
             | LogicalPlan::Values { .. }
             | LogicalPlan::Distinct { .. }
             | LogicalPlan::Analyze { .. } => {

@@ -1,7 +1,12 @@
 use std::collections::VecDeque;
 
-use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
+use datafusion::sql::sqlparser::{
+    ast::{DataType, Ident, ObjectName, Value},
+    dialect::{keywords::Keyword, Dialect, GenericDialect},
+    parser::{Parser, ParserError},
+    tokenizer::{Token, Tokenizer},
+};
 use snafu::ResultExt;
 use spi::query::ast::{
     ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DescribeDatabase, DescribeTable,
@@ -9,12 +14,6 @@ use spi::query::ast::{
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
-use sqlparser::ast::{DataType, Ident, ObjectName, Value};
-use sqlparser::{
-    dialect::{keywords::Keyword, Dialect, GenericDialect},
-    parser::{Parser, ParserError},
-    tokenizer::{Token, Tokenizer},
-};
 use trace::debug;
 
 // support tag token
@@ -229,7 +228,7 @@ impl<'a> ExtParser<'a> {
 
     /// Parses the set of valid formats
     /// This is a copy of the equivalent implementation in Datafusion.
-    fn parse_file_format(&mut self) -> Result<FileType, ParserError> {
+    fn parse_file_format(&mut self) -> Result<String, ParserError> {
         match self.parser.next_token() {
             Token::Word(w) => parse_file_type(&w.value),
             unexpected => self.expected("one of PARQUET, NDJSON, or CSV", unexpected),
@@ -537,17 +536,8 @@ impl<'a> ExtParser<'a> {
 }
 
 /// This is a copy of the equivalent implementation in Datafusion.
-fn parse_file_type(s: &str) -> Result<FileType, ParserError> {
-    match s.to_uppercase().as_str() {
-        "PARQUET" => Ok(FileType::Parquet),
-        "NDJSON" => Ok(FileType::NdJson),
-        "CSV" => Ok(FileType::CSV),
-        "AVRO" => Ok(FileType::Avro),
-        other => parser_err!(format!(
-            "expect one of PARQUET, AVRO, NDJSON, or CSV, found: {}",
-            other
-        )),
-    }
+fn parse_file_type(s: &str) -> Result<String, ParserError> {
+    Ok(s.to_uppercase())
 }
 
 /// Normalize a SQL object name
@@ -572,8 +562,8 @@ pub fn normalize_ident(id: &Ident) -> String {
 mod tests {
     use std::ops::Deref;
 
+    use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
     use spi::query::ast::{DropObject, ExtStatement};
-    use sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
 
     use super::*;
 

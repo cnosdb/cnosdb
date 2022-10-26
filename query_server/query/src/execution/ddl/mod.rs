@@ -73,15 +73,19 @@ impl DDLDefinitionTaskFactory {
     // If you add ddl operations, you usually need to modify here
     fn create_task(&self) -> Box<dyn DDLDefinitionTask> {
         match &self.plan {
-            DDLPlan::CreateExternalTable(stmt) => {
-                Box::new(CreateExternalTableTask::new(stmt.clone()))
+            DDLPlan::CreateExternalTable(sub_plan) => {
+                Box::new(CreateExternalTableTask::new(sub_plan.clone()))
             }
-            DDLPlan::Drop(stmt) => Box::new(DropObjectTask::new(stmt.clone())),
-            DDLPlan::CreateTable(stmt) => Box::new(CreateTableTask::new(stmt.clone())),
-            DDLPlan::CreateDatabase(stmt) => Box::new(CreateDatabaseTask::new(stmt.clone())),
-            DDLPlan::DescribeDatabase(stmt) => Box::new(DescribeDatabaseTask::new(stmt.clone())),
-            DDLPlan::DescribeTable(stmt) => Box::new(DescribeTableTask::new(stmt.clone())),
-            DDLPlan::ShowTables(stmt) => Box::new(ShowTablesTask::new(stmt.clone())),
+            DDLPlan::Drop(sub_plan) => Box::new(DropObjectTask::new(sub_plan.clone())),
+            DDLPlan::CreateTable(sub_plan) => Box::new(CreateTableTask::new(sub_plan.clone())),
+            DDLPlan::CreateDatabase(sub_plan) => {
+                Box::new(CreateDatabaseTask::new(sub_plan.clone()))
+            }
+            DDLPlan::DescribeDatabase(sub_plan) => {
+                Box::new(DescribeDatabaseTask::new(sub_plan.clone()))
+            }
+            DDLPlan::DescribeTable(sub_plan) => Box::new(DescribeTableTask::new(sub_plan.clone())),
+            DDLPlan::ShowTables(sub_plan) => Box::new(ShowTablesTask::new(sub_plan.clone())),
             DDLPlan::ShowDatabases() => Box::new(ShowDatabasesTask::new()),
         }
     }

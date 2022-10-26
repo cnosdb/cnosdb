@@ -102,6 +102,6 @@ fa
 
 -- EXECUTE SQL: select time, ta, fa, * from public.test order by fa, fb; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"#public.test.time\" at position 0 and \"#public.test.time\" at position 3 have the same name. Consider aliasing (\"AS\") one of them."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"public.test.time\" at position 0 and \"public.test.time\" at position 3 have the same name. Consider aliasing (\"AS\") one of them."}
 -- ERROR:  --
 
