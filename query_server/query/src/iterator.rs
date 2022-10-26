@@ -671,27 +671,31 @@ impl RowIterator {
             debug!("schema info {:02X} {}", item.id, item.name);
 
             match item.column_type {
-                ColumnType::Tag => builders.push(Box::new(StringBuilder::new(self.batch_size))),
-                ColumnType::Time => {
-                    builders.push(Box::new(TimestampNanosecondBuilder::new(self.batch_size)))
-                }
+                ColumnType::Tag => builders.push(Box::new(StringBuilder::with_capacity(
+                    self.batch_size,
+                    self.batch_size * 32,
+                ))),
+                ColumnType::Time => builders.push(Box::new(
+                    TimestampNanosecondBuilder::with_capacity(self.batch_size),
+                )),
                 ColumnType::Field(t) => match t {
                     ValueType::Unknown => todo!(),
                     ValueType::Float => {
-                        builders.push(Box::new(Float64Builder::new(self.batch_size)))
+                        builders.push(Box::new(Float64Builder::with_capacity(self.batch_size)))
                     }
                     ValueType::Integer => {
-                        builders.push(Box::new(Int64Builder::new(self.batch_size)))
+                        builders.push(Box::new(Int64Builder::with_capacity(self.batch_size)))
                     }
                     ValueType::Unsigned => {
-                        builders.push(Box::new(UInt64Builder::new(self.batch_size)))
+                        builders.push(Box::new(UInt64Builder::with_capacity(self.batch_size)))
                     }
                     ValueType::Boolean => {
-                        builders.push(Box::new(BooleanBuilder::new(self.batch_size)))
+                        builders.push(Box::new(BooleanBuilder::with_capacity(self.batch_size)))
                     }
-                    ValueType::String => {
-                        builders.push(Box::new(StringBuilder::new(self.batch_size)))
-                    }
+                    ValueType::String => builders.push(Box::new(StringBuilder::with_capacity(
+                        self.batch_size,
+                        self.batch_size * 32,
+                    ))),
                 },
             }
         }

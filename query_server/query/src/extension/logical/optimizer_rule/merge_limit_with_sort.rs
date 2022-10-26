@@ -33,16 +33,17 @@ impl OptimizerRule for MergeLimitWithSortRule {
             if let LogicalPlan::Sort(Sort {
                 ref expr,
                 ref input,
+                ..
             }) = **input
             {
                 // If k is too large, no topk optimization is performed
-                if skip.unwrap_or(0) + fetch <= 255 {
+                if skip + fetch <= 255 {
                     // we found a sort with a single sort expr, replace with a a TopK
                     return Ok(LogicalPlan::Extension(Extension {
                         node: Arc::new(TopKPlanNode::new(
                             expr.clone(),
                             Arc::new(self.optimize(input.as_ref(), optimizer_config)?),
-                            *skip,
+                            Some(*skip),
                             *fetch,
                         )),
                     }));

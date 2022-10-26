@@ -1,18 +1,19 @@
+use std::collections::HashMap;
 use std::option::Option;
 use std::sync::Arc;
 
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::TableSource;
-use datafusion::logical_plan::plan::{Analyze, Explain, Extension};
-use datafusion::logical_plan::{
-    DFField, FileType, LogicalPlan, LogicalPlanBuilder, PlanType, ToDFSchema, ToStringifiedPlan,
-};
-use datafusion::prelude::{cast, col, lit, Expr};
+use datafusion::logical_plan::plan::{Analyze, Explain, Extension, Projection};
+use datafusion::logical_plan::{DFField, LogicalPlan, PlanType, ToDFSchema, ToStringifiedPlan};
+use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{ContextProvider, SqlToRel};
+use datafusion::sql::sqlparser::ast::{
+    DataType as SQLDataType, Ident, ObjectName, Query, Statement,
+};
 use datafusion::sql::TableReference;
-use hashbrown::HashMap;
 use models::schema::{ColumnType, TableColumn};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -23,12 +24,11 @@ use spi::query::ast::{
     DescribeTable as DescribeTableOptions, DropObject, ExtStatement,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, CSVOptions, CreateDatabase, CreateExternalTable, CreateTable, DDLPlan,
-    DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu, FileDescriptor, LogicalPlanner,
-    LogicalPlannerError, Plan, QueryPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
+    self, affected_row_expr, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase, DescribeTable,
+    DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
-use sqlparser::ast::{Ident, ObjectName, Query};
 
 use models::codec::{
     codec_name_to_codec, BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC,
@@ -37,7 +37,6 @@ use models::codec::{
 use models::schema::{DatabaseOptions, Duration, Precision};
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
-use sqlparser::ast::{DataType as SQLDataType, Statement};
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
@@ -86,6 +85,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 statement,
                 analyze,
                 describe_alias: _,
+                format: _,
             } => self.explain_statement_to_plan(verbose, analyze, *statement),
             Statement::Insert {
                 table_name: ref sql_object_name,
@@ -180,10 +180,13 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     // insert column exists in the target table
                     if source_field.data_type() == target_column_data_type {
                         // save if type matches col(source_field_name)
-                        col(source_field.name())
+                        Expr::Column(source_field.qualified_column())
                     } else {
                         // Add cast(source_col as target_type) if it doesn't exist
-                        cast(col(source_field.name()), target_column_data_type.clone())
+                        cast(
+                            Expr::Column(source_field.qualified_column()),
+                            target_column_data_type.clone(),
+                        )
                     }
                 } else {
                     // The specified column in the target table is missing from the insert
@@ -195,11 +198,12 @@ impl<S: ContextProvider> SqlPlaner<S> {
             })
             .collect();
 
-        LogicalPlanBuilder::from(source_plan)
-            .project_with_alias(assignments, None)
-            .context(logical_planner::ExternalSnafu)?
-            .build()
-            .context(logical_planner::ExternalSnafu)
+        debug!("assignments: {:?}", &assignments);
+
+        Ok(LogicalPlan::Projection(
+            Projection::try_new(assignments, Arc::new(source_plan), None)
+                .context(logical_planner::ExternalSnafu)?,
+        ))
     }
 
     fn insert_to_plan(
@@ -244,9 +248,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
             vec![affected_row_expr],
         ));
 
-        Ok(Plan::Query(QueryPlan {
-            df_plan: LogicalPlan::Extension(Extension { node }),
-        }))
+        let df_plan = LogicalPlan::Extension(Extension { node });
+
+        debug!("Insert plan:\n{}", df_plan.display_indent_schema());
+
+        Ok(Plan::Query(QueryPlan { df_plan }))
     }
 
     fn drop_object_to_plan(&self, stmt: DropObject) -> Result<Plan> {
@@ -265,37 +271,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
             .external_table_to_plan(statement)
             .context(ExternalSnafu)?;
 
-        if let LogicalPlan::CreateExternalTable(datafusion::logical_plan::CreateExternalTable {
-            schema,
-            name,
-            location,
-            file_type,
-            has_header,
-            delimiter,
-            table_partition_cols,
-            if_not_exists,
-        }) = logical_plan
-        {
-            let file_descriptor = match file_type {
-                FileType::NdJson => FileDescriptor::NdJson,
-                FileType::Parquet => FileDescriptor::Parquet,
-                FileType::CSV => FileDescriptor::CSV(CSVOptions {
-                    has_header,
-                    delimiter,
-                }),
-                FileType::Avro => FileDescriptor::Avro,
-            };
-
-            return Ok(Plan::DDL(DDLPlan::CreateExternalTable(
-                CreateExternalTable {
-                    schema,
-                    name,
-                    location,
-                    file_descriptor,
-                    table_partition_cols,
-                    if_not_exists,
-                },
-            )));
+        if let LogicalPlan::CreateExternalTable(plan) = logical_plan {
+            return Ok(Plan::DDL(DDLPlan::CreateExternalTable(plan)));
         }
 
         Err(DataFusionError::Internal(
@@ -428,7 +405,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn make_data_type(&self, data_type: &SQLDataType) -> Result<ColumnType> {
         match data_type {
             // todo : should support get time unit for database
-            SQLDataType::Timestamp => Ok(ColumnType::Time),
+            SQLDataType::Timestamp(_) => Ok(ColumnType::Time),
             SQLDataType::BigInt(_) => Ok(ColumnType::Field(ValueType::Integer)),
             SQLDataType::UnsignedBigInt(_) => Ok(ColumnType::Field(ValueType::Unsigned)),
             SQLDataType::Double => Ok(ColumnType::Field(ValueType::Float)),
@@ -447,7 +424,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         }
         // 数据类型 -> 压缩方式 校验
         let is_ok = match column.data_type {
-            SQLDataType::Timestamp => {
+            SQLDataType::Timestamp(_) => {
                 TIMESTAMP_CODEC.contains(&column.codec.to_uppercase().as_str())
             }
             SQLDataType::BigInt(_) => BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str()),
@@ -615,18 +592,6 @@ mod tests {
             self.table_schema.clone()
         }
     }
-    #[test]
-    fn test_select() {
-        let sql = "select * from test_tb";
-        let mut statements = ExtParser::parse_sql(sql).unwrap();
-        assert_eq!(statements.len(), 1);
-        let test = MockContext {};
-        let planner = SqlPlaner::new(test);
-        let plan = planner
-            .statement_to_plan(statements.pop_back().unwrap())
-            .unwrap();
-        println!("{:?}", plan);
-    }
 
     #[test]
     fn test_drop() {
@@ -638,7 +603,11 @@ mod tests {
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
-        println!("{:?}", plan);
+        if let Plan::DDL(DDLPlan::Drop(drop)) = plan {
+            println!("{:?}", drop);
+        } else {
+            panic!("expected drop plan")
+        }
     }
 
     #[test]
@@ -657,9 +626,13 @@ mod tests {
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
-        let ans = format!("{:?}", plan);
-        let expected = "DDL(CreateTable(CreateTable { schema: [TableColumn { id: 0, name: \"time\", column_type: Time, codec: 0 }, TableColumn { id: 1, name: \"column6\", column_type: Tag, codec: 0 }, TableColumn { id: 2, name: \"column7\", column_type: Tag, codec: 0 }, TableColumn { id: 3, name: \"column1\", column_type: Field(Integer), codec: 2 }, TableColumn { id: 4, name: \"column2\", column_type: Field(String), codec: 4 }, TableColumn { id: 5, name: \"column3\", column_type: Field(Unsigned), codec: 1 }, TableColumn { id: 6, name: \"column4\", column_type: Field(Boolean), codec: 0 }, TableColumn { id: 7, name: \"column5\", column_type: Field(Float), codec: 6 }], name: \"test\", if_not_exists: true }))";
-        assert_eq!(ans, expected);
+        if let Plan::DDL(DDLPlan::CreateTable(create)) = plan {
+            let ans = format!("{:?}", create);
+            let expected = "CreateTable { schema: [TableColumn { id: 0, name: \"time\", column_type: Time, codec: 0 }, TableColumn { id: 1, name: \"column6\", column_type: Tag, codec: 0 }, TableColumn { id: 2, name: \"column7\", column_type: Tag, codec: 0 }, TableColumn { id: 3, name: \"column1\", column_type: Field(Integer), codec: 2 }, TableColumn { id: 4, name: \"column2\", column_type: Field(String), codec: 4 }, TableColumn { id: 5, name: \"column3\", column_type: Field(Unsigned), codec: 1 }, TableColumn { id: 6, name: \"column4\", column_type: Field(Boolean), codec: 0 }, TableColumn { id: 7, name: \"column5\", column_type: Field(Float), codec: 6 }], name: \"test\", if_not_exists: true }";
+            assert_eq!(ans, expected);
+        } else {
+            panic!("expected create table plan")
+        }
     }
 
     #[test]
@@ -672,9 +645,13 @@ mod tests {
         let plan = planner
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
-        let ans = format!("{:?}", plan);
-        let expected = r#"DDL(CreateDatabase(CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }))"#;
-        assert_eq!(ans, expected);
+        if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan {
+            let ans = format!("{:?}", create);
+            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }"#;
+            assert_eq!(ans, expected);
+        } else {
+            panic!("expected create table plan")
+        }
     }
 
     #[test]
