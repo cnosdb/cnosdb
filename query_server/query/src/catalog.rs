@@ -154,6 +154,11 @@ impl SchemaProvider for UserSchema {
             return Some(table);
         }
 
+        // get external table
+        if let Some(v) = tables.get(name) {
+            return Some(v.clone());
+        }
+
         None
     }
 
