@@ -25,7 +25,7 @@ use tokio::{
         oneshot::Sender,
     },
 };
-use trace::{debug, error, info, warn};
+use trace::{debug, error, info, log_error, warn};
 
 use crate::{
     compaction::FlushReq,
@@ -391,7 +391,7 @@ pub fn run_flush_memtable_job(
             .run(version, &mut edits)?;
 
             if let Err(e) = compact_task_sender.send(*tsf_id) {
-                error!("{}", e);
+                log_error!(e);
             }
         }
     }
