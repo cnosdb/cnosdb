@@ -17,6 +17,7 @@ use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
 use config::TLSConfig;
+use coordinator::hh_queue::HintedOffManager;
 use coordinator::meta_client::MetaClientRef;
 use coordinator::writer::{PointWriter, VnodeMapping};
 use datafusion::arrow::util::pretty::pretty_format_batches;
@@ -59,6 +60,7 @@ pub struct HttpService {
     dbms: DBMSRef,
     kv_inst: EngineRef,
     writer: Arc<PointWriter>,
+    hh_manager: Arc<HintedOffManager>,
     handle: Option<ServiceHandle<()>>,
 }
 
@@ -67,6 +69,7 @@ impl HttpService {
         dbms: DBMSRef,
         kv_inst: EngineRef,
         writer: Arc<PointWriter>,
+        hh_manager: Arc<HintedOffManager>,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
     ) -> Self {
@@ -75,6 +78,7 @@ impl HttpService {
             addr,
             dbms,
             kv_inst,
+            hh_manager,
             writer,
             handle: None,
         }
@@ -106,6 +110,12 @@ impl HttpService {
     ) -> impl Filter<Extract = (Arc<PointWriter>,), Error = Infallible> + Clone {
         let writer = self.writer.clone();
         warp::any().map(move || writer.clone())
+    }
+    fn with_hh_manager(
+        &self,
+    ) -> impl Filter<Extract = (Arc<HintedOffManager>,), Error = Infallible> + Clone {
+        let hh_manager = self.hh_manager.clone();
+        warp::any().map(move || hh_manager.clone())
     }
 
     fn routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
@@ -193,12 +203,14 @@ impl HttpService {
             .and(warp::query::<WriteParam>())
             .and(self.with_kv_inst())
             .and(self.with_writer())
+            .and(self.with_hh_manager())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
                  kv_inst: EngineRef,
-                 writer: Arc<PointWriter>| async move {
+                 writer: Arc<PointWriter>,
+                 handoff: Arc<HintedOffManager>| async move {
                     let start = Instant::now();
                     let user_info = match header.try_get_basic_auth() {
                         Ok(u) => u,
@@ -227,7 +239,7 @@ impl HttpService {
                     )?;
 
                     let result = writer
-                        .write_points(&mut mapping)
+                        .write_points(&mut mapping, handoff)
                         .await
                         .context(CoordinatorSnafu);
 

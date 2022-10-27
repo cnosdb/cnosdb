@@ -10,6 +10,7 @@ use config::HintedOffConfig;
 use parking_lot::RwLock;
 use protos::models as fb_models;
 use snafu::prelude::*;
+use tokio::time::{self, Duration};
 use trace::{debug, error, info, warn};
 use tskv::file_system::file_manager::{self, FileManager};
 use tskv::file_system::{DmaFile, FileCursor, FileSync};
@@ -35,11 +36,13 @@ pub struct HintedOffBlock {
 pub struct HintedOffOption {
     pub enable: bool,
     pub path: String,
+    pub node_id: u64,
 }
 
 impl HintedOffOption {
     pub fn new(config: &HintedOffConfig, node_id: u64) -> Self {
         Self {
+            node_id,
             enable: config.enable,
             path: format!("{}/{}", config.path, node_id),
         }
@@ -73,32 +76,64 @@ impl HintedOffBlock {
 pub struct HintedOffManager {
     config: HintedOffConfig,
 
+    writer: Arc<PointWriter>,
+
     nodes: RwLock<HashMap<u64, Arc<RwLock<HintedOffQueue>>>>,
 }
 
 impl HintedOffManager {
-    pub fn new(config: HintedOffConfig) -> Self {
+    pub fn new(config: HintedOffConfig, writer: Arc<PointWriter>) -> Self {
         Self {
             config,
+            writer,
             nodes: RwLock::new(HashMap::new()),
         }
     }
 
-    pub fn get_or_create_queue(
-        &self,
-        id: u64,
-        writer: &PointWriter,
-    ) -> Arc<RwLock<HintedOffQueue>> {
-        self.nodes
-            .write()
-            .entry(id)
-            .or_insert_with(|| {
-                Arc::new(RwLock::new(HintedOffQueue::new(HintedOffOption::new(
-                    &self.config,
-                    id,
-                ))))
-            })
-            .clone()
+    pub fn get_or_create_queue(&self, id: u64) -> Arc<RwLock<HintedOffQueue>> {
+        let mut nodes = self.nodes.write();
+        if let Some(val) = nodes.get(&id) {
+            return val.clone();
+        }
+
+        let queue = Arc::new(RwLock::new(HintedOffQueue::new(HintedOffOption::new(
+            &self.config,
+            id,
+        ))));
+        nodes.insert(id, queue.clone());
+
+        tokio::spawn(HintedOffManager::hinted_off_service(
+            id,
+            self.writer.clone(),
+            queue.clone(),
+        ));
+
+        return queue;
+    }
+
+    async fn hinted_off_service(
+        node_id: u64,
+        writer: Arc<PointWriter>,
+        queue: Arc<RwLock<HintedOffQueue>>,
+    ) {
+        debug!("hinted_off_service started for node: {}", node_id);
+
+        loop {
+            match queue.write().read() {
+                Ok(block) => {
+                    //debug!("==== got data {:#?}", block.debug());
+                    writer
+                        .warp_write_to_node(block.vnode_id, node_id, block.data)
+                        .await;
+                    queue.write().advance_read_offset(0).unwrap();
+                }
+
+                Err(err) => {
+                    debug!("==== got err {}", err.to_string());
+                    time::sleep(Duration::from_secs(2)).await;
+                }
+            }
+        }
     }
 }
 

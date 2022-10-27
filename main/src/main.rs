@@ -151,13 +151,16 @@ fn main() -> Result<(), std::io::Error> {
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
                 let dbms = Arc::new(make_cnosdbms(kv_inst.clone()).expect("make dbms"));
 
-                let hh_manager = Arc::new(HintedOffManager::new(global_config.hintedoff.clone()));
                 let meta_manager = Arc::new(MetaClientManager::new(global_config.cluster.clone()));
                 let point_writer = Arc::new(PointWriter::new(
                     global_config.cluster.node_id,
                     kv_inst.clone(),
                     meta_manager,
-                    hh_manager,
+                ));
+
+                let hh_manager = Arc::new(HintedOffManager::new(
+                    global_config.hintedoff.clone(),
+                    point_writer.clone(),
                 ));
 
                 let tcp_service =
@@ -167,6 +170,7 @@ fn main() -> Result<(), std::io::Error> {
                     dbms.clone(),
                     kv_inst.clone(),
                     point_writer,
+                    hh_manager,
                     http_host,
                     global_config.security.tls_config.clone(),
                 ));

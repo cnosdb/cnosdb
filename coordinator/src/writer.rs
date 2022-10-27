@@ -105,23 +105,16 @@ impl<'a> VnodeMapping<'a> {
 pub struct PointWriter {
     node_id: u64,
     kv_inst: EngineRef,
-    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
-
-    hh_manager: Arc<HintedOffManager>,
     meta_manager: Arc<MetaClientManager>,
+
+    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 }
 
 impl PointWriter {
-    pub fn new(
-        node_id: u64,
-        kv_inst: EngineRef,
-        meta_manager: Arc<MetaClientManager>,
-        hh_manager: Arc<HintedOffManager>,
-    ) -> Self {
+    pub fn new(node_id: u64, kv_inst: EngineRef, meta_manager: Arc<MetaClientManager>) -> Self {
         Self {
             node_id,
             kv_inst,
-            hh_manager,
             meta_manager,
             conn_map: RwLock::new(HashMap::new()),
         }
@@ -131,13 +124,22 @@ impl PointWriter {
         self.meta_manager.get_meta_client(tenant)
     }
 
-    pub async fn write_points(&self, mapping: &mut VnodeMapping<'_>) -> CoordinatorResult<()> {
+    pub async fn write_points(
+        &self,
+        mapping: &mut VnodeMapping<'_>,
+        hh_manager: Arc<HintedOffManager>,
+    ) -> CoordinatorResult<()> {
         let mut requests = vec![];
         for (id, points) in mapping.points.iter_mut() {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
-                let request = self.write_to_node(vnode.id, vnode.node_id, points.data.clone());
+                let request = self.write_to_node(
+                    vnode.id,
+                    vnode.node_id,
+                    points.data.clone(),
+                    hh_manager.clone(),
+                );
                 requests.push(request);
             }
         }
@@ -152,6 +154,7 @@ impl PointWriter {
         vnode_id: u32,
         node_id: u64,
         data: Vec<u8>,
+        hh_manager: Arc<HintedOffManager>,
     ) -> CoordinatorResult<()> {
         match self
             .warp_write_to_node(vnode_id, node_id, data.clone())
@@ -173,7 +176,7 @@ impl PointWriter {
                 );
 
                 let block = HintedOffBlock::new(now_timestamp(), vnode_id, data);
-                let queue = self.hh_manager.get_or_create_queue(node_id, self);
+                let queue = hh_manager.get_or_create_queue(node_id);
                 queue.write().write(&block);
 
                 return Err(err);
@@ -181,7 +184,7 @@ impl PointWriter {
         }
     }
 
-    async fn warp_write_to_node(
+    pub async fn warp_write_to_node(
         &self,
         vnode_id: u32,
         node_id: u64,
