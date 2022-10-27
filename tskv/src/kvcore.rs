@@ -41,7 +41,7 @@ use crate::{
     context::GlobalContext,
     database,
     engine::Engine,
-    error::{self, Result},
+    error::{self, IndexErrSnafu, Result},
     file_utils,
     index::{db_index, IndexResult},
     kv_option::Options,
@@ -577,13 +577,14 @@ impl Engine for TsKv {
 
     fn create_table(&self, schema: &TableSchema) -> Result<()> {
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
-            match db.read().get_index().create_table(schema) {
-                Ok(_) => Ok(()),
-                Err(e) => {
+            db.read()
+                .get_index()
+                .create_table(schema)
+                .map_err(|e| {
                     error!("failed create database '{}'", e);
-                    Err(Error::IndexErr { source: e })
-                }
-            }
+                    e
+                })
+                .context(IndexErrSnafu)
         } else {
             error!("Database {}, not found", schema.db);
             Err(Error::DatabaseNotFound {
