@@ -551,3 +551,30 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeMap;
+    use std::ops::Bound::Included;
+
+    #[tokio::test]
+    async fn test_btree_map() {
+        let mut map = BTreeMap::new();
+        map.insert("/root/abc".to_string(), "/root/abc_v".to_string());
+        map.insert("/root/abc/123".to_string(), "/root/abc/123_v".to_string());
+        map.insert("/root/abc/456".to_string(), "/root/abc/456_v".to_string());
+        map.insert("/root/abc/123/".to_string(), "/root/abc/123/_v".to_string());
+        map.insert(
+            "/root/abc/123/123".to_string(),
+            "/root/abc/123/123_v".to_string(),
+        );
+        map.insert("/root/abd/123".to_string(), "/root/abc/123_v".to_string());
+        map.insert("/root/abd/456".to_string(), "/root/abc/456_v".to_string());
+
+        let begin = "/root/abc/".to_string();
+        let end = "/root/abc/|".to_string();
+        for (key, value) in map.range(begin..end) {
+            println!("{key}  : {value}");
+        }
+    }
+}

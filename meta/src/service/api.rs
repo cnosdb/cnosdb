@@ -16,7 +16,7 @@ use crate::NodeId;
 pub async fn write(app: Data<MetaApp>, req: Json<KvReq>) -> actix_web::Result<impl Responder> {
     let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
     let response = app.raft.client_write(request).await;
-    Ok(Json(response))
+    Ok(Json(response.unwrap().log_id))
 }
 
 #[post("/read")]
@@ -27,7 +27,9 @@ pub async fn read(app: Data<MetaApp>, req: Json<String>) -> actix_web::Result<im
         _ => state_machine.data.get(&key).cloned().unwrap_or_default(),
     };
     let res: Result<String, Infallible> = Ok(value);
-    Ok(Json(res))
+
+    let index = state_machine.last_applied_log.unwrap().index;
+    Ok(Json(index))
 }
 
 #[post("/consistent_read")]

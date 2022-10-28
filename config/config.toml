@@ -31,3 +31,13 @@ path = 'dev/log'
 # [security.tls_config]
 # certificate = "./config/tls/server.crt"
 # private_key = "./config/tls/server.key"
+
+[cluster]
+node_id = 100
+name = 'cluster_name'
+meta = '127.0.0.1:22000,127.0.0.1,22001'
+
+[hintedoff]
+enable = true
+path = '/tmp/cnosdb/hh'
+
