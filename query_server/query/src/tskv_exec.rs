@@ -97,17 +97,15 @@ impl ExecutionPlan for TskvExec {
 
         let metrics = TableScanMetrics::new(&self.metrics, partition);
 
-        let table_stream = match TableScanStream::new(
+        let table_stream = TableScanStream::new(
             self.table_schema.clone(),
             self.schema(),
             self.filter(),
             batch_size,
             self.engine.clone(),
             metrics,
-        ) {
-            Ok(s) => s,
-            Err(err) => return Err(DataFusionError::Internal(err.to_string())),
-        };
+        )
+        .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
         Ok(Box::pin(table_stream))
     }

@@ -95,6 +95,11 @@ impl TimeRange {
     pub fn is_boundless(&self) -> bool {
         self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
     }
+
+    #[inline(always)]
+    pub fn contains(&self, time_stamp: Timestamp) -> bool {
+        time_stamp >= self.min_ts && time_stamp <= self.max_ts
+    }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRange {

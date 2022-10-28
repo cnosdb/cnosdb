@@ -6,6 +6,7 @@ use models::{
 };
 use protos::models::{Field, FieldType, Point};
 
+use libc::time;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -231,6 +232,34 @@ impl SeriesData {
         }
     }
 
+    pub fn read_data(
+        &self,
+        column_id: ColumnId,
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut value_predicate: impl FnMut(&FieldVal) -> bool,
+    ) -> Vec<DataType> {
+        let mut res = Vec::new();
+        for group in self.groups.iter() {
+            let field_index = group.schema.fields_id();
+            let index = match field_index.get(&column_id) {
+                None => continue,
+                Some(v) => v,
+            };
+            group
+                .rows
+                .iter()
+                .filter(|row| time_predicate(row.ts))
+                .for_each(|row| {
+                    if let Some(Some(field)) = row.fields.get(*index) {
+                        if value_predicate(field) {
+                            res.push(field.data_value(row.ts));
+                        }
+                    }
+                });
+        }
+        res
+    }
+
     pub fn read_entry(&self, field_id: ColumnId) -> Option<Arc<RwLock<MemEntry>>> {
         let mut entry = MemEntry {
             ts_min: self.range.min_ts,
@@ -297,7 +326,7 @@ pub struct MemCache {
     cache_size: AtomicU64,
 
     part_count: usize,
-    // This u64 comes from the last 40 bits of FieldId. split_id(field_id)
+    // This u64 comes from split_id(SeriesId) % part_count
     partions: Vec<RwLock<HashMap<u64, RwLockRef<SeriesData>>>>,
 }
 
@@ -351,6 +380,24 @@ impl MemCache {
         }
 
         None
+    }
+
+    pub fn get_data(
+        &self,
+        field_id: FieldId,
+        time_predicate: impl FnMut(Timestamp) -> bool,
+        value_predicate: impl FnMut(&FieldVal) -> bool,
+    ) -> Vec<DataType> {
+        let (field_id, sid) = split_id(field_id);
+        let index = (sid as usize) % self.part_count;
+        let part = self.partions[index].read();
+
+        match part.get(&sid) {
+            Some(series) => series
+                .read()
+                .read_data(field_id, time_predicate, value_predicate),
+            None => Vec::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
