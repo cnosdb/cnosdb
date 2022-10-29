@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::physical_plan::displayable;
 use datafusion::scheduler::Scheduler;
 use snafu::ResultExt;
 use spi::query::execution::Output;
@@ -12,6 +13,8 @@ use spi::query::{
 };
 
 use spi::query::Result;
+use trace::debug;
+
 pub struct SqlQueryExecution {
     query_state_machine: QueryStateMachineRef,
     plan: QueryPlan,
@@ -45,6 +48,14 @@ impl QueryExecution for SqlQueryExecution {
             .optimize(&self.plan.df_plan, &self.query_state_machine.session)
             .await?;
         self.query_state_machine.end_optimize();
+
+        debug!(
+            "Final physical plan:\nOutput partition count: {}\n{}\n",
+            optimized_physical_plan
+                .output_partitioning()
+                .partition_count(),
+            displayable(optimized_physical_plan.as_ref()).indent()
+        );
 
         // begin schedule
         self.query_state_machine.begin_schedule();
