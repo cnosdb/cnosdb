@@ -1,4 +1,5 @@
 --#DATABASE=bottom_func
+--#SORT=true
 drop database if exists bottom_func;
 create database bottom_func;
 
