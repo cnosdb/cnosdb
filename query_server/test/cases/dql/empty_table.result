@@ -1,0 +1,13 @@
+-- EXECUTE SQL: CREATE DATABASE empty_table; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE empty ( f DOUBLE, TAGS(t)); --
+200 OK
+
+
+-- EXECUTE SQL: SELECT * FROM empty; --
+200 OK
+time,t,f
+
+

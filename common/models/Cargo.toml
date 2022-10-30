@@ -18,3 +18,4 @@ parking_lot = "0.12"
 
 [dev-dependencies]
 flatbuffers = "2.1"
+chrono = "0.4.22"

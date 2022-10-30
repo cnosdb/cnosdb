@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    sync::atomic::AtomicU64,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -15,10 +16,12 @@ pub fn unite_id(hash_id: u64, incr_id: u64) -> u64 {
 }
 
 pub fn and_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
-    let mut len = arr1.len();
-    if len > arr2.len() {
-        len = arr2.len();
-    }
+    // let mut len = arr1.len();
+    // if len > arr2.len() {
+    //     len = arr2.len();
+    // }
+
+    let len = min_num(arr1.len(), arr2.len());
 
     let mut i = 0;
     let mut j = 0;
@@ -105,5 +108,23 @@ pub fn max_num<T: std::cmp::PartialOrd>(a: T, b: T) -> T {
         a
     } else {
         b
+    }
+}
+
+#[derive(Default)]
+pub struct SeqIdGenerator {
+    next_id: AtomicU64,
+}
+
+impl SeqIdGenerator {
+    pub fn new(start: u64) -> Self {
+        Self {
+            next_id: AtomicU64::new(start),
+        }
+    }
+
+    pub fn next_id(&self) -> u64 {
+        self.next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }

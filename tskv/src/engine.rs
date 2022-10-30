@@ -4,8 +4,10 @@ use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
-use models::schema::TableSchema;
-use models::{FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use datafusion::prelude::Column;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
+use models::schema::{DatabaseSchema, TableSchema};
+use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -33,14 +35,22 @@ pub trait Engine: Send + Sync + Debug {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<SchemaFieldId>,
-    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>>;
+        fields: Vec<ColumnId>,
+    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>>;
+
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
+
+    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema>;
 
     fn drop_database(&self, database: &str) -> Result<()>;
 
-    fn create_table(&self, schema: &TableSchema);
+    fn create_table(&self, schema: &TableSchema) -> Result<()>;
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()>;
+
+    fn list_databases(&self) -> Result<Vec<String>>;
+
+    fn list_tables(&self, database: &str) -> Result<Vec<String>>;
 
     fn delete_series(
         &self,
@@ -52,9 +62,15 @@ pub trait Engine: Send + Sync + Debug {
 
     fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>>;
 
+    fn get_series_id_by_filter(
+        &self,
+        db: &str,
+        tab: &str,
+        filter: &ColumnDomains<String>,
+    ) -> IndexResult<Vec<u64>>;
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
     fn get_series_key(&self, db: &str, sid: SeriesId) -> IndexResult<Option<SeriesKey>>;
-    fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>>;
+    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>>;
 }
 
 #[derive(Debug, Default)]
@@ -92,18 +108,34 @@ impl Engine for MockEngine {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<SchemaFieldId>,
-    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
+        fields: Vec<ColumnId>,
+    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
         HashMap::new()
     }
 
     fn drop_database(&self, database: &str) -> Result<()> {
-        println!("drop_database {:?}", database);
+        println!("drop_database.sql {:?}", database);
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) {
+    fn create_table(&self, schema: &TableSchema) -> Result<()> {
         todo!()
+    }
+
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
+        Ok(())
+    }
+
+    fn list_databases(&self) -> Result<Vec<String>> {
+        todo!()
+    }
+
+    fn list_tables(&self, database: &str) -> Result<Vec<String>> {
+        todo!()
+    }
+
+    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
+        Some(DatabaseSchema::new(name))
     }
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
@@ -126,8 +158,17 @@ impl Engine for MockEngine {
         Ok(Some(TableSchema::new(
             db.to_string(),
             tab.to_string(),
-            BTreeMap::default(),
+            Default::default(),
         )))
+    }
+
+    fn get_series_id_by_filter(
+        &self,
+        db: &str,
+        tab: &str,
+        filter: &ColumnDomains<String>,
+    ) -> IndexResult<Vec<u64>> {
+        Ok(vec![])
     }
 
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
@@ -138,7 +179,7 @@ impl Engine for MockEngine {
         Ok(None)
     }
 
-    fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>> {
+    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
         todo!()
     }
 }

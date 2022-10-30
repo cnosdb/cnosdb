@@ -18,8 +18,10 @@ use std::time::Instant;
 pub enum Command {
     Quit,
     Help,
+    ConnectDatabase(String),
     ListTables,
     DescribeTable(String),
+    DescribeDatabase(String),
     ListFunctions,
     SearchFunctions(String),
     QuietMode(Option<bool>),
@@ -40,12 +42,28 @@ impl Command {
         let now = Instant::now();
         match self {
             Self::Help => print_options.print_batches(&all_commands_info(), now),
+            Self::ConnectDatabase(database) => {
+                let old_database = ctx.get_database().to_string();
+                ctx.set_database(database);
+                match ctx.sql(format!("DESCRIBE DATABASE {}", database)).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        println!("Cannot connect to database {}.", database);
+                        ctx.set_database(old_database.as_str());
+                        Err(e)
+                    }
+                }
+            }
             Self::ListTables => {
                 let results = ctx.sql("SHOW TABLES".to_string()).await?;
                 print_options.print_batches(&results, now)
             }
             Self::DescribeTable(name) => {
-                let results = ctx.sql(format!("SHOW COLUMNS FROM {}", name)).await?;
+                let results = ctx.sql(format!("DESCRIBE TABLE {}", name)).await?;
+                print_options.print_batches(&results, now)
+            }
+            Self::DescribeDatabase(name) => {
+                let results = ctx.sql(format!("DESCRIBE DATABASE {}", name)).await?;
                 print_options.print_batches(&results, now)
             }
             Self::QuietMode(quiet) => {
@@ -88,8 +106,10 @@ impl Command {
     fn get_name_and_description(&self) -> (&'static str, &'static str) {
         match self {
             Self::Quit => ("\\q", "quit cnosdb-cli"),
+            Self::ConnectDatabase(_) => ("\\c", "connect database"),
             Self::ListTables => ("\\d", "list tables"),
             Self::DescribeTable(_) => ("\\d name", "describe table"),
+            Self::DescribeDatabase(_) => ("\\db name", "describe database"),
             Self::Help => ("\\?", "help"),
             Self::ListFunctions => ("\\h", "function list"),
             Self::SearchFunctions(_) => ("\\h function", "search function"),
@@ -100,9 +120,11 @@ impl Command {
     }
 }
 
-const ALL_COMMANDS: [Command; 9] = [
+const ALL_COMMANDS: [Command; 11] = [
+    Command::ConnectDatabase(String::new()),
     Command::ListTables,
     Command::DescribeTable(String::new()),
+    Command::DescribeDatabase(String::new()),
     Command::Quit,
     Command::Help,
     Command::ListFunctions,
@@ -144,6 +166,7 @@ impl FromStr for Command {
         };
         Ok(match (c, arg) {
             ("q", None) => Self::Quit,
+            ("c", Some(db_name)) => Self::ConnectDatabase(db_name.into()),
             ("d", None) => Self::ListTables,
             ("d", Some(name)) => Self::DescribeTable(name.into()),
             ("?", None) => Self::Help,

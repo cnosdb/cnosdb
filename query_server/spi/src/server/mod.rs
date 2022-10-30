@@ -1,3 +1,4 @@
+use crate::catalog::MetadataError;
 use crate::query::{function, QueryError};
 use models::define_result;
 use snafu::Snafu;
@@ -17,4 +18,7 @@ pub enum ServerError {
 
     #[snafu(display("Failed to load functions, err:{}", source))]
     LoadFunction { source: function::Error },
+
+    #[snafu(display("Failed init meta data, err :{}", source))]
+    MetaData { source: MetadataError },
 }

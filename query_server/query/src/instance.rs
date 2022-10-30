@@ -7,7 +7,7 @@ use spi::{
     server::dbms::DatabaseManagerSystem,
     server::BuildSnafu,
     server::Result,
-    server::{LoadFunctionSnafu, QuerySnafu},
+    server::{LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
     service::protocol::{Query, QueryHandle},
 };
 
@@ -46,10 +46,10 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
 
-    let meta = Arc::new(LocalCatalogMeta::new_with_default(
-        engine,
-        Arc::new(function_manager),
-    ));
+    let meta = Arc::new(
+        LocalCatalogMeta::new_with_default(engine, Arc::new(function_manager))
+            .context(MetaDataSnafu)?,
+    );
 
     // TODO session config need load global system config
     let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
@@ -250,106 +250,6 @@ mod tests {
         //     .to_string();
 
         // println!("{}", formatted);
-
-        assert_batches_eq!(expected, result.deref_mut());
-    }
-
-    #[tokio::test]
-    async fn test_drop() {
-        let result_db = make_cnosdbms(Arc::new(MockEngine::default()));
-
-        let db = result_db.unwrap();
-
-        let user = UserInfo {
-            user: DEFAULT_CATALOG.to_string(),
-            password: "todo".to_string(),
-        };
-
-        let query = Query::new(
-            ContextBuilder::new(user).build(),
-            "drop database if exists test; \
-                    drop database test; \
-                    drop table if exists test; \
-                    drop table test; \
-                    "
-            .to_string(),
-        );
-        let mut result = db.execute(&query).await.unwrap();
-        for ele in result.result().iter_mut() {
-            match ele {
-                Output::StreamData(_data) => {
-                    panic!("should not happen");
-                }
-                Output::Nil(_res) => {
-                    println!("sql excuted ok")
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_explain() {
-        // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
-
-        let mut result = exec_sql(
-            &db,
-            "
-        EXPLAIN
-            SELECT * FROM
-            (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter)
-            order by num desc limit 2;
-        EXPLAIN
-            SELECT * FROM
-            (VALUES  (9, 'nine'),(2, 'two'), (1, 'one'), (3, 'three')) AS t (num,letter)
-            order by num desc, letter limit 3;
-        ",
-        )
-        .await;
-
-        let num_cpu = num_cpus::get().to_string();
-        let mut re_partition = format!(
-            "|               |           RepartitionExec: partitioning=RoundRobinBatch({})",
-            num_cpu
-        );
-        for _ in 0..60 - num_cpu.chars().count() + 1 {
-            re_partition.push(' ');
-        }
-        re_partition.push('|');
-
-        let expected = vec![
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                  |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | TopK: [#t.num DESC NULLS FIRST], TopKOptions: k=2, skip=None, step=SINGLE                                             |",
-            "|               |   Projection: #t.num, #t.letter                                                                                       |",
-            "|               |     Projection: #t.column1 AS num, #t.column2 AS letter, alias=t                                                      |",
-            "|               |       Projection: #column1, #column2, alias=t                                                                         |",
-            "|               |         Values: (Int64(9), Utf8(\"nine\")), (Int64(2), Utf8(\"two\")), (Int64(1), Utf8(\"one\")), (Int64(3), Utf8(\"three\")) |",
-            "| physical_plan | TopKExec: [num@0 DESC], TopKOptions: k=2, skip=None, step=SINGLE                                                      |",
-            "|               |   CoalescePartitionsExec                                                                                              |",
-            "|               |     ProjectionExec: expr=[num@0 as num, letter@1 as letter]                                                           |",
-            "|               |       ProjectionExec: expr=[column1@0 as num, column2@1 as letter]                                                    |",
-            "|               |         ProjectionExec: expr=[column1@0 as column1, column2@1 as column2]                                             |",
-            re_partition.as_ref(),
-            "|               |             ValuesExec                                                                                                |",
-            "|               |                                                                                                                       |",
-            "| logical_plan  | TopK: [#t.num DESC NULLS FIRST,#t.letter ASC NULLS LAST], TopKOptions: k=3, skip=None, step=SINGLE                    |",
-            "|               |   Projection: #t.num, #t.letter                                                                                       |",
-            "|               |     Projection: #t.column1 AS num, #t.column2 AS letter, alias=t                                                      |",
-            "|               |       Projection: #column1, #column2, alias=t                                                                         |",
-            "|               |         Values: (Int64(9), Utf8(\"nine\")), (Int64(2), Utf8(\"two\")), (Int64(1), Utf8(\"one\")), (Int64(3), Utf8(\"three\")) |",
-            "| physical_plan | TopKExec: [num@0 DESC,letter@1 ASC NULLS LAST], TopKOptions: k=3, skip=None, step=SINGLE                              |",
-            "|               |   CoalescePartitionsExec                                                                                              |",
-            "|               |     ProjectionExec: expr=[num@0 as num, letter@1 as letter]                                                           |",
-            "|               |       ProjectionExec: expr=[column1@0 as num, column2@1 as letter]                                                    |",
-            "|               |         ProjectionExec: expr=[column1@0 as column1, column2@1 as column2]                                             |",
-            re_partition.as_ref(),
-            "|               |             ValuesExec                                                                                                |",
-            "|               |                                                                                                                       |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------+",
-        ];
 
         assert_batches_eq!(expected, result.deref_mut());
     }

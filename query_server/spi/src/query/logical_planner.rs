@@ -7,11 +7,12 @@ use super::{
 
 use datafusion::{
     error::DataFusionError,
-    logical_plan::{DFSchemaRef, LogicalPlan as DFPlan},
+    logical_plan::{CreateExternalTable, LogicalPlan as DFPlan},
     prelude::{lit, Expr},
     scalar::ScalarValue,
 };
-use models::define_result;
+use models::schema::DatabaseOptions;
+use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
 
 define_result!(LogicalPlannerError);
@@ -36,7 +37,7 @@ pub enum LogicalPlannerError {
     NotImplemented { err: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Plan {
     /// Query plan
     Query(QueryPlan),
@@ -49,13 +50,23 @@ pub struct QueryPlan {
     pub df_plan: DFPlan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum DDLPlan {
     Drop(DropPlan),
     /// Create external table. such as parquet\csv...
     CreateExternalTable(CreateExternalTable),
 
     CreateTable(CreateTable),
+
+    CreateDatabase(CreateDatabase),
+
+    DescribeTable(DescribeTable),
+
+    DescribeDatabase(DescribeDatabase),
+
+    ShowTables(Option<String>),
+
+    ShowDatabases(),
 }
 
 #[derive(Debug, Clone)]
@@ -68,33 +79,33 @@ pub struct DropPlan {
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug, Clone)]
-pub struct CreateExternalTable {
-    /// The table schema
-    pub schema: DFSchemaRef,
-    /// The table name
-    pub name: String,
-    /// The physical location
-    pub location: String,
-    /// The file type of physical file
-    pub file_descriptor: FileDescriptor,
-    /// Partition Columns
-    pub table_partition_cols: Vec<String>,
-    /// Option to not error if table already exists
-    pub if_not_exists: bool,
-}
+// #[derive(Debug, Clone)]
+// pub struct CreateExternalTable {
+//     /// The table schema
+//     pub schema: DFSchemaRef,
+//     /// The table name
+//     pub name: String,
+//     /// The physical location
+//     pub location: String,
+//     /// The file type of physical file
+//     pub file_descriptor: FileDescriptor,
+//     /// Partition Columns
+//     pub table_partition_cols: Vec<String>,
+//     /// Option to not error if table already exists
+//     pub if_not_exists: bool,
+// }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileDescriptor {
-    /// Newline-delimited JSON
-    NdJson,
-    /// Apache Parquet columnar storage
-    Parquet,
-    /// Comma separated values
-    CSV(CSVOptions),
-    /// Avro binary records
-    Avro,
-}
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum FileDescriptor {
+//     /// Newline-delimited JSON
+//     NdJson,
+//     /// Apache Parquet columnar storage
+//     Parquet,
+//     /// Comma separated values
+//     CSV(CSVOptions),
+//     /// Avro binary records
+//     Avro,
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CSVOptions {
@@ -107,13 +118,35 @@ pub struct CSVOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTable {
     /// The table schema
-    pub schema: DFSchemaRef,
+    pub schema: Vec<TableColumn>,
     /// The table name
     pub name: String,
     /// Option to not error if table already exists
     pub if_not_exists: bool,
-    /// The table tags
-    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateDatabase {
+    pub name: String,
+
+    pub if_not_exists: bool,
+
+    pub options: DatabaseOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeDatabase {
+    pub database_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DescribeTable {
+    pub table_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowTables {
+    pub database_name: String,
 }
 
 pub trait LogicalPlanner {

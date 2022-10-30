@@ -11,8 +11,8 @@ use std::{
 use models::schema::TableSchema;
 use models::utils::split_id;
 use models::{
-    utils as model_utils, FieldId, FieldInfo, RwLockRef, SchemaFieldId, SeriesId, SeriesKey,
-    Timestamp, ValueType,
+    utils as model_utils, ColumnId, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp,
+    ValueType,
 };
 use parking_lot::{Mutex, RwLock};
 use regex::internal::Input;
@@ -86,7 +86,8 @@ impl FlushTask {
         for mem in self.mem_caches.iter() {
             flushing_mems.push(mem.write());
         }
-        let mut flushing_mems_data: HashMap<u64, Vec<Arc<RwLock<SeriesData>>>> = HashMap::new();
+        let mut flushing_mems_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
+            HashMap::new();
         for mem in flushing_mems.iter() {
             let seq_no = mem.seq_no();
             high_seq = seq_no.max(high_seq);
@@ -142,8 +143,9 @@ impl FlushTask {
 
         for (sid, series_datas) in caches_data.iter_mut() {
             let mut field_id_code_type_map = HashMap::new();
-            let mut schema_columns_value_type_map: HashMap<u32, ValueType> = HashMap::new();
-            let mut column_values_map: HashMap<u32, Vec<(Timestamp, FieldVal)>> = HashMap::new();
+            let mut schema_columns_value_type_map: HashMap<ColumnId, ValueType> = HashMap::new();
+            let mut column_values_map: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>> =
+                HashMap::new();
 
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas.iter_mut() {
@@ -153,13 +155,13 @@ impl FlushTask {
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
-                        for (val, col) in row.fields.iter().zip(sch_cols.fields.iter()) {
+                        for (val, col) in row.fields.iter().zip(sch_cols.columns().iter()) {
                             if let Some(v) = val {
                                 schema_columns_value_type_map
-                                    .entry(col.1.id)
+                                    .entry(col.id)
                                     .or_insert_with(|| v.value_type());
                                 column_values_map
-                                    .entry(col.1.id)
+                                    .entry(col.id)
                                     .or_insert_with(Vec::new)
                                     .push((row.ts, v.clone()));
                             }
@@ -221,8 +223,8 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer)
     }
 
-    fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<SchemaFieldId, u8>) {
-        for (_, i) in schema.fields.iter() {
+    fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<ColumnId, u8>) {
+        for i in schema.columns().iter() {
             map.insert(i.id, i.codec);
         }
     }
@@ -231,8 +233,8 @@ impl FlushTask {
     /// Returns [ ( FieldId, Delta_DataBlocks, Tsm_DataBlocks) ]
     fn merge_series_data(
         series_id: SeriesId,
-        column_values: HashMap<u32, Vec<(Timestamp, FieldVal)>>,
-        column_types: HashMap<u32, ValueType>,
+        column_values: HashMap<ColumnId, Vec<(Timestamp, FieldVal)>>,
+        column_types: HashMap<ColumnId, ValueType>,
         max_level_ts: Timestamp,
         data_block_size: usize,
     ) -> Vec<(FieldId, Vec<DataBlock>, Vec<DataBlock>)> {
@@ -415,8 +417,8 @@ pub mod flush_tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use models::schema::{ColumnType, TableFiled, TableSchema};
-    use models::{utils as model_utils, FieldId, SchemaFieldId, Timestamp, ValueType};
+    use models::schema::{ColumnType, TableColumn, TableSchema};
+    use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
 
@@ -438,25 +440,18 @@ pub mod flush_tests {
 
     use super::FlushTask;
 
-    pub fn default_with_field_id(ids: Vec<SchemaFieldId>) -> TableSchema {
-        let mut map = BTreeMap::new();
-        for i in ids.iter() {
-            map.insert(
-                i.to_string(),
-                TableFiled {
-                    id: *i,
-                    name: i.to_string(),
-                    column_type: ColumnType::Field(ValueType::Unknown),
-                    codec: 0,
-                },
-            );
-        }
-        TableSchema {
-            db: "public".to_string(),
-            name: "".to_string(),
-            schema_id: 0,
-            fields: map,
-        }
+    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TableSchema {
+        let fields = ids
+            .iter()
+            .map(|i| TableColumn {
+                id: *i,
+                name: i.to_string(),
+                column_type: ColumnType::Field(ValueType::Unknown),
+                codec: 0,
+            })
+            .collect();
+
+        TableSchema::new("public".to_string(), "".to_string(), fields)
     }
 
     #[test]

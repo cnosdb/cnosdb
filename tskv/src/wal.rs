@@ -256,27 +256,21 @@ unsafe impl Sync for WalManager {}
 
 impl WalManager {
     pub fn new(config: Arc<WalOptions>) -> Self {
-        let (last, seq) = match file_utils::get_max_sequence_file_name(
-            config.path.clone(),
-            file_utils::get_wal_file_id,
-        ) {
-            Some((file, seq)) => (config.path.join(file), seq),
-            None => {
-                let seq = 1;
-                (file_utils::make_wal_file(config.path.clone(), seq), seq)
-            }
-        };
-
         if !file_manager::try_exists(&config.path) {
             std::fs::create_dir_all(&config.path).unwrap();
         }
-        let file = file_manager::get_file_manager()
-            .open_create_file(last.clone())
-            .unwrap();
-        let size = file.len();
 
-        let current_file = WalWriter::open(seq, last, config.clone()).unwrap();
+        // Create a new wal file every time it starts.
+        let new_seq = match file_utils::get_max_sequence_file_name(
+            config.path.clone(),
+            file_utils::get_wal_file_id,
+        ) {
+            Some((_, seq)) => seq + 1,
+            None => 1,
+        };
 
+        let new_wal = file_utils::make_wal_file(config.path.clone(), new_seq);
+        let current_file = WalWriter::open(new_seq, new_wal, config.clone()).unwrap();
         let current_dir = config.path.clone();
         WalManager {
             config,
@@ -324,33 +318,50 @@ impl WalManager {
         let wal_files = file_manager::list_file_names(&self.current_dir);
         for file_name in wal_files {
             let id = file_utils::get_wal_file_id(&file_name)?;
-            let tmp_walfile =
-                WalWriter::open(id, self.current_dir.join(file_name), self.config.clone())?;
-            let mut reader = WalReader::new(tmp_walfile.file.into())?;
+            let path = self.current_dir.join(file_name);
+            if !file_manager::try_exists(&path) {
+                continue;
+            }
+            let file = file_manager::get_file_manager().open_file(&path)?;
+            if file.is_empty() {
+                continue;
+            }
+            let mut reader = WalReader::new(file.into())?;
             if reader.max_sequence < min_log_seq {
+                // If this file is a new file, or empty file, continue.
                 continue;
             }
 
-            while let Some(e) = reader.next_wal_entry() {
-                if e.seq < min_log_seq {
-                    continue;
-                }
-                match e.typ {
-                    WalEntryType::Write => {
-                        let req = WritePointsRpcRequest {
-                            version: 1,
-                            points: e.buf,
+            loop {
+                match reader.next_wal_entry() {
+                    Ok(Some(e)) => {
+                        if e.seq < min_log_seq {
+                            continue;
+                        }
+                        match e.typ {
+                            WalEntryType::Write => {
+                                let req = WritePointsRpcRequest {
+                                    version: 1,
+                                    points: e.buf,
+                                };
+                                engine.write_from_wal(req, e.seq).await.unwrap();
+                            }
+                            WalEntryType::Delete => {
+                                // TODO delete a memcache entry
+                            }
+                            WalEntryType::DeleteRange => {
+                                // TODO delete range in a memcache
+                            }
+                            _ => {}
                         };
-                        engine.write_from_wal(req, e.seq).await.unwrap();
                     }
-                    WalEntryType::Delete => {
-                        // TODO delete a memcache entry
+                    Ok(None) | Err(Error::WalTruncated) => {
+                        break;
                     }
-                    WalEntryType::DeleteRange => {
-                        // TODO delete range in a memcache
+                    Err(e) => {
+                        panic!("Failed to recover from {}: {:?}", path.display(), e);
                     }
-                    _ => {}
-                };
+                }
             }
         }
         Ok(())
@@ -387,17 +398,19 @@ impl WalReader {
         })
     }
 
-    pub fn next_wal_entry(&mut self) -> Option<WalEntryBlock> {
-        debug!("WalReader: cursor.pos={}", self.cursor.pos());
+    pub fn next_wal_entry(&mut self) -> Result<Option<WalEntryBlock>> {
+        if self.cursor.len() - self.cursor.pos() < BLOCK_HEADER_SIZE as u64 {
+            return Err(Error::WalTruncated);
+        }
         let read_bytes = match self.cursor.read(&mut self.block_header_buf[..]) {
             Ok(v) => v,
             Err(e) => {
                 error!("failed read block header buf : {:?}", e);
-                return None;
+                return Ok(None);
             }
         };
         if read_bytes < 8 {
-            return None;
+            return Ok(None);
         }
         let typ = self.block_header_buf[0];
         let seq = byte_utils::decode_be_u64(self.block_header_buf[1..9].into());
@@ -406,14 +419,16 @@ impl WalReader {
             Ok(v) => v,
             Err(e) => {
                 error!("failed try into block header buf : {:?}", e);
-                return None;
+                return Ok(None);
             }
         };
         let data_len = byte_utils::decode_be_u32(key);
         if data_len == 0 {
-            return None;
+            return Ok(None);
         }
-        debug!("WalReader: data_len={}", data_len);
+        if self.cursor.len() - self.cursor.pos() < data_len as u64 {
+            return Err(Error::WalTruncated);
+        }
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
@@ -423,17 +438,17 @@ impl WalReader {
             Ok(v) => v,
             Err(e) => {
                 error!("failed read body buf : {:?}", e);
-                return None;
+                return Ok(None);
             }
         };
 
-        Some(WalEntryBlock {
+        Ok(Some(WalEntryBlock {
             typ: typ.into(),
             seq,
             crc,
             len: read_bytes as u32,
             buf: buf.to_vec(),
-        })
+        }))
     }
 }
 
@@ -451,6 +466,7 @@ mod test {
     use trace::init_default_global_tracing;
 
     use crate::file_system::file_manager::{self, list_file_names, FileManager};
+    use crate::Error;
     use crate::{
         file_system::{DmaFile, FileCursor, FileSync},
         kv_option::WalOptions,
@@ -503,20 +519,51 @@ mod test {
     fn check_wal_files(wal_dir: PathBuf) {
         let wal_files = list_file_names(&wal_dir);
         for wal_file in wal_files {
-            let file = file_manager::get_file_manager()
-                .open_file(wal_dir.join(wal_file))
-                .unwrap();
+            let path = wal_dir.join(wal_file);
+            let file = file_manager::get_file_manager().open_file(&path).unwrap();
             let cursor: FileCursor = file.into();
 
             let mut reader = WalReader::new(cursor).unwrap();
             let mut wrote_crcs = Vec::<u32>::new();
             let mut read_crcs = Vec::<u32>::new();
-            while let Some(entry) = reader.next_wal_entry() {
-                if entry.typ == WalEntryType::Write {
-                    let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
-                    wrote_crcs.push(entry.crc);
-                    read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
-                };
+            loop {
+                match reader.next_wal_entry() {
+                    Ok(Some(entry)) => {
+                        match entry.typ {
+                            WalEntryType::Write => {
+                                let de_block =
+                                    match flatbuffers::root::<fb_models::Points>(&entry.buf) {
+                                        Ok(blk) => blk,
+                                        Err(e) => {
+                                            println!(
+                                                "unexpected data in wal file, ignored file {}: {}",
+                                                wal_dir.display(),
+                                                e
+                                            );
+                                            continue;
+                                        }
+                                    };
+                                wrote_crcs.push(entry.crc);
+                                read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
+                            }
+                            WalEntryType::Delete => {
+                                // TODO delete a memcache entry
+                            }
+                            WalEntryType::DeleteRange => {
+                                // TODO delete range in a memcache
+                            }
+                            _ => {}
+                        };
+                    }
+                    Ok(None) => break,
+                    Err(Error::WalTruncated) => {
+                        println!("WAL file truncated: {}", path.display());
+                        break;
+                    }
+                    Err(e) => {
+                        panic!("Failed to recover from {}: {:?}", path.display(), e);
+                    }
+                }
             }
             assert_eq!(wrote_crcs, read_crcs);
         }
@@ -534,14 +581,9 @@ mod test {
 
         for _i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
-
             let entry = random_wal_entry_block(&mut fbb);
 
-            let bytes = fbb.finished_data();
-            println!("WAL write entry length: {}", bytes.len());
-
             if entry.typ == WalEntryType::Write {
-                let de_block = flatbuffers::root::<fb_models::Points>(&entry.buf).unwrap();
                 mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
             };
         }
@@ -571,6 +613,34 @@ mod test {
             mgr.write(WalEntryType::Write, &blk.buf).await.unwrap();
         }
         mgr.close().await.unwrap();
+
+        check_wal_files(mgr.current_dir);
+    }
+
+    #[tokio::test]
+    async fn test_read_truncated() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+
+        let dir = "/tmp/test/wal/3".to_string();
+        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
+        let mut global_config = get_config("../config/config.toml");
+        global_config.wal.path = dir.clone();
+        let wal_config = WalOptions::from(&global_config);
+
+        let mut mgr = WalManager::new(Arc::new(wal_config));
+
+        for i in 0..10 {
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+            let mut entry = random_wal_entry_block(&mut fbb);
+
+            if i == 9 {
+                entry.buf = entry.buf[10..].to_vec();
+            }
+
+            if entry.typ == WalEntryType::Write {
+                mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
+            };
+        }
 
         check_wal_files(mgr.current_dir);
     }

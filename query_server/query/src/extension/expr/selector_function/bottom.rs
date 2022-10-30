@@ -4,7 +4,7 @@ use datafusion::{
     arrow::{array::ArrayRef, datatypes::DataType},
     error::DataFusionError,
     logical_expr::{
-        aggregate_function::{DATES, NUMERICS, STRINGS, TIMESTAMPS},
+        type_coercion::aggregates::{DATES, NUMERICS, STRINGS, TIMESTAMPS},
         ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
     },
     physical_expr::functions::make_scalar_function,

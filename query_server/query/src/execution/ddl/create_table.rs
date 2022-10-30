@@ -1,16 +1,12 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::sql::TableReference;
-use models::codec::codec_name_to_codec;
-use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
-use models::{SchemaFieldId, ValueType};
+use models::schema::TableSchema;
 use snafu::ResultExt;
 use spi::catalog::{MetaDataRef, MetadataError};
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTable;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub struct CreateTableTask {
@@ -59,52 +55,8 @@ fn create_table(
     stmt: &CreateTable,
     catalog: MetaDataRef,
 ) -> Result<Arc<TableSchema>, ExecutionError> {
-    let CreateTable {
-        schema, name, tags, ..
-    } = stmt;
-    let mut kv_fields = BTreeMap::new();
-    let mut get_time = false;
-    for (i, tag) in tags.iter().enumerate() {
-        let kv_field = TableFiled::new((i + 1) as SchemaFieldId, tag.clone(), ColumnType::Tag, 0);
-        kv_fields.insert(tag.clone(), kv_field);
-    }
-
-    let start = kv_fields.len();
-    for (i, field) in schema.fields().iter().enumerate() {
-        let field_name = field.name();
-        let id = if field_name == TIME_FIELD {
-            get_time = true;
-            0
-        } else if !get_time {
-            start + i + 1
-        } else {
-            start + i
-        };
-        let kv_field = TableFiled::new(
-            id as SchemaFieldId,
-            field_name.clone(),
-            data_type_to_column_type(field.data_type()),
-            codec_name_to_codec(
-                schema
-                    .metadata()
-                    .get(field_name)
-                    .unwrap_or(&"DEFAULT".to_string()),
-            ),
-        );
-        kv_fields.insert(field_name.clone(), kv_field);
-    }
-
-    let table: TableReference = name.as_str().into();
-    let catalog_name = catalog.catalog_name();
-    let schema_name = catalog.schema_name();
-    let table_ref = table.resolve(&catalog_name, &schema_name);
-
-    let table_schema = TableSchema::new(
-        table_ref.schema.to_string(),
-        table.table().to_string(),
-        kv_fields,
-    );
-    let table_schema = Arc::new(table_schema);
+    let CreateTable { name, .. } = stmt;
+    let table_schema = Arc::new(build_schema(stmt, catalog.clone()));
     catalog
         .create_table(name, table_schema.clone())
         .context(execution::MetadataSnafu)?;
@@ -112,16 +64,19 @@ fn create_table(
     Ok(table_schema)
 }
 
-fn data_type_to_column_type(data_type: &DataType) -> ColumnType {
-    match data_type {
-        DataType::Timestamp(TimeUnit::Nanosecond, None) => ColumnType::Time,
-        DataType::Int64 => ColumnType::Field(ValueType::Integer),
-        DataType::UInt64 => ColumnType::Field(ValueType::Unsigned),
-        DataType::Float64 => ColumnType::Field(ValueType::Float),
-        DataType::Utf8 => ColumnType::Field(ValueType::String),
-        DataType::Boolean => ColumnType::Field(ValueType::Boolean),
-        _ => ColumnType::Field(ValueType::Unknown),
-    }
+fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TableSchema {
+    let CreateTable { schema, name, .. } = stmt;
+
+    let table: TableReference = name.as_str().into();
+    let catalog_name = catalog.catalog_name();
+    let schema_name = catalog.schema_name();
+    let table_ref = table.resolve(&catalog_name, &schema_name);
+
+    TableSchema::new(
+        table_ref.schema.to_string(),
+        table.table().to_string(),
+        schema.to_owned(),
+    )
 }
 
 #[cfg(test)]
@@ -181,10 +136,9 @@ mod test {
         let tskv = Arc::new(tskv);
         let mut function_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut function_manager).unwrap();
-        let meta = Arc::new(LocalCatalogMeta::new_with_default(
-            tskv.clone(),
-            Arc::new(function_manager),
-        ));
+        let meta = Arc::new(
+            LocalCatalogMeta::new_with_default(tskv.clone(), Arc::new(function_manager)).unwrap(),
+        );
         let context = ContextBuilder::new(UserInfo {
             user: "".to_string(),
             password: "".to_string(),
@@ -214,17 +168,18 @@ mod test {
             Plan::DDL(plan) => plan,
         };
         let plan = match plan {
-            DDLPlan::Drop(_) => panic!("not possible"),
-            DDLPlan::CreateExternalTable(_) => panic!("not possible"),
             DDLPlan::CreateTable(plan) => plan,
+            _ => panic!("not possible"),
         };
 
         create_table(&plan, query_state_machine.catalog.clone()).unwrap();
-        let ans = format!(
-            "{:?}",
-            tskv.get_table_schema(&query_state_machine.catalog.schema_name(), "test")
-        );
-        let expected = r#"Ok(Some(TableSchema { db: "public", name: "test", schema_id: 0, fields: {"column1": TableFiled { id: 3, name: "column1", column_type: Field(Integer), codec: 2 }, "column2": TableFiled { id: 4, name: "column2", column_type: Field(String), codec: 4 }, "column3": TableFiled { id: 5, name: "column3", column_type: Field(Unsigned), codec: 1 }, "column4": TableFiled { id: 6, name: "column4", column_type: Field(Boolean), codec: 0 }, "column5": TableFiled { id: 7, name: "column5", column_type: Field(Float), codec: 6 }, "column6": TableFiled { id: 1, name: "column6", column_type: Tag, codec: 0 }, "column7": TableFiled { id: 2, name: "column7", column_type: Tag, codec: 0 }, "time": TableFiled { id: 0, name: "time", column_type: Time, codec: 0 }} }))"#;
+        let table = tskv
+            .get_table_schema(&query_state_machine.catalog.schema_name(), "test")
+            .unwrap()
+            .unwrap();
+        let ans = format!("{:?}, {:?}", table.name, table.columns(),);
+
+        let expected = "\"test\", [TableColumn { id: 0, name: \"time\", column_type: Time, codec: 0 }, TableColumn { id: 1, name: \"column6\", column_type: Tag, codec: 0 }, TableColumn { id: 2, name: \"column7\", column_type: Tag, codec: 0 }, TableColumn { id: 3, name: \"column1\", column_type: Field(Integer), codec: 2 }, TableColumn { id: 4, name: \"column2\", column_type: Field(String), codec: 4 }, TableColumn { id: 5, name: \"column3\", column_type: Field(Unsigned), codec: 1 }, TableColumn { id: 6, name: \"column4\", column_type: Field(Boolean), codec: 0 }, TableColumn { id: 7, name: \"column5\", column_type: Field(Float), codec: 6 }]";
         assert_eq!(ans, expected);
     }
 }

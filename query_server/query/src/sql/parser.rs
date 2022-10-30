@@ -1,23 +1,30 @@
 use std::collections::VecDeque;
 
-use datafusion::logical_plan::FileType;
 use datafusion::sql::parser::CreateExternalTable;
-use models::schema::TIME_FIELD_NAME;
-use snafu::ResultExt;
-use spi::query::ast::{ColumnOption, CreateTable, DropObject, ExtStatement, ObjectType};
-use spi::query::parser::Parser as CnosdbParser;
-use spi::query::ParserSnafu;
-use sqlparser::ast::{DataType, Ident};
-use sqlparser::{
+use datafusion::sql::sqlparser::{
+    ast::{DataType, Ident, ObjectName, Value},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
     tokenizer::{Token, Tokenizer},
 };
+use snafu::ResultExt;
+use spi::query::ast::{
+    ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DescribeDatabase, DescribeTable,
+    DropObject, ExtStatement, ObjectType,
+};
+use spi::query::parser::Parser as CnosdbParser;
+use spi::query::ParserSnafu;
 use trace::debug;
 
 // support tag token
 const TAGS: &str = "TAGS";
 const CODEC: &str = "CODEC";
+
+const TTL: &str = "TTL";
+const SHARD: &str = "SHARD";
+const VNODE_DURATION: &str = "VNODE_DURATION";
+const REPLICA: &str = "REPLICA";
+const PRECISION: &str = "PRECISION";
 
 pub type Result<T, E = ParserError> = std::result::Result<T, E>;
 
@@ -106,7 +113,6 @@ impl<'a> ExtParser<'a> {
                     self.parser.next_token();
                     self.parse_describe()
                 }
-
                 Keyword::SHOW => {
                     self.parser.next_token();
                     self.parse_show()
@@ -135,18 +141,55 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a SQL SHOW statement
     fn parse_show(&mut self) -> Result<ExtStatement> {
-        if self.consume_token(&Token::make_keyword("TABLES")) {
-            Ok(ExtStatement::ShowTables)
-        } else if self.consume_token(&Token::make_keyword("DATABASES")) {
-            Ok(ExtStatement::ShowDatabases)
+        if self.consume_cnos_token("TABLES") {
+            self.parse_show_tables()
+        } else if self.consume_cnos_token("DATABASES") {
+            self.parse_show_databases()
         } else {
             self.expected("tables/databases", self.parser.peek_token())
         }
     }
 
-    /// Parse a SQL DESCRIBE statement
+    fn parse_show_databases(&mut self) -> Result<ExtStatement> {
+        Ok(ExtStatement::ShowDatabases())
+    }
+
+    fn parse_show_tables(&mut self) -> Result<ExtStatement> {
+        if self.consume_token(&Token::make_keyword("ON")) {
+            let database_name = self.parser.parse_object_name()?;
+            Ok(ExtStatement::ShowTables(Some(database_name)))
+        } else {
+            Ok(ExtStatement::ShowTables(None))
+        }
+    }
+
+    /// Parse a SQL DESCRIBE DATABASE statement
+    fn parse_describe_database(&mut self) -> Result<ExtStatement> {
+        debug!("Parse Describe DATABASE statement");
+        let database_name = self.parser.parse_object_name()?;
+
+        let describe = DescribeDatabase { database_name };
+
+        Ok(ExtStatement::DescribeDatabase(describe))
+    }
+
+    /// Parse a SQL DESCRIBE TABLE statement
+    fn parse_describe_table(&mut self) -> Result<ExtStatement> {
+        let table_name = self.parser.parse_object_name()?;
+
+        let describe = DescribeTable { table_name };
+
+        Ok(ExtStatement::DescribeTable(describe))
+    }
+
     fn parse_describe(&mut self) -> Result<ExtStatement> {
-        todo!()
+        if self.consume_cnos_token("TABLE") {
+            self.parse_describe_table()
+        } else if self.consume_cnos_token("DATABASE") {
+            self.parse_describe_database()
+        } else {
+            self.expected("tables/databases", self.parser.peek_token())
+        }
     }
 
     /// Parse a SQL ALTER statement
@@ -185,7 +228,7 @@ impl<'a> ExtParser<'a> {
 
     /// Parses the set of valid formats
     /// This is a copy of the equivalent implementation in Datafusion.
-    fn parse_file_format(&mut self) -> Result<FileType, ParserError> {
+    fn parse_file_format(&mut self) -> Result<String, ParserError> {
         match self.parser.next_token() {
             Token::Word(w) => parse_file_type(&w.value),
             unexpected => self.expected("one of PARQUET, NDJSON, or CSV", unexpected),
@@ -251,7 +294,7 @@ impl<'a> ExtParser<'a> {
         let location = self.parser.parse_literal_string()?;
 
         let create = CreateExternalTable {
-            name: table_name.to_string(),
+            name: normalize_sql_object_name(&table_name),
             columns,
             file_type,
             has_header,
@@ -271,11 +314,67 @@ impl<'a> ExtParser<'a> {
         let columns = self.parse_cnos_column()?;
 
         let create = CreateTable {
-            name: table_name.to_string(),
+            name: table_name,
             if_not_exists,
             columns,
         };
         Ok(ExtStatement::CreateTable(create))
+    }
+
+    fn parse_database_options(&mut self) -> Result<DatabaseOptions> {
+        if self.parser.parse_keyword(Keyword::WITH) {
+            let mut options = DatabaseOptions::default();
+            loop {
+                if self.consume_cnos_token(TTL) {
+                    options.ttl = Some(self.parse_string_value()?);
+                } else if self.consume_cnos_token(SHARD) {
+                    options.shard_num = Some(self.parse_u64()?);
+                } else if self.consume_cnos_token(VNODE_DURATION) {
+                    options.vnode_duration = Some(self.parse_string_value()?);
+                } else if self.consume_cnos_token(REPLICA) {
+                    options.replica = Some(self.parse_u64()?);
+                } else if self.consume_cnos_token(PRECISION) {
+                    options.precision = Some(self.parse_string_value()?);
+                } else {
+                    return Ok(options);
+                }
+            }
+        }
+        Ok(DatabaseOptions::default())
+    }
+
+    fn parse_u64(&mut self) -> Result<u64> {
+        let num = self.parser.parse_number_value()?.to_string();
+        match num.parse::<u64>() {
+            Ok(v) => Ok(v),
+            Err(_) => {
+                parser_err!(format!(
+                    "this option should be a unsigned number, but get {}",
+                    num
+                ))
+            }
+        }
+    }
+
+    fn parse_string_value(&mut self) -> Result<String> {
+        let value = self.parser.parse_value()?;
+        match value {
+            Value::SingleQuotedString(s) => Ok(s),
+            _ => parser_err!(format!("expected value, but found : {}", value)),
+        }
+    }
+
+    fn parse_create_database(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+        let database_name = self.parser.parse_object_name()?;
+        let options = self.parse_database_options()?;
+        Ok(ExtStatement::CreateDatabase(CreateDatabase {
+            name: database_name,
+            if_not_exists,
+            options,
+        }))
     }
 
     /// Parse a SQL CREATE statement
@@ -286,7 +385,7 @@ impl<'a> ExtParser<'a> {
         } else if self.parser.parse_keyword(Keyword::TABLE) {
             self.parse_create_table()
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
-            todo!()
+            self.parse_create_database()
         } else {
             self.expected("an object type after CREATE", self.parser.peek_token())
         }
@@ -302,7 +401,7 @@ impl<'a> ExtParser<'a> {
             return self.expected("TABLE,DATABASE after DROP", self.parser.peek_token());
         };
         let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-        let object_name = self.parser.parse_object_name()?.to_string();
+        let object_name = self.parser.parse_object_name()?;
 
         Ok(ExtStatement::Drop(DropObject {
             object_name,
@@ -330,28 +429,18 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_cnos_column(&mut self) -> Result<Vec<ColumnOption>> {
-        let mut columns = vec![ColumnOption {
-            name: Ident::from(TIME_FIELD_NAME),
-            is_tag: false,
-            data_type: DataType::Timestamp,
-            codec: "DEFAULT".to_string(),
-        }];
+        // -- Parse as is without adding any semantics
+        let mut all_columns: Vec<ColumnOption> = vec![];
+        let mut field_columns: Vec<ColumnOption> = vec![];
+
         if !self.consume_token(&Token::LParen) || self.consume_token(&Token::RParen) {
-            return Ok(columns);
+            return Ok(field_columns);
         }
         loop {
-            if self.consume_cnos_token(TAGS) {
-                self.parse_tag_columns(&mut columns)?;
-                if self.consume_token(&Token::RParen) {
-                    break;
-                } else {
-                    return parser_err!(format!(") after column definition"));
-                }
-            }
             let name = self.parser.parse_identifier()?;
             let column_type = self.parse_column_type()?;
             let codec_type = self.parse_codec_type()?;
-            columns.push(ColumnOption {
+            field_columns.push(ColumnOption {
                 name,
                 is_tag: false,
                 data_type: column_type,
@@ -367,9 +456,16 @@ impl<'a> ExtParser<'a> {
                     self.parser.peek_token(),
                 );
             }
+            if self.consume_cnos_token(TAGS) {
+                self.parse_tag_columns(&mut all_columns)?;
+                self.parser.expect_token(&Token::RParen)?;
+                break;
+            }
         }
+        // tag1, tag2, ..., field1, field2, ...
+        all_columns.append(&mut field_columns);
 
-        Ok(columns)
+        Ok(all_columns)
     }
 
     fn parse_tag_columns(&mut self, columns: &mut Vec<ColumnOption>) -> Result<()> {
@@ -440,16 +536,25 @@ impl<'a> ExtParser<'a> {
 }
 
 /// This is a copy of the equivalent implementation in Datafusion.
-fn parse_file_type(s: &str) -> Result<FileType, ParserError> {
-    match s.to_uppercase().as_str() {
-        "PARQUET" => Ok(FileType::Parquet),
-        "NDJSON" => Ok(FileType::NdJson),
-        "CSV" => Ok(FileType::CSV),
-        "AVRO" => Ok(FileType::Avro),
-        other => parser_err!(format!(
-            "expect one of PARQUET, AVRO, NDJSON, or CSV, found: {}",
-            other
-        )),
+fn parse_file_type(s: &str) -> Result<String, ParserError> {
+    Ok(s.to_uppercase())
+}
+
+/// Normalize a SQL object name
+pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+    sql_object_name
+        .0
+        .iter()
+        .map(normalize_ident)
+        .collect::<Vec<String>>()
+        .join(".")
+}
+
+// Normalize an identifier to a lowercase string unless the identifier is quoted.
+pub fn normalize_ident(id: &Ident) -> String {
+    match id.quote_style {
+        Some(_) => id.value.clone(),
+        None => id.value.to_ascii_lowercase(),
     }
 }
 
@@ -457,8 +562,8 @@ fn parse_file_type(s: &str) -> Result<FileType, ParserError> {
 mod tests {
     use std::ops::Deref;
 
+    use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
     use spi::query::ast::{DropObject, ExtStatement};
-    use sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
 
     use super::*;
 
@@ -548,15 +653,21 @@ mod tests {
             }) => {
                 assert_eq!(name.to_string(), "test".to_string());
                 assert_eq!(if_not_exists.to_string(), "true".to_string());
-                assert_eq!(columns.len(), 8);
+                assert_eq!(columns.len(), 7);
                 assert_eq!(
                     *columns,
                     vec![
                         ColumnOption {
-                            name: Ident::from("time"),
-                            is_tag: false,
-                            data_type: DataType::Timestamp,
-                            codec: "DEFAULT".to_string()
+                            name: Ident::from("column6"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            codec: "UNKNOWN".to_string()
+                        },
+                        ColumnOption {
+                            name: Ident::from("column7"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            codec: "UNKNOWN".to_string()
                         },
                         ColumnOption {
                             name: Ident::from("column1"),
@@ -587,18 +698,6 @@ mod tests {
                             is_tag: false,
                             data_type: DataType::Double,
                             codec: "GORILLA".to_string()
-                        },
-                        ColumnOption {
-                            name: Ident::from("column6"),
-                            is_tag: true,
-                            data_type: DataType::String,
-                            codec: "UNKNOWN".to_string()
-                        },
-                        ColumnOption {
-                            name: Ident::from("column7"),
-                            is_tag: true,
-                            data_type: DataType::String,
-                            codec: "UNKNOWN".to_string()
                         }
                     ]
                 );
@@ -730,5 +829,27 @@ mod tests {
             },
             _ => panic!("failed"),
         }
+    }
+
+    #[test]
+    fn test_create_database() {
+        let sql = "CREATE DATABASE test WITH TTl '10d' SHARD 5 VNOdE_DURATiON '3d' REPLICA 10 pRECISIOn 'us';";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match statements[0] {
+            ExtStatement::CreateDatabase(ref stmt) => {
+                let ans = format!("{:?}", stmt);
+                println!("{ans}");
+                let expectd = r#"CreateDatabase { name: ObjectName([Ident { value: "test", quote_style: None }]), if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10), precision: Some("us") } }"#;
+                assert_eq!(ans, expectd);
+            }
+            _ => panic!("impossible"),
+        }
+    }
+    #[test]
+    #[should_panic]
+    fn test_create_table_without_fields() {
+        let sql = "CREATE TABLE test0(TAGS(column6, column7));";
+        ExtParser::parse_sql(sql).unwrap();
     }
 }

@@ -78,7 +78,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintO
     let mut print_options = print_options.clone();
 
     loop {
-        match rl.readline("❯ ") {
+        match rl.readline(format!("{} ❯ ", ctx.get_database()).as_str()) {
             Ok(line) if line.starts_with('\\') => {
                 rl.add_history_entry(line.trim_end());
                 let command = line.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -137,7 +137,7 @@ async fn exec_and_print(
     ctx: &mut SessionContext,
     print_options: &PrintOptions,
     sql: String,
-) -> std::result::Result<(), String> {
+) -> Result<(), String> {
     let now = Instant::now();
     let results = ctx.sql(sql).await?;
     print_options.print_batches(&results, now)?;

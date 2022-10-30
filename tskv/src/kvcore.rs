@@ -1,10 +1,12 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
+use models::predicate::domain::{ColumnDomains, PredicateRef};
 use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 use tokio::sync::watch;
@@ -12,6 +14,7 @@ use tokio::sync::watch::{Receiver, Sender};
 use tokio::{
     runtime::Runtime,
     sync::{
+        broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender},
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
@@ -19,10 +22,10 @@ use tokio::{
 };
 
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
-use models::schema::TableSchema;
+use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use models::{
-    utils::unite_id, FieldId, FieldInfo, InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Tag,
-    Timestamp, ValueType,
+    utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
+    ValueType,
 };
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -30,7 +33,9 @@ use protos::{
 };
 use trace::{debug, error, info, trace, warn};
 
+use crate::database::Database;
 use crate::file_system::file_manager::{self, FileManager};
+use crate::index::index_manger;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -63,6 +68,7 @@ pub struct TsKv {
     flush_task_sender: UnboundedSender<FlushReq>,
     compact_task_sender: UnboundedSender<TseriesFamilyId>,
     summary_task_sender: UnboundedSender<SummaryTask>,
+    close_sender: BroadcastSender<UnboundedSender<()>>,
 }
 
 impl TsKv {
@@ -72,6 +78,7 @@ impl TsKv {
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
+        let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) =
             Self::recover_summary(shared_options.clone(), flush_task_sender.clone()).await;
         let wal_cfg = shared_options.wal.clone();
@@ -84,10 +91,11 @@ impl TsKv {
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
+            close_sender,
         };
 
-        core.recover_wal().await;
-        core.run_wal_job(wal_receiver);
+        let wal_manager = core.recover_wal().await;
+        core.run_wal_job(wal_manager, wal_receiver);
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
@@ -103,6 +111,17 @@ impl TsKv {
         );
         core.run_summary_job(summary, summary_task_receiver);
         Ok(core)
+    }
+
+    pub async fn close(&self) {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        if let Err(e) = self.close_sender.send(tx) {
+            error!("Failed to broadcast close signal: {:?}", e);
+        }
+        while let Some(_x) = rx.recv().await {
+            continue;
+        }
+        info!("TsKv closed");
     }
 
     async fn recover_summary(
@@ -128,13 +147,15 @@ impl TsKv {
         (version_set, summary)
     }
 
-    async fn recover_wal(&self) {
+    async fn recover_wal(&self) -> WalManager {
         let wal_manager = WalManager::new(self.options.wal.clone());
 
         wal_manager
             .recover(self, self.global_ctx.clone())
             .await
             .unwrap();
+
+        wal_manager
     }
 
     pub fn read_point(
@@ -192,23 +213,42 @@ impl TsKv {
         data
     }
 
-    fn run_wal_job(&self, mut receiver: UnboundedReceiver<WalTask>) {
+    fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: UnboundedReceiver<WalTask>) {
         warn!("job 'WAL' starting.");
-        let wal_opt = self.options.wal.clone();
-        let mut wal_manager = WalManager::new(wal_opt);
+        let mut close_receiver = self.close_sender.subscribe();
         let f = async move {
-            while let Some(x) = receiver.recv().await {
-                match x {
-                    WalTask::Write { points, cb } => {
-                        // write wal
-                        let ret = wal_manager.write(WalEntryType::Write, &points).await;
-                        let send_ret = cb.send(ret);
-                        match send_ret {
-                            Ok(wal_result) => {}
-                            Err(err) => {
-                                warn!("send WAL write result failed.")
+            loop {
+                tokio::select! {
+                    wal_task = receiver.recv() => {
+                        match wal_task {
+                            Some(WalTask::Write { points, cb }) => {
+                                // write wal
+                                let ret = wal_manager.write(WalEntryType::Write, &points).await;
+                                let send_ret = cb.send(ret);
+                                match send_ret {
+                                    Ok(wal_result) => {}
+                                    Err(err) => {
+                                        warn!("send WAL write result failed.")
+                                    }
+                                }
+                            }
+                            _ => {
+                                break;
                             }
                         }
+                    }
+                    close_task = close_receiver.recv() => {
+                        info!("job 'WAL' closing.");
+                        if let Err(e) = wal_manager.close().await {
+                            error!("Failed to close wal: {:?}", e);
+                        }
+                        info!("job 'WAL' closed.");
+                        if let Ok(tx) = close_task {
+                            if let Err(e) = tx.send(()) {
+                                error!("Failed to send wal closed signal: {:?}", e);
+                            }
+                        }
+                        break;
                     }
                 }
             }
@@ -362,7 +402,10 @@ impl Engine for TsKv {
         let db_warp = self.version_set.read().get_db(&db_name);
         let db = match db_warp {
             Some(database) => database,
-            None => self.version_set.write().create_db(&db_name),
+            None => self
+                .version_set
+                .write()
+                .create_db(DatabaseSchema::new(&db_name)),
         };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -407,7 +450,10 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self.version_set.write().create_db(&db_name);
+        let db = self
+            .version_set
+            .write()
+            .create_db(DatabaseSchema::new(&db_name));
 
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -436,10 +482,10 @@ impl Engine for TsKv {
         db: &str,
         sids: Vec<SeriesId>,
         time_range: &TimeRange,
-        fields: Vec<SchemaFieldId>,
-    ) -> HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> {
+        fields: Vec<ColumnId>,
+    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
         // get data block
-        let mut ans: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> = HashMap::new();
+        let mut ans: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> = HashMap::new();
         for sid in sids {
             let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
             for sch_fid in fields.iter() {
@@ -462,6 +508,43 @@ impl Engine for TsKv {
         final_ans
     }
 
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
+        if self.version_set.read().db_exists(&schema.name) {
+            return Err(Error::DatabaseAlreadyExists {
+                database: schema.name.clone(),
+            });
+        }
+        self.version_set.write().create_db(schema.clone());
+        Ok(())
+    }
+
+    fn list_databases(&self) -> Result<Vec<String>> {
+        let version_set = self.version_set.read();
+        let dbs = version_set.get_all_db();
+
+        let mut db = Vec::new();
+        for (name, _) in dbs.iter() {
+            db.push(name.clone())
+        }
+
+        Ok(db)
+    }
+
+    fn list_tables(&self, database: &str) -> Result<Vec<String>> {
+        if let Some(db) = self.version_set.read().get_db(database) {
+            Ok(db.read().get_index().list_tables())
+        } else {
+            error!("Database {}, not found", database);
+            Err(Error::DatabaseNotFound {
+                database: database.to_string(),
+            })
+        }
+    }
+
+    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
+        self.version_set.read().get_db_schema(name)
+    }
+
     fn drop_database(&self, database: &str) -> Result<()> {
         let database = database.to_string();
 
@@ -475,6 +558,9 @@ impl Engine for TsKv {
             for ts_family_id in ts_family_ids {
                 db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
             }
+            index_manger(db_wlock.get_index().path())
+                .write()
+                .remove_db_index(&database);
         }
 
         let idx_dir = self.options.storage.index_dir(&database);
@@ -489,16 +575,20 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) {
-        // todo : remove this create db after impl create db sql
-        self.version_set.write().create_db(&schema.db);
+    fn create_table(&self, schema: &TableSchema) -> Result<()> {
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
             match db.read().get_index().create_table(schema) {
-                Ok(_) => {}
-                Err(e) => error!("failed create database '{}'", e),
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    error!("failed create database '{}'", e);
+                    Err(Error::IndexErr { source: e })
+                }
             }
         } else {
             error!("Database {}, not found", schema.db);
+            Err(Error::DatabaseNotFound {
+                database: schema.db.clone(),
+            })
         }
     }
 
@@ -572,6 +662,36 @@ impl Engine for TsKv {
         Ok(vec![])
     }
 
+    fn get_series_id_by_filter(
+        &self,
+        name: &str,
+        tab: &str,
+        filter: &ColumnDomains<String>,
+    ) -> IndexResult<Vec<u64>> {
+        let result = if let Some(db) = self.version_set.read().get_db(name) {
+            if filter.is_all() {
+                // Match all records
+                debug!("pushed tags filter is All.");
+                db.read().get_index().get_series_id_list(tab, &[])
+            } else if filter.is_none() {
+                // Does not match any record, return null
+                debug!("pushed tags filter is None.");
+                Ok(vec![])
+            } else {
+                // No error will be reported here
+                debug!("pushed tags filter is {:?}.", filter);
+                let domains = unsafe { filter.domains_unsafe() };
+                db.read()
+                    .get_index()
+                    .get_series_ids_by_domains(tab, domains)
+            }
+        } else {
+            Ok(vec![])
+        };
+
+        result
+    }
+
     fn get_series_key(&self, name: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {
         if let Some(db) = self.version_set.read().get_db(name) {
             return db.read().get_series_key(sid);
@@ -580,13 +700,18 @@ impl Engine for TsKv {
         Ok(None)
     }
 
-    fn get_db_version(&self, db: &str) -> Option<Arc<SuperVersion>> {
+    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
         let version_set = self.version_set.read();
+        if !version_set.db_exists(db) {
+            return Err(Error::DatabaseNotFound {
+                database: db.to_string(),
+            });
+        }
         if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
-            return Some(tsf.read().super_version());
+            Ok(Some(tsf.read().super_version()))
         } else {
             warn!("ts_family with db name '{}' not found.", db);
-            None
+            Ok(None)
         }
     }
 }
@@ -596,7 +721,7 @@ mod test {
     use config::get_config;
     use flatbuffers::{FlatBufferBuilder, WIPOffset};
     use models::utils::now_timestamp;
-    use models::{InMemPoint, SchemaFieldId, SeriesId, SeriesKey, Timestamp};
+    use models::{ColumnId, InMemPoint, SeriesId, SeriesKey, Timestamp};
     use protos::{models::Points, models_helper};
     use std::collections::HashMap;
     use std::sync::{atomic, Arc};
@@ -634,9 +759,8 @@ mod test {
             let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
 
-            let field_ids: Vec<SchemaFieldId> =
-                table_schema.fields.iter().map(|f| f.1.id).collect();
-            let result: HashMap<SeriesId, HashMap<SchemaFieldId, Vec<DataBlock>>> =
+            let field_ids: Vec<ColumnId> = table_schema.columns().iter().map(|f| f.id).collect();
+            let result: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> =
                 tskv.read(database, series_ids, time_range, field_ids);
             println!("Result items: {}", result.len());
         }

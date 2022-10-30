@@ -8,7 +8,7 @@ mod test {
     };
 
     fn client() -> HttpClient {
-        HttpClient::from_addr("0.0.0.0".to_string(), 31007)
+        HttpClient::from_addr("127.0.0.1".to_string(), 31007)
     }
 
     #[tokio::test]

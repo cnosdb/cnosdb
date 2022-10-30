@@ -9,6 +9,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::fmt;
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
@@ -16,13 +17,15 @@ use std::mem::size_of_val;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use datafusion::arrow::datatypes::{DataType as ArrowDataType, Field, Schema, SchemaRef, TimeUnit};
+use datafusion::arrow::datatypes::{
+    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
+};
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::ExecutionPlan;
 
-use crate::{SchemaFieldId, ValueType};
+use crate::{ColumnId, SchemaId, ValueType};
 
 pub type TableSchemaRef = Arc<TableSchema>;
 
@@ -36,8 +39,11 @@ pub const TIME_FIELD: &str = "time";
 pub struct TableSchema {
     pub db: String,
     pub name: String,
-    pub schema_id: u32,
-    pub fields: BTreeMap<String, TableFiled>,
+    pub schema_id: SchemaId,
+
+    columns: Vec<TableColumn>,
+    //ColumnName -> ColumnsIndex
+    columns_index: HashMap<String, usize>,
 }
 
 impl Default for TableSchema {
@@ -46,45 +52,62 @@ impl Default for TableSchema {
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
-            fields: std::default::Default::default(),
+            columns: Default::default(),
+            columns_index: Default::default(),
         }
     }
 }
 
 impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<Field> = self
-            .fields
-            .iter()
-            .map(|(name, schema)| {
-                let mut f = Field::new(name, schema.column_type.into(), true);
-                let mut map = BTreeMap::new();
-                map.insert(FIELD_ID.to_string(), schema.id.to_string());
-                map.insert(TAG.to_string(), schema.column_type.is_tag().to_string());
-                f.set_metadata(Some(map));
-                f
-            })
-            .collect();
+        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
 
         Arc::new(Schema::new(fields))
     }
 
-    pub fn new(db: String, name: String, fields: BTreeMap<String, TableFiled>) -> Self {
+    pub fn new(db: String, name: String, columns: Vec<TableColumn>) -> Self {
+        let columns_index = columns
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| (e.name.clone(), idx))
+            .collect();
+
         Self {
             db,
             name,
             schema_id: 0,
-            fields,
+            columns,
+            columns_index,
         }
     }
-    pub fn fields(&self) -> &BTreeMap<String, TableFiled> {
-        &self.fields
+
+    /// add column
+    /// not add if exists
+    pub fn add_column(&mut self, col: TableColumn) {
+        self.columns_index
+            .entry(col.name.clone())
+            .or_insert_with(|| {
+                self.columns.push(col);
+                self.columns.len() - 1
+            });
     }
 
-    pub fn field_fields_num(&self) -> usize {
+    /// Get the metadata of the column according to the column name
+    pub fn column(&self, name: &str) -> Option<&TableColumn> {
+        self.columns_index
+            .get(name)
+            .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
+    }
+
+    pub fn columns(&self) -> &Vec<TableColumn> {
+        &self.columns
+    }
+
+    /// Number of columns of ColumnType is Field
+    pub fn field_num(&self) -> usize {
         let mut ans = 0;
-        for i in self.fields.iter() {
-            if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
+        for i in self.columns.iter() {
+            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
                 ans += 1;
             }
         }
@@ -92,11 +115,11 @@ impl TableSchema {
     }
 
     // return (table_field_id, index), index mean field location which column
-    pub fn fields_id(&self) -> HashMap<SchemaFieldId, usize> {
+    pub fn fields_id(&self) -> HashMap<ColumnId, usize> {
         let mut ans = vec![];
-        for i in self.fields.iter() {
-            if i.1.column_type != ColumnType::Tag && i.1.column_type != ColumnType::Time {
-                ans.push(i.1.id);
+        for i in self.columns.iter() {
+            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
+                ans.push(i.id);
             }
         }
         ans.sort();
@@ -109,8 +132,8 @@ impl TableSchema {
 
     pub fn size(&self) -> usize {
         let mut size = 0;
-        for i in self.fields.iter() {
-            size += i.0.capacity() + size_of_val(&i.1) + size_of_val(&i);
+        for i in self.columns.iter() {
+            size += size_of_val(&i);
         }
         size += size_of_val(&self);
         size
@@ -142,20 +165,37 @@ impl TableProvider for TableSchema {
     }
 }
 
-pub fn is_time_column(field: &Field) -> bool {
+pub fn is_time_column(field: &ArrowField) -> bool {
     TIME_FIELD_NAME == field.name()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TableFiled {
-    pub id: SchemaFieldId,
+pub struct TableColumn {
+    pub id: ColumnId,
     pub name: String,
     pub column_type: ColumnType,
     pub codec: u8,
 }
 
-impl TableFiled {
-    pub fn new(id: SchemaFieldId, name: String, column_type: ColumnType, codec: u8) -> Self {
+impl From<&TableColumn> for ArrowField {
+    fn from(column: &TableColumn) -> Self {
+        let mut f = ArrowField::new(&column.name, column.column_type.into(), column.nullable());
+        let mut map = BTreeMap::new();
+        map.insert(FIELD_ID.to_string(), column.id.to_string());
+        map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
+        f.set_metadata(Some(map));
+        f
+    }
+}
+
+impl From<TableColumn> for ArrowField {
+    fn from(field: TableColumn) -> Self {
+        (&field).into()
+    }
+}
+
+impl TableColumn {
+    pub fn new(id: ColumnId, name: String, column_type: ColumnType, codec: u8) -> Self {
         Self {
             id,
             name,
@@ -171,13 +211,28 @@ impl TableFiled {
             codec: 0,
         }
     }
-    pub fn time_field(codec: u8) -> TableFiled {
-        TableFiled {
-            id: 0,
+
+    pub fn new_time_column(id: ColumnId) -> TableColumn {
+        TableColumn {
+            id,
             name: TIME_FIELD_NAME.to_string(),
             column_type: ColumnType::Time,
-            codec,
+            codec: 0,
         }
+    }
+
+    pub fn new_tag_column(id: ColumnId, name: String) -> TableColumn {
+        TableColumn {
+            id,
+            name,
+            column_type: ColumnType::Tag,
+            codec: 0,
+        }
+    }
+
+    pub fn nullable(&self) -> bool {
+        // The time column cannot be empty
+        !matches!(self.column_type, ColumnType::Time)
     }
 }
 
@@ -265,5 +320,146 @@ impl std::fmt::Display for ColumnType {
 impl ColumnType {
     pub fn is_tag(&self) -> bool {
         matches!(self, ColumnType::Tag)
+    }
+
+    pub fn is_time(&self) -> bool {
+        matches!(self, ColumnType::Time)
+    }
+
+    pub fn is_field(&self) -> bool {
+        matches!(self, ColumnType::Field(_))
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DatabaseSchema {
+    pub name: String,
+    pub config: DatabaseOptions,
+}
+
+impl DatabaseSchema {
+    pub fn new(name: &str) -> Self {
+        DatabaseSchema {
+            name: name.to_string(),
+            config: DatabaseOptions::default(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DatabaseOptions {
+    // data keep time
+    pub ttl: Duration,
+
+    pub shard_num: u64,
+    // shard coverage time range
+    pub vnode_duration: Duration,
+
+    pub replica: u64,
+    // timestamp percision
+    pub precision: Precision,
+}
+
+impl Default for DatabaseOptions {
+    fn default() -> Self {
+        Self {
+            ttl: Duration {
+                time_num: 365,
+                unit: DurationUnit::Day,
+            },
+            shard_num: 1,
+            vnode_duration: Duration {
+                time_num: 365,
+                unit: DurationUnit::Day,
+            },
+            replica: 1,
+            precision: Precision::NS,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Precision {
+    MS,
+    US,
+    NS,
+}
+
+impl Precision {
+    pub fn new(text: &str) -> Option<Self> {
+        match text.to_uppercase().as_str() {
+            "MS" => Some(Precision::MS),
+            "US" => Some(Precision::US),
+            "NS" => Some(Precision::NS),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Precision {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Precision::MS => f.write_str("MS"),
+            Precision::US => f.write_str("US"),
+            Precision::NS => f.write_str("NS"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DurationUnit {
+    Minutes,
+    Hour,
+    Day,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Duration {
+    pub time_num: u64,
+    pub unit: DurationUnit,
+}
+
+impl fmt::Display for Duration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.unit {
+            DurationUnit::Minutes => write!(f, "{} Minutes", self.time_num),
+            DurationUnit::Hour => write!(f, "{} Hours", self.time_num),
+            DurationUnit::Day => write!(f, "{} Days", self.time_num),
+        }
+    }
+}
+
+impl Duration {
+    // with default DurationUnit day
+    pub fn new(text: &str) -> Option<Self> {
+        if text.is_empty() {
+            return None;
+        }
+        let len = text.len();
+        if let Ok(v) = text.parse::<u64>() {
+            return Some(Duration {
+                time_num: v,
+                unit: DurationUnit::Day,
+            });
+        };
+
+        let time = &text[..len - 1];
+        let unit = &text[len - 1..];
+        let time_num = match time.parse::<u64>() {
+            Ok(v) => v,
+            Err(_) => {
+                return None;
+            }
+        };
+        let time_unit = match unit.to_uppercase().as_str() {
+            "D" => DurationUnit::Day,
+            "H" => DurationUnit::Hour,
+            "M" => DurationUnit::Minutes,
+            _ => return None,
+        };
+        Some(Duration {
+            time_num,
+            unit: time_unit,
+        })
     }
 }

@@ -10,15 +10,16 @@ use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
+use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
+use datafusion::logical_plan::CreateExternalTable;
 use datafusion::prelude::SessionConfig;
 use datafusion::sql::TableReference;
 use snafu::ResultExt;
 use spi::catalog::MetadataError;
-use spi::query::execution;
 use spi::query::execution::ExecutionError;
+use spi::query::execution::{self, ExternalSnafu};
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::query::logical_planner::{CSVOptions, CreateExternalTable, FileDescriptor};
 
 use super::DDLDefinitionTask;
 
@@ -77,7 +78,8 @@ async fn create_exernal_table(
 
     let state = query_state_machine.session.inner().state();
 
-    let (provided_schema, options) = construct_listing_table_options(stmt, &state.config);
+    let (provided_schema, options) =
+        construct_listing_table_options(stmt, &state.config).context(ExternalSnafu)?;
 
     let listing_table = construct_listing_table(location, options, provided_schema, &state).await?;
 
@@ -92,15 +94,14 @@ async fn create_exernal_table(
 fn construct_listing_table_options(
     stmt: &CreateExternalTable,
     config: &SessionConfig,
-) -> (Option<Arc<Schema>>, ListingOptions) {
+) -> Result<(Option<Arc<Schema>>, ListingOptions), DataFusionError> {
     let CreateExternalTable {
         ref schema,
-        ref file_descriptor,
         ref table_partition_cols,
         ..
     } = stmt;
 
-    let (file_format, file_extension) = construct_file_format_and_extension(file_descriptor);
+    let (file_format, file_extension) = construct_file_format_and_extension(stmt)?;
 
     // TODO make schema in CreateExternalTable optional instead of empty
     let provided_schema = if schema.fields().is_empty() {
@@ -117,7 +118,7 @@ fn construct_listing_table_options(
         table_partition_cols: table_partition_cols.clone(),
     };
 
-    (provided_schema, options)
+    Ok((provided_schema, options))
 }
 
 /// construct a table that uses the listing feature of the object store to
@@ -146,31 +147,35 @@ async fn construct_listing_table(
 }
 
 fn construct_file_format_and_extension(
-    file_descriptor: &FileDescriptor,
-) -> (Arc<dyn FileFormat>, &str) {
-    match file_descriptor {
-        FileDescriptor::NdJson => (
-            Arc::new(JsonFormat::default()) as Arc<dyn FileFormat>,
-            DEFAULT_JSON_EXTENSION,
-        ),
-        FileDescriptor::Parquet => (
-            Arc::new(ParquetFormat::default()) as Arc<dyn FileFormat>,
-            DEFAULT_PARQUET_EXTENSION,
-        ),
-        FileDescriptor::CSV(CSVOptions {
-            has_header,
-            delimiter,
-        }) => (
+    plan: &CreateExternalTable,
+) -> Result<(Arc<dyn FileFormat>, &str), DataFusionError> {
+    let result = match plan.file_type.as_str() {
+        "CSV" => (
             Arc::new(
                 CsvFormat::default()
-                    .with_has_header(*has_header)
-                    .with_delimiter(*delimiter as u8),
+                    .with_has_header(plan.has_header)
+                    .with_delimiter(plan.delimiter as u8),
             ) as Arc<dyn FileFormat>,
             DEFAULT_CSV_EXTENSION,
         ),
-        FileDescriptor::Avro => (
+        "PARQUET" => (
+            Arc::new(ParquetFormat::default()) as Arc<dyn FileFormat>,
+            DEFAULT_PARQUET_EXTENSION,
+        ),
+        "AVRO" => (
             Arc::new(AvroFormat::default()) as Arc<dyn FileFormat>,
             DEFAULT_AVRO_EXTENSION,
         ),
-    }
+        "JSON" => (
+            Arc::new(JsonFormat::default()) as Arc<dyn FileFormat>,
+            DEFAULT_JSON_EXTENSION,
+        ),
+        _ => {
+            return Err(DataFusionError::Execution(
+                "Only known FileTypes can be ListingTables!".to_string(),
+            ))
+        }
+    };
+
+    Ok(result)
 }

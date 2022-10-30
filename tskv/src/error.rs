@@ -50,6 +50,9 @@ pub enum Error {
         source: flatbuffers::InvalidFlatbuffer,
     },
 
+    #[snafu(display("wal truncated"))]
+    WalTruncated,
+
     #[snafu(display("read record file block: {}", source))]
     LogRecordErr {
         source: crate::record_file::RecordFileError,
@@ -81,6 +84,9 @@ pub enum Error {
 
     #[snafu(display("database not found: {}", database))]
     DatabaseNotFound { database: String },
+
+    #[snafu(display("database '{}' already exists", database))]
+    DatabaseAlreadyExists { database: String },
 
     #[snafu(display("invalid model: {}", source))]
     InvalidModel { source: models::Error },

@@ -1,3 +1,26 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS createtable; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE DATABASE createtable; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE createtable."tesT"; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE createtable.tesT; --
+200 OK
+
+
+-- EXECUTE SQL: SHOW TABLES; --
+-- AFTER_SORT --
+200 OK
+Table
+tesT
+test
+
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 200 OK
 
@@ -9,10 +32,9 @@ rows
 
 
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (101, -1234, 'hello', -1234, false, 1.2, 'beijing', 'shanghai'); --
-200 OK
-rows
-1
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Can't cast value -1234 to type UInt64"}
+-- ERROR:  --
 
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (102, -1234, 'hello', 1234, false, 'failed', 'beijing', 'shanghai'); --
 422 Unprocessable Entity
@@ -43,26 +65,25 @@ rows
 
 
 -- EXECUTE SQL: select ALL * from createtable.test0; --
+-- AFTER_SORT --
 200 OK
-column1,column2,column3,column4,column5,column6,column7,time
--1234,hello,1234,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000100
--1234,hello,,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000101
--1234,hello,1234,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000103
--1234,hello,1234,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000104
-,hello,1234,false,1.2,beijing,,1970-01-01T00:00:00.000000100
-
+time,column6,column7,column1,column2,column3,column4,column5
+1970-01-01T00:00:00.000000100,beijing,,,hello,1234,false,1.2
+1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,hello,1234,false,1.2
+1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,hello,1234,false,1.2
+1970-01-01T00:00:00.000000104,beijing,shanghai,-1234,hello,1234,false,1.2
 
 -- EXECUTE SQL: select ALL * from test0; --
+-- AFTER_SORT --
 200 OK
-column1,column2,column3,column4,column5,column6,column7,time
--1234,hello,1234,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000100
--1234,hello,,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000101
--1234,hello,1234,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000103
--1234,hello,1234,false,1.2,beijing,shanghai,1970-01-01T00:00:00.000000104
-,hello,1234,false,1.2,beijing,,1970-01-01T00:00:00.000000100
-
+time,column6,column7,column1,column2,column3,column4,column5
+1970-01-01T00:00:00.000000100,beijing,,,hello,1234,false,1.2
+1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,hello,1234,false,1.2
+1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,hello,1234,false,1.2
+1970-01-01T00:00:00.000000104,beijing,shanghai,-1234,hello,1234,false,1.2
 
 -- EXECUTE SQL: select ALL * from public.test0; --
+-- AFTER_SORT --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: failed to resolve user:cnosdb  db: public, table: test0"}
 -- ERROR:  --
@@ -87,13 +108,12 @@ column1,column2,column3,column4,column5,column6,column7,time
 
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test3( column1 BIGINT CODEC(DELTA), column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Internal error: column name should different from each other. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test4( column1 BIGINT CODEC(DEL), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Internal error: Unsupported codec type DEL for BIGINT. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Unsupported codec type DEL for BIGINT"}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test5( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLE, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
@@ -109,4 +129,8 @@ column1,column2,column3,column4,column5,column6,column7,time
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: ) is not a codec"}
 -- ERROR:  --
+
+-- EXECUTE SQL: DROP DATABASE IF EXISTS createtable; --
+200 OK
+
 

@@ -366,16 +366,16 @@ async fn test_dataframe() {
     let logical_plan = LogicalPlanBuilder::scan_with_filters(
         "tbl",
         datasource::provider_as_source(table),
-        None,
+        Some(vec![0, 1]),
         vec![col("fa").gt_eq(Expr::Literal(ScalarValue::Int32(Some(2))))],
     )
     .unwrap()
     .build()
     .unwrap();
 
-    let dataframe = DataFrame::new(ctx.state, &logical_plan)
-        .select_columns(&["fa", "fb"])
-        .unwrap();
+    let dataframe = DataFrame::new(ctx.state, &logical_plan);
+    // .select_columns(&["fa", "fb"])
+    // .unwrap();
 
     time::timeout(Duration::from_secs(10), async move {
         let result = dataframe.collect().await.unwrap();

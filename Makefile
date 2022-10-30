@@ -27,4 +27,7 @@ check: fmt_check clippy_check build test docs_check
 clean:
 	cargo clean
 
-.PHONY: docs check fmt fmt_check clippy clippy_check build test docs_check clean 
+run:
+	cargo run -- run
+
+.PHONY: docs check fmt fmt_check clippy clippy_check build test docs_check clean run

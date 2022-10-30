@@ -47,6 +47,23 @@ impl From<u8> for Encoding {
     }
 }
 
+pub fn codec_to_codec_name(codec: u8) -> String {
+    match Encoding::from(codec) {
+        Encoding::Default => "Default".to_string(),
+        Encoding::Null => "Null".to_string(),
+        Encoding::Delta => "Delta".to_string(),
+        Encoding::Quantile => "Quantile".to_string(),
+        Encoding::Gzip => "Gzip".to_string(),
+        Encoding::Bzip => "Bzip".to_string(),
+        Encoding::Gorilla => "Gorilla".to_string(),
+        Encoding::Snappy => "Snappy".to_string(),
+        Encoding::Zstd => "Zstd".to_string(),
+        Encoding::Zlib => "Zlib".to_string(),
+        Encoding::BitPack => "BitPack".to_string(),
+        Encoding::Unknown => "Unknown".to_string(),
+    }
+}
+
 pub fn codec_name_to_codec(codec_name: &str) -> u8 {
     match codec_name {
         "DEFAULT" => 0,

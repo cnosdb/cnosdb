@@ -12,14 +12,14 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::TableSchema;
+use models::schema::{DatabaseSchema, TableSchema};
 use models::utils::{split_id, unite_id};
-use models::{SchemaFieldId, SchemaId, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
-use crate::index::{IndexError, IndexResult};
+use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
 use crate::{
     error::{self, Result},
@@ -41,17 +41,17 @@ pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 pub struct Database {
     name: String,
     index: Arc<db_index::DBIndex>,
-    ts_families: HashMap<u32, Arc<RwLock<TseriesFamily>>>,
+    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
 }
 
 impl Database {
-    pub fn new(name: &String, opt: Arc<Options>) -> Self {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
         Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(name),
-            name: name.to_string(),
+                .get_db_index(schema.clone()),
+            name: schema.name,
             ts_families: HashMap::new(),
             opt,
         }
@@ -221,9 +221,8 @@ impl Database {
 
         let row = RowData::point_to_row_data(point, &table_schema);
         let schema_size = table_schema.size();
-        let schema_id = 0;
+        let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-            schema_id,
             schema: TableSchema::default(),
             rows: vec![],
             range: TimeRange {
@@ -308,7 +307,7 @@ impl Database {
         self.ts_families.len()
     }
 
-    pub fn ts_families(&self) -> &HashMap<u32, Arc<RwLock<TseriesFamily>>> {
+    pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>> {
         &self.ts_families
     }
 
@@ -330,6 +329,10 @@ impl Database {
         }
 
         None
+    }
+
+    pub fn get_schema(&self) -> DatabaseSchema {
+        self.index.db_schema()
     }
 }
 
@@ -371,7 +374,7 @@ pub(crate) fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
-            let fids: Vec<SchemaFieldId> = fields.fields.iter().map(|f| f.1.id).collect();
+            let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
                 .flat_map(|sid| fids.iter().map(|fid| unite_id(*fid as u64, *sid)))
