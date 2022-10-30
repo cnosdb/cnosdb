@@ -10,8 +10,9 @@ actix-rt = "2.7.0"
 protos = { path = "../common/protos", features = ["test"] }
 
 [dev-dependencies]
-flatbuffers = "2.1"
-tonic = {version = "0.7", features = ["tls", "transport"]}
-tokio = { version = "1.21", features = ["full"] }
-tokio-stream = "0.1"
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
+
+flatbuffers = { workspace = true }
+tonic = {version = "0.7", features = ["tls", "transport"]}
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = "0.1"

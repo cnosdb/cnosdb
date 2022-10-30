@@ -7,9 +7,9 @@ readme = "README.md"
 
 [dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
-datafusion = { path = "../common/datafusion_dep" }
 
 clap = { version = "3", features = ["derive", "cargo"] }
+datafusion = { workspace = true }
 dirs = "4.0.0"
 env_logger = "0.9"
 mimalloc = { version = "0.1", default-features = false }
