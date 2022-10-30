@@ -6,13 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = {version = "1.21.1", features = ["full"]}
 clap = { version = "3", features = ["derive"] }
-serde = {version = "1.0.144", features = ["derive"]}
-prettydiff = "0.6.1"
 lazy_static = "1.4.0"
-reqwest = "0.11.11"
-walkdir = "2.3.2"
-toml = "0.5.9"
-snafu = "0.7.1"
 nom = "7.1.1"
+prettydiff = "0.6.1"
+reqwest = "0.11.11"
+serde = { workspace = true }
+snafu = { workspace = true }
+tokio = {workspace = true, features = ["full"]}
+toml = "0.5.9"
+walkdir = "2.3.2"

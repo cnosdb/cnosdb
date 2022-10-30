@@ -6,5 +6,5 @@ edition = "2021"
 [dependencies]
 trace = { path = "../common/trace" }
 
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true }
 toml = "0.5.9"

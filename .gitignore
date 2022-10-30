@@ -13,7 +13,6 @@ Cargo.lock
 **/dev/
 **/data/
 **/tskv_log/
-**/data/
 
 # tmpfile
 trace.log.*
