@@ -108,4 +108,7 @@ pub enum Error {
 
     #[snafu(display("unknown type"))]
     UnKnowType,
+
+    #[snafu(display("can't find tags in point or insert row"))]
+    InvalidPoint,
 }
