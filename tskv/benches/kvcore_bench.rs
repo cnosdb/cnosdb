@@ -25,7 +25,7 @@ async fn get_tskv() -> TsKv {
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
     let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().write(request)).unwrap();
+    rt.block_on(tskv.lock().write(0, request)).unwrap();
 }
 
 // fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
@@ -56,7 +56,7 @@ fn big_write(c: &mut Criterion) {
                 let points = fbb.finished_data().to_vec();
 
                 let request = WritePointsRpcRequest { version: 1, points };
-                rt.block_on(tskv.write(request)).unwrap();
+                rt.block_on(tskv.write(0, request)).unwrap();
             }
         })
     });

@@ -44,7 +44,7 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.spawn(async move {
-            tskv.write(request).await.unwrap();
+            tskv.write(0, request).await.unwrap();
         });
     }
 
@@ -61,19 +61,19 @@ mod tests {
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -95,7 +95,7 @@ mod tests {
             let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
             rt.block_on(async {
-                tskv.write(request).await.unwrap();
+                tskv.write(0, request).await.unwrap();
             });
         }
     }
@@ -112,19 +112,19 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(request).await.unwrap();
+            tskv.write(0, request).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -154,7 +154,7 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
-            tskv.write(request).await.unwrap();
+            tskv.write(0, request).await.unwrap();
         });
         println!("{:?}", tskv)
     }
