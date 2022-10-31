@@ -58,6 +58,49 @@ mod test {
         point_builder.finish()
     }
 
+    pub fn create_const_points<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        num: usize,
+    ) -> WIPOffset<Points<'a>> {
+        let db = fbb.create_vector("db0".as_bytes());
+        let mut points = vec![];
+        for _ in 0..num {
+            let timestamp = 1;
+            let tags = create_tags(
+                fbb,
+                vec![("ta", &("a".to_string())), ("tb", &("b".to_string()))],
+            );
+
+            let fav = 100_i64.to_be_bytes();
+            let fbv = 1000_i64.to_be_bytes();
+            let fields = create_fields(
+                fbb,
+                vec![
+                    ("fa", FieldType::Integer, fav.as_slice()),
+                    ("fb", FieldType::Float, fbv.as_slice()),
+                ],
+            );
+
+            let table = fbb.create_vector("table".as_bytes());
+            points.push(create_point(
+                fbb,
+                timestamp,
+                db.clone(),
+                table,
+                tags,
+                fields,
+            ))
+        }
+        let points = fbb.create_vector(&points);
+        Points::create(
+            fbb,
+            &PointsArgs {
+                database: Some(db),
+                points: Some(points),
+            },
+        )
+    }
+
     pub fn create_random_points_with_delta<'a>(
         fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
         num: usize,

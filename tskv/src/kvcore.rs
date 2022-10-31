@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use crate::tsm::codec::get_str_codec;
 use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
@@ -21,7 +22,9 @@ use tokio::{
     time::Instant,
 };
 
+use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
+use models::codec::Encoding;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
@@ -357,8 +360,16 @@ impl Engine for TsKv {
         let mut seq = 0;
         if self.options.wal.enabled {
             let (cb, rx) = oneshot::channel();
+            let mut enc_points = Vec::new();
+            let coder = get_str_codec(Encoding::Snappy);
+            coder
+                .encode(&[&points], &mut enc_points)
+                .map_err(|_| Error::Send)?;
             self.wal_sender
-                .send(WalTask::Write { cb, points })
+                .send(WalTask::Write {
+                    cb,
+                    points: Arc::new(enc_points),
+                })
                 .map_err(|err| Error::Send)?;
             seq = rx.await.context(error::ReceiveSnafu)??.0;
         }
