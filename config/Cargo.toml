@@ -7,4 +7,4 @@ edition = "2021"
 trace = { path = "../common/trace" }
 
 serde = { workspace = true }
-toml = "0.5.9"
+toml = { workspace = true }

@@ -9,10 +9,10 @@ test = []
 [dependencies]
 chrono = { workspace = true }
 flatbuffers = { workspace = true }
-prost = "0.10"
-rand = "0.8"
-tonic = "0.7"
+prost = { workspace = true }
+rand = { workspace = true }
+tonic = { workspace = true }
 
 [build-dependencies]
-prost-build = "0.10"
-tonic-build = "0.7"
+prost-build = { workspace = true }
+tonic-build = { workspace = true }

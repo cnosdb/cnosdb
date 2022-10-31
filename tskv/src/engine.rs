@@ -15,8 +15,7 @@ use protos::{
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
-use trace::debug;
-use tracing::log::info;
+use trace::{debug, info};
 
 pub type EngineRef = Arc<dyn Engine>;
 
