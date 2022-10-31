@@ -696,9 +696,11 @@ mod test {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4".to_string();
+        let dir_summary = "/tmp/test/wal/summary4".to_string();
         let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir;
+        global_config.storage.path = dir_summary;
         let wal_config = WalOptions::from(&global_config);
         let mut mgr = WalManager::new(Arc::new(wal_config));
         for _i in 0..10 {
