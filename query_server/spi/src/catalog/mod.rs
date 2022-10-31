@@ -59,4 +59,7 @@ pub enum MetadataError {
 
     #[snafu(display("Internal Error: {}.", error_msg))]
     InternalError { error_msg: String },
+
+    #[snafu(display("Invalid schema: {}.", error_msg))]
+    InvalidSchema { error_msg: String },
 }
