@@ -148,43 +148,7 @@ impl DataBlock {
     }
 
     /// Inserts new timestamp and value wrapped by `DataType` to this `DataBlock`.
-    pub fn insert(&mut self, data: &DataType) {
-        match data {
-            DataType::Bool(ts_in, val_in) => {
-                if let Self::Bool { ts, val, .. } = self {
-                    ts.push(*ts_in);
-                    val.push(*val_in);
-                }
-            }
-            DataType::U64(ts_in, val_in) => {
-                if let Self::U64 { ts, val, .. } = self {
-                    ts.push(*ts_in);
-                    val.push(*val_in);
-                }
-            }
-            DataType::I64(ts_in, val_in) => {
-                if let Self::I64 { ts, val, .. } = self {
-                    ts.push(*ts_in);
-                    val.push(*val_in);
-                }
-            }
-            DataType::Str(ts_in, val_in) => {
-                if let Self::Str { ts, val, .. } = self {
-                    ts.push(*ts_in);
-                    val.push(val_in.clone());
-                }
-            }
-            DataType::F64(ts_in, val_in) => {
-                if let Self::F64 { ts, val, .. } = self {
-                    ts.push(*ts_in);
-                    val.push(*val_in);
-                }
-            }
-        }
-    }
-
-    /// Inserts new timestamp and value wrapped by `DataType` to this `DataBlock`.
-    pub fn insert_into(&mut self, data: DataType) {
+    pub fn insert(&mut self, data: DataType) {
         match data {
             DataType::Bool(ts_in, val_in) => {
                 if let Self::Bool { ts, val, .. } = self {
@@ -248,7 +212,7 @@ impl DataBlock {
     /// Inserts new timestamps and values wrapped by `&[DataType]` to this `DataBlock`.
     pub fn batch_insert(&mut self, cells: &[DataType]) {
         for iter in cells.iter() {
-            self.insert(iter);
+            self.insert(iter.clone());
         }
     }
 
@@ -431,7 +395,7 @@ impl DataBlock {
                         }
                     }
                     if let Some(it) = data {
-                        blk.insert_into(it);
+                        blk.insert(it);
                         if max_block_size != 0 && blk.len() >= max_block_size as usize {
                             res.push(blk);
                             blk = Self::new(capacity, field_type);

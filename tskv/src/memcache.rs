@@ -471,13 +471,13 @@ impl MemEntry {
         let mut data = DataBlock::new(0, self.field_type);
         if time_range.is_boundless() {
             for datum in self.cells.iter() {
-                data.insert(datum);
+                data.insert(datum.clone());
             }
         } else {
             for datum in self.cells.iter() {
                 if datum.timestamp() >= time_range.min_ts && datum.timestamp() <= time_range.max_ts
                 {
-                    data.insert(datum);
+                    data.insert(datum.clone());
                 }
             }
         }

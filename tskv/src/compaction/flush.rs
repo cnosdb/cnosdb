@@ -253,13 +253,13 @@ impl FlushTask {
                 let mut delta_blk = DataBlock::new(data_block_size, *typ);
                 for (ts, v) in values {
                     if ts > max_level_ts {
-                        tsm_blk.insert(&v.data_value(ts));
+                        tsm_blk.insert(v.data_value(ts));
                         if tsm_blk.len() as usize >= data_block_size {
                             tsm_blocks.push(tsm_blk);
                             tsm_blk = DataBlock::new(data_block_size, *typ);
                         }
                     } else {
-                        delta_blk.insert(&v.data_value(ts));
+                        delta_blk.insert(v.data_value(ts));
                         if delta_blk.len() as usize >= data_block_size {
                             delta_blocks.push(delta_blk);
                             delta_blk = DataBlock::new(data_block_size, *typ);
