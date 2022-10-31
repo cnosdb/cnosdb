@@ -34,7 +34,7 @@ use crate::{
     error::{self, Error, Result},
     index::IndexResult,
     kv_option::Options,
-    memcache::{DataType, FieldVal, MemCache, MemEntry, SeriesData},
+    memcache::{DataType, FieldVal, MemCache, SeriesData},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
     tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
