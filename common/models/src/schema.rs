@@ -103,6 +103,19 @@ impl TableSchema {
         &self.columns
     }
 
+    pub fn fields(&self) -> Vec<TableColumn> {
+        let mut fields = Vec::with_capacity(self.columns.len());
+        for i in self.columns.iter() {
+            if i.column_type == ColumnType::Time || i.column_type == ColumnType::Tag {
+                continue;
+            }
+
+            fields.push(i.clone());
+        }
+
+        fields
+    }
+
     /// Number of columns of ColumnType is Field
     pub fn field_num(&self) -> usize {
         let mut ans = 0;

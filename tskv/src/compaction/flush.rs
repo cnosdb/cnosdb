@@ -155,7 +155,7 @@ impl FlushTask {
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
-                        for (val, col) in row.fields.iter().zip(sch_cols.columns().iter()) {
+                        for (val, col) in row.fields.iter().zip(sch_cols.fields().iter()) {
                             if let Some(v) = val {
                                 schema_columns_value_type_map
                                     .entry(col.id)
