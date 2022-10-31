@@ -7,8 +7,8 @@ use datafusion::{
         decorrelate_where_exists::DecorrelateWhereExists, decorrelate_where_in::DecorrelateWhereIn,
         eliminate_filter::EliminateFilter, eliminate_limit::EliminateLimit,
         filter_null_join_keys::FilterNullJoinKeys, filter_push_down::FilterPushDown,
-        limit_push_down::LimitPushDown, projection_push_down::ProjectionPushDown,
-        reduce_cross_join::ReduceCrossJoin, reduce_outer_join::ReduceOuterJoin,
+        limit_push_down::LimitPushDown, reduce_cross_join::ReduceCrossJoin,
+        reduce_outer_join::ReduceOuterJoin,
         rewrite_disjunctive_predicate::RewriteDisjunctivePredicate,
         scalar_subquery_to_join::ScalarSubqueryToJoin, simplify_expressions::SimplifyExpressions,
         single_distinct_to_groupby::SingleDistinctToGroupBy,
@@ -24,6 +24,7 @@ use spi::query::LogicalOptimizeSnafu;
 
 use crate::extension::logical::optimizer_rule::{
     implicit_type_conversion::ImplicitTypeConversion,
+    projection_push_down::ProjectionPushDownAdapter,
     transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule,
     transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule,
 };
@@ -64,7 +65,7 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(ReduceCrossJoin::new()),
             Arc::new(CommonSubexprEliminate::new()),
             Arc::new(EliminateLimit::new()),
-            Arc::new(ProjectionPushDown::new()),
+            Arc::new(ProjectionPushDownAdapter::new()),
             Arc::new(RewriteDisjunctivePredicate::new()),
             Arc::new(FilterNullJoinKeys::default()),
             Arc::new(ReduceOuterJoin::new()),
