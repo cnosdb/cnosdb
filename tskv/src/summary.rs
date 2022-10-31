@@ -584,7 +584,7 @@ mod test {
     use snafu::ResultExt;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedSender;
-    use tracing::debug;
+    use trace::debug;
 
     use config::get_config;
     use models::schema::DatabaseSchema;
