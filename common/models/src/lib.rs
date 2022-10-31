@@ -7,10 +7,11 @@ mod node_info;
 mod points;
 pub mod schema;
 mod series_info;
-mod tag;
+pub mod tag;
 pub mod utils;
 #[macro_use]
 pub mod error_code;
+pub mod predicate;
 
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -26,7 +27,7 @@ pub type CatalogId = u64;
 pub type SchemaId = u64;
 pub type SeriesId = u64;
 pub type TableId = u64;
-pub type SchemaFieldId = u32;
+pub type ColumnId = u32;
 
 pub type TagKey = Vec<u8>;
 pub type TagValue = Vec<u8>;

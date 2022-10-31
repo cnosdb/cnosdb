@@ -77,7 +77,7 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists("dev/db/data/db/tsm/0"))
+        assert!(file_manager::try_exists("data/db/data/db/tsm/0"))
     }
 
     #[test]
@@ -128,8 +128,8 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists("dev/db/data/db/tsm/0"));
-        assert!(file_manager::try_exists("dev/db/data/db/delta/0"));
+        assert!(file_manager::try_exists("data/db/data/db/tsm/0"));
+        assert!(file_manager::try_exists("data/db/data/db/delta/0"));
     }
 
     #[tokio::test]

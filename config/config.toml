@@ -3,7 +3,7 @@
 # Directory for index: $path/index/$database/
 # Directory for tsm: $path/data/$database/tsm/
 # Directory for delta: $path/data/$database/delta/
-path = 'dev/db'
+path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
@@ -16,7 +16,7 @@ strict_write = false
 
 [wal]
 enabled = true
-path = 'dev/wal'
+path = 'data/wal'
 sync = false
 
 [cache]
@@ -25,7 +25,7 @@ max_immutable_number = 4
 
 [log]
 level = 'debug'
-path = 'dev/log'
+path = 'data/log'
 
 [security]
 # [security.tls_config]

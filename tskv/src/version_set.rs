@@ -3,6 +3,7 @@ use std::{
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
+use models::schema::DatabaseSchema;
 use parking_lot::RwLock;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
@@ -18,19 +19,20 @@ use crate::{
     memcache::MemCache,
     summary::{SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, TseriesFamily, Version},
-    Options,
+    Options, TseriesFamilyId,
 };
 
 #[derive(Debug)]
 pub struct VersionSet {
     opt: Arc<Options>,
+    // DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
 }
 
 impl VersionSet {
     pub fn new(
         opt: Arc<Options>,
-        ver_set: HashMap<u32, Arc<Version>>,
+        ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Self {
         let mut dbs = HashMap::new();
@@ -39,9 +41,12 @@ impl VersionSet {
             let name = ver.database().to_string();
             let seq = ver.last_seq;
 
-            let db: &mut Arc<RwLock<Database>> = dbs
-                .entry(name.clone())
-                .or_insert_with(|| Arc::new(RwLock::new(Database::new(&name, opt.clone()))));
+            let db: &mut Arc<RwLock<Database>> = dbs.entry(name.clone()).or_insert_with(|| {
+                Arc::new(RwLock::new(Database::new(
+                    DatabaseSchema::new(&name),
+                    opt.clone(),
+                )))
+            });
 
             db.write().open_tsfamily(ver, flush_task_sender.clone());
         }
@@ -53,15 +58,26 @@ impl VersionSet {
         self.opt.clone()
     }
 
-    pub fn create_db(&mut self, name: &String) -> Arc<RwLock<Database>> {
+    pub fn create_db(&mut self, schema: DatabaseSchema) -> Arc<RwLock<Database>> {
         self.dbs
-            .entry(name.clone())
-            .or_insert_with(|| Arc::new(RwLock::new(Database::new(name, self.opt.clone()))))
+            .entry(schema.name.clone())
+            .or_insert_with(|| Arc::new(RwLock::new(Database::new(schema, self.opt.clone()))))
             .clone()
     }
 
     pub fn delete_db(&mut self, name: &String) -> Option<Arc<RwLock<Database>>> {
         self.dbs.remove(name)
+    }
+
+    pub fn db_exists(&self, name: &str) -> bool {
+        match self.dbs.get(name) {
+            None => false,
+            Some(_) => true,
+        }
+    }
+
+    pub fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
+        self.dbs.get(name).map(|db| db.read().get_schema())
     }
 
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {

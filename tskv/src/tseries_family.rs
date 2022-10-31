@@ -1,3 +1,4 @@
+use std::ops::Bound;
 use std::time::Duration;
 use std::{
     borrow::{Borrow, BorrowMut},
@@ -46,9 +47,32 @@ pub struct TimeRange {
     pub max_ts: i64,
 }
 
+impl From<(Bound<i64>, Bound<i64>)> for TimeRange {
+    /// TODO 目前TimeRange只支持闭区间
+    fn from(range: (Bound<i64>, Bound<i64>)) -> Self {
+        let min_ts = match range.0 {
+            Bound::Excluded(v) | Bound::Included(v) => v,
+            _ => Timestamp::MIN,
+        };
+        let max_ts = match range.1 {
+            Bound::Excluded(v) | Bound::Included(v) => v,
+            _ => Timestamp::MAX,
+        };
+
+        TimeRange { min_ts, max_ts }
+    }
+}
+
 impl TimeRange {
     pub fn new(min_ts: i64, max_ts: i64) -> Self {
         Self { min_ts, max_ts }
+    }
+
+    pub fn all() -> Self {
+        Self {
+            min_ts: Timestamp::MIN,
+            max_ts: Timestamp::MAX,
+        }
     }
 
     #[inline(always)]
@@ -782,6 +806,7 @@ mod test {
         TseriesFamilyId,
     };
     use config::get_config;
+    use models::schema::DatabaseSchema;
     use models::{Timestamp, ValueType};
     use trace::info;
 
@@ -1029,7 +1054,6 @@ mod test {
         );
 
         let row_group = RowGroup {
-            schema_id: 0,
             schema: default_with_field_id(vec![0, 1, 2]),
             range: TimeRange {
                 min_ts: 1,
@@ -1098,14 +1122,13 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let dir = PathBuf::from("dev/db".to_string());
+        let dir = PathBuf::from("data/db".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
         let mem = MemCache::new(0, 1000, 0);
         let row_group = RowGroup {
-            schema_id: 0,
             schema: default_with_field_id(vec![0, 1, 2]),
             range: TimeRange {
                 min_ts: 1,
@@ -1141,7 +1164,9 @@ mod test {
             HashMap::new(),
             flush_task_sender.clone(),
         )));
-        version_set.write().create_db(&database);
+        version_set
+            .write()
+            .create_db(DatabaseSchema::new(&database));
         let db = version_set.write().get_db(&database).unwrap();
 
         let ts_family_id = db

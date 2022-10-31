@@ -1,15 +1,11 @@
-use std::{
-    any::Any,
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use datafusion::{
     catalog::{catalog::CatalogProvider, schema::SchemaProvider},
     datasource::TableProvider,
     error::{DataFusionError, Result},
 };
-use models::schema::{TableFiled, TableSchema, TIME_FIELD};
+use models::schema::{DatabaseSchema, TableSchema};
 use parking_lot::RwLock;
 use spi::catalog::TableRef;
 
@@ -20,6 +16,7 @@ pub type UserCatalogRef = Arc<UserCatalog>;
 
 pub struct UserCatalog {
     engine: EngineRef,
+    /// DBName -> DB
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
 }
 
@@ -31,10 +28,23 @@ impl UserCatalog {
         }
     }
     pub fn deregister_schema(&self, db_name: &str) -> Result<()> {
+        let mut schema = self.schemas.write();
+        match schema.get(db_name) {
+            None => {
+                return Err(DataFusionError::Execution(
+                    "database not exists".to_string(),
+                ))
+            }
+            Some(db) => {
+                let tables = db.table_names();
+                for i in tables {
+                    db.deregister_table(&i)?;
+                }
+            }
+        }
         self.engine
             .drop_database(db_name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?;
-        let mut schema = self.schemas.write();
         schema.remove(db_name);
         Ok(())
     }
@@ -50,20 +60,30 @@ impl CatalogProvider for UserCatalog {
         schemas.keys().cloned().collect()
     }
 
+    // get db_schema
     fn schema(&self, name: &str) -> Option<Arc<dyn SchemaProvider>> {
-        {
-            let schemas = self.schemas.read();
-            if let Some(v) = schemas.get(name) {
-                return Some(v.clone());
+        let schemas = self.schemas.read();
+        return if let Some(v) = schemas.get(name) {
+            Some(v.clone())
+        } else {
+            drop(schemas);
+            match self.engine.get_db_schema(name) {
+                None => return None,
+                Some(schema) => {
+                    let mut schemas = self.schemas.write();
+                    schemas.insert(
+                        name.to_string(),
+                        Arc::new(UserSchema::new(
+                            name.to_string(),
+                            self.engine.clone(),
+                            schema,
+                        )),
+                    );
+                    let v = schemas.get(name).unwrap();
+                    return Some(v.clone());
+                }
             }
-        }
-
-        let mut schemas = self.schemas.write();
-        let v = schemas
-            .entry(name.to_owned())
-            .or_insert_with(|| Arc::new(UserSchema::new(name.to_owned(), self.engine.clone())));
-
-        Some(v.clone())
+        };
     }
 
     fn register_schema(
@@ -72,6 +92,19 @@ impl CatalogProvider for UserCatalog {
         schema: Arc<dyn SchemaProvider>,
     ) -> Result<Option<Arc<dyn SchemaProvider>>> {
         let mut schemas = self.schemas.write();
+        let schema_opt = schema.as_any().downcast_ref::<UserSchema>();
+        let user_schema = match schema_opt {
+            None => {
+                return Err(DataFusionError::Execution(
+                    "failed to register schema".to_string(),
+                ))
+            }
+            Some(v) => v,
+        };
+        self.engine
+            .create_database(&user_schema.database_schema)
+            .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;
+
         Ok(schemas.insert(name.into(), schema))
     }
 }
@@ -79,15 +112,18 @@ impl CatalogProvider for UserCatalog {
 pub struct UserSchema {
     db_name: String,
     engine: EngineRef,
+    // table_name -> TableRef
     tables: RwLock<HashMap<String, TableRef>>,
+    database_schema: DatabaseSchema,
 }
 
 impl UserSchema {
-    pub fn new(db: String, engine: EngineRef) -> Self {
+    pub fn new(db: String, engine: EngineRef, database_schema: DatabaseSchema) -> Self {
         Self {
             db_name: db,
             tables: RwLock::new(HashMap::new()),
             engine,
+            database_schema,
         }
     }
 }
@@ -103,32 +139,24 @@ impl SchemaProvider for UserSchema {
     }
 
     fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
-        {
-            let tables = self.tables.read();
-            if let Some(v) = tables.get(name) {
-                return Some(v.clone());
-            }
-        }
+        // table schema may be changed after write, so get from storage engine directly
+        // {
+        //     let tables = self.tables.read();
+        //     if let Some(v) = tables.get(name) {
+        //         return Some(v.clone());
+        //     }
+        // }
 
         let mut tables = self.tables.write();
-        if let Ok(Some(v)) = self.engine.get_table_schema(&self.db_name, name) {
-            let mut fields = BTreeMap::new();
-            let codec = match v.fields.get(TIME_FIELD) {
-                None => 0,
-                Some(v) => v.codec,
-            };
-            // system field (time)
-            let time_field = TableFiled::time_field(codec);
-            fields.insert(time_field.name.clone(), time_field);
-
-            for item in v.fields {
-                let field = item.1;
-                fields.insert(field.name.clone(), field);
-            }
-            let schema = TableSchema::new(self.db_name.clone(), name.to_owned(), fields);
+        if let Ok(Some(schema)) = self.engine.get_table_schema(&self.db_name, name) {
             let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
             tables.insert(name.to_owned(), table.clone());
             return Some(table);
+        }
+
+        // get external table
+        if let Some(v) = tables.get(name) {
+            return Some(v.clone());
         }
 
         None
@@ -150,7 +178,9 @@ impl SchemaProvider for UserSchema {
         let cluster_table = match table_schema {
             None => table,
             Some(schema) => {
-                self.engine.create_table(schema);
+                self.engine
+                    .create_table(schema)
+                    .map_err(|e| DataFusionError::External(Box::new(e)))?;
                 let cluster_table = ClusterTable::new(self.engine.clone(), schema.clone());
                 Arc::new(cluster_table)
             }

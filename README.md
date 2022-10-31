@@ -11,37 +11,38 @@ usability.
 CnosDB Isipho is an original new version of CnosDB which use Rust, [Apache Arrow](https://arrow.apache.org/)
 and [DataFusion](https://github.com/apache/arrow-datafusion) to build.
 
-## Design Objectives of CnosDB Isipho
+## Design Objectives of CnosDB2.0
 
 To design and develop a high performance, high compression ratio, highly available, distributed cloud native time series
 database, which meets the following objectives.
 
-### Storage
+> Time Series Database
 
-- Separate storage and computation; theoretically uncapped support time series expansion; support horizontal/vertical
-  scaling.
-- Focus performance and cost balance; high performance io, Run-to-Completion scheduling model, support for hierarchical
-  storage using object storage.
-- Lossy compression with reduced precision at the user's option.
+1. Extensibility, theoretically support time series without upper limit, completely solve the problem of time series
+   inflation, support horizontal/vertical expansion.
+2. Separate storage and computation. Compute nodes and storage nodes can expand and shrink independently.
+3. High-performance storage and low cost, high-performance I/O stacks, cloud disk and object storage for storage tiering
+4. Query engine supports vectorized queries.
+5. Supports multiple timing protocols to write and query, and provides external components to import data.
 
-### Query
+> Cloud Native
 
-- Implemented query engine by using Apache Arrow and Datafusion.
-- Support for vectorized execution of the query engine to execute complex query statements.
-- Support for standard SQL, Flux, rich aggregate queries and arithmetic.
+1. Supports cloud native, making full use of the convenience brought by cloud infrastructure and integrating into cloud
+   native ecology.
+2. High availability, second-level fault recovery, multi-cloud, and multi-zone disaster recovery and preparedness.
+3. Native support multi-tenant, pay-as-you-go.
+4. CDC, logs can be subscribed to and distributed to other nodes.
+5. More configurable items are provided to meet the complex requirements of public cloud users in multiple scenarios.
+6. Cloud edge - end collaboration provides the edge - end integration capability with the public cloud
+7. Converged OLAP/CloudAI data Ecosystem on the cloud.
 
-### Ecology
+## CnosDB Architecture
 
-- Design for multi-tenant-oriented, providing more configuration parameters, able to provide more flexible configuration
-  of resources.
-- CDC, WAL can provide subscription and distribution to other nodes, more flexible deploy and support.
-- Support Ecological compatibility with the K8s ecosystem, reducing shared memory.
-- Integration with other data ecosystems to support import/export of parquet files.
-- Be compatible with major international and domestic public cloud ecosystems.
+![整体架构](./docs/source/_static/img/arch.jpg)
 
 ## Roadmap
 
-- Click to view [Roadmap](https://github.com/cnosdb/cnosdb/issues/483)
+- Click to view [Roadmap](./docs/roadmap/ROADMAP.md)
 
 ## Join the community
 

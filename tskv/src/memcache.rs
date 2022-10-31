@@ -2,7 +2,7 @@ use flatbuffers::{ForwardsUOffset, Push, Vector};
 use futures::future::ok;
 
 use models::{
-    utils, FieldId, RwLockRef, SchemaFieldId, SchemaId, SeriesId, TableId, Timestamp, ValueType,
+    utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, TableId, Timestamp, ValueType,
 };
 use protos::models::{Field, FieldType, Point};
 
@@ -20,8 +20,8 @@ use minivec::{mini_vec, MiniVec};
 use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
-use crate::{byte_utils, error::Result, tseries_family::TimeRange};
-use models::schema::{TableFiled, TableSchema};
+use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
+use models::schema::{TableColumn, TableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
@@ -115,7 +115,7 @@ impl RowData {
     pub fn point_to_row_data(p: fb_models::Point, schema: &TableSchema) -> RowData {
         let fields = match p.fields() {
             None => {
-                let mut fields = Vec::with_capacity(schema.field_fields_num());
+                let mut fields = Vec::with_capacity(schema.field_num());
                 for i in 0..fields.capacity() {
                     fields.push(None);
                 }
@@ -130,7 +130,7 @@ impl RowData {
                 for (i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
                     let val = MiniVec::from(f.value().unwrap());
-                    match schema.fields.get(
+                    match schema.column(
                         String::from_utf8(f.name().unwrap().to_vec())
                             .unwrap()
                             .as_str(),
@@ -191,7 +191,6 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema_id: SchemaId,
     pub schema: TableSchema,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
@@ -210,7 +209,7 @@ impl SeriesData {
         self.range.merge(&group.range);
 
         for item in self.groups.iter_mut() {
-            if item.schema_id == group.schema_id {
+            if item.schema.schema_id == group.schema.schema_id {
                 item.range.merge(&group.range);
                 item.rows.append(&mut group.rows);
                 item.schema = group.schema;
@@ -232,7 +231,7 @@ impl SeriesData {
         }
     }
 
-    pub fn read_entry(&self, field_id: SchemaFieldId) -> Option<Arc<RwLock<MemEntry>>> {
+    pub fn read_entry(&self, field_id: ColumnId) -> Option<Arc<RwLock<MemEntry>>> {
         let mut entry = MemEntry {
             ts_min: self.range.min_ts,
             ts_max: self.range.max_ts,
@@ -266,7 +265,7 @@ impl SeriesData {
     pub fn flat_groups(&self) -> Vec<(SchemaId, &TableSchema, &Vec<RowData>)> {
         self.groups
             .iter()
-            .map(|g| (g.schema_id, &g.schema, &g.rows))
+            .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
             .collect()
     }
 }
@@ -298,11 +297,12 @@ pub struct MemCache {
     cache_size: AtomicU64,
 
     part_count: usize,
+    // This u64 comes from the last 40 bits of FieldId. split_id(field_id)
     partions: Vec<RwLock<HashMap<u64, RwLockRef<SeriesData>>>>,
 }
 
 impl MemCache {
-    pub fn new(tf_id: u32, max_size: u64, seq: u64) -> Self {
+    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64) -> Self {
         let parts = 16;
         let mut partions = Vec::with_capacity(parts);
         for _i in 0..parts {
@@ -389,7 +389,7 @@ impl MemCache {
         self.cache_size.load(Ordering::Relaxed) >= self.max_size
     }
 
-    pub fn tf_id(&self) -> u32 {
+    pub fn tf_id(&self) -> TseriesFamilyId {
         self.tf_id
     }
 
@@ -522,7 +522,7 @@ pub(crate) mod test {
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
-        schema: TableSchema,
+        mut schema: TableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {
@@ -530,7 +530,7 @@ pub(crate) mod test {
         let mut size: usize = schema.size();
         for ts in time_range.0..time_range.1 + 1 {
             let mut fields = Vec::new();
-            for _ in 0..schema.fields.len() {
+            for _ in 0..schema.columns().len() {
                 size += size_of::<Option<FieldVal>>();
                 if put_none {
                     fields.push(None);
@@ -543,8 +543,8 @@ pub(crate) mod test {
             rows.push(RowData { ts, fields });
         }
 
+        schema.schema_id = schema_id;
         let row_group = RowGroup {
-            schema_id,
             schema,
             range: TimeRange::from(time_range),
             rows,

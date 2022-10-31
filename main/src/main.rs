@@ -23,8 +23,8 @@ static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
-// cli examples is here
-// https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
+/// cli examples is here
+/// https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs
 #[derive(Debug, clap::Parser)]
 #[clap(name = "cnosdb")]
 #[clap(version = & VERSION[..],
@@ -32,7 +32,7 @@ about = "cnosdb command line tools",
 long_about = r#"cnosdb and command line tools
                         Examples:
                             # Run the cnosdb:
-                            server run
+                            cargo run -- run
                         "#
 )]
 struct Cli {
@@ -55,6 +55,7 @@ struct Cli {
     )]
     grpc_host: String,
 
+    /// http address
     #[clap(
         short,
         long,
@@ -64,14 +65,15 @@ struct Cli {
     )]
     http_host: String,
 
-    #[clap(short, long, global = true)]
+    #[clap(short, long, global = true, default_value_t = 4)]
     /// the number of cores on the system
-    cpu: Option<usize>,
+    cpu: usize,
 
-    #[clap(short, long, global = true)]
-    /// the number of cores on the system
-    memory: Option<usize>,
+    #[clap(short, long, global = true, default_value_t = 16)]
+    /// the number of memory on the system(GB)
+    memory: usize,
 
+    /// configuration path
     #[clap(long, global = true, default_value = "./config/config.toml")]
     config: String,
 
@@ -85,7 +87,7 @@ enum SubCommand {
     #[clap(arg_required_else_help = true)]
     Debug { debug: String },
     /// run cnosdb server
-    #[clap(arg_required_else_help = true)]
+    #[clap(arg_required_else_help = false)]
     Run {},
     // /// run tskv
     // #[clap(arg_required_else_help = true)]
@@ -107,12 +109,12 @@ static A: Jemalloc = Jemalloc;
 /// To run cnosdb-cli:
 ///
 /// ```bash
-/// cargo run -- run --cpu 1 --memory 64 debug
+/// cargo run -- run
 /// ```
 fn main() -> Result<(), std::io::Error> {
     signal::install_crash_handler();
     let cli = Cli::parse();
-    let runtime = init_runtime(cli.cpu)?;
+    let runtime = init_runtime(Some(cli.cpu))?;
     let runtime = Arc::new(runtime);
     println!(
         "params: host:{}, http_host: {}, cpu:{:?}, memory:{:?}, config: {:?}, sub:{:?}",
@@ -189,6 +191,8 @@ fn main() -> Result<(), std::io::Error> {
                 server.start().expect("server start.");
                 signal::block_waiting_ctrl_c();
                 server.stop(true).await;
+                kv_inst.close().await;
+                println!("CnosDB is stopped.");
             }
         }
     });
@@ -200,23 +204,15 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     let kind = std::io::ErrorKind::Other;
     match cores {
         None => Runtime::new(),
-        Some(cores) => {
-            println!(
-                "Setting core number to '{}' per command line request",
-                cores
-            );
-
-            match cores {
-                0 => {
-                    let msg = format!("Invalid core number: '{}' must be greater than zero", cores);
-                    Err(std::io::Error::new(kind, msg))
-                }
-                1 => Builder::new_current_thread().enable_all().build(),
-                _ => Builder::new_multi_thread()
-                    .enable_all()
-                    .worker_threads(cores)
-                    .build(),
+        Some(cores) => match cores {
+            0 => {
+                let msg = format!("Invalid core number: '{}' must be greater than zero", cores);
+                Err(std::io::Error::new(kind, msg))
             }
-        }
+            _ => Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(cores)
+                .build(),
+        },
     }
 }

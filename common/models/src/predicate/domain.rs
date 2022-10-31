@@ -2,22 +2,18 @@ use std::{
     cmp::{self, Ordering},
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
+    ops::RangeBounds,
     sync::Arc,
 };
 
+use crate::schema::TableSchema;
+use crate::{Error, Result};
 use datafusion::{
-    arrow::datatypes::DataType,
-    error::DataFusionError,
-    logical_expr::{utils::expr_to_columns, Expr, Operator},
-    logical_plan::combine_filters,
+    arrow::datatypes::DataType, logical_expr::Expr, logical_plan::combine_filters, prelude::Column,
     scalar::ScalarValue,
 };
-use models::schema::{TableFiled, TableSchema};
-use models::{Error, Result};
 
-use trace::info;
-
-use crate::helper::RowExpressionToDomainsVisitor;
+use super::transformation::RowExpressionToDomainsVisitor;
 
 pub type PredicateRef = Arc<Predicate>;
 
@@ -55,6 +51,26 @@ pub struct Marker {
     data_type: DataType,
     value: Option<ScalarValue>,
     bound: Bound,
+}
+
+impl<'a> From<&'a Marker> for std::ops::Bound<&'a ScalarValue> {
+    fn from(marker: &'a Marker) -> Self {
+        if marker.is_lower_unbound() || marker.is_upper_unbound() {
+            return std::ops::Bound::Unbounded;
+        }
+
+        match marker.bound {
+            Bound::Below => unsafe {
+                std::ops::Bound::Excluded(marker.value.as_ref().unwrap_unchecked())
+            },
+            Bound::Exactly => unsafe {
+                std::ops::Bound::Included(marker.value.as_ref().unwrap_unchecked())
+            },
+            Bound::Above => unsafe {
+                std::ops::Bound::Excluded(marker.value.as_ref().unwrap_unchecked())
+            },
+        }
+    }
 }
 
 impl Marker {
@@ -183,6 +199,16 @@ impl Ord for Marker {
 pub struct Range {
     low: Marker,
     high: Marker,
+}
+
+impl RangeBounds<ScalarValue> for Range {
+    fn start_bound(&self) -> std::ops::Bound<&ScalarValue> {
+        self.low_ref().into()
+    }
+
+    fn end_bound(&self) -> std::ops::Bound<&ScalarValue> {
+        self.high_ref().into()
+    }
 }
 
 impl Range {
@@ -374,6 +400,20 @@ pub struct ValueEntry {
     value: ScalarValue,
 }
 
+impl ValueEntry {
+    pub fn value(&self) -> &ScalarValue {
+        &self.value
+    }
+}
+
+/// 获取utf8类型的值，如果不是utf8类型或值为null，则返回None
+pub fn utf8_from(val: &ScalarValue) -> Option<&str> {
+    match &val {
+        ScalarValue::Utf8(v) => v.as_deref(),
+        _ => None,
+    }
+}
+
 /// A set containing zero or more Ranges of the same type over a continuous space of possible values.
 ///
 /// Ranges are coalesced into the most compact representation of non-overlapping Ranges.
@@ -385,6 +425,12 @@ pub struct RangeValueSet {
     low_indexed_ranges: BTreeMap<Marker, Range>,
 }
 
+impl RangeValueSet {
+    pub fn low_indexed_ranges(&self) -> impl IntoIterator<Item = (&Marker, &Range)> {
+        &self.low_indexed_ranges
+    }
+}
+
 /// A set containing values that are uniquely identifiable.
 ///
 /// Assumes an infinite number of possible values.
@@ -394,6 +440,16 @@ pub struct EqutableValueSet {
     data_type: DataType,
     white_list: bool,
     entries: HashSet<ValueEntry>,
+}
+
+impl EqutableValueSet {
+    pub fn is_white_list(&self) -> bool {
+        self.white_list
+    }
+
+    pub fn entries(&self) -> impl IntoIterator<Item = &ValueEntry> {
+        &self.entries
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -712,9 +768,7 @@ where
 
 impl<T: Eq + Hash + Clone> Default for ColumnDomains<T> {
     fn default() -> Self {
-        ColumnDomains {
-            column_to_domain: None,
-        }
+        ColumnDomains::all()
     }
 }
 
@@ -849,36 +903,38 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
                 .or_insert_with(|| domain.clone());
         }
     }
+
+    /// Returns the contained column_to_domain value,
+    /// without checking that the value is not None
+    ///
+    /// # Safety
+    ///
+    /// Calling this method on self.is_none() == true is *[undefined behavior]*.
+    pub unsafe fn domains_unsafe(&self) -> &HashMap<T, Domain> {
+        self.column_to_domain.as_ref().unwrap_unchecked()
+    }
+
+    /// Returns the contained column_to_domain value
+    ///
+    /// None means no matching record.
+    /// Empty map means match all records.
+    pub fn domains(&self) -> Option<&HashMap<T, Domain>> {
+        self.column_to_domain.as_ref()
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct Predicate {
-    filters: Vec<Expr>,
-    pushed_down_domains: Option<ColumnDomains<TableFiled>>,
+    pushed_down_domains: ColumnDomains<Column>,
     limit: Option<usize>,
-    timeframe: TimeRange,
 }
 
 impl Predicate {
-    pub fn new(
-        filters: Vec<Expr>,
-        pushed_down_domains: Option<ColumnDomains<TableFiled>>,
-        limit: Option<usize>,
-        timeframe: TimeRange,
-    ) -> Self {
-        Self {
-            filters,
-            pushed_down_domains,
-            limit,
-            timeframe,
-        }
-    }
-
     pub fn limit(&self) -> Option<usize> {
         self.limit
     }
 
-    pub fn domains(&self) -> &Option<ColumnDomains<TableFiled>> {
+    pub fn filter(&self) -> &ColumnDomains<Column> {
         &self.pushed_down_domains
     }
 
@@ -886,137 +942,25 @@ impl Predicate {
         self.limit = limit;
         self
     }
-    pub fn combine_expr(&self) -> Option<Expr> {
-        let mut res: Option<Expr> = None;
-        for i in &self.filters {
-            if let Some(e) = res {
-                res = Some(e.and(i.clone()))
-            } else {
-                res = Some(i.clone())
-            }
-        }
-        res
-    }
-
-    pub fn split_expr(predicate: &Expr, predicates: &mut Vec<Expr>) {
-        match predicate {
-            Expr::BinaryExpr {
-                right,
-                op: Operator::And,
-                left,
-            } => {
-                Self::split_expr(left, predicates);
-                Self::split_expr(right, predicates);
-            }
-            other => predicates.push(other.clone()),
-        }
-    }
-    pub fn primitive_binary_expr(expr: &Expr) -> bool {
-        match expr {
-            Expr::BinaryExpr { left, op, right } => {
-                matches!(
-                    (&**left, &**right),
-                    (Expr::Column(_), Expr::Literal(_)) | (Expr::Literal(_), Expr::Column(_))
-                ) && matches!(
-                    op,
-                    Operator::Eq
-                        | Operator::NotEq
-                        | Operator::Lt
-                        | Operator::LtEq
-                        | Operator::Gt
-                        | Operator::GtEq
-                )
-            }
-            _ => false,
-        }
-    }
-    pub fn pushdown_exprs(mut self, filters: &[Expr]) -> Predicate {
-        let mut exprs = vec![];
-        filters
-            .iter()
-            .for_each(|expr| Self::split_expr(expr, &mut exprs));
-
-        let mut pushdown: Vec<Expr> = vec![];
-        let exprs_result = exprs
-            .into_iter()
-            .try_for_each::<_, Result<_, DataFusionError>>(|expr| {
-                let mut columns = HashSet::new();
-                expr_to_columns(&expr, &mut columns)?;
-
-                if columns.len() == 1 && Self::primitive_binary_expr(&expr) {
-                    pushdown.push(expr);
-                }
-                Ok(())
-            });
-
-        match exprs_result {
-            Ok(()) => {
-                self.filters.append(&mut pushdown);
-            }
-            Err(e) => {
-                info!(
-                    "Error, {}, building push-down predicates for filters: {:#?}. No
-                predicates are pushed down",
-                    e, filters
-                );
-            }
-        }
-        self
-    }
 
     /// resolve and extract supported filter
     /// convert filter to ColumnDomains and set self
-    pub fn extract_pushed_down_domains(
-        mut self,
-        filters: &[Expr],
-        table_schema: &TableSchema,
-    ) -> Predicate {
+    pub fn push_down_filter(mut self, filters: &[Expr], _table_schema: &TableSchema) -> Predicate {
         if let Some(ref expr) = combine_filters(filters) {
-            let domains_result = expr_to_domains(expr, table_schema);
-            match domains_result {
-                Ok(domains) => {
-                    self.pushed_down_domains = Some(domains);
-                }
-                Err(e) => {
-                    info!(
-                        "Error, {}, building push-down predicates for filters: {:#?}. No
-                    predicates are pushed down",
-                        e, filters
-                    );
-                }
+            if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
+                self.pushed_down_domains = domains;
             }
         }
         self
     }
-
-    /// resolve the time range based on the input expression
-    pub fn with_time_frame(mut self, max_ts: i64, min_ts: i64) -> Self {
-        self.timeframe = TimeRange::new(max_ts, min_ts);
-        self
-    }
-
-    pub fn get_time_range(&self) -> (i64, i64) {
-        (self.timeframe.min_ts, self.timeframe.max_ts)
-    }
-}
-
-pub fn expr_to_domains(
-    expr: &Expr,
-    table_schema: &TableSchema,
-) -> Result<ColumnDomains<TableFiled>, DataFusionError> {
-    let fields = &table_schema.fields;
-    let column_domains = RowExpressionToDomainsVisitor::expr_to_column_domains(expr)?;
-    let resutl = column_domains.translate_column(|col| fields.get(&col.name).cloned());
-
-    Ok(resutl)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_of_ranges() {
+    #[test]
+    fn test_of_ranges() {
         let f1 = Range::lt(&DataType::Float64, &ScalarValue::Float64(Some(-1000000.1)));
         let f2 = Range::gt(&DataType::Float64, &ScalarValue::Float64(Some(2.2)));
         let f3 = Range::eq(
@@ -1038,8 +982,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn test_of_values() {
+    #[test]
+    fn test_of_values() {
         let val = ScalarValue::Int32(Some(10_i32));
 
         let elementss = &[&val, &val];

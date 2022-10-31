@@ -66,6 +66,9 @@ impl ResultFormat {
     }
 
     pub fn format_batches(&self, batches: &[RecordBatch]) -> ArrowResult<Vec<u8>> {
+        if batches.is_empty() {
+            return Ok(Vec::new());
+        }
         match self {
             Self::Csv => batches_with_sep(batches, b','),
             Self::Tsv => batches_with_sep(batches, b'\t'),

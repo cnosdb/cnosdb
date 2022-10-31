@@ -710,7 +710,10 @@ pub mod tsm_reader_tests {
         (tsm_file, tombstone_file)
     }
 
-    pub(crate) fn read_and_check(reader: &TsmReader, expected_data: HashMap<u64, Vec<DataBlock>>) {
+    pub(crate) fn read_and_check(
+        reader: &TsmReader,
+        expected_data: HashMap<FieldId, Vec<DataBlock>>,
+    ) {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
@@ -760,7 +763,7 @@ pub mod tsm_reader_tests {
         reader: &TsmReader,
         field_id: FieldId,
         time_range: (Timestamp, Timestamp),
-        expected_data: HashMap<u64, Vec<DataBlock>>,
+        expected_data: HashMap<FieldId, Vec<DataBlock>>,
     ) {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator_opt(2) {

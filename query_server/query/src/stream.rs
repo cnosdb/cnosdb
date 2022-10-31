@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, task::Poll};
+use std::task::Poll;
 
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
@@ -8,19 +8,20 @@ use datafusion::{
     },
 };
 use futures::Stream;
-use models::schema::{ColumnType, TableFiled, TableSchema, TIME_FIELD};
+use models::{
+    predicate::domain::PredicateRef,
+    schema::{ColumnType, TableColumn, TableSchema, TIME_FIELD},
+};
 
 use tskv::engine::EngineRef;
 
-use tskv::{Error, TimeRange};
+use tskv::Error;
 
 use crate::iterator::{QueryOption, RowIterator};
-use crate::predicate::PredicateRef;
 
 #[allow(dead_code)]
 pub struct TableScanStream {
     proj_schema: SchemaRef,
-    filter: PredicateRef,
     batch_size: usize,
     store_engine: EngineRef,
 
@@ -38,23 +39,25 @@ impl TableScanStream {
         store_engine: EngineRef,
         metrics: TableScanMetrics,
     ) -> Result<Self, Error> {
-        let mut proj_fileds = BTreeMap::new();
+        let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD {
-                let codec = match table_schema.fields.get(TIME_FIELD) {
+                let codec = match table_schema.column(TIME_FIELD) {
                     None => 0,
                     Some(v) => v.codec,
                 };
-                proj_fileds.insert(
+                proj_fileds.push(TableColumn::new(
+                    0,
                     TIME_FIELD.to_string(),
-                    TableFiled::new(0, TIME_FIELD.to_string(), ColumnType::Time, codec),
-                );
+                    ColumnType::Time,
+                    codec,
+                ));
                 continue;
             }
 
-            if let Some(v) = table_schema.fields.get(field_name) {
-                proj_fileds.insert(field_name.clone(), v.clone());
+            if let Some(v) = table_schema.column(field_name) {
+                proj_fileds.push(v.clone());
             } else {
                 return Err(Error::NotFoundField {
                     reason: field_name.clone(),
@@ -65,14 +68,30 @@ impl TableScanStream {
         let proj_table_schema =
             TableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
-        //let (min_ts, max_ts) = filter.get_time_range();
-        let (min_ts, max_ts) = (i64::MIN, i64::MAX);
+        let filter = filter
+            .filter()
+            .translate_column(|c| proj_table_schema.column(&c.name).cloned());
+
+        // 提取过滤条件
+        let time_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Time => Some(e.name.clone()),
+            _ => None,
+        });
+        let tags_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Tag => Some(e.name.clone()),
+            _ => None,
+        });
+        let fields_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Field(_) => Some(e.name.clone()),
+            _ => None,
+        });
         let option = QueryOption {
-            time_range: TimeRange { min_ts, max_ts },
             table_schema: proj_table_schema,
             datafusion_schema: proj_schema.clone(),
+            time_filter,
+            tags_filter,
+            fields_filter,
         };
-        println!("========={} {}", min_ts, max_ts);
 
         let iterator = match RowIterator::new(
             metrics.tskv_metrics(),
@@ -86,7 +105,6 @@ impl TableScanStream {
 
         Ok(Self {
             proj_schema,
-            filter,
             batch_size,
             store_engine,
             iterator,

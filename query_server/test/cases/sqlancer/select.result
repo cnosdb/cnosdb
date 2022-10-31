@@ -1,3 +1,7 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS sqlancer2; --
+200 OK
+
+
 -- WRITE LINE PROTOCOL --
 m0,t0=t0 f0=false,f1=0.0 0
 m1,t0=t0 f0="f0",f1=false 0
@@ -69,13 +73,13 @@ t2
 -- EXECUTE SQL: SELECT * FROM m1 ORDER BY m1.t0 ASC; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-f0,false,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,f0,false
 
 -- EXECUTE SQL: SELECT * FROM m1 WHERE ((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE UNION ALL SELECT ALL * FROM m1 WHERE NOT (((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE) UNION ALL SELECT * FROM m1 WHERE (((NOT (((m1.f1)>=(m1.f1)))) BETWEEN SYMMETRIC (((m1.f1) BETWEEN SYMMETRIC (m1.f1) AND (m1.f1)) IS UNKNOWN) AND ((CAST(-1148203774 AS BOOLEAN)) IS TRUE)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -105,7 +109,7 @@ f0,t0,t1
 -- EXECUTE SQL: SELECT SUM(- (CAST(((((m1.t0)||(1765622571)))>=(((m1.f0)||(-1441159514)))) AS BIGINT))) FROM m1; --
 -- AFTER_SORT --
 200 OK
-SUM((- CAST(m1.t0 StringConcat Int64(1765622571) GtEq m1.f0 StringConcat Int64(-1441159514) AS Int64)))
+SUM((- m1.t0 || Int64(1765622571) >= m1.f0 || Int64(-1441159514)))
 -1
 
 -- EXECUTE SQL: SELECT MAX(m4.f0) FROM m4; --
@@ -145,7 +149,7 @@ t0
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN))) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) UNION ALL SELECT m0.t0 FROM m0 WHERE (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(- (+ (CAST(m3.t0 AS BIGINT)))) FROM m3 ORDER BY m3.f0 DESC, m3.t0 ASC; --
@@ -234,8 +238,8 @@ t1
 -- EXECUTE SQL: SELECT * FROM m4 ORDER BY m4.t0 DESC; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE (CAST(CAST(CAST(m4.f0 AS BOOLEAN) AS BOOLEAN) AS STRING)) NOTNULL; --
 -- AFTER_SORT --
@@ -265,9 +269,9 @@ t2,0,t1
 
 -- EXECUTE SQL: SELECT ALL m4.t2, m4.f0, m4.t1 FROM m4 WHERE CAST(((m4.t1)||(+ (((m4.f0)/(m4.f0))))) AS BOOLEAN) UNION ALL SELECT ALL m4.t2, m4.f0, m4.t1 FROM m4 WHERE NOT (CAST(((m4.t1)||(+ (((m4.f0)/(m4.f0))))) AS BOOLEAN)) UNION ALL SELECT m4.t2, m4.f0, m4.t1 FROM m4 WHERE (CAST(((m4.t1)||(+ (((m4.f0)/(m4.f0))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
--- ERROR:  --
+200 OK
+t2,f0,t1
+t2,0,t1
 
 -- EXECUTE SQL: SELECT ALL BIT_AND(CAST(NOT (CAST(CAST(-436419271 AS BIGINT) AS BOOLEAN)) AS BIGINT)) FROM m1; --
 -- AFTER_SORT --
@@ -278,15 +282,16 @@ t2,0,t1
 -- EXECUTE SQL: SELECT ALL * FROM m0; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE ((0.2700918132109975) IN (0.9097818468489035, 0.3427383563915254, 0.6717903709667695)) IS NOT UNKNOWN UNION ALL SELECT * FROM m0 WHERE NOT (((0.2700918132109975) IN (0.9097818468489035, 0.3427383563915254, 0.6717903709667695)) IS NOT UNKNOWN) UNION ALL SELECT * FROM m0 WHERE (((0.2700918132109975) IN (0.9097818468489035, 0.3427383563915254, 0.6717903709667695)) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -349,7 +354,7 @@ f1,f0,t0
 -- EXECUTE SQL: SELECT MAX(CAST(CAST(((((-512080491)+(1953842239)))%(CAST(m2.t0 AS BIGINT))) AS BIGINT) AS STRING)) FROM m2; --
 -- AFTER_SORT --
 200 OK
-MAX(CAST(CAST(Int64(-512080491) + Int64(1953842239) % CAST(m2.t0 AS Int64) AS Int64) AS Utf8))
+MAX(Int64(-512080491) + Int64(1953842239) % m2.t0)
 ""
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1; --
@@ -361,7 +366,7 @@ t0,f0
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1 WHERE ((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE NOT (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-1326988525' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -374,7 +379,7 @@ f1
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE CAST(CAST(0.8194569637054474 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '0.8194569637054474' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.8194569637054474' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (-1205285987)) FROM m2; --
@@ -480,14 +485,14 @@ false
 -- EXECUTE SQL: SELECT * FROM m4; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE (0.5753811395614317) NOT IN (0.8417561043814955) UNION ALL SELECT * FROM m4 WHERE NOT ((0.5753811395614317) NOT IN (0.8417561043814955)) UNION ALL SELECT ALL * FROM m4 WHERE ((0.5753811395614317) NOT IN (0.8417561043814955)) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t1 FROM m4; --
 -- AFTER_SORT --
@@ -497,21 +502,19 @@ t0,t1
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t1 FROM m4 WHERE (((TRUE) IN (FALSE, TRUE, FALSE)) IS FALSE) IS FALSE; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(IsFalse(Nested(InList { expr: Nested(Value(Boolean(true))), list: [Value(Boolean(false)), Value(Boolean(true)), Value(Boolean(false))], negated: false })))) in sqltorel"}
--- ERROR:  --
+200 OK
+t0,t1
+
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1 FROM m4 WHERE NOT ((((TRUE) IN (FALSE, TRUE, FALSE)) IS FALSE) IS FALSE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(IsFalse(Nested(InList { expr: Nested(Value(Boolean(true))), list: [Value(Boolean(false)), Value(Boolean(true)), Value(Boolean(false))], negated: false })))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t1 FROM m4 WHERE ((((TRUE) IN (FALSE, TRUE, FALSE)) IS FALSE) IS FALSE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(IsFalse(Nested(InList { expr: Nested(Value(Boolean(true))), list: [Value(Boolean(false)), Value(Boolean(true)), Value(Boolean(false))], negated: false })))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m4.f0 FROM m4; --
 -- AFTER_SORT --
@@ -600,7 +603,7 @@ false,t0
 -- AFTER_SORT --
 200 OK
 MAX(Float64(0.6592404280882139))
-0.6592404280882139
+""
 
 -- EXECUTE SQL: SELECT ALL m2.t0, m2.f0 FROM m2; --
 -- AFTER_SORT --
@@ -659,19 +662,19 @@ t0,0,t1
 -- EXECUTE SQL: SELECT m4.t0, m4.f0, m4.t1 FROM m4 WHERE CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE NOT (CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.t0, m4.f0, m4.t1 FROM m4 WHERE (CAST((((((((((0.9584559080711685) NOT IN (0.733569031597476, 0.7960654456099594))AND((m4.t0) BETWEEN SYMMETRIC (m4.t1) AND (m4.t1))))AND(CAST(962753936 AS BOOLEAN))))AND(NOT ((m4.t2) BETWEEN (m4.t2) AND (m4.t0)))))AND((CAST(FALSE AS BOOLEAN)) IS NOT UNKNOWN)) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1, m4.t2 FROM m4; --
@@ -722,9 +725,9 @@ f1
 
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2 WHERE (NOT (CAST((m2.f1) NOT IN ('', '', 'C') AS BOOLEAN))) IS FALSE UNION ALL SELECT ALL m2.f1 FROM m2 WHERE NOT ((NOT (CAST((m2.f1) NOT IN ('', '', 'C') AS BOOLEAN))) IS FALSE) UNION ALL SELECT m2.f1 FROM m2 WHERE ((NOT (CAST((m2.f1) NOT IN ('', '', 'C') AS BOOLEAN))) IS FALSE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(UnaryOp { op: Not, expr: Nested(Cast { expr: InList { expr: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])), list: [Value(SingleQuotedString(\"\")), Value(SingleQuotedString(\"\")), Value(SingleQuotedString(\"C\"))], negated: true }, data_type: Boolean }) })) in sqltorel"}
--- ERROR:  --
+200 OK
+f1
+f1
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -747,14 +750,14 @@ f0,false
 -- EXECUTE SQL: SELECT * FROM m3; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT ALL * FROM m3 WHERE CAST(((- (((m3.f0)-(m3.f0))))/(- (+ (m3.f0)))) AS BOOLEAN) UNION ALL SELECT * FROM m3 WHERE NOT (CAST(((- (((m3.f0)-(m3.f0))))/(- (+ (m3.f0)))) AS BOOLEAN)) UNION ALL SELECT ALL * FROM m3 WHERE (CAST(((- (((m3.f0)-(m3.f0))))/(- (+ (m3.f0)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
--- ERROR:  --
+200 OK
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.t0, m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -806,9 +809,9 @@ t0,t1,0,t2
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4 WHERE NOT ((CAST(CAST(FALSE AS STRING) AS BOOLEAN)) IS NOT UNKNOWN) UNION ALL SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4 WHERE NOT (NOT ((CAST(CAST(FALSE AS STRING) AS BOOLEAN)) IS NOT UNKNOWN)) UNION ALL SELECT m4.t0, m4.t1, m4.f0, m4.t2 FROM m4 WHERE (NOT ((CAST(CAST(FALSE AS STRING) AS BOOLEAN)) IS NOT UNKNOWN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+t0,t1,f0,t2
+t0,t1,0,t2
 
 -- EXECUTE SQL: SELECT m3.f1, m3.f0, m3.t0, m3.t1 FROM m3; --
 -- AFTER_SORT --
@@ -847,26 +850,24 @@ false,0,t0,t1
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE ((+ (m4.f0)) IN (0.1404597703313497)) IS TRUE; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(InList { expr: Nested(UnaryOp { op: Plus, expr: Nested(CompoundIdentifier([Ident { value: \"m4\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) }), list: [Value(Number(\"0.1404597703313497\", false))], negated: false })) in sqltorel"}
--- ERROR:  --
+200 OK
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE NOT (((+ (m4.f0)) IN (0.1404597703313497)) IS TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(InList { expr: Nested(UnaryOp { op: Plus, expr: Nested(CompoundIdentifier([Ident { value: \"m4\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) }), list: [Value(Number(\"0.1404597703313497\", false))], negated: false })) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE (((+ (m4.f0)) IN (0.1404597703313497)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(InList { expr: Nested(UnaryOp { op: Plus, expr: Nested(CompoundIdentifier([Ident { value: \"m4\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) }), list: [Value(Number(\"0.1404597703313497\", false))], negated: false })) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -911,27 +912,26 @@ false,0.0,t0
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE (((((m0.f0)OR((NOT (m0.f0)) IS NULL)))OR((((m0.f0) IS UNKNOWN)OR((1344908686) NOT IN (1088197086)))))) IS NOT UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+f0,f1,t0
+,0.507623643211476,916053861
+false,0.0,t0
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE NOT ((((((m0.f0)OR((NOT (m0.f0)) IS NULL)))OR((((m0.f0) IS UNKNOWN)OR((1344908686) NOT IN (1088197086)))))) IS NOT UNKNOWN); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE ((((((m0.f0)OR((NOT (m0.f0)) IS NULL)))OR((((m0.f0) IS UNKNOWN)OR((1344908686) NOT IN (1088197086)))))) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT COUNT(CAST(- (CAST(CAST(TRUE AS BIGINT) AS BIGINT)) AS BIGINT)) FROM m0; --
 -- AFTER_SORT --
 200 OK
-COUNT(CAST((- CAST(CAST(Boolean(true) AS Int64) AS Int64)) AS Int64))
-1
+COUNT((- Boolean(true)))
+0
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1, m0.f0 FROM m0; --
 -- AFTER_SORT --
@@ -995,14 +995,14 @@ f0,t0
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t0 FROM m3 WHERE NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN)) UNION ALL SELECT ALL m3.f0, m3.t0 FROM m3 WHERE NOT (NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN))) UNION ALL SELECT m3.f0, m3.t0 FROM m3 WHERE (NOT (CAST(((m3.f0) BETWEEN SYMMETRIC (m3.f0) AND (m3.f0)) IS FALSE AS BOOLEAN))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Between { expr: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])), negated: false, low: Function(Function { name: ObjectName([Ident { value: \"SYMMETRIC\", quote_style: None }]), args: [Unnamed(Expr(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])))], over: None, distinct: false }), high: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) })) in sqltorel"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE m2.f0; --
 -- AFTER_SORT --
@@ -1012,8 +1012,8 @@ false,f1,t0,1970-01-01T00:00:00.000000000
 -- EXECUTE SQL: SELECT * FROM m2 WHERE NOT (m2.f0); --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE (m2.f0) IS NULL; --
 -- AFTER_SORT --
@@ -1069,14 +1069,14 @@ f0
 -- EXECUTE SQL: SELECT ALL m3.f0 FROM m3 WHERE ((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE)) UNION ALL SELECT m3.f0 FROM m3 WHERE NOT (((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE))) UNION ALL SELECT ALL m3.f0 FROM m3 WHERE (((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(IsNull(Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])), op: Or, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])) })), op: Or, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])) })), op: And, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])) })), op: Or, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])) }))))) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0-436419271' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(0.7069601217262456) FROM m0; --
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.7069601217262456))
-0.7069601217262456
+""
 
 -- EXECUTE SQL: SELECT SUM(+ ('-991419863')) FROM m0; --
 -- AFTER_SORT --
@@ -1145,12 +1145,12 @@ false,f1,t0
 -- AFTER_SORT --
 200 OK
 SUM(Int64(-996695851))
--996695851
+""
 
 -- EXECUTE SQL: SELECT MAX(m2.f1) FROM m2 ORDER BY m2.f1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1)'."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1)'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0 FROM m3; --
@@ -1162,7 +1162,7 @@ t1,t0
 -- EXECUTE SQL: SELECT m3.t1, m3.t0 FROM m3 WHERE (((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0') UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'type_coercion' failed due to unexpected error: Error during planning: Can not find compatible types to compare Boolean with [Boolean, Boolean, Utf8]. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -1238,7 +1238,7 @@ f0,f1
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.05995030089566167))
-0.05995030089566167
+""
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.f1, m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -1260,9 +1260,9 @@ f0,false,t0
 
 -- EXECUTE SQL: SELECT m1.f0, m1.f1, m1.t0 FROM m1 WHERE ((((CAST(-174538563 AS STRING))<(((m1.f0)||(m1.t0))))) IS UNKNOWN) IS FALSE UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE NOT (((((CAST(-174538563 AS STRING))<(((m1.f0)||(m1.t0))))) IS UNKNOWN) IS FALSE) UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE (((((CAST(-174538563 AS STRING))<(((m1.f0)||(m1.t0))))) IS UNKNOWN) IS FALSE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+f0,f1,t0
+f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0 FROM m3; --
 -- AFTER_SORT --
@@ -1328,9 +1328,9 @@ f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE CAST(+ (- (((360976499)^(1111746167)))) AS BOOLEAN) UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE NOT (CAST(+ (- (((360976499)^(1111746167)))) AS BOOLEAN)) UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE (CAST(+ (- (((360976499)^(1111746167)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+f0,f1,t0
+f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m4.t1, m4.f0, m4.t0, m4.t2 FROM m4; --
 -- AFTER_SORT --
@@ -1353,7 +1353,7 @@ false,f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE ((((((((m2.f1)||(1052801116)))||(((m2.f1)||(m2.f0)))))||(CAST(CAST(m2.f1 AS STRING) AS BIGINT))))LIKE(CAST((CAST(FALSE AS BOOLEAN)) IS UNKNOWN AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.t1, m3.f1 FROM m3; --
@@ -1371,7 +1371,7 @@ t0,0,t1,false
 -- EXECUTE SQL: SELECT MIN(((CAST(0.5545125075521484 AS STRING))||((((m2.f0)<(m2.f0))) IN (TRUE)))) FROM m2; --
 -- AFTER_SORT --
 200 OK
-MIN(CAST(Float64(0.5545125075521484) AS Utf8) || m2.f0 < m2.f0 IN (Map { iter: Iter([Boolean(true)]) }))
+MIN(Float64(0.5545125075521484) || m2.f0 < m2.f0 IN (Map { iter: Iter([Boolean(true)]) }))
 0.55451250755214840
 
 -- EXECUTE SQL: SELECT ALL BIT_AND(+ (CAST(CAST(+ (m3.f0) AS STRING) AS BIGINT))), CAST(0.13969056553337023 AS BIGINT) FROM m3 GROUP BY 0.2133494693314646; --
@@ -1414,7 +1414,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE (((CAST(CAST(m2.f1 AS STRING) AS BOOLEAN)) IS FALSE)AND((CAST(m2.f0 AS BOOLEAN)) IS UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR(TRUE) FROM m4; --
@@ -1431,21 +1431,19 @@ f0,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0 FROM m1 WHERE NOT (NOT ((CAST(-1231009110 AS BOOLEAN)) IS FALSE)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Cast { expr: UnaryOp { op: Minus, expr: Value(Number(\"1231009110\", false)) }, data_type: Boolean })) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE NOT (NOT (NOT ((CAST(-1231009110 AS BOOLEAN)) IS FALSE))); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Cast { expr: UnaryOp { op: Minus, expr: Value(Number(\"1231009110\", false)) }, data_type: Boolean })) in sqltorel"}
--- ERROR:  --
+200 OK
+f0,t0
+f0,t0
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (NOT (NOT ((CAST(-1231009110 AS BOOLEAN)) IS FALSE))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Cast { expr: UnaryOp { op: Minus, expr: Value(Number(\"1231009110\", false)) }, data_type: Boolean })) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t2, m4.t0 FROM m4; --
 -- AFTER_SORT --
@@ -1468,9 +1466,10 @@ f1
 
 -- EXECUTE SQL: SELECT m0.f1 FROM m0 WHERE ((CAST(((443506543)/(291484029)) AS STRING)) BETWEEN (CAST((m0.f0) IS FALSE AS STRING)) AND (((CAST(-932564021 AS STRING))||(CAST(33499183 AS STRING))))) IS TRUE UNION ALL SELECT m0.f1 FROM m0 WHERE NOT (((CAST(((443506543)/(291484029)) AS STRING)) BETWEEN (CAST((m0.f0) IS FALSE AS STRING)) AND (((CAST(-932564021 AS STRING))||(CAST(33499183 AS STRING))))) IS TRUE) UNION ALL SELECT m0.f1 FROM m0 WHERE (((CAST(((443506543)/(291484029)) AS STRING)) BETWEEN (CAST((m0.f0) IS FALSE AS STRING)) AND (((CAST(-932564021 AS STRING))||(CAST(33499183 AS STRING))))) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Between { expr: Nested(Cast { expr: Nested(BinaryOp { left: Nested(Value(Number(\"443506543\", false))), op: Divide, right: Nested(Value(Number(\"291484029\", false))) }), data_type: String }), negated: false, low: Nested(Cast { expr: IsFalse(Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }]))), data_type: String }), high: Nested(Nested(BinaryOp { left: Nested(Cast { expr: UnaryOp { op: Minus, expr: Value(Number(\"932564021\", false)) }, data_type: String }), op: StringConcat, right: Nested(Cast { expr: Value(Number(\"33499183\", false)), data_type: String }) })) })) in sqltorel"}
--- ERROR:  --
+200 OK
+f1
+0.0
+0.507623643211476
 
 -- EXECUTE SQL: SELECT MAX(-4.88758559E8) FROM m3; --
 -- AFTER_SORT --
@@ -1594,9 +1593,9 @@ false,t0
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 WHERE ((CAST(- (-283773192) AS BOOLEAN)) IS TRUE) IS UNKNOWN UNION ALL SELECT m0.f0, m0.t0 FROM m0 WHERE NOT (((CAST(- (-283773192) AS BOOLEAN)) IS TRUE) IS UNKNOWN) UNION ALL SELECT ALL m0.f0, m0.t0 FROM m0 WHERE (((CAST(- (-283773192) AS BOOLEAN)) IS TRUE) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+f0,t0
+false,t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -1606,9 +1605,8 @@ t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 WHERE (CAST(+ (CAST(m3.t0 AS BIGINT)) AS BOOLEAN)) IS UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -1619,21 +1617,22 @@ f1
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0 WHERE (((((((((((395826959) NOT IN (421382481, 1997494472))OR(m0.f0)))OR((((m0.f0)AND(m0.f0))) IS UNKNOWN)))OR((((181591174)=(-2085221357))) BETWEEN (((m0.t0)LIKE(m0.t0))) AND (NOT (m0.f0)))))OR(NOT ((m0.f0) IS TRUE))))OR(m0.f0)) UNION ALL SELECT m0.f1 FROM m0 WHERE NOT ((((((((((((395826959) NOT IN (421382481, 1997494472))OR(m0.f0)))OR((((m0.f0)AND(m0.f0))) IS UNKNOWN)))OR((((181591174)=(-2085221357))) BETWEEN (((m0.t0)LIKE(m0.t0))) AND (NOT (m0.f0)))))OR(NOT ((m0.f0) IS TRUE))))OR(m0.f0))) UNION ALL SELECT ALL m0.f1 FROM m0 WHERE ((((((((((((395826959) NOT IN (421382481, 1997494472))OR(m0.f0)))OR((((m0.f0)AND(m0.f0))) IS UNKNOWN)))OR((((181591174)=(-2085221357))) BETWEEN (((m0.t0)LIKE(m0.t0))) AND (NOT (m0.f0)))))OR(NOT ((m0.f0) IS TRUE))))OR(m0.f0))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+f1
+0.0
+0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL SUM(0.05290683551262432) FROM m3; --
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.05290683551262432))
-0.05290683551262432
+""
 
 -- EXECUTE SQL: SELECT ALL SUM(CAST(0.9609833329171376 AS BIGINT)) FROM m1; --
 -- AFTER_SORT --
 200 OK
-SUM(CAST(Float64(0.9609833329171376) AS Int64))
-0
+SUM(Float64(0.9609833329171376))
+""
 
 -- EXECUTE SQL: SELECT ALL MIN(((((CAST(- (+ (m4.f0)) AS BOOLEAN))OR(CAST(0.18361102209351832 AS BOOLEAN))))OR(CAST(0.14149015016136468 AS BOOLEAN)))) FROM m4; --
 -- AFTER_SORT --
@@ -1681,7 +1680,7 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT SUM(0.6096484376459871) FROM m1 ORDER BY m1.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Schema error: No field named 'm1.t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm1.t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR((((((((((((m2.f1)LIKE(m2.f1)))OR(((m2.f0)AND(m2.f0)))))OR((0.5546139751565915) IN (0.3276204101429546))))AND((m2.t0) BETWEEN ('0.6468887984268011') AND (m2.f1)))) BETWEEN SYMMETRIC ((((m2.f0) BETWEEN SYMMETRIC (m2.f0) AND (m2.f0))AND(m2.f0))) AND (((CAST(m2.f0 AS STRING))LIKE(CAST(m2.f0 AS STRING)))))<=((+ (- (1120541685))) IS NOT NULL))) FROM m2; --
@@ -1720,21 +1719,19 @@ false,t0,f0
 
 -- EXECUTE SQL: SELECT m1.f1, m1.t0, m1.f0 FROM m1 WHERE (((CAST(-936302330 AS BOOLEAN)) IS NOT UNKNOWN) IS NOT UNKNOWN) IS NOT UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f1,t0,f0
+false,t0,f0
 
 -- EXECUTE SQL: SELECT m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT ((((CAST(-936302330 AS BOOLEAN)) IS NOT UNKNOWN) IS NOT UNKNOWN) IS NOT UNKNOWN); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE ((((CAST(-936302330 AS BOOLEAN)) IS NOT UNKNOWN) IS NOT UNKNOWN) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(CAST((CAST(FALSE AS BIGINT)) NOT IN (0.5844695362547421, 0.7511352762098632, 0.02431858285836208) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
@@ -1745,14 +1742,14 @@ false,t0,f0
 -- EXECUTE SQL: SELECT ALL * FROM m3; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE (+ (((m3.f0)-(m3.f0)))) IN (311761313, 0, -75068225, -1147098940); --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT ((+ (((m3.f0)-(m3.f0)))) IN (311761313, 0, -75068225, -1147098940)); --
 -- AFTER_SORT --
@@ -1788,9 +1785,9 @@ t1,t2,t0,0
 
 -- EXECUTE SQL: SELECT ALL MAX(CAST(CAST(((((-1770299815)^(291484029)))-(((706170751)-(-488758559)))) AS STRING) AS BIGINT)) FROM m0; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+MAX(Int64(-1770299815) # Int64(291484029) - Int64(706170751) - Int64(-488758559))
+""
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0; --
 -- AFTER_SORT --
@@ -1807,18 +1804,18 @@ false,t0
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.7211913967091175))
-0.7211913967091175
+""
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(0.7211913967091175)  as agg0 FROM m3 WHERE CAST((0.9192293931564824) NOT IN (0.6760630186109298) AS BOOLEAN) UNION ALL SELECT ALL SUM(0.7211913967091175)  as agg0 FROM m3 WHERE NOT (CAST((0.9192293931564824) NOT IN (0.6760630186109298) AS BOOLEAN)) UNION ALL SELECT ALL SUM(0.7211913967091175)  as agg0 FROM m3 WHERE (CAST((0.9192293931564824) NOT IN (0.6760630186109298) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 200 OK
 SUM(asdf.agg0)
-0.7211913967091175
+""
 
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST(0.5224095978421741 AS STRING) AS BIGINT)) FROM m1 WHERE (NOT (((m1.t0)LIKE(m1.t0)))) IN (TRUE) GROUP BY CAST(- (CAST(CAST(m1.t0 AS STRING) AS BIGINT)) AS BIGINT); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5224095978421741' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --
@@ -1861,9 +1858,9 @@ false,t0,f1
 
 -- EXECUTE SQL: SELECT m2.f0, m2.t0, m2.f1 FROM m2 WHERE CAST(((m2.t0) IN ('{e', '')) IS FALSE AS BOOLEAN) UNION ALL SELECT m2.f0, m2.t0, m2.f1 FROM m2 WHERE NOT (CAST(((m2.t0) IN ('{e', '')) IS FALSE AS BOOLEAN)) UNION ALL SELECT ALL m2.f0, m2.t0, m2.f1 FROM m2 WHERE (CAST(((m2.t0) IN ('{e', '')) IS FALSE AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(InList { expr: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"t0\", quote_style: None }])), list: [Value(SingleQuotedString(\"{e\")), Value(SingleQuotedString(\"\"))], negated: false })) in sqltorel"}
--- ERROR:  --
+200 OK
+f0,t0,f1
+false,t0,f1
 
 -- EXECUTE SQL: SELECT m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -1901,19 +1898,19 @@ false,0.0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE (CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1 FROM m0 WHERE ((CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0, m3.f0 FROM m3; --
@@ -1924,21 +1921,19 @@ t1,t0,0
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f0 FROM m3 WHERE ((((((((m3.f1) IS NOT UNKNOWN)OR(NOT (FALSE))))OR(CAST(m3.t0 AS BOOLEAN))))OR(NOT (NULL)))) IN (FALSE, TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+t1,t0,f0
+t1,t0,0
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f0 FROM m3 WHERE NOT (((((((((m3.f1) IS NOT UNKNOWN)OR(NOT (FALSE))))OR(CAST(m3.t0 AS BOOLEAN))))OR(NOT (NULL)))) IN (FALSE, TRUE)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f0 FROM m3 WHERE (((((((((m3.f1) IS NOT UNKNOWN)OR(NOT (FALSE))))OR(CAST(m3.t0 AS BOOLEAN))))OR(NOT (NULL)))) IN (FALSE, TRUE)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2; --
 -- AFTER_SORT --
@@ -1967,7 +1962,7 @@ t0
 -- AFTER_SORT --
 200 OK
 MAX(Float64(0.11902110991187975))
-0.11902110991187975
+""
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND((0.6217647053258654) IN (0.30980467236273324)) FROM m3; --
 -- AFTER_SORT --
@@ -1990,14 +1985,14 @@ t0,t2
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE m2.f0 UNION ALL SELECT ALL * FROM m2 WHERE NOT (m2.f0) UNION ALL SELECT * FROM m2 WHERE (m2.f0) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1; --
 -- AFTER_SORT --
@@ -2007,21 +2002,19 @@ t0,f0
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE (m1.f1) IS TRUE; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(CompoundIdentifier([Ident { value: \"m1\", quote_style: None }, Ident { value: \"f1\", quote_style: None }]))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE NOT ((m1.f1) IS TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(CompoundIdentifier([Ident { value: \"m1\", quote_style: None }, Ident { value: \"f1\", quote_style: None }]))) in sqltorel"}
--- ERROR:  --
+200 OK
+t0,f0
+t0,f0
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE ((m1.f1) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(CompoundIdentifier([Ident { value: \"m1\", quote_style: None }, Ident { value: \"f1\", quote_style: None }]))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1, m4.f0 FROM m4; --
 -- AFTER_SORT --
@@ -2042,9 +2035,9 @@ t0,t1,0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE ((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN UNION ALL SELECT m3.t0 FROM m3 WHERE NOT (((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN) UNION ALL SELECT m3.t0 FROM m3 WHERE (((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+t0
+t0
 
 -- EXECUTE SQL: SELECT ALL m4.t0 FROM m4; --
 -- AFTER_SORT --
@@ -2078,7 +2071,7 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE ((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0)))) UNION ALL SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE NOT (((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0))))) UNION ALL SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE (((((CAST(299102740 AS BOOLEAN))OR(((CAST(CAST(-824534954 AS BIGINT) AS STRING))IS DISTINCT FROM(CAST(0.9496735118924012 AS STRING))))))AND((((((m0.f0) IS TRUE)OR((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0))))<(m0.f0))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }]))) in sqltorel"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1, m0.f0, m0.t0 FROM m0; --
@@ -2090,9 +2083,10 @@ f1,f0,t0
 
 -- EXECUTE SQL: SELECT m0.f1, m0.f0, m0.t0 FROM m0 WHERE ((((m0.t0)||(m0.f1))) IN ('', '')) IS NOT UNKNOWN UNION ALL SELECT ALL m0.f1, m0.f0, m0.t0 FROM m0 WHERE NOT (((((m0.t0)||(m0.f1))) IN ('', '')) IS NOT UNKNOWN) UNION ALL SELECT m0.f1, m0.f0, m0.t0 FROM m0 WHERE (((((m0.t0)||(m0.f1))) IN ('', '')) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f1,f0,t0
+0.0,false,t0
+0.507623643211476,,916053861
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0; --
 -- AFTER_SORT --
@@ -2103,26 +2097,26 @@ false
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE (m0.f0) IN (NULL, TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((m0.f0) IN (NULL, TRUE)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE ((m0.f0) IN (NULL, TRUE)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Error during planning: column:Column { relation: Some(\"m0\"), name: \"f0\" } value:NULL is invalid. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT - (AVG(((((((CAST(-631199003 AS BIGINT))-(- (26056234))))^(CAST(((-1384117880)+(-1715477248)) AS BIGINT))))-(- (- (- (-1568581974))))))) FROM m2 GROUP BY (CAST(m2.f0 AS BIGINT)) IN (-703875107); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+(- AVG(Int64(-631199003) - (- Int64(26056234)) # Int64(-1384117880) + Int64(-1715477248) - (- (- (- Int64(-1568581974))))))
+-1062405681.0
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2; --
 -- AFTER_SORT --
@@ -2161,8 +2155,8 @@ f1,t0
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST(0.17801957922120693 AS BIGINT) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
 200 OK
-COUNT(CAST(CAST(Float64(0.17801957922120693) AS Int64) AS Int64))
-1
+COUNT(Float64(0.17801957922120693))
+0
 
 -- EXECUTE SQL: SELECT m3.f1 FROM m3; --
 -- AFTER_SORT --
@@ -2228,7 +2222,7 @@ t0,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f1 FROM m0 WHERE (- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE NOT ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) UNION ALL SELECT ALL m0.t0, m0.f1 FROM m0 WHERE ((- (CAST('<{QdbO勌' AS BIGINT))) NOT IN (993617280)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '<{QdbO勌' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1; --
@@ -2309,14 +2303,14 @@ MAX(m4.f0)
 -- EXECUTE SQL: SELECT * FROM m3; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT ALL * FROM m3 WHERE (((CAST(((m3.t0)<('N')) AS STRING))LIKE(CAST(0.5307694906163952 AS STRING)))) IS NOT UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT m4.t2, m4.f0 FROM m4; --
 -- AFTER_SORT --
@@ -2357,8 +2351,8 @@ f0,t1,f1,t0
 -- EXECUTE SQL: SELECT * FROM m4; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE FALSE; --
 -- AFTER_SORT --
@@ -2368,8 +2362,8 @@ f0,t0,t1,t2,time
 -- EXECUTE SQL: SELECT * FROM m4 WHERE NOT (FALSE); --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE (FALSE) IS NULL; --
 -- AFTER_SORT --
@@ -2417,21 +2411,19 @@ t0,0,false
 
 -- EXECUTE SQL: SELECT ALL m3.t0, m3.f0, m3.f1 FROM m3 WHERE (NOT (NOT (((m3.t1)LIKE('XWI[}\룮f'))))) IS TRUE; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(UnaryOp { op: Not, expr: Nested(UnaryOp { op: Not, expr: Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])), op: Like, right: Nested(Value(SingleQuotedString(\"XWI[}\\\\룮f\"))) })) }) })) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.f1 FROM m3 WHERE NOT ((NOT (NOT (((m3.t1)LIKE('XWI[}\룮f'))))) IS TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(UnaryOp { op: Not, expr: Nested(UnaryOp { op: Not, expr: Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])), op: Like, right: Nested(Value(SingleQuotedString(\"XWI[}\\\\룮f\"))) })) }) })) in sqltorel"}
--- ERROR:  --
+200 OK
+t0,f0,f1
+t0,0,false
 
 -- EXECUTE SQL: SELECT ALL m3.t0, m3.f0, m3.f1 FROM m3 WHERE ((NOT (NOT (((m3.t1)LIKE('XWI[}\룮f'))))) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(UnaryOp { op: Not, expr: Nested(UnaryOp { op: Not, expr: Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])), op: Like, right: Nested(Value(SingleQuotedString(\"XWI[}\\\\룮f\"))) })) }) })) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f1, m3.f0 FROM m3; --
 -- AFTER_SORT --
@@ -2473,7 +2465,7 @@ f1,t0
 -- AFTER_SORT --
 200 OK
 Float64(0.3000222763276785)
-0.3000222763276785
+
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 ORDER BY m0.t0 DESC; --
 -- AFTER_SORT --
@@ -2483,9 +2475,9 @@ t0,false
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE (NOT ((0.114734690079073) NOT IN (0.16365240511015255, 0.42955713688800734, 0.172575140114413))) IS UNKNOWN UNION ALL SELECT ALL m0.t0, m0.f0 FROM m0 WHERE NOT ((NOT ((0.114734690079073) NOT IN (0.16365240511015255, 0.42955713688800734, 0.172575140114413))) IS UNKNOWN) UNION ALL SELECT m0.t0, m0.f0 FROM m0 WHERE ((NOT ((0.114734690079073) NOT IN (0.16365240511015255, 0.42955713688800734, 0.172575140114413))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+t0,f0
+t0,false
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -2512,9 +2504,9 @@ t0,false
 -- EXECUTE SQL: SELECT * FROM m0; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE m0.f0; --
 -- AFTER_SORT --
@@ -2524,14 +2516,14 @@ false,0.0,t0,1970-01-01T00:00:00.000000000
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE NOT (m0.f0); --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE (m0.f0) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
+time,t0,f0,f1
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT m4.t1, m4.f0, m4.t2 FROM m4; --
 -- AFTER_SORT --
@@ -2612,21 +2604,20 @@ f1,f0
 
 -- EXECUTE SQL: SELECT m0.f1, m0.f0 FROM m0 WHERE ((CAST(-1826088151 AS BIGINT)) NOT IN (-1169738310, -848444240)) IS UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m0.f1, m0.f0 FROM m0 WHERE NOT (((CAST(-1826088151 AS BIGINT)) NOT IN (-1169738310, -848444240)) IS UNKNOWN); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+f1,f0
+0.0,false
+0.507623643211476,
 
 -- EXECUTE SQL: SELECT ALL m0.f1, m0.f0 FROM m0 WHERE (((CAST(-1826088151 AS BIGINT)) NOT IN (-1169738310, -848444240)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m3.t0, m3.f1, m3.t1 FROM m3; --
 -- AFTER_SORT --
@@ -2681,16 +2672,16 @@ f1,f0,t0
 -- EXECUTE SQL: SELECT * FROM m0; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT * FROM m0 WHERE (CAST(((-983671546)*(1075247831)) AS BIGINT)) NOT IN (-2040259374, 935034281, 1026141981, 1998939448); --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -2700,9 +2691,9 @@ false
 
 -- EXECUTE SQL: SELECT ALL m1.f1 FROM m1 WHERE CAST(CAST(((CAST(1442669721 AS BIGINT))^(CAST(m1.f1 AS BIGINT))) AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+f1
+false
 
 -- EXECUTE SQL: SELECT m4.f0 FROM m4; --
 -- AFTER_SORT --
@@ -2712,9 +2703,9 @@ f0
 
 -- EXECUTE SQL: SELECT m4.f0 FROM m4 WHERE NOT (((TRUE) NOT IN (TRUE, FALSE)) IS TRUE) UNION ALL SELECT ALL m4.f0 FROM m4 WHERE NOT (NOT (((TRUE) NOT IN (TRUE, FALSE)) IS TRUE)) UNION ALL SELECT m4.f0 FROM m4 WHERE (NOT (((TRUE) NOT IN (TRUE, FALSE)) IS TRUE)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(InList { expr: Nested(Value(Boolean(true))), list: [Value(Boolean(true)), Value(Boolean(false))], negated: true })) in sqltorel"}
--- ERROR:  --
+200 OK
+f0
+0
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -2724,9 +2715,9 @@ t0,f0,false
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0, m1.f1 FROM m1 WHERE CAST(((((((1185127241)%(1836419101)))^(+ (-1460414512))))^(+ (+ (336207901)))) AS BOOLEAN) UNION ALL SELECT m1.t0, m1.f0, m1.f1 FROM m1 WHERE NOT (CAST(((((((1185127241)%(1836419101)))^(+ (-1460414512))))^(+ (+ (336207901)))) AS BOOLEAN)) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE (CAST(((((((1185127241)%(1836419101)))^(+ (-1460414512))))^(+ (+ (336207901)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+t0,f0,f1
+t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1; --
 -- AFTER_SORT --
@@ -2761,19 +2752,19 @@ false,t0,f0
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE NOT (NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.t0, m1.f0 FROM m1 WHERE (NOT ((((-1775207148) IN (0.1688741619134384, 0.39268540295479615, 0.4546068705461972, -0.0, 0.5989936450918769)) BETWEEN SYMMETRIC (((m1.f0)IS NOT DISTINCT FROM(m1.f0))) AND ((('L')>=(m1.f0)))) IS NOT UNKNOWN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0; --
@@ -2827,7 +2818,7 @@ f0,t1,t0,t2
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.743111469303056))
-0.743111469303056
+""
 
 -- EXECUTE SQL: SELECT m1.f0, m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -2860,9 +2851,9 @@ false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE CAST(+ (- (((-683547521)^(-595803483)))) AS BOOLEAN) UNION ALL SELECT m1.f1, m1.f0, m1.t0 FROM m1 WHERE NOT (CAST(+ (- (((-683547521)^(-595803483)))) AS BOOLEAN)) UNION ALL SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE (CAST(+ (- (((-683547521)^(-595803483)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+f1,f0,t0
+false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0, m2.f0 FROM m2; --
 -- AFTER_SORT --
@@ -2889,25 +2880,25 @@ f1,t0,false
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 ORDER BY m0.f1 ASC, m0.f1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: Schema contains duplicate qualified field name 'm0.f1'"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"m0.f1\" at position 1 and \"m0.f1\" at position 2 have the same name. Consider aliasing (\"AS\") one of them."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE (CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Cast { expr: Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Value(SingleQuotedString(\"ࢀ+h\"))), op: StringConcat, right: Nested(Value(SingleQuotedString(\"335616128\"))) })), op: StringConcat, right: Nested(InList { expr: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"t0\", quote_style: None }])), list: [Value(SingleQuotedString(\"\")), Value(SingleQuotedString(\"A6<k['\"))], negated: true }) }), data_type: Boolean })) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Cast { expr: Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Value(SingleQuotedString(\"ࢀ+h\"))), op: StringConcat, right: Nested(Value(SingleQuotedString(\"335616128\"))) })), op: StringConcat, right: Nested(InList { expr: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"t0\", quote_style: None }])), list: [Value(SingleQuotedString(\"\")), Value(SingleQuotedString(\"A6<k['\"))], negated: true }) }), data_type: Boolean })) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Cast { expr: Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Value(SingleQuotedString(\"ࢀ+h\"))), op: StringConcat, right: Nested(Value(SingleQuotedString(\"335616128\"))) })), op: StringConcat, right: Nested(InList { expr: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"t0\", quote_style: None }])), list: [Value(SingleQuotedString(\"\")), Value(SingleQuotedString(\"A6<k['\"))], negated: true }) }), data_type: Boolean })) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -2949,8 +2940,8 @@ f1
 -- EXECUTE SQL: SELECT ALL * FROM m1; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-f0,false,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE (((m1.f1) NOT IN (FALSE, TRUE, FALSE, TRUE)) IN (NULL, FALSE, TRUE)) BETWEEN SYMMETRIC (NOT (NOT (((m1.f0)LIKE(m1.f0))))) AND ((NOT (m1.f1)) NOT IN (TRUE, TRUE, FALSE)); --
 -- AFTER_SORT --
@@ -2978,21 +2969,19 @@ false
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 WHERE NOT (NOT (((m1.t0) BETWEEN (m1.f0) AND (m1.f0)) IS NOT UNKNOWN)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f1
+false
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 WHERE NOT (NOT (NOT (((m1.t0) BETWEEN (m1.f0) AND (m1.f0)) IS NOT UNKNOWN))); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 WHERE (NOT (NOT (((m1.t0) BETWEEN (m1.f0) AND (m1.f0)) IS NOT UNKNOWN))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT COUNT(- (+ (((((m3.f0)%(m3.f0)))-(CAST(m3.f1 AS BIGINT)))))) FROM m3; --
 -- AFTER_SORT --
@@ -3015,8 +3004,8 @@ false
 -- EXECUTE SQL: SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT))) FROM m2; --
 -- AFTER_SORT --
 200 OK
-COUNT(CAST(Float64(0.5249418544831504) AS Int64))
-1
+COUNT(Float64(0.5249418544831504))
+0
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE NOT (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
@@ -3032,9 +3021,8 @@ t0
 
 -- EXECUTE SQL: SELECT m2.t0 FROM m2 WHERE (NOT (CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN))) IS UNKNOWN UNION ALL SELECT ALL m2.t0 FROM m2 WHERE NOT ((NOT (CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN))) IS UNKNOWN) UNION ALL SELECT m2.t0 FROM m2 WHERE ((NOT (CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -3058,9 +3046,9 @@ false,t0
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 WHERE CAST(((((((CAST(NOT (m0.f0) AS BOOLEAN))AND((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))OR(m0.f0))) IS TRUE)))AND(CAST(NOT (m0.f0) AS BOOLEAN))))AND(((m0.t0)LIKE(((m0.t0)||(m0.f0)))))) AS BOOLEAN) UNION ALL SELECT ALL m0.f0, m0.t0 FROM m0 WHERE NOT (CAST(((((((CAST(NOT (m0.f0) AS BOOLEAN))AND((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))OR(m0.f0))) IS TRUE)))AND(CAST(NOT (m0.f0) AS BOOLEAN))))AND(((m0.t0)LIKE(((m0.t0)||(m0.f0)))))) AS BOOLEAN)) UNION ALL SELECT ALL m0.f0, m0.t0 FROM m0 WHERE (CAST(((((((CAST(NOT (m0.f0) AS BOOLEAN))AND((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))OR(m0.f0))) IS TRUE)))AND(CAST(NOT (m0.f0) AS BOOLEAN))))AND(((m0.t0)LIKE(((m0.t0)||(m0.f0)))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])), op: Or, right: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) })), op: And, right: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) })), op: Or, right: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) }))) in sqltorel"}
--- ERROR:  --
+200 OK
+f0,t0
+false,t0
 
 -- EXECUTE SQL: SELECT ALL m4.t1 FROM m4; --
 -- AFTER_SORT --
@@ -3092,32 +3080,32 @@ false,t0,f1
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.t0, m2.f1 FROM m2 WHERE (m2.f0) IS NOT UNKNOWN UNION ALL SELECT m2.f0, m2.t0, m2.f1 FROM m2 WHERE NOT ((m2.f0) IS NOT UNKNOWN) UNION ALL SELECT m2.f0, m2.t0, m2.f1 FROM m2 WHERE ((m2.f0) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f0,t0,f1
+false,t0,f1
 
 -- EXECUTE SQL: SELECT ALL * FROM m3; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])), op: Like, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])) }))) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])), op: Like, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])) }))) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])), op: Like, right: Nested(CompoundIdentifier([Ident { value: \"m3\", quote_style: None }, Ident { value: \"t1\", quote_style: None }])) }))) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -3130,7 +3118,7 @@ t0,false,0.0
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE) UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT (NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE)) UNION ALL SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE (NOT ((CAST((m0.f0) BETWEEN SYMMETRIC (m0.f0) AND (m0.f0) AS BOOLEAN)) IS TRUE)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Cast { expr: Between { expr: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])), negated: false, low: Function(Function { name: ObjectName([Ident { value: \"SYMMETRIC\", quote_style: None }]), args: [Unnamed(Expr(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])))], over: None, distinct: false }), high: Nested(CompoundIdentifier([Ident { value: \"m0\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) }, data_type: Boolean })) in sqltorel"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'symmetric'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(m4.f0) FROM m4; --
@@ -3162,7 +3150,7 @@ t0
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.2270785075878876))
-0.2270785075878876
+""
 
 -- EXECUTE SQL: SELECT m4.t0 FROM m4; --
 -- AFTER_SORT --
@@ -3241,9 +3229,9 @@ t0,t1,0
 -- EXECUTE SQL: SELECT * FROM m0; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE NOT ((((((((CAST(m0.f1 AS BIGINT)) IS NULL)OR(((CAST(-1906695061 AS STRING))LIKE(((m0.t0)||(TRUE)))))))AND(CAST(CAST(m0.t0 AS STRING) AS BOOLEAN))))OR(((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))OR(((m0.t0)IS DISTINCT FROM(m0.t0))))))); --
 -- AFTER_SORT --
@@ -3290,7 +3278,7 @@ f1,false
 -- EXECUTE SQL: SELECT MIN(CAST(((CAST('Infinity' AS BIGINT))-(((((m4.f0)+(m4.f0)))%(CAST(m4.f0 AS BIGINT))))) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'Infinity' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.f0 FROM m3; --
@@ -3314,7 +3302,7 @@ f1,false,t0
 -- EXECUTE SQL: SELECT m2.f1, m2.f0, m2.t0 FROM m2 WHERE ((NOT (CAST(1826216466 AS BOOLEAN)))AND(CAST(CAST(0.9464404925619687 AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '0.9464404925619687' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.9464404925619687' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1; --
@@ -3370,9 +3358,10 @@ t0,false,0.0
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0 WHERE CAST(((((-1854084498) NOT IN (0.9166874677479094)) IS TRUE)AND(CAST(((m0.t0)IS NOT DISTINCT FROM(m0.t0)) AS BOOLEAN))) AS BOOLEAN) UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE NOT (CAST(((((-1854084498) NOT IN (0.9166874677479094)) IS TRUE)AND(CAST(((m0.t0)IS NOT DISTINCT FROM(m0.t0)) AS BOOLEAN))) AS BOOLEAN)) UNION ALL SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0 WHERE (CAST(((((-1854084498) NOT IN (0.9166874677479094)) IS TRUE)AND(CAST(((m0.t0)IS NOT DISTINCT FROM(m0.t0)) AS BOOLEAN))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(InList { expr: Nested(UnaryOp { op: Minus, expr: Value(Number(\"1854084498\", false)) }), list: [Value(Number(\"0.9166874677479094\", false))], negated: true })) in sqltorel"}
--- ERROR:  --
+200 OK
+t0,f0,f1
+916053861,,0.507623643211476
+t0,false,0.0
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0 FROM m1; --
 -- AFTER_SORT --
@@ -3383,7 +3372,7 @@ f0,t0
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE NOT ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f1 FROM m3; --
@@ -3422,21 +3411,19 @@ t1
 
 -- EXECUTE SQL: SELECT ALL m4.t1 FROM m4 WHERE NOT ((((((((((TRUE)AND(FALSE)))OR(TRUE)))OR((FALSE) IS FALSE)))AND(FALSE))) IS FALSE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Value(Boolean(true))), op: And, right: Nested(Value(Boolean(false))) })), op: Or, right: Nested(Value(Boolean(true))) })), op: Or, right: Nested(IsFalse(Nested(Value(Boolean(false))))) })), op: And, right: Nested(Value(Boolean(false))) }))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE NOT (NOT ((((((((((TRUE)AND(FALSE)))OR(TRUE)))OR((FALSE) IS FALSE)))AND(FALSE))) IS FALSE)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Value(Boolean(true))), op: And, right: Nested(Value(Boolean(false))) })), op: Or, right: Nested(Value(Boolean(true))) })), op: Or, right: Nested(IsFalse(Nested(Value(Boolean(false))))) })), op: And, right: Nested(Value(Boolean(false))) }))) in sqltorel"}
--- ERROR:  --
+200 OK
+t1
+
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE (NOT ((((((((((TRUE)AND(FALSE)))OR(TRUE)))OR((FALSE) IS FALSE)))AND(FALSE))) IS FALSE)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Nested(BinaryOp { left: Nested(Value(Boolean(true))), op: And, right: Nested(Value(Boolean(false))) })), op: Or, right: Nested(Value(Boolean(true))) })), op: Or, right: Nested(IsFalse(Nested(Value(Boolean(false))))) })), op: And, right: Nested(Value(Boolean(false))) }))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1; --
 -- AFTER_SORT --
@@ -3454,13 +3441,13 @@ t0
 -- AFTER_SORT --
 200 OK
 MIN(Float64(0.22987745635426093))
-0.22987745635426093
+""
 
 -- EXECUTE SQL: SELECT ALL COUNT(26056234) FROM m2; --
 -- AFTER_SORT --
 200 OK
 COUNT(UInt8(1))
-1
+0
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(CAST(((712230685)-(NULL)) AS STRING) AS BIGINT))) FROM m0; --
 -- AFTER_SORT --
@@ -3495,8 +3482,8 @@ t0,false
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(0.5759978377746883 AS BIGINT)) FROM m0; --
 -- AFTER_SORT --
 200 OK
-COUNT(CAST(Float64(0.5759978377746883) AS Int64))
-1
+COUNT(Float64(0.5759978377746883))
+0
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0, m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -3562,14 +3549,14 @@ f0,t0,false
 -- EXECUTE SQL: SELECT * FROM m3; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE (((((m3.f0)/(m3.f0)))*(((1720243269)/(m3.f0))))) IN (0.11609437700844338, 0.7128171476947955) UNION ALL SELECT * FROM m3 WHERE NOT ((((((m3.f0)/(m3.f0)))*(((1720243269)/(m3.f0))))) IN (0.11609437700844338, 0.7128171476947955)) UNION ALL SELECT * FROM m3 WHERE ((((((m3.f0)/(m3.f0)))*(((1720243269)/(m3.f0))))) IN (0.11609437700844338, 0.7128171476947955)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
--- ERROR:  --
+200 OK
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -3601,9 +3588,9 @@ t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE ((CAST(m4.f0 AS STRING)) NOT IN ('^')) IS FALSE UNION ALL SELECT ALL m4.t1 FROM m4 WHERE NOT (((CAST(m4.f0 AS STRING)) NOT IN ('^')) IS FALSE) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE (((CAST(m4.f0 AS STRING)) NOT IN ('^')) IS FALSE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(InList { expr: Nested(Cast { expr: CompoundIdentifier([Ident { value: \"m4\", quote_style: None }, Ident { value: \"f0\", quote_style: None }]), data_type: String }), list: [Value(SingleQuotedString(\"^\"))], negated: true })) in sqltorel"}
--- ERROR:  --
+200 OK
+t1
+t1
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.f0 FROM m2; --
 -- AFTER_SORT --
@@ -3614,7 +3601,7 @@ f1,false
 -- EXECUTE SQL: SELECT m2.f1, m2.f0 FROM m2 WHERE (CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE UNION ALL SELECT ALL m2.f1, m2.f0 FROM m2 WHERE NOT ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) UNION ALL SELECT m2.f1, m2.f0 FROM m2 WHERE ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Cast { expr: Cast { expr: Cast { expr: CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"t0\", quote_style: None }]), data_type: Boolean }, data_type: Boolean }, data_type: Boolean })) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3; --
@@ -3678,14 +3665,14 @@ false,t0
 -- EXECUTE SQL: SELECT * FROM m2; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE NOT (m2.f0); --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT * FROM m2 WHERE NOT (NOT (m2.f0)); --
 -- AFTER_SORT --
@@ -3712,8 +3699,8 @@ false,t0
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE (-1.497906008E9) IN (0.277040821627761); --
 -- AFTER_SORT --
@@ -3747,16 +3734,16 @@ f0
 -- EXECUTE SQL: SELECT ALL * FROM m0; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE m0.f0 UNION ALL SELECT * FROM m0 WHERE NOT (m0.f0) UNION ALL SELECT * FROM m0 WHERE (m0.f0) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT m3.t1 FROM m3; --
 -- AFTER_SORT --
@@ -3790,14 +3777,13 @@ f0,t1
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1 FROM m3 WHERE ((CAST(- (+ (m3.f0)) AS BOOLEAN))OR((((m3.f0)^(m3.f0))) IN ('Infinity', NULL))); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT MAX(+ (CAST(((((m2.f1)||(m2.f1)))LIKE((('C')||(m2.t0)))) AS BIGINT))) FROM m2 ORDER BY m2.f1 DESC, m2.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(CAST(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 AS Int64))'."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f1 FROM m3; --
@@ -3831,7 +3817,7 @@ t0,f0,false
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE (((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913)) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE NOT ((((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913))) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE ((((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(InList { expr: Nested(UnaryOp { op: Minus, expr: Value(Number(\"24313008\", false)) }), list: [Value(Number(\"0.5789588919379464\", false)), Value(Number(\"0.6440105044101978\", false)), Value(Number(\"0.7972080808201099\", false))], negated: true })) in sqltorel"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f1, m2.t0 FROM m2; --
@@ -3871,7 +3857,7 @@ false
 -- EXECUTE SQL: SELECT COUNT(CAST(m3.f0 AS BIGINT)) FROM m3; --
 -- AFTER_SORT --
 200 OK
-COUNT(CAST(m3.f0 AS Int64))
+COUNT(m3.f0)
 1
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT COUNT(CAST(m3.f0 AS BIGINT))  as agg0 FROM m3 WHERE (((CAST(m3.f0 AS STRING))||(CAST(m3.t0 AS STRING)))) NOT IN ('', 'BFl') UNION ALL SELECT COUNT(CAST(m3.f0 AS BIGINT))  as agg0 FROM m3 WHERE NOT ((((CAST(m3.f0 AS STRING))||(CAST(m3.t0 AS STRING)))) NOT IN ('', 'BFl')) UNION ALL SELECT COUNT(CAST(m3.f0 AS BIGINT))  as agg0 FROM m3 WHERE ((((CAST(m3.f0 AS STRING))||(CAST(m3.t0 AS STRING)))) NOT IN ('', 'BFl')) IS NULL) as asdf; --
@@ -3883,14 +3869,14 @@ SUM(asdf.agg0)
 -- EXECUTE SQL: SELECT ALL * FROM m1; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-f0,false,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE ((+ (543535954)) NOT IN (-1930876602)) IS NULL UNION ALL SELECT * FROM m1 WHERE NOT (((+ (543535954)) NOT IN (-1930876602)) IS NULL) UNION ALL SELECT ALL * FROM m1 WHERE (((+ (543535954)) NOT IN (-1930876602)) IS NULL) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-f0,false,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL m2.t0 FROM m2; --
 -- AFTER_SORT --
@@ -3918,9 +3904,9 @@ f1
 
 -- EXECUTE SQL: SELECT m2.f1 FROM m2 WHERE NOT (((NOT (m2.f0)) BETWEEN (((m2.f1)LIKE(m2.f1))) AND ((m2.t0) BETWEEN (m2.t0) AND (m2.f1))) IS TRUE) UNION ALL SELECT m2.f1 FROM m2 WHERE NOT (NOT (((NOT (m2.f0)) BETWEEN (((m2.f1)LIKE(m2.f1))) AND ((m2.t0) BETWEEN (m2.t0) AND (m2.f1))) IS TRUE)) UNION ALL SELECT ALL m2.f1 FROM m2 WHERE (NOT (((NOT (m2.f0)) BETWEEN (((m2.f1)LIKE(m2.f1))) AND ((m2.t0) BETWEEN (m2.t0) AND (m2.f1))) IS TRUE)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Between { expr: Nested(UnaryOp { op: Not, expr: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"f0\", quote_style: None }])) }), negated: false, low: Nested(Nested(BinaryOp { left: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])), op: Like, right: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])) })), high: Nested(Between { expr: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"t0\", quote_style: None }])), negated: false, low: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"t0\", quote_style: None }])), high: Nested(CompoundIdentifier([Ident { value: \"m2\", quote_style: None }, Ident { value: \"f1\", quote_style: None }])) }) })) in sqltorel"}
--- ERROR:  --
+200 OK
+f1
+f1
 
 -- EXECUTE SQL: SELECT MAX(CAST(3.50532422E8 AS STRING)) FROM m2; --
 -- AFTER_SORT --
@@ -3937,7 +3923,7 @@ f1
 -- EXECUTE SQL: SELECT BOOL_OR((CAST(CAST(CAST(m4.f0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS UNKNOWN) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_or'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f0, m2.t0 FROM m2; --
@@ -3984,21 +3970,19 @@ t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE (NOT ((m4.f0) IN (1324253038, -768959031))) IS NOT UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+t1
+t1
 
 -- EXECUTE SQL: SELECT ALL m4.t1 FROM m4 WHERE NOT ((NOT ((m4.f0) IN (1324253038, -768959031))) IS NOT UNKNOWN); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE ((NOT ((m4.f0) IN (1324253038, -768959031))) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4; --
 -- AFTER_SORT --
@@ -4026,14 +4010,13 @@ t0,f0
 -- EXECUTE SQL: SELECT * FROM m4; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE ((CAST(CAST(m4.f0 AS STRING) AS STRING))LIKE(((CAST(((m4.f0)-(m4.f0)) AS STRING))||(((- (m4.f0))/(CAST(m4.f0 AS BIGINT))))))); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m3.f1 FROM m3; --
 -- AFTER_SORT --
@@ -4055,9 +4038,9 @@ false,t0
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0 WHERE CAST(((((1492391863)^(378965728))) IS NULL) IS NOT NULL AS BOOLEAN) UNION ALL SELECT m0.f0, m0.t0 FROM m0 WHERE NOT (CAST(((((1492391863)^(378965728))) IS NULL) IS NOT NULL AS BOOLEAN)) UNION ALL SELECT m0.f0, m0.t0 FROM m0 WHERE (CAST(((((1492391863)^(378965728))) IS NULL) IS NOT NULL AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+f0,t0
+false,t0
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f0 FROM m3; --
 -- AFTER_SORT --
@@ -4089,15 +4072,15 @@ t0,f0
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE NOT (((m1.f0)LIKE(CAST(((388010802)^(916053861)) AS STRING)))) UNION ALL SELECT ALL m1.t0, m1.f0 FROM m1 WHERE NOT (NOT (((m1.f0)LIKE(CAST(((388010802)^(916053861)) AS STRING))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (NOT (((m1.f0)LIKE(CAST(((388010802)^(916053861)) AS STRING))))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+t0,f0
+t0,f0
 
 -- EXECUTE SQL: SELECT * FROM m2; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-false,f1,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,f1
 
 -- EXECUTE SQL: SELECT ALL * FROM m2 WHERE (CAST((CAST(m2.f0 AS STRING)) BETWEEN (CAST(m2.f1 AS STRING)) AND (((m2.f1)||(1825484883))) AS BIGINT)) NOTNULL UNION ALL SELECT ALL * FROM m2 WHERE NOT ((CAST((CAST(m2.f0 AS STRING)) BETWEEN (CAST(m2.f1 AS STRING)) AND (((m2.f1)||(1825484883))) AS BIGINT)) NOTNULL) UNION ALL SELECT * FROM m2 WHERE ((CAST((CAST(m2.f0 AS STRING)) BETWEEN (CAST(m2.f1 AS STRING)) AND (((m2.f1)||(1825484883))) AS BIGINT)) NOTNULL) IS NULL; --
 -- AFTER_SORT --
@@ -4109,7 +4092,7 @@ false,f1,t0,1970-01-01T00:00:00.000000000
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.7059204780758392))
-0.7059204780758392
+""
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.f1, m3.t1 FROM m3; --
 -- AFTER_SORT --
@@ -4141,21 +4124,19 @@ t0
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE (FALSE) IS TRUE; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Value(Boolean(false)))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE NOT ((FALSE) IS TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Value(Boolean(false)))) in sqltorel"}
--- ERROR:  --
+200 OK
+t0
+
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE ((FALSE) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Value(Boolean(false)))) in sqltorel"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m1.f0, m1.f1, m1.t0 FROM m1; --
 -- AFTER_SORT --
@@ -4165,9 +4146,9 @@ f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE (FALSE) IS NOT UNKNOWN UNION ALL SELECT m1.f0, m1.f1, m1.t0 FROM m1 WHERE NOT ((FALSE) IS NOT UNKNOWN) UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE ((FALSE) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f0,f1,t0
+f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2, m4.f0, m4.t1 FROM m4; --
 -- AFTER_SORT --
@@ -4200,13 +4181,13 @@ MAX(m0.t0)
 -- EXECUTE SQL: SELECT BOOL_AND(((NOT (((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))AND(m0.f0)))) IS NOT UNKNOWN) IS NULL) FROM m0 ORDER BY m0.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(NOT (((m3.t0)IS DISTINCT FROM(m3.t1))) AS STRING) AS BIGINT)) FROM m3 ORDER BY m3.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Schema error: No field named 'm3.t0'. Valid fields are 'COUNT(CAST(CAST(NOT m3.t0 IS DISTINCT FROM m3.t1 AS Utf8) AS Int64))'."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm3.t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0; --
@@ -4218,9 +4199,10 @@ false,0.0
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE (((((+ (-1637708205))-(- (-1438866223))))>(0.3743626300346117))) IS NOT UNKNOWN UNION ALL SELECT m0.f0, m0.f1 FROM m0 WHERE NOT ((((((+ (-1637708205))-(- (-1438866223))))>(0.3743626300346117))) IS NOT UNKNOWN) UNION ALL SELECT m0.f0, m0.f1 FROM m0 WHERE ((((((+ (-1637708205))-(- (-1438866223))))>(0.3743626300346117))) IS NOT UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f0,f1
+,0.507623643211476
+false,0.0
 
 -- EXECUTE SQL: SELECT ALL m1.f1 FROM m1; --
 -- AFTER_SORT --
@@ -4285,9 +4267,9 @@ false
 
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE (CAST(((m2.t0)IS DISTINCT FROM(m2.t0)) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT ALL m2.f0 FROM m2 WHERE NOT ((CAST(((m2.t0)IS DISTINCT FROM(m2.t0)) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT ALL m2.f0 FROM m2 WHERE ((CAST(((m2.t0)IS DISTINCT FROM(m2.t0)) AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: UNKNOWN"}
--- ERROR:  --
+200 OK
+f0
+false
 
 -- EXECUTE SQL: SELECT m4.t0, m4.f0 FROM m4; --
 -- AFTER_SORT --
@@ -4371,14 +4353,14 @@ f1
 -- EXECUTE SQL: SELECT * FROM m3; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,t1,time
-0,false,t0,t1,1970-01-01T00:00:00.000000000
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT ALL * FROM m3 WHERE (((CAST(CAST(TRUE AS STRING) AS STRING))LIKE(CAST(m3.t1 AS STRING)))) IS NOT UNKNOWN; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+time,t0,t1,f0,f1
+1970-01-01T00:00:00.000000000,t0,t1,0,false
 
 -- EXECUTE SQL: SELECT m4.t0 FROM m4; --
 -- AFTER_SORT --
@@ -4401,14 +4383,14 @@ t0
 -- EXECUTE SQL: SELECT * FROM m1; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-f0,false,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE CAST(- (CAST(((-597573009)+(-436419271)) AS BIGINT)) AS BOOLEAN) UNION ALL SELECT * FROM m1 WHERE NOT (CAST(- (CAST(((-597573009)+(-436419271)) AS BIGINT)) AS BOOLEAN)) UNION ALL SELECT ALL * FROM m1 WHERE (CAST(- (CAST(((-597573009)+(-436419271)) AS BIGINT)) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-f0,false,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,f0,false
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0; --
 -- AFTER_SORT --
@@ -4425,9 +4407,9 @@ false
 -- EXECUTE SQL: SELECT ALL * FROM m0; --
 -- AFTER_SORT --
 200 OK
-f0,f1,t0,time
-,0.507623643211476,916053861,2003-01-04T08:51:33.467254361
-false,0.0,t0,1970-01-01T00:00:00.000000000
+time,t0,f0,f1
+1970-01-01T00:00:00.000000000,t0,false,0.0
+2003-01-04T08:51:33.467254361,916053861,,0.507623643211476
 
 -- EXECUTE SQL: SELECT * FROM m0 WHERE NOT (CAST(0.5703553350775143 AS BOOLEAN)); --
 -- AFTER_SORT --
@@ -4438,13 +4420,13 @@ false,0.0,t0,1970-01-01T00:00:00.000000000
 -- AFTER_SORT --
 200 OK
 SUM(Int64(1099878272))
-1099878272
+""
 
 -- EXECUTE SQL: SELECT ALL SUM(0.15266774123964788) FROM m3; --
 -- AFTER_SORT --
 200 OK
 SUM(Float64(0.15266774123964788))
-0.15266774123964788
+""
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.t0, m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -4529,7 +4511,7 @@ t0,f0,false
 -- EXECUTE SQL: SELECT ALL BOOL_AND(CAST(CAST((((m4.t2)>=(m4.t1))) IS NOT UNKNOWN AS STRING) AS BOOLEAN)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Invalid function 'bool_and'"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -4553,9 +4535,9 @@ f0,false,t0
 
 -- EXECUTE SQL: SELECT m1.f0, m1.f1, m1.t0 FROM m1 WHERE (NOT (CAST(CAST(m1.f1 AS BIGINT) AS BOOLEAN))) IS FALSE UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE NOT ((NOT (CAST(CAST(m1.f1 AS BIGINT) AS BOOLEAN))) IS FALSE) UNION ALL SELECT m1.f0, m1.f1, m1.t0 FROM m1 WHERE ((NOT (CAST(CAST(m1.f1 AS BIGINT) AS BOOLEAN))) IS FALSE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsFalse(Nested(UnaryOp { op: Not, expr: Nested(Cast { expr: Cast { expr: CompoundIdentifier([Ident { value: \"m1\", quote_style: None }, Ident { value: \"f1\", quote_style: None }]), data_type: BigInt(None) }, data_type: Boolean }) })) in sqltorel"}
--- ERROR:  --
+200 OK
+f0,f1,t0
+f0,false,t0
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1; --
 -- AFTER_SORT --
@@ -4606,7 +4588,7 @@ false,t0
 -- EXECUTE SQL: SELECT ALL SUM(CAST(TRUE AS BIGINT)) FROM m1 ORDER BY m1.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Schema error: No field named 'm1.f0'. Valid fields are 'SUM(CAST(Boolean(true) AS Int64))'."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm1.f0'. Valid fields are 'SUM(Boolean(true))'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -4694,9 +4676,9 @@ f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE CAST(+ (((((17118187)^(-595486666)))^(-483484156))) AS BOOLEAN) UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE NOT (CAST(+ (((((17118187)^(-595486666)))^(-483484156))) AS BOOLEAN)) UNION ALL SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1 WHERE (CAST(+ (((((17118187)^(-595486666)))^(-483484156))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported SQL binary operator BitwiseXor"}
--- ERROR:  --
+200 OK
+f0,f1,t0
+f0,false,t0
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -4724,12 +4706,12 @@ false,f1
 -- AFTER_SORT --
 200 OK
 MAX(Float64(0.8380110533784965))
-0.8380110533784965
+""
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(((CAST(((m2.f0)<(m2.f0)) AS BIGINT))*(CAST((('0.40560185446598973')||('0.5010374883053191')) AS BIGINT))) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.405601854465989730.5010374883053191' to value of Int64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(-1.281952729E9) FROM m4; --
@@ -4781,14 +4763,14 @@ f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2 WHERE (((((((((((((((m2.f1) BETWEEN (m2.f1) AND (m2.f1))AND(((FALSE)OR(m2.f0)))))OR(NOT (m2.f0))))OR(((m2.f1)IS NOT DISTINCT FROM(m2.t0)))))OR(CAST(-2044174412 AS BOOLEAN))))OR(NOT (FALSE))))>(NOT (((((((m2.f0)AND(m2.f0)))OR(m2.f0)))AND(m2.f0))))))<=(CAST(CAST(- (64411633) AS STRING) AS BOOLEAN))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '-64411633' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '-64411633' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(CAST(0.871191940974261 AS BIGINT)) FROM m0; --
 -- AFTER_SORT --
 200 OK
-SUM(CAST(Float64(0.871191940974261) AS Int64))
-0
+SUM(Float64(0.871191940974261))
+""
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND(NOT ((- (-217143237)) NOT IN (-65550593, 111116366))) FROM m0; --
 -- AFTER_SORT --
@@ -4823,20 +4805,20 @@ t0
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE (+ (CAST(CAST(TRUE AS BIGINT) AS BIGINT))) IS NULL UNION ALL SELECT ALL * FROM m4 WHERE NOT ((+ (CAST(CAST(TRUE AS BIGINT) AS BIGINT))) IS NULL) UNION ALL SELECT ALL * FROM m4 WHERE ((+ (CAST(CAST(TRUE AS BIGINT) AS BIGINT))) IS NULL) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT SUM(797300273) FROM m2; --
 -- AFTER_SORT --
 200 OK
 SUM(Int64(797300273))
-797300273
+""
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1; --
 -- AFTER_SORT --
@@ -4983,7 +4965,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE CAST(CAST(0.5590183968399077 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Arrow error: Cast error: Cannot cast string '0.5590183968399077' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'simplify_expressions' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '0.5590183968399077' to value of Boolean type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4; --
@@ -4994,9 +4976,9 @@ t0,t1,0,t2
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t1, m4.f0, m4.t2 FROM m4 WHERE (TRUE) IS TRUE UNION ALL SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4 WHERE NOT ((TRUE) IS TRUE) UNION ALL SELECT ALL m4.t0, m4.t1, m4.f0, m4.t2 FROM m4 WHERE ((TRUE) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: This feature is not implemented: Unsupported ast node IsTrue(Nested(Value(Boolean(true)))) in sqltorel"}
--- ERROR:  --
+200 OK
+t0,t1,f0,t2
+t0,t1,0,t2
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND((- (+ (m3.f0))) IN (-2034004639, -1209273618)) FROM m3; --
 -- AFTER_SORT --
@@ -5007,14 +4989,14 @@ t0,t1,0,t2
 -- EXECUTE SQL: SELECT ALL * FROM m4 ORDER BY m4.t2 DESC; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT ALL * FROM m4 WHERE TRUE; --
 -- AFTER_SORT --
 200 OK
-f0,t0,t1,t2,time
-0,t0,t1,t2,1970-01-01T00:00:00.000000000
+time,t0,t1,t2,f0
+1970-01-01T00:00:00.000000000,t0,t1,t2,0
 
 -- EXECUTE SQL: SELECT * FROM m4 WHERE NOT (TRUE); --
 -- AFTER_SORT --
@@ -5040,19 +5022,17 @@ false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE (((((NOT ((m1.f1) IS NOT UNKNOWN))AND(CAST(+ (1526963605) AS BOOLEAN))))AND((-1029718495) IN (326575169)))) IS TRUE; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE NOT ((((((NOT ((m1.f1) IS NOT UNKNOWN))AND(CAST(+ (1526963605) AS BOOLEAN))))AND((-1029718495) IN (326575169)))) IS TRUE); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+f1,f0,t0
+false,f0,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE ((((((NOT ((m1.f1) IS NOT UNKNOWN))AND(CAST(+ (1526963605) AS BOOLEAN))))AND((-1029718495) IN (326575169)))) IS TRUE) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected [NOT] NULL or TRUE|FALSE or [NOT] DISTINCT FROM after IS, found: NOT"}
--- ERROR:  --
+200 OK
+
 

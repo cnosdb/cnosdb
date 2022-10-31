@@ -1,25 +1,34 @@
 use std::borrow::Borrow;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::mem::size_of;
-use std::ops::Index;
+use std::ops::{Bound, Index, RangeBounds};
 use std::path::{self, Path, PathBuf};
 use std::string::FromUtf8Error;
 use std::{collections::HashMap, sync::Arc};
 
 use bytes::BufMut;
 use chrono::format::format;
+use datafusion::prelude::Column;
+use datafusion::scalar::ScalarValue;
+use lazy_static::__Deref;
+use models::predicate::domain::{utf8_from, Domain, Marker, Range, ValueEntry};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use sled::Error;
 use snafu::ResultExt;
-use tracing::info;
+use tracing::field::debug;
+use tracing::{error, info};
 
 use crate::Error::IndexErr;
 use config::Config;
-use datafusion::arrow::datatypes::ToByteSlice;
-use models::schema::{ColumnType, TableFiled, TableSchema};
-use models::{utils, FieldId, FieldInfo, SchemaFieldId, SeriesId, SeriesKey, Tag, ValueType};
+use datafusion::arrow::datatypes::{DataType, ToByteSlice};
+use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema};
+use models::{
+    tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
+};
 use protos::models::Point;
-use trace::warn;
+use trace::{debug, warn};
 
 use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 use super::*;
@@ -28,6 +37,7 @@ use super::{errors, IndexEngine, IndexError, IndexResult};
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
 const TIME_STAMP_NAME: &str = "time";
+const DATABASE_SCHEMA_PREFIX: &str = "_database_schema_";
 
 #[derive(Debug, Clone)]
 pub struct IndexConfig {
@@ -50,6 +60,7 @@ pub fn index_manger(path: impl AsRef<Path>) -> &'static Arc<RwLock<DbIndexMgr>> 
 #[derive(Debug)]
 pub struct DbIndexMgr {
     base_path: PathBuf,
+    //db_name -> DBIndex
     indexs: HashMap<String, Arc<DBIndex>>,
 }
 
@@ -61,13 +72,18 @@ impl DbIndexMgr {
         }
     }
 
-    pub fn get_db_index(&mut self, db: &String) -> Arc<DBIndex> {
-        let index = self
-            .indexs
-            .entry(db.clone())
-            .or_insert_with(|| Arc::new(DBIndex::new(self.base_path.join(db))));
-
+    pub fn get_db_index(&mut self, schema: DatabaseSchema) -> Arc<DBIndex> {
+        let index = self.indexs.entry(schema.name.clone()).or_insert_with(|| {
+            Arc::new(DBIndex::new(
+                self.base_path.join(schema.name.clone()),
+                schema,
+            ))
+        });
         index.clone()
+    }
+
+    pub fn remove_db_index(&mut self, db_name: &str) {
+        self.indexs.remove(db_name);
     }
 }
 
@@ -75,21 +91,43 @@ impl DbIndexMgr {
 pub struct DBIndex {
     path: PathBuf,
     storage: IndexEngine,
+    db_schema: DatabaseSchema,
+    //The u32 comes from split(SeriesKey.hash())
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
+    // TableName -> TableSchema
     table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
-impl From<&str> for DBIndex {
-    fn from(path: &str) -> Self {
-        DBIndex::new(path)
-    }
-}
-
 impl DBIndex {
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new(path: impl AsRef<Path>, db_schema: DatabaseSchema) -> Self {
         let path = path.as_ref();
+        let storage = IndexEngine::new(path);
+        let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
+        let schema = match storage.get(key.as_bytes()) {
+            Ok(v) => match v {
+                None => {
+                    store_db_schema(&key, &db_schema, &storage);
+                    db_schema
+                }
+                Some(v) => match bincode::deserialize::<DatabaseSchema>(&v) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!(
+                            "failed to deserialize db schema, because {}, maybe file damage",
+                            e
+                        );
+                        db_schema
+                    }
+                },
+            },
+            Err(_) => {
+                store_db_schema(&key, &db_schema, &storage);
+                db_schema
+            }
+        };
         Self {
-            storage: IndexEngine::new(path),
+            storage,
+            db_schema: schema,
             series_cache: RwLock::new(HashMap::new()),
             table_schema: RwLock::new(HashMap::new()),
             path: path.into(),
@@ -111,6 +149,7 @@ impl DBIndex {
 
     pub fn add_series_if_not_exists(&self, info: &Point) -> IndexResult<u64> {
         let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
+
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
 
@@ -153,8 +192,13 @@ impl DBIndex {
         if let Some(schema) = self.table_schema.read().get(&table_name) {
             for field in info.fields().unwrap() {
                 let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
-                if let Some(v) = schema.fields.get(&field_name) {
+                if let Some(v) = schema.column(&field_name) {
                     if field.type_().0 != v.column_type.field_type() as i32 {
+                        trace::debug!(
+                            "type mismatch, point: {}, schema: {}",
+                            field.type_().0,
+                            v.column_type.field_type()
+                        );
                         return Err(IndexError::FieldType);
                     }
                 } else {
@@ -163,15 +207,15 @@ impl DBIndex {
             }
             for tag in info.tags().unwrap() {
                 let tag_name: String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
-                if let Some(v) = schema.fields.get(&tag_name) {
+                if let Some(v) = schema.column(&tag_name) {
                     if ColumnType::Tag != v.column_type {
+                        trace::debug!("type mismatch, point: tag, schema: {}", &v.column_type);
                         return Err(IndexError::FieldType);
                     }
                 } else {
                     return Err(IndexError::NotFoundField);
                 }
             }
-            // info.set_schema_id(self.table_schema_id(info.table()));
             Ok(())
         } else {
             Err(IndexError::NotFoundField)
@@ -182,6 +226,7 @@ impl DBIndex {
         //load schema first from cache,or else from storage and than cache it!
         let mut schema = &mut TableSchema::default();
         let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
         let mut new_schema = false;
         match fields.get_mut(&table_name) {
@@ -189,6 +234,7 @@ impl DBIndex {
             None => {
                 new_schema = true;
                 schema.name = table_name.clone();
+                schema.db = db_name;
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
@@ -200,29 +246,35 @@ impl DBIndex {
         }
 
         let mut schema_change = false;
-        let mut check_fn = |field: &mut TableFiled| -> IndexResult<()> {
-            let codec = match schema.fields.get(&field.name) {
+        let mut check_fn = |field: &mut TableColumn| -> IndexResult<()> {
+            let codec = match schema.column(&field.name) {
                 None => 0,
                 Some(v) => v.codec,
             };
             field.codec = codec;
 
-            match schema.fields.get(&field.name) {
+            match schema.column(&field.name) {
                 Some(v) => {
                     if field.column_type != v.column_type {
+                        trace::debug!(
+                            "type mismatch, point: {}, schema: {}",
+                            &field.column_type,
+                            &v.column_type
+                        );
+                        trace::debug!("type mismatch, schema: {:?}", &schema);
                         return Err(IndexError::FieldType);
                     }
                 }
                 None => {
                     schema_change = true;
-                    field.id = (schema.fields.len() + 1) as SchemaFieldId;
-                    schema.fields.insert(field.name.clone(), field.clone());
+                    field.id = (schema.columns().len() + 1) as ColumnId;
+                    schema.add_column(field.clone());
                 }
             }
             Ok(())
         };
         //check timestamp
-        check_fn(&mut TableFiled::new_with_default(
+        check_fn(&mut TableColumn::new_with_default(
             TIME_STAMP_NAME.to_string(),
             ColumnType::Time,
         ))?;
@@ -230,13 +282,13 @@ impl DBIndex {
         //check tags
         for tag in info.tags().unwrap() {
             let tag_key = unsafe { String::from_utf8_unchecked(tag.key().unwrap().to_vec()) };
-            check_fn(&mut TableFiled::new_with_default(tag_key, ColumnType::Tag))?
+            check_fn(&mut TableColumn::new_with_default(tag_key, ColumnType::Tag))?
         }
 
         //check fields
         for field in info.fields().unwrap() {
             let field_name = unsafe { String::from_utf8_unchecked(field.name().unwrap().to_vec()) };
-            check_fn(&mut TableFiled::new_with_default(
+            check_fn(&mut TableColumn::new_with_default(
                 field_name,
                 ColumnType::from_i32(field.type_().0),
             ))?
@@ -272,6 +324,15 @@ impl DBIndex {
         Ok(None)
     }
 
+    pub fn list_tables(&self) -> Vec<String> {
+        let mut tables = Vec::new();
+        for (table, _) in self.table_schema.read().iter() {
+            tables.push(table.clone())
+        }
+
+        tables
+    }
+
     pub fn get_table_schema_by_series_id(
         &self,
         series_id: SeriesId,
@@ -298,7 +359,7 @@ impl DBIndex {
         }
     }
 
-    pub fn del_table_schema(&self, tab: &String) -> IndexResult<()> {
+    pub fn del_table_schema(&self, tab: &str) -> IndexResult<()> {
         self.table_schema.write().remove(tab);
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
@@ -376,6 +437,30 @@ impl DBIndex {
         Ok(())
     }
 
+    pub fn get_series_ids_by_domains(
+        &self,
+        tab: &str,
+        tag_domains: &HashMap<String, Domain>,
+    ) -> IndexResult<Vec<u64>> {
+        debug!("pushed tags: {:?}", tag_domains);
+
+        let mut series_ids: Vec<Vec<u64>> = vec![vec![]; tag_domains.len()];
+
+        for (idx, (tag_key, v)) in tag_domains.iter().enumerate() {
+            series_ids[idx] = self.get_series_ids_by_domain(tab, tag_key, v)?;
+        }
+
+        debug!("filter scan all series_ids: {:?}", series_ids);
+
+        let result = series_ids
+            .into_iter()
+            // The relationship between multiple tags is 'and', so use and
+            .reduce(|p, c| utils::and_u64(&p, &c))
+            .unwrap_or_default();
+
+        Ok(result)
+    }
+
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
@@ -426,4 +511,119 @@ impl DBIndex {
         self.flush()?;
         Ok(())
     }
+
+    pub fn db_schema(&self) -> DatabaseSchema {
+        self.db_schema.clone()
+    }
+
+    pub fn get_series_ids_by_domain(
+        &self,
+        tab: &str,
+        tag_key: &str,
+        v: &Domain,
+    ) -> IndexResult<Vec<u64>> {
+        let mut series_ids: Vec<u64> = vec![];
+
+        match v {
+            Domain::Range(range_set) => {
+                for (_, range) in range_set.low_indexed_ranges().into_iter() {
+                    let key_range = filter_range_to_index_key_range(tab, tag_key, range);
+
+                    // Search the sid list corresponding to qualified tags in the range
+                    let iter = self.storage.range(key_range).collect::<Vec<_>>();
+
+                    // Save all sids
+                    for kv in iter {
+                        let (idx_key, ori_sid_list) = kv?;
+                        let sid_list = decode_series_id_list(&ori_sid_list)?;
+                        series_ids = utils::or_u64(&series_ids, &sid_list);
+                    }
+
+                    debug!("range scan series_ids[{}]: {:?}", tag_key, series_ids);
+                }
+            }
+            Domain::Equtable(val) => {
+                if val.is_white_list() {
+                    // Contains the given value
+                    for entry in val.entries().into_iter() {
+                        let index_key = tag_value_to_index_key(tab, tag_key, entry.value());
+
+                        if let Some(data) = self.storage.get(&index_key)? {
+                            let id_list = decode_series_id_list(&data)?;
+                            series_ids = utils::or_u64(&series_ids, &id_list);
+                        };
+                    }
+                } else {
+                    // Does not contain a given value, that is, a value other than a given value
+                    // TODO will not deal with this situation for the time being
+                    series_ids = self.get_series_id_list(tab, &[])?;
+                }
+            }
+            Domain::None => {
+                // Normally, it will not go here unless no judgment is made at the ColumnDomains level
+                // If you go here, you will directly return an empty series, because the tag condition in the map is' and '
+                return Ok(vec![]);
+            }
+            Domain::All => {
+                // Normally, it will not go here unless no judgment is made at the ColumnDomains level
+                // The current tag is not filtered, all series are obtained, and the next tag is processed
+                series_ids = self.get_series_id_list(tab, &[])?;
+            }
+        };
+
+        Ok(series_ids)
+    }
+
+    pub fn path(&self) -> PathBuf {
+        self.path.clone()
+    }
+}
+
+fn store_db_schema(key: &str, db_schema: &DatabaseSchema, storage: &IndexEngine) {
+    match bincode::serialize(db_schema) {
+        Ok(v) => match storage.set(key.as_bytes(), &v) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("failed storage db schema, because : {:?}", e);
+            }
+        },
+        Err(e) => {
+            error!("failed serialize data : {:?}, because : {:?}", db_schema, e);
+        }
+    };
+    storage.flush();
+}
+
+pub fn filter_range_to_index_key_range(
+    tab: &str,
+    tag_key: &str,
+    range: &Range,
+) -> impl RangeBounds<Vec<u8>> {
+    let start_bound = range.start_bound();
+    let end_bound = range.end_bound();
+
+    // Convert ScalarValue value to inverted index key
+    let generate_index_key = |v: &ScalarValue| tag_value_to_index_key(tab, tag_key, v);
+
+    // Convert the tag value in Bound to the inverted index key
+    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
+        Bound::Unbounded => Bound::Unbounded,
+        Bound::Included(v) => Bound::Included(generate_index_key(v)),
+        Bound::Excluded(v) => Bound::Excluded(generate_index_key(v)),
+    };
+
+    (translate_bound(start_bound), translate_bound(end_bound))
+}
+
+pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<u8> {
+    // Tag can only be of string type
+    assert_eq!(DataType::Utf8, v.get_datatype());
+
+    // Convert a string to an inverted index key
+    let generate_index_key = |tag_val| {
+        let tag = Tag::from_parts(tag_key, tag_val);
+        encode_inverted_index_key(tab, &tag.key, &tag.value)
+    };
+
+    unsafe { utf8_from(v).map(generate_index_key).unwrap_unchecked() }
 }

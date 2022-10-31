@@ -29,7 +29,18 @@ pipeline {
             }
         }
 
-	    stage('test') {
+        stage('clippy check') {
+            steps {
+
+                sh """
+        	cd $WORKSPACE
+        	cargo clippy --workspace --all-features --all-targets -- -D warnings
+                   """
+            }
+        }
+
+
+	    stage('unit-test') {
             steps {
 
                 sh """
@@ -38,5 +49,16 @@ pipeline {
                 """
             }
 	    }
+
+
+	    stage('integration test') {
+            steps {
+                sh """
+        	cd $WORKSPACE
+        	bash ./query_server/test/script/start_and_test.sh
+                  """
+            }
+        }
+
 	}
 }
