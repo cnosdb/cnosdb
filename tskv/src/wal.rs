@@ -12,13 +12,16 @@ use snafu::prelude::*;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 use walkdir::IntoIter;
 
+use crate::tsm::{DecodeSnafu, EncodeSnafu};
 use engine::EngineRef;
+use models::codec::Encoding;
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest};
 use protos::models as fb_models;
 use trace::{debug, error, info, warn};
 
 use crate::engine;
 use crate::file_system::file_manager::{self, FileManager};
+use crate::tsm::codec::get_str_codec;
 use crate::{
     byte_utils,
     compaction::FlushReq,
@@ -340,9 +343,13 @@ impl WalManager {
                         }
                         match e.typ {
                             WalEntryType::Write => {
+                                let decoder = get_str_codec(Encoding::Snappy);
+                                let mut dst = Vec::new();
+                                decoder.decode(&e.buf, &mut dst).context(DecodeSnafu)?;
+                                debug_assert_eq!(dst.len(), 1);
                                 let req = WritePointsRpcRequest {
                                     version: 1,
-                                    points: e.buf,
+                                    points: dst[0].to_vec(),
                                 };
                                 engine.write_from_wal(req, e.seq).await.unwrap();
                             }
@@ -460,18 +467,22 @@ mod test {
     use chrono::Utc;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
+    use tokio::runtime;
 
     use config::get_config;
+    use models::codec::Encoding;
     use protos::{models as fb_models, models_helper};
     use trace::init_default_global_tracing;
 
+    use crate::engine::Engine;
     use crate::file_system::file_manager::{self, list_file_names, FileManager};
-    use crate::Error;
+    use crate::tsm::codec::get_str_codec;
     use crate::{
         file_system::{DmaFile, FileCursor, FileSync},
         kv_option::WalOptions,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
+    use crate::{kv_option, Error, TsKv};
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
@@ -509,9 +520,23 @@ mod test {
         models_helper::create_random_points_with_delta(fbb, 5)
     }
 
+    fn write_wal_entry<'a>(
+        _fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+    ) -> WIPOffset<fb_models::Points<'a>> {
+        let fbb = _fbb.borrow_mut();
+        models_helper::create_const_points(fbb, 5)
+    }
+
     fn random_wal_entry_block(_fbb: &mut flatbuffers::FlatBufferBuilder) -> WalEntryBlock {
         let fbb = _fbb.borrow_mut();
         let ptr = random_write_wal_entry(fbb);
+        fbb.finish(ptr, None);
+        WalEntryBlock::new(WalEntryType::Write, fbb.finished_data())
+    }
+
+    fn wal_entry_block(_fbb: &mut flatbuffers::FlatBufferBuilder) -> WalEntryBlock {
+        let fbb = _fbb.borrow_mut();
+        let ptr = write_wal_entry(fbb);
         fbb.finish(ptr, None);
         WalEntryBlock::new(WalEntryType::Write, fbb.finished_data())
     }
@@ -531,18 +556,20 @@ mod test {
                     Ok(Some(entry)) => {
                         match entry.typ {
                             WalEntryType::Write => {
-                                let de_block =
-                                    match flatbuffers::root::<fb_models::Points>(&entry.buf) {
-                                        Ok(blk) => blk,
-                                        Err(e) => {
-                                            println!(
-                                                "unexpected data in wal file, ignored file {}: {}",
-                                                wal_dir.display(),
-                                                e
-                                            );
-                                            continue;
-                                        }
-                                    };
+                                let decoder = get_str_codec(Encoding::Snappy);
+                                let mut buf = Vec::new();
+                                decoder.decode(&entry.buf, &mut buf).unwrap();
+                                let de_block = match flatbuffers::root::<fb_models::Points>(&buf[0])
+                                {
+                                    Ok(blk) => blk,
+                                    Err(e) => {
+                                        panic!(
+                                            "unexpected data in wal file, ignored file {}: {}",
+                                            wal_dir.display(),
+                                            e
+                                        );
+                                    }
+                                };
                                 wrote_crcs.push(entry.crc);
                                 read_crcs.push(crc32fast::hash(&entry.buf[..entry.len as usize]));
                             }
@@ -584,7 +611,13 @@ mod test {
             let entry = random_wal_entry_block(&mut fbb);
 
             if entry.typ == WalEntryType::Write {
-                mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
+                let mut enc_points = Vec::new();
+                let coder = get_str_codec(Encoding::Snappy);
+                coder
+                    .encode(&[&entry.buf], &mut enc_points)
+                    .map_err(|_| Error::Send)
+                    .unwrap();
+                mgr.write(WalEntryType::Write, &enc_points).await.unwrap();
             };
         }
 
@@ -610,7 +643,13 @@ mod test {
             let points = models_helper::create_dev_ops_points(&mut fbb, 10, &database, &table);
             fbb.finish(points, None);
             let blk = WalEntryBlock::new(WalEntryType::Write, fbb.finished_data());
-            mgr.write(WalEntryType::Write, &blk.buf).await.unwrap();
+            let mut enc_points = Vec::new();
+            let coder = get_str_codec(Encoding::Snappy);
+            coder
+                .encode(&[&blk.buf], &mut enc_points)
+                .map_err(|_| Error::Send)
+                .unwrap();
+            mgr.write(WalEntryType::Write, &enc_points).await.unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -618,6 +657,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[should_panic]
     async fn test_read_truncated() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
@@ -638,10 +678,51 @@ mod test {
             }
 
             if entry.typ == WalEntryType::Write {
-                mgr.write(WalEntryType::Write, &entry.buf).await.unwrap();
+                let mut enc_points = Vec::new();
+                let coder = get_str_codec(Encoding::Snappy);
+                coder
+                    .encode(&[&entry.buf], &mut enc_points)
+                    .map_err(|_| Error::Send)
+                    .unwrap();
+                mgr.write(WalEntryType::Write, &enc_points).await.unwrap();
             };
         }
 
         check_wal_files(mgr.current_dir);
+    }
+
+    #[test]
+    fn test_recover_from_wal() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let rt = Arc::new(runtime::Runtime::new().unwrap());
+        let dir = "/tmp/test/wal/4".to_string();
+        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
+        let mut global_config = get_config("../config/config.toml");
+        global_config.wal.path = dir;
+        let wal_config = WalOptions::from(&global_config);
+        let mut mgr = WalManager::new(Arc::new(wal_config));
+        for _i in 0..10 {
+            let mut fbb = flatbuffers::FlatBufferBuilder::new();
+            let entry = wal_entry_block(&mut fbb);
+
+            if entry.typ == WalEntryType::Write {
+                let mut enc_points = Vec::new();
+                let coder = get_str_codec(Encoding::Snappy);
+                coder
+                    .encode(&[&entry.buf], &mut enc_points)
+                    .map_err(|_| Error::Send)
+                    .unwrap();
+                rt.block_on(mgr.write(WalEntryType::Write, &enc_points))
+                    .unwrap();
+            };
+        }
+
+        check_wal_files(mgr.current_dir);
+        let opt = kv_option::Options::from(&global_config);
+        let tskv = rt.block_on(TsKv::open(opt, rt.clone())).unwrap();
+        let ver = tskv.get_db_version("db0").unwrap().unwrap();
+        let expect = r#"range: TimeRange { min_ts: 1, max_ts: 1 }, rows: [RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }], size: 736 }] } })]"#;
+        let ans = format!("{:?}", ver.caches.mut_cache.read().read_series_data());
+        assert_eq!(&ans[573..], expect);
     }
 }
