@@ -108,12 +108,14 @@ impl From<&Config> for StorageOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryOptions {
     pub max_server_connections: u32,
+    pub query_threads: usize,
 }
 
 impl From<&Config> for QueryOptions {
     fn from(config: &Config) -> Self {
         Self {
             max_server_connections: config.query.max_server_connections,
+            query_threads: config.query.query_threads,
         }
     }
 }

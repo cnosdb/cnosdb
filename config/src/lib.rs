@@ -24,6 +24,7 @@ impl Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryConfig {
+    pub query_threads: usize,
     pub max_server_connections: u32,
     pub query_sql_limit: u64,
     pub write_sql_limit: u64,
@@ -127,6 +128,10 @@ impl QueryConfig {
         if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
             self.write_sql_limit = size.parse::<u64>().unwrap();
         }
+
+        if let Ok(size) = std::env::var("QUERY_THREADS") {
+            self.query_threads = size.parse::<usize>().unwrap();
+        }
     }
 }
 
@@ -179,6 +184,7 @@ pub fn get_config(path: &str) -> Config {
 fn test() {
     let config_str = r#"
 [query]
+query_threads = 2
 max_server_connections = 10240 
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024

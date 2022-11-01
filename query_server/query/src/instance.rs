@@ -58,7 +58,7 @@ pub fn make_cnosdbms(engine: EngineRef, options: Options) -> Result<Cnosdbms> {
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
-    let scheduler = Arc::new(Scheduler::new(num_cpus::get() * 2));
+    let scheduler = Arc::new(Scheduler::new(options.query.query_threads));
 
     let queries_limit = options.query.max_server_connections;
 
