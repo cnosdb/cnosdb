@@ -252,14 +252,10 @@ fn main() -> Result<(), std::io::Error> {
 
 fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
     use tokio::runtime::Builder;
-    let kind = std::io::ErrorKind::Other;
     match cores {
         None => Runtime::new(),
         Some(cores) => match cores {
-            0 => {
-                let msg = format!("Invalid core number: '{}' must be greater than zero", cores);
-                Err(std::io::Error::new(kind, msg))
-            }
+            0 => Runtime::new(),
             _ => Builder::new_multi_thread()
                 .enable_all()
                 .worker_threads(cores)
