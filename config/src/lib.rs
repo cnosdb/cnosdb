@@ -5,6 +5,7 @@ use trace::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    pub query: QueryConfig,
     pub storage: StorageConfig,
     pub wal: WalConfig,
     pub cache: CacheConfig,
@@ -17,7 +18,15 @@ impl Config {
         self.storage.override_by_env();
         self.wal.override_by_env();
         self.cache.override_by_env();
+        self.query.override_by_env();
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryConfig {
+    pub max_server_connections: u32,
+    pub query_sql_limit: u64,
+    pub write_sql_limit: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +116,20 @@ impl CacheConfig {
     }
 }
 
+impl QueryConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
+            self.max_server_connections = size.parse::<u32>().unwrap();
+        }
+        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
+            self.query_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
+            self.write_sql_limit = size.parse::<u64>().unwrap();
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogConfig {
     pub level: String,
@@ -155,6 +178,10 @@ pub fn get_config(path: &str) -> Config {
 #[test]
 fn test() {
     let config_str = r#"
+[query]
+max_server_connections = 50 
+query_sql_limit = 16777216
+write_sql_limit: 134217728,
 [storage]
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024

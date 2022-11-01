@@ -47,15 +47,14 @@ use warp::Rejection;
 use warp::Reply;
 use warp::{header, reject, Filter};
 
-const QUERY_LEN: u64 = 1024 * 16;
-const WRITE_LEN: u64 = 100 * 1024 * 1024;
-
 pub struct HttpService {
     tls_config: Option<TLSConfig>,
     addr: SocketAddr,
     dbms: DBMSRef,
     kv_inst: EngineRef,
     handle: Option<ServiceHandle<()>>,
+    query_body_limit: u64,
+    write_body_limit: u64,
 }
 
 impl HttpService {
@@ -64,6 +63,8 @@ impl HttpService {
         kv_inst: EngineRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
+        query_body_limit: u64,
+        write_body_limit: u64,
     ) -> Self {
         Self {
             tls_config,
@@ -71,6 +72,8 @@ impl HttpService {
             dbms,
             kv_inst,
             handle: None,
+            query_body_limit: query_body_limit,
+            write_body_limit: write_body_limit,
         }
     }
 
@@ -118,7 +121,7 @@ impl HttpService {
         // let dbms = self.dbms.clone();
         warp::path!("api" / "v1" / "sql")
             .and(warp::post())
-            .and(warp::body::content_length_limit(QUERY_LEN))
+            .and(warp::body::content_length_limit(self.query_body_limit))
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
@@ -175,7 +178,7 @@ impl HttpService {
     ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "write")
             .and(warp::post())
-            .and(warp::body::content_length_limit(WRITE_LEN))
+            .and(warp::body::content_length_limit(self.write_body_limit))
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
