@@ -5,7 +5,6 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
 use tskv::TsKv;
-
 mod http;
 mod rpc;
 pub mod server;
@@ -132,13 +131,17 @@ fn main() -> Result<(), std::io::Error> {
             }
             SubCommand::Run {} => {
                 let tskv_options = tskv::Options::from(&global_config);
+                let query_options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
-                let dbms = Arc::new(make_cnosdbms(kv_inst.clone()).expect("make dbms"));
+                let dbms =
+                    Arc::new(make_cnosdbms(kv_inst.clone(), query_options).expect("make dbms"));
                 let http_service = Box::new(HttpService::new(
                     dbms.clone(),
                     kv_inst.clone(),
                     http_host,
                     global_config.security.tls_config.clone(),
+                    global_config.query.query_sql_limit,
+                    global_config.query.write_sql_limit,
                 ));
                 let grpc_service = Box::new(GrpcService::new(
                     dbms.clone(),

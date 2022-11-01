@@ -18,6 +18,7 @@ pub struct Options {
     pub storage: Arc<StorageOptions>,
     pub wal: Arc<WalOptions>,
     pub cache: Arc<CacheOptions>,
+    pub query: Arc<QueryOptions>,
 }
 
 impl From<&Config> for Options {
@@ -26,6 +27,7 @@ impl From<&Config> for Options {
             storage: Arc::new(StorageOptions::from(config)),
             wal: Arc::new(WalOptions::from(config)),
             cache: Arc::new(CacheOptions::from(config)),
+            query: Arc::new(QueryOptions::from(config)),
         }
     }
 }
@@ -99,6 +101,19 @@ impl From<&Config> for StorageOptions {
             dio_max_non_resident: config.storage.dio_max_non_resident,
             dio_page_len_scale: config.storage.dio_page_len_scale,
             strict_write: config.storage.strict_write,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueryOptions {
+    pub max_server_connections: u32,
+}
+
+impl From<&Config> for QueryOptions {
+    fn from(config: &Config) -> Self {
+        Self {
+            max_server_connections: config.query.max_server_connections,
         }
     }
 }
