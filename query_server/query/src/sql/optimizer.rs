@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::physical_plan::displayable;
 use datafusion::{logical_plan::LogicalPlan, physical_plan::ExecutionPlan};
 use spi::query::session::IsiphoSessionCtx;
 use spi::query::{optimizer::Optimizer, physical_planner::PhysicalPlanner};
 
 use spi::query::Result;
+use trace::debug;
 
 use super::{
     logical::optimizer::{DefaultLogicalOptimizer, LogicalOptimizer},
@@ -25,7 +27,14 @@ impl Optimizer for CascadeOptimizer {
         plan: &LogicalPlan,
         session: &IsiphoSessionCtx,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        debug!("Original logical plan:\n{}\n", plan.display_indent_schema(),);
+
         let optimized_logical_plan = self.logical_optimizer.optimize(plan, session)?;
+
+        debug!(
+            "Final logical plan:\n{}\n",
+            optimized_logical_plan.display_indent_schema(),
+        );
 
         let physical_plan = self
             .physical_planner
@@ -33,6 +42,14 @@ impl Optimizer for CascadeOptimizer {
             .await?;
 
         let optimized_physical_plan = self.physical_optimizer.optimize(physical_plan, session)?;
+
+        debug!(
+            "Final physical plan:\nOutput partition count: {}\n{}\n",
+            optimized_physical_plan
+                .output_partitioning()
+                .partition_count(),
+            displayable(optimized_physical_plan.as_ref()).indent()
+        );
 
         Ok(optimized_physical_plan)
     }

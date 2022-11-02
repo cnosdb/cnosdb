@@ -7,6 +7,7 @@ use datafusion::{
     error::{DataFusionError, Result},
     execution::context::SessionState,
     logical_expr::{Expr, TableProviderFilterPushDown},
+    logical_plan::DFSchemaRef,
     physical_plan::{project_schema, ExecutionPlan},
 };
 use models::{
@@ -18,9 +19,11 @@ use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
-    extension::physical::plan_node::table_writer::TableWriterExec, tskv_exec::TskvExec,
+    extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
+    tskv_exec::TskvExec,
 };
 
+#[derive(Clone)]
 pub struct ClusterTable {
     engine: EngineRef,
     schema: TableSchema,
@@ -60,6 +63,27 @@ impl ClusterTable {
             input,
             self.schema.clone(),
             record_batch_sink_privider,
+        )))
+    }
+
+    pub async fn tag_scan(
+        &self,
+        _ctx: &SessionState,
+        projected_schema: &DFSchemaRef,
+        filters: &[Expr],
+        limit: Option<usize>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let filter = Arc::new(
+            Predicate::default()
+                .set_limit(limit)
+                .push_down_filter(filters, &self.schema),
+        );
+
+        Ok(Arc::new(TagScanExec::new(
+            Arc::new(self.schema.clone()),
+            Arc::new(projected_schema.as_ref().into()),
+            filter,
+            self.engine.clone(),
         )))
     }
 

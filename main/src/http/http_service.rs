@@ -128,24 +128,20 @@ impl HttpService {
             .and(self.with_dbms())
             .and_then(
                 |req: Bytes, header: Header, param: SqlParam, dbms: DBMSRef| async move {
-                    debug!(
+                    let req_log = format!(
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
                     );
+                    debug!(req_log);
 
                     // Parse req、header and param to construct query request
                     let query_req = construct_query(req, &header, param);
 
-                    match query_req {
+                    let result = match query_req {
                         Ok(ref q) => {
                             let start = Instant::now();
 
                             let result = sql_handle(q, header, dbms).await;
-
-                            let result = result.map_err(|e| {
-                                trace::error!("Failed to handle http sql request, err: {}", e);
-                                e
-                            });
 
                             sample_query_read_latency(
                                 q.context().catalog(),
@@ -153,22 +149,21 @@ impl HttpService {
                                 start.elapsed().as_millis() as f64,
                             );
 
-                            match result {
-                                Ok(resp) => {
-                                    incr_query_read_success();
-                                    Ok(resp)
-                                }
-                                Err(e) => {
-                                    incr_query_read_failed();
-                                    Err(reject::custom(e))
-                                }
-                            }
+                            result.map_err(|e| {
+                                trace::error!("Failed to handle http sql request, err: {}", e);
+                                reject::custom(e)
+                            })
                         }
-                        Err(e) => {
-                            incr_query_read_failed();
-                            Err(reject::custom(e))
-                        }
+                        Err(e) => Err(reject::custom(e)),
+                    };
+
+                    match result {
+                        Ok(_) => incr_query_read_success(),
+                        Err(_) => incr_query_read_failed(),
                     }
+
+                    trace::trace!("Response {}", req_log);
+                    result
                 },
             )
     }
