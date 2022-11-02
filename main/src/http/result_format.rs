@@ -125,6 +125,8 @@ impl FromStr for ResultFormat {
 pub async fn fetch_record_batches(res: &mut QueryHandle) -> ArrowResult<Vec<RecordBatch>> {
     let mut actual = vec![];
 
+    trace::trace!("try collect result for: {}", res.query().content());
+
     for ele in res.result().iter_mut() {
         match ele {
             Output::StreamData(stream) => {
@@ -134,6 +136,8 @@ pub async fn fetch_record_batches(res: &mut QueryHandle) -> ArrowResult<Vec<Reco
             Output::Nil(_) => {}
         }
     }
+
+    trace::trace!("successfully collected result of {}", res.query().content());
 
     Ok(actual)
 }

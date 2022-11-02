@@ -24,7 +24,7 @@ use spi::query::LogicalOptimizeSnafu;
 
 use crate::extension::logical::optimizer_rule::{
     implicit_type_conversion::ImplicitTypeConversion,
-    projection_push_down::ProjectionPushDownAdapter,
+    projection_push_down::ProjectionPushDownAdapter, rewrite_tag_scan::RewriteTagScan,
     transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule,
     transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule,
 };
@@ -53,7 +53,7 @@ impl Default for DefaultLogicalOptimizer {
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
             // data type conv
             Arc::new(ImplicitTypeConversion {}),
-            // df default rules
+            // df default rules start
             Arc::new(TypeCoercion::new()),
             Arc::new(SimplifyExpressions::new()),
             Arc::new(UnwrapCastInComparison::new()),
@@ -66,12 +66,17 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(CommonSubexprEliminate::new()),
             Arc::new(EliminateLimit::new()),
             Arc::new(ProjectionPushDownAdapter::new()),
+            // df default rules end
+            // cnosdb rules
+            Arc::new(RewriteTagScan {}),
+            // df default rules start
             Arc::new(RewriteDisjunctivePredicate::new()),
             Arc::new(FilterNullJoinKeys::default()),
             Arc::new(ReduceOuterJoin::new()),
             Arc::new(FilterPushDown::new()),
             Arc::new(LimitPushDown::new()),
             Arc::new(SingleDistinctToGroupBy::new()),
+            // df default rules end
             // cnosdb rules
             Arc::new(TransformBottomFuncToTopkNodeRule {}),
             Arc::new(TransformTopkFuncToTopkNodeRule {}),
