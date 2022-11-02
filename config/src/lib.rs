@@ -179,9 +179,9 @@ pub fn get_config(path: &str) -> Config {
 fn test() {
     let config_str = r#"
 [query]
-max_server_connections = 50 
-query_sql_limit = 16777216
-write_sql_limit: 134217728,
+max_server_connections = 10240 
+query_sql_limit = 16777216   # 16 * 1024 * 1024
+write_sql_limit = 167772160   # 160 * 1024 * 1024
 [storage]
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024

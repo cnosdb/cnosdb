@@ -72,8 +72,8 @@ impl HttpService {
             dbms,
             kv_inst,
             handle: None,
-            query_body_limit: query_body_limit,
-            write_body_limit: write_body_limit,
+            query_body_limit,
+            write_body_limit,
         }
     }
 

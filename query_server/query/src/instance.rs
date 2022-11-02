@@ -144,7 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple_sql() {
-        let config = get_config("../config/config.toml");
+        let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
         let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
@@ -199,7 +199,7 @@ mod tests {
     #[ignore]
     async fn test_topk_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-        let config = get_config("../config/config.toml");
+        let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
         let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
@@ -233,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn test_topk_desc_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-        let config = get_config("../config/config.toml");
+        let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
         let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
@@ -267,7 +267,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_csv_table() {
-        let config = get_config("../config/config.toml");
+        let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
         let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
@@ -321,7 +321,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_parquet_table() {
-        let config = get_config("../config/config.toml");
+        let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
         let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
