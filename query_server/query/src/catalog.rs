@@ -1,14 +1,19 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
+use coordinator::meta_client::MetaRef;
 use datafusion::{
     catalog::{catalog::CatalogProvider, schema::SchemaProvider},
     datasource::TableProvider,
     error::{DataFusionError, Result},
 };
-use models::schema::{DatabaseSchema, TableSchema};
+use models::{
+    meta_data::DatabaseInfo,
+    schema::{DatabaseSchema, TableSchema},
+};
 use parking_lot::RwLock;
-use spi::catalog::TableRef;
+use spi::catalog::{TableRef, DEFAULT_CATALOG};
 
+use trace::info;
 use tskv::engine::EngineRef;
 
 use crate::table::ClusterTable;
@@ -16,15 +21,17 @@ pub type UserCatalogRef = Arc<UserCatalog>;
 
 pub struct UserCatalog {
     engine: EngineRef,
+    manager: MetaRef,
     /// DBName -> DB
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
 }
 
 impl UserCatalog {
-    pub fn new(engine: EngineRef) -> Self {
+    pub fn new(engine: EngineRef, manager: MetaRef) -> Self {
         Self {
             schemas: RwLock::new(HashMap::new()),
             engine,
+            manager,
         }
     }
     pub fn deregister_schema(&self, db_name: &str) -> Result<()> {
@@ -101,6 +108,28 @@ impl CatalogProvider for UserCatalog {
             }
             Some(v) => v,
         };
+
+        info!(
+            "==== create_database: {}  config:{:#?}",
+            name, &user_schema.database_schema.config
+        );
+
+        if let Some(client) = self.manager.tenant_meta(&DEFAULT_CATALOG.to_string()) {
+            let info = DatabaseInfo {
+                name: name.to_string(),
+                shard: user_schema.database_schema.config.shard_num as u32,
+                ttl: user_schema.database_schema.config.ttl.time_stamp(),
+                vnode_duration: user_schema
+                    .database_schema
+                    .config
+                    .vnode_duration
+                    .time_stamp(),
+                replications: user_schema.database_schema.config.replica as u32,
+                buckets: vec![],
+            };
+            client.create_db(&name.to_string(), &info).unwrap(); //todo
+        }
+
         self.engine
             .create_database(&user_schema.database_schema)
             .map_err(|e| DataFusionError::Execution(format!("{}", e)))?;

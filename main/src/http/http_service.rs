@@ -123,6 +123,7 @@ impl HttpService {
             .or(self.query())
             .or(self.write_line_protocol())
             .or(self.metrics())
+            .or(self.print_meta())
     }
 
     fn ping(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
@@ -265,6 +266,32 @@ impl HttpService {
             )
     }
 
+    fn print_meta(
+        &self,
+    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "meta")
+            .and(self.handle_header())
+            .and(self.with_writer())
+            .and_then(|header: Header, writer: Arc<PointWriter>| async move {
+                let user_info = match header.try_get_basic_auth() {
+                    Ok(u) => u,
+                    Err(e) => return Err(reject::custom(e)),
+                };
+
+                let meta_client = match writer.tenant_meta_client(&user_info.user) {
+                    Some(client) => client,
+                    None => {
+                        return Err(reject::custom(HttpError::NotFoundTenant {
+                            name: user_info.user,
+                        }));
+                    }
+                };
+                meta_client.print_data();
+
+                Ok(warp::reply::json(&gather_metrics_as_prometheus_string()))
+            })
+    }
+
     fn metrics(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "metrics")
             .map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
@@ -320,7 +347,7 @@ fn parse_lines_to_points<'a>(
 ) -> Result<(VnodeMapping<'a>, Vec<u8>), Error> {
     let mut fbb = FlatBufferBuilder::new();
     let mut mapping = VnodeMapping::new();
-    let full_name = format!("{}.{}", tenant, db);
+    let _full_name = format!("{}.{}", tenant, db);
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter_mut() {
         let mut tags = Vec::with_capacity(line.tags.len());
@@ -367,7 +394,7 @@ fn parse_lines_to_points<'a>(
             fields.push(field_builder.finish());
         }
         let point_args = PointArgs {
-            db: Some(fbb.create_vector(full_name.as_bytes())),
+            db: Some(fbb.create_vector(db.as_bytes())),
             table: Some(fbb.create_vector(line.measurement.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
@@ -383,7 +410,7 @@ fn parse_lines_to_points<'a>(
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
 
-    let fbb_db = fbb.create_vector(full_name.as_bytes());
+    let fbb_db = fbb.create_vector(db.as_bytes());
     let points_raw = fbb.create_vector(&point_offsets);
     let points = Points::create(
         &mut fbb,

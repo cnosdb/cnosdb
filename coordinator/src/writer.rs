@@ -18,7 +18,7 @@ use crate::command::*;
 use crate::errors::*;
 use crate::hh_queue::HintedOffBlock;
 use crate::hh_queue::HintedOffManager;
-use crate::meta_client::{MetaClientManager, MetaClientRef};
+use crate::meta_client::{MetaClientRef, MetaRef};
 use trace::debug;
 use trace::info;
 
@@ -88,8 +88,8 @@ impl<'a> VnodeMapping<'a> {
         point: &PointArgs,
         hash_id: u64,
     ) {
-        if let Ok(info) = meta_client.locate_replcation_set_for_write(db, hash_id, point.timestamp)
-        {
+        let ts = point.timestamp;
+        if let Ok(info) = meta_client.locate_replcation_set_for_write(&db.clone(), hash_id, ts) {
             let full_name = format!("{}.{}", meta_client.tenant_name(), db);
             self.sets.entry(info.id).or_insert(info.clone());
             let entry = self
@@ -105,13 +105,13 @@ impl<'a> VnodeMapping<'a> {
 pub struct PointWriter {
     node_id: u64,
     kv_inst: EngineRef,
-    meta_manager: Arc<MetaClientManager>,
+    meta_manager: MetaRef,
 
     conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 }
 
 impl PointWriter {
-    pub fn new(node_id: u64, kv_inst: EngineRef, meta_manager: Arc<MetaClientManager>) -> Self {
+    pub fn new(node_id: u64, kv_inst: EngineRef, meta_manager: MetaRef) -> Self {
         Self {
             node_id,
             kv_inst,
@@ -121,7 +121,7 @@ impl PointWriter {
     }
 
     pub fn tenant_meta_client(&self, tenant: &String) -> Option<MetaClientRef> {
-        self.meta_manager.get_meta_client(tenant)
+        self.meta_manager.tenant_meta(tenant)
     }
 
     pub async fn write_points(
@@ -238,10 +238,7 @@ impl PointWriter {
             }
         }
 
-        let info = self
-            .meta_manager
-            .get_admin_meta_client()
-            .node_info_by_id(node_id)?;
+        let info = self.meta_manager.admin_meta().node_info_by_id(node_id)?;
         let client = TcpStream::connect(info.tcp_addr).await?;
 
         return Ok(client);

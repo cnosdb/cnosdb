@@ -66,7 +66,8 @@ pub async fn start_raft_node(node_id: NodeId, http_addr: String) -> std::io::Res
             .service(raft_api::metrics)
             .service(api::write)
             .service(api::read)
-            .service(api::get_all)
+            .service(api::read_all)
+            .service(api::data_nodes)
             .service(api::consistent_read)
     })
     .keep_alive(Duration::from_secs(5));

@@ -9,6 +9,7 @@ trace = { path = "../../common/trace" }
 tskv = { path = "../../tskv" }
 models = { path = "../../common/models" }
 config = { path = "../../config" }
+coordinator = { path = "../../coordinator" }
 spi = { path = "../spi" }
 datafusion = { path = "../../common/datafusion_dep" }
 criterion = { version = "0.3.5", features = ["async_tokio"] }

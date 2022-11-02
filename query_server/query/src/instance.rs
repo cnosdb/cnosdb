@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use coordinator::meta_client::MetaRef;
 use datafusion::scheduler::Scheduler;
 use spi::{
     query::{dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory},
@@ -40,14 +41,14 @@ impl DatabaseManagerSystem for Cnosdbms {
     }
 }
 
-pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
+pub fn make_cnosdbms(engine: EngineRef, manager: MetaRef) -> Result<Cnosdbms> {
     // todo: add query config
     // for now only support local mode
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
 
     let meta = Arc::new(
-        LocalCatalogMeta::new_with_default(engine, Arc::new(function_manager))
+        LocalCatalogMeta::new_with_default(engine, manager, Arc::new(function_manager))
             .context(MetaDataSnafu)?,
     );
 
@@ -75,6 +76,7 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
+    use coordinator::meta_client_mock::MockMetaManager;
     use std::ops::DerefMut;
     use trace::debug;
 
@@ -138,7 +140,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple_sql() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let db = make_cnosdbms(
+            Arc::new(MockEngine::default()),
+            Arc::new(Box::new(MockMetaManager::default())),
+        )
+        .unwrap();
 
         let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
 
@@ -192,7 +198,11 @@ mod tests {
     async fn test_topk_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
 
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let db = make_cnosdbms(
+            Arc::new(MockEngine::default()),
+            Arc::new(Box::new(MockMetaManager::default())),
+        )
+        .unwrap();
 
         let sql = format!(
             "SELECT * FROM
@@ -225,7 +235,11 @@ mod tests {
     async fn test_topk_desc_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
 
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let db = make_cnosdbms(
+            Arc::new(MockEngine::default()),
+            Arc::new(Box::new(MockMetaManager::default())),
+        )
+        .unwrap();
 
         let mut result = exec_sql(
             &db,
@@ -257,7 +271,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_csv_table() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let db = make_cnosdbms(
+            Arc::new(MockEngine::default()),
+            Arc::new(Box::new(MockMetaManager::default())),
+        )
+        .unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],
@@ -309,7 +327,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_parquet_table() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let db = make_cnosdbms(
+            Arc::new(MockEngine::default()),
+            Arc::new(Box::new(MockMetaManager::default())),
+        )
+        .unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],
@@ -353,7 +375,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_json_table() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let db = make_cnosdbms(
+            Arc::new(MockEngine::default()),
+            Arc::new(Box::new(MockMetaManager::default())),
+        )
+        .unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],

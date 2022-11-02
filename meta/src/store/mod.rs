@@ -810,16 +810,14 @@ fn process_create_bucket(
 
 #[cfg(test)]
 mod test {
-    use std::{
-        collections::{BTreeMap, HashMap},
-        sync::Arc,
-    };
+    use std::collections::{BTreeMap, HashMap};
 
     use models::meta_data::NodeInfo;
     use serde::{Deserialize, Serialize};
-    use tokio::runtime;
 
     use crate::{client::MetaHttpClient, store::node_list};
+
+    use super::KvReq;
 
     #[tokio::test]
     async fn test_btree_map() {
@@ -877,16 +875,20 @@ mod test {
 
         let tup = ("test1".to_string(), "test2".to_string());
         let str = serde_json::to_string(&tup).unwrap();
-        print!("\n2 === {}=== \n", str);
+        print!("\n3 === {}=== \n", str);
+
+        let str = serde_json::to_string(&"xxx".to_string()).unwrap();
+        print!("\n4 === {}=== \n", str);
     }
 
     #[tokio::test]
     async fn test_meta_client() {
-        let rt = Arc::new(runtime::Runtime::new().unwrap());
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string(), rt);
-        let rsp = client.test_read(&"null".to_string());
-
-        print!("{:#?} \n", rsp)
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let rsp = client.write(&KvReq::Set {
+            key: "kxxxxxx".to_string(),
+            value: "vxxxxxx".to_string(),
+        });
+        println!("write: {:#?}\n", rsp);
     }
 
     #[tokio::test]

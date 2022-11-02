@@ -2,8 +2,9 @@
 
 use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
-use coordinator::meta_client::{LocalMetaClient, MetaClientManager, MetaClientRef};
+use coordinator::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use coordinator::writer::PointWriter;
+use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
 use query::instance::make_cnosdbms;
 use std::{net::SocketAddr, sync::Arc};
@@ -129,19 +130,37 @@ fn main() -> Result<(), std::io::Error> {
         &global_config.log.level,
     );
 
-    let grpc_host = cli
-        .grpc_host
+    // let grpc_host = cli
+    //     .grpc_host
+    //     .parse::<SocketAddr>()
+    //     .expect("Invalid grpc_host");
+    // let http_host = cli
+    //     .http_host
+    //     .parse::<SocketAddr>()
+    //     .expect("Invalid http_host");
+
+    // let tcp_host = cli
+    //     .tcp_host
+    //     .parse::<SocketAddr>()
+    //     .expect("Invalid http_host");
+
+    let grpc_host = global_config
+        .cluster
+        .grpc_server
         .parse::<SocketAddr>()
         .expect("Invalid grpc_host");
-    let http_host = cli
-        .http_host
+    let http_host = global_config
+        .cluster
+        .http_server
         .parse::<SocketAddr>()
         .expect("Invalid http_host");
 
-    let tcp_host = cli
-        .tcp_host
+    let tcp_host = global_config
+        .cluster
+        .tcp_server
         .parse::<SocketAddr>()
         .expect("Invalid http_host");
+
     init_tskv_metrics_recorder();
     init_query_metrics_recorder();
 
@@ -151,14 +170,17 @@ fn main() -> Result<(), std::io::Error> {
                 todo!()
             }
             SubCommand::Run {} => {
-                let tskv_options = tskv::Options::from(&global_config);
-                let kv_inst = Arc::new(TsKv::open(tskv_options, runtime.clone()).await.unwrap());
-                let dbms = Arc::new(make_cnosdbms(kv_inst.clone()).expect("make dbms"));
-
-                let meta_manager = Arc::new(MetaClientManager::new(
+                let meta_manager: MetaRef = Arc::new(Box::new(RemoteMetaManager::new(
                     global_config.cluster.clone(),
-                    runtime,
-                ));
+                )));
+                // let meta_manager = Arc::new(MetaRef::new(global_config.cluster.clone()));
+
+                let tskv_options = tskv::Options::from(&global_config);
+                let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
+                let dbms = Arc::new(
+                    make_cnosdbms(kv_inst.clone(), meta_manager.clone()).expect("make dbms"),
+                );
+
                 let point_writer = Arc::new(PointWriter::new(
                     global_config.cluster.node_id,
                     kv_inst.clone(),

@@ -462,4 +462,12 @@ impl Duration {
             unit: time_unit,
         })
     }
+
+    pub fn time_stamp(&self) -> i64 {
+        match self.unit {
+            DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,
+            DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
+            DurationUnit::Day => self.time_num as i64 * 24 * 3600 * 1000000000,
+        }
+    }
 }

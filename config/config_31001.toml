@@ -3,7 +3,7 @@
 # Directory for index: $path/index/$database/
 # Directory for tsm: $path/data/$database/tsm/
 # Directory for delta: $path/data/$database/delta/
-path = 'data/db'
+path = '/tmp/cnosdb/1001/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
@@ -16,7 +16,7 @@ strict_write = false
 
 [wal]
 enabled = true
-path = 'data/wal'
+path = '/tmp/cnosdb/1001/wal'
 sync = false
 
 [cache]
@@ -25,7 +25,7 @@ max_immutable_number = 4
 
 [log]
 level = 'debug'
-path = 'data/log'
+path = '/tmp/cnosdb/1001/log'
 
 [security]
 # [security.tls_config]
@@ -33,15 +33,15 @@ path = 'data/log'
 # private_key = "./config/tls/server.key"
 
 [cluster]
-node_id = 100
+node_id = 1001
 name = 'cluster_xxx'
-meta = '127.0.0.1,22001'
+meta = '127.0.0.1:21001'
 
-http_server = '127.0.0.1:31007'
-grpc_server = '127.0.0.1:31008'
-tcp_server = '127.0.0.1:31009'
+http_server = '127.0.0.1:31001'
+grpc_server = '127.0.0.1:31002'
+tcp_server = '127.0.0.1:31003'
 
 [hintedoff]
 enable = true
-path = '/tmp/cnosdb/hh'
+path = '/tmp/cnosdb/1001/hh'
 

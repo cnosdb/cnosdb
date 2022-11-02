@@ -68,17 +68,17 @@ pub async fn data_nodes(
     Ok(Json(res))
 }
 
-#[get("/get_all")]
-pub async fn get_all(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+#[get("/read_all")]
+pub async fn read_all(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
 
-    let mut response = vec![];
+    let mut response = "*---------------------------------------------------------\n".to_string();
     for (k, v) in sm.data.iter() {
-        response.push(format!("{}: {}\n", k, v));
+        response = response + &format!("* {}: {}\n", k, v);
     }
+    response = response + &"*-------------------------------------------------------\n".to_string();
 
-    let res: Result<Vec<String>, Infallible> = Ok(response);
-    Ok(Json(res))
+    Ok(response)
 }
 
 #[post("/consistent_read")]

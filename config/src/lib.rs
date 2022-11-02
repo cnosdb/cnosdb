@@ -155,11 +155,15 @@ pub fn get_config(path: &str) -> Config {
     config
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Default, Deserialize)]
 pub struct ClusterConfig {
     pub node_id: u64,
     pub name: String,
     pub meta: String,
+
+    pub http_server: String,
+    pub grpc_server: String,
+    pub tcp_server: String,
 }
 
 impl ClusterConfig {
@@ -172,6 +176,18 @@ impl ClusterConfig {
         }
         if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
             self.node_id = id.parse::<u64>().unwrap();
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_HTTP_SERVER") {
+            self.http_server = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_GRPC_SERVER") {
+            self.grpc_server = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_TCP_SERVER") {
+            self.tcp_server = val;
         }
     }
 }

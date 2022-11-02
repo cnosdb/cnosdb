@@ -1,4 +1,5 @@
 use crate::catalog::{UserCatalog, UserCatalogRef, UserSchema};
+use coordinator::meta_client::MetaRef;
 use datafusion::arrow::array::{BooleanArray, StringArray};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::catalog::catalog::CatalogProvider;
@@ -45,12 +46,16 @@ pub struct LocalCatalogMeta {
 }
 
 impl LocalCatalogMeta {
-    pub fn new_with_default(engine: EngineRef, func_manager: FuncMetaManagerRef) -> Result<Self> {
+    pub fn new_with_default(
+        engine: EngineRef,
+        manager: MetaRef,
+        func_manager: FuncMetaManagerRef,
+    ) -> Result<Self> {
         let meta = Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
             database_name: DEFAULT_DATABASE.to_string(),
             engine: engine.clone(),
-            catalog: Arc::new(UserCatalog::new(engine)),
+            catalog: Arc::new(UserCatalog::new(engine, manager)),
             func_manager,
         };
         if let Err(e) = meta.create_database(
