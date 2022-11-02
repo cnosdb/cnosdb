@@ -244,14 +244,14 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
                 continue;
             }
 
-            if !escaped && c == '=' {
+            if !quoted && c == '=' {
                 tok_offsets[1] = i;
                 if buf.len() <= i + 1 {
                     return Ok(None);
                 }
                 tok_offsets[2] = i + 1;
             }
-            if !escaped && c == ',' {
+            if !quoted && c == ',' {
                 field_set.push((
                     &buf[tok_offsets[0]..tok_offsets[1]],
                     parse_field_value(&buf[tok_offsets[2]..i])?,
@@ -530,16 +530,16 @@ mod test {
     #[test]
     fn test_line_parser() {
         //! measurement: ma
-        //! | ta  | tb | fa     | fb | ts |
-        //! | --  | -- | ------ | -- | -- |
-        //! | 2\\ | 1  | 112\"" | 2  | 1  |
+        //! | ta  | tb | fa     | fb | fc             | ts |
+        //! | --  | -- | ------ | -- | -------------- | -- |
+        //! | 2\\ | 1  | 112\"" | 2  | "hello, world" | 1  |
         //!
         //! measurement: mb
         //! | tb | tc  | fa  | fc  | ts |
         //! | -- | --- | --- | --- | -- |
         //! | 2  | abc | 1.3 | 0.9 |    |
 
-        let lines = "ma,ta=2\\\\,tb=1 fa=\"112\\\"3\",fb=2 1  \n mb,tb=2,tc=abc fa=1.3,fc=0.9";
+        let lines = "ma,ta=2\\\\,tb=1 fa=\"112\\\"3\",fb=2,fc=\"hello, world\" 1  \n mb,tb=2,tc=abc fa=1.3,fc=0.9";
         println!(
             "Length of the line protocol string in test case: {}\n======\n{}\n======",
             lines.len(),
@@ -558,7 +558,8 @@ mod test {
                 tags: vec![("ta", "2\\\\"), ("tb", "1")],
                 fields: vec![
                     ("fa", FieldValue::Str(b"112\\\"3".to_vec())),
-                    ("fb", FieldValue::F64(2.0))
+                    ("fb", FieldValue::F64(2.0)),
+                    ("fc", FieldValue::Str(b"hello, world".to_vec())),
                 ],
                 timestamp: 1
             }
