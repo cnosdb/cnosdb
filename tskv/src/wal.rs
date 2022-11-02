@@ -185,23 +185,26 @@ impl WalWriter {
     }
 
     pub async fn write(&mut self, typ: WalEntryType, data: Arc<Vec<u8>>) -> Result<(u64, usize)> {
-        let pos = self.size;
+        let mut pos = self.size;
         let mut seq = self.max_sequence;
+        let seq_buf = seq.to_be_bytes();
 
         let typ = (typ as u8).to_be_bytes();
         let crc = crc32fast::hash(&data).to_be_bytes();
         let len = (data.len() as u32).to_be_bytes();
+        println!("before byte {:?}",len);
 
         let bufs = &mut [
             IoSlice::new(&typ),
+            IoSlice::new(&seq_buf),
             IoSlice::new(&crc),
-            IoSlice::new(&data),
             IoSlice::new(&len),
+            IoSlice::new(&data),
         ][..];
-        self.file
+        pos += self.file
             .write_vec(pos, bufs)
             .await
-            .context(error::IOSnafu)?;
+            .context(error::IOSnafu)? as u64;
         seq += 1;
 
         if self.config.sync {
@@ -214,7 +217,9 @@ impl WalWriter {
         let written_size = (pos - self.size) as usize;
         self.size = pos;
         self.max_sequence = seq;
-
+        println!("size {}",self.size);
+        println!("seq {}", self.max_sequence);
+        println!("written_size {}", written_size);
         Ok((seq, written_size))
     }
 
@@ -425,9 +430,12 @@ impl WalReader {
             }
         };
         let data_len = byte_utils::decode_be_u32(key);
+        println!("after {}",data_len);
+        println!("after byte {:?}", key);
         if data_len == 0 {
             return Ok(None);
         }
+        println!("{}", self.cursor.len() - self.cursor.pos());
         if self.cursor.len() - self.cursor.pos() < data_len as u64 {
             return Err(Error::WalTruncated);
         }
@@ -686,8 +694,8 @@ mod test {
         check_wal_files(mgr.current_dir).await;
     }
 
-    #[tokio::test]
-    async fn test_recover_from_wal() {
+    #[test]
+    fn test_recover_from_wal() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4".to_string();
@@ -698,7 +706,7 @@ mod test {
         global_config.wal.path = dir;
         global_config.storage.path = dir_summary;
         let wal_config = WalOptions::from(&global_config);
-        let mut mgr = WalManager::new(Arc::new(wal_config)).await;
+        let mut mgr = rt.block_on(WalManager::new(Arc::new(wal_config)));
         for _i in 0..10 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
             let entry = wal_entry_block(&mut fbb);
@@ -710,13 +718,13 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, Arc::new(enc_points)).await.expect("write succeed");
+                rt.block_on(mgr.write(WalEntryType::Write, Arc::new(enc_points))).expect("write succeed");
             };
         }
 
-        check_wal_files(mgr.current_dir).await;
+        rt.block_on(check_wal_files(mgr.current_dir));
         let opt = kv_option::Options::from(&global_config);
-        let tskv = TsKv::open(opt, rt.clone()).await.unwrap();
+        let tskv = rt.block_on(TsKv::open(opt, rt.clone())).unwrap();
         let ver = tskv.get_db_version("db0").unwrap().unwrap();
         let expect = r#"range: TimeRange { min_ts: 1, max_ts: 1 }, rows: [RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }], size: 736 }] } })]"#;
         let ans = format!("{:?}", ver.caches.mut_cache.read().read_series_data());
