@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 config = { path = "../config" }
 models = { path = "../common/models" }
-metrics = {path = "../common/metrics"}
+metrics = { path = "../common/metrics" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
@@ -50,6 +50,7 @@ walkdir = "2.3"
 zstd = "0.11.2"
 minivec = "0.4.0"
 crossbeam-channel = "0.5"
+fs2 = "0.4"
 [dev-dependencies]
 criterion = { version = "0.3.5", features = ["async_tokio"] }
 rand = "0.8"

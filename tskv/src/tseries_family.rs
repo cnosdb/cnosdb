@@ -201,12 +201,12 @@ impl ColumnFile {
         false
     }
 
-    pub fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open_for_write(dir, self.file_id)?;
-        tombstone.add_range(field_ids, time_range)?;
-        tombstone.flush()?;
+        let mut tombstone = TsmTombstone::open_for_write(dir, self.file_id).await?;
+        tombstone.add_range(field_ids, time_range).await?;
+        tombstone.flush().await?;
         Ok(())
     }
 }
@@ -258,10 +258,10 @@ pub struct FieldFileLocation {
 }
 
 impl FieldFileLocation {
-    pub fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    pub async fn peek(&mut self) -> Result<Option<DataType>, Error> {
         if self.read_index >= self.data_block.len() {
             if let Some(meta) = self.block_it.next() {
-                let blk = self.reader.get_data_block(&meta)?;
+                let blk = self.reader.get_data_block(&meta).await?;
                 self.read_index = 0;
                 self.data_block = blk;
             } else {
@@ -358,7 +358,7 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub fn read_column_file(
+    pub async fn read_column_file(
         &self,
         tf_id: u32,
         field_id: FieldId,
@@ -370,7 +370,7 @@ impl LevelInfo {
                 continue;
             }
 
-            let tsm_reader = match TsmReader::open(file.file_path()) {
+            let tsm_reader = match TsmReader::open(file.file_path()).await {
                 Ok(tr) => tr,
                 Err(e) => {
                     error!("failed to load tsm reader, in case {:?}", e);
@@ -379,7 +379,7 @@ impl LevelInfo {
             };
             for idx in tsm_reader.index_iterator_opt(field_id) {
                 for blk in idx.block_iterator_opt(time_range) {
-                    if let Ok(blk) = tsm_reader.get_data_block(&blk) {
+                    if let Ok(blk) = tsm_reader.get_data_block(&blk).await {
                         data.push(blk);
                     }
                 }
@@ -789,6 +789,11 @@ mod test {
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
 
+    use config::get_config;
+    use models::schema::DatabaseSchema;
+    use models::{Timestamp, ValueType};
+    use trace::info;
+
     use crate::compaction::flush_tests::default_with_field_id;
     use crate::file_system::file_manager;
     use crate::file_utils::{self, make_tsm_file_name};
@@ -805,10 +810,6 @@ mod test {
         version_set::VersionSet,
         TseriesFamilyId,
     };
-    use config::get_config;
-    use models::schema::DatabaseSchema;
-    use models::{Timestamp, ValueType};
-    use trace::info;
 
     use super::{ColumnFile, LevelInfo};
 
@@ -1188,6 +1189,7 @@ mod test {
             summary_task_sender,
             compact_task_sender,
         )
+        .await
         .unwrap();
 
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
@@ -1195,30 +1197,39 @@ mod test {
         let version_set = version_set.write();
         let tsf = version_set.get_tsfamily_by_name(&database).unwrap();
         let version = tsf.write().version();
-        version.levels_info[1].read_column_file(
-            ts_family_id,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1]
+            .read_column_file(
+                ts_family_id,
+                0,
+                &TimeRange {
+                    max_ts: 0,
+                    min_ts: 0,
+                },
+            )
+            .await;
 
         let file = version.levels_info[1].files[0].clone();
 
         let dir = opt.storage.tsm_dir(&database, ts_family_id);
-        let mut tombstone = TsmTombstone::open_for_write(dir, file.file_id).unwrap();
-        tombstone.add_range(&[0], &TimeRange::new(0, 0)).unwrap();
-        tombstone.flush().unwrap();
-        tombstone.load().unwrap();
+        let mut tombstone = TsmTombstone::open_for_write(dir, file.file_id)
+            .await
+            .unwrap();
+        tombstone
+            .add_range(&[0], &TimeRange::new(0, 0))
+            .await
+            .unwrap();
+        tombstone.flush().await.unwrap();
+        tombstone.load().await.unwrap();
 
-        version.levels_info[1].read_column_file(
-            0,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1]
+            .read_column_file(
+                0,
+                0,
+                &TimeRange {
+                    max_ts: 0,
+                    min_ts: 0,
+                },
+            )
+            .await;
     }
 }

@@ -89,6 +89,7 @@ impl Writer {
                 .file
                 .lock()
                 .write_at(pos, &buf[p..p + write_len])
+                .await
                 .map_err(|err| RecordFileError::WriteFile { source: err })
             {
                 Ok(_) => {
@@ -114,6 +115,7 @@ impl Writer {
         self.file
             .lock()
             .sync_all(FileSync::Soft)
+            .await
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
@@ -121,6 +123,7 @@ impl Writer {
         self.file
             .lock()
             .sync_all(FileSync::Hard)
+            .await
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 
@@ -128,6 +131,7 @@ impl Writer {
         self.file
             .lock()
             .sync_all(FileSync::Hard)
+            .await
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
 

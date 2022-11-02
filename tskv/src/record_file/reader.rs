@@ -169,6 +169,7 @@ impl Reader {
             .file
             .lock()
             .read_at(self.pos.to_u64().unwrap(), &mut self.buf)
+            .await
             .map_err(|err| RecordFileError::ReadFile { source: err })?;
         self.buf_use = 0;
         Ok(())
@@ -204,6 +205,7 @@ impl Reader {
             .file
             .lock()
             .read_at(pos.to_u64().unwrap(), &mut head_buf)
+            .await
             .map_err(|err| RecordFileError::ReadFile { source: err })?;
         if len != head_len {
             return Err(RecordFileError::InvalidPos);
@@ -234,6 +236,7 @@ impl Reader {
                 pos.to_u64().unwrap() + head_len.to_u64().unwrap(),
                 &mut data,
             )
+            .await
             .map_err(|err| RecordFileError::ReadFile { source: err })?;
         if read_data_len != data_size as usize {
             return Err(RecordFileError::InvalidPos);

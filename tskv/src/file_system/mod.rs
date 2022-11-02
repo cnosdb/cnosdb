@@ -3,6 +3,7 @@
 // #![deny(unused_imports)]
 // #![deny(unused_must_use)]
 
+mod async_file;
 mod cache;
 mod file;
 pub mod file_manager;

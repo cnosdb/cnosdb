@@ -198,7 +198,7 @@ impl CompactIterator {
     }
 
     /// Collect merging `DataBlock`s.
-    fn next_merging_blocks(&mut self) -> Result<()> {
+    async fn next_merging_blocks(&mut self) -> Result<()> {
         if self.tmp_tsm_blks.is_empty() {
             return Ok(());
         }
@@ -253,6 +253,7 @@ impl CompactIterator {
                 if cbm.has_tombstone {
                     let data_block = self.tsm_readers[cbm.readers_idx]
                         .get_data_block(&cbm.block_meta)
+                        .await
                         .context(error::ReadTsmSnafu)?;
                     merging_blks.push(CompactingBlock::DataBlock {
                         priority: cbm.readers_idx + 1,
@@ -262,6 +263,7 @@ impl CompactIterator {
                 } else {
                     let size = self.tsm_readers[cbm.readers_idx]
                         .get_raw_data(&cbm.block_meta, &mut buf)
+                        .await
                         .context(error::ReadTsmSnafu)?;
                     merging_blks.push(CompactingBlock::Raw {
                         priority: cbm.readers_idx + 1,
@@ -276,6 +278,7 @@ impl CompactIterator {
                 // 2.1
                 let data_block = self.tsm_readers[cbm.readers_idx]
                     .get_data_block(&cbm.block_meta)
+                    .await
                     .context(error::ReadTsmSnafu)?;
                 merging_blks.push(CompactingBlock::DataBlock {
                     priority: cbm.readers_idx + 1,
@@ -332,6 +335,7 @@ impl CompactIterator {
                         if cbm.has_tombstone {
                             let data_block = self.tsm_readers[cbm.readers_idx]
                                 .get_data_block(&cbm.block_meta)
+                                .await
                                 .context(error::ReadTsmSnafu)?;
                             merging_blks.push(CompactingBlock::DataBlock {
                                 priority: cbm.readers_idx + 1,
@@ -341,6 +345,7 @@ impl CompactIterator {
                         } else {
                             let size = self.tsm_readers[cbm.readers_idx]
                                 .get_raw_data(&cbm.block_meta, &mut buf)
+                                .await
                                 .context(error::ReadTsmSnafu)?;
                             merging_blks.push(CompactingBlock::Raw {
                                 priority: cbm.readers_idx + 1,
@@ -352,6 +357,7 @@ impl CompactIterator {
                         // cbm.block_meta.count is less than max_datablock_values
                         let data_block = self.tsm_readers[cbm.readers_idx]
                             .get_data_block(&cbm.block_meta)
+                            .await
                             .context(error::ReadTsmSnafu)?;
                         merging_blks.push(CompactingBlock::DataBlock {
                             priority: cbm.readers_idx + 1,
@@ -381,10 +387,8 @@ impl CompactIterator {
     }
 }
 
-impl Iterator for CompactIterator {
-    type Item = Result<CompactingBlock>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl CompactIterator {
+    pub async fn next(&mut self) -> Option<Result<CompactingBlock>> {
         if let Some(blk) = self.merged_blocks.pop_front() {
             return Some(Ok(blk));
         }
@@ -405,7 +409,7 @@ impl Iterator for CompactIterator {
             }
 
             // Get all of block_metas of this field id, and merge these blocks
-            if let Err(e) = self.next_merging_blocks() {
+            if let Err(e) = self.next_merging_blocks().await {
                 return Some(Err(e));
             }
 
@@ -426,7 +430,7 @@ pub fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
     r1.0 <= r2.1 && r1.1 >= r2.0
 }
 
-pub fn run_compaction_job(
+pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<VersionEdit>> {
@@ -460,7 +464,7 @@ pub fn run_compaction_job(
     let mut tsm_index_iters = Vec::new();
     for col_file in request.files.iter() {
         let tsm_file = col_file.file_path();
-        let tsm_reader = TsmReader::open(&tsm_file)?;
+        let tsm_reader = TsmReader::open(&tsm_file).await?;
         tsm_files.push(tsm_file);
         let idx_iter = tsm_reader.index_iterator().peekable();
         tsm_readers.push(tsm_reader);
@@ -473,7 +477,7 @@ pub fn run_compaction_job(
     }
 
     let tsm_readers_cnt = tsm_readers.len();
-    let iter = CompactIterator {
+    let mut iter = CompactIterator {
         tsm_readers,
         tsm_index_iters,
         finished_readers: vec![false; tsm_readers_cnt],
@@ -481,56 +485,74 @@ pub fn run_compaction_job(
         ..Default::default()
     };
     let tsm_dir = storage_opt.tsm_dir(&request.database, tsf_id);
-    let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
+    let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!("Compaction: File {} been created.", tsm_writer.sequence());
     let mut version_edit = VersionEdit::new();
     version_edit.tsf_id = tsf_id;
-    for next_blk in iter.flatten() {
-        trace!("===============================");
-        let write_ret = match next_blk {
-            CompactingBlock::DataBlock {
-                field_id: fid,
-                data_block: b,
-                ..
-            } => {
-                // TODO: let enc = b.encodings();
-                tsm_writer.write_block(fid, &b)
-            }
-            CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw),
-        };
-        if let Err(e) = write_ret {
-            match e {
-                tsm::WriteTsmError::IO { source } => {
-                    // TODO handle this
-                    error!("IO error when write tsm");
-                }
-                tsm::WriteTsmError::Encode { source } => {
-                    // TODO handle this
-                    error!("Encoding error when write tsm");
-                }
-                tsm::WriteTsmError::MaxFileSizeExceed { source } => {
-                    tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-                    tsm_writer.finish().context(error::WriteTsmSnafu)?;
-                    info!(
-                        "Compaction: File: {} write finished (level: {}, {} B).",
-                        tsm_writer.sequence(),
-                        request.out_level,
-                        tsm_writer.size()
-                    );
-                    let cm = new_compact_meta(&tsm_writer, request.out_level);
-                    version_edit.add_file(cm, version.max_level_ts);
-                    tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)?;
-                    info!("Compaction: File {} been created.", tsm_writer.sequence());
-                }
-                tsm::WriteTsmError::Finished { path } => {
-                    error!("Tsm writer finished: {}", path.display());
+
+    loop {
+        let block = iter.next().await;
+        match block {
+            None => break,
+            Some(next) => {
+                let blk = next?;
+                trace!("===============================");
+                let write_ret = match blk {
+                    CompactingBlock::DataBlock {
+                        field_id: fid,
+                        data_block: b,
+                        ..
+                    } => {
+                        // TODO: let enc = b.encodings();
+                        tsm_writer.write_block(fid, &b).await
+                    }
+                    CompactingBlock::Raw { meta, raw, .. } => {
+                        tsm_writer.write_raw(&meta, &raw).await
+                    }
+                };
+                if let Err(e) = write_ret {
+                    match e {
+                        tsm::WriteTsmError::IO { source } => {
+                            // TODO handle this
+                            error!("IO error when write tsm");
+                        }
+                        tsm::WriteTsmError::Encode { source } => {
+                            // TODO handle this
+                            error!("Encoding error when write tsm");
+                        }
+                        tsm::WriteTsmError::MaxFileSizeExceed { source } => {
+                            tsm_writer
+                                .write_index()
+                                .await
+                                .context(error::WriteTsmSnafu)?;
+                            tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
+                            info!(
+                                "Compaction: File: {} write finished (level: {}, {} B).",
+                                tsm_writer.sequence(),
+                                request.out_level,
+                                tsm_writer.size()
+                            );
+                            let cm = new_compact_meta(&tsm_writer, request.out_level);
+                            version_edit.add_file(cm, version.max_level_ts);
+                            tsm_writer =
+                                tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0)
+                                    .await?;
+                            info!("Compaction: File {} been created.", tsm_writer.sequence());
+                        }
+                        tsm::WriteTsmError::Finished { path } => {
+                            error!("Tsm writer finished: {}", path.display());
+                        }
+                    }
                 }
             }
         }
     }
 
-    tsm_writer.write_index().context(error::WriteTsmSnafu)?;
-    tsm_writer.finish().context(error::WriteTsmSnafu)?;
+    tsm_writer
+        .write_index()
+        .await
+        .context(error::WriteTsmSnafu)?;
+    tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
     info!(
         "Compaction: File: {} write finished (level: {}, {} B).",
         tsm_writer.sequence(),
@@ -594,7 +616,7 @@ mod test {
         TseriesFamilyId,
     };
 
-    fn write_data_blocks_to_column_file(
+    async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
         tsf_id: TseriesFamilyId,
@@ -607,14 +629,14 @@ mod test {
         let mut file_seq = 0;
         for (i, d) in data.iter().enumerate() {
             file_seq = i as u64 + 1;
-            let mut writer = tsm::new_tsm_writer(&dir, file_seq, false, 0).unwrap();
+            let mut writer = tsm::new_tsm_writer(&dir, file_seq, false, 0).await.unwrap();
             for (fid, data_blks) in d.iter() {
                 for blk in data_blks.iter() {
-                    writer.write_block(*fid, blk).unwrap();
+                    writer.write_block(*fid, blk).await.unwrap();
                 }
             }
-            writer.write_index().unwrap();
-            writer.finish().unwrap();
+            writer.write_index().await.unwrap();
+            writer.finish().await.unwrap();
             cfs.push(Arc::new(ColumnFile::new(
                 file_seq,
                 2,
@@ -627,15 +649,15 @@ mod test {
         (file_seq + 1, cfs)
     }
 
-    fn read_data_blocks_from_column_file(
+    async fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
     ) -> HashMap<FieldId, Vec<DataBlock>> {
-        let tsm_reader = TsmReader::open(path).unwrap();
+        let tsm_reader = TsmReader::open(path).await.unwrap();
         let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in tsm_reader.index_iterator() {
             let field_id = idx.field_id();
             for blk_meta in idx.block_iterator() {
-                let blk = tsm_reader.get_data_block(&blk_meta).unwrap();
+                let blk = tsm_reader.get_data_block(&blk_meta).await.unwrap();
                 data.entry(field_id).or_insert(vec![]).push(blk);
             }
         }
@@ -652,13 +674,13 @@ mod test {
     }
 
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
-    fn check_column_file(
+    async fn check_column_file(
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
         expected_data: HashMap<FieldId, Vec<DataBlock>>,
     ) {
         let path = get_result_file_path(dir, version_edit);
-        let data = read_data_blocks_from_column_file(path);
+        let data = read_data_blocks_from_column_file(path).await;
         let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
         data_field_ids.sort_unstable();
         let mut expected_data_field_ids = expected_data.keys().copied().collect::<Vec<_>>();
@@ -712,8 +734,8 @@ mod test {
         (compact_req, kernel)
     }
 
-    #[test]
-    fn test_compaction_fast() {
+    #[tokio::test]
+    async fn test_compaction_fast() {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
@@ -744,15 +766,19 @@ mod test {
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 1, opt.clone());
+        let (next_file_id, files) =
+            write_data_blocks_to_column_file(&dir, data, 1, opt.clone()).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
-        check_column_file(dir, version_edit, expected_data);
+        let version_edit = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir, version_edit, expected_data).await;
     }
 
-    #[test]
-    fn test_compaction_1() {
+    #[tokio::test]
+    async fn test_compaction_1() {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
@@ -783,15 +809,19 @@ mod test {
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 1, opt.clone());
+        let (next_file_id, files) =
+            write_data_blocks_to_column_file(&dir, data, 1, opt.clone()).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
-        check_column_file(dir, version_edit, expected_data);
+        let version_edit = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir, version_edit, expected_data).await;
     }
 
-    #[test]
-    fn test_compaction_2() {
+    #[tokio::test]
+    async fn test_compaction_2() {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
@@ -822,11 +852,15 @@ mod test {
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
 
-        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 1, opt.clone());
+        let (next_file_id, files) =
+            write_data_blocks_to_column_file(&dir, data, 1, opt.clone()).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
-        check_column_file(dir, version_edit, expected_data);
+        let version_edit = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir, version_edit, expected_data).await;
     }
 
     /// Returns a generated `DataBlock` with default value and specified size, `DataBlock::ts`
@@ -923,8 +957,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_compaction_3() {
+    #[tokio::test]
+    async fn test_compaction_3() {
         #[rustfmt::skip]
         let data_desc = [
             // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
@@ -1018,14 +1052,17 @@ mod test {
 
         let mut column_files = Vec::new();
         for (tsm_sequence, args) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
+            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
+                .await
+                .unwrap();
             for arg in args.iter() {
                 tsm_writer
                     .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                    .await
                     .unwrap();
             }
-            tsm_writer.write_index().unwrap();
-            tsm_writer.finish().unwrap();
+            tsm_writer.write_index().await.unwrap();
+            tsm_writer.finish().await.unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
                 2,
@@ -1041,13 +1078,16 @@ mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
-        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
+        let version_edit = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
 
-        check_column_file(dir, version_edit, expected_data);
+        check_column_file(dir, version_edit, expected_data).await;
     }
 
-    #[test]
-    fn test_compaction_4() {
+    #[tokio::test]
+    async fn test_compaction_4() {
         #[rustfmt::skip]
         let data_desc = [
             // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
@@ -1159,22 +1199,28 @@ mod test {
 
         let mut column_files = Vec::new();
         for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0).unwrap();
+            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
+                .await
+                .unwrap();
             for arg in tsm_desc.iter() {
                 tsm_writer
                     .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
+                    .await
                     .unwrap();
             }
-            tsm_writer.write_index().unwrap();
-            tsm_writer.finish().unwrap();
-            let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence).unwrap();
+            tsm_writer.write_index().await.unwrap();
+            tsm_writer.finish().await.unwrap();
+            let mut tsm_tombstone = TsmTombstone::open_for_write(&dir, *tsm_sequence)
+                .await
+                .unwrap();
             for t in tombstone_desc.iter().flatten() {
                 tsm_tombstone
                     .add_range(&[t.0][..], &TimeRange::new(t.1, t.2))
+                    .await
                     .unwrap();
             }
 
-            tsm_tombstone.flush().unwrap();
+            tsm_tombstone.flush().await.unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
                 2,
@@ -1190,8 +1236,11 @@ mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
-        let version_edit = run_compaction_job(compact_req, kernel).unwrap().unwrap();
+        let version_edit = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
 
-        check_column_file(dir, version_edit, expected_data);
+        check_column_file(dir, version_edit, expected_data).await;
     }
 }

@@ -73,7 +73,11 @@ impl FlushTask {
         }
     }
 
-    pub fn run(self, version: Arc<Version>, version_edits: &mut Vec<VersionEdit>) -> Result<()> {
+    pub async fn run(
+        self,
+        version: Arc<Version>,
+        version_edits: &mut Vec<VersionEdit>,
+    ) -> Result<()> {
         info!(
             "Flush: Running flush job on ts_family: {} with {} MemCaches, collecting informations.",
             version.ts_family_id,
@@ -107,11 +111,13 @@ impl FlushTask {
         }
 
         let mut max_level_ts = version.max_level_ts;
-        let mut compact_metas = self.flush_mem_caches(
-            flushing_mems_data,
-            max_level_ts,
-            tsm::MAX_BLOCK_VALUES as usize,
-        )?;
+        let mut compact_metas = self
+            .flush_mem_caches(
+                flushing_mems_data,
+                max_level_ts,
+                tsm::MAX_BLOCK_VALUES as usize,
+            )
+            .await?;
         let mut edit = VersionEdit::new();
         for cm in compact_metas.iter_mut() {
             cm.low_seq = low_seq;
@@ -132,7 +138,7 @@ impl FlushTask {
 
     /// Merges caches data and write them into a `.tsm` file and a `.delta` file
     /// (Sometimes one of the two file type.), returns `CompactMeta`s of the wrote files.
-    fn flush_mem_caches(
+    async fn flush_mem_caches(
         &self,
         mut caches_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_level_ts: Timestamp,
@@ -190,7 +196,7 @@ impl FlushTask {
                 );
                 if !dlt_blks.is_empty() {
                     if delta_writer.is_none() {
-                        let writer = self.new_writer(true)?;
+                        let writer = self.new_writer(true).await?;
                         info!("Flush: File {}(delta) been created.", writer.sequence());
                         delta_writer = Some(writer);
                     };
@@ -199,12 +205,13 @@ impl FlushTask {
                         data_block.set_encodings(encoding);
                         writer
                             .write_block(field_id, &data_block)
+                            .await
                             .context(error::WriteTsmSnafu)?;
                     }
                 }
                 if !tsm_blks.is_empty() {
                     if tsm_writer.is_none() {
-                        let writer = self.new_writer(false)?;
+                        let writer = self.new_writer(false).await?;
                         info!("Flush: File {}(tsm) been created.", writer.sequence());
                         tsm_writer = Some(writer);
                     }
@@ -213,6 +220,7 @@ impl FlushTask {
                         data_block.set_encodings(encoding);
                         writer
                             .write_block(field_id, &data_block)
+                            .await
                             .context(error::WriteTsmSnafu)?;
                     }
                 }
@@ -220,7 +228,7 @@ impl FlushTask {
         }
 
         // Flush the wrote files.
-        self.finish_flush_mem_caches(delta_writer, tsm_writer)
+        self.finish_flush_mem_caches(delta_writer, tsm_writer).await
     }
 
     fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<ColumnId, u8>) {
@@ -281,24 +289,24 @@ impl FlushTask {
         cols_data
     }
 
-    fn new_writer(&self, is_delta: bool) -> Result<TsmWriter> {
+    async fn new_writer(&self, is_delta: bool) -> Result<TsmWriter> {
         let dir = if is_delta {
             &self.path_delta
         } else {
             &self.path_tsm
         };
-        tsm::new_tsm_writer(dir, self.global_context.file_id_next(), is_delta, 0)
+        tsm::new_tsm_writer(dir, self.global_context.file_id_next(), is_delta, 0).await
     }
 
     /// Flush writers (if it exists) and then generate `CompactMeta`s.
-    fn finish_flush_mem_caches(
+    async fn finish_flush_mem_caches(
         &self,
         mut delta_writer: Option<TsmWriter>,
         mut tsm_writer: Option<TsmWriter>,
     ) -> Result<Vec<CompactMeta>> {
         if let Some(writer) = tsm_writer.as_mut() {
-            writer.write_index().context(error::WriteTsmSnafu)?;
-            writer.finish().context(error::WriteTsmSnafu)?;
+            writer.write_index().await.context(error::WriteTsmSnafu)?;
+            writer.finish().await.context(error::WriteTsmSnafu)?;
             info!(
                 "Flush: File: {} write finished ({} B).",
                 writer.sequence(),
@@ -306,8 +314,8 @@ impl FlushTask {
             );
         }
         if let Some(writer) = delta_writer.as_mut() {
-            writer.write_index().context(error::WriteTsmSnafu)?;
-            writer.finish().context(error::WriteTsmSnafu)?;
+            writer.write_index().await.context(error::WriteTsmSnafu)?;
+            writer.finish().await.context(error::WriteTsmSnafu)?;
             info!(
                 "Flush: File: {} write finished ({} B).",
                 writer.sequence(),
@@ -346,7 +354,7 @@ impl FlushTask {
     }
 }
 
-pub fn run_flush_memtable_job(
+pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
@@ -388,7 +396,8 @@ pub fn run_flush_memtable_job(
                 path_tsm,
                 path_delta,
             )
-            .run(version, &mut edits)?;
+            .run(version, &mut edits)
+            .await?;
 
             if let Err(e) = compact_task_sender.send(*tsf_id) {
                 error!("{}", e);
@@ -654,7 +663,7 @@ pub mod flush_tests {
         });
         let flush_task = FlushTask::new(caches, 1, global_context, &tsm_dir, &delta_dir);
         let mut version_edits = vec![];
-        flush_task.run(version, &mut version_edits).unwrap();
+        flush_task.run(version, &mut version_edits).await.unwrap();
 
         assert_eq!(version_edits.len(), 1);
         let ve = version_edits.get(0).unwrap();
@@ -669,17 +678,17 @@ pub mod flush_tests {
                 assert_eq!(cm.min_ts, 1);
                 assert_eq!(cm.max_ts, 10);
                 let file_path = file_utils::make_delta_file_name(&delta_dir, cm.file_id);
-                dlt_reader = Some(TsmReader::open(file_path).unwrap())
+                dlt_reader = Some(TsmReader::open(file_path).await.unwrap())
             } else {
                 assert_eq!(cm.file_size, 366);
                 assert_eq!(cm.min_ts, 11);
                 assert_eq!(cm.max_ts, 18);
                 let file_path = file_utils::make_tsm_file_name(&tsm_dir, cm.file_id);
-                tsm_reader = Some(TsmReader::open(file_path).unwrap())
+                tsm_reader = Some(TsmReader::open(file_path).await.unwrap())
             }
         }
 
-        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data);
-        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data);
+        read_and_check(tsm_reader.as_ref().unwrap(), expected_tsm_data).await;
+        read_and_check(dlt_reader.as_ref().unwrap(), expected_delta_data).await;
     }
 }

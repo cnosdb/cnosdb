@@ -3,6 +3,7 @@ mod os;
 mod scope;
 pub mod system;
 
+use std::io::IoSlice;
 use std::{
     cmp,
     convert::TryFrom,
@@ -85,15 +86,15 @@ impl DmaFile {
         self.scope.discard();
     }
 
-    pub fn sync_all(&self, sync: FileSync) -> Result<()> {
+    pub async fn sync_all(&self, sync: FileSync) -> Result<()> {
         scope::sync_all(&self.scope, sync)
     }
 
-    pub fn sync_data(&self, sync: FileSync) -> Result<()> {
+    pub async fn sync_data(&self, sync: FileSync) -> Result<()> {
         scope::sync_data(&self.scope, sync)
     }
 
-    pub fn read_at(&self, mut pos: u64, mut buf: &mut [u8]) -> Result<usize> {
+    pub async fn read_at(&self, mut pos: u64, mut buf: &mut [u8]) -> Result<usize> {
         let mut read = 0_usize;
         while !buf.is_empty() {
             let (id, offset) = self.page_id_at(pos);
@@ -112,8 +113,11 @@ impl DmaFile {
         }
         Ok(read)
     }
-
-    pub fn write_at(&self, mut pos: u64, mut buf: &[u8]) -> Result<usize> {
+    //&'a mut [IoSlice<'a>]
+    pub async fn write_vec<'a>(&self, pos: u64, bufs: &'a mut [IoSlice<'a>]) -> Result<usize> {
+        Ok(0)
+    }
+    pub async fn write_at(&self, mut pos: u64, mut buf: &[u8]) -> Result<usize> {
         let len = buf.len();
         while !buf.is_empty() {
             let (id, offset) = self.page_id_at(pos);
@@ -330,25 +334,25 @@ mod test {
         r
     }
 
-    fn read_vec_at(file: &DmaFile, pos: u64, len: usize) -> Vec<u8> {
+    async fn read_vec_at(file: &DmaFile, pos: u64, len: usize) -> Vec<u8> {
         let mut r = Vec::new();
         r.resize(len, 0);
-        let read = file.read_at(pos, &mut r).unwrap();
+        let read = file.read_at(pos, &mut r).await.unwrap();
         r.truncate(read);
         r
     }
 
-    #[test]
-    fn write_far_page() {
+    #[tokio::test]
+    async fn write_far_page() {
         let fs = new(1, 0, 1);
         let page_len = fs.max_page_len() as u64;
 
         let mut tmpf = NamedTempFile::new().unwrap();
         {
             let f = fs.open(tmpf.path()).unwrap();
-            f.write_at(page_len, &[1, 2, 3]).unwrap();
+            f.write_at(page_len, &[1, 2, 3]).await.unwrap();
 
-            assert_eq!(&read_vec_at(&f, page_len, 3), &[1, 2, 3]);
+            assert_eq!(&read_vec_at(&f, page_len, 3).await, &[1, 2, 3]);
         }
 
         fs.sync_data(FileSync::Soft).unwrap();
@@ -363,8 +367,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn read_write_on_non_boundary() {
+    #[tokio::test]
+    async fn read_write_on_non_boundary() {
         let mut tmpf = {
             let fs = new(1, 0, 1);
             assert!(fs.max_page_len() > 100);
@@ -375,24 +379,24 @@ mod test {
             {
                 let f = fs.open(tmpf.path()).unwrap();
 
-                f.write_at(0, &[1]).unwrap();
+                f.write_at(0, &[1]).await.unwrap();
                 assert_eq!(f.len(), 1);
                 assert_eq!(file_len(tmpf.as_file()), 0);
 
-                f.sync_data(FileSync::Soft).unwrap();
+                f.sync_data(FileSync::Soft).await.unwrap();
                 assert_eq!(f.len(), 1);
                 assert_eq!(file_len(tmpf.as_file()), fs.max_page_len() as u64);
 
-                f.sync_all(FileSync::Soft).unwrap();
+                f.sync_all(FileSync::Soft).await.unwrap();
                 assert_eq!(f.len(), 1);
                 assert_eq!(file_len(tmpf.as_file()), 1);
             }
 
             {
                 let f = fs.open(tmpf.path()).unwrap();
-                f.write_at(1, &[2]).unwrap();
+                f.write_at(1, &[2]).await.unwrap();
 
-                f.sync_data(FileSync::Soft).unwrap();
+                f.sync_data(FileSync::Soft).await.unwrap();
                 assert_eq!(file_len(tmpf.as_file()), fs.max_page_len() as u64);
             }
 
@@ -400,7 +404,7 @@ mod test {
                 let f = fs.open(tmpf2.path()).unwrap();
                 // This replaces the only page and drops the file scope which syncs the physical
                 // length in separate task.
-                f.write_at(0, &[1]).unwrap();
+                f.write_at(0, &[1]).await.unwrap();
                 f.discard();
             }
 

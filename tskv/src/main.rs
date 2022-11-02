@@ -11,7 +11,8 @@ const ARG_SUMMARY: &str = "--summary"; // To print a summary file
 ///
 /// - --tsm <tsm_path> print statistics for .tsm file at <tsm_path> .
 /// - --tombstone also print tombstone for every field_id in .tsm file.
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut args = env::args().peekable();
 
     let mut show_tsm = false;
@@ -53,7 +54,7 @@ fn main() {
     if show_tsm {
         if let Some(p) = tsm_path {
             println!("TSM Path: {}, ShowTombstone: {}", p, show_tombstone);
-            tskv::print_tsm_statistics(p, show_tombstone);
+            tskv::print_tsm_statistics(p, show_tombstone).await;
         }
     }
 

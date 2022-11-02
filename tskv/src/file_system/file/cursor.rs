@@ -25,15 +25,15 @@ impl FileCursor {
         self.pos = pos;
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let read = self.file.read_at(self.pos, buf)?;
+    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let read = self.file.read_at(self.pos, buf).await?;
         self.seek(SeekFrom::Current(read.try_into().unwrap()))
             .unwrap();
         Ok(read)
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let size = self.file.write_at(self.pos, buf)?;
+    pub async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let size = self.file.write_at(self.pos, buf).await?;
         self.seek(SeekFrom::Current(buf.len().try_into().unwrap()))
             .unwrap();
         Ok(size)
@@ -84,8 +84,8 @@ mod test {
 
     use crate::file_system::*;
 
-    #[test]
-    fn copy() {
+    #[tokio::test]
+    async fn copy() {
         let fs = FileSystemCache::new(Options::default().max_resident(2).max_non_resident(2));
 
         let file_len: usize = (fs.max_page_len() as f64 * 5.3) as usize;
@@ -105,8 +105,8 @@ mod test {
             let mut dst_d = fs.open(dst.path()).unwrap().into_cursor();
 
             let buf = &mut [0];
-            while src_d.read(buf).unwrap() == 1 {
-                dst_d.write(buf).unwrap();
+            while src_d.read(buf).await.unwrap() == 1 {
+                dst_d.write(buf).await.unwrap();
             }
         }
 
@@ -114,10 +114,10 @@ mod test {
             let mut dst_d = fs.open(dst.path()).unwrap().into_cursor();
             let buf = &mut [0];
             for i in 0..file_len {
-                assert_eq!(dst_d.read(buf).unwrap(), 1);
+                assert_eq!(dst_d.read(buf).await.unwrap(), 1);
                 assert_eq!(buf[0], i as u8);
             }
-            assert_eq!(dst_d.read(buf).unwrap(), 0);
+            assert_eq!(dst_d.read(buf).await.unwrap(), 0);
         }
     }
 }

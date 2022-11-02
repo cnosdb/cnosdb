@@ -30,14 +30,6 @@ pub trait Engine: Send + Sync + Debug {
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
 
-    fn read(
-        &self,
-        db: &str,
-        sids: Vec<SeriesId>,
-        time_range: &TimeRange,
-        fields: Vec<ColumnId>,
-    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>>;
-
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema>;
@@ -101,16 +93,6 @@ impl Engine for MockEngine {
             version: write_batch.version,
             points: vec![],
         })
-    }
-
-    fn read(
-        &self,
-        db: &str,
-        sids: Vec<SeriesId>,
-        time_range: &TimeRange,
-        fields: Vec<ColumnId>,
-    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
-        HashMap::new()
     }
 
     fn drop_database(&self, database: &str) -> Result<()> {

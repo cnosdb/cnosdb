@@ -336,7 +336,7 @@ impl Database {
     }
 }
 
-pub(crate) fn delete_table_async(
+pub(crate) async fn delete_table_async(
     database: String,
     table: String,
     version_set: Arc<RwLock<VersionSet>>,
@@ -388,7 +388,7 @@ pub(crate) fn delete_table_async(
                 ts_family.write().delete_cache(&storage_fids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
-                    column_file.add_tombstone(&storage_fids, time_range)?;
+                    column_file.add_tombstone(&storage_fids, time_range).await?;
                 }
             }
         }

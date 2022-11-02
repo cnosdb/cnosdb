@@ -148,7 +148,7 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::new(self.options.wal.clone());
+        let wal_manager = WalManager::new(self.options.wal.clone()).await;
 
         wal_manager
             .recover(self, self.global_ctx.clone())
@@ -158,60 +158,60 @@ impl TsKv {
         wal_manager
     }
 
-    pub fn read_point(
-        &self,
-        db: &str,
-        time_range: &TimeRange,
-        field_id: FieldId,
-    ) -> Vec<DataBlock> {
-        let version = {
-            let version_set = self.version_set.read();
-            if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
-                tsf.read().super_version()
-            } else {
-                warn!("ts_family with db name '{}' not found.", db);
-                return vec![];
-            }
-        };
+    // pub fn read_point(
+    //     &self,
+    //     db: &str,
+    //     time_range: &TimeRange,
+    //     field_id: FieldId,
+    // ) -> Vec<DataBlock> {
+    //     let version = {
+    //         let version_set = self.version_set.read();
+    //         if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
+    //             tsf.read().super_version()
+    //         } else {
+    //             warn!("ts_family with db name '{}' not found.", db);
+    //             return vec![];
+    //         }
+    //     };
 
-        let mut data = vec![];
-        // get data from memcache
-        if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
-            data.append(&mut mem_entry.read().read_cell(time_range));
-        }
+    //     let mut data = vec![];
+    //     // get data from memcache
+    //     if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
+    //         data.append(&mut mem_entry.read().read_cell(time_range));
+    //     }
 
-        // get data from im_memcache
-        for mem_cache in version.caches.immut_cache.iter() {
-            if mem_cache.read().flushed {
-                continue;
-            }
-            if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                data.append(&mut mem_entry.read().read_cell(time_range));
-            }
-        }
+    //     // get data from im_memcache
+    //     for mem_cache in version.caches.immut_cache.iter() {
+    //         if mem_cache.read().flushed {
+    //             continue;
+    //         }
+    //         if let Some(mem_entry) = mem_cache.read().get(&field_id) {
+    //             data.append(&mut mem_entry.read().read_cell(time_range));
+    //         }
+    //     }
 
-        // get data from levelinfo
-        for level_info in version.version.levels_info.iter() {
-            if level_info.level == 0 {
-                continue;
-            }
-            data.append(&mut level_info.read_column_file(
-                version.ts_family_id,
-                field_id,
-                time_range,
-            ));
-        }
+    //     // get data from levelinfo
+    //     for level_info in version.version.levels_info.iter() {
+    //         if level_info.level == 0 {
+    //             continue;
+    //         }
+    //         data.append(&mut level_info.read_column_file(
+    //             version.ts_family_id,
+    //             field_id,
+    //             time_range,
+    //         ).await);
+    //     }
 
-        // get data from delta
-        let level_info = version.version.levels_info();
-        data.append(&mut level_info[0].read_column_file(
-            version.ts_family_id,
-            field_id,
-            time_range,
-        ));
+    //     // get data from delta
+    //     let level_info = version.version.levels_info();
+    //     data.append(&mut level_info[0].read_column_file(
+    //         version.ts_family_id,
+    //         field_id,
+    //         time_range,
+    //     ).await);
 
-        data
-    }
+    //     data
+    // }
 
     fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: UnboundedReceiver<WalTask>) {
         warn!("job 'WAL' starting.");
@@ -223,7 +223,7 @@ impl TsKv {
                         match wal_task {
                             Some(WalTask::Write { points, cb }) => {
                                 // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, &points).await;
+                                let ret = wal_manager.write(WalEntryType::Write, points).await;
                                 let send_ret = cb.send(ret);
                                 match send_ret {
                                     Ok(wal_result) => {}
@@ -274,7 +274,8 @@ impl TsKv {
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
-                .unwrap();
+                .await
+                .unwrap()
             }
         };
         self.runtime.spawn(f);
@@ -293,11 +294,12 @@ impl TsKv {
                 if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
                     info!("Starting compaction on ts_family {}", ts_family_id);
                     let start = Instant::now();
-                    if let Some(compact_req) = tsf.read().pick_compaction() {
+                    let req = tsf.read().pick_compaction();
+                    if let Some(compact_req) = req {
                         let database = compact_req.database.clone();
                         let compact_ts_family = compact_req.ts_family_id;
                         let out_level = compact_req.out_level;
-                        match compaction::run_compaction_job(compact_req, ctx.clone()) {
+                        match compaction::run_compaction_job(compact_req, ctx.clone()).await {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
@@ -361,12 +363,16 @@ impl TsKv {
     // }
 
     // Compact TSM files in database into bigger TSM files.
-    pub fn compact(&self, database: &str) {
-        if let Some(db) = self.version_set.read().get_db(database) {
+    pub async fn compact(&self, database: &str) {
+        let db = self.version_set.read().get_db(database);
+        if let Some(db) = db {
             // TODO: stop current and prevent next flush and compaction.
-            for (ts_family_id, ts_family) in db.read().ts_families() {
-                if let Some(compact_req) = ts_family.read().pick_compaction() {
-                    match compaction::run_compaction_job(compact_req, self.global_ctx.clone()) {
+            let read_db = db.read();
+            for (ts_family_id, ts_family) in read_db.ts_families() {
+                let req = ts_family.read().pick_compaction();
+                if let Some(compact_req) = req {
+                    match compaction::run_compaction_job(compact_req, self.global_ctx.clone()).await
+                    {
                         Ok(Some(version_edit)) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
                             let ret = self.summary_task_sender.send(SummaryTask {
@@ -477,36 +483,36 @@ impl Engine for TsKv {
         });
     }
 
-    fn read(
-        &self,
-        db: &str,
-        sids: Vec<SeriesId>,
-        time_range: &TimeRange,
-        fields: Vec<ColumnId>,
-    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
-        // get data block
-        let mut ans: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> = HashMap::new();
-        for sid in sids {
-            let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
-            for sch_fid in fields.iter() {
-                let field_id_entry = sid_entry.entry(*sch_fid).or_insert(vec![]);
-                let fid = unite_id((*sch_fid).into(), sid);
-                field_id_entry.append(&mut self.read_point(db, time_range, fid));
-            }
-        }
+    // fn read(
+    //     &self,
+    //     db: &str,
+    //     sids: Vec<SeriesId>,
+    //     time_range: &TimeRange,
+    //     fields: Vec<ColumnId>,
+    // ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
+    //     // get data block
+    //     let mut ans: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> = HashMap::new();
+    //     for sid in sids {
+    //         let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
+    //         for sch_fid in fields.iter() {
+    //             let field_id_entry = sid_entry.entry(*sch_fid).or_insert(vec![]);
+    //             let fid = unite_id((*sch_fid).into(), sid);
+    //             field_id_entry.append(&mut self.read_point(db, time_range, fid));
+    //         }
+    //     }
 
-        // sort data block, max block size 1000
-        let mut final_ans = HashMap::new();
-        for (sid, map) in ans {
-            let sid_entry = final_ans.entry(sid).or_insert_with(HashMap::new);
-            for (sch_fid, blks) in map {
-                let field_id_entry = sid_entry.entry(sch_fid).or_insert(vec![]);
-                field_id_entry.append(&mut DataBlock::merge_blocks(blks, MAX_BLOCK_VALUES));
-            }
-        }
+    //     // sort data block, max block size 1000
+    //     let mut final_ans = HashMap::new();
+    //     for (sid, map) in ans {
+    //         let sid_entry = final_ans.entry(sid).or_insert_with(HashMap::new);
+    //         for (sch_fid, blks) in map {
+    //             let field_id_entry = sid_entry.entry(sch_fid).or_insert(vec![]);
+    //             field_id_entry.append(&mut DataBlock::merge_blocks(blks, MAX_BLOCK_VALUES));
+    //         }
+    //     }
 
-        final_ans
-    }
+    //     final_ans
+    // }
 
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
         if self.version_set.read().db_exists(&schema.name) {
@@ -594,20 +600,12 @@ impl Engine for TsKv {
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
-
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
-        let handle = std::thread::spawn(move || {
-            database::delete_table_async(database.to_string(), table.to_string(), version_set)
-        });
-        let recv_ret = match handle.join() {
-            Ok(ret) => ret,
-            Err(e) => panic::resume_unwind(e),
-        };
-
-        // TODO Release global DropTable flag.
-        recv_ret
+        self.runtime
+            .block_on(database::delete_table_async(database, table, version_set))?;
+        Ok(())
     }
 
     fn delete_series(
@@ -621,24 +619,21 @@ impl Engine for TsKv {
             .iter()
             .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
             .collect();
-
-        if let Some(db) = self.version_set.read().get_db(database) {
-            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+        let res = self.version_set.read().get_db(database);
+        if let Some(db) = res {
+            let readable_db = db.read();
+            for (ts_family_id, ts_family) in readable_db.ts_families() {
                 // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
-
                 ts_family
                     .write()
                     .delete_cache(&storage_field_ids, time_range);
-
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
-                    column_file.add_tombstone(&storage_field_ids, time_range)?;
+                    self.runtime
+                        .block_on(column_file.add_tombstone(&storage_field_ids, time_range))?;
                 }
-
-                // TODO Start next flush or compaction.
             }
-        }
-
+        };
         Ok(())
     }
 
@@ -740,7 +735,7 @@ mod test {
         let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
             .await
             .unwrap();
-        tskv.compact("public");
+        tskv.compact("public").await;
     }
 
     async fn prepare(tskv: &TsKv, database: &str, table: &str, time_range: &TimeRange) {
@@ -760,9 +755,9 @@ mod test {
             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
 
             let field_ids: Vec<ColumnId> = table_schema.columns().iter().map(|f| f.id).collect();
-            let result: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> =
-                tskv.read(database, series_ids, time_range, field_ids);
-            println!("Result items: {}", result.len());
+            // let result: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> =
+            // tskv.read(database, series_ids, time_range, field_ids);
+            // println!("Result items: {}", result.len());
         }
     }
     #[test]
