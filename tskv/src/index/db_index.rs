@@ -17,8 +17,6 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use sled::Error;
 use snafu::ResultExt;
-use tracing::field::debug;
-use tracing::{error, info};
 
 use crate::Error::IndexErr;
 use config::Config;
@@ -28,7 +26,7 @@ use models::{
     tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
 };
 use protos::models::Point;
-use trace::{debug, warn};
+use trace::{debug, error, info, warn};
 
 use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 use super::*;

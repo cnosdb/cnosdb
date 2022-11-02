@@ -335,7 +335,7 @@ pub fn get_encoding(src: &[u8]) -> Encoding {
     Encoding::from(src[0])
 }
 
-pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec> {
+pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullTimestampCodec()),
         Encoding::Delta => Box::new(DeltaTimestampCodec()),
@@ -344,7 +344,7 @@ pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec> {
     }
 }
 
-pub fn get_i64_codec(algo: Encoding) -> Box<dyn IntegerCodec> {
+pub fn get_i64_codec(algo: Encoding) -> Box<dyn IntegerCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullIntegerCodec()),
         Encoding::Delta => Box::new(DeltaIntegerCodec()),
@@ -353,7 +353,7 @@ pub fn get_i64_codec(algo: Encoding) -> Box<dyn IntegerCodec> {
     }
 }
 
-pub fn get_u64_codec(algo: Encoding) -> Box<dyn UnsignedCodec> {
+pub fn get_u64_codec(algo: Encoding) -> Box<dyn UnsignedCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullUnsignedCodec()),
         Encoding::Delta => Box::new(DeltaUnsignedCodec()),
@@ -362,7 +362,7 @@ pub fn get_u64_codec(algo: Encoding) -> Box<dyn UnsignedCodec> {
     }
 }
 
-pub fn get_f64_codec(algo: Encoding) -> Box<dyn FloatCodec> {
+pub fn get_f64_codec(algo: Encoding) -> Box<dyn FloatCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullFloatCodec()),
         Encoding::Gorilla => Box::new(GorillaFloatCodec()),
@@ -371,7 +371,7 @@ pub fn get_f64_codec(algo: Encoding) -> Box<dyn FloatCodec> {
     }
 }
 
-pub fn get_str_codec(algo: Encoding) -> Box<dyn StringCodec> {
+pub fn get_str_codec(algo: Encoding) -> Box<dyn StringCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullStringCodec()),
         Encoding::Gzip => Box::new(GzipStringCodec()),
@@ -383,7 +383,7 @@ pub fn get_str_codec(algo: Encoding) -> Box<dyn StringCodec> {
     }
 }
 
-pub fn get_bool_codec(algo: Encoding) -> Box<dyn BooleanCodec> {
+pub fn get_bool_codec(algo: Encoding) -> Box<dyn BooleanCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullBooleanCodec()),
         Encoding::BitPack => Box::new(BitPackBooleanCodec()),

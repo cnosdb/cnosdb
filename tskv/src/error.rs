@@ -105,4 +105,7 @@ pub enum Error {
 
     #[snafu(display("can't find field name: {}", reason))]
     NotFoundField { reason: String },
+
+    #[snafu(display("unknown type"))]
+    UnKnowType,
 }

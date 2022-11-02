@@ -15,19 +15,14 @@ use trace::debug;
 
 use crate::stream::TskvSourceMetrics;
 
-use tskv::{
-    engine::EngineRef,
-    memcache::DataType,
-    tseries_family::{ColumnFile, SuperVersion, TimeRange},
-    tsm::{BlockMetaIterator, DataBlock, TsmReader},
-    Error, {error, ColumnFileId},
-};
+use tskv::{engine::EngineRef, error::IndexErrSnafu, memcache::DataType, tseries_family::{ColumnFile, SuperVersion, TimeRange}, tsm::{BlockMetaIterator, DataBlock, TsmReader}, ColumnFileId, Error, error};
 
 use datafusion::arrow::{
     array::{BooleanBuilder, Float64Builder, Int64Builder, StringBuilder, UInt64Builder},
     datatypes::SchemaRef,
     record_batch::RecordBatch,
 };
+
 use models::predicate::domain::{ColumnDomains, Domain, Range, ValueEntry};
 use models::schema::{ColumnType, TableSchema, TIME_FIELD, TIME_FIELD_NAME};
 pub type CursorPtr = Box<dyn Cursor>;
@@ -154,20 +149,20 @@ impl Cursor for TagCursor {
         &self.name
     }
 
-    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        let data = DataType::Str(0, MiniVec::from(self.value.as_bytes()));
-
-        Ok(Some(data))
+    fn is_field(&self) -> bool {
+        false
     }
-
-    async fn next(&mut self, _ts: i64) {}
 
     fn val_type(&self) -> ValueType {
         ValueType::String
     }
 
-    fn is_field(&self) -> bool {
-        false
+    async fn next(&mut self, _ts: i64) {}
+
+    async fn peek(&mut self) -> Result<Option<DataType>, Error> {
+        let data = DataType::Str(0, MiniVec::from(self.value.as_bytes()));
+
+        Ok(Some(data))
     }
 }
 
@@ -177,8 +172,7 @@ pub struct FieldCursor {
     value_type: ValueType,
 
     cache_index: usize,
-    cache_block: DataBlock,
-
+    cache_data: Vec<DataType>,
     locations: Vec<FieldFileLocation>,
 }
 
@@ -188,7 +182,7 @@ impl FieldCursor {
             name,
             value_type,
             cache_index: 0,
-            cache_block: DataBlock::new(0, value_type),
+            cache_data: Vec::new(),
             locations: Vec::new(),
         }
     }
@@ -207,32 +201,35 @@ impl FieldCursor {
         let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&iterator.option.time_filter);
 
         // get data from im_memcache and memcache
-        let mut blocks = vec![];
-        for mem_cache in version.caches.immut_cache.iter() {
-            if mem_cache.read().flushed {
-                continue;
-            }
-            if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-                time_ranges.iter().for_each(|time_range| {
-                    blocks.append(&mut mem_entry.read().read_cell(time_range));
-                });
-            }
-        }
+        let mut mem_data: Vec<DataType> = Vec::new();
 
-        if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
-            time_ranges.iter().for_each(|time_range| {
-                blocks.append(&mut mem_entry.read().read_cell(time_range));
-            });
-        }
-
-        let cache_block = match DataBlock::merge_blocks(blocks, 0).pop() {
-            Some(v) => v,
-            None => DataBlock::new(0, vtype),
+        let time_predicate = |ts| {
+            time_ranges
+                .iter()
+                .any(|time_range| time_range.is_boundless() || time_range.contains(ts))
         };
-        debug!(
-            "build memcache data block id: {:02X}, len: {}",
+
+        version
+            .caches
+            .immut_cache
+            .iter()
+            .filter(|m| !m.read().flushed)
+            .for_each(|m| {
+                mem_data.append(&mut m.read().get_data(field_id, time_predicate, |_| true))
+            });
+
+        mem_data.append(&mut version.caches.mut_cache.read().get_data(
             field_id,
-            cache_block.len()
+            time_predicate,
+            |_| true,
+        ));
+
+        mem_data.sort_by_key(|data| data.timestamp());
+
+        debug!(
+            "build memcache data id: {:02X}, len: {}",
+            field_id,
+            mem_data.len()
         );
 
         // get data from levelinfo
@@ -268,9 +265,26 @@ impl FieldCursor {
             name,
             value_type: vtype,
             cache_index: 0,
-            cache_block,
+            cache_data: mem_data,
             locations,
         })
+    }
+
+    fn peek_cache(&mut self) -> Option<&DataType> {
+        let mut opt_top = self.cache_data.get(self.cache_index);
+        let mut opt_next = self.cache_data.get(self.cache_index + 1);
+
+        while let (Some(top), Some(next)) = (opt_top, opt_next) {
+            if top == next {
+                self.cache_index += 1;
+                opt_top = Some(next);
+                opt_next = self.cache_data.get(self.cache_index + 1);
+            } else {
+                break;
+            }
+        }
+
+        opt_top
     }
 }
 
@@ -290,9 +304,9 @@ impl Cursor for FieldCursor {
             }
         }
 
-        if let Some(val) = self.cache_block.get(self.cache_index) {
+        if let Some(val) = self.peek_cache() {
             if data.timestamp() >= val.timestamp() {
-                data = val;
+                data = val.clone();
             }
         }
 
@@ -303,7 +317,7 @@ impl Cursor for FieldCursor {
     }
 
     async fn next(&mut self, ts: i64) {
-        if let Some(val) = self.cache_block.get(self.cache_index) {
+        if let Some(val) = self.peek_cache() {
             if val.timestamp() == ts {
                 self.cache_index += 1;
             }
@@ -333,62 +347,61 @@ pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRan
         return vec![];
     }
 
-    let mut time_ranges: Vec<TimeRange> = vec![];
-
     if time_domain.is_all() {
         // Include all data
-        time_ranges.push(TimeRange::all());
-    } else {
-        // Include some data
-        if let Some(time_domain) = time_domain.domains() {
-            assert!(time_domain.contains_key(TIME_FIELD_NAME));
+        return vec![TimeRange::all()];
+    }
 
-            let domain = unsafe { time_domain.get(TIME_FIELD_NAME).unwrap_unchecked() };
+    let mut time_ranges: Vec<TimeRange> = Vec::new();
 
-            // Convert ScalarValue value to nanosecond timestamp
-            let valid_and_generate_index_key = |v: &ScalarValue| {
-                // Time can only be of type Timestamp
-                assert!(matches!(v.get_datatype(), ArrowDataType::Timestamp(_, _)));
-                unsafe { i64::try_from(v.clone()).unwrap_unchecked() }
-            };
+    if let Some(time_domain) = time_domain.domains() {
+        assert!(time_domain.contains_key(TIME_FIELD_NAME));
 
-            match domain {
-                Domain::Range(range_set) => {
-                    for (_, range) in range_set.low_indexed_ranges().into_iter() {
-                        let range: &Range = range;
+        let domain = unsafe { time_domain.get(TIME_FIELD_NAME).unwrap_unchecked() };
 
-                        let start_bound = range.start_bound();
-                        let end_bound = range.end_bound();
+        // Convert ScalarValue value to nanosecond timestamp
+        let valid_and_generate_index_key = |v: &ScalarValue| {
+            // Time can only be of type Timestamp
+            assert!(matches!(v.get_datatype(), ArrowDataType::Timestamp(_, _)));
+            unsafe { i64::try_from(v.clone()).unwrap_unchecked() }
+        };
 
-                        // Convert the time value in Bound to timestamp
-                        let translate_bound = |bound: Bound<&ScalarValue>| match bound {
-                            Bound::Unbounded => Bound::Unbounded,
-                            Bound::Included(v) => Bound::Included(valid_and_generate_index_key(v)),
-                            Bound::Excluded(v) => Bound::Excluded(valid_and_generate_index_key(v)),
-                        };
+        match domain {
+            Domain::Range(range_set) => {
+                for (_, range) in range_set.low_indexed_ranges().into_iter() {
+                    let range: &Range = range;
 
-                        let range = (translate_bound(start_bound), translate_bound(end_bound));
-                        time_ranges.push(range.into());
-                    }
+                    let start_bound = range.start_bound();
+                    let end_bound = range.end_bound();
+
+                    // Convert the time value in Bound to timestamp
+                    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
+                        Bound::Unbounded => Bound::Unbounded,
+                        Bound::Included(v) => Bound::Included(valid_and_generate_index_key(v)),
+                        Bound::Excluded(v) => Bound::Excluded(valid_and_generate_index_key(v)),
+                    };
+
+                    let range = (translate_bound(start_bound), translate_bound(end_bound));
+                    time_ranges.push(range.into());
                 }
-                Domain::Equtable(vals) => {
-                    if !vals.is_white_list() {
-                        // eg. time != xxx
-                        time_ranges.push(TimeRange::all());
-                    } else {
-                        // Contains the given value
-                        for entry in vals.entries().into_iter() {
-                            let entry: &ValueEntry = entry;
-
-                            let ts = valid_and_generate_index_key(entry.value());
-
-                            time_ranges.push(TimeRange::new(ts, ts));
-                        }
-                    }
-                }
-                Domain::All => time_ranges.push(TimeRange::all()),
-                Domain::None => return vec![],
             }
+            Domain::Equtable(vals) => {
+                if !vals.is_white_list() {
+                    // eg. time != xxx
+                    time_ranges.push(TimeRange::all());
+                } else {
+                    // Contains the given value
+                    for entry in vals.entries().into_iter() {
+                        let entry: &ValueEntry = entry;
+
+                        let ts = valid_and_generate_index_key(entry.value());
+
+                        time_ranges.push(TimeRange::new(ts, ts));
+                    }
+                }
+            }
+            Domain::All => time_ranges.push(TimeRange::all()),
+            Domain::None => return vec![],
         }
     }
 
@@ -460,7 +473,7 @@ impl RowIterator {
         if let Some(key) = self
             .engine
             .get_series_key(&self.option.table_schema.db, id)
-            .context(error::IndexErrSnafu)?
+            .context(IndexErrSnafu)?
         {
             self.columns.clear();
             let fields = self.option.table_schema.columns().clone();
@@ -488,8 +501,7 @@ impl RowIterator {
                                 field_name,
                                 vtype,
                                 self,
-                            )
-                            .await?;
+                            ).await?;
                             Box::new(cursor)
                         }
                     },
@@ -517,36 +529,25 @@ impl RowIterator {
             return Ok(None);
         }
 
-        self.build_series_columns(self.series[self.series_index])
-            .await?;
+        self.build_series_columns(self.series[self.series_index]).await?;
 
         Ok(Some(()))
     }
 
-    async fn collect_row_data(
-        &mut self,
-        builder: &mut [ArrayBuilderPtr],
-    ) -> Result<Option<()>, Error> {
+    async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
         debug!("======collect_row_data=========");
         let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
         let mut values = Vec::with_capacity(self.columns.len());
         for column in self.columns.iter_mut() {
-            match column.peek().await {
-                Ok(val) => match val {
-                    Some(ref data) => {
-                        if column.is_field() {
-                            min_time = min_num(min_time, data.timestamp());
-                        }
-
-                        values.push(val);
-                    }
-                    None => values.push(None),
-                },
-
-                Err(err) => return Err(err),
+            let val = column.peek().await?;
+            if let Some(ref data) = val {
+                if column.is_field() {
+                    min_time = min_num(min_time, data.timestamp());
+                }
             }
+            values.push(val)
         }
 
         for (column, value) in self.columns.iter_mut().zip(values.iter_mut()) {
@@ -575,7 +576,7 @@ impl RowIterator {
 
         let timer = self.metrics.elapsed_point_to_record_batch().timer();
 
-        for i in 0..values.len() {
+        for (i, value) in values.into_iter().enumerate() {
             if self.columns[i].name() == TIME_FIELD {
                 let field_builder = builder[i]
                     .as_any_mut()
@@ -587,17 +588,17 @@ impl RowIterator {
             }
 
             match self.columns[i].val_type() {
-                ValueType::Unknown => todo!(),
+                ValueType::Unknown => {
+                    return Err(Error::UnKnowType);
+                }
                 ValueType::Float => {
                     let field_builder = builder[i]
                         .as_any_mut()
                         .downcast_mut::<Float64Builder>()
                         .unwrap();
-                    if let Some(DataType::F64(_, val)) = &values[i] {
-                        debug!("append float value");
-                        field_builder.append_value(*val);
+                    if let Some(DataType::F64(_, val)) = value {
+                        field_builder.append_value(val);
                     } else {
-                        debug!("append float null");
                         field_builder.append_null();
                     }
                 }
@@ -606,8 +607,8 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<Int64Builder>()
                         .unwrap();
-                    if let Some(DataType::I64(_, val)) = &values[i] {
-                        field_builder.append_value(*val);
+                    if let Some(DataType::I64(_, val)) = value {
+                        field_builder.append_value(val);
                     } else {
                         field_builder.append_null();
                     }
@@ -617,8 +618,8 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<UInt64Builder>()
                         .unwrap();
-                    if let Some(DataType::U64(_, val)) = &values[i] {
-                        field_builder.append_value(*val);
+                    if let Some(DataType::U64(_, val)) = value {
+                        field_builder.append_value(val);
                     } else {
                         field_builder.append_null();
                     }
@@ -628,8 +629,8 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<BooleanBuilder>()
                         .unwrap();
-                    if let Some(DataType::Bool(_, val)) = &values[i] {
-                        field_builder.append_value(*val);
+                    if let Some(DataType::Bool(_, val)) = value {
+                        field_builder.append_value(val);
                     } else {
                         field_builder.append_null();
                     }
@@ -639,11 +640,11 @@ impl RowIterator {
                         .as_any_mut()
                         .downcast_mut::<StringBuilder>()
                         .unwrap();
-                    if let Some(DataType::Str(_, val)) = &values[i] {
-                        debug!("append string value");
-                        field_builder.append_value(String::from_utf8(val.to_vec()).unwrap());
+                    if let Some(DataType::Str(_, val)) = value {
+                        field_builder.append_value(
+                            String::from_utf8(val.to_vec()).map_err(|_| Error::ErrCharacterSet)?,
+                        );
                     } else {
-                        debug!("append string null");
                         field_builder.append_null();
                     }
                 }
@@ -657,14 +658,8 @@ impl RowIterator {
 
     async fn next_row(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
         loop {
-            if self.columns.is_empty() {
-                match self.next_series().await {
-                    Ok(val) => match val {
-                        Some(_) => {}
-                        None => return Ok(None),
-                    },
-                    Err(err) => return Err(err),
-                }
+            if self.columns.is_empty() && self.next_series().await?.is_none() {
+                return Ok(None);
             }
 
             if self.collect_row_data(builder).await?.is_some() {
@@ -734,13 +729,10 @@ impl RowIterator {
         for _ in 0..self.batch_size {
             debug!("========next_row");
             match self.next_row(&mut builder).await {
-                Ok(val) => match val {
-                    Some(_) => {}
-                    None => break,
-                },
-
+                Ok(Some(_)) => {}
+                Ok(None) => break,
                 Err(err) => return Some(Err(err)),
-            }
+            };
         }
 
         let timer = self.metrics.elapsed_point_to_record_batch().timer();

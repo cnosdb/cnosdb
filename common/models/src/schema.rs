@@ -99,8 +99,31 @@ impl TableSchema {
             .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
     }
 
+    /// Get the index of the column
+    pub fn column_index(&self, name: &str) -> Option<&usize> {
+        self.columns_index.get(name)
+    }
+
+    /// Get the metadata of the column according to the column index
+    pub fn column_by_index(&self, idx: usize) -> Option<&TableColumn> {
+        self.columns.get(idx)
+    }
+
     pub fn columns(&self) -> &Vec<TableColumn> {
         &self.columns
+    }
+
+    pub fn fields(&self) -> Vec<TableColumn> {
+        let mut fields = Vec::with_capacity(self.columns.len());
+        for i in self.columns.iter() {
+            if i.column_type == ColumnType::Time || i.column_type == ColumnType::Tag {
+                continue;
+            }
+
+            fields.push(i.clone());
+        }
+
+        fields
     }
 
     /// Number of columns of ColumnType is Field

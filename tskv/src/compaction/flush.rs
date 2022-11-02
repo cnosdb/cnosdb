@@ -25,7 +25,7 @@ use tokio::{
         oneshot::Sender,
     },
 };
-use trace::{debug, error, info, warn};
+use trace::{debug, error, info, log_error, warn};
 
 use crate::{
     compaction::FlushReq,
@@ -34,7 +34,7 @@ use crate::{
     error::{self, Error, Result},
     index::IndexResult,
     kv_option::Options,
-    memcache::{DataType, FieldVal, MemCache, MemEntry, SeriesData},
+    memcache::{DataType, FieldVal, MemCache, SeriesData},
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, Version},
     tsm::{self, codec::DataBlockEncoding, DataBlock, TsmWriter},
@@ -161,7 +161,7 @@ impl FlushTask {
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
-                        for (val, col) in row.fields.iter().zip(sch_cols.columns().iter()) {
+                        for (val, col) in row.fields.iter().zip(sch_cols.fields().iter()) {
                             if let Some(v) = val {
                                 schema_columns_value_type_map
                                     .entry(col.id)
@@ -261,13 +261,13 @@ impl FlushTask {
                 let mut delta_blk = DataBlock::new(data_block_size, *typ);
                 for (ts, v) in values {
                     if ts > max_level_ts {
-                        tsm_blk.insert(&v.data_value(ts));
+                        tsm_blk.insert(v.data_value(ts));
                         if tsm_blk.len() as usize >= data_block_size {
                             tsm_blocks.push(tsm_blk);
                             tsm_blk = DataBlock::new(data_block_size, *typ);
                         }
                     } else {
-                        delta_blk.insert(&v.data_value(ts));
+                        delta_blk.insert(v.data_value(ts));
                         if delta_blk.len() as usize >= data_block_size {
                             delta_blocks.push(delta_blk);
                             delta_blk = DataBlock::new(data_block_size, *typ);
@@ -400,7 +400,7 @@ pub async fn run_flush_memtable_job(
             .await?;
 
             if let Err(e) = compact_task_sender.send(*tsf_id) {
-                error!("{}", e);
+                log_error!(e);
             }
         }
     }

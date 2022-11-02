@@ -113,9 +113,12 @@ impl DmaFile {
         }
         Ok(read)
     }
-    //&'a mut [IoSlice<'a>]
     pub async fn write_vec<'a>(&self, pos: u64, bufs: &'a mut [IoSlice<'a>]) -> Result<usize> {
-        Ok(0)
+        let mut p = pos;
+        for buf in bufs{
+            p += self.write_at(p, buf.deref()).await? as u64;
+        }
+        Ok((p - pos) as usize)
     }
     pub async fn write_at(&self, mut pos: u64, mut buf: &[u8]) -> Result<usize> {
         let len = buf.len();

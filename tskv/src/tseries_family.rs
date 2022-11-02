@@ -95,6 +95,11 @@ impl TimeRange {
     pub fn is_boundless(&self) -> bool {
         self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
     }
+
+    #[inline(always)]
+    pub fn contains(&self, time_stamp: Timestamp) -> bool {
+        time_stamp >= self.min_ts && time_stamp <= self.max_ts
+    }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRange {
@@ -1074,7 +1079,10 @@ mod test {
         points.insert((0, 0), row_group);
         tsf.put_points(0, points);
 
-        assert_eq!(tsf.mut_cache.read().get(&0).unwrap().read().cells.len(), 1);
+        assert_eq!(
+            tsf.mut_cache.read().get_data(0, |_| true, |_| true).len(),
+            1
+        );
         tsf.delete_cache(
             &[0],
             &TimeRange {
@@ -1082,10 +1090,11 @@ mod test {
                 max_ts: 200,
             },
         );
-        let data = tsf.mut_cache.read().get(&0);
-        if let Some(cache) = data {
-            assert_eq!(cache.read().cells.len(), 0);
-        }
+        assert!(tsf
+            .mut_cache
+            .read()
+            .get_data(0, |_| true, |_| true)
+            .is_empty());
     }
 
     // Util function for testing with summary modification.

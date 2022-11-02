@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use crate::tsm::codec::get_str_codec;
 use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
@@ -21,7 +22,9 @@ use tokio::{
     time::Instant,
 };
 
+use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
+use models::codec::Encoding;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
@@ -41,7 +44,7 @@ use crate::{
     context::GlobalContext,
     database,
     engine::Engine,
-    error::{self, Result},
+    error::{self, IndexErrSnafu, Result},
     file_utils,
     index::{db_index, IndexResult},
     kv_option::Options,
@@ -157,61 +160,6 @@ impl TsKv {
 
         wal_manager
     }
-
-    // pub fn read_point(
-    //     &self,
-    //     db: &str,
-    //     time_range: &TimeRange,
-    //     field_id: FieldId,
-    // ) -> Vec<DataBlock> {
-    //     let version = {
-    //         let version_set = self.version_set.read();
-    //         if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
-    //             tsf.read().super_version()
-    //         } else {
-    //             warn!("ts_family with db name '{}' not found.", db);
-    //             return vec![];
-    //         }
-    //     };
-
-    //     let mut data = vec![];
-    //     // get data from memcache
-    //     if let Some(mem_entry) = version.caches.mut_cache.read().get(&field_id) {
-    //         data.append(&mut mem_entry.read().read_cell(time_range));
-    //     }
-
-    //     // get data from im_memcache
-    //     for mem_cache in version.caches.immut_cache.iter() {
-    //         if mem_cache.read().flushed {
-    //             continue;
-    //         }
-    //         if let Some(mem_entry) = mem_cache.read().get(&field_id) {
-    //             data.append(&mut mem_entry.read().read_cell(time_range));
-    //         }
-    //     }
-
-    //     // get data from levelinfo
-    //     for level_info in version.version.levels_info.iter() {
-    //         if level_info.level == 0 {
-    //             continue;
-    //         }
-    //         data.append(&mut level_info.read_column_file(
-    //             version.ts_family_id,
-    //             field_id,
-    //             time_range,
-    //         ).await);
-    //     }
-
-    //     // get data from delta
-    //     let level_info = version.version.levels_info();
-    //     data.append(&mut level_info[0].read_column_file(
-    //         version.ts_family_id,
-    //         field_id,
-    //         time_range,
-    //     ).await);
-
-    //     data
-    // }
 
     fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: UnboundedReceiver<WalTask>) {
         warn!("job 'WAL' starting.");
@@ -418,10 +366,18 @@ impl Engine for TsKv {
         let mut seq = 0;
         if self.options.wal.enabled {
             let (cb, rx) = oneshot::channel();
+            let mut enc_points = Vec::new();
+            let coder = get_str_codec(Encoding::Snappy);
+            coder
+                .encode(&[&points], &mut enc_points)
+                .map_err(|_| Error::Send)?;
             self.wal_sender
-                .send(WalTask::Write { cb, points })
+                .send(WalTask::Write {
+                    cb,
+                    points: Arc::new(enc_points),
+                })
                 .map_err(|err| Error::Send)?;
-            (seq, _) = rx.await.context(error::ReceiveSnafu)??;
+            seq = rx.await.context(error::ReceiveSnafu)??.0;
         }
 
         let opt_tsf = db.read().get_tsfamily_random();
@@ -482,37 +438,6 @@ impl Engine for TsKv {
             points: vec![],
         });
     }
-
-    // fn read(
-    //     &self,
-    //     db: &str,
-    //     sids: Vec<SeriesId>,
-    //     time_range: &TimeRange,
-    //     fields: Vec<ColumnId>,
-    // ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
-    //     // get data block
-    //     let mut ans: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> = HashMap::new();
-    //     for sid in sids {
-    //         let sid_entry = ans.entry(sid).or_insert_with(HashMap::new);
-    //         for sch_fid in fields.iter() {
-    //             let field_id_entry = sid_entry.entry(*sch_fid).or_insert(vec![]);
-    //             let fid = unite_id((*sch_fid).into(), sid);
-    //             field_id_entry.append(&mut self.read_point(db, time_range, fid));
-    //         }
-    //     }
-
-    //     // sort data block, max block size 1000
-    //     let mut final_ans = HashMap::new();
-    //     for (sid, map) in ans {
-    //         let sid_entry = final_ans.entry(sid).or_insert_with(HashMap::new);
-    //         for (sch_fid, blks) in map {
-    //             let field_id_entry = sid_entry.entry(sch_fid).or_insert(vec![]);
-    //             field_id_entry.append(&mut DataBlock::merge_blocks(blks, MAX_BLOCK_VALUES));
-    //         }
-    //     }
-
-    //     final_ans
-    // }
 
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
         if self.version_set.read().db_exists(&schema.name) {
@@ -583,13 +508,14 @@ impl Engine for TsKv {
 
     fn create_table(&self, schema: &TableSchema) -> Result<()> {
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
-            match db.read().get_index().create_table(schema) {
-                Ok(_) => Ok(()),
-                Err(e) => {
+            db.read()
+                .get_index()
+                .create_table(schema)
+                .map_err(|e| {
                     error!("failed create database '{}'", e);
-                    Err(Error::IndexErr { source: e })
-                }
-            }
+                    e
+                })
+                .context(IndexErrSnafu)
         } else {
             error!("Database {}, not found", schema.db);
             Err(Error::DatabaseNotFound {

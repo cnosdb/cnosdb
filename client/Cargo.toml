@@ -7,11 +7,11 @@ readme = "README.md"
 
 [dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
-datafusion = { path = "../common/datafusion_dep" }
 
-clap = { version = "3", features = ["derive", "cargo"] }
-dirs = "4.0.0"
-env_logger = "0.9"
-mimalloc = { version = "0.1", default-features = false }
-rustyline = "9.0"
-tokio = { version = "1.21", features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot"] }
+clap = { workspace = true, features = ["derive", "cargo"] }
+datafusion = { workspace = true }
+dirs = { workspace = true }
+env_logger = { workspace = true }
+mimalloc = { workspace = true, default-features = false }
+rustyline = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot"] }

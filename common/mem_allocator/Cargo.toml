@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = { version = "0.2", default-features = false }
+libc = { workspace = true, default-features = false }
 tikv-jemalloc-ctl = { version = "0.5", optional = true }
 tikv-jemalloc-sys = "0.5"
 
 [dev-dependencies]
-chrono = "0.4.22"
+chrono = { workspace = true}
