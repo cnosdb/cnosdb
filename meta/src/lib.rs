@@ -1,6 +1,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::meta_app::MetaApp;
+use crate::service::api;
+use crate::service::connection::Connections;
+use crate::service::raft_api;
+use crate::store::KvReq;
+use crate::store::KvResp;
+use crate::store::Restore;
+use crate::store::Store;
 use actix_web::middleware;
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
@@ -9,17 +17,9 @@ use actix_web::HttpServer;
 use openraft::Config;
 use openraft::Raft;
 use openraft::SnapshotPolicy;
-use crate::meta_app::MetaApp;
-use crate::service::api;
-use crate::service::raft_api;
-use crate::service::connection::Connections;
-use crate::store::KvReq;
-use crate::store::KvResp;
-use crate::store::Store;
-use crate::store::Restore;
 
-pub mod meta_app;
 pub mod client;
+pub mod meta_app;
 pub mod service;
 pub mod store;
 pub type NodeId = u64;
@@ -30,10 +30,7 @@ openraft::declare_raft_types!(
 
 pub type ExampleRaft = Raft<ExampleTypeConfig, Connections, Arc<Store>>;
 
-pub async fn start_raft_node(
-    node_id: NodeId,
-    http_addr: String,
-) -> std::io::Result<()> {
+pub async fn start_raft_node(node_id: NodeId, http_addr: String) -> std::io::Result<()> {
     let mut config = Config::default().validate().unwrap();
     config.snapshot_policy = SnapshotPolicy::LogsSinceLast(500);
     config.max_applied_log_to_keep = 20000;
@@ -69,6 +66,7 @@ pub async fn start_raft_node(
             .service(raft_api::metrics)
             .service(api::write)
             .service(api::read)
+            .service(api::get_all)
             .service(api::consistent_read)
     })
     .keep_alive(Duration::from_secs(5));

@@ -1,9 +1,11 @@
 use config::ClusterConfig;
+use meta::client::MetaHttpClient;
 use models::meta_data::*;
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::Snafu;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::runtime::Runtime;
 
 use trace::info;
 
@@ -17,6 +19,12 @@ pub enum MetaError {
 
     #[snafu(display("Not Found DB: {}", db))]
     NotFoundDb { db: String },
+
+    #[snafu(display("Not Found Data Node: {}", id))]
+    NotFoundNode { id: u64 },
+
+    #[snafu(display("Error: {}", msg))]
+    CommonError { msg: String },
 }
 
 pub type MetaResult<T> = Result<T, MetaError>;
@@ -39,11 +47,22 @@ pub trait AdminMetaClient {
     fn heartbeat(&self); // update node status
 }
 
-pub struct LocalAdminMetaClient {}
+pub struct LocalAdminMetaClient {
+    cluster: String,
+    meta_url: String,
+    data_nodes: RwLock<HashMap<u64, NodeInfo>>,
+
+    client: MetaHttpClient,
+}
 
 impl LocalAdminMetaClient {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(cluster: String, meta_url: String, runtime: Arc<Runtime>) -> Self {
+        Self {
+            cluster,
+            meta_url,
+            data_nodes: RwLock::new(HashMap::new()),
+            client: MetaHttpClient::new(1, "127.0.0.1:21001".to_string(), runtime),
+        }
     }
 }
 
@@ -69,7 +88,30 @@ impl AdminMetaClient for LocalAdminMetaClient {
         todo!()
     }
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
-        todo!()
+        if let Some(val) = self.data_nodes.read().get(&id) {
+            return Ok(val.clone());
+        }
+
+        match self.client.read_data_nodes(&self.cluster) {
+            Ok(val) => {
+                let mut nodes = self.data_nodes.write();
+                for item in val.iter() {
+                    nodes.insert(item.id, item.clone());
+                }
+            }
+
+            Err(err) => {
+                return Err(MetaError::CommonError {
+                    msg: err.to_string(),
+                });
+            }
+        }
+
+        if let Some(val) = self.data_nodes.read().get(&id) {
+            return Ok(val.clone());
+        }
+
+        return Err(MetaError::NotFoundNode { id });
     }
 
     fn heartbeat(&self) {
@@ -83,7 +125,7 @@ pub trait MetaClient {
     fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
     fn drop_user(&self, name: &String) -> MetaResult<()>;
 
-    fn create_db(&self, name: &String, policy: &RetentionPolicyInfo) -> MetaResult<()>;
+    fn create_db(&self, name: &String, policy: &DatabaseInfo) -> MetaResult<()>;
     fn drop_db(&self, name: &String) -> MetaResult<()>;
 
     fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<&BucketInfo>;
@@ -117,16 +159,18 @@ pub struct LocalMetaClient {
     tenant: String,
     meta_url: String,
 
-    data: MetaData,
+    data: TenantMetaData,
+    client: MetaHttpClient,
 }
 
 impl LocalMetaClient {
-    pub fn new(cluster: String, tenant: String, meta_url: String) -> Self {
+    pub fn new(cluster: String, tenant: String, meta_url: String, runtime: Arc<Runtime>) -> Self {
         Self {
             cluster,
             tenant,
             meta_url,
-            data: MetaData::new(),
+            data: TenantMetaData::new(),
+            client: MetaHttpClient::new(1, "127.0.0.1:21001".to_string(), runtime),
         }
     }
 }
@@ -145,7 +189,7 @@ impl MetaClient for LocalMetaClient {
         todo!()
     }
 
-    fn create_db(&self, name: &String, policy: &RetentionPolicyInfo) -> MetaResult<()> {
+    fn create_db(&self, name: &String, policy: &DatabaseInfo) -> MetaResult<()> {
         todo!()
     }
 
@@ -190,18 +234,7 @@ impl MetaClient for LocalMetaClient {
     fn get_table_schema(&self) {}
 
     fn database_min_ts(&self, name: &String) -> Option<i64> {
-        for db in &self.data.dbs {
-            if db.name == *name {
-                if db.policy.database_duration == 0 {
-                    return Some(0);
-                }
-
-                let now = models::utils::now_timestamp();
-                return Some(now - db.policy.database_duration);
-            }
-        }
-
-        None
+        self.data.database_min_ts(name)
     }
 
     fn locate_replcation_set_for_write(
@@ -225,6 +258,7 @@ impl MetaClient for LocalMetaClient {
 }
 
 pub struct MetaClientManager {
+    runtime: Arc<Runtime>,
     config: ClusterConfig,
 
     admin: AdminMetaClientRef,
@@ -232,12 +266,17 @@ pub struct MetaClientManager {
 }
 
 impl MetaClientManager {
-    pub fn new(config: ClusterConfig) -> Self {
-        let admin: AdminMetaClientRef = Arc::new(Box::new(LocalAdminMetaClient::new()));
+    pub fn new(config: ClusterConfig, runtime: Arc<Runtime>) -> Self {
+        let admin: AdminMetaClientRef = Arc::new(Box::new(LocalAdminMetaClient::new(
+            config.name.clone(),
+            config.meta.clone(),
+            runtime.clone(),
+        )));
 
         Self {
             config,
             admin,
+            runtime,
             tenants: RwLock::new(HashMap::new()),
         }
     }
@@ -255,6 +294,7 @@ impl MetaClientManager {
             self.config.name.clone(),
             tenant.clone(),
             self.config.meta.clone(),
+            self.runtime.clone(),
         )));
 
         self.tenants.write().insert(tenant.clone(), client.clone());

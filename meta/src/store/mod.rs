@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
@@ -27,13 +27,17 @@ use openraft::StorageIOError;
 use openraft::Vote;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json::from_str;
 use sled::{Db, IVec};
 use tokio::sync::RwLock;
+use trace::info;
 use tracing;
 pub mod config;
 pub mod store;
 
 use crate::store::config::Config;
+
+use models::meta_data::*;
 
 #[derive(Debug)]
 pub struct SnapshotInfo {
@@ -43,12 +47,27 @@ pub struct SnapshotInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum KvReq {
-    Set { key: String, value: String },
+    AddDataNode(String, NodeInfo),
+    CreateDB(String, String, DatabaseInfo),
+    CreateBucket {
+        cluster: String,
+        tenant: String,
+        db: String,
+        ts: i64,
+    },
+
+    Set {
+        key: String,
+        value: String,
+    },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct KvResp {
-    pub value: Option<String>,
+    pub err_code: i32,
+    pub err_msg: String,
+
+    pub meta_data: TenantMetaData,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -57,6 +76,130 @@ pub struct StateMachineContent {
     pub last_membership: EffectiveMembership<NodeId>,
     pub data: BTreeMap<String, String>,
     pub sequance: u64,
+}
+
+pub fn node_list(path: &String, map: &BTreeMap<String, String>) -> Vec<String> {
+    let mut path = path.clone();
+    if !path.ends_with("/") {
+        path.push('/');
+    }
+
+    let mut list = vec![];
+    for (key, _) in map.range(path.clone()..) {
+        match key.strip_prefix(path.as_str()) {
+            Some(val) => {
+                if let Some(_) = val.find('/') {
+                    continue;
+                }
+                if val.to_string() == "" {
+                    continue;
+                }
+
+                list.push(key.clone());
+            }
+
+            None => break,
+        }
+    }
+
+    list
+}
+
+fn fetch_and_add_incr_id(cluster: &String, map: &mut BTreeMap<String, String>, count: u32) -> u32 {
+    let id_key = KeyPath::incr_id(cluster);
+
+    let mut id_str = "1".to_string();
+    if let Some(val) = map.get(&id_key) {
+        id_str = val.clone();
+    }
+    let id_num = from_str::<u32>(&id_str).unwrap_or(1);
+
+    map.insert(id_key, (id_num + count).to_string());
+
+    return id_num;
+}
+
+pub fn get_struct<'a, T: Deserialize<'a>>(
+    key: &String,
+    map: &'a BTreeMap<String, String>,
+) -> Option<T> {
+    let val = map.get(key)?;
+    let info: T = serde_json::from_str(val).ok()?;
+
+    Some(info)
+}
+
+pub fn children<'a, T: Deserialize<'a>>(
+    path: &String,
+    map: &'a BTreeMap<String, String>,
+) -> HashMap<String, T> {
+    let mut result = HashMap::new();
+
+    for it in node_list(path, map).iter() {
+        if let Some(val) = get_struct::<T>(it, map) {
+            result.insert(it.clone(), val);
+        }
+    }
+
+    result
+}
+
+// **    /cluster_name/auto_incr_id -> id
+// **    /cluster_name/data_nodes/node_id -> [NodeInfo] 集群、数据节点等信息
+// **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
+// **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
+// **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
+// **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [BucketInfo] schema相关信息
+pub struct KeyPath {}
+impl KeyPath {
+    pub fn incr_id(cluster: &String) -> String {
+        format!("/{}/auto_incr_id", cluster)
+    }
+
+    pub fn data_nodes(cluster: &String) -> String {
+        format!("/{}/data_nodes", cluster)
+    }
+
+    pub fn data_node_id(cluster: &String, id: u64) -> String {
+        format!("/{}/data_nodes/{}", cluster, id)
+    }
+
+    pub fn tenant_users(cluster: &String, tenant: &String) -> String {
+        format!("/{}/{}/users", cluster, tenant)
+    }
+
+    pub fn tenant_user_name(cluster: &String, tenant: &String, name: &String) -> String {
+        format!("/{}/{}/users/{}", cluster, tenant, name)
+    }
+
+    pub fn tenant_dbs(cluster: &String, tenant: &String) -> String {
+        format!("/{}/{}/dbs", cluster, tenant)
+    }
+
+    pub fn tenant_db_name(cluster: &String, tenant: &String, db: &String) -> String {
+        format!("/{}/{}/dbs/{}", cluster, tenant, db)
+    }
+
+    pub fn tenant_db_buckets(cluster: &String, tenant: &String, db: &String) -> String {
+        format!("/{}/{}/dbs/{}/buckets", cluster, tenant, db)
+    }
+
+    pub fn tenant_bucket_id(cluster: &String, tenant: &String, db: &String, id: u32) -> String {
+        format!("/{}/{}/dbs/{}/buckets/{}", cluster, tenant, db, id)
+    }
+
+    pub fn tenant_schemas(cluster: &String, tenant: &String, db: &String) -> String {
+        format!("/{}/{}/dbs/{}/schemas", cluster, tenant, db)
+    }
+
+    pub fn tenant_schema_name(
+        cluster: &String,
+        tenant: &String,
+        db: &String,
+        name: &String,
+    ) -> String {
+        format!("/{}/{}/dbs/{}/schemas/{}", cluster, tenant, db, name)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -80,6 +223,28 @@ impl StateMachine {
         self.last_applied_log = content.last_applied_log;
         self.last_membership = content.last_membership.clone();
         self.data = content.data.clone();
+    }
+
+    pub fn to_tenant_meta_data(&self, cluster: &String, tenant: &String) -> TenantMetaData {
+        let mut meta = TenantMetaData::new();
+
+        if let Some(val) = self.last_applied_log {
+            meta.version = val.index
+        }
+
+        meta.users = children::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
+        meta.data_nodes = children::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data);
+
+        meta.dbs = children::<DatabaseInfo>(&KeyPath::tenant_dbs(cluster, tenant), &self.data);
+        for (key, val) in meta.dbs.iter_mut() {
+            let buckets = children::<BucketInfo>(
+                &KeyPath::tenant_db_buckets(cluster, tenant, key),
+                &self.data,
+            );
+            val.buckets = buckets.into_values().collect();
+        }
+
+        meta
     }
 }
 
@@ -428,19 +593,51 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
             sm.last_applied_log = Some(entry.log_id);
 
             match entry.payload {
-                EntryPayload::Blank => res.push(KvResp { value: None }),
+                EntryPayload::Blank => res.push(KvResp::default()),
+                EntryPayload::Membership(ref mem) => {
+                    sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
+                    res.push(KvResp::default())
+                }
+
                 EntryPayload::Normal(ref req) => match req {
                     KvReq::Set { key, value } => {
                         sm.data.insert(key.clone(), value.clone());
-                        res.push(KvResp {
-                            value: Some(value.clone()),
-                        })
+                        res.push(KvResp::default());
+
+                        info!("WRITE: {} :{}", key, value);
+                    }
+
+                    KvReq::AddDataNode(cluster, node) => {
+                        let key = KeyPath::data_node_id(cluster, node.id);
+                        let value = serde_json::to_string(node).unwrap();
+                        sm.data.insert(key.clone(), value.clone());
+                        info!("WRITE: {} :{}", key, value);
+
+                        res.push(KvResp::default());
+                    }
+
+                    KvReq::CreateDB(cluster, tenant, db) => {
+                        let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
+                        let value = serde_json::to_string(db).unwrap();
+                        sm.data.insert(key.clone(), value.clone());
+                        info!("WRITE: {} :{}", key, value);
+
+                        let mut resp = KvResp::default();
+                        resp.meta_data = sm.to_tenant_meta_data(cluster, tenant);
+                        res.push(resp);
+                    }
+
+                    KvReq::CreateBucket {
+                        cluster,
+                        tenant,
+                        db,
+                        ts,
+                    } => {
+                        let mut resp = process_create_bucket(&mut sm, cluster, tenant, db, ts);
+                        resp.meta_data = sm.to_tenant_meta_data(cluster, tenant);
+                        res.push(resp);
                     }
                 },
-                EntryPayload::Membership(ref mem) => {
-                    sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
-                    res.push(KvResp { value: None })
-                }
             };
         }
         Ok(res)
@@ -552,29 +749,178 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     }
 }
 
+fn process_create_bucket(
+    sm: &mut StateMachine,
+    cluster: &String,
+    tenant: &String,
+    db: &String,
+    ts: &i64,
+) -> KvResp {
+    let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
+    let buckets = children::<BucketInfo>(&(db_path.clone() + "/buckets"), &sm.data);
+    for (_, val) in buckets.iter() {
+        if *ts >= val.start_time && *ts < val.end_time {
+            return KvResp::default();
+        }
+    }
+
+    let db_info = match get_struct::<DatabaseInfo>(&db_path, &sm.data) {
+        Some(info) => info,
+        None => {
+            return KvResp {
+                err_code: -1,
+                meta_data: TenantMetaData::new(),
+                err_msg: format!("database {} is not exist", db),
+            };
+        }
+    };
+
+    let node_list: Vec<NodeInfo> = children::<NodeInfo>(&KeyPath::data_nodes(cluster), &sm.data)
+        .into_values()
+        .collect();
+
+    if node_list.len() == 0 || db_info.shard == 0 || db_info.replications > node_list.len() as u32 {
+        return KvResp {
+            err_code: -1,
+            meta_data: TenantMetaData::new(),
+            err_msg: format!("database {} attribute invalid!", db),
+        };
+    }
+
+    let mut bucket = BucketInfo::default();
+    bucket.id = fetch_and_add_incr_id(cluster, &mut sm.data, 1);
+    (bucket.start_time, bucket.end_time) = get_time_range(*ts, db_info.vnode_duration);
+    let (group, used) = allocation_replication_set(
+        node_list,
+        db_info.shard,
+        db_info.replications,
+        bucket.id + 1,
+    );
+    bucket.shard_group = group;
+    fetch_and_add_incr_id(cluster, &mut sm.data, used);
+
+    let key = KeyPath::tenant_bucket_id(cluster, tenant, db, bucket.id);
+    let val = serde_json::to_string(&bucket).unwrap();
+
+    sm.data.insert(key.clone(), val.clone());
+    info!("WRITE: {} :{}", key, val);
+
+    return KvResp::default();
+}
+
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
-    use std::ops::Bound::Included;
+    use std::{
+        collections::{BTreeMap, HashMap},
+        sync::Arc,
+    };
+
+    use models::meta_data::NodeInfo;
+    use serde::{Deserialize, Serialize};
+    use tokio::runtime;
+
+    use crate::{client::MetaHttpClient, store::node_list};
 
     #[tokio::test]
     async fn test_btree_map() {
         let mut map = BTreeMap::new();
-        map.insert("/root/abc".to_string(), "/root/abc_v".to_string());
-        map.insert("/root/abc/123".to_string(), "/root/abc/123_v".to_string());
-        map.insert("/root/abc/456".to_string(), "/root/abc/456_v".to_string());
-        map.insert("/root/abc/123/".to_string(), "/root/abc/123/_v".to_string());
-        map.insert(
-            "/root/abc/123/123".to_string(),
-            "/root/abc/123/123_v".to_string(),
-        );
-        map.insert("/root/abd/123".to_string(), "/root/abc/123_v".to_string());
-        map.insert("/root/abd/456".to_string(), "/root/abc/456_v".to_string());
+        map.insert("/root/tenant".to_string(), "tenant_v".to_string());
+        map.insert("/root/tenant/db1".to_string(), "123_v".to_string());
+        map.insert("/root/tenant/db2".to_string(), "456_v".to_string());
+        map.insert("/root/tenant/db1/".to_string(), "123/_v".to_string());
+        map.insert("/root/tenant/db1/table1".to_string(), "123_v".to_string());
+        map.insert("/root/tenant/123".to_string(), "123_v".to_string());
+        map.insert("/root/tenant/456".to_string(), "456_v".to_string());
 
-        let begin = "/root/abc/".to_string();
-        let end = "/root/abc/|".to_string();
+        let begin = "/root/tenant/".to_string();
+        let end = "/root/tenant/|".to_string();
         for (key, value) in map.range(begin..end) {
             println!("{key}  : {value}");
+        }
+
+        let nodes = node_list(&"/root/tenant".to_string(), &map);
+        print!("nodes: {:?}\n", nodes);
+    }
+
+    //{"Set":{"key":"foo","value":"bar111"}}
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Command1 {
+        id: u32,
+        name: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Command2 {
+        id: u32,
+        name: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub enum Command {
+        // Test1 { id: u32, name: String },
+        // Test2 { id: u32, name: String },
+        Test1(Command1),
+    }
+
+    #[tokio::test]
+    async fn test_json() {
+        let cmd = Command::Test1(Command1 {
+            id: 100,
+            name: "test".to_string(),
+        });
+
+        let str = serde_json::to_vec(&cmd).unwrap();
+        print!("\n1 === {}=== \n", String::from_utf8(str).unwrap());
+
+        let str = serde_json::to_string(&cmd).unwrap();
+        print!("\n2 === {}=== \n", str);
+
+        let tup = ("test1".to_string(), "test2".to_string());
+        let str = serde_json::to_string(&tup).unwrap();
+        print!("\n2 === {}=== \n", str);
+    }
+
+    #[tokio::test]
+    async fn test_meta_client() {
+        let rt = Arc::new(runtime::Runtime::new().unwrap());
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string(), rt);
+        let rsp = client.test_read(&"null".to_string());
+
+        print!("{:#?} \n", rsp)
+    }
+
+    #[tokio::test]
+    async fn test_allocation_replication_set() {
+        let mut nodes = vec![];
+        let mut node = NodeInfo::default();
+
+        node.id = 1;
+        nodes.push(node.clone());
+        node.id = 2;
+        nodes.push(node.clone());
+        node.id = 3;
+        nodes.push(node.clone());
+        node.id = 4;
+        nodes.push(node.clone());
+        node.id = 5;
+        nodes.push(node.clone());
+        node.id = 6;
+        nodes.push(node.clone());
+
+        let (group, id) = super::allocation_replication_set(nodes, 3, 3, 10);
+
+        print!("{} \n {:#?}\n", id, group);
+
+        let mut map = HashMap::new();
+        map.insert("k1".to_string(), "v1".to_string());
+        modify_hashmap(&mut map);
+
+        print!("{:#?}", map)
+    }
+
+    fn modify_hashmap(map: &mut HashMap<String, String>) {
+        for i in 100..200 {
+            map.insert(i.to_string(), i.to_string());
         }
     }
 }

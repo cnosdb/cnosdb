@@ -122,9 +122,18 @@ impl HintedOffManager {
             match queue.write().read() {
                 Ok(block) => {
                     //debug!("==== got data {:#?}", block.debug());
-                    writer
-                        .warp_write_to_node(block.vnode_id, node_id, block.data)
-                        .await;
+                    loop {
+                        if let Ok(_) = writer
+                            .warp_write_to_node(block.vnode_id, node_id, block.data.clone())
+                            .await
+                        {
+                            break;
+                        } else {
+                            info!("hinted_off write data to node failed");
+                            time::sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+
                     queue.write().advance_read_offset(0).unwrap();
                 }
 

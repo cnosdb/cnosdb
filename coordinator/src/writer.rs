@@ -69,8 +69,8 @@ impl VnodePoints<'_> {
 }
 
 pub struct VnodeMapping<'a> {
-    pub points: HashMap<u64, VnodePoints<'a>>,
-    pub sets: HashMap<u64, ReplcationSet>,
+    pub points: HashMap<u32, VnodePoints<'a>>,
+    pub sets: HashMap<u32, ReplcationSet>,
 }
 
 impl<'a> VnodeMapping<'a> {
@@ -177,7 +177,7 @@ impl PointWriter {
 
                 let block = HintedOffBlock::new(now_timestamp(), vnode_id, data);
                 let queue = hh_manager.get_or_create_queue(node_id);
-                queue.write().write(&block);
+                let _ = queue.write().write(&block);
 
                 return Err(err);
             }

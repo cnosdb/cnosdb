@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use models::meta_data::DatabaseInfo;
+use models::meta_data::NodeInfo;
 use openraft::error::AddLearnerError;
 use openraft::error::CheckIsLeaderError;
 use openraft::error::ClientWriteError;
@@ -18,69 +20,79 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::runtime::Runtime;
 
-use crate::NodeId;
-use crate::KvReq;
+use crate::store::KvResp;
 use crate::ExampleTypeConfig;
+use crate::KvReq;
+use crate::NodeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Empty {}
 
 pub struct MetaHttpClient {
-    pub leader: Arc<Mutex<(NodeId, String)>>,
+    runtime: Arc<Runtime>,
     pub inner: Client,
+    pub leader: Arc<Mutex<(NodeId, String)>>,
 }
 
 impl MetaHttpClient {
-    pub fn new(leader_id: NodeId, leader_addr: String) -> Self {
+    pub fn new(leader_id: NodeId, leader_addr: String, runtime: Arc<Runtime>) -> Self {
         Self {
-            leader: Arc::new(Mutex::new((leader_id, leader_addr))),
+            runtime,
             inner: Client::new(),
+            leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }
 
-    pub async fn write(
+    pub fn write(
         &self,
         req: &KvReq,
-    ) -> Result<
-        ClientWriteResponse<ExampleTypeConfig>,
-        RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>,
-    > {
-        self.send_rpc_to_leader("write", Some(req)).await
+    ) -> Result<KvResp, RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>> {
+        self.send_rpc_to_leader("write", Some(req))
     }
 
-    pub async fn read(
+    pub fn read_tenant_meta(
+        &self,
+        req: &(String, String),
+    ) -> Result<KvResp, RPCError<ExampleTypeConfig, Infallible>> {
+        self.warp_do_send_rpc_to_leader("read", Some(req))
+    }
+
+    pub fn read_data_nodes(
         &self,
         req: &String,
-    ) -> Result<String, RPCError<ExampleTypeConfig, Infallible>> {
-        self.do_send_rpc_to_leader("read", Some(req)).await
+    ) -> Result<Vec<NodeInfo>, RPCError<ExampleTypeConfig, Infallible>> {
+        self.warp_do_send_rpc_to_leader("data_nodes", Some(req))
     }
 
-    pub async fn consistent_read(
+    pub fn test_read(
+        &self,
+        req: &String,
+    ) -> Result<DatabaseInfo, RPCError<ExampleTypeConfig, Infallible>> {
+        self.warp_do_send_rpc_to_leader("read", Some(req))
+    }
+
+    pub fn consistent_read(
         &self,
         req: &String,
     ) -> Result<String, RPCError<ExampleTypeConfig, CheckIsLeaderError<NodeId>>> {
-        self.do_send_rpc_to_leader("consistent_read", Some(req))
-            .await
+        self.warp_do_send_rpc_to_leader("consistent_read", Some(req))
     }
 
-    pub async fn init(
-        &self,
-    ) -> Result<(), RPCError<ExampleTypeConfig, InitializeError<NodeId>>> {
-        self.do_send_rpc_to_leader("init", Some(&Empty {})).await
+    pub fn init(&self) -> Result<(), RPCError<ExampleTypeConfig, InitializeError<NodeId>>> {
+        self.warp_do_send_rpc_to_leader("init", Some(&Empty {}))
     }
 
-    pub async fn add_learner(
+    pub fn add_learner(
         &self,
         req: (NodeId, String),
-    ) -> Result<
-        AddLearnerResponse<NodeId>,
-        RPCError<ExampleTypeConfig, AddLearnerError<NodeId>>,
-    > {
-        self.send_rpc_to_leader("add-learner", Some(&req)).await
+    ) -> Result<AddLearnerResponse<NodeId>, RPCError<ExampleTypeConfig, AddLearnerError<NodeId>>>
+    {
+        self.send_rpc_to_leader("add-learner", Some(&req))
     }
 
-    pub async fn change_membership(
+    pub fn change_membership(
         &self,
         req: &BTreeSet<NodeId>,
     ) -> Result<
@@ -88,13 +100,25 @@ impl MetaHttpClient {
         RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>,
     > {
         self.send_rpc_to_leader("change-membership", Some(req))
-            .await
     }
 
-    pub async fn metrics(
+    pub fn metrics(
         &self,
     ) -> Result<RaftMetrics<ExampleTypeConfig>, RPCError<ExampleTypeConfig, Infallible>> {
-        self.do_send_rpc_to_leader("metrics", None::<&()>).await
+        self.warp_do_send_rpc_to_leader("metrics", None::<&()>)
+    }
+
+    fn warp_do_send_rpc_to_leader<Req, Resp, Err>(
+        &self,
+        uri: &str,
+        req: Option<&Req>,
+    ) -> Result<Resp, RPCError<ExampleTypeConfig, Err>>
+    where
+        Req: Serialize + 'static,
+        Resp: Serialize + DeserializeOwned,
+        Err: std::error::Error + Serialize + DeserializeOwned,
+    {
+        self.runtime.block_on(self.do_send_rpc_to_leader(uri, req))
     }
 
     async fn do_send_rpc_to_leader<Req, Resp, Err>(
@@ -130,8 +154,7 @@ impl MetaHttpClient {
         res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
     }
 
-
-    async fn send_rpc_to_leader<Req, Resp, Err>(
+    fn send_rpc_to_leader<Req, Resp, Err>(
         &self,
         uri: &str,
         req: Option<&Req>,
@@ -149,7 +172,7 @@ impl MetaHttpClient {
 
         loop {
             let res: Result<Resp, RPCError<ExampleTypeConfig, Err>> =
-                self.do_send_rpc_to_leader(uri, req).await;
+                self.warp_do_send_rpc_to_leader(uri, req);
 
             let rpc_err = match res {
                 Ok(x) => return Ok(x),
@@ -157,9 +180,8 @@ impl MetaHttpClient {
             };
 
             if let RPCError::RemoteError(remote_err) = &rpc_err {
-                let forward_err_res = <Err as TryInto<ForwardToLeader<NodeId>>>::try_into(
-                    remote_err.source.clone(),
-                );
+                let forward_err_res =
+                    <Err as TryInto<ForwardToLeader<NodeId>>>::try_into(remote_err.source.clone());
 
                 if let Ok(ForwardToLeader {
                     leader_id: Some(leader_id),

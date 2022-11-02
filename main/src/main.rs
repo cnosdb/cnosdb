@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports, unused_variables)]
+
 use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::meta_client::{LocalMetaClient, MetaClientManager, MetaClientRef};
@@ -150,10 +152,13 @@ fn main() -> Result<(), std::io::Error> {
             }
             SubCommand::Run {} => {
                 let tskv_options = tskv::Options::from(&global_config);
-                let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
+                let kv_inst = Arc::new(TsKv::open(tskv_options, runtime.clone()).await.unwrap());
                 let dbms = Arc::new(make_cnosdbms(kv_inst.clone()).expect("make dbms"));
 
-                let meta_manager = Arc::new(MetaClientManager::new(global_config.cluster.clone()));
+                let meta_manager = Arc::new(MetaClientManager::new(
+                    global_config.cluster.clone(),
+                    runtime,
+                ));
                 let point_writer = Arc::new(PointWriter::new(
                     global_config.cluster.node_id,
                     kv_inst.clone(),

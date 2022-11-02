@@ -10,6 +10,7 @@ protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
+meta = { path = "../meta" }
 
 async-channel = "1.7.1"
 snafu = "0.7"

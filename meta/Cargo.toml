@@ -12,6 +12,7 @@ path = "src/bin/main.rs"
 [dependencies]
 config = { path = "../config" }
 trace = { path = "../common/trace" }
+models = { path = "../common/models" }
 
 actix-web = "4.0.0"
 async-trait = "0.1.36"
