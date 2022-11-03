@@ -88,6 +88,7 @@ mod test {
     use crate::sql::parser::ExtParser;
     use crate::sql::planner::SqlPlaner;
     use config::get_config;
+    use coordinator::meta_client_mock::MockMetaManager;
     use datafusion::arrow::datatypes::DataType;
     use datafusion::error::DataFusionError;
     use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
@@ -137,7 +138,12 @@ mod test {
         let mut function_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut function_manager).unwrap();
         let meta = Arc::new(
-            LocalCatalogMeta::new_with_default(tskv.clone(), Arc::new(function_manager)).unwrap(),
+            LocalCatalogMeta::new_with_default(
+                tskv.clone(),
+                Arc::new(Box::new(MockMetaManager::default())),
+                Arc::new(function_manager),
+            )
+            .unwrap(),
         );
         let context = ContextBuilder::new(UserInfo {
             user: "".to_string(),

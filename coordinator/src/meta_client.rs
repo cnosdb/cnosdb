@@ -1,5 +1,7 @@
 use config::ClusterConfig;
+use futures::future::ok;
 use meta::client::MetaHttpClient;
+use meta::store::KvReq;
 use models::meta_data::*;
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::Snafu;
@@ -256,8 +258,32 @@ impl MetaClient for RemoteMetaClient {
         return &self.tenant;
     }
 
-    fn create_db(&self, name: &String, policy: &DatabaseInfo) -> MetaResult<()> {
-        todo!()
+    fn create_db(&self, name: &String, info: &DatabaseInfo) -> MetaResult<()> {
+        if let Some(_) = self.data.read().dbs.get(name) {
+            return Ok(());
+        }
+
+        let req = KvReq::CreateDB(self.cluster.clone(), self.tenant.clone(), info.clone());
+
+        let rsp = self
+            .client
+            .write(&req)
+            .map_err(|err| MetaError::CommonError {
+                msg: format!("create bucket err: {}", err.to_string()),
+            })?;
+
+        if rsp.err_code < 0 {
+            return Err(MetaError::CommonError {
+                msg: format!("create bucket err: {} {}", rsp.err_code, rsp.err_msg),
+            });
+        }
+
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        return Ok(());
     }
 
     fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo> {
