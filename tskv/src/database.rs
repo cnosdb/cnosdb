@@ -21,6 +21,7 @@ use trace::{debug, error, info};
 use crate::compaction::FlushReq;
 use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
+use crate::Error::InvalidPoint;
 use crate::{
     error::{self, Result},
     memcache::{RowData, RowGroup},
@@ -243,6 +244,9 @@ impl Database {
     }
 
     fn build_index(&self, info: &Point) -> Result<u64> {
+        if info.tags().ok_or(InvalidPoint)?.is_empty() {
+            return Err(InvalidPoint);
+        }
         if let Some(id) = self
             .index
             .get_sid_from_cache(info)

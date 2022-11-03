@@ -21,6 +21,8 @@ insert createtable.test0(TIME, column1, column2, column3, column4, column5, colu
 insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (103, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
 insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (104, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
 insert createtable.test0(TIME, column2, column3, column4, column5, column6) values (100, 'hello', 1234, false, 1.2, 'beijing');
+insert createtable.test0(TIME, column1, column2, column3, column4, column5) values (100, -1234, 'hello', 1234, false, 1.2);
+
 
 select ALL * from createtable.test0;
 select ALL * from test0;
