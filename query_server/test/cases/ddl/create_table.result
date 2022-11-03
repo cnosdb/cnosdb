@@ -145,8 +145,9 @@ time,column6,column7,column1,column2,column3,column4,column5
 
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test3( column1 BIGINT CODEC(DELTA), column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
-200 OK
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: Field or Tag name should not have same"}
+-- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test4( column1 BIGINT CODEC(DEL), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
