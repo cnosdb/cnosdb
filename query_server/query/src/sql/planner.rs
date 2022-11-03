@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::Arc;
 
@@ -311,8 +311,16 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     codec_name_to_codec(&column_opt.codec),
                 )
             };
+            schema.push(col);
+        }
 
-            schema.push(col)
+        let mut column_name = HashSet::new();
+        for col in schema.iter() {
+            if !column_name.insert(col.name.as_str()) {
+                return Err(LogicalPlannerError::Semantic {
+                    err: "Field or Tag name should not have same".to_string(),
+                });
+            }
         }
         Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
             schema,
@@ -652,6 +660,45 @@ mod tests {
         } else {
             panic!("expected create table plan")
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_filed_name_same() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,presssure DOUBLE,TAGS(station));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_tag_name_same() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,station));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_tag_field_same_name() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,presssure));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
     }
 
     #[test]
