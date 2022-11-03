@@ -98,7 +98,7 @@ rows
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5) values (100, -1234, 'hello', 1234, false, 1.2); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select ALL * from createtable.test0; --

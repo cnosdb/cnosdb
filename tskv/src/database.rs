@@ -244,7 +244,9 @@ impl Database {
     }
 
     fn build_index(&self, info: &Point) -> Result<u64> {
-        if info.tags().ok_or(InvalidPoint)?.is_empty() {
+        if info.tags().ok_or(InvalidPoint)?.is_empty()
+            || info.fields().ok_or(InvalidPoint)?.is_empty()
+        {
             return Err(InvalidPoint);
         }
         if let Some(id) = self

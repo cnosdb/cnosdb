@@ -29,13 +29,13 @@
 -- EXECUTE SQL: INSERT m1(TIME, f2) VALUES(3894556692135729687, -803836627), (4555921208464455397, -25284663); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f0) VALUES(1191631107457969673, '9195442692708162668'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f1, f0, t0) VALUES(2645614256296351398, FALSE, '7276138141691785489', '4'), (4523696464976555956, TRUE, 'IG', ''), (1252859358085287398, TRUE, '0.12602752741440792', 'pR'), (6971753681441287817, FALSE, 'Y', ''); -- 1ms; --
@@ -85,16 +85,9 @@ rows
 
 -- EXECUTE SQL: INSERT m3(TIME, t1, t0) VALUES(8357345634210517894, 'T!', 't'); -- 0ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-1
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(4963944696064243826, 4872214110337414144), (8906039179956143515, 0.8770889075333576645476796329603530466556549072265625); -- 0ms; --
 -- AFTER_SORT --
@@ -130,16 +123,9 @@ rows
 
 -- EXECUTE SQL: INSERT m4(TIME, t0) VALUES(1641279124618714342, '*Yk'), (6904427846636587726, 'Ff(u'), (8501508840232273345, 'CB<7E]'), (4535575739230910918, '9065525203050843594'); -- 0ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-4
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0) VALUES(8033277448126677494, -719146430, 0.637860522993480838493951523560099303722381591796875, 'sGh[2[*?Q'); -- 1ms; --
 -- AFTER_SORT --
@@ -157,7 +143,7 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, f0) VALUES(7874484282556631665, -184853823), (6101230550563449153, -2085716189); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m4(TIME, t1, f0) VALUES(8297020634243142773, '', FALSE); -- 2ms; --
@@ -176,13 +162,13 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, f0) VALUES(3415710888110090697, -1134968677), (7304141719206898387, -374901666); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(4690298394886424922, 0.7365373850922811715946636468288488686084747314453125); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t2, f1, t0) VALUES(6848635358907743076, '7825004207928641098', 0.02312444644650846203859373417799361050128936767578125, 'n'), (6623331093118139075, 'sW', 0.54727668609854573933404253693879581987857818603515625, '4683132071972081202'); -- 0ms; --
@@ -226,16 +212,9 @@ rows
 
 -- EXECUTE SQL: INSERT m2(TIME, t0, t2) VALUES(3792508435101275658, 't5sd/,D?7', ',d'); -- 0ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-1
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(1128201073465455417, 0.7520663873197779292212317159282974898815155029296875), (8928495096372163377, 419303373304867648), (7728172917082845593, 418797746943372864); -- 0ms; --
 -- AFTER_SORT --
@@ -272,7 +251,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(3445745323472776741, FALSE), (4004885874743297811, FALSE); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t0, f1) VALUES(7255535569352092297, '0.14928332458710802', -179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368); -- 0ms; --
@@ -343,21 +322,14 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(4405135655254137840, TRUE), (5010135736173590510, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(7830195537671872289, ''), (2960157668810740158, '0.08834751653967488'); -- 0ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-2
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, f0, t1) VALUES(5760405580491443116, 951192745, '[%^TQVy8'); -- 0ms; --
 -- AFTER_SORT --
@@ -375,7 +347,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f2, f0) VALUES(341303125816519819, NULL, '3309273192353118515'), (5491711760282782714, 1700015934, 'Vb5P落ꦀ'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, f0, t0) VALUES(6634512753791616118, 1296743770, 'O~'); -- 0ms; --
@@ -393,33 +365,26 @@ rows
 
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(681590122943006574, ''); -- 1ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-1
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(7034851862018480562, 0.7802602952255794921399001395911909639835357666015625); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f0) VALUES(4632089311642511003, ''), (1284932644367558414, 's'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m4(TIME, f0) VALUES(8628134510828718363, TRUE), (5632091374246825572, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t0, f0) VALUES(8573280033733946014, 'z', 0.45063825268152390979281562977121211588382720947265625); -- 0ms; --
@@ -438,7 +403,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, t0) VALUES(9025730320552868594, NULL); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t2, f1, f0, t0) VALUES(3116582321238022207, '', 1692022416413118976, 19144301, ''); -- 0ms; --
@@ -475,16 +440,9 @@ rows
 
 -- EXECUTE SQL: INSERT m3(TIME, t0) VALUES(5961690929868572693, 'Rn3'), (6927680728977609390, '0.46917222743479703'); -- 0ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-2
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, t0, f1, f0, f2) VALUES(567722332927164807, '.1''㔱鎫c9', TRUE, '\g', -1359365092); -- 0ms; --
 -- AFTER_SORT --
