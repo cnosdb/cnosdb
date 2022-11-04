@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::{
-    logical_plan::LogicalPlan,
+    logical_expr::LogicalPlan,
     physical_optimizer::{
         aggregate_statistics::AggregateStatistics, coalesce_batches::CoalesceBatches,
         hash_build_probe_order::HashBuildProbeOrder, merge_exec::AddCoalescePartitionsExec,

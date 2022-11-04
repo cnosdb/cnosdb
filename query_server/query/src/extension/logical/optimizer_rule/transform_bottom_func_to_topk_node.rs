@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use datafusion::{
     error::DataFusionError,
-    logical_plan::{
-        plan::{Projection, Sort},
-        LogicalPlan,
+    logical_expr::{
+        LogicalPlan, {Projection, Sort},
     },
     optimizer::{OptimizerConfig, OptimizerRule},
     prelude::Expr,

@@ -5,7 +5,7 @@ use datafusion::{
     arrow::compute::SortOptions,
     error::DataFusionError,
     execution::context::SessionState,
-    logical_plan::{LogicalPlan, UserDefinedLogicalNode},
+    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
     physical_plan::{
         planner::{create_physical_sort_expr, ExtensionPlanner},
         ExecutionPlan, PhysicalPlanner,

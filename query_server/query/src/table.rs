@@ -3,11 +3,11 @@ use std::{any::Any, sync::Arc};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::SchemaRef,
+    common::DFSchemaRef,
     datasource::{TableProvider, TableType},
     error::{DataFusionError, Result},
     execution::context::SessionState,
     logical_expr::{Expr, TableProviderFilterPushDown},
-    logical_plan::DFSchemaRef,
     physical_plan::{project_schema, ExecutionPlan},
 };
 use models::{
