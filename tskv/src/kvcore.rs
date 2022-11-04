@@ -238,14 +238,16 @@ impl TsKv {
     ) {
         self.runtime.spawn(async move {
             while let Some(ts_family_id) = receiver.recv().await {
-                if let Some(tsf) = version_set.read().get_tsfamily_by_tf_id(ts_family_id) {
+                let ts_family = version_set.read().get_tsfamily_by_tf_id(ts_family_id);
+                if let Some(tsf) = ts_family {
                     info!("Starting compaction on ts_family {}", ts_family_id);
                     let start = Instant::now();
-                    if let Some(compact_req) = tsf.read().pick_compaction() {
-                        let database = compact_req.database.clone();
-                        let compact_ts_family = compact_req.ts_family_id;
-                        let out_level = compact_req.out_level;
-                        match compaction::run_compaction_job(compact_req, ctx.clone()) {
+                    let compact_req = tsf.read().pick_compaction();
+                    if let Some(req) = compact_req {
+                        let database = req.database.clone();
+                        let compact_ts_family = req.ts_family_id;
+                        let out_level = req.out_level;
+                        match compaction::run_compaction_job(req, ctx.clone()) {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
@@ -310,11 +312,13 @@ impl TsKv {
 
     // Compact TSM files in database into bigger TSM files.
     pub fn compact(&self, database: &str) {
-        if let Some(db) = self.version_set.read().get_db(database) {
+        let database = self.version_set.read().get_db(database);
+        if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().ts_families() {
-                if let Some(compact_req) = ts_family.read().pick_compaction() {
-                    match compaction::run_compaction_job(compact_req, self.global_ctx.clone()) {
+                let compact_req = ts_family.read().pick_compaction();
+                if let Some(req) = compact_req {
+                    match compaction::run_compaction_job(req, self.global_ctx.clone()) {
                         Ok(Some(version_edit)) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
                             let ret = self.summary_task_sender.send(SummaryTask {
