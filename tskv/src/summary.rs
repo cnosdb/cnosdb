@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::Path;
@@ -266,6 +267,7 @@ impl Summary {
         let mut edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::default();
         let mut databases: HashMap<TseriesFamilyId, String> = HashMap::default();
 
+        let mut tsf_id = 0;
         loop {
             let res = reader
                 .read_record()
@@ -275,6 +277,7 @@ impl Summary {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.add_tsf {
+                        tsf_id = max(ed.tsf_id, tsf_id);
                         edits.insert(ed.tsf_id, vec![]);
                         databases.insert(ed.tsf_id, ed.tsf_name.clone());
                     } else if ed.del_tsf {
@@ -287,6 +290,7 @@ impl Summary {
                 Err(_) => break,
             }
         }
+        ctx.set_tsfamily_id(tsf_id);
 
         let mut versions = HashMap::new();
         let mut has_seq_no = false;
@@ -664,6 +668,7 @@ mod test {
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
+        assert_eq!(summary.ctx.tsfamily_id(), 100);
 
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
@@ -713,13 +718,8 @@ mod test {
             .write()
             .create_db(DatabaseSchema::new(&database));
         for i in 0..40 {
-            db.write().add_tsfamily(
-                i,
-                0,
-                0,
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-            );
+            db.write()
+                .add_tsfamily(i, 0, summary_task_sender.clone(), flush_task_sender.clone());
             let mut edit = VersionEdit::new();
             edit.add_tsfamily(i, database.clone());
             edits.push(edit.clone());
@@ -763,7 +763,6 @@ mod test {
             .create_db(DatabaseSchema::new(&database));
         db.write().add_tsfamily(
             10,
-            0,
             0,
             summary_task_sender.clone(),
             flush_task_sender.clone(),
