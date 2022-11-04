@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
@@ -12,12 +13,14 @@ use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
+use super::CoordinatorSnafu;
 use super::PointUtilSnafu;
 use super::Result;
 use super::TskvSnafu;
 
 pub struct TskvRecordBatchSink {
     engine: EngineRef,
+    coord: CoordinatorRef,
     partition: usize,
     schema: TableSchema,
 
@@ -34,14 +37,24 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // record batchs to points
         let timer = self.metrics.elapsed_record_batch_to_point().timer();
-        let points = record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())
-            .context(PointUtilSnafu)?;
+        let (mut mapping, _points) = record_batch_to_points_flat_buffer(
+            &record_batch,
+            self.schema.clone(),
+            self.coord.clone(),
+        )
+        .context(PointUtilSnafu)?;
         timer.done();
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
-        let req = WritePointsRpcRequest { version: 0, points };
-        let _ = self.engine.write(0, req).await.context(TskvSnafu)?;
+        // let req = WritePointsRpcRequest { version: 0, points };
+        // let _ = self.engine.write(0, req).await.context(TskvSnafu)?;
+
+        self.coord
+            .write_points(&mut mapping)
+            .await
+            .context(CoordinatorSnafu)?;
+
         timer.done();
 
         Ok(())
@@ -50,12 +63,17 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
 pub struct TskvRecordBatchSinkProvider {
     engine: EngineRef,
+    coord: CoordinatorRef,
     schema: TableSchema,
 }
 
 impl TskvRecordBatchSinkProvider {
-    pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
-        Self { engine, schema }
+    pub fn new(engine: EngineRef, coord: CoordinatorRef, schema: TableSchema) -> Self {
+        Self {
+            engine,
+            coord,
+            schema,
+        }
     }
 }
 
@@ -67,6 +85,7 @@ impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
     ) -> Box<dyn RecordBatchSink> {
         Box::new(TskvRecordBatchSink {
             engine: self.engine.clone(),
+            coord: self.coord.clone(),
             partition,
             schema: self.schema.clone(),
             metrics: TskvSinkMetrics::new(metrics, partition),

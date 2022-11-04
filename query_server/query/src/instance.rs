@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use coordinator::meta_client::MetaRef;
+use coordinator::service::CoordinatorRef;
 use datafusion::scheduler::Scheduler;
 use spi::{
     query::{dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory},
@@ -41,14 +41,14 @@ impl DatabaseManagerSystem for Cnosdbms {
     }
 }
 
-pub fn make_cnosdbms(engine: EngineRef, manager: MetaRef) -> Result<Cnosdbms> {
+pub fn make_cnosdbms(engine: EngineRef, coord: CoordinatorRef) -> Result<Cnosdbms> {
     // todo: add query config
     // for now only support local mode
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
 
     let meta = Arc::new(
-        LocalCatalogMeta::new_with_default(engine, manager, Arc::new(function_manager))
+        LocalCatalogMeta::new_with_default(engine, coord, Arc::new(function_manager))
             .context(MetaDataSnafu)?,
     );
 
@@ -76,7 +76,7 @@ pub fn make_cnosdbms(engine: EngineRef, manager: MetaRef) -> Result<Cnosdbms> {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use coordinator::meta_client_mock::MockMetaManager;
+    use coordinator::{meta_client_mock::MockMetaManager, service::MockCoordinator};
     use std::ops::DerefMut;
     use trace::debug;
 
@@ -142,7 +142,7 @@ mod tests {
     async fn test_simple_sql() {
         let db = make_cnosdbms(
             Arc::new(MockEngine::default()),
-            Arc::new(Box::new(MockMetaManager::default())),
+            Arc::new(MockCoordinator::default()),
         )
         .unwrap();
 
@@ -200,7 +200,7 @@ mod tests {
 
         let db = make_cnosdbms(
             Arc::new(MockEngine::default()),
-            Arc::new(Box::new(MockMetaManager::default())),
+            Arc::new(MockCoordinator::default()),
         )
         .unwrap();
 
@@ -237,7 +237,7 @@ mod tests {
 
         let db = make_cnosdbms(
             Arc::new(MockEngine::default()),
-            Arc::new(Box::new(MockMetaManager::default())),
+            Arc::new(MockCoordinator::default()),
         )
         .unwrap();
 
@@ -273,7 +273,7 @@ mod tests {
     async fn test_create_external_csv_table() {
         let db = make_cnosdbms(
             Arc::new(MockEngine::default()),
-            Arc::new(Box::new(MockMetaManager::default())),
+            Arc::new(MockCoordinator::default()),
         )
         .unwrap();
 
@@ -329,7 +329,7 @@ mod tests {
     async fn test_create_external_parquet_table() {
         let db = make_cnosdbms(
             Arc::new(MockEngine::default()),
-            Arc::new(Box::new(MockMetaManager::default())),
+            Arc::new(MockCoordinator::default()),
         )
         .unwrap();
 
@@ -377,7 +377,7 @@ mod tests {
     async fn test_create_external_json_table() {
         let db = make_cnosdbms(
             Arc::new(MockEngine::default()),
-            Arc::new(Box::new(MockMetaManager::default())),
+            Arc::new(MockCoordinator::default()),
         )
         .unwrap();
 

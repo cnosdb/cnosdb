@@ -1,20 +1,26 @@
+use coordinator::{service::CoordinatorRef, writer::VnodeMapping};
 use datafusion::arrow::{
     array::{
         Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
         TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
         TimestampSecondArray, UInt64Array,
     },
-    datatypes::{DataType as ArrowDataType, Field, TimeUnit},
+    datatypes::{DataType as ArrowDataType, Field, TimeUnit, ToByteSlice},
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::schema::{is_time_column, ColumnType, TableColumn, TableSchema, TIME_FIELD_NAME};
-use models::{define_result, ValueType};
+use models::{define_result, tag, FieldValue, ValueType};
+use models::{
+    schema::{is_time_column, ColumnType, TableColumn, TableSchema, TIME_FIELD_NAME},
+    Tag,
+};
 use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
-use trace::debug;
+use spi::catalog::DEFAULT_CATALOG;
+use std::cmp::Ordering;
+use trace::{debug, info};
 
 define_result!(PointUtilError);
 
@@ -100,7 +106,8 @@ macro_rules! arrow_array_to_offset_array {
 pub fn record_batch_to_points_flat_buffer(
     record_batch: &RecordBatch,
     table_schema: TableSchema,
-) -> Result<Vec<u8>> {
+    coord: CoordinatorRef,
+) -> Result<(VnodeMapping, Vec<u8>)> {
     let mut fbb = FlatBufferBuilder::new();
 
     let record_schema = record_batch.schema();
@@ -138,25 +145,27 @@ pub fn record_batch_to_points_flat_buffer(
         record_batch.num_columns()
     );
 
-    construct_row_based_points(
+    construct_row_based_points2(
         &mut fbb,
         columns_wip_offset_without_time_col,
         &column_schemas_without_time_col,
         time_col_array,
         record_batch.num_rows(),
         table_schema,
+        coord,
     )
 }
 
 /// Construct row-based points flatbuffer from column-based data wip_offset
-fn construct_row_based_points(
+fn construct_row_based_points<'a>(
     fbb: &mut FlatBufferBuilder,
     columns_datum: Vec<Vec<Option<Datum>>>,
     column_schemas: &[&Field],
     time_col_array: Vec<Option<i64>>,
     num_rows: usize,
     schema: TableSchema,
-) -> Result<Vec<u8>> {
+    coord: CoordinatorRef,
+) -> Result<(VnodeMapping<'a>, Vec<u8>)> {
     let mut point_offsets = Vec::with_capacity(num_rows);
     // row-based
     for row_idx in 0..num_rows {
@@ -218,8 +227,8 @@ fn construct_row_based_points(
         let point_args = PointArgs {
             db: Some(fbb.create_vector(schema.db.as_bytes())),
             table: Some(fbb.create_vector(schema.name.as_bytes())),
-            tags: Some(fbb.create_vector(&tags)),
-            fields: Some(fbb.create_vector(&fields)),
+            tags: Some(fbb.create_vector(&tags.clone())),
+            fields: Some(fbb.create_vector(&fields.clone())),
             timestamp: time,
         };
 
@@ -237,7 +246,85 @@ fn construct_row_based_points(
     );
     fbb.finish(points, None);
 
-    Ok(fbb.finished_data().to_vec())
+    Ok((VnodeMapping::new(), fbb.finished_data().to_vec()))
+}
+
+/// Construct row-based points flatbuffer from column-based data wip_offset
+fn construct_row_based_points2<'a>(
+    fbb: &mut FlatBufferBuilder,
+    columns_datum: Vec<Vec<Option<Datum>>>,
+    column_schemas: &[&Field],
+    time_col_array: Vec<Option<i64>>,
+    num_rows: usize,
+    schema: TableSchema,
+    coord: CoordinatorRef,
+) -> Result<(VnodeMapping<'a>, Vec<u8>)> {
+    let mut mapping = VnodeMapping::new();
+    // row-based
+    for row_idx in 0..num_rows {
+        let time = unsafe { time_col_array.get_unchecked(row_idx) };
+
+        // Extract tags and fields
+        let mut tags = Vec::new();
+        let mut fields = Vec::new();
+
+        for (col_idx, df_field) in column_schemas.iter().enumerate() {
+            let name = df_field.name();
+
+            let field = schema
+                .column(name)
+                .ok_or_else(|| PointUtilError::ColumnNotFound {
+                    col: name.to_owned(),
+                })?;
+
+            let value = unsafe { columns_datum.get_unchecked(col_idx).get_unchecked(row_idx) };
+
+            if let Some(datum) = value {
+                info!("=======field {} {:?}", name, *datum,);
+
+                match field.column_type {
+                    ColumnType::Time => {
+                        continue;
+                    }
+                    ColumnType::Tag => {
+                        tags.push(Tag {
+                            key: name.as_bytes().to_vec(),
+                            value: datum.to_byte_slice().to_vec(),
+                        });
+                    }
+                    ColumnType::Field(type_) => {
+                        fields.push(FieldValue {
+                            field_id: 0,
+                            value_type: type_,
+                            name: name.as_bytes().to_vec(),
+                            value: datum.to_byte_slice().to_vec(),
+                        });
+                    }
+                }
+            }
+        }
+
+        let time = time.ok_or_else(|| PointUtilError::ColumnNotFound {
+            col: TIME_FIELD_NAME.to_string(),
+        })?;
+
+        tag::sort_tags(&mut tags);
+        let hash_id = tag::tags_hash_id(&schema.name, &tags);
+        let point = models::Point {
+            db: schema.db.clone(),
+            table: schema.name.clone(),
+            tags,
+            fields,
+            timestamp: time,
+            hash_id,
+        };
+
+        if let Some(client) = coord.tenant_meta(&DEFAULT_CATALOG.to_string()) {
+            mapping.map_point(client, point);
+        }
+    }
+
+    Ok((mapping, vec![]))
 }
 
 fn cast_arrow_array<T: 'static>(array: &ArrayRef) -> Result<&T> {

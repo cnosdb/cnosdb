@@ -8,6 +8,7 @@ protos = { path = "../../common/protos" }
 trace = { path = "../../common/trace" }
 tskv = { path = "../../tskv" }
 models = { path = "../../common/models" }
+utils = { path = "../../common/utils" }
 config = { path = "../../config" }
 coordinator = { path = "../../coordinator" }
 spi = { path = "../spi" }

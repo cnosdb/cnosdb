@@ -14,6 +14,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tskv::engine::EngineRef;
 
+use protos::models as fb_models;
+
 use crate::command::*;
 use crate::errors::*;
 use crate::hh_queue::HintedOffBlock;
@@ -48,8 +50,41 @@ impl VnodePoints<'_> {
         }
     }
 
-    pub fn add_point(&mut self, args: &PointArgs) {
-        self.offset.push(Point::create(&mut self.fbb, args));
+    pub fn add_point(&mut self, point: models::Point) {
+        let mut tags = Vec::with_capacity(point.tags.len());
+        for item in point.tags.iter() {
+            let fbk = self.fbb.create_vector(&item.key);
+            let fbv = self.fbb.create_vector(&item.value);
+            let mut tag_builder = TagBuilder::new(&mut self.fbb);
+            tag_builder.add_key(fbk);
+            tag_builder.add_value(fbv);
+            tags.push(tag_builder.finish());
+        }
+
+        let mut fields = Vec::with_capacity(point.fields.len());
+        for item in point.fields.iter() {
+            let fbk = self.fbb.create_vector(&item.name);
+            let fbv = self.fbb.create_vector(&item.value);
+
+            //fb_models::FieldType::Boolean,
+
+            let vtype = item.value_type.to_fb_type();
+            let mut field_builder = FieldBuilder::new(&mut self.fbb);
+            field_builder.add_name(fbk);
+            field_builder.add_type_(vtype);
+            field_builder.add_value(fbv);
+            fields.push(field_builder.finish());
+        }
+
+        let point_args = PointArgs {
+            db: Some(self.fbb.create_vector(point.db.as_bytes())),
+            table: Some(self.fbb.create_vector(point.table.as_bytes())),
+            tags: Some(self.fbb.create_vector(&tags)),
+            fields: Some(self.fbb.create_vector(&fields)),
+            timestamp: point.timestamp,
+        };
+
+        self.offset.push(Point::create(&mut self.fbb, &point_args));
     }
 
     pub fn finish(&mut self) {
@@ -81,21 +116,16 @@ impl<'a> VnodeMapping<'a> {
         }
     }
 
-    pub fn map_point(
-        &mut self,
-        meta_client: MetaClientRef,
-        db: &String,
-        point: &PointArgs,
-        hash_id: u64,
-    ) {
-        let ts = point.timestamp;
-        if let Ok(info) = meta_client.locate_replcation_set_for_write(&db.clone(), hash_id, ts) {
-            let full_name = format!("{}.{}", meta_client.tenant_name(), db);
+    pub fn map_point(&mut self, meta_client: MetaClientRef, point: models::Point) {
+        if let Ok(info) =
+            meta_client.locate_replcation_set_for_write(&point.db, point.hash_id, point.timestamp)
+        {
+            //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
             self.sets.entry(info.id).or_insert(info.clone());
             let entry = self
                 .points
                 .entry(info.id)
-                .or_insert(VnodePoints::new(full_name, info));
+                .or_insert(VnodePoints::new(point.db.clone(), info));
 
             entry.add_point(point);
         }
@@ -118,10 +148,6 @@ impl PointWriter {
             meta_manager,
             conn_map: RwLock::new(HashMap::new()),
         }
-    }
-
-    pub fn tenant_meta_client(&self, tenant: &String) -> Option<MetaClientRef> {
-        self.meta_manager.tenant_meta(tenant)
     }
 
     pub async fn write_points(

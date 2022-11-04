@@ -89,6 +89,7 @@ mod test {
     use crate::sql::planner::SqlPlaner;
     use config::get_config;
     use coordinator::meta_client_mock::MockMetaManager;
+    use coordinator::service::MockCoordinator;
     use datafusion::arrow::datatypes::DataType;
     use datafusion::error::DataFusionError;
     use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
@@ -140,7 +141,7 @@ mod test {
         let meta = Arc::new(
             LocalCatalogMeta::new_with_default(
                 tskv.clone(),
-                Arc::new(Box::new(MockMetaManager::default())),
+                Arc::new(MockCoordinator::default()),
                 Arc::new(function_manager),
             )
             .unwrap(),

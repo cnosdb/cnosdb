@@ -1,5 +1,5 @@
 use crate::catalog::{UserCatalog, UserCatalogRef, UserSchema};
-use coordinator::meta_client::MetaRef;
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::array::{BooleanArray, StringArray};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::catalog::catalog::CatalogProvider;
@@ -41,6 +41,7 @@ pub struct LocalCatalogMeta {
     catalog_name: String,
     database_name: String,
     engine: EngineRef,
+    coord: CoordinatorRef,
     catalog: UserCatalogRef,
     func_manager: FuncMetaManagerRef,
 }
@@ -48,14 +49,15 @@ pub struct LocalCatalogMeta {
 impl LocalCatalogMeta {
     pub fn new_with_default(
         engine: EngineRef,
-        manager: MetaRef,
+        coord: CoordinatorRef,
         func_manager: FuncMetaManagerRef,
     ) -> Result<Self> {
         let meta = Self {
             catalog_name: DEFAULT_CATALOG.to_string(),
             database_name: DEFAULT_DATABASE.to_string(),
             engine: engine.clone(),
-            catalog: Arc::new(UserCatalog::new(engine, manager)),
+            coord: coord.clone(),
+            catalog: Arc::new(UserCatalog::new(engine, coord)),
             func_manager,
         };
         if let Err(e) = meta.create_database(
@@ -175,7 +177,12 @@ impl MetaData for LocalCatalogMeta {
     }
 
     fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()> {
-        let user_schema = UserSchema::new(name.to_string(), self.engine.clone(), database);
+        let user_schema = UserSchema::new(
+            name.to_string(),
+            self.engine.clone(),
+            self.coord.clone(),
+            database,
+        );
         self.catalog
             .register_schema(name, Arc::new(user_schema))
             .map(|_| ())

@@ -1,11 +1,12 @@
 use protos::models as fb_models;
 
-use crate::{Error, FieldId, Result, SeriesId, Timestamp, ValueType};
+use crate::{Error, FieldId, Result, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 
 #[derive(Debug)]
 pub struct FieldValue {
     pub field_id: FieldId,
     pub value_type: ValueType,
+    pub name: Vec<u8>,
     pub value: Vec<u8>,
 }
 
@@ -14,6 +15,12 @@ impl FieldValue {
         Ok(Self {
             field_id: 0,
             value_type: field.type_().into(),
+
+            name: match field.name() {
+                Some(v) => v.to_vec(),
+                None => Vec::new(),
+            },
+
             value: match field.value() {
                 Some(v) => v.to_vec(),
                 None => Vec::new(),
@@ -73,10 +80,12 @@ impl From<fb_models::Point<'_>> for InMemPoint {
                 for f in fields_inner.into_iter() {
                     let val_type = f.type_().into();
                     let val = f.value().unwrap().to_vec();
+                    let name = f.name().unwrap().to_vec();
                     fields.push(FieldValue {
                         field_id: 0,
                         value_type: val_type,
                         value: val,
+                        name,
                     });
                 }
                 fields
@@ -91,6 +100,33 @@ impl From<fb_models::Point<'_>> for InMemPoint {
             timestamp,
             fields,
         }
+    }
+}
+
+#[derive(Default)]
+pub struct Point {
+    pub db: String,
+    pub table: String,
+    pub tags: Vec<Tag>,
+    pub fields: Vec<FieldValue>,
+    pub timestamp: Timestamp,
+    pub hash_id: u64,
+}
+
+impl Point {
+    pub fn from_flatbuffers(point: &fb_models::Point) -> Result<Self> {
+        let mem_point = InMemPoint::from_flatbuffers(point)?;
+        let series_key = SeriesKey::from_flatbuffer(point)?;
+
+        let hash_id = series_key.hash();
+        Ok(Self {
+            hash_id,
+            db: series_key.db,
+            table: series_key.table,
+            tags: series_key.tags,
+            fields: mem_point.fields,
+            timestamp: mem_point.timestamp,
+        })
     }
 }
 

@@ -312,7 +312,7 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.meta_data;
         }
 
-        if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
+        if let Some(bucket) = data.bucket_by_timestamp(db, ts) {
             return Ok(bucket.clone());
         }
 

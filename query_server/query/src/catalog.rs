@@ -1,6 +1,6 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
-use coordinator::meta_client::MetaRef;
+use coordinator::service::CoordinatorRef;
 use datafusion::{
     catalog::{catalog::CatalogProvider, schema::SchemaProvider},
     datasource::TableProvider,
@@ -21,17 +21,17 @@ pub type UserCatalogRef = Arc<UserCatalog>;
 
 pub struct UserCatalog {
     engine: EngineRef,
-    manager: MetaRef,
+    coord: CoordinatorRef,
     /// DBName -> DB
     schemas: RwLock<HashMap<String, Arc<dyn SchemaProvider>>>,
 }
 
 impl UserCatalog {
-    pub fn new(engine: EngineRef, manager: MetaRef) -> Self {
+    pub fn new(engine: EngineRef, coord: CoordinatorRef) -> Self {
         Self {
             schemas: RwLock::new(HashMap::new()),
             engine,
-            manager,
+            coord,
         }
     }
     pub fn deregister_schema(&self, db_name: &str) -> Result<()> {
@@ -83,6 +83,7 @@ impl CatalogProvider for UserCatalog {
                         Arc::new(UserSchema::new(
                             name.to_string(),
                             self.engine.clone(),
+                            self.coord.clone(),
                             schema,
                         )),
                     );
@@ -114,7 +115,7 @@ impl CatalogProvider for UserCatalog {
             name, &user_schema.database_schema.config
         );
 
-        if let Some(client) = self.manager.tenant_meta(&DEFAULT_CATALOG.to_string()) {
+        if let Some(client) = self.coord.tenant_meta(&DEFAULT_CATALOG.to_string()) {
             let info = DatabaseInfo {
                 name: name.to_string(),
                 shard: user_schema.database_schema.config.shard_num as u32,
@@ -141,17 +142,24 @@ impl CatalogProvider for UserCatalog {
 pub struct UserSchema {
     db_name: String,
     engine: EngineRef,
+    coord: CoordinatorRef,
     // table_name -> TableRef
     tables: RwLock<HashMap<String, TableRef>>,
     database_schema: DatabaseSchema,
 }
 
 impl UserSchema {
-    pub fn new(db: String, engine: EngineRef, database_schema: DatabaseSchema) -> Self {
+    pub fn new(
+        db: String,
+        engine: EngineRef,
+        coord: CoordinatorRef,
+        database_schema: DatabaseSchema,
+    ) -> Self {
         Self {
             db_name: db,
             tables: RwLock::new(HashMap::new()),
             engine,
+            coord,
             database_schema,
         }
     }
@@ -178,7 +186,11 @@ impl SchemaProvider for UserSchema {
 
         let mut tables = self.tables.write();
         if let Ok(Some(schema)) = self.engine.get_table_schema(&self.db_name, name) {
-            let table = Arc::new(ClusterTable::new(self.engine.clone(), schema));
+            let table = Arc::new(ClusterTable::new(
+                self.engine.clone(),
+                self.coord.clone(),
+                schema,
+            ));
             tables.insert(name.to_owned(), table.clone());
             return Some(table);
         }
@@ -210,7 +222,8 @@ impl SchemaProvider for UserSchema {
                 self.engine
                     .create_table(schema)
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;
-                let cluster_table = ClusterTable::new(self.engine.clone(), schema.clone());
+                let cluster_table =
+                    ClusterTable::new(self.engine.clone(), self.coord.clone(), schema.clone());
                 Arc::new(cluster_table)
             }
         };

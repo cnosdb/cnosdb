@@ -1,6 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
+use coordinator::service::CoordinatorRef;
 use datafusion::{
     arrow::datatypes::SchemaRef,
     datasource::{TableProvider, TableType},
@@ -22,6 +23,7 @@ use crate::{
 
 pub struct ClusterTable {
     engine: EngineRef,
+    coord: CoordinatorRef,
     schema: TableSchema,
 }
 
@@ -41,8 +43,12 @@ impl ClusterTable {
         )))
     }
 
-    pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
-        ClusterTable { engine, schema }
+    pub fn new(engine: EngineRef, coord: CoordinatorRef, schema: TableSchema) -> Self {
+        ClusterTable {
+            engine,
+            coord,
+            schema,
+        }
     }
 
     pub async fn write(
@@ -52,6 +58,7 @@ impl ClusterTable {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
             self.engine.clone(),
+            self.coord.clone(),
             self.schema.clone(),
         ));
 

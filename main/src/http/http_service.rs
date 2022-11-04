@@ -1,8 +1,10 @@
 use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
 
+use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
+use spi::catalog::DEFAULT_CATALOG;
 
 use super::header::Header;
 use super::Error as HttpError;
@@ -59,8 +61,7 @@ pub struct HttpService {
     addr: SocketAddr,
     dbms: DBMSRef,
     kv_inst: EngineRef,
-    writer: Arc<PointWriter>,
-    hh_manager: Arc<HintedOffManager>,
+    coord: CoordinatorRef,
     handle: Option<ServiceHandle<()>>,
 }
 
@@ -68,8 +69,7 @@ impl HttpService {
     pub fn new(
         dbms: DBMSRef,
         kv_inst: EngineRef,
-        writer: Arc<PointWriter>,
-        hh_manager: Arc<HintedOffManager>,
+        coord: CoordinatorRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
     ) -> Self {
@@ -78,8 +78,7 @@ impl HttpService {
             addr,
             dbms,
             kv_inst,
-            hh_manager,
-            writer,
+            coord,
             handle: None,
         }
     }
@@ -105,17 +104,9 @@ impl HttpService {
         let kv_inst = self.kv_inst.clone();
         warp::any().map(move || kv_inst.clone())
     }
-    fn with_writer(
-        &self,
-    ) -> impl Filter<Extract = (Arc<PointWriter>,), Error = Infallible> + Clone {
-        let writer = self.writer.clone();
-        warp::any().map(move || writer.clone())
-    }
-    fn with_hh_manager(
-        &self,
-    ) -> impl Filter<Extract = (Arc<HintedOffManager>,), Error = Infallible> + Clone {
-        let hh_manager = self.hh_manager.clone();
-        warp::any().map(move || hh_manager.clone())
+    fn with_coord(&self) -> impl Filter<Extract = (CoordinatorRef,), Error = Infallible> + Clone {
+        let coord = self.coord.clone();
+        warp::any().map(move || coord.clone())
     }
 
     fn routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
@@ -203,22 +194,20 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
             .and(self.with_kv_inst())
-            .and(self.with_writer())
-            .and(self.with_hh_manager())
+            .and(self.with_coord())
             .and_then(
                 |req: Bytes,
                  header: Header,
                  param: WriteParam,
                  kv_inst: EngineRef,
-                 writer: Arc<PointWriter>,
-                 handoff: Arc<HintedOffManager>| async move {
+                 coord: CoordinatorRef| async move {
                     let start = Instant::now();
                     let user_info = match header.try_get_basic_auth() {
                         Ok(u) => u,
                         Err(e) => return Err(reject::custom(e)),
                     };
 
-                    let meta_client = match writer.tenant_meta_client(&user_info.user) {
+                    let meta_client = match coord.tenant_meta(&user_info.user) {
                         Some(client) => client,
                         None => {
                             return Err(reject::custom(HttpError::NotFoundTenant {
@@ -239,8 +228,8 @@ impl HttpService {
                         &mut line_protocol_lines,
                     )?;
 
-                    let result = writer
-                        .write_points(&mut mapping, handoff)
+                    let result = coord
+                        .write_points(&mut mapping)
                         .await
                         .context(CoordinatorSnafu);
 
@@ -271,24 +260,20 @@ impl HttpService {
     ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "meta")
             .and(self.handle_header())
-            .and(self.with_writer())
-            .and_then(|header: Header, writer: Arc<PointWriter>| async move {
-                let user_info = match header.try_get_basic_auth() {
-                    Ok(u) => u,
-                    Err(e) => return Err(reject::custom(e)),
-                };
+            .and(self.with_coord())
+            .and_then(|header: Header, coord: CoordinatorRef| async move {
+                let tenant = DEFAULT_CATALOG.to_string();
 
-                let meta_client = match writer.tenant_meta_client(&user_info.user) {
+                let meta_client = match coord.tenant_meta(&tenant) {
                     Some(client) => client,
                     None => {
-                        return Err(reject::custom(HttpError::NotFoundTenant {
-                            name: user_info.user,
-                        }));
+                        return Err(reject::custom(HttpError::NotFoundTenant { name: tenant }));
                     }
                 };
-                meta_client.print_data();
+                let data = meta_client.print_data();
 
-                Ok(warp::reply::json(&gather_metrics_as_prometheus_string()))
+                //Ok(warp::reply::json(&data))
+                Ok(data)
             })
     }
 
@@ -401,12 +386,6 @@ fn parse_lines_to_points<'a>(
             timestamp: line.timestamp,
         };
 
-        mapping.map_point(
-            meta_client.clone(),
-            &db.to_string(),
-            &point_args,
-            line.hash_id(),
-        );
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
 
@@ -420,7 +399,7 @@ fn parse_lines_to_points<'a>(
         },
     );
     fbb.finish(points, None);
-    Ok((mapping, fbb.finished_data().to_vec()))
+    Ok((VnodeMapping::new(), fbb.finished_data().to_vec()))
 }
 
 fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query, HttpError> {

@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
 use coordinator::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
+use coordinator::service::CoordService;
 use coordinator::writer::PointWriter;
 use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
@@ -170,27 +171,17 @@ fn main() -> Result<(), std::io::Error> {
                 todo!()
             }
             SubCommand::Run {} => {
-                let meta_manager: MetaRef = Arc::new(Box::new(RemoteMetaManager::new(
-                    global_config.cluster.clone(),
-                )));
-                // let meta_manager = Arc::new(MetaRef::new(global_config.cluster.clone()));
-
                 let tskv_options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
-                let dbms = Arc::new(
-                    make_cnosdbms(kv_inst.clone(), meta_manager.clone()).expect("make dbms"),
-                );
-
-                let point_writer = Arc::new(PointWriter::new(
-                    global_config.cluster.node_id,
+                let coord_service = Arc::new(CoordService::new(
                     kv_inst.clone(),
-                    meta_manager,
+                    global_config.cluster.clone(),
+                    global_config.hintedoff.clone(),
                 ));
 
-                let hh_manager = Arc::new(HintedOffManager::new(
-                    global_config.hintedoff.clone(),
-                    point_writer.clone(),
-                ));
+                let dbms = Arc::new(
+                    make_cnosdbms(kv_inst.clone(), coord_service.clone()).expect("make dbms"),
+                );
 
                 let tcp_service =
                     Box::new(TcpService::new(dbms.clone(), kv_inst.clone(), tcp_host));
@@ -198,8 +189,7 @@ fn main() -> Result<(), std::io::Error> {
                 let http_service = Box::new(HttpService::new(
                     dbms.clone(),
                     kv_inst.clone(),
-                    point_writer,
-                    hh_manager,
+                    coord_service,
                     http_host,
                     global_config.security.tls_config.clone(),
                 ));

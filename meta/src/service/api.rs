@@ -12,7 +12,7 @@ use openraft::EntryPayload;
 use web::Json;
 
 use crate::meta_app::MetaApp;
-use crate::store::children;
+use crate::store::children_data;
 use crate::store::KeyPath;
 use crate::store::KvReq;
 use crate::store::KvResp;
@@ -59,7 +59,7 @@ pub async fn data_nodes(
 
     let sm = app.store.state_machine.read().await;
 
-    let response = children::<NodeInfo>(&KeyPath::data_nodes(&cluster), &sm.data)
+    let response = children_data::<NodeInfo>(&KeyPath::data_nodes(&cluster), &sm.data)
         .into_values()
         .collect();
 

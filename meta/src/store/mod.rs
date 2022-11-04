@@ -78,7 +78,7 @@ pub struct StateMachineContent {
     pub sequance: u64,
 }
 
-pub fn node_list(path: &String, map: &BTreeMap<String, String>) -> Vec<String> {
+pub fn children_fullpath(path: &String, map: &BTreeMap<String, String>) -> Vec<String> {
     let mut path = path.clone();
     if !path.ends_with("/") {
         path.push('/');
@@ -129,15 +129,21 @@ pub fn get_struct<'a, T: Deserialize<'a>>(
     Some(info)
 }
 
-pub fn children<'a, T: Deserialize<'a>>(
+pub fn children_data<'a, T: Deserialize<'a>>(
     path: &String,
     map: &'a BTreeMap<String, String>,
 ) -> HashMap<String, T> {
-    let mut result = HashMap::new();
+    let mut path = path.clone();
+    if !path.ends_with("/") {
+        path.push('/');
+    }
 
-    for it in node_list(path, map).iter() {
+    let mut result = HashMap::new();
+    for it in children_fullpath(&path, map).iter() {
         if let Some(val) = get_struct::<T>(it, map) {
-            result.insert(it.clone(), val);
+            if let Some(key) = it.strip_prefix(path.as_str()) {
+                result.insert(key.to_string(), val);
+            }
         }
     }
 
@@ -232,12 +238,12 @@ impl StateMachine {
             meta.version = val.index
         }
 
-        meta.users = children::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
-        meta.data_nodes = children::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data);
+        meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
+        meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data);
 
-        meta.dbs = children::<DatabaseInfo>(&KeyPath::tenant_dbs(cluster, tenant), &self.data);
+        meta.dbs = children_data::<DatabaseInfo>(&KeyPath::tenant_dbs(cluster, tenant), &self.data);
         for (key, val) in meta.dbs.iter_mut() {
-            let buckets = children::<BucketInfo>(
+            let buckets = children_data::<BucketInfo>(
                 &KeyPath::tenant_db_buckets(cluster, tenant, key),
                 &self.data,
             );
@@ -757,7 +763,7 @@ fn process_create_bucket(
     ts: &i64,
 ) -> KvResp {
     let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
-    let buckets = children::<BucketInfo>(&(db_path.clone() + "/buckets"), &sm.data);
+    let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), &sm.data);
     for (_, val) in buckets.iter() {
         if *ts >= val.start_time && *ts < val.end_time {
             return KvResp::default();
@@ -775,9 +781,10 @@ fn process_create_bucket(
         }
     };
 
-    let node_list: Vec<NodeInfo> = children::<NodeInfo>(&KeyPath::data_nodes(cluster), &sm.data)
-        .into_values()
-        .collect();
+    let node_list: Vec<NodeInfo> =
+        children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), &sm.data)
+            .into_values()
+            .collect();
 
     if node_list.len() == 0 || db_info.shard == 0 || db_info.replications > node_list.len() as u32 {
         return KvResp {
@@ -815,7 +822,7 @@ mod test {
     use models::meta_data::NodeInfo;
     use serde::{Deserialize, Serialize};
 
-    use crate::{client::MetaHttpClient, store::node_list};
+    use crate::{client::MetaHttpClient, store::children_fullpath};
 
     use super::KvReq;
 
@@ -836,7 +843,7 @@ mod test {
             println!("{key}  : {value}");
         }
 
-        let nodes = node_list(&"/root/tenant".to_string(), &map);
+        let nodes = children_fullpath(&"/root/tenant".to_string(), &map);
         print!("nodes: {:?}\n", nodes);
     }
 
