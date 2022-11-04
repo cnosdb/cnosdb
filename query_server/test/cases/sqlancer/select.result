@@ -216,14 +216,12 @@ false
 -- AFTER_SORT --
 200 OK
 t1
-""
 t1
 
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE CAST(0.9301634332886752 AS BOOLEAN); --
 -- AFTER_SORT --
 200 OK
 t1
-""
 t1
 
 -- EXECUTE SQL: SELECT BIT_AND(-1155506580) FROM m2; --
@@ -318,7 +316,6 @@ f0,t0
 -- AFTER_SORT --
 200 OK
 t1
-""
 t1
 
 -- EXECUTE SQL: SELECT m3.t1 FROM m3 WHERE (((((m3.t1)||(m3.f0)))||(((m3.t0)||(m3.f1))))) NOT IN ('t6i4<y}et') UNION ALL SELECT m3.t1 FROM m3 WHERE NOT ((((((m3.t1)||(m3.f0)))||(((m3.t0)||(m3.f1))))) NOT IN ('t6i4<y}et')) UNION ALL SELECT ALL m3.t1 FROM m3 WHERE ((((((m3.t1)||(m3.f0)))||(((m3.t0)||(m3.f1))))) NOT IN ('t6i4<y}et')) IS NULL; --
@@ -1138,14 +1135,13 @@ SUM(Int64(-996695851))
 -- EXECUTE SQL: SELECT MAX(m2.f1) FROM m2 ORDER BY m2.f1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1)'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1)'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0 FROM m3; --
 -- AFTER_SORT --
 200 OK
 t1,t0
-,
 t1,t0
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0 FROM m3 WHERE (((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0') UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) IS NULL; --
@@ -1587,13 +1583,12 @@ false,t0
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM (select t0 from m3 order by t0 limit 1) WHERE (CAST(+ (CAST(m3.t0 AS BIGINT)) AS BOOLEAN)) IS UNKNOWN; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
@@ -1665,7 +1660,7 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT SUM(0.6096484376459871) FROM m1 ORDER BY m1.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm1.t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm1'.'t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR((((((((((((m2.f1)LIKE(m2.f1)))OR(((m2.f0)AND(m2.f0)))))OR((0.5546139751565915) IN (0.3276204101429546))))AND((m2.t0) BETWEEN ('0.6468887984268011') AND (m2.f1)))) BETWEEN SYMMETRIC ((((m2.f0) BETWEEN SYMMETRIC (m2.f0) AND (m2.f0))AND(m2.f0))) AND (((CAST(m2.f0 AS STRING))LIKE(CAST(m2.f0 AS STRING)))))<=((+ (- (1120541685))) IS NOT NULL))) FROM m2; --
@@ -2013,7 +2008,6 @@ t0,t1,0
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE ((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN UNION ALL SELECT m3.t0 FROM m3 WHERE NOT (((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN) UNION ALL SELECT m3.t0 FROM m3 WHERE (((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN) IS NULL; --
@@ -2354,7 +2348,6 @@ time,t0,t1,t2,f0
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 WHERE NOT ((((m3.f0)*(m3.f0))) IN (2007382636)); --
@@ -2752,7 +2745,6 @@ false,t0,0.0
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE ((CAST(CAST(((m3.t0)LIKE(m3.t0)) AS BIGINT) AS STRING))IS NOT DISTINCT FROM(CAST(CAST(CAST(m3.f0 AS STRING) AS STRING) AS STRING))); --
@@ -3142,7 +3134,6 @@ t0
 -- AFTER_SORT --
 200 OK
 t1,t0
-,
 t1,t0
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0 FROM m3 WHERE NOT (m3.f1); --
@@ -3408,7 +3399,7 @@ MIN(Float64(0.22987745635426093))
 -- EXECUTE SQL: SELECT ALL COUNT(26056234) FROM m2; --
 -- AFTER_SORT --
 200 OK
-COUNT(UInt8(1))
+COUNT(Int64(26056234))
 1
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(CAST(((712230685)-(NULL)) AS STRING) AS BIGINT))) FROM m0; --
@@ -3522,7 +3513,6 @@ time,t0,t1,f0,f1
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE NOT (TRUE); --
@@ -3534,7 +3524,6 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 WHERE (NOT (TRUE)) IS NULL; --
@@ -3570,7 +3559,6 @@ f1,false
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) IS NULL; --
@@ -3710,7 +3698,6 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 t1
-""
 t1
 
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN)); --
@@ -3745,7 +3732,7 @@ f0,t1
 -- EXECUTE SQL: SELECT MAX(+ (CAST(((((m2.f1)||(m2.f1)))LIKE((('C')||(m2.t0)))) AS BIGINT))) FROM m2 ORDER BY m2.f1 DESC, m2.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f1 FROM m3; --
@@ -3904,7 +3891,6 @@ false,t0
 -- AFTER_SORT --
 200 OK
 t0
-""
 t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE m3.f1 UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (m3.f1) UNION ALL SELECT m3.t0 FROM m3 WHERE (m3.f1) IS NULL; --
@@ -4150,7 +4136,7 @@ t0
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(NOT (((m3.t0)IS DISTINCT FROM(m3.t1))) AS STRING) AS BIGINT)) FROM m3 ORDER BY m3.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm3.t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm3'.'t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0; --
@@ -4545,7 +4531,7 @@ false,t0
 -- EXECUTE SQL: SELECT ALL SUM(CAST(TRUE AS BIGINT)) FROM m1 ORDER BY m1.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm1.f0'. Valid fields are 'SUM(Boolean(true))'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm1'.'f0'. Valid fields are 'SUM(Boolean(true))'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --

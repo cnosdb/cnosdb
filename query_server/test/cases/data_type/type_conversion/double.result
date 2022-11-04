@@ -166,7 +166,7 @@ logical_plan,"Projection: test_double_conv.time
     TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa IN ([Float64(12345678865), Float64(12345678869)])]"
 physical_plan,"ProjectionExec: expr=[time@0 as time]
   CoalesceBatchesExec: target_batch_size=4096
-    FilterExec: fa@1 IN ([Literal { value: Float64(12345678865) }, Literal { value: Float64(12345678869) }])
+    FilterExec: Use fa@1 IN (SET) ([Literal { value: Float64(12345678865) }, Literal { value: Float64(12345678869) }])
       RepartitionExec: partitioning=RoundRobinBatch(8)
         TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, projection=[time,fa]
 "
