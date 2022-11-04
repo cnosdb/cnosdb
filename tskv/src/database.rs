@@ -96,7 +96,6 @@ impl Database {
         &mut self,
         tsf_id: u32,
         seq_no: u64,
-        file_id: u64,
         summary_task_sender: UnboundedSender<SummaryTask>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Arc<RwLock<TseriesFamily>> {
@@ -104,7 +103,7 @@ impl Database {
             tsf_id,
             self.name.clone(),
             self.opt.storage.clone(),
-            file_id,
+            seq_no,
             LevelInfo::init_levels(self.name.clone(), self.opt.storage.clone()),
             i64::MIN,
         ));

@@ -389,9 +389,8 @@ impl Engine for TsKv {
         let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
-                0,
+                self.global_ctx.tsfamily_id_next(),
                 seq,
-                self.global_ctx.file_id_next(),
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
             ),
@@ -428,9 +427,8 @@ impl Engine for TsKv {
         let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
-                0,
+                self.global_ctx.tsfamily_id_next(),
                 seq,
-                self.global_ctx.file_id_next(),
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
             ),

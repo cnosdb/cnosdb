@@ -1180,13 +1180,7 @@ mod test {
 
         let ts_family_id = db
             .write()
-            .add_tsfamily(
-                0,
-                0,
-                0,
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-            )
+            .add_tsfamily(0, 0, summary_task_sender.clone(), flush_task_sender.clone())
             .read()
             .tf_id();
 
