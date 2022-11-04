@@ -343,7 +343,7 @@ impl WalManager {
                         }
                         match e.typ {
                             WalEntryType::Write => {
-                                let decoder = get_str_codec(Encoding::Snappy);
+                                let decoder = get_str_codec(Encoding::Zstd);
                                 let mut dst = Vec::new();
                                 decoder.decode(&e.buf, &mut dst).context(DecodeSnafu)?;
                                 debug_assert_eq!(dst.len(), 1);
@@ -556,7 +556,7 @@ mod test {
                     Ok(Some(entry)) => {
                         match entry.typ {
                             WalEntryType::Write => {
-                                let decoder = get_str_codec(Encoding::Snappy);
+                                let decoder = get_str_codec(Encoding::Zstd);
                                 let mut buf = Vec::new();
                                 decoder.decode(&entry.buf, &mut buf).unwrap();
                                 let de_block = match flatbuffers::root::<fb_models::Points>(&buf[0])
@@ -612,7 +612,7 @@ mod test {
 
             if entry.typ == WalEntryType::Write {
                 let mut enc_points = Vec::new();
-                let coder = get_str_codec(Encoding::Snappy);
+                let coder = get_str_codec(Encoding::Zstd);
                 coder
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
@@ -644,7 +644,7 @@ mod test {
             fbb.finish(points, None);
             let blk = WalEntryBlock::new(WalEntryType::Write, fbb.finished_data());
             let mut enc_points = Vec::new();
-            let coder = get_str_codec(Encoding::Snappy);
+            let coder = get_str_codec(Encoding::Zstd);
             coder
                 .encode(&[&blk.buf], &mut enc_points)
                 .map_err(|_| Error::Send)
@@ -679,7 +679,7 @@ mod test {
 
             if entry.typ == WalEntryType::Write {
                 let mut enc_points = Vec::new();
-                let coder = get_str_codec(Encoding::Snappy);
+                let coder = get_str_codec(Encoding::Zstd);
                 coder
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
@@ -709,7 +709,7 @@ mod test {
 
             if entry.typ == WalEntryType::Write {
                 let mut enc_points = Vec::new();
-                let coder = get_str_codec(Encoding::Snappy);
+                let coder = get_str_codec(Encoding::Zstd);
                 coder
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
