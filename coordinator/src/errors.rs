@@ -33,6 +33,15 @@ pub enum CoordinatorError {
 
     #[snafu(display("not found tenant: {}", name))]
     TenantNotFound { name: String },
+
+    #[snafu(display("unknow coordinator command: {}", cmd))]
+    UnKnownCoordCmd { cmd: u32 },
+
+    #[snafu(display("coordinator command parse failed"))]
+    CoordCmmandParseErr,
+
+    #[snafu(display("unexpect response message"))]
+    UnExpectResponse,
 }
 
 impl From<meta_client::MetaError> for CoordinatorError {

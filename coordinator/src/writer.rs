@@ -229,39 +229,25 @@ impl PointWriter {
             }
         }
 
-        let mut conn = self.get_node_conn(node_id).await?;
-
-        let req_cmd = WriteVnodeRequest::new(vnode_id, data.len() as u32);
-        let cmd_data = req_cmd.encode();
-
-        conn.write(&WRITE_VNODE_POINT_COMMAND.to_be_bytes())?;
-        conn.write(&(cmd_data.len() as u32).to_be_bytes())?;
-        conn.write_all(&cmd_data)?;
-        conn.write_all(&data)?;
-
-        debug!(
-            "=====warp_write_to_node write data  id: {}, len:{}, {}  ",
-            vnode_id,
-            cmd_data.len(),
-            data.len()
-        );
-
-        match CommonResponse::recv(&mut conn).await {
-            Ok(msg) => {
-                self.put_node_conn(node_id, conn);
-                if msg.code == 0 {
-                    return Ok(());
-                } else {
-                    return Err(CoordinatorError::WriteVnode {
-                        msg: format!("code: {}, msg: {}", msg.code, msg.data),
-                    });
-                }
+        let mut conn = self.get_node_conn(node_id)?;
+        let req_cmd = WriteVnodeRequest { vnode_id, data };
+        send_command(&mut conn, &CoordinatorCmd::WriteVnodePointCmd(req_cmd))?;
+        let rsp_cmd = recv_command(&mut conn)?;
+        if let CoordinatorCmd::CommonResponseCmd(msg) = rsp_cmd {
+            self.put_node_conn(node_id, conn);
+            if msg.code == 0 {
+                return Ok(());
+            } else {
+                return Err(CoordinatorError::WriteVnode {
+                    msg: format!("code: {}, msg: {}", msg.code, msg.data),
+                });
             }
-            Err(err) => Err(err),
+        } else {
+            return Err(CoordinatorError::UnExpectResponse);
         }
     }
 
-    async fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
+    fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
         {
             let mut write = self.conn_map.write();
             let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));

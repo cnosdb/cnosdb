@@ -96,8 +96,15 @@ async fn service_run(
 
                 debug!("client address: {}", address);
 
-                let handler =
-                    tokio::spawn(warp_process_client(client, dbms.clone(), kv_inst.clone()));
+                let dbms_ = dbms.clone();
+                let kv_inst_ = kv_inst.clone();
+                let processor_fn = async move {
+                    info!("=====process_client begin");
+                    let result = process_client(client, dbms_, kv_inst_).await;
+                    info!("=====process_client {:#?}", result);
+                };
+
+                let handler = tokio::spawn(processor_fn);
                 handler.await.unwrap(); //todo
             }
 
@@ -116,58 +123,44 @@ async fn service_run(
     }
 }
 
-async fn warp_process_client(client: TcpStream, dbms: DBMSRef, kv_inst: EngineRef) {
-    print!("=====process_client begin");
-
-    info!("=====process_client begin");
-    let result = process_client(client, dbms, kv_inst).await;
-
-    info!("=====process_client {:#?}", result);
-}
-
 async fn process_client(
     mut client: TcpStream,
     dbms: DBMSRef,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
     loop {
-        let mut tmp_buf: [u8; 4] = [0; 4];
-
-        client.read_exact(&mut tmp_buf)?;
-        let cmd_type = u32::from_be_bytes(tmp_buf);
-
-        client.read_exact(&mut tmp_buf)?;
-        let data_len = u32::from_be_bytes(tmp_buf);
-
-        let mut cmd_buf = vec![0; data_len as usize];
-        client.read_exact(&mut cmd_buf)?;
-
-        if cmd_type == WRITE_VNODE_POINT_COMMAND {
-            process_vnode_write_command(&mut client, cmd_buf, kv_inst.clone()).await?;
+        let recv_cmd = recv_command(&mut client)?;
+        match recv_cmd {
+            CoordinatorCmd::CommonResponseCmd(cmd) => {}
+            CoordinatorCmd::WriteVnodePointCmd(cmd) => {
+                process_vnode_write_command(&mut client, cmd, kv_inst.clone()).await?;
+            }
         }
     }
 }
 
 async fn process_vnode_write_command(
     client: &mut TcpStream,
-    cmd_buf: Vec<u8>,
+    cmd: WriteVnodeRequest,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
-    let cmd = WriteVnodeRequest::decode(&cmd_buf)?;
-
-    let mut points_data = vec![0; cmd.data_len as usize];
-    client.read_exact(&mut points_data)?;
-
     let req = WritePointsRpcRequest {
         version: 1,
-        points: points_data,
+        points: cmd.data,
     };
 
+    let mut resp = CommonResponse {
+        code: SUCCESS_RESPONSE_CODE,
+        data: "".to_string(),
+    };
     if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
-        CommonResponse::send(client, -1, err.to_string()).await?;
+        resp.code = -1;
+        resp.data = err.to_string();
+        send_command(client, &CoordinatorCmd::CommonResponseCmd(resp))?;
         return Err(err.into());
     } else {
-        CommonResponse::send(client, 0, "".to_owned()).await?;
+        info!("success write data to vnode: {}", cmd.vnode_id);
+        send_command(client, &CoordinatorCmd::CommonResponseCmd(resp))?;
         return Ok(());
     }
 }

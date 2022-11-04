@@ -4,97 +4,108 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::errors::*;
+use crate::errors::{CoordinatorError::*, CoordinatorResult};
 
 pub const COMMON_RESPONSE_COMMAND: u32 = 1;
-pub const WRITE_VNODE_POINT_COMMAND: u32 = 1;
-pub const EXECUTE_STATEMENT_REQUEST_COMMAND: u32 = 2;
+pub const WRITE_VNODE_POINT_COMMAND: u32 = 2;
+pub const EXECUTE_STATEMENT_REQUEST_COMMAND: u32 = 3;
+
+pub const SUCCESS_RESPONSE_CODE: i32 = 0;
 
 pub enum CoordinatorCmd {
     CommonResponseCmd(CommonResponse),
     WriteVnodePointCmd(WriteVnodeRequest),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CommandHeader {
-    pub typ: u32,
-    pub len: u32,
+pub fn send_command(conn: &mut TcpStream, cmd: &CoordinatorCmd) -> CoordinatorResult<()> {
+    match cmd {
+        CoordinatorCmd::CommonResponseCmd(val) => val.send_cmd(conn),
+        CoordinatorCmd::WriteVnodePointCmd(val) => val.send_cmd(conn),
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+pub fn recv_command(conn: &mut TcpStream) -> CoordinatorResult<CoordinatorCmd> {
+    let mut tmp_buf: [u8; 4] = [0; 4];
+    conn.read_exact(&mut tmp_buf)?;
+
+    let cmd_type = u32::from_be_bytes(tmp_buf);
+    if cmd_type == COMMON_RESPONSE_COMMAND {
+        let mut cmd = CommonResponse::default();
+        cmd.recv_data(conn)?;
+        return Ok(CoordinatorCmd::CommonResponseCmd(cmd));
+    } else if cmd_type == WRITE_VNODE_POINT_COMMAND {
+        let mut cmd = WriteVnodeRequest::default();
+        cmd.recv_data(conn)?;
+        return Ok(CoordinatorCmd::WriteVnodePointCmd(cmd));
+    } else {
+        return Err(UnKnownCoordCmd { cmd: cmd_type });
+    }
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct CommonResponse {
     pub code: i32,
     pub data: String,
 }
 
 impl CommonResponse {
-    pub fn new(code: i32, data: String) -> Self {
-        Self { code, data }
-    }
-
-    pub async fn send(conn: &mut TcpStream, code: i32, data: String) -> CoordinatorResult<()> {
-        let cmd = CommonResponse::new(code, data);
-        let cmd_data = cmd.encode();
-
+    pub fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
         conn.write(&COMMON_RESPONSE_COMMAND.to_be_bytes())?;
-        conn.write(&(cmd_data.len() as u32).to_be_bytes())?;
-        conn.write_all(&cmd_data)?;
+
+        conn.write(&self.code.to_be_bytes())?;
+        conn.write(&(self.data.len() as u32).to_be_bytes())?;
+        conn.write_all(self.data.as_bytes())?;
 
         Ok(())
     }
 
-    pub async fn recv(conn: &mut TcpStream) -> CoordinatorResult<CommonResponse> {
+    pub fn recv_data(&mut self, conn: &mut TcpStream) -> CoordinatorResult<()> {
         let mut tmp_buf: [u8; 4] = [0; 4];
 
         conn.read_exact(&mut tmp_buf)?;
-        let cmd_type = u32::from_be_bytes(tmp_buf);
+        self.code = i32::from_be_bytes(tmp_buf);
 
         conn.read_exact(&mut tmp_buf)?;
-        let data_len = u32::from_be_bytes(tmp_buf);
+        let len = u32::from_be_bytes(tmp_buf);
 
-        let mut data_buf = vec![0; data_len as usize];
+        let mut data_buf = vec![0; len as usize];
         conn.read_exact(&mut data_buf)?;
 
-        CommonResponse::decode(&data_buf)
-    }
+        self.data = String::from_utf8(data_buf).map_err(|_| CoordCmmandParseErr)?;
 
-    pub fn encode(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
-    }
-
-    pub fn decode(data: &[u8]) -> CoordinatorResult<CommonResponse> {
-        let key = bincode::deserialize(data);
-        match key {
-            Ok(key) => Ok(key),
-            Err(err) => Err(CoordinatorError::InvalidSerdeMsg {
-                err: format!("Invalid CommonResponse serde message: {}", err),
-            }),
-        }
+        Ok(())
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct WriteVnodeRequest {
     pub vnode_id: u32,
-    pub data_len: u32,
+    pub data: Vec<u8>,
 }
 
 impl WriteVnodeRequest {
-    pub fn new(vnode_id: u32, data_len: u32) -> Self {
-        Self { vnode_id, data_len }
+    pub fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
+        conn.write(&WRITE_VNODE_POINT_COMMAND.to_be_bytes())?;
+
+        conn.write(&self.vnode_id.to_be_bytes())?;
+        conn.write(&(self.data.len() as u32).to_be_bytes())?;
+        conn.write_all(&self.data)?;
+
+        Ok(())
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
-    }
+    pub fn recv_data(&mut self, conn: &mut TcpStream) -> CoordinatorResult<()> {
+        let mut tmp_buf: [u8; 4] = [0; 4];
 
-    pub fn decode(data: &[u8]) -> CoordinatorResult<WriteVnodeRequest> {
-        let key = bincode::deserialize(data);
-        match key {
-            Ok(key) => Ok(key),
-            Err(err) => Err(CoordinatorError::InvalidSerdeMsg {
-                err: format!("Invalid WriteVnodeRequest serde message: {}", err),
-            }),
-        }
+        conn.read_exact(&mut tmp_buf)?;
+        self.vnode_id = u32::from_be_bytes(tmp_buf);
+
+        conn.read_exact(&mut tmp_buf)?;
+        let len = u32::from_be_bytes(tmp_buf);
+
+        self.data.resize(len as usize, 0);
+        conn.read_exact(&mut self.data)?;
+
+        Ok(())
     }
 }
