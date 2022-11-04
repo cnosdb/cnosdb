@@ -5,8 +5,9 @@ use std::{
 };
 
 use datafusion::{
+    common::DFSchemaRef,
     logical_expr::TableSource,
-    logical_plan::{DFSchemaRef, LogicalPlan, UserDefinedLogicalNode},
+    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
     prelude::Expr,
 };
 

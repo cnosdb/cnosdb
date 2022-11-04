@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::{
-    logical_plan::LogicalPlan,
+    logical_expr::LogicalPlan,
     physical_plan::{planner::ExtensionPlanner, ExecutionPlan},
 };
 

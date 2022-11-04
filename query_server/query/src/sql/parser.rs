@@ -197,6 +197,19 @@ impl<'a> ExtParser<'a> {
         todo!()
     }
 
+    /// Parses the set of
+    fn parse_file_compression_type(&mut self) -> Result<String, ParserError> {
+        match self.parser.next_token() {
+            Token::Word(w) => parse_file_compression_type(&w.value),
+            unexpected => self.expected("one of GZIP, BZIP2", unexpected),
+        }
+    }
+
+    fn parse_has_file_compression_type(&mut self) -> bool {
+        self.consume_token(&Token::make_keyword("COMPRESSION"))
+            & self.consume_token(&Token::make_keyword("TYPE"))
+    }
+
     /// This is a copy of the equivalent implementation in Datafusion.
     fn parse_csv_has_header(&mut self) -> bool {
         self.consume_token(&Token::make_keyword("WITH"))
@@ -284,6 +297,12 @@ impl<'a> ExtParser<'a> {
             false => ',',
         };
 
+        let file_compression_type = if self.parse_has_file_compression_type() {
+            self.parse_file_compression_type()?
+        } else {
+            "".to_string()
+        };
+
         let table_partition_cols = if self.parse_has_partition() {
             self.parse_partitions()?
         } else {
@@ -302,6 +321,7 @@ impl<'a> ExtParser<'a> {
             location,
             table_partition_cols,
             if_not_exists,
+            file_compression_type,
         };
         Ok(ExtStatement::CreateExternalTable(create))
     }
@@ -533,6 +553,10 @@ impl<'a> ExtParser<'a> {
             }
         }
     }
+}
+
+fn parse_file_compression_type(s: &str) -> Result<String, ParserError> {
+    Ok(s.to_uppercase())
 }
 
 /// This is a copy of the equivalent implementation in Datafusion.

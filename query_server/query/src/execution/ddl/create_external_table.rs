@@ -1,18 +1,20 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
-use datafusion::datasource::file_format::avro::{AvroFormat, DEFAULT_AVRO_EXTENSION};
-use datafusion::datasource::file_format::csv::{CsvFormat, DEFAULT_CSV_EXTENSION};
-use datafusion::datasource::file_format::json::{JsonFormat, DEFAULT_JSON_EXTENSION};
-use datafusion::datasource::file_format::parquet::{ParquetFormat, DEFAULT_PARQUET_EXTENSION};
+use datafusion::datasource::file_format::avro::AvroFormat;
+use datafusion::datasource::file_format::csv::CsvFormat;
+use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::datasource::file_format::json::JsonFormat;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
-use datafusion::logical_plan::CreateExternalTable;
+use datafusion::logical_expr::CreateExternalTable;
 use datafusion::prelude::SessionConfig;
 use datafusion::sql::TableReference;
 use snafu::ResultExt;
@@ -113,7 +115,7 @@ fn construct_listing_table_options(
     let options = ListingOptions {
         format: file_format,
         collect_stat: false,
-        file_extension: file_extension.to_owned(),
+        file_extension,
         target_partitions: config.target_partitions,
         table_partition_cols: table_partition_cols.clone(),
     };
@@ -148,34 +150,37 @@ async fn construct_listing_table(
 
 fn construct_file_format_and_extension(
     plan: &CreateExternalTable,
-) -> Result<(Arc<dyn FileFormat>, &str), DataFusionError> {
-    let result = match plan.file_type.as_str() {
-        "CSV" => (
-            Arc::new(
-                CsvFormat::default()
-                    .with_has_header(plan.has_header)
-                    .with_delimiter(plan.delimiter as u8),
-            ) as Arc<dyn FileFormat>,
-            DEFAULT_CSV_EXTENSION,
+) -> Result<(Arc<dyn FileFormat>, String), DataFusionError> {
+    let file_compression_type =
+        match FileCompressionType::from_str(plan.file_compression_type.as_str()) {
+            Ok(t) => t,
+            Err(_) => Err(DataFusionError::Execution(
+                "Only known FileCompressionTypes can be ListingTables!".to_string(),
+            ))?,
+        };
+
+    let file_type = match FileType::from_str(plan.file_type.as_str()) {
+        Ok(t) => t,
+        Err(_) => Err(DataFusionError::Execution(
+            "Only known FileTypes can be ListingTables!".to_string(),
+        ))?,
+    };
+
+    let file_extension = file_type.get_ext_with_compression(file_compression_type.to_owned())?;
+
+    let file_format: Arc<dyn FileFormat> = match file_type {
+        FileType::CSV => Arc::new(
+            CsvFormat::default()
+                .with_has_header(plan.has_header)
+                .with_delimiter(plan.delimiter as u8)
+                .with_file_compression_type(file_compression_type),
         ),
-        "PARQUET" => (
-            Arc::new(ParquetFormat::default()) as Arc<dyn FileFormat>,
-            DEFAULT_PARQUET_EXTENSION,
-        ),
-        "AVRO" => (
-            Arc::new(AvroFormat::default()) as Arc<dyn FileFormat>,
-            DEFAULT_AVRO_EXTENSION,
-        ),
-        "JSON" => (
-            Arc::new(JsonFormat::default()) as Arc<dyn FileFormat>,
-            DEFAULT_JSON_EXTENSION,
-        ),
-        _ => {
-            return Err(DataFusionError::Execution(
-                "Only known FileTypes can be ListingTables!".to_string(),
-            ))
+        FileType::PARQUET => Arc::new(ParquetFormat::default()),
+        FileType::AVRO => Arc::new(AvroFormat::default()),
+        FileType::JSON => {
+            Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
         }
     };
 
-    Ok(result)
+    Ok((file_format, file_extension))
 }

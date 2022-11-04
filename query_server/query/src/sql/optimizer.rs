@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::physical_plan::displayable;
-use datafusion::{logical_plan::LogicalPlan, physical_plan::ExecutionPlan};
+use datafusion::{logical_expr::LogicalPlan, physical_plan::ExecutionPlan};
 use spi::query::session::IsiphoSessionCtx;
 use spi::query::{optimizer::Optimizer, physical_planner::PhysicalPlanner};
 

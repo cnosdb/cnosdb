@@ -2,10 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::Arc;
 
+use datafusion::common::{DFField, ToDFSchema};
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::TableSource;
-use datafusion::logical_plan::plan::{Analyze, Explain, Extension, Projection};
-use datafusion::logical_plan::{DFField, LogicalPlan, PlanType, ToDFSchema, ToStringifiedPlan};
+use datafusion::logical_expr::logical_plan::Analyze;
+use datafusion::logical_expr::{
+    Explain, Extension, LogicalPlan, PlanType, Projection, TableSource, ToStringifiedPlan,
+};
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;

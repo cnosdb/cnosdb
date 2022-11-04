@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::{
-    logical_plan::LogicalPlan,
+    logical_expr::LogicalPlan,
     optimizer::{
         common_subexpr_eliminate::CommonSubexprEliminate,
         decorrelate_where_exists::DecorrelateWhereExists, decorrelate_where_in::DecorrelateWhereIn,

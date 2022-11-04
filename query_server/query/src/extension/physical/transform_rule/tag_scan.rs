@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::{
     execution::context::SessionState,
-    logical_plan::{LogicalPlan, UserDefinedLogicalNode},
+    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
     physical_plan::{planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
 };
 

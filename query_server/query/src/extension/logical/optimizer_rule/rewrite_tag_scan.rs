@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use datafusion::{
-    logical_plan::{
-        plan::Extension, source_as_provider, LogicalPlan, LogicalPlanBuilder, TableScan,
-    },
+    datasource::source_as_provider,
+    logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan},
     optimizer::{OptimizerConfig, OptimizerRule},
 };
 

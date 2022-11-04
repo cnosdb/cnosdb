@@ -8,13 +8,11 @@ use datafusion::{
         error::ArrowError,
         record_batch::RecordBatch,
     },
-    common::DataFusionError,
+    common::{DFSchemaRef, DataFusionError, ToDFSchema},
     datasource::{self, TableProvider},
     execution::context::{SessionState, TaskContext},
     logical_expr::TableType,
-    logical_plan::{
-        DFSchemaRef, LogicalPlan, LogicalPlanBuilder, ToDFSchema, UserDefinedLogicalNode,
-    },
+    logical_expr::{LogicalPlan, LogicalPlanBuilder, UserDefinedLogicalNode},
     physical_expr::{planner, PhysicalSortExpr},
     physical_plan::{
         filter::FilterExec, ExecutionPlan, Partitioning, RecordBatchStream,

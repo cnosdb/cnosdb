@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::{
+    datasource::source_as_provider,
     error::DataFusionError,
     execution::context::SessionState,
-    logical_plan::{source_as_provider, LogicalPlan, UserDefinedLogicalNode},
+    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
     physical_plan::{displayable, planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
 };
 use trace::debug;

@@ -7,7 +7,7 @@ use super::{
 
 use datafusion::{
     error::DataFusionError,
-    logical_plan::{CreateExternalTable, LogicalPlan as DFPlan},
+    logical_expr::{CreateExternalTable, LogicalPlan as DFPlan},
     prelude::{lit, Expr},
     scalar::ScalarValue,
 };

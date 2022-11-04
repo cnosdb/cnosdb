@@ -6,6 +6,7 @@ use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::common::{
     Column, DFField, DFSchema, DFSchemaRef, DataFusionError, Result, ToDFSchema,
 };
+use datafusion::datasource::source_as_provider;
 use datafusion::datasource::TableProvider;
 use datafusion::logical_expr::utils::grouping_set_to_exprlist;
 use datafusion::logical_expr::{
@@ -16,7 +17,6 @@ use datafusion::logical_expr::{
     utils::{expr_to_columns, exprlist_to_columns, find_sort_exprs, from_plan},
     Expr,
 };
-use datafusion::logical_plan::source_as_provider;
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use std::{
     collections::{BTreeSet, HashSet},
@@ -255,7 +255,7 @@ fn optimize_plan(
             let mut new_window_expr = Vec::new();
             {
                 window_expr.iter().try_for_each(|expr| {
-                    let name = &expr.name()?;
+                    let name = &expr.display_name()?;
                     let column = Column::from_name(name);
                     if required_columns.contains(&column) {
                         new_window_expr.push(expr.clone());
@@ -313,7 +313,7 @@ fn optimize_plan(
             // Gather all columns needed for expressions in this Aggregate
             let mut new_aggr_expr = Vec::new();
             aggr_expr.iter().try_for_each(|expr| {
-                let name = &expr.name()?;
+                let name = &expr.display_name()?;
                 let column = Column::from_name(name);
                 if required_columns.contains(&column) {
                     new_aggr_expr.push(expr.clone());
@@ -477,6 +477,7 @@ fn optimize_plan(
         | LogicalPlan::CreateCatalog(_)
         | LogicalPlan::DropTable(_)
         | LogicalPlan::DropView(_)
+        | LogicalPlan::SetVariable(_)
         | LogicalPlan::CrossJoin(_)
         | LogicalPlan::Distinct(_)
         | LogicalPlan::Extension { .. } => {
