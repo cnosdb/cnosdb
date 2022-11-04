@@ -24,7 +24,8 @@ use spi::query::LogicalOptimizeSnafu;
 
 use crate::extension::logical::optimizer_rule::{
     implicit_type_conversion::ImplicitTypeConversion,
-    projection_push_down::ProjectionPushDownAdapter, rewrite_tag_scan::RewriteTagScan,
+    projection_push_down::ProjectionPushDownAdapter, reject_cross_join::RejectCrossJoin,
+    rewrite_tag_scan::RewriteTagScan,
     transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule,
     transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule,
 };
@@ -51,6 +52,7 @@ impl Default for DefaultLogicalOptimizer {
     fn default() -> Self {
         // additional optimizer rule
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
+            Arc::new(RejectCrossJoin {}),
             // data type conv
             Arc::new(ImplicitTypeConversion {}),
             // df default rules start
