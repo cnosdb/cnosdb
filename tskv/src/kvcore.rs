@@ -37,7 +37,8 @@ use protos::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::database::Database;
-use crate::file_system::file_manager::{self, FileManager};
+use crate::file_system::file_manager::{self, init_file_manager, FileManager};
+use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
@@ -77,6 +78,12 @@ pub struct TsKv {
 impl TsKv {
     pub async fn open(opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
+        init_file_manager(
+            FileOptions::default()
+                .max_resident(shared_options.storage.dio_max_resident)
+                .max_non_resident(shared_options.storage.dio_max_non_resident)
+                .page_len_scale(shared_options.storage.dio_page_len_scale),
+        );
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -361,7 +368,7 @@ impl Engine for TsKv {
         if self.options.wal.enabled {
             let (cb, rx) = oneshot::channel();
             let mut enc_points = Vec::new();
-            let coder = get_str_codec(Encoding::Snappy);
+            let coder = get_str_codec(Encoding::Zstd);
             coder
                 .encode(&[&points], &mut enc_points)
                 .map_err(|_| Error::Send)?;

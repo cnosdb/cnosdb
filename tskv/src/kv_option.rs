@@ -40,9 +40,9 @@ pub struct StorageOptions {
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
-    pub dio_max_resident: u64,
-    pub dio_max_non_resident: u64,
-    pub dio_page_len_scale: u64,
+    pub dio_max_resident: usize,
+    pub dio_max_non_resident: usize,
+    pub dio_page_len_scale: usize,
     pub strict_write: bool,
 }
 
@@ -81,9 +81,9 @@ impl StorageOptions {
 
     pub fn direct_io_options(&self) -> file_system::Options {
         let mut opt = file_system::Options::default();
-        opt.max_resident(self.dio_max_resident as usize)
-            .max_non_resident(self.dio_max_non_resident as usize)
-            .page_len_scale(self.dio_page_len_scale as usize);
+        opt.max_resident(self.dio_max_resident)
+            .max_non_resident(self.dio_max_non_resident)
+            .page_len_scale(self.dio_page_len_scale);
         opt
     }
 }

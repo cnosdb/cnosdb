@@ -10,6 +10,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
+use crate::file_system::Options;
 use crate::{
     error,
     file_system::{self},
@@ -40,20 +41,24 @@ pub enum FileError {
     Cancel,
 }
 
+static INSTANCE: OnceCell<FileManager> = OnceCell::new();
+
 pub struct FileManager {
     file_system: Arc<file_system::FileSystemCache>,
 }
 
 pub fn get_file_manager() -> &'static FileManager {
-    static INSTANCE: OnceCell<FileManager> = OnceCell::new();
-    INSTANCE.get_or_init(FileManager::new)
+    INSTANCE.get_or_init(FileManager::default)
+}
+
+pub fn init_file_manager(fs_options: &mut Options) {
+    INSTANCE.get_or_init(|| FileManager::new(fs_options));
 }
 
 impl FileManager {
-    fn new() -> Self {
-        let fs_options = file_system::Options::default();
+    fn new(fs_options: &Options) -> Self {
         Self {
-            file_system: Arc::new(file_system::FileSystemCache::new(&fs_options)),
+            file_system: Arc::new(file_system::FileSystemCache::new(fs_options)),
         }
     }
 
@@ -106,6 +111,15 @@ impl FileManager {
         self.file_system
             .sync_data(sync)
             .context(error::SyncFileSnafu)
+    }
+}
+
+impl Default for FileManager {
+    fn default() -> Self {
+        let fs_options = file_system::Options::default();
+        Self {
+            file_system: Arc::new(file_system::FileSystemCache::new(&fs_options)),
+        }
     }
 }
 
@@ -181,7 +195,7 @@ mod test {
             file_manager_2 as *const FileManager as usize
         );
 
-        let file_manager_3 = FileManager::new();
+        let file_manager_3 = FileManager::default();
         info!("0x{:X}", &file_manager_3 as *const FileManager as usize);
         assert_ne!(
             file_manager_1 as *const FileManager as usize,
