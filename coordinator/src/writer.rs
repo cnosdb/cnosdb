@@ -9,9 +9,9 @@ use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuil
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::io::{BufWriter, Write};
+use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
 use tskv::engine::EngineRef;
 
 use protos::models as fb_models;
@@ -233,12 +233,18 @@ impl PointWriter {
 
         let req_cmd = WriteVnodeRequest::new(vnode_id, data.len() as u32);
         let cmd_data = req_cmd.encode();
-        conn.write_u32(WRITE_VNODE_REQUEST_COMMAND).await?;
-        conn.write_u32(cmd_data.len().try_into().unwrap()).await?;
 
-        conn.write_all(&cmd_data).await?;
+        conn.write(&WRITE_VNODE_POINT_COMMAND.to_be_bytes())?;
+        conn.write(&(cmd_data.len() as u32).to_be_bytes())?;
+        conn.write_all(&cmd_data)?;
+        conn.write_all(&data)?;
 
-        conn.write_all(&data).await?;
+        debug!(
+            "=====warp_write_to_node write data  id: {}, len:{}, {}  ",
+            vnode_id,
+            cmd_data.len(),
+            data.len()
+        );
 
         match CommonResponse::recv(&mut conn).await {
             Ok(msg) => {
@@ -265,7 +271,7 @@ impl PointWriter {
         }
 
         let info = self.meta_manager.admin_meta().node_info_by_id(node_id)?;
-        let client = TcpStream::connect(info.tcp_addr).await?;
+        let client = TcpStream::connect(info.tcp_addr)?;
 
         return Ok(client);
     }

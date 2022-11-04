@@ -1,13 +1,19 @@
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
+use std::{
+    io::{BufReader, BufWriter, Read, Write},
+    net::{TcpListener, TcpStream},
+};
 
 use crate::errors::*;
 
 pub const COMMON_RESPONSE_COMMAND: u32 = 1;
-pub const WRITE_VNODE_REQUEST_COMMAND: u32 = 1;
+pub const WRITE_VNODE_POINT_COMMAND: u32 = 1;
 pub const EXECUTE_STATEMENT_REQUEST_COMMAND: u32 = 2;
+
+pub enum CoordinatorCmd {
+    CommonResponseCmd(CommonResponse),
+    WriteVnodePointCmd(WriteVnodeRequest),
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CommandHeader {
@@ -29,20 +35,25 @@ impl CommonResponse {
     pub async fn send(conn: &mut TcpStream, code: i32, data: String) -> CoordinatorResult<()> {
         let cmd = CommonResponse::new(code, data);
         let cmd_data = cmd.encode();
-        conn.write_u32(COMMON_RESPONSE_COMMAND).await?;
-        conn.write_u32(cmd_data.len().try_into().unwrap()).await?;
 
-        conn.write_all(&cmd_data).await?;
+        conn.write(&COMMON_RESPONSE_COMMAND.to_be_bytes())?;
+        conn.write(&(cmd_data.len() as u32).to_be_bytes())?;
+        conn.write_all(&cmd_data)?;
 
         Ok(())
     }
 
     pub async fn recv(conn: &mut TcpStream) -> CoordinatorResult<CommonResponse> {
-        let cmd_type = (*conn).read_u32().await?;
-        let data_len = (*conn).read_u32().await?;
+        let mut tmp_buf: [u8; 4] = [0; 4];
+
+        conn.read_exact(&mut tmp_buf)?;
+        let cmd_type = u32::from_be_bytes(tmp_buf);
+
+        conn.read_exact(&mut tmp_buf)?;
+        let data_len = u32::from_be_bytes(tmp_buf);
 
         let mut data_buf = vec![0; data_len as usize];
-        (*conn).read_exact(&mut data_buf).await?;
+        conn.read_exact(&mut data_buf)?;
 
         CommonResponse::decode(&data_buf)
     }

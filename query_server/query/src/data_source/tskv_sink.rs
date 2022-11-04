@@ -1,11 +1,16 @@
 use async_trait::async_trait;
+use coordinator::errors::CoordinatorError;
 use coordinator::service::CoordinatorRef;
+use coordinator::writer::VnodeMapping;
 use datafusion::arrow::record_batch::RecordBatch;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::schema::TableSchema;
+use models::Point;
 use protos::kv_service::WritePointsRpcRequest;
-use snafu::ResultExt;
+use protos::models as fb_models;
+use snafu::{OptionExt, ResultExt};
+use spi::catalog::DEFAULT_CATALOG;
 use trace::debug;
 use tskv::engine::EngineRef;
 
@@ -14,9 +19,10 @@ use crate::utils::point_util::record_batch_to_points_flat_buffer;
 use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 use super::CoordinatorSnafu;
-use super::PointUtilSnafu;
 use super::Result;
 use super::TskvSnafu;
+use super::{InvalidFlatbufferSnafu, PointUtilSnafu};
+use crate::data_source::DataSourceError::CommonError;
 
 pub struct TskvRecordBatchSink {
     engine: EngineRef,
@@ -37,13 +43,28 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         // record batchs to points
         let timer = self.metrics.elapsed_record_batch_to_point().timer();
-        let (mut mapping, _points) = record_batch_to_points_flat_buffer(
-            &record_batch,
-            self.schema.clone(),
-            self.coord.clone(),
-        )
-        .context(PointUtilSnafu)?;
+        let points = record_batch_to_points_flat_buffer(&record_batch, self.schema.clone())
+            .context(PointUtilSnafu)?;
         timer.done();
+
+        let tenant = DEFAULT_CATALOG.to_string();
+        let meta_client = self
+            .coord
+            .tenant_meta(&tenant)
+            .ok_or(CoordinatorError::TenantNotFound { name: tenant })
+            .context(CoordinatorSnafu)?;
+
+        let mut mapping = VnodeMapping::new();
+        let fb_points =
+            flatbuffers::root::<fb_models::Points>(&points).context(InvalidFlatbufferSnafu)?;
+        let fb_points = fb_points.points().unwrap();
+        for item in fb_points {
+            let point = Point::from_flatbuffers(&item).map_err(|err| CommonError {
+                msg: err.to_string(),
+            })?;
+
+            mapping.map_point(meta_client.clone(), point);
+        }
 
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();

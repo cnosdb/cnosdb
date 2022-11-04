@@ -1,16 +1,12 @@
 use futures::future::ok;
 use snafu::ResultExt;
-use std::{collections::HashMap, sync::Arc};
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::runtime::Runtime;
-use tokio::time::{self, Duration};
-
 use spi::server::dbms::DBMSRef;
-use std::io::Error;
+use std::io::{BufReader, Error, Read};
 use std::net::SocketAddr;
+use std::net::{TcpListener, TcpStream};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::oneshot;
+use tokio::time::{self, Duration};
 use tskv::engine::EngineRef;
 
 use coordinator::command::*;
@@ -52,7 +48,7 @@ impl Service for TcpService {
         let dbms = self.dbms.clone();
         let kv_inst = self.kv_inst.clone();
         let acceptor_fn = async move {
-            let listener = TcpListener::bind(addr.to_string()).await.unwrap();
+            let listener = TcpListener::bind(addr.to_string()).unwrap();
             info!("tcp server start addr: {}", addr);
 
             tokio::select! {
@@ -61,7 +57,6 @@ impl Service for TcpService {
                         error!(cause = %err, "failed to accept");
                     }
                 }
-
 
                 _ = rx => {
                     info!("tcp server shutting down");
@@ -95,15 +90,19 @@ async fn service_run(
     let mut backoff = 1;
 
     loop {
-        match listener.accept().await {
+        match listener.accept() {
             Ok((client, address)) => {
                 backoff = 1;
 
                 debug!("client address: {}", address);
-                tokio::spawn(process_client(client, dbms.clone(), kv_inst.clone()));
+
+                let handler =
+                    tokio::spawn(warp_process_client(client, dbms.clone(), kv_inst.clone()));
+                handler.await.unwrap(); //todo
             }
 
             Err(err) => {
+                info!("=== {}", err.to_string());
                 if backoff > 64 {
                     // Accept has failed too many times. Return the error.
                     return Err(err.into());
@@ -117,18 +116,33 @@ async fn service_run(
     }
 }
 
+async fn warp_process_client(client: TcpStream, dbms: DBMSRef, kv_inst: EngineRef) {
+    print!("=====process_client begin");
+
+    info!("=====process_client begin");
+    let result = process_client(client, dbms, kv_inst).await;
+
+    info!("=====process_client {:#?}", result);
+}
+
 async fn process_client(
     mut client: TcpStream,
     dbms: DBMSRef,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
     loop {
-        let cmd_type = client.read_u32().await?;
-        let data_len = client.read_u32().await?;
+        let mut tmp_buf: [u8; 4] = [0; 4];
+
+        client.read_exact(&mut tmp_buf)?;
+        let cmd_type = u32::from_be_bytes(tmp_buf);
+
+        client.read_exact(&mut tmp_buf)?;
+        let data_len = u32::from_be_bytes(tmp_buf);
 
         let mut cmd_buf = vec![0; data_len as usize];
-        client.read_exact(&mut cmd_buf).await?;
-        if cmd_type == meta_data::WRITE_VNODE_POINT_COMMAND {
+        client.read_exact(&mut cmd_buf)?;
+
+        if cmd_type == WRITE_VNODE_POINT_COMMAND {
             process_vnode_write_command(&mut client, cmd_buf, kv_inst.clone()).await?;
         }
     }
@@ -142,7 +156,7 @@ async fn process_vnode_write_command(
     let cmd = WriteVnodeRequest::decode(&cmd_buf)?;
 
     let mut points_data = vec![0; cmd.data_len as usize];
-    (*client).read_exact(&mut points_data).await?;
+    client.read_exact(&mut points_data)?;
 
     let req = WritePointsRpcRequest {
         version: 1,
@@ -155,28 +169,5 @@ async fn process_vnode_write_command(
     } else {
         CommonResponse::send(client, 0, "".to_owned()).await?;
         return Ok(());
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::io::Error;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, TcpStream};
-    use tokio::time;
-    #[tokio::test]
-    async fn tcp_client() {
-        let mut buffer = vec![0; 4096];
-
-        let mut client = TcpStream::connect("127.0.0.1:31005").await.unwrap();
-
-        client.write_u32(100).await.unwrap();
-        client.write(b"hello my server").await.unwrap();
-
-        let len = client.read_u32().await.unwrap();
-        let size = client.read(&mut buffer).await.unwrap();
-
-        let str = std::str::from_utf8(&buffer[..size]).unwrap();
-        println!("收到数据：{}|{}", len, str);
     }
 }

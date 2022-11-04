@@ -1,6 +1,6 @@
 use crate::meta_client;
 use snafu::Snafu;
-use tokio::io;
+use std::io;
 
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
@@ -30,6 +30,9 @@ pub enum CoordinatorError {
 
     #[snafu(display("Error from tskv: {}", source))]
     TskvError { source: tskv::Error },
+
+    #[snafu(display("not found tenant: {}", name))]
+    TenantNotFound { name: String },
 }
 
 impl From<meta_client::MetaError> for CoordinatorError {
