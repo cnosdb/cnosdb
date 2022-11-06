@@ -499,11 +499,11 @@ impl Engine for TsKv {
 
         let idx_dir = self.options.storage.index_dir(&database);
         if let Err(e) = std::fs::remove_dir_all(&idx_dir) {
-            error!("Failed to remove dir '{}'", idx_dir.display());
+            error!("Failed to remove dir '{}', e: {}", idx_dir.display(), e);
         }
         let db_dir = self.options.storage.database_dir(&database);
         if let Err(e) = std::fs::remove_dir_all(&db_dir) {
-            error!("Failed to remove dir '{}'", db_dir.display());
+            error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
         }
 
         Ok(())

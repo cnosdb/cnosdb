@@ -6,6 +6,7 @@ use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
 use tskv::TsKv;
 mod http;
+mod report;
 mod rpc;
 pub mod server;
 mod signal;
@@ -84,6 +85,7 @@ enum SubCommand {
 }
 
 use crate::http::http_service::HttpService;
+use crate::report::ReportService;
 use crate::rpc::grpc_service::GrpcService;
 use mem_allocator::Jemalloc;
 use metrics::{init_query_metrics_recorder, init_tskv_metrics_recorder};
@@ -149,11 +151,19 @@ fn main() -> Result<(), std::io::Error> {
                     grpc_host,
                     global_config.security.tls_config.clone(),
                 ));
-                let mut server = server::Builder::default()
+
+                let report_service = Box::new(ReportService::new());
+
+                let mut server_builder = server::Builder::default()
                     .add_service(http_service)
-                    .add_service(grpc_service)
-                    .build()
-                    .expect("build server.");
+                    .add_service(grpc_service);
+
+                if !global_config.reporting_disabled.unwrap_or(false) {
+                    server_builder = server_builder.add_service(report_service);
+                }
+
+                let mut server = server_builder.build().expect("build server.");
+
                 server.start().expect("server start.");
                 signal::block_waiting_ctrl_c();
                 server.stop(true).await;

@@ -11,6 +11,7 @@ pub struct Config {
     pub cache: CacheConfig,
     pub log: LogConfig,
     pub security: SecurityConfig,
+    pub reporting_disabled: Option<bool>,
 }
 
 impl Config {

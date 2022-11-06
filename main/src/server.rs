@@ -73,6 +73,7 @@ impl Server {
         }
         Ok(())
     }
+
     pub async fn stop(&mut self, force: bool) {
         for x in self.services.iter_mut() {
             x.stop(force).await;
