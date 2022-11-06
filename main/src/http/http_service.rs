@@ -99,14 +99,16 @@ impl HttpService {
         warp::any().map(move || kv_inst.clone())
     }
 
-    fn routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn routes(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         self.ping()
             .or(self.query())
             .or(self.write_line_protocol())
             .or(self.metrics())
     }
 
-    fn ping(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "ping")
             .and(warp::get().or(warp::head()))
             .map(|_| {
@@ -117,7 +119,7 @@ impl HttpService {
             })
     }
 
-    fn query(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn query(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         // let dbms = self.dbms.clone();
         warp::path!("api" / "v1" / "sql")
             .and(warp::post())
@@ -170,7 +172,7 @@ impl HttpService {
 
     fn write_line_protocol(
         &self,
-    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "write")
             .and(warp::post())
             .and(warp::body::content_length_limit(self.write_body_limit))
@@ -213,7 +215,9 @@ impl HttpService {
             )
     }
 
-    fn metrics(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn metrics(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "metrics")
             .map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
     }
