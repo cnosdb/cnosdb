@@ -147,7 +147,7 @@ impl TsmTombstone {
 
         const BUF_SIZE: usize = 1024 * 64;
         let (mut buf, buf_len) = if file_len < BUF_SIZE {
-            let buf_len = (file_len - 4) as usize;
+            let buf_len = file_len - 4;
             (vec![0_u8; buf_len], buf_len)
         } else {
             (vec![0_u8; BUF_SIZE], BUF_SIZE)
@@ -166,7 +166,7 @@ impl TsmTombstone {
                 buf_pos += 8;
                 let max = byte_utils::decode_be_i64(&buf[buf_pos..buf_pos + 8]);
                 buf_pos += 8;
-                let bucket = tombstones.entry(field_id).or_insert(Vec::new());
+                let bucket = tombstones.entry(field_id).or_default();
                 bucket.push(TimeRange {
                     min_ts: min,
                     max_ts: max,
@@ -200,7 +200,7 @@ impl TsmTombstone {
                 self.tomb_size += s as u64;
                 self.tombstones
                     .entry(*field_id)
-                    .or_insert(Vec::new())
+                    .or_default()
                     .push(*time_range);
             })?;
         }
@@ -325,7 +325,7 @@ mod test {
         }
         let path = file_utils::make_tsm_tombstone_file_name(&dir, 1);
 
-        let mut tombstone = TsmTombstone::with_path(&path).unwrap();
+        let mut tombstone = TsmTombstone::with_path(path).unwrap();
         // tsm_tombstone.load().unwrap();
         tombstone.add_range(&[0], &TimeRange::new(0, 0)).unwrap();
         tombstone.flush().unwrap();
@@ -348,7 +348,7 @@ mod test {
         }
         let path = file_utils::make_tsm_tombstone_file_name(&dir, 1);
 
-        let mut tombstone = TsmTombstone::with_path(&path).unwrap();
+        let mut tombstone = TsmTombstone::with_path(path).unwrap();
         // tsm_tombstone.load().unwrap();
         tombstone
             .add_range(&[1, 2, 3], &TimeRange::new(1, 100))
@@ -387,7 +387,7 @@ mod test {
         }
         let path = file_utils::make_tsm_tombstone_file_name(&dir, 1);
 
-        let mut tombstone = TsmTombstone::with_path(&path).unwrap();
+        let mut tombstone = TsmTombstone::with_path(path).unwrap();
         // tsm_tombstone.load().unwrap();
         for i in 0..10000 {
             tombstone

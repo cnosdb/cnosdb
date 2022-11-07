@@ -38,7 +38,7 @@ impl OptimizerRule for ImplicitTypeConversion {
     fn optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &mut OptimizerConfig,
+        _optimizer_config: &mut OptimizerConfig,
     ) -> Result<LogicalPlan> {
         let mut rewriter = DataTypeRewriter {
             schemas: plan.all_schemas(),
@@ -47,7 +47,7 @@ impl OptimizerRule for ImplicitTypeConversion {
         match plan {
             LogicalPlan::Filter(filter) => Ok(LogicalPlan::Filter(Filter::try_new(
                 filter.predicate().clone().rewrite(&mut rewriter)?,
-                Arc::new(self.optimize(filter.input().as_ref(), optimizer_config)?),
+                Arc::new(self.optimize(filter.input().as_ref(), _optimizer_config)?),
             )?)),
             LogicalPlan::TableScan(TableScan {
                 table_name,
@@ -93,7 +93,7 @@ impl OptimizerRule for ImplicitTypeConversion {
                 let inputs = plan.inputs();
                 let new_inputs = inputs
                     .iter()
-                    .map(|plan| self.optimize(plan, optimizer_config))
+                    .map(|plan| self.optimize(plan, _optimizer_config))
                     .collect::<Result<Vec<_>>>()?;
 
                 let expr = plan

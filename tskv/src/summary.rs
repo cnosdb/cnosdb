@@ -245,7 +245,7 @@ impl Summary {
         let summary_path = opt.storage.summary_dir();
         let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
         let ctx = Arc::new(GlobalContext::default());
-        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap());
+        let rd = Box::new(Reader::new(file_utils::make_summary_file(&summary_path, 0)).unwrap());
         let vs = Self::recover_version(rd, &ctx, opt.clone(), flush_task_sender).await?;
 
         Ok(Self {
@@ -373,7 +373,7 @@ impl Summary {
 
             tsf_version_edits
                 .entry(edit.tsf_id)
-                .or_insert(Vec::new())
+                .or_default()
                 .push(edit.clone());
             if edit.has_seq_no {
                 tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
