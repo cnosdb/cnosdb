@@ -217,7 +217,7 @@ fn construct_row_based_points(
 
         let point_args = PointArgs {
             db: Some(fbb.create_vector(schema.db.as_bytes())),
-            table: Some(fbb.create_vector(schema.name.as_bytes())),
+            tab: Some(fbb.create_vector(schema.name.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
             timestamp: time,
@@ -231,7 +231,7 @@ fn construct_row_based_points(
     let points = Points::create(
         fbb,
         &PointsArgs {
-            database: Some(fbb_db),
+            db: Some(fbb_db),
             points: Some(points_raw),
         },
     );

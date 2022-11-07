@@ -186,7 +186,7 @@ impl DBIndex {
     }
 
     pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> IndexResult<()> {
-        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let table_name = unsafe { String::from_utf8_unchecked(info.tab().unwrap().to_vec()) };
         if let Some(schema) = self.table_schema.read().get(&table_name) {
             for field in info.fields().unwrap() {
                 let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
@@ -223,7 +223,7 @@ impl DBIndex {
     pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
         let mut schema = &mut TableSchema::default();
-        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let table_name = unsafe { String::from_utf8_unchecked(info.tab().unwrap().to_vec()) };
         let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
         let mut new_schema = false;

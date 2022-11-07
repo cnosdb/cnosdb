@@ -355,7 +355,7 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
+        let db_name = String::from_utf8(fb_points.db().unwrap().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db_warp = self.version_set.read().get_db(&db_name);
@@ -413,7 +413,7 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = String::from_utf8(fb_points.database().unwrap().to_vec())
+        let db_name = String::from_utf8(fb_points.db().unwrap().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
         let db = self

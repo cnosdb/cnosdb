@@ -309,7 +309,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
         }
         let point_args = PointArgs {
             db: Some(fbb.create_vector(db.as_bytes())),
-            table: Some(fbb.create_vector(line.measurement.as_bytes())),
+            tab: Some(fbb.create_vector(line.measurement.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
             timestamp: line.timestamp,
@@ -322,7 +322,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
     let points = Points::create(
         &mut fbb,
         &PointsArgs {
-            database: Some(fbb_db),
+            db: Some(fbb_db),
             points: Some(points_raw),
         },
     );
