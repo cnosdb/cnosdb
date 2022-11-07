@@ -149,7 +149,7 @@ pub fn f64_gorilla_encode(
             if m <= 3 {
                 // 5 bits fit in current byte
                 dst[n >> 3] |= (mask >> m) as u8;
-                n += l as usize;
+                n += l;
             } else {
                 // not enough bits available in current byte
                 let written = 8 - m;
@@ -270,7 +270,7 @@ pub fn f64_without_compress_encode(
     dst.push(Encoding::Null as u8);
 
     for i in src.iter() {
-        dst.extend_from_slice(((*i) as f64).to_be_bytes().as_slice());
+        dst.extend_from_slice((*i).to_be_bytes().as_slice());
     }
     Ok(())
 }

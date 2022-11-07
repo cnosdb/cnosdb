@@ -445,7 +445,7 @@ impl Version {
         for ve in version_edits {
             if !ve.add_files.is_empty() {
                 ve.add_files.into_iter().for_each(|f| {
-                    added_files.entry(f.level).or_insert(Vec::new()).push(f);
+                    added_files.entry(f.level).or_default().push(f);
                 });
             }
             if !ve.del_files.is_empty() {

@@ -316,7 +316,7 @@ impl MemCache {
             flushed: false,
             flushing: false,
 
-            part_count: parts as usize,
+            part_count: parts,
 
             seq_no: AtomicU64::new(seq),
             cache_size: AtomicU64::new(0),

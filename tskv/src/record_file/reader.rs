@@ -250,6 +250,6 @@ impl Reader {
 
 impl From<&str> for Reader {
     fn from(path: &str) -> Self {
-        Reader::new(&PathBuf::from(path)).unwrap()
+        Reader::new(PathBuf::from(path)).unwrap()
     }
 }

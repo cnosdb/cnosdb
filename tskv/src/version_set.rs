@@ -70,10 +70,7 @@ impl VersionSet {
     }
 
     pub fn db_exists(&self, name: &str) -> bool {
-        match self.dbs.get(name) {
-            None => false,
-            Some(_) => true,
-        }
+        self.dbs.get(name).is_some()
     }
 
     pub fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
