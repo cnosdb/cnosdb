@@ -4,7 +4,7 @@ use crate::catalog::DEFAULT_DATABASE;
 use crate::query::execution::Output;
 use crate::query::session::IsiphoSessionConfig;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryId(u64);
 
 impl QueryId {
@@ -12,6 +12,12 @@ impl QueryId {
         static NEXT_ID: AtomicU64 = AtomicU64::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         Self(id)
+    }
+}
+
+impl From<u64> for QueryId {
+    fn from(u: u64) -> Self {
+        QueryId(u)
     }
 }
 

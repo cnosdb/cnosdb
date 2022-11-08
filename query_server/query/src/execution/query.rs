@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::scheduler::Scheduler;
+use futures::stream::AbortHandle;
+use futures::TryStreamExt;
+use parking_lot::Mutex;
 use snafu::ResultExt;
-use spi::query::execution::Output;
+use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use spi::query::execution::{ExecutionError, Output};
 use spi::query::{
     execution::{QueryExecution, QueryStateMachineRef},
     logical_planner::QueryPlan,
@@ -11,13 +15,16 @@ use spi::query::{
     ScheduleSnafu,
 };
 
-use spi::query::Result;
+use spi::query::{QueryError, Result};
+use trace::debug;
 
 pub struct SqlQueryExecution {
     query_state_machine: QueryStateMachineRef,
     plan: QueryPlan,
     optimizer: Arc<dyn Optimizer + Send + Sync>,
     scheduler: Arc<Scheduler>,
+
+    abort_handle: Mutex<Option<AbortHandle>>,
 }
 
 impl SqlQueryExecution {
@@ -32,12 +39,12 @@ impl SqlQueryExecution {
             plan,
             optimizer,
             scheduler,
+            abort_handle: Mutex::new(None),
         }
     }
 }
 
-#[async_trait]
-impl QueryExecution for SqlQueryExecution {
+impl SqlQueryExecution {
     async fn start(&self) -> Result<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
@@ -56,9 +63,59 @@ impl QueryExecution for SqlQueryExecution {
                 self.query_state_machine.session.inner().task_ctx(),
             )
             .context(ScheduleSnafu)?
-            .stream();
+            .stream()
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|source| QueryError::Execution {
+                source: ExecutionError::Arrow { source },
+            })?;
         self.query_state_machine.end_schedule();
 
         Ok(Output::StreamData(execution_result))
+    }
+}
+
+#[async_trait]
+impl QueryExecution for SqlQueryExecution {
+    async fn start(&self) -> Result<Output> {
+        let (task, abort_handle) = futures::future::abortable(self.start());
+
+        {
+            *self.abort_handle.lock() = Some(abort_handle);
+        }
+
+        task.await.map_err(|_| QueryError::Cancel)?
+    }
+
+    fn cancel(&self) -> Result<()> {
+        debug!(
+            "cancel sql query execution: query_id: {:?}, sql: {}, state: {:?}",
+            &self.query_state_machine.query_id,
+            self.query_state_machine.query.content(),
+            self.query_state_machine.state()
+        );
+
+        // change state
+        self.query_state_machine.cancel();
+        // stop future task
+        if let Some(e) = self.abort_handle.lock().as_ref() {
+            e.abort()
+        };
+
+        debug!(
+            "canceled sql query execution: query_id: {:?}, sql: {}, state: {:?}",
+            &self.query_state_machine.query_id,
+            self.query_state_machine.query.content(),
+            self.query_state_machine.state()
+        );
+        Ok(())
+    }
+
+    fn info(&self) -> QueryInfo {
+        QueryInfo::new(self.query_state_machine.query_id)
+    }
+
+    fn status(&self) -> QueryStatus {
+        QueryStatus::new(self.query_state_machine.state().clone())
     }
 }

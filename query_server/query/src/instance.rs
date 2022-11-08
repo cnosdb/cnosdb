@@ -8,7 +8,7 @@ use spi::{
     server::BuildSnafu,
     server::Result,
     server::{LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
-    service::protocol::{Query, QueryHandle},
+    service::protocol::{Query, QueryHandle, QueryId},
 };
 
 use tskv::kv_option::Options;
@@ -39,6 +39,29 @@ impl DatabaseManagerSystem for Cnosdbms {
             .context(QuerySnafu)?;
 
         Ok(QueryHandle::new(id, query.clone(), result))
+    }
+
+    fn metrics(&self) -> String {
+        let infos = self.query_dispatcher.running_query_infos();
+        let status = self.query_dispatcher.running_query_status();
+
+        format!(
+            "infos: {}\nstatus: {}\n",
+            infos
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join(","),
+            status
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+
+    fn cancel(&self, query_id: &QueryId) {
+        self.query_dispatcher.cancel_query(query_id);
     }
 }
 
@@ -88,7 +111,6 @@ mod tests {
     use datafusion::arrow::{
         datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
     };
-    use futures::StreamExt;
     use spi::{
         catalog::DEFAULT_CATALOG,
         query::execution::Output,
@@ -128,10 +150,7 @@ mod tests {
         for ele in result.result().iter_mut() {
             match ele {
                 Output::StreamData(data) => {
-                    while let Some(next) = data.next().await {
-                        let batch = next.unwrap();
-                        actual.push(batch);
-                    }
+                    actual.append(data);
                 }
                 Output::Nil(_) => {
                     let batch = RecordBatch::new_empty(Arc::new(Schema::empty()));
