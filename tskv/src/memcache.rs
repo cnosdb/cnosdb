@@ -22,7 +22,7 @@ use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
-use models::schema::{TableColumn, TableSchema};
+use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
@@ -113,7 +113,7 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(p: fb_models::Point, schema: &TableSchema) -> RowData {
+    pub fn point_to_row_data(p: fb_models::Point, schema: &TskvTableSchema) -> RowData {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_num());
@@ -192,7 +192,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema: TableSchema,
+    pub schema: TskvTableSchema,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -260,7 +260,7 @@ impl SeriesData {
         res
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &TableSchema, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, &TskvTableSchema, &Vec<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
@@ -470,7 +470,7 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use bytes::buf;
-    use models::schema::TableSchema;
+    use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use std::mem::{size_of, size_of_val};
 
@@ -482,7 +482,7 @@ pub(crate) mod test {
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
-        mut schema: TableSchema,
+        mut schema: TskvTableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {

@@ -31,7 +31,7 @@ use datafusion::arrow::{
 };
 
 use models::predicate::domain::{ColumnDomains, Domain, Range, ValueEntry};
-use models::schema::{ColumnType, TableSchema, TIME_FIELD, TIME_FIELD_NAME};
+use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 
@@ -50,7 +50,7 @@ pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 pub struct QueryOption {
-    pub table_schema: TableSchema,
+    pub table_schema: TskvTableSchema,
     pub datafusion_schema: SchemaRef,
     pub time_filter: ColumnDomains<String>,
     pub tags_filter: ColumnDomains<String>,

@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::schema::TableSchema;
+use crate::schema::TskvTableSchema;
 use crate::{Error, Result};
 use datafusion::{
     arrow::datatypes::DataType, logical_expr::Expr, optimizer::utils::conjunction, prelude::Column,
@@ -945,7 +945,11 @@ impl Predicate {
 
     /// resolve and extract supported filter
     /// convert filter to ColumnDomains and set self
-    pub fn push_down_filter(mut self, filters: &[Expr], _table_schema: &TableSchema) -> Predicate {
+    pub fn push_down_filter(
+        mut self,
+        filters: &[Expr],
+        _table_schema: &TskvTableSchema,
+    ) -> Predicate {
         if let Some(ref expr) = conjunction(filters.to_vec()) {
             if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
                 self.pushed_down_domains = domains;

@@ -41,6 +41,7 @@ priority-queue = { workspace = true }
 q_compress = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serial_test = { workspace = true }
 sled = { workspace = true }
 snafu = { workspace = true }
