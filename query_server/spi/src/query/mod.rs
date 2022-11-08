@@ -50,4 +50,20 @@ pub enum QueryError {
 
     #[snafu(display("Concurrent query request limit exceeded"))]
     RequestLimit,
+
+    #[snafu(display("Multi-statement not allow, found num:{}, sql:{}", num, sql))]
+    MultiStatement { num: usize, sql: String },
+
+    #[snafu(display(
+        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+    code and we would welcome that you file an bug report in our issue tracker",
+        err
+    ))]
+    Internal { err: String },
+
+    #[snafu(display("The query has been canceled"))]
+    Cancel,
+
+    #[snafu(display("The query server has been closed"))]
+    Closed,
 }

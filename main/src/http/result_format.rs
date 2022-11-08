@@ -4,7 +4,6 @@ use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::arrow::json::{ArrayWriter, LineDelimitedWriter};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
-use futures::TryStreamExt;
 use spi::query::execution::Output;
 use spi::service::protocol::QueryHandle;
 use std::str::FromStr;
@@ -130,8 +129,7 @@ pub async fn fetch_record_batches(res: &mut QueryHandle) -> ArrowResult<Vec<Reco
     for ele in res.result().iter_mut() {
         match ele {
             Output::StreamData(stream) => {
-                let mut result = stream.try_collect::<Vec<RecordBatch>>().await?;
-                actual.append(&mut result);
+                actual.append(stream);
             }
             Output::Nil(_) => {}
         }

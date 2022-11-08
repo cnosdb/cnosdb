@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
 use spi::query::{self, QueryError};
@@ -63,6 +64,19 @@ impl QueryExecution for DDLExecution {
             .execute(query_state_machine)
             .await
             .context(query::ExecutionSnafu)
+    }
+
+    fn cancel(&self) -> query::Result<()> {
+        // ddl ignore
+        Ok(())
+    }
+
+    fn info(&self) -> QueryInfo {
+        QueryInfo::new(self.query_state_machine.query_id)
+    }
+
+    fn status(&self) -> QueryStatus {
+        QueryStatus::new(self.query_state_machine.state().clone())
     }
 }
 

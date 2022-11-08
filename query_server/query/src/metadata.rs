@@ -187,9 +187,9 @@ impl MetaData for LocalCatalogMeta {
                     RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(databases))])
                         .unwrap();
 
-                let batches = vec![Arc::new(batch)];
+                let batches = vec![batch];
 
-                Ok(Output::StreamData(stream_from_batches(batches)))
+                Ok(Output::StreamData(batches))
             }
             Err(err) => Err(MetadataError::InternalError {
                 error_msg: err.to_string(),
@@ -220,9 +220,9 @@ impl MetaData for LocalCatalogMeta {
                             RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(tables))])
                                 .unwrap();
 
-                        let batches = vec![Arc::new(batch)];
+                        let batches = vec![batch];
 
-                        Ok(Output::StreamData(stream_from_batches(batches)))
+                        Ok(Output::StreamData(batches))
                     }
                     Err(err) => Err(MetadataError::InternalError {
                         error_msg: err.to_string(),

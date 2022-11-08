@@ -31,15 +31,15 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
         &self,
         plan: Plan,
         state_machine: QueryStateMachineRef,
-    ) -> Box<dyn QueryExecution> {
+    ) -> Arc<dyn QueryExecution> {
         match plan {
-            Plan::Query(query_plan) => Box::new(SqlQueryExecution::new(
+            Plan::Query(query_plan) => Arc::new(SqlQueryExecution::new(
                 state_machine,
                 query_plan,
                 self.optimizer.clone(),
                 self.scheduler.clone(),
             )),
-            Plan::DDL(ddl_plan) => Box::new(DDLExecution::new(state_machine, ddl_plan)),
+            Plan::DDL(ddl_plan) => Arc::new(DDLExecution::new(state_machine, ddl_plan)),
         }
     }
 }
