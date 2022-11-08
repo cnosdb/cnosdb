@@ -1,26 +1,20 @@
-use coordinator::{service::CoordinatorRef, writer::VnodeMapping};
 use datafusion::arrow::{
     array::{
         Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
         TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
         TimestampSecondArray, UInt64Array,
     },
-    datatypes::{DataType as ArrowDataType, Field, TimeUnit, ToByteSlice},
+    datatypes::{DataType as ArrowDataType, Field, TimeUnit},
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::{define_result, tag, FieldValue, ValueType};
-use models::{
-    schema::{is_time_column, ColumnType, TableColumn, TableSchema, TIME_FIELD_NAME},
-    Tag,
-};
+use models::schema::{is_time_column, ColumnType, TableColumn, TableSchema, TIME_FIELD_NAME};
+use models::{define_result, ValueType};
 use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
-use spi::catalog::DEFAULT_CATALOG;
-use std::cmp::Ordering;
-use trace::{debug, info};
+use trace::debug;
 
 define_result!(PointUtilError);
 

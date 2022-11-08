@@ -136,6 +136,33 @@ pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
     list
 }
 
+pub fn list_dir_names(dir: impl AsRef<Path>) -> Vec<String> {
+    let mut list = Vec::new();
+
+    for file_name in walkdir::WalkDir::new(dir)
+        .min_depth(1)
+        .max_depth(1)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(|e| {
+            let dir_entry = match e {
+                Ok(dir_entry) if dir_entry.file_type().is_dir() => dir_entry,
+                _ => {
+                    return None;
+                }
+            };
+            dir_entry
+                .file_name()
+                .to_str()
+                .map(|file_name| file_name.to_string())
+        })
+    {
+        list.push(file_name);
+    }
+
+    list
+}
+
 /// Case `std::fs::try_exists` is unstable, so copied the same logic to here.
 /// Todo For that reason, this way to check file exists may be disabled someday.
 #[inline(always)]

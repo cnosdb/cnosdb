@@ -10,9 +10,13 @@ use config::HintedOffConfig;
 use parking_lot::RwLock;
 use protos::models as fb_models;
 use snafu::prelude::*;
-use tokio::time::{self, Duration};
+use tokio::{
+    sync::mpsc::Receiver,
+    sync::oneshot::{self, Sender},
+    time::{self, Duration},
+};
 use trace::{debug, error, info, warn};
-use tskv::file_system::file_manager::{self, FileManager};
+use tskv::file_system::file_manager::{self, list_dir_names, FileManager};
 use tskv::file_system::{DmaFile, FileCursor, FileSync};
 use tskv::{byte_utils, file_utils};
 
@@ -23,14 +27,6 @@ const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x54];
 const SEGMENT_FILE_MAX_SIZE: u64 = 1073741824; // 1 GiB
 const HINTEDOFF_BLOCK_HEADER_SIZE: usize = 16;
-
-#[derive(Debug)]
-pub struct HintedOffBlock {
-    pub ts: i64,
-    pub vnode_id: u32,
-    pub data_len: u32,
-    pub data: Vec<u8>,
-}
 
 #[derive(Debug)]
 pub struct HintedOffOption {
@@ -47,6 +43,21 @@ impl HintedOffOption {
             path: format!("{}/{}", config.path, node_id),
         }
     }
+}
+
+#[derive(Debug)]
+pub struct HintedOffWriteReq {
+    pub node_id: u64,
+    pub block: HintedOffBlock,
+    pub sender: Sender<CoordinatorResult<()>>,
+}
+
+#[derive(Debug)]
+pub struct HintedOffBlock {
+    pub ts: i64,
+    pub vnode_id: u32,
+    pub data_len: u32,
+    pub data: Vec<u8>,
 }
 
 impl HintedOffBlock {
@@ -83,23 +94,44 @@ pub struct HintedOffManager {
 
 impl HintedOffManager {
     pub fn new(config: HintedOffConfig, writer: Arc<PointWriter>) -> Self {
-        Self {
+        let manager = Self {
             config,
             writer,
             nodes: RwLock::new(HashMap::new()),
+        };
+
+        let dir = PathBuf::from(manager.config.path.clone());
+        for id in list_dir_names(dir).iter() {
+            if let Ok(id) = id.parse::<u64>() {
+                manager.get_or_create_queue(id).unwrap();
+            }
+        }
+
+        return manager;
+    }
+
+    pub async fn write_handoff_job(
+        manager: Arc<HintedOffManager>,
+        mut hh_receiver: Receiver<HintedOffWriteReq>,
+    ) {
+        while let Some(request) = hh_receiver.recv().await {
+            let result = match manager.get_or_create_queue(request.node_id) {
+                Ok(queue) => queue.write().write(&request.block),
+                Err(err) => Err(err),
+            };
+
+            request.sender.send(result).expect("successful");
         }
     }
 
-    pub fn get_or_create_queue(&self, id: u64) -> Arc<RwLock<HintedOffQueue>> {
+    fn get_or_create_queue(&self, id: u64) -> CoordinatorResult<Arc<RwLock<HintedOffQueue>>> {
         let mut nodes = self.nodes.write();
         if let Some(val) = nodes.get(&id) {
-            return val.clone();
+            return Ok(val.clone());
         }
 
-        let queue = Arc::new(RwLock::new(HintedOffQueue::new(HintedOffOption::new(
-            &self.config,
-            id,
-        ))));
+        let queue = HintedOffQueue::new(HintedOffOption::new(&self.config, id))?;
+        let queue = Arc::new(RwLock::new(queue));
         nodes.insert(id, queue.clone());
 
         tokio::spawn(HintedOffManager::hinted_off_service(
@@ -108,7 +140,7 @@ impl HintedOffManager {
             queue.clone(),
         ));
 
-        return queue;
+        return Ok(queue);
     }
 
     async fn hinted_off_service(
@@ -119,27 +151,29 @@ impl HintedOffManager {
         debug!("hinted_off_service started for node: {}", node_id);
 
         loop {
-            match queue.write().read() {
+            let block_data = queue.write().read();
+            match block_data {
                 Ok(block) => {
-                    //debug!("==== got data {:#?}", block.debug());
                     loop {
                         if let Ok(_) = writer
-                            .warp_write_to_node(block.vnode_id, node_id, block.data.clone())
+                            .write_to_node(block.vnode_id, node_id, block.data.clone())
                             .await
                         {
                             break;
                         } else {
-                            info!("hinted_off write data to node failed");
-                            time::sleep(Duration::from_secs(1)).await;
+                            info!("hinted_off write data to node {} failed", node_id);
+                            time::sleep(Duration::from_secs(3)).await;
                         }
                     }
 
-                    queue.write().advance_read_offset(0).unwrap();
+                    if let Err(err) = queue.write().advance_read_offset(0) {
+                        info!("advance offset {}", err.to_string());
+                    }
                 }
 
                 Err(err) => {
-                    debug!("==== got err {}", err.to_string());
-                    time::sleep(Duration::from_secs(2)).await;
+                    info!("read hindoff data: {}", err.to_string());
+                    time::sleep(Duration::from_secs(3)).await;
                 }
             }
         }
@@ -154,7 +188,7 @@ pub struct HintedOffQueue {
 }
 
 impl HintedOffQueue {
-    pub fn new(option: HintedOffOption) -> Self {
+    pub fn new(option: HintedOffOption) -> CoordinatorResult<Self> {
         let data_dir = PathBuf::from(option.path.clone());
         let (last, seq) = match file_utils::get_max_sequence_file_name(
             data_dir.clone(),
@@ -168,22 +202,22 @@ impl HintedOffQueue {
         };
 
         if !file_manager::try_exists(&data_dir) {
-            std::fs::create_dir_all(&data_dir).unwrap();
+            std::fs::create_dir_all(&data_dir)?;
         }
 
-        let writer_file = HintedOffWriter::open(seq, last).unwrap();
+        let writer_file = HintedOffWriter::open(seq, last)?;
 
         let hh_files = file_manager::list_file_names(&data_dir);
         let read_filename = hh_files[0].clone();
-        let read_fileid = file_utils::get_hinted_off_file_id(&read_filename).unwrap();
-        let tmp_file = HintedOffWriter::open(read_fileid, data_dir.join(read_filename)).unwrap();
-        let reader_file = HintedOffReader::new(read_fileid, tmp_file.file.into()).unwrap();
+        let read_fileid = file_utils::get_hinted_off_file_id(&read_filename)?;
+        let tmp_file = HintedOffWriter::open(read_fileid, data_dir.join(read_filename))?;
+        let reader_file = HintedOffReader::new(read_fileid, tmp_file.file.into())?;
 
-        HintedOffQueue {
+        Ok(HintedOffQueue {
             option,
             writer_file,
             reader_file,
-        }
+        })
     }
 
     fn roll_hinted_off_write_file(&mut self) -> CoordinatorResult<()> {
@@ -211,26 +245,26 @@ impl HintedOffQueue {
             let new_file_id = self.reader_file.id + 1;
             let new_file_name = file_utils::make_hinted_off_file(&self.option.path, new_file_id);
             if !file_manager::try_exists(&PathBuf::from(new_file_name.clone())) {
-                debug!("Read new hinted off file is not create ");
-
                 return Ok(());
             }
 
             let new_file = HintedOffWriter::open(new_file_id, new_file_name)?;
-            self.reader_file = HintedOffReader::new(new_file_id, new_file.file.into()).unwrap();
+            self.reader_file = HintedOffReader::new(new_file_id, new_file.file.into())?;
         }
 
         Ok(())
     }
 
-    pub fn write(&mut self, block: &HintedOffBlock) -> CoordinatorResult<usize> {
+    pub fn write(&mut self, block: &HintedOffBlock) -> CoordinatorResult<()> {
         if !self.option.enable {
-            return Ok(0);
+            return Ok(());
         }
 
         self.roll_hinted_off_write_file()?;
 
-        self.writer_file.write(block)
+        self.writer_file.write(block)?;
+
+        Ok(())
     }
 
     pub fn advance_read_offset(&mut self, offset: u32) -> CoordinatorResult<()> {
@@ -263,7 +297,6 @@ struct HintedOffWriter {
 
 impl HintedOffWriter {
     pub fn open(id: u64, path: impl AsRef<Path>) -> CoordinatorResult<Self> {
-        // TODO: Check path
         let path = path.as_ref();
 
         // Get file and check if new file
@@ -458,7 +491,7 @@ mod test {
             },
             1,
         );
-        let queue = HintedOffQueue::new(option);
+        let queue = HintedOffQueue::new(option).unwrap();
         let queue = Arc::new(RwLock::new(queue));
 
         tokio::spawn(read_hinted_off_file(queue.clone()));
@@ -481,22 +514,25 @@ mod test {
         loop {
             match queue.write().read() {
                 Ok(block) => {
-                    //debug!("==== got data {:#?}", block.debug());
                     count = count + 1;
                 }
 
                 Err(err) => {
-                    //debug!("==== got err {}", err.to_string());
                     break;
                 }
             }
-            queue.write().advance_read_offset(0).unwrap();
-
-            //time::sleep(Duration::from_secs(2)).await;
+            let _ = queue.write().advance_read_offset(0);
         }
 
         if count != 100 {
             panic!("hinted off read write wrong");
         }
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_names() {
+        let list = list_dir_names(PathBuf::from("/tmp/cnosdb".to_string()));
+
+        print!("{:#?}", list);
     }
 }

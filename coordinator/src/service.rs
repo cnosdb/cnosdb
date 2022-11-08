@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use config::{ClusterConfig, HintedOffConfig};
+use tokio::sync::mpsc;
 use tskv::engine::EngineRef;
 
 use crate::errors::*;
@@ -40,16 +41,23 @@ pub struct CoordService {
 impl CoordService {
     pub fn new(kv_inst: EngineRef, cluster: ClusterConfig, handoff_cfg: HintedOffConfig) -> Self {
         let meta_manager: MetaRef = Arc::new(Box::new(RemoteMetaManager::new(cluster.clone())));
+        let (hh_sender, hh_receiver) = mpsc::channel(128);
 
         let point_writer = Arc::new(PointWriter::new(
             cluster.node_id,
             kv_inst,
             meta_manager.clone(),
+            hh_sender,
         ));
 
         let hh_manager = Arc::new(HintedOffManager::new(
             handoff_cfg.clone(),
             point_writer.clone(),
+        ));
+
+        tokio::spawn(HintedOffManager::write_handoff_job(
+            hh_manager.clone(),
+            hh_receiver,
         ));
 
         Self {

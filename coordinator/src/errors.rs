@@ -1,4 +1,5 @@
 use crate::meta_client;
+
 use snafu::Snafu;
 use std::io;
 
@@ -20,10 +21,15 @@ pub enum CoordinatorError {
     #[snafu(display("Invalid serde message: {}", err))]
     InvalidSerdeMsg { err: String },
 
-    #[snafu(display("fails to receive from channel"))]
-    Receive {
-        source: tokio::sync::oneshot::error::RecvError,
-    },
+    // #[snafu(display("fails to receive from channel"))]
+    // Receive {
+    //     source: tokio::sync::oneshot::error::RecvError,
+    // },
+    #[snafu(display("fails to send to channel: {}", msg))]
+    ChannelSend { msg: String },
+
+    #[snafu(display("fails to recv from channel: {}", msg))]
+    ChannelRecv { msg: String },
 
     #[snafu(display("write vnode error: {}", msg))]
     WriteVnode { msg: String },
@@ -38,7 +44,7 @@ pub enum CoordinatorError {
     UnKnownCoordCmd { cmd: u32 },
 
     #[snafu(display("coordinator command parse failed"))]
-    CoordCmmandParseErr,
+    CoordCommandParseErr,
 
     #[snafu(display("unexpect response message"))]
     UnExpectResponse,

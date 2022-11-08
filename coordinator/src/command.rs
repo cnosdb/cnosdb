@@ -71,7 +71,7 @@ impl CommonResponse {
         let mut data_buf = vec![0; len as usize];
         conn.read_exact(&mut data_buf)?;
 
-        self.data = String::from_utf8(data_buf).map_err(|_| CoordCmmandParseErr)?;
+        self.data = String::from_utf8(data_buf).map_err(|_| CoordCommandParseErr)?;
 
         Ok(())
     }

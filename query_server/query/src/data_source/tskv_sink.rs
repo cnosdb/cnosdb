@@ -7,9 +7,9 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::schema::TableSchema;
 use models::Point;
-use protos::kv_service::WritePointsRpcRequest;
+
 use protos::models as fb_models;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 use spi::catalog::DEFAULT_CATALOG;
 use trace::debug;
 use tskv::engine::EngineRef;
@@ -20,7 +20,7 @@ use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 use super::CoordinatorSnafu;
 use super::Result;
-use super::TskvSnafu;
+
 use super::{InvalidFlatbufferSnafu, PointUtilSnafu};
 use crate::data_source::DataSourceError::CommonError;
 

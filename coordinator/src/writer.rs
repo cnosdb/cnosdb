@@ -12,14 +12,16 @@ use std::collections::VecDeque;
 use std::io::{BufWriter, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot;
 use tskv::engine::EngineRef;
 
 use protos::models as fb_models;
 
 use crate::command::*;
 use crate::errors::*;
-use crate::hh_queue::HintedOffBlock;
 use crate::hh_queue::HintedOffManager;
+use crate::hh_queue::{HintedOffBlock, HintedOffWriteReq};
 use crate::meta_client::{MetaClientRef, MetaRef};
 use trace::debug;
 use trace::info;
@@ -136,16 +138,23 @@ pub struct PointWriter {
     node_id: u64,
     kv_inst: EngineRef,
     meta_manager: MetaRef,
+    hh_sender: Sender<HintedOffWriteReq>,
 
     conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 }
 
 impl PointWriter {
-    pub fn new(node_id: u64, kv_inst: EngineRef, meta_manager: MetaRef) -> Self {
+    pub fn new(
+        node_id: u64,
+        kv_inst: EngineRef,
+        meta_manager: MetaRef,
+        hh_sender: Sender<HintedOffWriteReq>,
+    ) -> Self {
         Self {
             node_id,
             kv_inst,
             meta_manager,
+            hh_sender,
             conn_map: RwLock::new(HashMap::new()),
         }
     }
@@ -160,7 +169,7 @@ impl PointWriter {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
-                let request = self.write_to_node(
+                let request = self.warp_write_to_node(
                     vnode.id,
                     vnode.node_id,
                     points.data.clone(),
@@ -175,17 +184,14 @@ impl PointWriter {
         Ok(())
     }
 
-    async fn write_to_node(
+    async fn warp_write_to_node(
         &self,
         vnode_id: u32,
         node_id: u64,
         data: Vec<u8>,
         hh_manager: Arc<HintedOffManager>,
     ) -> CoordinatorResult<()> {
-        match self
-            .warp_write_to_node(vnode_id, node_id, data.clone())
-            .await
-        {
+        match self.write_to_node(vnode_id, node_id, data.clone()).await {
             Ok(_) => {
                 debug!(
                     "write data to node: {}[vnode: {}] success!",
@@ -201,16 +207,31 @@ impl PointWriter {
                     err.to_string()
                 );
 
-                let block = HintedOffBlock::new(now_timestamp(), vnode_id, data);
-                let queue = hh_manager.get_or_create_queue(node_id);
-                let _ = queue.write().write(&block);
+                let (sender, receiver) = oneshot::channel();
+                let request = HintedOffWriteReq {
+                    node_id,
+                    sender,
+                    block: HintedOffBlock::new(now_timestamp(), vnode_id, data),
+                };
 
-                return Err(err);
+                self.hh_sender.send(request).await.map_err(|err| {
+                    CoordinatorError::ChannelSend {
+                        msg: err.to_string(),
+                    }
+                })?;
+
+                let result = receiver
+                    .await
+                    .map_err(|err| CoordinatorError::ChannelSend {
+                        msg: err.to_string(),
+                    })?;
+
+                return result;
             }
         }
     }
 
-    pub async fn warp_write_to_node(
+    pub async fn write_to_node(
         &self,
         vnode_id: u32,
         node_id: u64,

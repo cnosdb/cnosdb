@@ -221,27 +221,17 @@ impl HttpService {
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
                             .context(ParseLineProtocolSnafu)?;
 
-                    let (mut mapping, points) = parse_lines_to_points(
-                        meta_client,
-                        &user_info.user,
-                        &param.db,
-                        &mut line_protocol_lines,
-                    )?;
+                    let points = parse_lines_to_points(&param.db, &mut line_protocol_lines)?;
 
-                    let result = coord
-                        .write_points(&mut mapping)
-                        .await
-                        .context(CoordinatorSnafu);
-
-                    // let req = WritePointsRpcRequest { version: 1, points };
-                    // let resp = kv_inst.write(0, req).await.context(TskvSnafu);
+                    let req = WritePointsRpcRequest { version: 1, points };
+                    let resp = kv_inst.write(0, req).await.context(TskvSnafu);
 
                     sample_point_write_latency(
                         &user_info.user,
                         &param.db,
                         start.elapsed().as_millis() as f64,
                     );
-                    match result {
+                    match resp {
                         Ok(_) => {
                             incr_point_write_success();
                             Ok(ResponseBuilder::ok())
@@ -324,15 +314,8 @@ impl Service for HttpService {
     }
 }
 
-fn parse_lines_to_points<'a>(
-    meta_client: MetaClientRef,
-    tenant: &'a str,
-    db: &'a str,
-    lines: &'a mut [Line],
-) -> Result<(VnodeMapping<'a>, Vec<u8>), Error> {
+fn parse_lines_to_points<'a>(db: &'a str, lines: &'a mut [Line]) -> Result<Vec<u8>, Error> {
     let mut fbb = FlatBufferBuilder::new();
-    let mut mapping = VnodeMapping::new();
-    let _full_name = format!("{}.{}", tenant, db);
     let mut point_offsets = Vec::with_capacity(lines.len());
     for line in lines.iter_mut() {
         let mut tags = Vec::with_capacity(line.tags.len());
@@ -399,7 +382,7 @@ fn parse_lines_to_points<'a>(
         },
     );
     fbb.finish(points, None);
-    Ok((VnodeMapping::new(), fbb.finished_data().to_vec()))
+    Ok(fbb.finished_data().to_vec())
 }
 
 fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query, HttpError> {
