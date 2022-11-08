@@ -43,6 +43,9 @@ enum CnosKeyWord {
     REPLICA,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     PRECISION,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    QUERIES,
 }
 
 // impl CnosKeyWord {
@@ -207,7 +210,7 @@ impl<'a> ExtParser<'a> {
             self.parse_show_tables()
         } else if self.parse_cnos_keyword(CnosKeyWord::DATABASES) {
             self.parse_show_databases()
-        } else if self.consume_cnos_token("QUERIES") {
+        } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else {
             self.expected("tables/databases", self.parser.peek_token())
