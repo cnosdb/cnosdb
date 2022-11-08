@@ -207,9 +207,15 @@ impl<'a> ExtParser<'a> {
             self.parse_show_tables()
         } else if self.parse_cnos_keyword(CnosKeyWord::DATABASES) {
             self.parse_show_databases()
+        } else if self.consume_cnos_token("QUERIES") {
+            self.parse_show_queries()
         } else {
             self.expected("tables/databases", self.parser.peek_token())
         }
+    }
+
+    fn parse_show_queries(&mut self) -> Result<ExtStatement> {
+        Ok(ExtStatement::ShowQueries)
     }
 
     fn parse_show_databases(&mut self) -> Result<ExtStatement> {

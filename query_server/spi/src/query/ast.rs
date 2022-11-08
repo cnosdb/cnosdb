@@ -23,6 +23,9 @@ pub enum ExtStatement {
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
     //todo:  insert/update/alter
+
+    // system cmd
+    ShowQueries,
     AlterDatabase(AlterDatabase),
 }
 

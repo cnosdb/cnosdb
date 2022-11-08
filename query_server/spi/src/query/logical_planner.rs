@@ -43,6 +43,8 @@ pub enum Plan {
     Query(QueryPlan),
     /// Query plan
     DDL(DDLPlan),
+    /// Query plan
+    SYSTEM(SYSPlan),
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +71,11 @@ pub enum DDLPlan {
     ShowDatabases(),
 
     AlterDatabase(AlterDatabase),
+}
+
+#[derive(Debug, Clone)]
+pub enum SYSPlan {
+    ShowQueries,
 }
 
 #[derive(Debug, Clone)]

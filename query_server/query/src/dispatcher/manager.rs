@@ -34,7 +34,7 @@ pub struct SimpleQueryDispatcher {
     session_factory: Arc<IsiphoSessionCtxFactory>,
     // TODO resource manager
     // query tracker
-    query_tracker: QueryTracker,
+    query_tracker: Arc<QueryTracker>,
     // parser
     parser: Arc<dyn Parser + Send + Sync>,
     // get query execution factory
@@ -213,14 +213,20 @@ impl SimpleQueryDispatcherBuilder {
             err: "lost of scheduler".to_string(),
         })?;
 
-        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(optimizer, scheduler));
+        let query_tracker = Arc::new(QueryTracker::new(self.queries_limit));
+
+        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
+            optimizer,
+            scheduler,
+            query_tracker.clone(),
+        ));
 
         Ok(SimpleQueryDispatcher {
             metadata,
             session_factory,
             parser,
             query_execution_factory,
-            query_tracker: QueryTracker::new(self.queries_limit),
+            query_tracker,
         })
     }
 }

@@ -28,7 +28,7 @@ use spi::query::ast::{
 };
 use spi::query::logical_planner::{
     self, affected_row_expr, AlterDatabase, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase,
-    DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan, SYSPlan,
     MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
@@ -68,6 +68,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::ShowDatabases() => self.database_to_show(),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
+            // system statement
+            ExtStatement::ShowQueries => Ok(Plan::SYSTEM(SYSPlan::ShowQueries)),
         }
     }
 

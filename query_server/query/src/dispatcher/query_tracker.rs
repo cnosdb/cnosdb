@@ -28,7 +28,8 @@ impl QueryTracker {
     /// track a query
     ///
     /// [`QueryError::RequestLimit`]
-    /// [`QueryError::Internal`]
+    ///
+    /// [`QueryError::Closed`] after call [`Self::close`]
     pub fn try_track_query(
         &self,
         query_id: QueryId,
@@ -70,11 +71,14 @@ impl QueryTracker {
         self.queries.read().len()
     }
 
-    // all running queries
+    /// all running queries
     pub fn running_queries(&self) -> Vec<Arc<dyn QueryExecution>> {
         self.queries.read().values().cloned().collect()
     }
 
+    /// Once closed, no new requests will be accepted
+    ///
+    /// After closing, tracking new requests through [`QueryTracker::try_track_query`] will return [`QueryError::Closed`]
     pub fn _close(&self) {
         self.query_limit_semaphore.close();
     }
@@ -119,6 +123,7 @@ mod tests {
         },
         service::protocol::QueryId,
     };
+    use std::time::Duration;
 
     use super::QueryTracker;
 
@@ -133,10 +138,13 @@ mod tests {
             Ok(())
         }
         fn info(&self) -> QueryInfo {
-            QueryInfo::new(QueryId::next_id())
+            QueryInfo::new(1_u64.into(), "test".to_string(), "UNKNOWN".to_string())
         }
         fn status(&self) -> QueryStatus {
-            QueryStatus::new(QueryState::RUNNING(RUNNING::SCHEDULING))
+            QueryStatus::new(
+                QueryState::RUNNING(RUNNING::SCHEDULING),
+                Duration::new(0, 1),
+            )
         }
     }
 
@@ -145,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn test_track_and_release() {
+    fn test_track_and_drop() {
         let query_id = QueryId::next_id();
         let query = Arc::new(QueryExecutionMock {});
         let tracker = new_query_tracker(10);
@@ -186,5 +194,21 @@ mod tests {
 
         let query_id = QueryId::next_id();
         assert!(tracker.try_track_query(query_id, query).is_err())
+    }
+
+    #[test]
+    fn test_get_query_info() {
+        let query_id = QueryId::next_id();
+        let query = Arc::new(QueryExecutionMock {});
+        let tracker = new_query_tracker(2);
+
+        let _tq = tracker.try_track_query(query_id, query.clone()).unwrap();
+
+        let exe = tracker.query(&query_id).unwrap();
+
+        let info_actual = query.info();
+        let info_found = exe.info();
+
+        assert_eq!(info_actual, info_found);
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::execution::ddl::DDLExecution;
+use crate::{dispatcher::query_tracker::QueryTracker, execution::ddl::DDLExecution};
 use datafusion::scheduler::Scheduler;
 use spi::query::{
     execution::{QueryExecution, QueryExecutionFactory, QueryStateMachineRef},
@@ -8,20 +8,26 @@ use spi::query::{
     optimizer::Optimizer,
 };
 
-use super::query::SqlQueryExecution;
+use super::{query::SqlQueryExecution, sys::SystemExecution};
 
 pub struct SqlQueryExecutionFactory {
     optimizer: Arc<dyn Optimizer + Send + Sync>,
     // TODO 需要封装 scheduler
     scheduler: Arc<Scheduler>,
+    query_tracker: Arc<QueryTracker>,
 }
 
 impl SqlQueryExecutionFactory {
     #[inline(always)]
-    pub fn new(optimizer: Arc<dyn Optimizer + Send + Sync>, scheduler: Arc<Scheduler>) -> Self {
+    pub fn new(
+        optimizer: Arc<dyn Optimizer + Send + Sync>,
+        scheduler: Arc<Scheduler>,
+        query_tracker: Arc<QueryTracker>,
+    ) -> Self {
         Self {
             optimizer,
             scheduler,
+            query_tracker,
         }
     }
 }
@@ -40,6 +46,11 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 self.scheduler.clone(),
             )),
             Plan::DDL(ddl_plan) => Arc::new(DDLExecution::new(state_machine, ddl_plan)),
+            Plan::SYSTEM(sys_plan) => Arc::new(SystemExecution::new(
+                state_machine,
+                sys_plan,
+                self.query_tracker.clone(),
+            )),
         }
     }
 }

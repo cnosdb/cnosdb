@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use datafusion::arrow::error::ArrowError;
@@ -68,6 +69,7 @@ pub struct QueryStateMachine {
     pub catalog: MetaDataRef,
 
     state: AtomicPtr<QueryState>,
+    start: Instant,
 }
 
 impl QueryStateMachine {
@@ -83,6 +85,7 @@ impl QueryStateMachine {
             query,
             catalog,
             state: AtomicPtr::new(Box::into_raw(Box::new(QueryState::ACCEPTING))),
+            start: Instant::now(),
         }
     }
 
@@ -132,6 +135,10 @@ impl QueryStateMachine {
         unsafe { &*self.state.load(Ordering::Relaxed) }
     }
 
+    pub fn duration(&self) -> Duration {
+        self.start.elapsed()
+    }
+
     fn translate_to(&self, state: Box<QueryState>) {
         self.state.store(Box::into_raw(state), Ordering::Relaxed);
     }
@@ -144,6 +151,16 @@ pub enum QueryState {
     DONE(DONE),
 }
 
+impl ToString for QueryState {
+    fn to_string(&self) -> String {
+        match self {
+            QueryState::ACCEPTING => format!("{:?}", self),
+            QueryState::RUNNING(e) => e.to_string(),
+            QueryState::DONE(e) => e.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum RUNNING {
     DISPATCHING,
@@ -152,9 +169,21 @@ pub enum RUNNING {
     SCHEDULING,
 }
 
+impl ToString for RUNNING {
+    fn to_string(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum DONE {
     FINISHED,
     FAILED,
     CANCELLED,
+}
+
+impl ToString for DONE {
+    fn to_string(&self) -> String {
+        format!("{:?}", self)
+    }
 }
