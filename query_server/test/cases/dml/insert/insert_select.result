@@ -114,7 +114,7 @@ time,ta,tb,fa,fb
 -- EXECUTE SQL: insert public.test_insert_subquery(TIME, fa) select TIME, ta from (values (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '10a' to value of Float64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '10a' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
