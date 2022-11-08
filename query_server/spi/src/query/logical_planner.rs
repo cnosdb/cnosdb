@@ -1,4 +1,4 @@
-use crate::catalog::MetadataError;
+use crate::{catalog::MetadataError, service::protocol::QueryId};
 
 use super::{
     ast::{ExtStatement, ObjectType},
@@ -76,6 +76,7 @@ pub enum DDLPlan {
 #[derive(Debug, Clone)]
 pub enum SYSPlan {
     ShowQueries,
+    KillQuery(QueryId),
 }
 
 #[derive(Debug, Clone)]

@@ -26,6 +26,9 @@ pub enum ExecutionError {
 
     #[snafu(display("Metadata operator err: {}", source))]
     Metadata { source: MetadataError },
+
+    #[snafu(display("Query not found: {:?}", query_id))]
+    QueryNotFound { query_id: QueryId },
 }
 
 #[async_trait]

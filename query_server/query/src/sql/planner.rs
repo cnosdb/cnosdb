@@ -28,8 +28,8 @@ use spi::query::ast::{
 };
 use spi::query::logical_planner::{
     self, affected_row_expr, AlterDatabase, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase,
-    DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan, SYSPlan,
-    MISMATCHED_COLUMNS, MISSING_COLUMN,
+    DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    SYSPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 
@@ -95,6 +95,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 source,
                 ..
             } => self.insert_to_plan(sql_object_name, sql_column_names, source),
+            Statement::Kill { id, .. } => Ok(Plan::SYSTEM(SYSPlan::KillQuery(id.into()))),
             _ => Err(LogicalPlannerError::NotImplemented {
                 err: stmt.to_string(),
             }),

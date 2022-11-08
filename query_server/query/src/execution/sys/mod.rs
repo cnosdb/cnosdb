@@ -1,3 +1,4 @@
+mod kill_query;
 mod show_queries;
 
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use spi::query::{
 
 use crate::dispatcher::query_tracker::QueryTracker;
 
+use self::kill_query::KillQueryTask;
 use self::show_queries::ShowQueriesTask;
 
 pub struct SystemExecution {
@@ -95,6 +97,9 @@ impl SystemTaskFactory {
     fn create_task(&self) -> Box<dyn SystemTask> {
         match &self.plan {
             SYSPlan::ShowQueries => Box::new(ShowQueriesTask::new(self.query_tracker.clone())),
+            SYSPlan::KillQuery(query_id) => {
+                Box::new(KillQueryTask::new(self.query_tracker.clone(), *query_id))
+            }
         }
     }
 }
