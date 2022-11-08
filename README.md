@@ -53,10 +53,13 @@ Please check [Instructions for joining the group](./docs/guidelines/CnosDBWeChat
 
 <img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
 
+## Use CnosDB
+
+To quick use CnosDB, please refer to [Quick Start](docs/quick-start.md).
+
 ## Contributing
 
-* To compile the code by hand, please refer to [Quick Start](docs/get-started.md)。
-* Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to CnosDB.
+Please refer to [Contribution Guide](./CONTRIBUTING_EN.md) to contribute to CnosDB.
 
 ## Contact
 
