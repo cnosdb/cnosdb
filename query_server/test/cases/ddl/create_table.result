@@ -41,13 +41,13 @@ rows
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (101, -1234, 'hello', -1234, false, 1.2, 'beijing', 'shanghai'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Can't cast value -1234 to type UInt64"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Can't cast value -1234 to type UInt64"}
 -- ERROR:  --
 
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (102, -1234, 'hello', 1234, false, 'failed', 'beijing', 'shanghai'); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'failed' to value of Float64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'failed' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (0.1, -1234, 'hello', 1234, true, 1.2, 'beijing', 'shanghai'); --
@@ -98,7 +98,7 @@ rows
 -- EXECUTE SQL: insert createtable.test0(TIME, column1, column2, column3, column4, column5) values (100, -1234, 'hello', 1234, false, 1.2); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: select ALL * from createtable.test0; --

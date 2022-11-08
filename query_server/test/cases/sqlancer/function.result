@@ -29,13 +29,13 @@
 -- EXECUTE SQL: INSERT m1(TIME, f2) VALUES(3894556692135729687, -803836627), (4555921208464455397, -25284663); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f0) VALUES(1191631107457969673, '9195442692708162668'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f1, f0, t0) VALUES(2645614256296351398, FALSE, '7276138141691785489', '4'), (4523696464976555956, TRUE, 'IG', ''), (1252859358085287398, TRUE, '0.12602752741440792', 'pR'), (6971753681441287817, FALSE, 'Y', ''); -- 1ms; --
@@ -86,7 +86,7 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, t1, t0) VALUES(8357345634210517894, 'T!', 't'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(4963944696064243826, 4872214110337414144), (8906039179956143515, 0.8770889075333576645476796329603530466556549072265625); -- 0ms; --
@@ -124,7 +124,7 @@ rows
 -- EXECUTE SQL: INSERT m4(TIME, t0) VALUES(1641279124618714342, '*Yk'), (6904427846636587726, 'Ff(u'), (8501508840232273345, 'CB<7E]'), (4535575739230910918, '9065525203050843594'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0) VALUES(8033277448126677494, -719146430, 0.637860522993480838493951523560099303722381591796875, 'sGh[2[*?Q'); -- 1ms; --
@@ -143,7 +143,7 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, f0) VALUES(7874484282556631665, -184853823), (6101230550563449153, -2085716189); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m4(TIME, t1, f0) VALUES(8297020634243142773, '', FALSE); -- 2ms; --
@@ -162,13 +162,13 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, f0) VALUES(3415710888110090697, -1134968677), (7304141719206898387, -374901666); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(4690298394886424922, 0.7365373850922811715946636468288488686084747314453125); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t2, f1, t0) VALUES(6848635358907743076, '7825004207928641098', 0.02312444644650846203859373417799361050128936767578125, 'n'), (6623331093118139075, 'sW', 0.54727668609854573933404253693879581987857818603515625, '4683132071972081202'); -- 0ms; --
@@ -213,7 +213,7 @@ rows
 -- EXECUTE SQL: INSERT m2(TIME, t0, t2) VALUES(3792508435101275658, 't5sd/,D?7', ',d'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(1128201073465455417, 0.7520663873197779292212317159282974898815155029296875), (8928495096372163377, 419303373304867648), (7728172917082845593, 418797746943372864); -- 0ms; --
@@ -251,7 +251,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(3445745323472776741, FALSE), (4004885874743297811, FALSE); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t0, f1) VALUES(7255535569352092297, '0.14928332458710802', -179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368); -- 0ms; --
@@ -322,13 +322,13 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(4405135655254137840, TRUE), (5010135736173590510, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(7830195537671872289, ''), (2960157668810740158, '0.08834751653967488'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, f0, t1) VALUES(5760405580491443116, 951192745, '[%^TQVy8'); -- 0ms; --
@@ -347,7 +347,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, f2, f0) VALUES(341303125816519819, NULL, '3309273192353118515'), (5491711760282782714, 1700015934, 'Vb5P落ꦀ'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, f0, t0) VALUES(6634512753791616118, 1296743770, 'O~'); -- 0ms; --
@@ -366,25 +366,25 @@ rows
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(681590122943006574, ''); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(7034851862018480562, 0.7802602952255794921399001395911909639835357666015625); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f0) VALUES(4632089311642511003, ''), (1284932644367558414, 's'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m4(TIME, f0) VALUES(8628134510828718363, TRUE), (5632091374246825572, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t0, f0) VALUES(8573280033733946014, 'z', 0.45063825268152390979281562977121211588382720947265625); -- 0ms; --
@@ -403,7 +403,7 @@ rows
 -- EXECUTE SQL: INSERT m1(TIME, t0) VALUES(9025730320552868594, NULL); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m2(TIME, t2, f1, f0, t0) VALUES(3116582321238022207, '', 1692022416413118976, 19144301, ''); -- 0ms; --
@@ -441,7 +441,7 @@ rows
 -- EXECUTE SQL: INSERT m3(TIME, t0) VALUES(5961690929868572693, 'Rn3'), (6927680728977609390, '0.46917222743479703'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, t0, f1, f0, f2) VALUES(567722332927164807, '.1''㔱鎫c9', TRUE, '\g', -1359365092); -- 0ms; --
@@ -1111,7 +1111,7 @@ SUM(Int64(1025561311408145024))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT SUM(1025561311408145024)  as agg0 FROM m3 WHERE CAST(((btrim(m3.t1, m3.t1))||((('')>(substr(m3.t0, m3.f0, m3.f0))))) AS BOOLEAN) GROUP BY ((lower(((m3.t1)||(to_timestamp(6885523128782352370)))))>(((((((m3.t0)||(to_timestamp(5901555110772389986))))||(+ (m3.f0))))||(((abs(-682635667))/(CAST(TRUE AS BIGINT))))))), (((abs(0.41713529943645977215993525533122010529041290283203125))/(((1905482740356971090)*(m3.f0))))) IN (0.77499041932336443228024336349335499107837677001953125), ((CAST(starts_with(m3.t1, m3.t0) AS STRING))||(CAST(((m3.f0)-(signum(m3.f0))) AS BIGINT))) UNION ALL SELECT ALL SUM(1025561311408145024)  as agg0 FROM m3 WHERE NOT (CAST(((btrim(m3.t1, m3.t1))||((('')>(substr(m3.t0, m3.f0, m3.f0))))) AS BOOLEAN)) UNION ALL SELECT ALL SUM(1025561311408145024)  as agg0 FROM m3 WHERE (CAST(((btrim(m3.t1, m3.t1))||((('')>(substr(m3.t0, m3.f0, m3.f0))))) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Execution error: negative substring length not allowed: substr(<str>, -370874632, -370874632)"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Execution error: negative substring length not allowed: substr(<str>, -370874632, -370874632)"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m4; --
@@ -1277,7 +1277,7 @@ COUNT(characterlength(lower(m4.t0)))
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST((((('0.8094767692308924')||(m3.t0)))||(to_timestamp(1277316360868259377))) AS TIMESTAMP) AS BIGINT)) FROM (select t0 from m3 order by t0); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Error parsing '0.80947676923089242010-06-23 18:06:00.868259377' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Error parsing '0.80947676923089242010-06-23 18:06:00.868259377' as timestamp"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(starts_with(CAST(nullif(m3.f0, m3.f0) AS STRING), ((split_part(m3.t1, m3.f0))||(CAST((TRUE) IS TRUE AS BIGINT))))), LAST_VALUE(CAST(to_timestamp(1986281025171801323) AS BIGINT)) OVER () FROM m3 GROUP BY CAST(to_timestamp(399147416573161272) AS BIGINT); --
@@ -1666,7 +1666,7 @@ t1,f0,t0
 -- EXECUTE SQL: SELECT ALL MAX(+ (CAST(((CAST(TRUE AS STRING))||(+ (m3.f0))) AS DOUBLE))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '1-370874632' to value of Float64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '1-370874632' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL MIN(((((- (((2816775355401660872)*(-138267314))))%(CAST(CAST(5611604645754140672 AS BOOLEAN) AS BIGINT))))-(CAST(+ (((768014761)%(-1280188786))) AS BIGINT)))) FROM m4; --
@@ -1714,13 +1714,13 @@ f0,t1,t0
 -- EXECUTE SQL: SELECT AVG(((CAST(CAST(CAST(m1.t0 AS BIGINT) AS STRING) AS BIGINT))%(nullif(- (m1.f2), CAST(m1.t0 AS BIGINT))))), m1.f2 FROM m1 GROUP BY m1.f2, + (CAST(((m1.t0) IS NULL) IS NOT UNKNOWN AS BIGINT)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '8N] ' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '8N] ' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(CAST(lower(CAST(m0.f0 AS STRING)) AS BIGINT)) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '0.8910983143439503' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '0.8910983143439503' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(((upper(CAST(TRUE AS STRING)))||(((((- (399102672))*(octet_length(m0.t0))))/(nullif(9128294059941661688, 467224302)))))), to_timestamp(4855360540374673284), upper(CAST(((m0.t0)LIKE(m0.t0)) AS STRING)), LAST_VALUE((2939004359518327808) BETWEEN (- (((((4937133)/(4427397264085496521)))-(tan(m0.f0))))) AND (CAST(CAST(((-1544300553)+(m0.f0)) AS BIGINT) AS BIGINT))) OVER () FROM m0 WHERE starts_with(md5(((m0.t0)||(to_timestamp(8820075756143557622)))), lower(m0.t0)) GROUP BY ((m0.t0)||(CAST(CAST(CAST(1252075524 AS STRING) AS BOOLEAN) AS DOUBLE))); --
@@ -1838,7 +1838,7 @@ COUNT(octetlength(m0.t0) * ascii(m0.t0))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT COUNT(+ (+ (((octet_length(m0.t0))*(ascii(m0.t0))))))  as agg0 FROM m0 WHERE NOT (CAST((CAST(-778818536 AS DOUBLE)) BETWEEN (sin(m0.f0)) AND (nullif(0.960536205831008516042857081629335880279541015625, m0.f0)) AS BOOLEAN)) UNION ALL SELECT COUNT(+ (+ (((octet_length(m0.t0))*(ascii(m0.t0))))))  as agg0 FROM m0 WHERE NOT (NOT (CAST((CAST(-778818536 AS DOUBLE)) BETWEEN (sin(m0.f0)) AND (nullif(0.960536205831008516042857081629335880279541015625, m0.f0)) AS BOOLEAN))) UNION ALL SELECT ALL COUNT(+ (+ (((octet_length(m0.t0))*(ascii(m0.t0))))))  as agg0 FROM m0 WHERE (NOT (CAST((CAST(-778818536 AS DOUBLE)) BETWEEN (sin(m0.f0)) AND (nullif(0.960536205831008516042857081629335880279541015625, m0.f0)) AS BOOLEAN))) IS NULL GROUP BY - (((length(m0.t0))+(m0.f0)))) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MAX(ascii(m1.f0)) FROM m1; --
@@ -2119,7 +2119,7 @@ time,t0,f0,f1,f2
 -- EXECUTE SQL: SELECT ALL * FROM m1 WHERE CAST(((- (+ (-25284663)))-(CAST(translate(m1.f0, '418797746943372845', m1.f0) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT ALL * FROM m1 WHERE NOT (CAST(((- (+ (-25284663)))-(CAST(translate(m1.f0, '418797746943372845', m1.f0) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT * FROM m1 WHERE (CAST(((- (+ (-25284663)))-(CAST(translate(m1.f0, '418797746943372845', m1.f0) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'N粶i!cm+R.' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'N粶i!cm+R.' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(nullif(CAST(CAST(m2.f0 AS BOOLEAN) AS BIGINT), - (((m2.f0)%(m2.f0))))) FROM m2; --
@@ -2168,13 +2168,13 @@ c]_tcQrM
 
 -- EXECUTE SQL: with m3 as (select t0, t1 from m3 order by t0, t1 limit 1) SELECT ALL m3.t0 FROM m3 WHERE CAST(CAST(((ltrim(m3.t0))||(translate(m3.t1, m3.t0, m3.t0))) AS DOUBLE) AS BOOLEAN) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (CAST(CAST(((ltrim(m3.t0))||(translate(m3.t1, m3.t0, m3.t0))) AS DOUBLE) AS BOOLEAN)) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE (CAST(CAST(((ltrim(m3.t0))||(translate(m3.t1, m3.t0, m3.t0))) AS DOUBLE) AS BOOLEAN)) IS NULL; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '[%^TQVy8' to value of Float64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '[%^TQVy8' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT COUNT(((CAST(to_timestamp_seconds(m3.f0) AS BIGINT))*(((((CAST(m3.f0 AS BIGINT))/(nullif(-925290082, m3.f0))))*(+ (nullif(m3.f0, m3.f0))))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL ARRAY_AGG(CAST(lower(((m3.t0)||(TRUE))) AS STRING)), ((LEAD(nullif(nullif(m3.f0, m3.f0), m3.f0), - (m3.f0), atan2(- (((0.82516268991487529138595391486887820065021514892578125)/(0.2503907561107918677834049958619289100170135498046875))), CAST(CAST(3459226966385057792 AS DOUBLE) AS BIGINT))) OVER ())/(CAST(to_timestamp(3605305428072996707) AS BIGINT))) FROM m3 GROUP BY bit_length(CAST(CAST(0.5223801756078867430943546423804946243762969970703125 AS STRING) AS STRING)); --
@@ -2198,7 +2198,7 @@ I,A,0.545203526083238
 -- EXECUTE SQL: SELECT m2.t1, m2.t2, m2.f1 FROM m2 WHERE (CAST(((CAST(m2.t0 AS STRING))||(+ (m2.f0))) AS BOOLEAN)) IS NOT UNKNOWN; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '~!k297153453615660218' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '~!k297153453615660218' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f2 FROM m1; --
@@ -2288,7 +2288,7 @@ MAX(Boolean(true))
 -- EXECUTE SQL: SELECT COUNT(((((CAST(m2.t2 AS BIGINT))*(nullif(m2.f0, m2.f0))))-(CAST(to_timestamp(1342137666896473430) AS BIGINT)))) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '<[#n3Lb' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '<[#n3Lb' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0; --
@@ -2354,7 +2354,7 @@ m?gbg&),,true
 -- EXECUTE SQL: SELECT m4.t1, m4.t0, m4.f0 FROM m4 WHERE CAST(m4.t0 AS BOOLEAN) UNION ALL SELECT m4.t1, m4.t0, m4.f0 FROM m4 WHERE NOT (CAST(m4.t0 AS BOOLEAN)) UNION ALL SELECT ALL m4.t1, m4.t0, m4.f0 FROM m4 WHERE (CAST(m4.t0 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.t2, m2.f0, m2.t1, m2.t0, m2.f1 FROM m2 ORDER BY m2.t0 DESC, m2.f0 ASC; --
@@ -2605,7 +2605,7 @@ t0,f0
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0 FROM m4 WHERE (((ltrim(m4.t1))LIKE(lower(m4.t0)))) BETWEEN (starts_with(CAST(((((m4.f0)OR(m4.f0)))AND(m4.f0)) AS STRING), ((CAST(to_timestamp(3422035704230732300) AS STRING))||(CAST(m4.t0 AS TIMESTAMP))))) AND ((CAST(NULL AS BIGINT)) NOT IN (289051392, -88103715)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Error parsing '' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Error parsing '' as timestamp"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f0 FROM m3 ORDER BY m3.f0 ASC, m3.f0 ASC; --
@@ -3082,19 +3082,19 @@ f0,t0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 WHERE CAST(((((lower(m0.t0))||(((702529185)%(8678572959805489135)))))||(((((((((((FALSE)OR(TRUE)))AND(FALSE)))AND(TRUE)))OR((m0.f0) NOT IN (0.52533408673121473331235620207735337316989898681640625, 0.3189876226774799317098540996084921061992645263671875, 0.85372543435322467697545789633295498788356781005859375))))AND(NOT (TRUE))))) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '54689935215554652657025291850' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '54689935215554652657025291850' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0 WHERE NOT (CAST(((((lower(m0.t0))||(((702529185)%(8678572959805489135)))))||(((((((((((FALSE)OR(TRUE)))AND(FALSE)))AND(TRUE)))OR((m0.f0) NOT IN (0.52533408673121473331235620207735337316989898681640625, 0.3189876226774799317098540996084921061992645263671875, 0.85372543435322467697545789633295498788356781005859375))))AND(NOT (TRUE))))) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '54689935215554652657025291850' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '54689935215554652657025291850' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0 WHERE (CAST(((((lower(m0.t0))||(((702529185)%(8678572959805489135)))))||(((((((((((FALSE)OR(TRUE)))AND(FALSE)))AND(TRUE)))OR((m0.f0) NOT IN (0.52533408673121473331235620207735337316989898681640625, 0.3189876226774799317098540996084921061992645263671875, 0.85372543435322467697545789633295498788356781005859375))))AND(NOT (TRUE))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '54689935215554652657025291850' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '54689935215554652657025291850' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0; --
@@ -3146,7 +3146,7 @@ true
 -- EXECUTE SQL: SELECT COUNT(((((((CAST(m2.t0 AS BIGINT))/(+ (m2.f0))))+(character_length(m2.t1))))+(length(lower(m2.t0))))) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '~!k' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '~!k' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL COUNT(((((((CAST(m2.t0 AS BIGINT))/(+ (m2.f0))))+(character_length(m2.t1))))+(length(lower(m2.t0)))))  as agg0 FROM m2 WHERE (((+ (((m2.f0)%(m2.f0))))%(CAST(CAST(384165926 AS DOUBLE) AS BIGINT)))) BETWEEN (CAST(((CAST(m2.f1 AS BIGINT))%(- (m2.f0))) AS BIGINT)) AND (((date_part(to_timestamp(6083453367890951674), m2.f0))*(((((m2.f0)%(m2.f0)))%(nullif(m2.f0, m2.f0)))))) UNION ALL SELECT ALL COUNT(((((((CAST(m2.t0 AS BIGINT))/(+ (m2.f0))))+(character_length(m2.t1))))+(length(lower(m2.t0)))))  as agg0 FROM m2 WHERE NOT ((((+ (((m2.f0)%(m2.f0))))%(CAST(CAST(384165926 AS DOUBLE) AS BIGINT)))) BETWEEN (CAST(((CAST(m2.f1 AS BIGINT))%(- (m2.f0))) AS BIGINT)) AND (((date_part(to_timestamp(6083453367890951674), m2.f0))*(((((m2.f0)%(m2.f0)))%(nullif(m2.f0, m2.f0))))))) UNION ALL SELECT ALL COUNT(((((((CAST(m2.t0 AS BIGINT))/(+ (m2.f0))))+(character_length(m2.t1))))+(length(lower(m2.t0)))))  as agg0 FROM m2 WHERE ((((+ (((m2.f0)%(m2.f0))))%(CAST(CAST(384165926 AS DOUBLE) AS BIGINT)))) BETWEEN (CAST(((CAST(m2.f1 AS BIGINT))%(- (m2.f0))) AS BIGINT)) AND (((date_part(to_timestamp(6083453367890951674), m2.f0))*(((((m2.f0)%(m2.f0)))%(nullif(m2.f0, m2.f0))))))) IS NULL) as asdf; --
@@ -3248,7 +3248,7 @@ true
 -- EXECUTE SQL: SELECT ALL MAX(- (CAST(m2.t1 AS DOUBLE))) FROM (select t1 from m2 order by t1); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '' to value of Float64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.f2 FROM m1; --
@@ -3449,7 +3449,7 @@ f0,t1,t0
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1, m3.t0 FROM m3 WHERE ((((((CAST(((((m3.t1)||(to_timestamp(1690585311883110656))))||(((m3.t0)LIKE(m3.t0)))) AS BOOLEAN))OR(CAST(starts_with(m3.t0, m3.t1) AS BOOLEAN))))OR(NOT ((-901658202) NOT IN (-285620474, -1615597340)))))OR(((+ (CAST(m3.f0 AS BIGINT)))IS DISTINCT FROM(((m3.f0)*(length(m3.t1))))))) UNION ALL SELECT ALL m3.f0, m3.t1, m3.t0 FROM m3 WHERE NOT (((((((CAST(((((m3.t1)||(to_timestamp(1690585311883110656))))||(((m3.t0)LIKE(m3.t0)))) AS BOOLEAN))OR(CAST(starts_with(m3.t0, m3.t1) AS BOOLEAN))))OR(NOT ((-901658202) NOT IN (-285620474, -1615597340)))))OR(((+ (CAST(m3.f0 AS BIGINT)))IS DISTINCT FROM(((m3.f0)*(length(m3.t1)))))))) UNION ALL SELECT ALL m3.f0, m3.t1, m3.t0 FROM m3 WHERE (((((((CAST(((((m3.t1)||(to_timestamp(1690585311883110656))))||(((m3.t0)LIKE(m3.t0)))) AS BOOLEAN))OR(CAST(starts_with(m3.t0, m3.t1) AS BOOLEAN))))OR(NOT ((-901658202) NOT IN (-285620474, -1615597340)))))OR(((+ (CAST(m3.f0 AS BIGINT)))IS DISTINCT FROM(((m3.f0)*(length(m3.t1)))))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '*2023-07-28 23:01:51.8831106561' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '*2023-07-28 23:01:51.8831106561' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT MIN(((CAST(to_timestamp(5468993521555465265) AS BIGINT))/(CAST(to_timestamp(6173720494491910995) AS BIGINT)))) FROM m1; --
@@ -3516,7 +3516,7 @@ c]_tcQrM
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE ((upper(CAST(m3.f0 AS STRING)))LIKE(CAST(CAST(btrim(m3.t1, m3.t1) AS TIMESTAMP) AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Error parsing '' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Error parsing '' as timestamp"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(((CAST((((TRUE) IS TRUE)OR((to_timestamp(1790625706534557306)) IS NULL)) AS BIGINT))+(- (CAST(0.88557665748068481459398526567383669316768646240234375 AS BIGINT))))) FROM m3; --
@@ -3727,7 +3727,7 @@ MAX(Int64(2939042495407010816))
 -- EXECUTE SQL: SELECT MIN(nullif(floor(107728388379031552), - (CAST(m1.f1 AS BIGINT)))), TRUE FROM m1 GROUP BY ((+ (CAST((m1.f1) IN (TRUE, FALSE) AS BIGINT)))/(CAST(upper(m1.t0) AS BIGINT))), to_timestamp(2203679857318095721), upper(CAST(((m1.f2)/(m1.f2)) AS STRING)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(m3.f0 AS BIGINT)) FROM m3 ORDER BY m3.t1 ASC; --
@@ -3770,7 +3770,7 @@ os,2939042495407010978
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0 FROM m3 WHERE (abs(- (m3.f0))) BETWEEN (((CAST(- (m3.f0) AS BIGINT))*(((+ (m3.f0))/(CAST(m3.f0 AS BIGINT)))))) AND (+ (+ (nullif(-1713569182, m3.f0)))) UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((abs(- (m3.f0))) BETWEEN (((CAST(- (m3.f0) AS BIGINT))*(((+ (m3.f0))/(CAST(m3.f0 AS BIGINT)))))) AND (+ (+ (nullif(-1713569182, m3.f0))))) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((abs(- (m3.f0))) BETWEEN (((CAST(- (m3.f0) AS BIGINT))*(((+ (m3.f0))/(CAST(m3.f0 AS BIGINT)))))) AND (+ (+ (nullif(-1713569182, m3.f0))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: This feature is not implemented: nullif does not support a literal as first argument"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT CAST(- (AVG(octet_length(lower(m2.t1)))) AS BIGINT), ((+ (+ (((m2.f0)*(m2.f0)))))%(to_hex(CAST(TRUE AS STRING)))), NTH_VALUE(upper(CAST(CAST(m2.t1 AS BIGINT) AS STRING)), CAST(CAST(((((m2.f0)/(m2.f0)))IS NOT DISTINCT FROM(- (m2.f0))) AS STRING) AS BIGINT)) OVER () FROM m2 GROUP BY ((CAST(CAST(((m2.f0)%(m2.f0)) AS STRING) AS DOUBLE))-(nullif(+ (m2.f1), tan(m2.f1)))); --
