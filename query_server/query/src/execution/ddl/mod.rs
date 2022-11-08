@@ -59,11 +59,18 @@ impl QueryExecution for DDLExecution {
     async fn start(&self) -> Result<Output, QueryError> {
         let query_state_machine = self.query_state_machine.clone();
 
-        self.task_factory
+        query_state_machine.begin_schedule();
+
+        let result = self
+            .task_factory
             .create_task()
-            .execute(query_state_machine)
+            .execute(query_state_machine.clone())
             .await
-            .context(query::ExecutionSnafu)
+            .context(query::ExecutionSnafu);
+
+        query_state_machine.end_schedule();
+
+        result
     }
 
     fn cancel(&self) -> query::Result<()> {
@@ -72,11 +79,19 @@ impl QueryExecution for DDLExecution {
     }
 
     fn info(&self) -> QueryInfo {
-        QueryInfo::new(self.query_state_machine.query_id)
+        let qsm = &self.query_state_machine;
+        QueryInfo::new(
+            qsm.query_id,
+            qsm.query.content().to_string(),
+            qsm.query.context().user_info().user.to_string(),
+        )
     }
 
     fn status(&self) -> QueryStatus {
-        QueryStatus::new(self.query_state_machine.state().clone())
+        QueryStatus::new(
+            self.query_state_machine.state().clone(),
+            self.query_state_machine.duration(),
+        )
     }
 }
 

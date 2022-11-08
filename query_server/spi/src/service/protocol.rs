@@ -21,6 +21,12 @@ impl From<u64> for QueryId {
     }
 }
 
+impl ToString for QueryId {
+    fn to_string(&self) -> String {
+        self.0.to_string()
+    }
+}
+
 #[derive(Clone)]
 pub struct UserInfo {
     pub user: String,

@@ -112,10 +112,18 @@ impl QueryExecution for SqlQueryExecution {
     }
 
     fn info(&self) -> QueryInfo {
-        QueryInfo::new(self.query_state_machine.query_id)
+        let qsm = &self.query_state_machine;
+        QueryInfo::new(
+            qsm.query_id,
+            qsm.query.content().to_string(),
+            qsm.query.context().user_info().user.to_string(),
+        )
     }
 
     fn status(&self) -> QueryStatus {
-        QueryStatus::new(self.query_state_machine.state().clone())
+        QueryStatus::new(
+            self.query_state_machine.state().clone(),
+            self.query_state_machine.duration(),
+        )
     }
 }
