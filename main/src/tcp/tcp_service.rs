@@ -1,11 +1,15 @@
 use futures::future::ok;
+use futures::Future;
 use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
-use std::io::{BufReader, Error, Read};
-use std::net::SocketAddr;
-use std::net::{TcpListener, TcpStream};
+use std::net::{self, SocketAddr};
+use tokio::io::BufReader;
+
+use std::net::TcpStream as StdTcpStream;
 use std::{collections::HashMap, sync::Arc};
 //use tokio::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot::Receiver;
 
 use tokio::sync::oneshot;
 use tokio::time::{self, Duration};
@@ -49,25 +53,8 @@ impl Service for TcpService {
         let addr = self.addr.clone();
         let dbms = self.dbms.clone();
         let kv_inst = self.kv_inst.clone();
-        let acceptor_fn = async move {
-            let listener = TcpListener::bind(addr.to_string()).unwrap();
-            info!("tcp server start addr: {}", addr);
 
-            tokio::select! {
-                res = service_run(listener,dbms,kv_inst) => {
-                    if let Err(err) = res {
-                        error!(cause = %err, "failed to accept");
-                    }
-                }
-
-                _ = rx => {
-                    info!("tcp server shutting down");
-                }
-            }
-        };
-
-        let join_handle = tokio::spawn(acceptor_fn);
-
+        let join_handle = tokio::spawn(service_run(addr, dbms, kv_inst));
         self.handle = Some(ServiceHandle::new(
             "tcp service".to_string(),
             join_handle,
@@ -84,42 +71,30 @@ impl Service for TcpService {
     }
 }
 
-async fn service_run(
-    listener: TcpListener,
-    dbms: DBMSRef,
-    kv_inst: EngineRef,
-) -> Result<(), Error> {
-    let mut backoff = 1;
+async fn service_run(addr: SocketAddr, dbms: DBMSRef, kv_inst: EngineRef) {
+    let listener = TcpListener::bind(addr.to_string()).unwrap();
+    info!("tcp server start addr: {}", addr);
 
     loop {
         match listener.accept() {
             Ok((client, address)) => {
-                backoff = 1;
-
-                debug!("client address: {}", address);
+                debug!("tcp client address: {}", address);
 
                 let dbms_ = dbms.clone();
                 let kv_inst_ = kv_inst.clone();
                 let processor_fn = async move {
-                    info!("=====process_client begin");
+                    info!("process client begin");
                     let result = process_client(client, dbms_, kv_inst_).await;
-                    info!("=====process_client {:#?}", result);
+                    info!("process client result: {:#?}", result);
                 };
 
-                let handler = tokio::spawn(processor_fn);
-                handler.await.unwrap(); //todo
+                let _handler = tokio::spawn(processor_fn);
+                _handler.await.unwrap(); //todo
             }
 
             Err(err) => {
-                info!("=== {}", err.to_string());
-                if backoff > 64 {
-                    // Accept has failed too many times. Return the error.
-                    return Err(err.into());
-                }
-
-                time::sleep(Duration::from_secs(backoff)).await;
-                // Double the back off
-                backoff *= 2;
+                info!("tcp server accetp error: {}", err.to_string());
+                time::sleep(Duration::from_secs(1)).await;
             }
         }
     }
@@ -130,6 +105,11 @@ async fn process_client(
     dbms: DBMSRef,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
+    //let mut client = client.into_std()?;
+    //client.set_nonblocking(false)?;
+
+    //let reader = BufReader::new(client);
+
     loop {
         let recv_cmd = recv_command(&mut client)?;
         match recv_cmd {
@@ -142,7 +122,7 @@ async fn process_client(
 }
 
 async fn process_vnode_write_command(
-    client: &mut TcpStream,
+    client: &mut StdTcpStream,
     cmd: WriteVnodeRequest,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
