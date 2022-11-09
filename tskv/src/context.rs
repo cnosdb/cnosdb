@@ -29,7 +29,7 @@ impl GlobalContext {
     }
 
     /// # Examples
-    ///  ```
+    ///  ```ignore
     ///  assert_eq!(foo.file_id_next(), 0);
     ///  assert_eq!(foo.file_id(), 1);
     /// ```
@@ -50,7 +50,7 @@ impl GlobalContext {
     }
 
     /// # Examples
-    ///  ```
+    ///  ```ignore
     ///  assert_eq!(foo.tsfamily_id_next(), 0);
     ///  assert_eq!(foo.tsfamily_id(), 1);
     /// ```
