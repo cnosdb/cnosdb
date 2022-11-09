@@ -24,7 +24,7 @@ backtrace = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
-ctrlc = { workspace = true }
+ctrlc = { workspace = true, features = ["termination"] }
 datafusion = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
