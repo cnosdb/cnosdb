@@ -25,6 +25,12 @@ pub struct Config {
 
     #[clap(long, env = "RAFT_SNAPSHOT_PER_EVENTS", default_value = "500")]
     pub snapshot_per_events: u32,
+
+    #[clap(long, env = "META_LOGS_PATH", default_value = "/tmp/cnosdb/meta/logs")]
+    pub logs_path: String,
+
+    #[clap(long, env = "META_LOGS_LEVEL", default_value = "info")]
+    pub logs_level: String,
 }
 
 impl Default for Config {

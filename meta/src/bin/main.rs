@@ -1,10 +1,10 @@
 use clap::Parser;
-use config as global_config;
 use meta::service::connection::Connections;
-use meta::start_raft_node;
 use meta::store::Store;
 use meta::ExampleTypeConfig;
+use meta::{start_raft_node, store};
 use openraft::Raft;
+use store::config::Config;
 use trace::init_global_tracing;
 
 pub type ExampleRaft = Raft<ExampleTypeConfig, Connections, Store>;
@@ -21,13 +21,11 @@ pub struct Option {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let global_config = global_config::get_config("../config/config.toml");
-    let mut _trace_guard = init_global_tracing(
-        &global_config.log.path,
-        "meta_server.log",
-        &global_config.log.level,
-    );
-    // Parse the parameters passed by arguments.
     let options = Option::parse();
+    let config = Config::default();
+
+    let logs_path = format!("{}/{}", config.logs_path, options.id);
+    let _ = init_global_tracing(&logs_path, "meta_server.log", &config.logs_level);
+
     start_raft_node(options.id, options.http_addr).await
 }

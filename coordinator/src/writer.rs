@@ -119,6 +119,12 @@ impl<'a> VnodeMapping<'a> {
     }
 
     pub fn map_point(&mut self, meta_client: MetaClientRef, point: models::Point) {
+        if let Some(val) = meta_client.database_min_ts(&point.db) {
+            if point.timestamp < val {
+                return;
+            }
+        }
+
         if let Ok(info) =
             meta_client.locate_replcation_set_for_write(&point.db, point.hash_id, point.timestamp)
         {

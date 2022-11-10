@@ -37,7 +37,7 @@ pub mod store;
 
 use crate::store::config::Config;
 
-use models::meta_data::*;
+use models::{meta_data::*, utils};
 
 #[derive(Debug)]
 pub struct SnapshotInfo {
@@ -786,7 +786,12 @@ fn process_create_bucket(
             .into_values()
             .collect();
 
-    if node_list.len() == 0 || db_info.shard == 0 || db_info.replications > node_list.len() as u32 {
+    let now = utils::now_timestamp();
+    if node_list.len() == 0
+        || db_info.shard == 0
+        || db_info.replications > node_list.len() as u32
+        || *ts < now - db_info.ttl
+    {
         return KvResp {
             err_code: -1,
             meta_data: TenantMetaData::new(),
