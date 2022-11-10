@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use models::codec::Encoding;
 use models::schema::TskvTableSchema;
 use models::utils::split_id;
 use models::{
@@ -182,12 +183,14 @@ impl FlushTask {
             // Write the merged data into files.
             for (field_id, dlt_blks, tsm_blks) in merged_series_data {
                 let (table_field_id, _) = split_id(field_id);
-                let encoding = DataBlockEncoding(
+                let encoding = DataBlockEncoding::new(
+                    Encoding::Default,
                     field_id_code_type_map
                         .get(&table_field_id)
                         .copied()
-                        .unwrap_or(0),
+                        .unwrap_or_default(),
                 );
+
                 if !dlt_blks.is_empty() {
                     if delta_writer.is_none() {
                         let writer = self.new_writer(true)?;
@@ -223,9 +226,9 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer)
     }
 
-    fn build_codec_map(&self, schema: &TskvTableSchema, map: &mut HashMap<ColumnId, u8>) {
+    fn build_codec_map(&self, schema: &TskvTableSchema, map: &mut HashMap<ColumnId, Encoding>) {
         for i in schema.columns().iter() {
-            map.insert(i.id, i.codec);
+            map.insert(i.id, i.encoding);
         }
     }
 
@@ -417,6 +420,7 @@ pub mod flush_tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
+    use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
@@ -447,7 +451,7 @@ pub mod flush_tests {
                 id: *i,
                 name: i.to_string(),
                 column_type: ColumnType::Field(ValueType::Unknown),
-                codec: 0,
+                encoding: Encoding::Default,
             })
             .collect();
 

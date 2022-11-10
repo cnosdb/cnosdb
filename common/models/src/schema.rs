@@ -29,6 +29,7 @@ use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
+use crate::codec::Encoding;
 use crate::{ColumnId, SchemaId, ValueType};
 
 pub type TableSchemaRef = Arc<TskvTableSchema>;
@@ -248,7 +249,7 @@ pub struct TableColumn {
     pub id: ColumnId,
     pub name: String,
     pub column_type: ColumnType,
-    pub codec: u8,
+    pub encoding: Encoding,
 }
 
 impl From<&TableColumn> for ArrowField {
@@ -269,12 +270,12 @@ impl From<TableColumn> for ArrowField {
 }
 
 impl TableColumn {
-    pub fn new(id: ColumnId, name: String, column_type: ColumnType, codec: u8) -> Self {
+    pub fn new(id: ColumnId, name: String, column_type: ColumnType, encoding: Encoding) -> Self {
         Self {
             id,
             name,
             column_type,
-            codec,
+            encoding,
         }
     }
     pub fn new_with_default(name: String, column_type: ColumnType) -> Self {
@@ -282,7 +283,7 @@ impl TableColumn {
             id: 0,
             name,
             column_type,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -291,7 +292,7 @@ impl TableColumn {
             id,
             name: TIME_FIELD_NAME.to_string(),
             column_type: ColumnType::Time,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -300,7 +301,7 @@ impl TableColumn {
             id,
             name,
             column_type: ColumnType::Tag,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 

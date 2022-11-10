@@ -8,6 +8,7 @@ use datafusion::{
     },
 };
 use futures::Stream;
+use models::codec::Encoding;
 use models::{
     predicate::domain::PredicateRef,
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
@@ -43,15 +44,15 @@ impl TableScanStream {
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD {
-                let codec = match table_schema.column(TIME_FIELD) {
-                    None => 0,
-                    Some(v) => v.codec,
+                let encoding = match table_schema.column(TIME_FIELD) {
+                    None => Encoding::Default,
+                    Some(v) => v.encoding,
                 };
                 proj_fileds.push(TableColumn::new(
                     0,
                     TIME_FIELD.to_string(),
                     ColumnType::Time,
-                    codec,
+                    encoding,
                 ));
                 continue;
             }

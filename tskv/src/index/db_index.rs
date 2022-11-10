@@ -22,6 +22,7 @@ use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
 use libc::read;
+use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
     tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
@@ -263,11 +264,11 @@ impl DBIndex {
 
         let mut schema_change = false;
         let mut check_fn = |field: &mut TableColumn| -> IndexResult<()> {
-            let codec = match schema.column(&field.name) {
-                None => 0,
-                Some(v) => v.codec,
+            let encoding = match schema.column(&field.name) {
+                None => Encoding::Default,
+                Some(v) => v.encoding,
             };
-            field.codec = codec;
+            field.encoding = encoding;
 
             match schema.column(&field.name) {
                 Some(v) => {
