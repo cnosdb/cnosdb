@@ -41,7 +41,7 @@ crossbeam = "0.8"
 crossbeam-channel = "0.5"
 ctrlc = "3"
 dashmap = "5.2"
-datafusion = { git = "https://github.com/apache/arrow-datafusion.git", rev = "7e944ede86457fe0f43be44e0e5550229ecaf008", features = ["scheduler"] }
+datafusion = { version = "14.0.0", features = ["scheduler"] }
 dirs = "4.0.0"
 env_logger = "0.9"
 evmap = "10.0"
