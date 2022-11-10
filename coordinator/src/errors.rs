@@ -1,7 +1,7 @@
 use crate::meta_client;
 
 use snafu::Snafu;
-use std::io;
+use std::{fmt::Debug, io};
 
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
@@ -40,6 +40,11 @@ pub enum CoordinatorError {
     #[snafu(display("not found tenant: {}", name))]
     TenantNotFound { name: String },
 
+    #[snafu(display("invalid flatbuffers: {}", source))]
+    InvalidFlatbuffer {
+        source: flatbuffers::InvalidFlatbuffer,
+    },
+
     #[snafu(display("unknow coordinator command: {}", cmd))]
     UnKnownCoordCmd { cmd: u32 },
 
@@ -48,6 +53,9 @@ pub enum CoordinatorError {
 
     #[snafu(display("unexpect response message"))]
     UnExpectResponse,
+
+    #[snafu(display("error msg: {}", msg))]
+    CommonError { msg: String },
 }
 
 impl From<meta_client::MetaError> for CoordinatorError {
@@ -69,6 +77,22 @@ impl From<io::Error> for CoordinatorError {
 impl From<tskv::Error> for CoordinatorError {
     fn from(err: tskv::Error) -> Self {
         CoordinatorError::TskvError { source: err }
+    }
+}
+
+impl<T> From<tokio::sync::mpsc::error::SendError<T>> for CoordinatorError {
+    fn from(err: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        CoordinatorError::ChannelSend {
+            msg: err.to_string(),
+        }
+    }
+}
+
+impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
+    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
+        CoordinatorError::ChannelRecv {
+            msg: err.to_string(),
+        }
     }
 }
 

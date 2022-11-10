@@ -787,15 +787,19 @@ fn process_create_bucket(
             .collect();
 
     let now = utils::now_timestamp();
-    if node_list.len() == 0
-        || db_info.shard == 0
-        || db_info.replications > node_list.len() as u32
-        || *ts < now - db_info.ttl
-    {
+    if node_list.len() == 0 || db_info.shard == 0 || db_info.replications > node_list.len() as u32 {
         return KvResp {
             err_code: -1,
             meta_data: TenantMetaData::new(),
             err_msg: format!("database {} attribute invalid!", db),
+        };
+    }
+
+    if *ts < now - db_info.ttl {
+        return KvResp {
+            err_code: -1,
+            meta_data: TenantMetaData::new(),
+            err_msg: format!("database {} create expired bucket not permit!", db),
         };
     }
 

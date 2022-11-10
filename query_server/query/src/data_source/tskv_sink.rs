@@ -1,14 +1,13 @@
 use async_trait::async_trait;
-use coordinator::errors::CoordinatorError;
+
 use coordinator::service::CoordinatorRef;
-use coordinator::writer::VnodeMapping;
 use datafusion::arrow::record_batch::RecordBatch;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
+use models::consistency_level::ConsistencyLevel;
 use models::schema::TableSchema;
-use models::Point;
 
-use protos::models as fb_models;
+use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use spi::catalog::DEFAULT_CATALOG;
 use trace::debug;
@@ -21,8 +20,7 @@ use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
 use super::CoordinatorSnafu;
 use super::Result;
 
-use super::{InvalidFlatbufferSnafu, PointUtilSnafu};
-use crate::data_source::DataSourceError::CommonError;
+use super::PointUtilSnafu;
 
 pub struct TskvRecordBatchSink {
     engine: EngineRef,
@@ -47,32 +45,13 @@ impl RecordBatchSink for TskvRecordBatchSink {
             .context(PointUtilSnafu)?;
         timer.done();
 
-        let tenant = DEFAULT_CATALOG.to_string();
-        let meta_client = self
-            .coord
-            .tenant_meta(&tenant)
-            .ok_or(CoordinatorError::TenantNotFound { name: tenant })
-            .context(CoordinatorSnafu)?;
-
-        let mut mapping = VnodeMapping::new();
-        let fb_points =
-            flatbuffers::root::<fb_models::Points>(&points).context(InvalidFlatbufferSnafu)?;
-        let fb_points = fb_points.points().unwrap();
-        for item in fb_points {
-            let point = Point::from_flatbuffers(&item).map_err(|err| CommonError {
-                msg: err.to_string(),
-            })?;
-
-            mapping.map_point(meta_client.clone(), point);
-        }
-
         // points write request
         let timer = self.metrics.elapsed_point_write().timer();
-        // let req = WritePointsRpcRequest { version: 0, points };
+        let req = WritePointsRpcRequest { version: 0, points };
         // let _ = self.engine.write(0, req).await.context(TskvSnafu)?;
 
         self.coord
-            .write_points(&mut mapping)
+            .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
             .await
             .context(CoordinatorSnafu)?;
 

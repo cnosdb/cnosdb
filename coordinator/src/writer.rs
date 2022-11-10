@@ -1,17 +1,18 @@
 use async_channel as channel;
 use flatbuffers::FlatBufferBuilder;
+use futures::future::ok;
 use models::meta_data::*;
 use models::utils::now_timestamp;
 use models::RwLockRef;
 use parking_lot::{RwLock, RwLockReadGuard};
 use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse};
-use protos::models::{FieldBuilder, Point, PointArgs, Points, PointsArgs, TagBuilder};
+use protos::models::{FieldBuilder, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::io::{BufWriter, Write};
-use std::net::{TcpListener, TcpStream};
+//use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tskv::engine::EngineRef;
@@ -26,16 +27,10 @@ use crate::meta_client::{MetaClientRef, MetaRef};
 use trace::debug;
 use trace::info;
 
-pub struct WritePointsRequest {
-    db: String,
-    level: models::consistency_level::ConsistencyLevel,
-    request: WritePointsRpcRequest,
-}
-
 pub struct VnodePoints<'a> {
     db: String,
     fbb: FlatBufferBuilder<'a>,
-    offset: Vec<flatbuffers::WIPOffset<Point<'a>>>,
+    offset: Vec<flatbuffers::WIPOffset<fb_models::Point<'a>>>,
 
     pub data: Vec<u8>,
     pub repl_set: ReplcationSet,
@@ -86,7 +81,8 @@ impl VnodePoints<'_> {
             timestamp: point.timestamp,
         };
 
-        self.offset.push(Point::create(&mut self.fbb, &point_args));
+        self.offset
+            .push(fb_models::Point::create(&mut self.fbb, &point_args));
     }
 
     pub fn finish(&mut self) {
@@ -118,25 +114,34 @@ impl<'a> VnodeMapping<'a> {
         }
     }
 
-    pub fn map_point(&mut self, meta_client: MetaClientRef, point: models::Point) {
+    pub fn map_point(
+        &mut self,
+        meta_client: MetaClientRef,
+        point: models::Point,
+    ) -> CoordinatorResult<()> {
         if let Some(val) = meta_client.database_min_ts(&point.db) {
             if point.timestamp < val {
-                return;
+                return Err(CoordinatorError::CommonError {
+                    msg: "write expired time data not permit".to_string(),
+                });
             }
         }
 
-        if let Ok(info) =
-            meta_client.locate_replcation_set_for_write(&point.db, point.hash_id, point.timestamp)
-        {
-            //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
-            self.sets.entry(info.id).or_insert(info.clone());
-            let entry = self
-                .points
-                .entry(info.id)
-                .or_insert(VnodePoints::new(point.db.clone(), info));
+        //let full_name = format!("{}.{}", meta_client.tenant_name(), db);
+        let info = meta_client.locate_replcation_set_for_write(
+            &point.db,
+            point.hash_id,
+            point.timestamp,
+        )?;
+        self.sets.entry(info.id).or_insert(info.clone());
+        let entry = self
+            .points
+            .entry(info.id)
+            .or_insert(VnodePoints::new(point.db.clone(), info));
 
-            entry.add_point(point);
-        }
+        entry.add_point(point);
+
+        return Ok(());
     }
 }
 
@@ -167,9 +172,30 @@ impl PointWriter {
 
     pub async fn write_points(
         &self,
-        mapping: &mut VnodeMapping<'_>,
+        req: &WritePointsRequest,
         hh_manager: Arc<HintedOffManager>,
     ) -> CoordinatorResult<()> {
+        let meta_client =
+            self.meta_manager
+                .tenant_meta(&req.tenant)
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: req.tenant.clone(),
+                })?;
+
+        let mut mapping = VnodeMapping::new();
+        let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
+            .context(InvalidFlatbufferSnafu)?;
+        let fb_points = fb_points.points().unwrap();
+        for item in fb_points {
+            let point = models::Point::from_flatbuffers(&item).map_err(|err| {
+                CoordinatorError::CommonError {
+                    msg: err.to_string(),
+                }
+            })?;
+
+            mapping.map_point(meta_client.clone(), point)?;
+        }
+
         let mut requests = vec![];
         for (id, points) in mapping.points.iter_mut() {
             points.finish();
@@ -220,17 +246,8 @@ impl PointWriter {
                     block: HintedOffBlock::new(now_timestamp(), vnode_id, data),
                 };
 
-                self.hh_sender.send(request).await.map_err(|err| {
-                    CoordinatorError::ChannelSend {
-                        msg: err.to_string(),
-                    }
-                })?;
-
-                let result = receiver
-                    .await
-                    .map_err(|err| CoordinatorError::ChannelSend {
-                        msg: err.to_string(),
-                    })?;
+                self.hh_sender.send(request).await?;
+                let result = receiver.await?;
 
                 return result;
             }
@@ -256,11 +273,11 @@ impl PointWriter {
             }
         }
 
-        let mut conn = self.get_node_conn(node_id)?;
+        let mut conn = self.get_node_conn(node_id).await?;
         let req_cmd = WriteVnodeRequest { vnode_id, data };
-        send_command(&mut conn, &CoordinatorCmd::WriteVnodePointCmd(req_cmd))?;
-        let rsp_cmd = recv_command(&mut conn)?;
-        if let CoordinatorCmd::CommonResponseCmd(msg) = rsp_cmd {
+        send_command(&mut conn, &CoordinatorTcpCmd::WriteVnodePointCmd(req_cmd)).await?;
+        let rsp_cmd = recv_command(&mut conn).await?;
+        if let CoordinatorTcpCmd::CommonResponseCmd(msg) = rsp_cmd {
             self.put_node_conn(node_id, conn);
             if msg.code == 0 {
                 return Ok(());
@@ -274,7 +291,7 @@ impl PointWriter {
         }
     }
 
-    fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
+    async fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
         {
             let mut write = self.conn_map.write();
             let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
@@ -284,7 +301,7 @@ impl PointWriter {
         }
 
         let info = self.meta_manager.admin_meta().node_info_by_id(node_id)?;
-        let client = TcpStream::connect(info.tcp_addr)?;
+        let client = TcpStream::connect(info.tcp_addr).await?;
 
         return Ok(client);
     }

@@ -173,11 +173,11 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Run {} => {
                 let tskv_options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
-                let coord_service = Arc::new(CoordService::new(
+                let coord_service = CoordService::new(
                     kv_inst.clone(),
                     global_config.cluster.clone(),
                     global_config.hintedoff.clone(),
-                ));
+                );
 
                 let dbms = Arc::new(
                     make_cnosdbms(kv_inst.clone(), coord_service.clone()).expect("make dbms"),

@@ -5,10 +5,9 @@ use spi::server::dbms::DBMSRef;
 use std::net::{self, SocketAddr};
 use tokio::io::BufReader;
 
-use std::net::TcpStream as StdTcpStream;
 use std::{collections::HashMap, sync::Arc};
-//use tokio::net::{TcpListener, TcpStream};
-use std::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream};
+// use std::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot::Receiver;
 
 use tokio::sync::oneshot;
@@ -72,11 +71,11 @@ impl Service for TcpService {
 }
 
 async fn service_run(addr: SocketAddr, dbms: DBMSRef, kv_inst: EngineRef) {
-    let listener = TcpListener::bind(addr.to_string()).unwrap();
+    let listener = TcpListener::bind(addr.to_string()).await.unwrap();
     info!("tcp server start addr: {}", addr);
 
     loop {
-        match listener.accept() {
+        match listener.accept().await {
             Ok((client, address)) => {
                 debug!("tcp client address: {}", address);
 
@@ -111,10 +110,10 @@ async fn process_client(
     //let reader = BufReader::new(client);
 
     loop {
-        let recv_cmd = recv_command(&mut client)?;
+        let recv_cmd = recv_command(&mut client).await?;
         match recv_cmd {
-            CoordinatorCmd::CommonResponseCmd(cmd) => {}
-            CoordinatorCmd::WriteVnodePointCmd(cmd) => {
+            CoordinatorTcpCmd::CommonResponseCmd(cmd) => {}
+            CoordinatorTcpCmd::WriteVnodePointCmd(cmd) => {
                 process_vnode_write_command(&mut client, cmd, kv_inst.clone()).await?;
             }
         }
@@ -122,7 +121,7 @@ async fn process_client(
 }
 
 async fn process_vnode_write_command(
-    client: &mut StdTcpStream,
+    client: &mut TcpStream,
     cmd: WriteVnodeRequest,
     kv_inst: EngineRef,
 ) -> CoordinatorResult<()> {
@@ -138,11 +137,11 @@ async fn process_vnode_write_command(
     if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
         resp.code = -1;
         resp.data = err.to_string();
-        send_command(client, &CoordinatorCmd::CommonResponseCmd(resp))?;
+        send_command(client, &CoordinatorTcpCmd::CommonResponseCmd(resp)).await?;
         return Err(err.into());
     } else {
         info!("success write data to vnode: {}", cmd.vnode_id);
-        send_command(client, &CoordinatorCmd::CommonResponseCmd(resp))?;
+        send_command(client, &CoordinatorTcpCmd::CommonResponseCmd(resp)).await?;
         return Ok(());
     }
 }
