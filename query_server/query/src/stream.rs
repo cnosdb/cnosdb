@@ -10,7 +10,7 @@ use datafusion::{
 use futures::Stream;
 use models::{
     predicate::domain::PredicateRef,
-    schema::{ColumnType, TableColumn, TableSchema, TIME_FIELD},
+    schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
 };
 
 use tskv::engine::EngineRef;
@@ -32,7 +32,7 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(
-        table_schema: TableSchema,
+        table_schema: TskvTableSchema,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         batch_size: usize,
@@ -66,7 +66,7 @@ impl TableScanStream {
         }
 
         let proj_table_schema =
-            TableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
+            TskvTableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
         let filter = filter
             .filter()

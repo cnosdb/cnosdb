@@ -6,7 +6,7 @@ use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
 use datafusion::prelude::Column;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -136,11 +136,11 @@ impl Engine for MockEngine {
 
     fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
-        Ok(Some(TableSchema::new(
+        Ok(Some(TableSchema::TsKvTableSchema(TskvTableSchema::new(
             db.to_string(),
             tab.to_string(),
             Default::default(),
-        )))
+        ))))
     }
 
     fn get_series_id_by_filter(

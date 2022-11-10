@@ -12,7 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
@@ -23,7 +23,7 @@ use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
 use crate::Error::InvalidPoint;
 use crate::{
-    error::{self, Result},
+    error::{self, IndexErrSnafu, Result},
     memcache::{RowData, RowGroup},
     version_set::VersionSet,
     Error, TimeRange, TseriesFamilyId,
@@ -172,7 +172,7 @@ impl Database {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
-            self.build_row_data(&mut map, point, sid)
+            self.build_row_data(&mut map, point, sid)?
         }
         Ok(map)
     }
@@ -193,7 +193,7 @@ impl Database {
                 }
             }
 
-            self.build_row_data(&mut map, point, sid)
+            self.build_row_data(&mut map, point, sid)?
         }
         Ok(map)
     }
@@ -203,27 +203,26 @@ impl Database {
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
         point: Point,
         sid: u64,
-    ) {
+    ) -> Result<()> {
         let table_name = String::from_utf8(point.tab().unwrap().to_vec()).unwrap();
-        let table_schema = match self.index.get_table_schema(&table_name) {
-            Ok(schema) => match schema {
-                None => {
-                    error!("failed get schema for table {}", table_name);
-                    return;
-                }
-                Some(schema) => schema,
-            },
-            Err(_) => {
-                error!("failed get schema for table {}", table_name);
-                return;
-            }
+        let table_schema = self
+            .index
+            .get_table_schema(&table_name)
+            .context(IndexErrSnafu)?;
+        let table_schema = match table_schema {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+        let table_schema = match table_schema {
+            TableSchema::TsKvTableSchema(schema) => schema,
+            _ => return Err(Error::NotFoundTable { table_name }),
         };
 
         let row = RowData::point_to_row_data(point, &table_schema);
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-            schema: TableSchema::default(),
+            schema: TskvTableSchema::default(),
             rows: vec![],
             range: TimeRange {
                 min_ts: i64::MAX,
@@ -240,6 +239,7 @@ impl Database {
         entry.size += row.size();
         //todo: remove this copy
         entry.rows.push(row);
+        Ok(())
     }
 
     fn build_index(&self, info: &Point) -> Result<u64> {
@@ -379,6 +379,10 @@ pub(crate) fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
+            let fields = match fields {
+                TableSchema::TsKvTableSchema(schema) => schema,
+                _ => return Err(Error::NotFoundTable { table_name: table }),
+            };
             let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()

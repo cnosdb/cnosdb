@@ -21,8 +21,9 @@ members = [
 default-members = ["main"]
 
 [workspace.dependencies]
-async-recursion = "1.0.0"
 actix-rt = "2.7.0"
+arrow-schema = {version = "25.0.0", features = ["serde"]}
+async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"
 base64 = { version = "0.13" }

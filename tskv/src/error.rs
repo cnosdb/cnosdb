@@ -111,4 +111,7 @@ pub enum Error {
 
     #[snafu(display("tags or fields can't be empty"))]
     InvalidPoint,
+
+    #[snafu(display("table not found for {}", table_name))]
+    NotFoundTable { table_name: String },
 }

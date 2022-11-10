@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use models::schema::TableSchema;
+use models::schema::TskvTableSchema;
 use models::utils::split_id;
 use models::{
     utils as model_utils, ColumnId, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp,
@@ -223,7 +223,7 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer)
     }
 
-    fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<ColumnId, u8>) {
+    fn build_codec_map(&self, schema: &TskvTableSchema, map: &mut HashMap<ColumnId, u8>) {
         for i in schema.columns().iter() {
             map.insert(i.id, i.codec);
         }
@@ -391,7 +391,7 @@ pub fn run_flush_memtable_job(
             .run(version, &mut edits)?;
 
             if let Err(e) = compact_task_sender.send(*tsf_id) {
-                log_error!(e);
+                warn!("failed to send compact task, {}", e);
             }
         }
     }
@@ -404,8 +404,8 @@ pub fn run_flush_memtable_job(
         cb: task_state_sender,
     };
 
-    if summary_task_sender.send(task).is_err() {
-        error!("failed to send Summary task,the edits not be loaded!")
+    if let Err(e) = summary_task_sender.send(task) {
+        warn!("failed to send Summary task, {}", e);
     }
     Ok(())
 }
@@ -417,7 +417,7 @@ pub mod flush_tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use models::schema::{ColumnType, TableColumn, TableSchema};
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
@@ -440,7 +440,7 @@ pub mod flush_tests {
 
     use super::FlushTask;
 
-    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TableSchema {
+    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
             .iter()
             .map(|i| TableColumn {
@@ -451,7 +451,7 @@ pub mod flush_tests {
             })
             .collect();
 
-        TableSchema::new("public".to_string(), "".to_string(), fields)
+        TskvTableSchema::new("public".to_string(), "".to_string(), fields)
     }
 
     #[test]

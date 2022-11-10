@@ -510,7 +510,7 @@ impl Engine for TsKv {
     }
 
     fn create_table(&self, schema: &TableSchema) -> Result<()> {
-        if let Some(db) = self.version_set.write().get_db(&schema.db) {
+        if let Some(db) = self.version_set.write().get_db(&schema.db()) {
             db.read()
                 .get_index()
                 .create_table(schema)
@@ -520,9 +520,9 @@ impl Engine for TsKv {
                 })
                 .context(IndexErrSnafu)
         } else {
-            error!("Database {}, not found", schema.db);
+            error!("Database {}, not found", schema.db());
             Err(Error::DatabaseNotFound {
-                database: schema.db.clone(),
+                database: schema.db(),
             })
         }
     }
