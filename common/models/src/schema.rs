@@ -186,7 +186,7 @@ impl TskvTableSchema {
         self.columns.get(idx)
     }
 
-    pub fn columns(&self) -> &Vec<TableColumn> {
+    pub fn columns(&self) -> &[TableColumn] {
         &self.columns
     }
 
@@ -361,6 +361,15 @@ impl ColumnType {
             _ => "Error filed type not supported",
         }
     }
+
+    pub fn as_column_type_str(&self) -> &'static str {
+        match self {
+            Self::Tag => "TAG",
+            Self::Field(_) => "FIELD",
+            Self::Time => "TIME",
+        }
+    }
+
     pub fn field_type(&self) -> u8 {
         match self {
             Self::Field(ValueType::Float) => 0,
@@ -381,6 +390,21 @@ impl ColumnType {
             4 => Self::Field(ValueType::String),
             5 => Self::Time,
             _ => Self::Field(ValueType::Unknown),
+        }
+    }
+
+    pub fn to_sql_type_str(&self) -> &'static str {
+        match self {
+            Self::Tag => "STRING",
+            Self::Time => "TIMESTAMP",
+            Self::Field(value_type) => match value_type {
+                ValueType::String => "STRING",
+                ValueType::Integer => "BIGINT",
+                ValueType::Unsigned => "BIGINT UNSIGNED",
+                ValueType::Float => "DOUBLE",
+                ValueType::Boolean => "BOOLEAN",
+                ValueType::Unknown => "UNKNOWN",
+            },
         }
     }
 }
