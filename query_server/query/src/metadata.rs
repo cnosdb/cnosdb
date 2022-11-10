@@ -12,8 +12,6 @@ use datafusion::{
     sql::{planner::ContextProvider, TableReference},
 };
 
-use models::codec::codec_to_codec_name;
-
 use models::schema::{ColumnType, TableSchema};
 use models::ValueType;
 use spi::query::execution::Output;
@@ -260,7 +258,7 @@ impl MetaData for LocalCatalogMeta {
                                 ColumnType::Field(ValueType::Unknown) => field_type = "UNKNOW",
                             }
 
-                            let compression = codec_to_codec_name(item.codec);
+                            let compression = item.encoding.as_str();
                             name_column.push(field_name);
                             type_column.push(field_type);
                             tags.push(tag);

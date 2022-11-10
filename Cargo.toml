@@ -22,7 +22,7 @@ default-members = ["main"]
 
 [workspace.dependencies]
 actix-rt = "2.7.0"
-arrow-schema = {version = "25.0.0", features = ["serde"]}
+arrow-schema = {version = "26.0.0", features = ["serde"]}
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"

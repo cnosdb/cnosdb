@@ -8,6 +8,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use config::get_config;
+    use models::codec::Encoding;
     use models::schema::{
         ColumnType, DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, TskvTableSchema,
     };
@@ -198,16 +199,21 @@ mod tests {
             "test".to_string(),
             "test0".to_string(),
             vec![
-                TableColumn::new(0, "time".to_string(), ColumnType::Time, 0),
-                TableColumn::new(1, "ta".to_string(), ColumnType::Tag, 0),
-                TableColumn::new(2, "tb".to_string(), ColumnType::Tag, 0),
+                TableColumn::new(0, "time".to_string(), ColumnType::Time, Encoding::Default),
+                TableColumn::new(1, "ta".to_string(), ColumnType::Tag, Encoding::Default),
+                TableColumn::new(2, "tb".to_string(), ColumnType::Tag, Encoding::Default),
                 TableColumn::new(
                     3,
                     "fa".to_string(),
                     ColumnType::Field(ValueType::Integer),
-                    0,
+                    Encoding::Default,
                 ),
-                TableColumn::new(4, "fb".to_string(), ColumnType::Field(ValueType::Float), 0),
+                TableColumn::new(
+                    4,
+                    "fb".to_string(),
+                    ColumnType::Field(ValueType::Float),
+                    Encoding::Default,
+                ),
             ],
         ));
         tskv.create_table(&expected).unwrap();
