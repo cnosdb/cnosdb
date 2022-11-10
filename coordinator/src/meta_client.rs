@@ -31,9 +31,9 @@ pub enum MetaError {
 
 pub type MetaResult<T> = Result<T, MetaError>;
 
-pub type MetaClientRef = Arc<Box<dyn MetaClient + Send + Sync>>;
-pub type AdminMetaRef = Arc<Box<dyn AdminMeta + Send + Sync>>;
-pub type MetaRef = Arc<Box<dyn MetaManager + Send + Sync>>;
+pub type MetaClientRef = Arc<dyn MetaClient + Send + Sync>;
+pub type AdminMetaRef = Arc<dyn AdminMeta + Send + Sync>;
+pub type MetaRef = Arc<dyn MetaManager + Send + Sync>;
 
 #[async_trait::async_trait]
 pub trait MetaManager {
@@ -96,10 +96,10 @@ pub struct RemoteMetaManager {
 
 impl RemoteMetaManager {
     pub fn new(config: ClusterConfig) -> Self {
-        let admin: AdminMetaRef = Arc::new(Box::new(RemoteAdminMeta::new(
+        let admin: AdminMetaRef = Arc::new(RemoteAdminMeta::new(
             config.name.clone(),
             config.meta.clone(),
-        )));
+        ));
 
         let node_info = NodeInfo {
             status: 0,
@@ -130,11 +130,11 @@ impl MetaManager for RemoteMetaManager {
             return Some(client.clone());
         }
 
-        let client: MetaClientRef = Arc::new(Box::new(RemoteMetaClient::new(
+        let client: MetaClientRef = Arc::new(RemoteMetaClient::new(
             self.config.name.clone(),
             tenant.clone(),
             self.config.meta.clone(),
-        )));
+        ));
 
         self.tenants.write().insert(tenant.clone(), client.clone());
 

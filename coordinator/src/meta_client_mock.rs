@@ -61,10 +61,10 @@ pub struct MockMetaManager {}
 #[async_trait::async_trait]
 impl MetaManager for MockMetaManager {
     fn admin_meta(&self) -> AdminMetaRef {
-        Arc::new(Box::new(MockAdminMeta::default()))
+        Arc::new(MockAdminMeta::default())
     }
 
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
-        Some(Arc::new(Box::new(MockMetaClient::default())))
+        Some(Arc::new(MockMetaClient::default()))
     }
 }

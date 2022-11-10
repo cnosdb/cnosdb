@@ -36,7 +36,7 @@ pub struct MockCoordinator {}
 #[async_trait::async_trait]
 impl Coordinator for MockCoordinator {
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
-        Some(Arc::new(Box::new(MockMetaClient::default())))
+        Some(Arc::new(MockMetaClient::default()))
     }
 
     async fn write_points(
@@ -61,7 +61,7 @@ impl CoordService {
         cluster: ClusterConfig,
         handoff_cfg: HintedOffConfig,
     ) -> Arc<Self> {
-        let meta_manager: MetaRef = Arc::new(Box::new(RemoteMetaManager::new(cluster.clone())));
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster.clone()));
 
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
