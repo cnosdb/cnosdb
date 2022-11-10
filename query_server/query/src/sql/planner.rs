@@ -21,13 +21,14 @@ use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
 use spi::query::ast::{
-    ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
-    DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
-    DescribeTable as DescribeTableOptions, DropObject, ExtStatement,
+    AlterDatabase as ASTAlterDatabase, ColumnOption, CreateDatabase as ASTCreateDatabase,
+    CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
+    DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions, DropObject,
+    ExtStatement,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase, DescribeTable,
-    DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
+    self, affected_row_expr, AlterDatabase, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase,
+    DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
     MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
@@ -66,6 +67,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt),
             ExtStatement::ShowDatabases() => self.database_to_show(),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
+            ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
         }
     }
 
@@ -363,32 +365,38 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })))
     }
 
+    fn database_to_alter(&self, stmt: ASTAlterDatabase) -> Result<Plan> {
+        let ASTAlterDatabase { name, options } = stmt;
+        let options = self.make_database_option(options)?;
+        Ok(Plan::DDL(DDLPlan::AlterDatabase(AlterDatabase {
+            database_name: normalize_sql_object_name(&name),
+            database_options: options,
+        })))
+    }
+
     fn make_database_option(&self, options: ASTDatabaseOptions) -> Result<DatabaseOptions> {
         let mut plan_options = DatabaseOptions::default();
         if let Some(ttl) = options.ttl {
-            plan_options.ttl = self.str_to_duration(&ttl)?;
+            plan_options.with_ttl(self.str_to_duration(&ttl)?);
         }
         if let Some(replica) = options.replica {
-            plan_options.replica = replica
+            plan_options.with_replica(replica);
         }
         if let Some(shard_num) = options.shard_num {
-            plan_options.shard_num = shard_num
+            plan_options.with_shard_num(shard_num);
         }
         if let Some(vnode_duration) = options.vnode_duration {
-            plan_options.vnode_duration = self.str_to_duration(&vnode_duration)?
+            plan_options.with_vnode_duration(self.str_to_duration(&vnode_duration)?);
         }
         if let Some(precision) = options.precision {
-            plan_options.precision = match Precision::new(&precision) {
-                None => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!(
-                            "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                            precision
-                        ),
-                    })
-                }
-                Some(v) => v,
-            }
+            plan_options.with_precision(Precision::new(&precision).ok_or(
+                LogicalPlannerError::Semantic {
+                    err: format!(
+                        "{} is not a valid precision, use like 'ms', 'us', 'ns'",
+                        precision
+                    ),
+                },
+            )?);
         }
         Ok(plan_options)
     }
@@ -705,7 +713,8 @@ mod tests {
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan {
             let ans = format!("{:?}", create);
-            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }"#;
+            println!("{ans}");
+            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some(Duration { time_num: 10, unit: Day }), shard_num: Some(5), vnode_duration: Some(Duration { time_num: 3, unit: Day }), replica: Some(10), precision: Some(US) } }"#;
             assert_eq!(ans, expected);
         } else {
             panic!("expected create table plan")

@@ -67,6 +67,8 @@ pub enum DDLPlan {
     ShowTables(Option<String>),
 
     ShowDatabases(),
+
+    AlterDatabase(AlterDatabase),
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +149,12 @@ pub struct DescribeTable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowTables {
     pub database_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterDatabase {
+    pub database_name: String,
+    pub database_options: DatabaseOptions,
 }
 
 pub trait LogicalPlanner {

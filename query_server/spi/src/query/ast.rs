@@ -23,6 +23,13 @@ pub enum ExtStatement {
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
     //todo:  insert/update/alter
+    AlterDatabase(AlterDatabase),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterDatabase {
+    pub name: ObjectName,
+    pub options: DatabaseOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

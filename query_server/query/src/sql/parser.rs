@@ -11,8 +11,8 @@ use datafusion::sql::sqlparser::{
 use models::codec::Encoding;
 use snafu::ResultExt;
 use spi::query::ast::{
-    ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DescribeDatabase, DescribeTable,
-    DropObject, ExtStatement, ObjectType,
+    AlterDatabase, ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DescribeDatabase,
+    DescribeTable, DropObject, ExtStatement, ObjectType,
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
@@ -257,14 +257,12 @@ impl<'a> ExtParser<'a> {
     /// Parse a SQL ALTER statement
     fn parse_alter(&mut self) -> Result<ExtStatement> {
         if self.parser.parse_keyword(Keyword::TABLE) {
-            return self.parse_alter_table();
+            self.parse_alter_table()
+        } else if self.parser.parse_keyword(Keyword::DATABASE) {
+            self.parse_alter_database()
+        } else {
+            self.expected("TABLE or DATABASE", self.parser.peek_token())
         }
-
-        if self.parser.parse_keyword(Keyword::DATABASE) {
-            return self.parse_alter_database();
-        }
-
-        self.expected("TABLE or DATABASE", self.parser.peek_token())
     }
 
     fn parse_alter_table(&mut self) -> Result<ExtStatement> {
@@ -309,7 +307,19 @@ impl<'a> ExtParser<'a> {
     // fn parse_alter_table_alter_column(&mut self) -> Result<ExtStatement>
 
     fn parse_alter_database(&mut self) -> Result<ExtStatement> {
-        parser_err!("not implementation")
+        let database_name = self.parser.parse_object_name()?;
+        self.parser.expect_keyword(Keyword::SET)?;
+        let mut options = DatabaseOptions::default();
+        if !self.parse_database_option(&mut options)? {
+            return parser_err!(format!(
+                "expected database option, but found {}",
+                self.parser.peek_token()
+            ));
+        }
+        Ok(ExtStatement::AlterDatabase(AlterDatabase {
+            name: database_name,
+            options,
+        }))
     }
 
     /// Parses the set of
@@ -460,22 +470,29 @@ impl<'a> ExtParser<'a> {
         if self.parser.parse_keyword(Keyword::WITH) {
             let mut options = DatabaseOptions::default();
             loop {
-                if self.parse_cnos_keyword(CnosKeyWord::TTL) {
-                    options.ttl = Some(self.parse_string_value()?);
-                } else if self.parse_cnos_keyword(CnosKeyWord::SHARD) {
-                    options.shard_num = Some(self.parse_u64()?);
-                } else if self.parse_cnos_keyword(CnosKeyWord::VNODE_DURATION) {
-                    options.vnode_duration = Some(self.parse_string_value()?);
-                } else if self.parse_cnos_keyword(CnosKeyWord::REPLICA) {
-                    options.replica = Some(self.parse_u64()?);
-                } else if self.parse_cnos_keyword(CnosKeyWord::PRECISION) {
-                    options.precision = Some(self.parse_string_value()?);
-                } else {
+                if !self.parse_database_option(&mut options)? {
                     return Ok(options);
                 }
             }
         }
         Ok(DatabaseOptions::default())
+    }
+
+    fn parse_database_option(&mut self, options: &mut DatabaseOptions) -> Result<bool> {
+        if self.parse_cnos_keyword(CnosKeyWord::TTL) {
+            options.ttl = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::SHARD) {
+            options.shard_num = Some(self.parse_u64()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::VNODE_DURATION) {
+            options.vnode_duration = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::REPLICA) {
+            options.replica = Some(self.parse_u64()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::PRECISION) {
+            options.precision = Some(self.parse_string_value()?);
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     fn parse_u64(&mut self) -> Result<u64> {

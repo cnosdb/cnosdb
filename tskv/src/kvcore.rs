@@ -40,6 +40,7 @@ use crate::database::Database;
 use crate::file_system::file_manager::{self, init_file_manager, FileManager};
 use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
+use crate::Error::DatabaseNotFound;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -449,6 +450,18 @@ impl Engine for TsKv {
             });
         }
         self.version_set.write().create_db(schema.clone());
+        Ok(())
+    }
+
+    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
+        let db = self
+            .version_set
+            .write()
+            .get_db(&schema.name)
+            .ok_or(DatabaseNotFound {
+                database: schema.name.clone(),
+            })?;
+        db.write().alter_db_schema(schema.clone());
         Ok(())
     }
 
