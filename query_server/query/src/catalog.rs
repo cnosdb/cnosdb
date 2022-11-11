@@ -94,17 +94,19 @@ impl UserCatalog {
     ) -> Result<Option<Arc<Database>>> {
         let mut schemas = self.schemas.write();
 
-        if let Some(client) = self.coord.tenant_meta(&DEFAULT_CATALOG.to_string()) {
-            let info = DatabaseInfo {
-                name: name.to_string(),
-                shard: schema.database_schema.config.shard_num as u32,
-                ttl: schema.database_schema.config.ttl.time_stamp(),
-                vnode_duration: schema.database_schema.config.vnode_duration.time_stamp(),
-                replications: schema.database_schema.config.replica as u32,
-                buckets: vec![],
-            };
-            client.create_db(&name.to_string(), &info).unwrap(); //todo
-        }
+        let info = DatabaseInfo {
+            name: name.to_string(),
+            shard: schema.database_schema.config.shard_num as u32,
+            ttl: schema.database_schema.config.ttl.time_stamp(),
+            vnode_duration: schema.database_schema.config.vnode_duration.time_stamp(),
+            replications: schema.database_schema.config.replica as u32,
+            buckets: vec![],
+        };
+        self.coord
+            .create_db(&DEFAULT_CATALOG.to_string(), info)
+            .map_err(|err| MetadataError::InternalError {
+                error_msg: err.to_string(),
+            })?;
 
         self.engine
             .create_database(&schema.database_schema)

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use config::{ClusterConfig, HintedOffConfig};
 use models::consistency_level::ConsistencyLevel;
+use models::meta_data::DatabaseInfo;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -21,6 +22,7 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 #[async_trait::async_trait]
 pub trait Coordinator: Send + Sync {
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
+    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
 
     async fn write_points(
         &self,
@@ -37,6 +39,10 @@ pub struct MockCoordinator {}
 impl Coordinator for MockCoordinator {
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
         Some(Arc::new(MockMetaClient::default()))
+    }
+
+    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()> {
+        Ok(())
     }
 
     async fn write_points(
@@ -115,6 +121,18 @@ impl CoordService {
 impl Coordinator for CoordService {
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
         self.meta.tenant_meta(tenant)
+    }
+
+    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()> {
+        let meta = self
+            .tenant_meta(tenant)
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: tenant.clone(),
+            })?;
+
+        meta.create_db(&info.name, &info)?;
+
+        Ok(())
     }
 
     async fn write_points(
