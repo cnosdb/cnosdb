@@ -21,6 +21,7 @@ use crate::table::ClusterTable;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
 use datafusion::datasource::provider_as_source;
 use models::schema::DatabaseSchema;
+
 use spi::catalog::{
     MetaData, MetaDataRef, MetadataError, Result, DEFAULT_CATALOG, DEFAULT_DATABASE,
 };
@@ -117,6 +118,14 @@ impl MetaData for LocalCatalogMeta {
         Ok(table)
     }
 
+    fn database(&self, name: &str) -> Result<DatabaseSchema> {
+        self.engine
+            .get_db_schema(name)
+            .ok_or(MetadataError::DatabaseNotExists {
+                database_name: name.to_string(),
+            })
+    }
+
     fn function(&self) -> FuncMetaManagerRef {
         self.func_manager.clone()
     }
@@ -161,45 +170,6 @@ impl MetaData for LocalCatalogMeta {
 
     fn database_names(&self) -> Vec<String> {
         self.catalog.schema_names()
-    }
-
-    fn describe_database(&self, name: &str) -> Result<Output> {
-        match self.engine.get_db_schema(name) {
-            None => Err(MetadataError::DatabaseNotExists {
-                database_name: name.to_string(),
-            }),
-            Some(db_cfg) => {
-                let schema = Arc::new(Schema::new(vec![
-                    Field::new("TTL", DataType::Utf8, false),
-                    Field::new("SHARD", DataType::Utf8, false),
-                    Field::new("VNODE_DURATION", DataType::Utf8, false),
-                    Field::new("REPLICA", DataType::Utf8, false),
-                    Field::new("PRECISION", DataType::Utf8, false),
-                ]));
-
-                let ttl = db_cfg.config.ttl.to_string();
-                let shard = db_cfg.config.shard_num.to_string();
-                let vnode_duration = db_cfg.config.vnode_duration.to_string();
-                let replica = db_cfg.config.replica.to_string();
-                let precision = db_cfg.config.precision.to_string();
-
-                let batch = RecordBatch::try_new(
-                    schema,
-                    vec![
-                        Arc::new(StringArray::from(vec![ttl.as_str()])),
-                        Arc::new(StringArray::from(vec![shard.as_str()])),
-                        Arc::new(StringArray::from(vec![vnode_duration.as_str()])),
-                        Arc::new(StringArray::from(vec![replica.as_str()])),
-                        Arc::new(StringArray::from(vec![precision.as_str()])),
-                    ],
-                )
-                .unwrap();
-
-                let batches = vec![Arc::new(batch)];
-
-                Ok(Output::StreamData(stream_from_batches(batches)))
-            }
-        }
     }
 
     fn show_databases(&self) -> Result<Output> {
@@ -260,6 +230,14 @@ impl MetaData for LocalCatalogMeta {
                 }
             }
         }
+    }
+
+    fn alter_database(&self, database: DatabaseSchema) -> Result<()> {
+        self.engine
+            .alter_database(&database)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
     }
 }
 
