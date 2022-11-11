@@ -107,7 +107,7 @@ impl CoordService {
 
     async fn process_write_point_request(coord: Arc<CoordService>, req: WritePointsRequest) {
         let result = coord.writer.write_points(&req, coord.handoff.clone()).await;
-        req.sender.send(result).expect("successfule");
+        req.sender.send(result).expect("successful");
     }
 }
 

@@ -207,15 +207,6 @@ impl HttpService {
                         Err(e) => return Err(reject::custom(e)),
                     };
 
-                    let meta_client = match coord.tenant_meta(&user_info.user) {
-                        Some(client) => client,
-                        None => {
-                            return Err(reject::custom(HttpError::NotFoundTenant {
-                                name: user_info.user,
-                            }));
-                        }
-                    };
-
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let mut line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
