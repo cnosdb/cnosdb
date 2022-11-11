@@ -12,6 +12,7 @@ use spi::query::{
 };
 
 use spi::query::Result;
+
 pub struct SqlQueryExecution {
     query_state_machine: QueryStateMachineRef,
     plan: QueryPlan,

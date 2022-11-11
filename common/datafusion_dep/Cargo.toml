@@ -1,9 +1,0 @@
-[package]
-name = "datafusion"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-datafusion_dep = { version = "13.0.0", features = ["scheduler"], package = "datafusion" }

@@ -47,15 +47,14 @@ use warp::Rejection;
 use warp::Reply;
 use warp::{header, reject, Filter};
 
-const QUERY_LEN: u64 = 1024 * 16;
-const WRITE_LEN: u64 = 100 * 1024 * 1024;
-
 pub struct HttpService {
     tls_config: Option<TLSConfig>,
     addr: SocketAddr,
     dbms: DBMSRef,
     kv_inst: EngineRef,
     handle: Option<ServiceHandle<()>>,
+    query_body_limit: u64,
+    write_body_limit: u64,
 }
 
 impl HttpService {
@@ -64,6 +63,8 @@ impl HttpService {
         kv_inst: EngineRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
+        query_body_limit: u64,
+        write_body_limit: u64,
     ) -> Self {
         Self {
             tls_config,
@@ -71,6 +72,8 @@ impl HttpService {
             dbms,
             kv_inst,
             handle: None,
+            query_body_limit,
+            write_body_limit,
         }
     }
 
@@ -96,14 +99,16 @@ impl HttpService {
         warp::any().map(move || kv_inst.clone())
     }
 
-    fn routes(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn routes(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         self.ping()
             .or(self.query())
             .or(self.write_line_protocol())
             .or(self.metrics())
     }
 
-    fn ping(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "ping")
             .and(warp::get().or(warp::head()))
             .map(|_| {
@@ -114,35 +119,31 @@ impl HttpService {
             })
     }
 
-    fn query(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn query(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         // let dbms = self.dbms.clone();
         warp::path!("api" / "v1" / "sql")
             .and(warp::post())
-            .and(warp::body::content_length_limit(QUERY_LEN))
+            .and(warp::body::content_length_limit(self.query_body_limit))
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
             .and_then(
                 |req: Bytes, header: Header, param: SqlParam, dbms: DBMSRef| async move {
-                    debug!(
+                    let req_log = format!(
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
                     );
+                    debug!(req_log);
 
                     // Parse req、header and param to construct query request
                     let query_req = construct_query(req, &header, param);
 
-                    match query_req {
+                    let result = match query_req {
                         Ok(ref q) => {
                             let start = Instant::now();
 
                             let result = sql_handle(q, header, dbms).await;
-
-                            let result = result.map_err(|e| {
-                                trace::error!("Failed to handle http sql request, err: {}", e);
-                                e
-                            });
 
                             sample_query_read_latency(
                                 q.context().catalog(),
@@ -150,32 +151,31 @@ impl HttpService {
                                 start.elapsed().as_millis() as f64,
                             );
 
-                            match result {
-                                Ok(resp) => {
-                                    incr_query_read_success();
-                                    Ok(resp)
-                                }
-                                Err(e) => {
-                                    incr_query_read_failed();
-                                    Err(reject::custom(e))
-                                }
-                            }
+                            result.map_err(|e| {
+                                trace::error!("Failed to handle http sql request, err: {}", e);
+                                reject::custom(e)
+                            })
                         }
-                        Err(e) => {
-                            incr_query_read_failed();
-                            Err(reject::custom(e))
-                        }
+                        Err(e) => Err(reject::custom(e)),
+                    };
+
+                    match result {
+                        Ok(_) => incr_query_read_success(),
+                        Err(_) => incr_query_read_failed(),
                     }
+
+                    trace::trace!("Response {}", req_log);
+                    result
                 },
             )
     }
 
     fn write_line_protocol(
         &self,
-    ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "write")
             .and(warp::post())
-            .and(warp::body::content_length_limit(WRITE_LEN))
+            .and(warp::body::content_length_limit(self.write_body_limit))
             .and(warp::body::bytes())
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
@@ -215,7 +215,9 @@ impl HttpService {
             )
     }
 
-    fn metrics(&self) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    fn metrics(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "metrics")
             .map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
     }
@@ -311,7 +313,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
         }
         let point_args = PointArgs {
             db: Some(fbb.create_vector(db.as_bytes())),
-            table: Some(fbb.create_vector(line.measurement.as_bytes())),
+            tab: Some(fbb.create_vector(line.measurement.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
             timestamp: line.timestamp,
@@ -324,7 +326,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
     let points = Points::create(
         &mut fbb,
         &PointsArgs {
-            database: Some(fbb_db),
+            db: Some(fbb_db),
             points: Some(points_raw),
         },
     );

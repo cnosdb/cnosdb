@@ -17,8 +17,11 @@ use spi::{
     },
     service::protocol::{Query, QueryId},
 };
+use trace::error;
 
-use spi::query::QueryError::BuildQueryDispatcher;
+use tokio::sync::{Semaphore, TryAcquireError};
+
+use spi::query::QueryError::{BuildQueryDispatcher, RequestLimit};
 use spi::query::{LogicalPlannerSnafu, Result};
 
 use crate::metadata::MetadataProvider;
@@ -35,6 +38,8 @@ pub struct SimpleQueryDispatcher {
     parser: Arc<dyn Parser + Send + Sync>,
     // get query execution factory
     query_execution_factory: Arc<dyn QueryExecutionFactory + Send + Sync>,
+
+    queries_limit_semaphore: Semaphore,
 }
 
 #[async_trait]
@@ -56,6 +61,15 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     }
 
     async fn execute_query(&self, _id: QueryId, query: &Query) -> Result<Vec<Output>> {
+        let _permit = match self.queries_limit_semaphore.try_acquire() {
+            Ok(p) => p,
+            Err(TryAcquireError::NoPermits) => {
+                error!("simultaneous request limit exceeded - dropping request");
+                return Err(RequestLimit);
+            }
+            Err(e) => panic!("request limiter error: {}", e),
+        };
+
         let mut results = vec![];
 
         let session = self
@@ -126,6 +140,8 @@ pub struct SimpleQueryDispatcherBuilder {
     optimizer: Option<Arc<dyn Optimizer + Send + Sync>>,
     // TODO 需要封装 scheduler
     scheduler: Option<Arc<Scheduler>>,
+
+    queries_limit: usize,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -154,6 +170,11 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_queries_limit(mut self, limit: u32) -> Self {
+        self.queries_limit = limit as usize;
+        self
+    }
+
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
         let metadata = self.metadata.ok_or_else(|| BuildQueryDispatcher {
             err: "lost of metadata".to_string(),
@@ -176,11 +197,14 @@ impl SimpleQueryDispatcherBuilder {
 
         let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(optimizer, scheduler));
 
+        let queries_limit_semaphore = Semaphore::new(self.queries_limit);
+
         Ok(SimpleQueryDispatcher {
             metadata,
             session_factory,
             parser,
             query_execution_factory,
+            queries_limit_semaphore,
         })
     }
 }

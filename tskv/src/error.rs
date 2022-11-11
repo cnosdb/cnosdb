@@ -105,4 +105,13 @@ pub enum Error {
 
     #[snafu(display("can't find field name: {}", reason))]
     NotFoundField { reason: String },
+
+    #[snafu(display("unknown type"))]
+    UnKnowType,
+
+    #[snafu(display("tags or fields can't be empty"))]
+    InvalidPoint,
+
+    #[snafu(display("table not found for {}", table_name))]
+    NotFoundTable { table_name: String },
 }

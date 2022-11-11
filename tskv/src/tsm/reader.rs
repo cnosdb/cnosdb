@@ -591,7 +591,7 @@ pub fn decode_data_block(
             Ok(DataBlock::F64 {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::Integer => {
@@ -603,7 +603,7 @@ pub fn decode_data_block(
             Ok(DataBlock::I64 {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::Boolean => {
@@ -615,7 +615,7 @@ pub fn decode_data_block(
             Ok(DataBlock::Bool {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::String => {
@@ -627,7 +627,7 @@ pub fn decode_data_block(
             Ok(DataBlock::Str {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::Unsigned => {
@@ -639,7 +639,7 @@ pub fn decode_data_block(
             Ok(DataBlock::U64 {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         _ => Err(ReadTsmError::Decode {

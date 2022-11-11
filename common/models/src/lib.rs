@@ -10,6 +10,7 @@ pub mod tag;
 pub mod utils;
 #[macro_use]
 pub mod error_code;
+pub mod arrow_array;
 pub mod predicate;
 
 use parking_lot::RwLock;

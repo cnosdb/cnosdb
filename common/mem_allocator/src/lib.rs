@@ -104,6 +104,7 @@ mod tests {
     #[global_allocator]
     static A: Jemalloc = Jemalloc;
     #[test]
+    #[ignore]
     fn it_works() {
         for _ in 0..10 {
             let start = Utc::now();

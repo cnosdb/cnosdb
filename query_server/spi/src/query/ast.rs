@@ -2,6 +2,7 @@ use std::fmt;
 
 use datafusion::sql::sqlparser::ast::{DataType, Ident, ObjectName};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
+use models::codec::Encoding;
 
 /// Statement representations
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +60,7 @@ pub struct ColumnOption {
     pub name: Ident,
     pub is_tag: bool,
     pub data_type: DataType,
-    pub codec: String,
+    pub encoding: Encoding,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]

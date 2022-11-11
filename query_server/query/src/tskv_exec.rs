@@ -14,7 +14,8 @@ use datafusion::{
         SendableRecordBatchStream, Statistics,
     },
 };
-use models::{predicate::domain::PredicateRef, schema::TableSchema};
+use models::predicate::domain::PredicateRef;
+use models::schema::TskvTableSchema;
 
 use crate::stream::{TableScanMetrics, TableScanStream};
 use tskv::engine::EngineRef;
@@ -23,7 +24,7 @@ use tskv::engine::EngineRef;
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
-    table_schema: TableSchema,
+    table_schema: TskvTableSchema,
     proj_schema: SchemaRef,
     filter: PredicateRef,
     engine: EngineRef,
@@ -34,7 +35,7 @@ pub struct TskvExec {
 
 impl TskvExec {
     pub(crate) fn new(
-        table_schema: TableSchema,
+        table_schema: TskvTableSchema,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         engine: EngineRef,
@@ -97,17 +98,15 @@ impl ExecutionPlan for TskvExec {
 
         let metrics = TableScanMetrics::new(&self.metrics, partition);
 
-        let table_stream = match TableScanStream::new(
+        let table_stream = TableScanStream::new(
             self.table_schema.clone(),
             self.schema(),
             self.filter(),
             batch_size,
             self.engine.clone(),
             metrics,
-        ) {
-            Ok(s) => s,
-            Err(err) => return Err(DataFusionError::Internal(err.to_string())),
-        };
+        )
+        .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
         Ok(Box::pin(table_stream))
     }

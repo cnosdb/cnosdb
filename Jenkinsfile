@@ -24,7 +24,7 @@ pipeline {
             steps {
                 sh """
 		cd $WORKSPACE
-		cargo build
+		cargo build --release --bin main
                 """
             }
         }

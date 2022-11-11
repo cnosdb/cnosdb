@@ -1,4 +1,5 @@
 --#DATABASE=topk_func
+--#SORT=true
 drop database if exists topk_func;
 create database topk_func;
 

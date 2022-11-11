@@ -7,27 +7,32 @@
 //!         - Column #3
 //!         - Column #4
 
-use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
+use std::str::FromStr;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use arrow_schema::Schema;
 use datafusion::arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
+    DataType as ArrowDataType, Field as ArrowField, SchemaRef, TimeUnit,
 };
-use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::Expr;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::datasource::file_format::avro::AvroFormat;
+use datafusion::datasource::file_format::csv::CsvFormat;
+use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::datasource::file_format::json::JsonFormat;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::file_format::FileFormat;
+use datafusion::datasource::listing::ListingOptions;
+use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
+use crate::codec::Encoding;
 use crate::{ColumnId, SchemaId, ValueType};
 
-pub type TableSchemaRef = Arc<TableSchema>;
+pub type TableSchemaRef = Arc<TskvTableSchema>;
 
 pub const TIME_FIELD_NAME: &str = "time";
 
@@ -35,8 +40,80 @@ pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
 pub const TIME_FIELD: &str = "time";
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TableSchema {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum TableSchema {
+    TsKvTableSchema(TskvTableSchema),
+    ExternalTableSchema(ExternalTableSchema),
+}
+
+impl TableSchema {
+    pub fn name(&self) -> String {
+        match self {
+            TableSchema::TsKvTableSchema(schema) => schema.name.clone(),
+            TableSchema::ExternalTableSchema(schema) => schema.name.clone(),
+        }
+    }
+
+    pub fn db(&self) -> String {
+        match self {
+            TableSchema::TsKvTableSchema(schema) => schema.db.clone(),
+            TableSchema::ExternalTableSchema(schema) => schema.db.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ExternalTableSchema {
+    pub db: String,
+    pub name: String,
+    pub file_compression_type: String,
+    pub file_type: String,
+    pub location: String,
+    pub target_partitions: usize,
+    pub table_partition_cols: Vec<String>,
+    pub has_header: bool,
+    pub delimiter: u8,
+    pub schema: Schema,
+}
+
+impl ExternalTableSchema {
+    pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
+        let file_format: Arc<dyn FileFormat> = match FileType::from_str(&self.file_type)? {
+            FileType::CSV => Arc::new(
+                CsvFormat::default()
+                    .with_has_header(self.has_header)
+                    .with_delimiter(self.delimiter)
+                    .with_file_compression_type(
+                        FileCompressionType::from_str(&self.file_compression_type).map_err(
+                            |_| {
+                                DataFusionError::Execution(
+                                    "Only known FileCompressionTypes can be ListingTables!"
+                                        .to_string(),
+                                )
+                            },
+                        )?,
+                    ),
+            ),
+            FileType::PARQUET => Arc::new(ParquetFormat::default()),
+            FileType::AVRO => Arc::new(AvroFormat::default()),
+            FileType::JSON => Arc::new(JsonFormat::default().with_file_compression_type(
+                FileCompressionType::from_str(&self.file_compression_type)?,
+            )),
+        };
+
+        Ok(ListingOptions {
+            format: file_format,
+            collect_stat: false,
+            file_extension: FileType::from_str(&self.file_type)?
+                .get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?,
+            target_partitions: self.target_partitions,
+            table_partition_cols: self.table_partition_cols.clone(),
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TskvTableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: SchemaId,
@@ -46,7 +123,7 @@ pub struct TableSchema {
     columns_index: HashMap<String, usize>,
 }
 
-impl Default for TableSchema {
+impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
             db: "public".to_string(),
@@ -58,7 +135,7 @@ impl Default for TableSchema {
     }
 }
 
-impl TableSchema {
+impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
 
@@ -97,6 +174,16 @@ impl TableSchema {
         self.columns_index
             .get(name)
             .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
+    }
+
+    /// Get the index of the column
+    pub fn column_index(&self, name: &str) -> Option<&usize> {
+        self.columns_index.get(name)
+    }
+
+    /// Get the metadata of the column according to the column index
+    pub fn column_by_index(&self, idx: usize) -> Option<&TableColumn> {
+        self.columns.get(idx)
     }
 
     pub fn columns(&self) -> &Vec<TableColumn> {
@@ -153,31 +240,6 @@ impl TableSchema {
     }
 }
 
-#[async_trait]
-impl TableProvider for TableSchema {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn schema(&self) -> SchemaRef {
-        todo!()
-    }
-
-    fn table_type(&self) -> TableType {
-        todo!()
-    }
-
-    async fn scan(
-        &self,
-        _ctx: &SessionState,
-        _projection: &Option<Vec<usize>>,
-        _filters: &[Expr],
-        _limit: Option<usize>,
-    ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
-        todo!()
-    }
-}
-
 pub fn is_time_column(field: &ArrowField) -> bool {
     TIME_FIELD_NAME == field.name()
 }
@@ -187,7 +249,7 @@ pub struct TableColumn {
     pub id: ColumnId,
     pub name: String,
     pub column_type: ColumnType,
-    pub codec: u8,
+    pub encoding: Encoding,
 }
 
 impl From<&TableColumn> for ArrowField {
@@ -208,12 +270,12 @@ impl From<TableColumn> for ArrowField {
 }
 
 impl TableColumn {
-    pub fn new(id: ColumnId, name: String, column_type: ColumnType, codec: u8) -> Self {
+    pub fn new(id: ColumnId, name: String, column_type: ColumnType, encoding: Encoding) -> Self {
         Self {
             id,
             name,
             column_type,
-            codec,
+            encoding,
         }
     }
     pub fn new_with_default(name: String, column_type: ColumnType) -> Self {
@@ -221,7 +283,7 @@ impl TableColumn {
             id: 0,
             name,
             column_type,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -230,7 +292,7 @@ impl TableColumn {
             id,
             name: TIME_FIELD_NAME.to_string(),
             column_type: ColumnType::Time,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -239,7 +301,7 @@ impl TableColumn {
             id,
             name,
             column_type: ColumnType::Tag,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 

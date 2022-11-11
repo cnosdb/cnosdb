@@ -12,25 +12,40 @@ test,ta=a1,tb=b1 fa=1,fb=2 3
 200 OK
 
 -- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (7, '7a', '7b', 7, 7); --
+-- AFTER_SORT --
 200 OK
 rows
+0
+0
+0
+0
+0
+0
+0
 1
 
-
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 time,ta,tb,fa,fb
 1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
 1970-01-01T00:00:00.000000007,7a,7b,7.0,7.0
 
-
 -- EXECUTE SQL: insert public.test(TIME, ta, tb, fa, fb) values (8, '8a', '8b', 8, 8), (9, '9a', '9b', 9, 9), (10, '10a', '10b', 10, 10); --
+-- AFTER_SORT --
 200 OK
 rows
+0
+0
+0
+0
+0
+0
+0
 3
 
-
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 time,ta,tb,fa,fb
 1970-01-01T00:00:00.000000003,a1,b1,1.0,2.0
@@ -39,8 +54,8 @@ time,ta,tb,fa,fb
 1970-01-01T00:00:00.000000009,9a,9b,9.0,9.0
 1970-01-01T00:00:00.000000010,10a,10b,10.0,10.0
 
-
 -- EXECUTE SQL: select time, ta, fa from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 time,ta,fa
 1970-01-01T00:00:00.000000003,a1,1.0
@@ -49,8 +64,8 @@ time,ta,fa
 1970-01-01T00:00:00.000000009,9a,9.0
 1970-01-01T00:00:00.000000010,10a,10.0
 
-
 -- EXECUTE SQL: select time, fa from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 time,fa
 1970-01-01T00:00:00.000000003,1.0
@@ -59,8 +74,8 @@ time,fa
 1970-01-01T00:00:00.000000009,9.0
 1970-01-01T00:00:00.000000010,10.0
 
-
 -- EXECUTE SQL: select time, ta from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 time,ta
 1970-01-01T00:00:00.000000003,a1
@@ -69,8 +84,8 @@ time,ta
 1970-01-01T00:00:00.000000009,9a
 1970-01-01T00:00:00.000000010,10a
 
-
 -- EXECUTE SQL: select time from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 time
 1970-01-01T00:00:00.000000003
@@ -79,29 +94,64 @@ time
 1970-01-01T00:00:00.000000009
 1970-01-01T00:00:00.000000010
 
-
 -- EXECUTE SQL: select ta from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 ta
-a1
+10a
 7a
 8a
 9a
-10a
-
+a1
 
 -- EXECUTE SQL: select fa from public.test order by fa, fb; --
+-- AFTER_SORT --
 200 OK
 fa
 1.0
+10.0
 7.0
 8.0
 9.0
-10.0
-
 
 -- EXECUTE SQL: select time, ta, fa, * from public.test order by fa, fb; --
+-- AFTER_SORT --
 422 Unprocessable Entity
 {"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: Projections require unique expression names but the expression \"public.test.time\" at position 0 and \"public.test.time\" at position 3 have the same name. Consider aliasing (\"AS\") one of them."}
+-- ERROR:  --
+
+-- EXECUTE SQL: CREATE TABLE air ( visibility DOUBLE, temperature DOUBLE, presssure DOUBLE, TAGS(station,region) ); --
+200 OK
+
+
+-- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:40:00', 'XiaoMaiDao', 55, 68, 76); --
+-- AFTER_SORT --
+200 OK
+rows
+0
+0
+0
+0
+0
+0
+0
+1
+
+-- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:41:00', NULL, 56, 69, 77); --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
+
+-- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:42:00', 'XiaoMaiDao', NULL, NULL, NULL); --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
+
+-- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:43:00', NULL, NULL, NULL, NULL); --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 

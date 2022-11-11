@@ -47,7 +47,7 @@ fn build_grpc_server(tls_config: &Option<TLSConfig>) -> server::Result<Server> {
     } = tls_config.as_ref().unwrap();
     let cert = std::fs::read(certificate)?;
     let key = std::fs::read(private_key)?;
-    let identity = Identity::from_pem(&cert, &key);
+    let identity = Identity::from_pem(cert, key);
     let server = server.tls_config(ServerTlsConfig::new().identity(identity))?;
 
     Ok(server)
