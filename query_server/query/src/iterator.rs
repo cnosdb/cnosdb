@@ -279,7 +279,7 @@ impl FieldCursor {
         let mut opt_next = self.cache_data.get(self.cache_index + 1);
 
         while let (Some(top), Some(next)) = (opt_top, opt_next) {
-            if top == next {
+            if top.timestamp() == next.timestamp() {
                 self.cache_index += 1;
                 opt_top = Some(next);
                 opt_next = self.cache_data.get(self.cache_index + 1);
