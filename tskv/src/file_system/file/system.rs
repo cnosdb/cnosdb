@@ -29,7 +29,7 @@ impl Default for Options {
         Self {
             max_resident: 1024,
             max_non_resident: 1024,
-            page_len_scale: 1,
+            page_len_scale: 10,
         }
     }
 }

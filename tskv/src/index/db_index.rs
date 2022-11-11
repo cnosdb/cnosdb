@@ -17,18 +17,18 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use sled::Error;
 use snafu::ResultExt;
-use tracing::field::debug;
-use tracing::{error, info};
 
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
-use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema};
+use libc::read;
+use models::codec::Encoding;
+use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
     tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
 };
 use protos::models::Point;
-use trace::{debug, warn};
+use trace::{debug, error, info, warn};
 
 use super::utils::{decode_series_id_list, encode_inverted_index_key, encode_series_id_list};
 use super::*;
@@ -188,8 +188,14 @@ impl DBIndex {
     }
 
     pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> IndexResult<()> {
-        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let table_name = unsafe { String::from_utf8_unchecked(info.tab().unwrap().to_vec()) };
         if let Some(schema) = self.table_schema.read().get(&table_name) {
+            let schema = match schema {
+                TableSchema::TsKvTableSchema(schema) => schema,
+                TableSchema::ExternalTableSchema(_) => {
+                    return Err(IndexError::TableNotFound { table: table_name })
+                }
+            };
             for field in info.fields().unwrap() {
                 let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
                 if let Some(v) = schema.column(&field_name) {
@@ -224,13 +230,18 @@ impl DBIndex {
 
     pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> IndexResult<()> {
         //load schema first from cache,or else from storage and than cache it!
-        let mut schema = &mut TableSchema::default();
-        let table_name = unsafe { String::from_utf8_unchecked(info.table().unwrap().to_vec()) };
+        let mut schema = &mut TskvTableSchema::default();
+        let table_name = unsafe { String::from_utf8_unchecked(info.tab().unwrap().to_vec()) };
         let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
         let mut new_schema = false;
         match fields.get_mut(&table_name) {
-            Some(fields) => schema = fields,
+            Some(fields) => {
+                schema = match fields {
+                    TableSchema::TsKvTableSchema(schema) => schema,
+                    _ => return Err(IndexError::TableNotFound { table: table_name }),
+                };
+            }
             None => {
                 new_schema = true;
                 schema.name = table_name.clone();
@@ -239,7 +250,13 @@ impl DBIndex {
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
                         fields.insert(table_name.clone(), list);
-                        schema = fields.get_mut(&table_name).unwrap();
+                        schema = match fields
+                            .get_mut(&table_name)
+                            .ok_or(IndexError::NotFoundField)?
+                        {
+                            TableSchema::TsKvTableSchema(schema) => schema,
+                            _ => return Err(IndexError::TableNotFound { table: table_name }),
+                        };
                     }
                 }
             }
@@ -247,11 +264,11 @@ impl DBIndex {
 
         let mut schema_change = false;
         let mut check_fn = |field: &mut TableColumn| -> IndexResult<()> {
-            let codec = match schema.column(&field.name) {
-                None => 0,
-                Some(v) => v.codec,
+            let encoding = match schema.column(&field.name) {
+                None => Encoding::Default,
+                Some(v) => v.encoding,
             };
-            field.codec = codec;
+            field.encoding = encoding;
 
             match schema.column(&field.name) {
                 Some(v) => {
@@ -299,9 +316,9 @@ impl DBIndex {
         } else if schema_change {
             schema.schema_id += 1;
         }
-        let data = bincode::serialize(schema).unwrap();
+        let data = serde_json::to_string(&TableSchema::TsKvTableSchema(schema.clone())).unwrap();
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
-        self.storage.set(key.as_bytes(), &data)?;
+        self.storage.set(key.as_bytes(), data.as_bytes())?;
         Ok(())
     }
 
@@ -312,12 +329,19 @@ impl DBIndex {
 
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
         if let Some(data) = self.storage.get(key.as_bytes())? {
-            if let Ok(list) = bincode::deserialize::<TableSchema>(&data) {
+            let data = String::from_utf8(data).map_err(|_| IndexError::DecodeTableSchema {
+                table: tab.to_string(),
+            })?;
+            if let Ok(list) = serde_json::from_str::<TableSchema>(&data) {
                 //todo: remove copy
                 self.table_schema
                     .write()
                     .insert(tab.to_string(), list.clone());
                 return Ok(Some(list));
+            } else {
+                return Err(IndexError::DecodeTableSchema {
+                    table: tab.to_string(),
+                });
             }
         }
 
@@ -464,7 +488,7 @@ impl DBIndex {
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
-            info!("{:?}", format!("{}.", tab).as_bytes());
+            debug!("{:?}", format!("{}.", tab).as_bytes());
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
             for kv in it.by_ref() {
                 if let Ok(kv) = kv {
@@ -502,12 +526,12 @@ impl DBIndex {
     }
 
     pub fn create_table(&self, schema: &TableSchema) -> IndexResult<()> {
-        let data = bincode::serialize(schema).unwrap();
-        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, schema.name);
+        let data = serde_json::to_string(schema).unwrap();
+        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, schema.name());
         self.table_schema
             .write()
-            .insert(schema.name.clone(), schema.clone());
-        self.storage.set(key.as_bytes(), &data)?;
+            .insert(schema.name(), schema.clone());
+        self.storage.set(key.as_bytes(), data.as_bytes())?;
         self.flush()?;
         Ok(())
     }
@@ -626,4 +650,37 @@ pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<
     };
 
     unsafe { utf8_from(v).map(generate_index_key).unwrap_unchecked() }
+}
+
+#[cfg(test)]
+mod test {
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use models::schema::ExternalTableSchema;
+
+    #[test]
+    fn test_serde() {
+        let schema = Schema::new(vec![
+            Field::new("name", DataType::Utf8, false),
+            Field::new("address", DataType::Utf8, false),
+            Field::new("priority", DataType::UInt8, false),
+        ]);
+
+        let schema = ExternalTableSchema {
+            db: "hello".to_string(),
+            name: "world".to_string(),
+            file_compression_type: "test".to_string(),
+            file_type: "1".to_string(),
+            location: "2".to_string(),
+            target_partitions: 3,
+            table_partition_cols: vec!["4".to_string()],
+            has_header: true,
+            delimiter: 5,
+            schema,
+        };
+
+        let ans_inter = serde_json::to_string(&schema).unwrap();
+        let ans = serde_json::from_str::<ExternalTableSchema>(&ans_inter).unwrap();
+
+        assert_eq!(ans, schema);
+    }
 }

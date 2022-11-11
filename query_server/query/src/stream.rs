@@ -8,9 +8,10 @@ use datafusion::{
     },
 };
 use futures::Stream;
+use models::codec::Encoding;
 use models::{
     predicate::domain::PredicateRef,
-    schema::{ColumnType, TableColumn, TableSchema, TIME_FIELD},
+    schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
 };
 
 use tskv::engine::EngineRef;
@@ -32,7 +33,7 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(
-        table_schema: TableSchema,
+        table_schema: TskvTableSchema,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         batch_size: usize,
@@ -43,15 +44,15 @@ impl TableScanStream {
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD {
-                let codec = match table_schema.column(TIME_FIELD) {
-                    None => 0,
-                    Some(v) => v.codec,
+                let encoding = match table_schema.column(TIME_FIELD) {
+                    None => Encoding::Default,
+                    Some(v) => v.encoding,
                 };
                 proj_fileds.push(TableColumn::new(
                     0,
                     TIME_FIELD.to_string(),
                     ColumnType::Time,
-                    codec,
+                    encoding,
                 ));
                 continue;
             }
@@ -66,7 +67,7 @@ impl TableScanStream {
         }
 
         let proj_table_schema =
-            TableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
+            TskvTableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
         let filter = filter
             .filter()

@@ -12,8 +12,8 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
 use tskv::TsKv;
-
 mod http;
+mod report;
 mod rpc;
 pub mod server;
 mod signal;
@@ -102,6 +102,7 @@ enum SubCommand {
 }
 
 use crate::http::http_service::HttpService;
+use crate::report::ReportService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::tcp::tcp_service::TcpService;
 use mem_allocator::Jemalloc;
@@ -172,6 +173,7 @@ fn main() -> Result<(), std::io::Error> {
             }
             SubCommand::Run {} => {
                 let tskv_options = tskv::Options::from(&global_config);
+                let query_options = tskv::Options::from(&global_config);
                 let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
                 let coord_service = CoordService::new(
                     kv_inst.clone(),
@@ -180,7 +182,8 @@ fn main() -> Result<(), std::io::Error> {
                 );
 
                 let dbms = Arc::new(
-                    make_cnosdbms(kv_inst.clone(), coord_service.clone()).expect("make dbms"),
+                    make_cnosdbms(kv_inst.clone(), coord_service.clone(), query_options)
+                        .expect("make dbms"),
                 );
 
                 let tcp_service =
@@ -192,6 +195,8 @@ fn main() -> Result<(), std::io::Error> {
                     coord_service,
                     http_host,
                     global_config.security.tls_config.clone(),
+                    global_config.query.query_sql_limit,
+                    global_config.query.write_sql_limit,
                 ));
                 let grpc_service = Box::new(GrpcService::new(
                     dbms.clone(),
@@ -199,12 +204,20 @@ fn main() -> Result<(), std::io::Error> {
                     grpc_host,
                     global_config.security.tls_config.clone(),
                 ));
-                let mut server = server::Builder::default()
+
+                let report_service = Box::new(ReportService::new());
+
+                let mut server_builder = server::Builder::default()
                     .add_service(http_service)
                     .add_service(grpc_service)
-                    .add_service(tcp_service)
-                    .build()
-                    .expect("build server.");
+                    .add_service(tcp_service);
+
+                if !global_config.reporting_disabled.unwrap_or(false) {
+                    server_builder = server_builder.add_service(report_service);
+                }
+
+                let mut server = server_builder.build().expect("build server.");
+
                 server.start().expect("server start.");
                 signal::block_waiting_ctrl_c();
                 server.stop(true).await;

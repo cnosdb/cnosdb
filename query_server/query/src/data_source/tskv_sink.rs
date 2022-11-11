@@ -5,8 +5,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
-use models::schema::TableSchema;
 
+use models::schema::TskvTableSchema;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use spi::catalog::DEFAULT_CATALOG;
@@ -26,7 +26,7 @@ pub struct TskvRecordBatchSink {
     engine: EngineRef,
     coord: CoordinatorRef,
     partition: usize,
-    schema: TableSchema,
+    schema: TskvTableSchema,
 
     metrics: TskvSinkMetrics,
 }
@@ -35,7 +35,7 @@ pub struct TskvRecordBatchSink {
 impl RecordBatchSink for TskvRecordBatchSink {
     async fn append(&self, record_batch: RecordBatch) -> Result<()> {
         debug!(
-            "Partition: {}, \nTableSchema: {:?}, \nTskvRecordBatchSink::append: {:?}",
+            "Partition: {}, \nTskvTableSchema: {:?}, \nTskvRecordBatchSink::append: {:?}",
             self.partition, self.schema, record_batch,
         );
 
@@ -64,11 +64,11 @@ impl RecordBatchSink for TskvRecordBatchSink {
 pub struct TskvRecordBatchSinkProvider {
     engine: EngineRef,
     coord: CoordinatorRef,
-    schema: TableSchema,
+    schema: TskvTableSchema,
 }
 
 impl TskvRecordBatchSinkProvider {
-    pub fn new(engine: EngineRef, coord: CoordinatorRef, schema: TableSchema) -> Self {
+    pub fn new(engine: EngineRef, coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
         Self {
             engine,
             coord,

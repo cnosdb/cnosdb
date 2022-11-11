@@ -6,6 +6,7 @@ use models::{
 };
 use protos::models::{Field, FieldType, Point};
 
+use libc::time;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -21,7 +22,7 @@ use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
-use models::schema::{TableColumn, TableSchema};
+use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
@@ -112,7 +113,7 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(p: fb_models::Point, schema: &TableSchema) -> RowData {
+    pub fn point_to_row_data(p: fb_models::Point, schema: &TskvTableSchema) -> RowData {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_num());
@@ -191,7 +192,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema: TableSchema,
+    pub schema: TskvTableSchema,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -231,38 +232,35 @@ impl SeriesData {
         }
     }
 
-    pub fn read_entry(&self, field_id: ColumnId) -> Option<Arc<RwLock<MemEntry>>> {
-        let mut entry = MemEntry {
-            ts_min: self.range.min_ts,
-            ts_max: self.range.max_ts,
-            field_type: ValueType::Unknown,
-            cells: Vec::new(),
-        };
-
+    pub fn read_data(
+        &self,
+        column_id: ColumnId,
+        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        mut value_predicate: impl FnMut(&FieldVal) -> bool,
+    ) -> Vec<DataType> {
+        let mut res = Vec::new();
         for group in self.groups.iter() {
             let field_index = group.schema.fields_id();
-            let index = match field_index.get(&field_id) {
+            let index = match field_index.get(&column_id) {
                 None => continue,
                 Some(v) => v,
             };
-            for row in group.rows.iter() {
-                if let Some(Some(field)) = row.fields.get(*index) {
-                    entry.field_type = field.value_type();
-                    entry.cells.push(field.data_value(row.ts));
-                }
-            }
+            group
+                .rows
+                .iter()
+                .filter(|row| time_predicate(row.ts))
+                .for_each(|row| {
+                    if let Some(Some(field)) = row.fields.get(*index) {
+                        if value_predicate(field) {
+                            res.push(field.data_value(row.ts));
+                        }
+                    }
+                });
         }
-
-        if entry.field_type == ValueType::Unknown || entry.cells.is_empty() {
-            return None;
-        }
-
-        entry.sort();
-
-        Some(Arc::new(RwLock::new(entry)))
+        res
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &TableSchema, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, &TskvTableSchema, &Vec<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
@@ -297,7 +295,7 @@ pub struct MemCache {
     cache_size: AtomicU64,
 
     part_count: usize,
-    // This u64 comes from the last 40 bits of FieldId. split_id(field_id)
+    // This u64 comes from split_id(SeriesId) % part_count
     partions: Vec<RwLock<HashMap<u64, RwLockRef<SeriesData>>>>,
 }
 
@@ -341,16 +339,22 @@ impl MemCache {
         entry.write().write(group);
     }
 
-    pub fn get(&self, field_id: &FieldId) -> Option<Arc<RwLock<MemEntry>>> {
-        let (field_id, sid) = utils::split_id(*field_id);
-
+    pub fn get_data(
+        &self,
+        field_id: FieldId,
+        time_predicate: impl FnMut(Timestamp) -> bool,
+        value_predicate: impl FnMut(&FieldVal) -> bool,
+    ) -> Vec<DataType> {
+        let (field_id, sid) = split_id(field_id);
         let index = (sid as usize) % self.part_count;
         let part = self.partions[index].read();
-        if let Some(series) = part.get(&sid) {
-            return series.read().read_entry(field_id);
-        }
 
-        None
+        match part.get(&sid) {
+            Some(series) => series
+                .read()
+                .read_data(field_id, time_predicate, value_predicate),
+            None => Vec::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -410,50 +414,6 @@ impl MemCache {
     }
 }
 
-///////////////////////////////////////
-#[derive(Debug)]
-pub struct MemEntry {
-    pub ts_min: i64,
-    pub ts_max: i64,
-    pub field_type: ValueType,
-    pub cells: Vec<DataType>,
-}
-
-impl MemEntry {
-    pub fn data_block(&self, time_range: &TimeRange) -> DataBlock {
-        let mut data = DataBlock::new(0, self.field_type);
-        if time_range.is_boundless() {
-            for datum in self.cells.iter() {
-                data.insert(datum);
-            }
-        } else {
-            for datum in self.cells.iter() {
-                if datum.timestamp() >= time_range.min_ts && datum.timestamp() <= time_range.max_ts
-                {
-                    data.insert(datum);
-                }
-            }
-        }
-
-        data
-    }
-
-    pub fn read_cell(&self, time_range: &TimeRange) -> Vec<DataBlock> {
-        vec![self.data_block(time_range)]
-    }
-
-    pub fn sort(&mut self) {
-        self.cells
-            .sort_by(|a, b| match a.timestamp().partial_cmp(&b.timestamp()) {
-                None => {
-                    error!("timestamp is illegal");
-                    CmpOrdering::Less
-                }
-                Some(v) => v,
-            });
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataType {
     U64(i64, u64),
@@ -510,7 +470,7 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use bytes::buf;
-    use models::schema::TableSchema;
+    use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use std::mem::{size_of, size_of_val};
 
@@ -522,7 +482,7 @@ pub(crate) mod test {
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
-        mut schema: TableSchema,
+        mut schema: TskvTableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {

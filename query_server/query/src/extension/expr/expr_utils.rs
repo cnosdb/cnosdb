@@ -1,7 +1,5 @@
-use datafusion::{
-    logical_plan::{ExprVisitable, ExpressionVisitor, Recursion},
-    prelude::Expr,
-};
+use datafusion::logical_expr::expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion};
+use datafusion::prelude::Expr;
 
 use datafusion::error::Result;
 

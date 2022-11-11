@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::BufMut;
-use tracing::log::info;
+use trace::info;
 
 use models::FieldId;
 

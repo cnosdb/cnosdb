@@ -15,8 +15,7 @@ use chrono::{
 use lazy_static::lazy_static;
 use models::Timestamp;
 use parking_lot::RwLock;
-use trace::error;
-use tracing::info;
+use trace::{error, info};
 
 use crate::{
     compaction::CompactReq,

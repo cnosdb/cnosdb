@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use datafusion::execution::FunctionRegistry;
 use datafusion::logical_expr::AggregateUDF;
-use datafusion::logical_plan::FunctionRegistry;
 use datafusion::{logical_expr::ScalarUDF, prelude::SessionContext};
 use snafu::ResultExt;
 use spi::query::function::*;

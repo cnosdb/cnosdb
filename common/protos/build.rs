@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join("src")
         .join("generated")
         .join("mod.rs");
-    let mut generated_mod_rs_file = fs::File::create(&generated_mod_rs_path)?;
+    let mut generated_mod_rs_file = fs::File::create(generated_mod_rs_path)?;
     generated_mod_rs_file.write_all(
         b"mod protobuf_generated;
 pub use protobuf_generated::*;
@@ -40,7 +40,7 @@ mod flatbuffers_generated;
 
         tonic_build::configure()
             .out_dir(&output_dir_final)
-            .file_descriptor_set_path(&descriptor_set_path)
+            .file_descriptor_set_path(descriptor_set_path)
             .compile_well_known_types(true)
             .compile_with_config(config, proto_file_paths, &[proto_files_dir.as_path()])
             .expect("Failed to generate protobuf file {}.");

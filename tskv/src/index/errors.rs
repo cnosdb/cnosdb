@@ -35,11 +35,17 @@ pub enum IndexError {
     #[snafu(display("Series not exists"))]
     SeriesNotExists,
 
-    #[snafu(display("Decode Series ID List"))]
+    #[snafu(display("Decode Series ID List failed"))]
     DecodeSeriesIDList,
+
+    #[snafu(display("Decode TableSchema failed for '{}'", table))]
+    DecodeTableSchema { table: String },
 
     #[snafu(display("index storage error: {}", msg))]
     IndexStroage { msg: String },
+
+    #[snafu(display("table '{}' not found", table))]
+    TableNotFound { table: String },
 }
 
 impl From<sled::Error> for IndexError {

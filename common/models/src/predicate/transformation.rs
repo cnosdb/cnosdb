@@ -3,9 +3,11 @@ use std::{collections::VecDeque, result};
 use datafusion::{
     arrow::datatypes::DataType,
     error::DataFusionError,
-    logical_plan::Column,
-    logical_plan::{ExprVisitable, ExpressionVisitor, Operator, Recursion},
-    prelude::Expr,
+    logical_expr::{
+        expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion},
+        BinaryExpr, Operator,
+    },
+    prelude::{Column, Expr},
     scalar::ScalarValue,
 };
 
@@ -78,6 +80,7 @@ impl NormalizedSimpleComparison {
             | ScalarValue::LargeUtf8(_)
             | ScalarValue::Binary(_)
             | ScalarValue::LargeBinary(_)
+            | ScalarValue::FixedSizeBinary(_, _)
             | ScalarValue::Date32(_)
             | ScalarValue::Date64(_)
             | ScalarValue::Time64(_)
@@ -172,7 +175,7 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
 
     fn post_visit(self, expr: &Expr) -> datafusion::common::Result<Self> {
         match expr {
-            Expr::BinaryExpr { left, op, right } => {
+            Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
                 match op {
                     // stack中为expr，清空，生成domain
                     Operator::Eq
@@ -294,8 +297,7 @@ mod tests {
 
     use datafusion::{
         logical_expr::{binary_expr, expr_fn::col},
-        logical_plan::{and, or, Operator},
-        prelude::{in_list, lit, random},
+        prelude::{and, in_list, lit, or, random},
     };
 
     /// resolves the domain of the specified expression

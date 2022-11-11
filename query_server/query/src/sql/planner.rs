@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::Arc;
 
+use datafusion::common::{DFField, ToDFSchema};
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::TableSource;
-use datafusion::logical_plan::plan::{Analyze, Explain, Extension, Projection};
-use datafusion::logical_plan::{DFField, LogicalPlan, PlanType, ToDFSchema, ToStringifiedPlan};
+use datafusion::logical_expr::logical_plan::Analyze;
+use datafusion::logical_expr::{
+    Explain, Extension, LogicalPlan, PlanType, Projection, TableSource, ToStringifiedPlan,
+};
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
@@ -30,10 +32,6 @@ use spi::query::logical_planner::{
 };
 use spi::query::session::IsiphoSessionCtx;
 
-use models::codec::{
-    codec_name_to_codec, BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC,
-    UNSIGNED_BIGINT_CODEC,
-};
 use models::schema::{DatabaseOptions, Duration, Precision};
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
@@ -308,11 +306,19 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     col_id,
                     normalize_ident(&column_opt.name),
                     self.make_data_type(&column_opt.data_type)?,
-                    codec_name_to_codec(&column_opt.codec),
+                    column_opt.encoding,
                 )
             };
+            schema.push(col);
+        }
 
-            schema.push(col)
+        let mut column_name = HashSet::new();
+        for col in schema.iter() {
+            if !column_name.insert(col.name.as_str()) {
+                return Err(LogicalPlannerError::Semantic {
+                    err: "Field or Tag name should not have same".to_string(),
+                });
+            }
         }
         Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
             schema,
@@ -423,24 +429,21 @@ impl<S: ContextProvider> SqlPlaner<S> {
             return Ok(());
         }
         // 数据类型 -> 压缩方式 校验
+        let encoding = column.encoding;
         let is_ok = match column.data_type {
-            SQLDataType::Timestamp(_) => {
-                TIMESTAMP_CODEC.contains(&column.codec.to_uppercase().as_str())
-            }
-            SQLDataType::BigInt(_) => BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str()),
-            SQLDataType::UnsignedBigInt(_) => {
-                UNSIGNED_BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str())
-            }
-            SQLDataType::Double => DOUBLE_CODEC.contains(&column.codec.to_uppercase().as_str()),
-            SQLDataType::String => STRING_CODEC.contains(&column.codec.to_uppercase().as_str()),
-            SQLDataType::Boolean => BOOLEAN_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::Timestamp(_) => encoding.is_timestamp_encoding(),
+            SQLDataType::BigInt(_) => encoding.is_bigint_encoding(),
+            SQLDataType::UnsignedBigInt(_) => encoding.is_unsigned_encoding(),
+            SQLDataType::Double => encoding.is_double_encoding(),
+            SQLDataType::String => encoding.is_string_encoding(),
+            SQLDataType::Boolean => encoding.is_bool_encoding(),
             _ => false,
         };
         if !is_ok {
             return Err(LogicalPlannerError::Semantic {
                 err: format!(
-                    "Unsupported codec type {} for {}",
-                    column.codec, column.data_type
+                    "Unsupported encoding type {:?} for {}",
+                    column.encoding, column.data_type
                 ),
             });
         }
@@ -540,6 +543,7 @@ mod tests {
 
     use super::*;
     use datafusion::error::Result;
+    use models::codec::Encoding;
 
     #[derive(Debug)]
     struct MockContext {}
@@ -627,9 +631,63 @@ mod tests {
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateTable(create)) = plan {
-            let ans = format!("{:?}", create);
-            let expected = "CreateTable { schema: [TableColumn { id: 0, name: \"time\", column_type: Time, codec: 0 }, TableColumn { id: 1, name: \"column6\", column_type: Tag, codec: 0 }, TableColumn { id: 2, name: \"column7\", column_type: Tag, codec: 0 }, TableColumn { id: 3, name: \"column1\", column_type: Field(Integer), codec: 2 }, TableColumn { id: 4, name: \"column2\", column_type: Field(String), codec: 4 }, TableColumn { id: 5, name: \"column3\", column_type: Field(Unsigned), codec: 1 }, TableColumn { id: 6, name: \"column4\", column_type: Field(Boolean), codec: 0 }, TableColumn { id: 7, name: \"column5\", column_type: Field(Float), codec: 6 }], name: \"test\", if_not_exists: true }";
-            assert_eq!(ans, expected);
+            assert_eq!(
+                create,
+                CreateTable {
+                    schema: vec![
+                        TableColumn {
+                            id: 0,
+                            name: "time".to_string(),
+                            column_type: ColumnType::Time,
+                            encoding: Encoding::Default
+                        },
+                        TableColumn {
+                            id: 1,
+                            name: "column6".to_string(),
+                            column_type: ColumnType::Tag,
+                            encoding: Encoding::Default,
+                        },
+                        TableColumn {
+                            id: 2,
+                            name: "column7".to_string(),
+                            column_type: ColumnType::Tag,
+                            encoding: Encoding::Default,
+                        },
+                        TableColumn {
+                            id: 3,
+                            name: "column1".to_string(),
+                            column_type: ColumnType::Field(ValueType::Integer),
+                            encoding: Encoding::Delta,
+                        },
+                        TableColumn {
+                            id: 4,
+                            name: "column2".to_string(),
+                            column_type: ColumnType::Field(ValueType::String),
+                            encoding: Encoding::Gzip,
+                        },
+                        TableColumn {
+                            id: 5,
+                            name: "column3".to_string(),
+                            column_type: ColumnType::Field(ValueType::Unsigned),
+                            encoding: Encoding::Null,
+                        },
+                        TableColumn {
+                            id: 6,
+                            name: "column4".to_string(),
+                            column_type: ColumnType::Field(ValueType::Boolean),
+                            encoding: Encoding::Default,
+                        },
+                        TableColumn {
+                            id: 7,
+                            name: "column5".to_string(),
+                            column_type: ColumnType::Field(ValueType::Float),
+                            encoding: Encoding::Gorilla,
+                        }
+                    ],
+                    name: "test".to_string(),
+                    if_not_exists: true
+                }
+            );
         } else {
             panic!("expected create table plan")
         }
@@ -652,6 +710,45 @@ mod tests {
         } else {
             panic!("expected create table plan")
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_filed_name_same() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,presssure DOUBLE,TAGS(station));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_tag_name_same() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,station));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_tag_field_same_name() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,presssure));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
     }
 
     #[test]

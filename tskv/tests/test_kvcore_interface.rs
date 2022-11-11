@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use serial_test::serial;
     use std::sync::Arc;
     use std::time::Duration;
@@ -7,6 +8,11 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use config::get_config;
+    use models::codec::Encoding;
+    use models::schema::{
+        ColumnType, DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, TskvTableSchema,
+    };
+    use models::ValueType;
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
@@ -157,5 +163,61 @@ mod tests {
             tskv.write(0, request).await.unwrap();
         });
         println!("{:?}", tskv)
+    }
+
+    #[test]
+    #[serial]
+    fn test_kvcore_create_table() {
+        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        let (_rt, tskv) = get_tskv();
+        tskv.create_database(&DatabaseSchema::new("public"))
+            .unwrap();
+        tskv.create_database(&DatabaseSchema::new("test")).unwrap();
+        let schema = Schema::new(vec![
+            Field::new("cpu_hz", DataType::Decimal128(10, 6), false),
+            Field::new("temp", DataType::Float64, false),
+            Field::new("version_num", DataType::Int64, false),
+            Field::new("is_old", DataType::Boolean, false),
+            Field::new("weight", DataType::Decimal128(12, 7), false),
+        ]);
+        let expected = TableSchema::ExternalTableSchema(ExternalTableSchema {
+            db: "public".to_string(),
+            name: "cpu".to_string(),
+            file_compression_type: "".to_string(),
+            file_type: "CSV".to_string(),
+            location: "tests/data/csv/decimal_data.csv".to_string(),
+            target_partitions: 100,
+            table_partition_cols: vec![],
+            has_header: true,
+            delimiter: 44,
+            schema,
+        });
+        tskv.create_table(&expected).unwrap();
+        let table_schema = tskv.get_table_schema("public", "cpu").unwrap().unwrap();
+        assert_eq!(expected, table_schema);
+        let expected = TableSchema::TsKvTableSchema(TskvTableSchema::new(
+            "test".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(0, "time".to_string(), ColumnType::Time, Encoding::Default),
+                TableColumn::new(1, "ta".to_string(), ColumnType::Tag, Encoding::Default),
+                TableColumn::new(2, "tb".to_string(), ColumnType::Tag, Encoding::Default),
+                TableColumn::new(
+                    3,
+                    "fa".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::Default,
+                ),
+                TableColumn::new(
+                    4,
+                    "fb".to_string(),
+                    ColumnType::Field(ValueType::Float),
+                    Encoding::Default,
+                ),
+            ],
+        ));
+        tskv.create_table(&expected).unwrap();
+        let table_schema = tskv.get_table_schema("test", "test0").unwrap().unwrap();
+        assert_eq!(expected, table_schema);
     }
 }

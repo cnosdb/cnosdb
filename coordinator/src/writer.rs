@@ -75,7 +75,7 @@ impl VnodePoints<'_> {
 
         let point_args = PointArgs {
             db: Some(self.fbb.create_vector(point.db.as_bytes())),
-            table: Some(self.fbb.create_vector(point.table.as_bytes())),
+            tab: Some(self.fbb.create_vector(point.table.as_bytes())),
             tags: Some(self.fbb.create_vector(&tags)),
             fields: Some(self.fbb.create_vector(&fields)),
             timestamp: point.timestamp,
@@ -92,7 +92,7 @@ impl VnodePoints<'_> {
         let points = Points::create(
             &mut self.fbb,
             &PointsArgs {
-                database: Some(fbb_db),
+                db: Some(fbb_db),
                 points: Some(points_raw),
             },
         );

@@ -1,3 +1,4 @@
+--#SORT=true
 -- normal
 DROP DATABASE IF EXISTS public;
 CREATE DATABASE public;
@@ -43,3 +44,15 @@ select fa from public.test order by fa, fb;
 -- error
 -- query duplicate column
 select time, ta, fa, * from public.test order by fa, fb;
+
+CREATE TABLE air (
+     visibility DOUBLE,
+     temperature DOUBLE,
+     presssure DOUBLE,
+     TAGS(station,region)
+);
+
+INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:40:00', 'XiaoMaiDao', 55, 68, 76);
+INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:41:00', NULL, 56, 69, 77);
+INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:42:00', 'XiaoMaiDao', NULL, NULL, NULL);
+INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:43:00', NULL, NULL, NULL, NULL);

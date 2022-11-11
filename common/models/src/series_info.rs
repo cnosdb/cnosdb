@@ -104,7 +104,7 @@ impl SeriesKey {
             }
         };
 
-        let table = match point.table() {
+        let table = match point.tab() {
             Some(table) => {
                 String::from_utf8(table.to_vec()).map_err(|err| InvalidFlatbufferMessage {
                     err: err.to_string(),

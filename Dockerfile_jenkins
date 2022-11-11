@@ -1,4 +1,4 @@
-ARG RUST_VERSION=1.62.1
+ARG RUST_VERSION=1.64
 FROM rust:${RUST_VERSION}-slim-bullseye
 
 RUN apt update \

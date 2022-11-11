@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-models = { path = "../models"}
-reqwest = { version = "0.11.11", features = ["native-tls", "__rustls"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+models = { path = "../models" }
+
+reqwest = { workspace = true, features = ["native-tls", "__rustls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [features]
 http_client = []

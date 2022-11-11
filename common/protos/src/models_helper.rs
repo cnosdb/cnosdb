@@ -51,11 +51,54 @@ mod test {
     ) -> WIPOffset<Point<'a>> {
         let mut point_builder = PointBuilder::new(fbb);
         point_builder.add_db(db);
-        point_builder.add_table(table);
+        point_builder.add_tab(table);
         point_builder.add_tags(tags);
         point_builder.add_fields(fields);
         point_builder.add_timestamp(timestamp);
         point_builder.finish()
+    }
+
+    pub fn create_const_points<'a>(
+        fbb: &mut flatbuffers::FlatBufferBuilder<'a>,
+        num: usize,
+    ) -> WIPOffset<Points<'a>> {
+        let db = fbb.create_vector("db0".as_bytes());
+        let mut points = vec![];
+        for _ in 0..num {
+            let timestamp = 1;
+            let tags = create_tags(
+                fbb,
+                vec![("ta", &("a".to_string())), ("tb", &("b".to_string()))],
+            );
+
+            let fav = 100_i64.to_be_bytes();
+            let fbv = 1000_i64.to_be_bytes();
+            let fields = create_fields(
+                fbb,
+                vec![
+                    ("fa", FieldType::Integer, fav.as_slice()),
+                    ("fb", FieldType::Float, fbv.as_slice()),
+                ],
+            );
+
+            let table = fbb.create_vector("table".as_bytes());
+            points.push(create_point(
+                fbb,
+                timestamp,
+                db.clone(),
+                table,
+                tags,
+                fields,
+            ))
+        }
+        let points = fbb.create_vector(&points);
+        Points::create(
+            fbb,
+            &PointsArgs {
+                db: Some(db),
+                points: Some(points),
+            },
+        )
     }
 
     pub fn create_random_points_with_delta<'a>(
@@ -106,7 +149,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -181,7 +224,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -225,7 +268,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -277,7 +320,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(database),
+                db: Some(database),
                 points: Some(points),
             },
         )

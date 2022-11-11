@@ -6,12 +6,14 @@ use trace::info;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub cluster: ClusterConfig,
+    pub query: QueryConfig,
     pub storage: StorageConfig,
     pub wal: WalConfig,
     pub cache: CacheConfig,
     pub log: LogConfig,
     pub security: SecurityConfig,
     pub hintedoff: HintedOffConfig,
+    pub reporting_disabled: Option<bool>,
 }
 
 impl Config {
@@ -20,7 +22,15 @@ impl Config {
         self.storage.override_by_env();
         self.wal.override_by_env();
         self.cache.override_by_env();
+        self.query.override_by_env();
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryConfig {
+    pub max_server_connections: u32,
+    pub query_sql_limit: u64,
+    pub write_sql_limit: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,9 +41,9 @@ pub struct StorageConfig {
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
-    pub dio_max_resident: u64,
-    pub dio_max_non_resident: u64,
-    pub dio_page_len_scale: u64,
+    pub dio_max_resident: usize,
+    pub dio_max_non_resident: usize,
+    pub dio_page_len_scale: usize,
     pub strict_write: bool,
 }
 
@@ -58,13 +68,13 @@ impl StorageConfig {
             self.max_compact_size = size.parse::<u64>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_RESIDENT") {
-            self.dio_max_resident = size.parse::<u64>().unwrap();
+            self.dio_max_resident = size.parse::<usize>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_NON_RESIDENT") {
-            self.dio_max_non_resident = size.parse::<u64>().unwrap();
+            self.dio_max_non_resident = size.parse::<usize>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_PAGE_LEN_SCALE") {
-            self.dio_page_len_scale = size.parse::<u64>().unwrap();
+            self.dio_page_len_scale = size.parse::<usize>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
             self.strict_write = size.parse::<bool>().unwrap();
@@ -106,6 +116,20 @@ impl CacheConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
             self.max_immutable_number = size.parse::<u16>().unwrap();
+        }
+    }
+}
+
+impl QueryConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
+            self.max_server_connections = size.parse::<u32>().unwrap();
+        }
+        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
+            self.query_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
+            self.write_sql_limit = size.parse::<u64>().unwrap();
         }
     }
 }
@@ -216,6 +240,10 @@ fn test() {
 node_id = 100
 name = 'cluster_name'
 meta = '127.0.0.1:22000,127.0.0.1,22001'
+[query]
+max_server_connections = 10240 
+query_sql_limit = 16777216   # 16 * 1024 * 1024
+write_sql_limit = 167772160   # 160 * 1024 * 1024
 [storage]
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024

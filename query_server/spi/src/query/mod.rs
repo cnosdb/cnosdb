@@ -47,4 +47,7 @@ pub enum QueryError {
 
     #[snafu(display("Failed to do execution. err: {}", source))]
     Execution { source: ExecutionError },
+
+    #[snafu(display("Concurrent query request limit exceeded"))]
+    RequestLimit,
 }

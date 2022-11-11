@@ -50,6 +50,32 @@ pub fn init_global_tracing(dir: &str, file_name: &str, level: &str) -> Vec<Worke
 
     guards
 }
+///Use this macro to wrap the expression, you can output the error log
+#[macro_export]
+macro_rules! log_error {
+    ($e: expr) => {
+        error!("{}", &$e);
+        #[allow(unused_must_use)] {$e}
+    };
+
+    ($e: expr, $($arg: tt),+) => {
+        error!("{}, {}", format!($($arg)+).as_str(), &$e);
+        #[allow(unused_must_use)] {&$e}
+    };
+}
+/// Use this macro to wrap the expression, you can output the warning log
+#[macro_export]
+macro_rules! log_warn {
+    ($e: expr) => {
+        warn!("{}", &$e);
+        #[allow(unused_must_use)] {$e}
+    };
+
+    ($e: expr, $($arg: tt),+) => {
+        warn!("{}, {}", format!($($arg)+).as_str(), &$e);
+        #[allow(unused_must_use)] {&$e}
+    };
+}
 
 #[cfg(test)]
 mod tests {

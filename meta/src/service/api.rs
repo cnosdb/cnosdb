@@ -22,7 +22,7 @@ use crate::NodeId;
 pub async fn write(app: Data<MetaApp>, req: Json<KvReq>) -> actix_web::Result<impl Responder> {
     let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
     let response = match app.raft.client_write(request).await {
-        Ok(val) => (val.data),
+        Ok(val) => val.data,
         Err(err) => KvResp {
             err_code: -1,
             meta_data: TenantMetaData::new(),

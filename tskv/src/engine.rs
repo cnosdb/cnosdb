@@ -6,7 +6,7 @@ use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
 use datafusion::prelude::Column;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -15,8 +15,7 @@ use protos::{
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
-use trace::debug;
-use tracing::log::info;
+use trace::{debug, info};
 
 pub type EngineRef = Arc<dyn Engine>;
 
@@ -33,14 +32,6 @@ pub trait Engine: Send + Sync + Debug {
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
-
-    fn read(
-        &self,
-        db: &str,
-        sids: Vec<SeriesId>,
-        time_range: &TimeRange,
-        fields: Vec<ColumnId>,
-    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>>;
 
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
@@ -111,16 +102,6 @@ impl Engine for MockEngine {
         })
     }
 
-    fn read(
-        &self,
-        db: &str,
-        sids: Vec<SeriesId>,
-        time_range: &TimeRange,
-        fields: Vec<ColumnId>,
-    ) -> HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> {
-        HashMap::new()
-    }
-
     fn drop_database(&self, database: &str) -> Result<()> {
         println!("drop_database.sql {:?}", database);
         Ok(())
@@ -163,11 +144,11 @@ impl Engine for MockEngine {
 
     fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
-        Ok(Some(TableSchema::new(
+        Ok(Some(TableSchema::TsKvTableSchema(TskvTableSchema::new(
             db.to_string(),
             tab.to_string(),
             Default::default(),
-        )))
+        ))))
     }
 
     fn get_series_id_by_filter(

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use datafusion::{
     arrow::datatypes::DataType,
+    logical_expr::create_udaf,
     logical_expr::{AggregateUDF, Volatility},
-    logical_plan::create_udaf,
     physical_plan::expressions::AvgAccumulator,
 };
 use spi::query::function::FunctionMetadataManager;

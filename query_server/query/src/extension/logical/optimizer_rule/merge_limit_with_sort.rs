@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use datafusion::{
-    logical_plan::{
-        plan::{Extension, Sort},
-        Limit, LogicalPlan,
+    logical_expr::{
+        Limit, LogicalPlan, {Extension, Sort},
     },
     optimizer::{OptimizerConfig, OptimizerRule},
 };
