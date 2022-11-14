@@ -37,6 +37,9 @@ pub enum CoordinatorError {
     #[snafu(display("Error from tskv: {}", source))]
     TskvError { source: tskv::Error },
 
+    #[snafu(display("Error from tskv index: {}", source))]
+    TskvIndexError { source: tskv::index::IndexError },
+
     #[snafu(display("not found tenant: {}", name))]
     TenantNotFound { name: String },
 
@@ -93,6 +96,12 @@ impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
         CoordinatorError::ChannelRecv {
             msg: err.to_string(),
         }
+    }
+}
+
+impl From<tskv::index::IndexError> for CoordinatorError {
+    fn from(err: tskv::index::IndexError) -> Self {
+        CoordinatorError::TskvIndexError { source: err }
     }
 }
 

@@ -4,11 +4,16 @@ use std::sync::Arc;
 use config::{ClusterConfig, HintedOffConfig};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::DatabaseInfo;
+use models::predicate::domain::ColumnDomains;
+use models::schema::{DatabaseSchema, TableSchema};
+use models::*;
+
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use tskv::engine::EngineRef;
+use tskv::TimeRange;
 
 use crate::command::{CoordinatorIntCmd, WritePointsRequest};
 use crate::errors::*;
@@ -22,14 +27,34 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 #[async_trait::async_trait]
 pub trait Coordinator: Send + Sync {
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
-    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
-
     async fn write_points(
         &self,
         tenant: String,
         level: ConsistencyLevel,
         request: WritePointsRpcRequest,
     ) -> CoordinatorResult<()>;
+    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
+
+    // async fn read_record(
+    //     &self,
+    //     tenant: &String,
+    //     option: &QueryOption,
+    // ) -> CoordinatorResult<RowIterator>;
+
+    // fn create_db(&self, tenant: &String, info: &DatabaseSchema) -> CoordinatorResult<()>;
+    // fn db_schema(&self, tenant: &String, name: &String) -> Option<DatabaseSchema>;
+    // fn list_databases(&self, tenant: &String) -> CoordinatorResult<Vec<String>>;
+    // fn drop_db(&self, tenant: &String, name: &String) -> CoordinatorResult<()>;
+
+    // fn create_table(&self, tenant: &String, schema: &TableSchema) -> CoordinatorResult<()>;
+    // fn table_schema(
+    //     &self,
+    //     tenant: &String,
+    //     db: &String,
+    //     table: &String,
+    // ) -> CoordinatorResult<Option<TableSchema>>;
+    // fn list_tables(&self, tenant: &String, db: &String) -> CoordinatorResult<Vec<String>>;
+    // fn drop_table(&self, tenant: &String, db: &String, table: &String) -> CoordinatorResult<()>;
 }
 
 #[derive(Default)]
