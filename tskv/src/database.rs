@@ -58,6 +58,10 @@ impl Database {
         }
     }
 
+    pub fn alter_db_schema(&self, schema: DatabaseSchema) {
+        self.index.alter_db_schema(schema);
+    }
+
     pub fn open_tsfamily(
         &mut self,
         ver: Arc<Version>,

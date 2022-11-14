@@ -370,7 +370,9 @@ impl FieldCursor {
         let mut opt_next = self.cache_data.get(self.cache_index + 1);
 
         while let (Some(top), Some(next)) = (opt_top, opt_next) {
-            if top == next {
+            // if timestamp is same, select next data
+            // deduplication
+            if top.timestamp() == next.timestamp() {
                 self.cache_index += 1;
                 opt_top = Some(next);
                 opt_next = self.cache_data.get(self.cache_index + 1);
@@ -570,7 +572,7 @@ impl RowIterator {
             .context(IndexErrSnafu)?
         {
             self.columns.clear();
-            let fields = self.option.table_schema.columns().clone();
+            let fields = self.option.table_schema.columns().to_vec();
             for item in fields {
                 let field_name = item.name.clone();
                 debug!("build series columns id:{:02X}, {:?}", id, item);
@@ -578,18 +580,14 @@ impl RowIterator {
                     ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
 
                     ColumnType::Tag => Box::new(TagCursor::new(
-                        String::from_utf8(key.tag_val(&item.name)).unwrap(),
+                        String::from_utf8(key.tag_val(&item.name))
+                            .map_err(|_| Error::ErrCharacterSet)?,
                         field_name,
                     )),
 
                     ColumnType::Field(vtype) => match vtype {
                         ValueType::Unknown => todo!(),
-
-                        ValueType::Float
-                        | ValueType::Integer
-                        | ValueType::Unsigned
-                        | ValueType::Boolean
-                        | ValueType::String => {
+                        _ => {
                             let cursor = FieldCursor::new(
                                 unite_id(item.id as u64, id),
                                 field_name,

@@ -186,7 +186,7 @@ impl TskvTableSchema {
         self.columns.get(idx)
     }
 
-    pub fn columns(&self) -> &Vec<TableColumn> {
+    pub fn columns(&self) -> &[TableColumn] {
         &self.columns
     }
 
@@ -361,6 +361,15 @@ impl ColumnType {
             _ => "Error filed type not supported",
         }
     }
+
+    pub fn as_column_type_str(&self) -> &'static str {
+        match self {
+            Self::Tag => "TAG",
+            Self::Field(_) => "FIELD",
+            Self::Time => "TIME",
+        }
+    }
+
     pub fn field_type(&self) -> u8 {
         match self {
             Self::Field(ValueType::Float) => 0,
@@ -381,6 +390,21 @@ impl ColumnType {
             4 => Self::Field(ValueType::String),
             5 => Self::Time,
             _ => Self::Field(ValueType::Unknown),
+        }
+    }
+
+    pub fn to_sql_type_str(&self) -> &'static str {
+        match self {
+            Self::Tag => "STRING",
+            Self::Time => "TIMESTAMP",
+            Self::Field(value_type) => match value_type {
+                ValueType::String => "STRING",
+                ValueType::Integer => "BIGINT",
+                ValueType::Unsigned => "BIGINT UNSIGNED",
+                ValueType::Float => "DOUBLE",
+                ValueType::Boolean => "BOOLEAN",
+                ValueType::Unknown => "UNKNOWN",
+            },
         }
     }
 }
@@ -421,35 +445,95 @@ impl DatabaseSchema {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseOptions {
     // data keep time
-    pub ttl: Duration,
+    ttl: Option<Duration>,
 
-    pub shard_num: u64,
+    shard_num: Option<u64>,
     // shard coverage time range
-    pub vnode_duration: Duration,
+    vnode_duration: Option<Duration>,
 
-    pub replica: u64,
+    replica: Option<u64>,
     // timestamp percision
-    pub precision: Precision,
+    precision: Option<Precision>,
 }
 
-impl Default for DatabaseOptions {
-    fn default() -> Self {
-        Self {
-            ttl: Duration {
-                time_num: 365,
-                unit: DurationUnit::Day,
-            },
-            shard_num: 1,
-            vnode_duration: Duration {
-                time_num: 365,
-                unit: DurationUnit::Day,
-            },
-            replica: 1,
-            precision: Precision::NS,
-        }
+impl DatabaseOptions {
+    pub const DEFAULT_TTL: Duration = Duration {
+        time_num: 365,
+        unit: DurationUnit::Day,
+    };
+    pub const DEFAULT_SHARD_NUM: u64 = 1;
+    pub const DEFAULT_REPLICA: u64 = 1;
+    pub const DEFAULT_VNODE_DURATION: Duration = Duration {
+        time_num: 365,
+        unit: DurationUnit::Day,
+    };
+    pub const DEFAULT_PRECISION: Precision = Precision::NS;
+
+    pub fn ttl(&self) -> &Option<Duration> {
+        &self.ttl
+    }
+
+    pub fn ttl_or_default(&self) -> &Duration {
+        self.ttl.as_ref().unwrap_or(&DatabaseOptions::DEFAULT_TTL)
+    }
+
+    pub fn shard_num(&self) -> &Option<u64> {
+        &self.shard_num
+    }
+
+    pub fn shard_num_or_default(&self) -> u64 {
+        self.shard_num.unwrap_or(DatabaseOptions::DEFAULT_SHARD_NUM)
+    }
+
+    pub fn vnode_duration(&self) -> &Option<Duration> {
+        &self.vnode_duration
+    }
+
+    pub fn vnode_duration_or_default(&self) -> &Duration {
+        self.vnode_duration
+            .as_ref()
+            .unwrap_or(&DatabaseOptions::DEFAULT_VNODE_DURATION)
+    }
+
+    pub fn replica(&self) -> &Option<u64> {
+        &self.replica
+    }
+
+    pub fn replica_or_default(&self) -> u64 {
+        self.replica.unwrap_or(DatabaseOptions::DEFAULT_REPLICA)
+    }
+
+    pub fn precision(&self) -> &Option<Precision> {
+        &self.precision
+    }
+
+    pub fn precision_or_default(&self) -> &Precision {
+        self.precision
+            .as_ref()
+            .unwrap_or(&DatabaseOptions::DEFAULT_PRECISION)
+    }
+
+    pub fn with_ttl(&mut self, ttl: Duration) {
+        self.ttl = Some(ttl);
+    }
+
+    pub fn with_shard_num(&mut self, shard_num: u64) {
+        self.shard_num = Some(shard_num);
+    }
+
+    pub fn with_vnode_duration(&mut self, vnode_duration: Duration) {
+        self.vnode_duration = Some(vnode_duration);
+    }
+
+    pub fn with_replica(&mut self, replica: u64) {
+        self.replica = Some(replica);
+    }
+
+    pub fn with_precision(&mut self, precision: Precision) {
+        self.precision = Some(precision)
     }
 }
 

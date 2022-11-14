@@ -21,7 +21,6 @@ use snafu::ResultExt;
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
-use libc::read;
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
@@ -91,7 +90,7 @@ impl DbIndexMgr {
 pub struct DBIndex {
     path: PathBuf,
     storage: IndexEngine,
-    db_schema: DatabaseSchema,
+    db_schema: RwLock<DatabaseSchema>,
     //The u32 comes from split(SeriesKey.hash())
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
     // TableName -> TableSchema
@@ -127,11 +126,17 @@ impl DBIndex {
         };
         Self {
             storage,
-            db_schema: schema,
+            db_schema: RwLock::new(schema),
             series_cache: RwLock::new(HashMap::new()),
             table_schema: RwLock::new(HashMap::new()),
             path: path.into(),
         }
+    }
+
+    pub fn alter_db_schema(&self, db_schema: DatabaseSchema) {
+        let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
+        store_db_schema(&key, &db_schema, &self.storage);
+        *self.db_schema.write() = db_schema;
     }
 
     pub fn get_sid_from_cache(&self, info: &Point) -> IndexResult<Option<u64>> {
@@ -537,7 +542,7 @@ impl DBIndex {
     }
 
     pub fn db_schema(&self) -> DatabaseSchema {
-        self.db_schema.clone()
+        self.db_schema.read().clone()
     }
 
     pub fn get_series_ids_by_domain(
