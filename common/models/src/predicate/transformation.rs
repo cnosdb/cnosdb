@@ -417,16 +417,22 @@ mod tests {
     }
 
     fn get_tuple_date64_and_expr_with_except_column_domains() -> (Expr, ColumnDomains<Column>) {
-        let epoch_l = NaiveDate::from_ymd(1970, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_l = NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_m = NaiveDate::from_ymd(2022, 12, 31)
-            .and_hms(1, 1, 1)
+        let epoch_m = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_h = NaiveDate::from_ymd(2000, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_h = NaiveDate::from_ymd_opt(2000, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
         let epoch_h_expr = Expr::Literal(ScalarValue::Date64(Some(epoch_h.timestamp())));
@@ -920,12 +926,16 @@ mod tests {
         let port_low = binary_expr(col("port"), Operator::LtEq, lit(20000));
         let port_high = binary_expr(col("port"), Operator::GtEq, lit(10000));
 
-        let epoch_l = NaiveDate::from_ymd(1970, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_l = NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_m = NaiveDate::from_ymd(2022, 12, 31)
-            .and_hms(1, 1, 1)
+        let epoch_m = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
         let filter_d2 = binary_expr(col("time"), Operator::Lt, lit(epoch_m.timestamp_micros()));
@@ -1002,12 +1012,16 @@ mod tests {
         let host_low = binary_expr(col("host"), Operator::LtEq, lit("host099"));
         let host_high = binary_expr(col("host"), Operator::GtEq, lit("host200"));
 
-        let epoch_l = NaiveDate::from_ymd(1970, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_l = NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_m = NaiveDate::from_ymd(2022, 12, 31)
-            .and_hms(1, 1, 1)
+        let epoch_m = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
         let filter_d2 = binary_expr(col("time"), Operator::Lt, lit(epoch_m.timestamp_micros()));
