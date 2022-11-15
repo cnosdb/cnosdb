@@ -41,8 +41,8 @@ pub enum AlterTableAction {
     AddColumn {
         column: ColumnOption,
     },
-    AlterField {
-        field_name: Ident,
+    AlterColumnEncoding {
+        column_name: Ident,
         encoding: Encoding,
     },
     DropColumn {

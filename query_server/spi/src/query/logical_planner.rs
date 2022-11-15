@@ -179,8 +179,8 @@ pub enum AlterTableAction {
     AddColumn {
         table_column: TableColumn,
     },
-    AlterField {
-        field_name: String,
+    AlterColumnEncoding {
+        column_name: String,
         encoding: Encoding,
     },
     DropColumn {
