@@ -137,15 +137,16 @@ impl Database {
     }
 
     pub fn register_table(&self, name: String, table: TableSchema) -> Result<Option<TableSchema>> {
-        if self.table_exist(name.as_str()) {
+        let mut tables = self.tables.write();
+        if tables.contains_key(name.as_str()) {
             return Err(MetadataError::TableAlreadyExists { table_name: name });
         }
+
         self.engine
             .create_table(&table)
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })?;
-        let mut tables = self.tables.write();
         Ok(tables.insert(name, table))
     }
 
@@ -159,10 +160,5 @@ impl Database {
             })?;
 
         Ok(tables.remove(name))
-    }
-
-    pub fn table_exist(&self, name: &str) -> bool {
-        let tables = self.tables.read();
-        tables.contains_key(name)
     }
 }

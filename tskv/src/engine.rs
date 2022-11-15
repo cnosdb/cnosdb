@@ -55,7 +55,7 @@ pub trait Engine: Send + Sync + Debug {
         database: &str,
         table: &str,
         column_name: &str,
-        new_column: &TableColumn,
+        new_column: TableColumn,
     ) -> Result<()>;
 
     fn delete_series(
@@ -196,7 +196,7 @@ impl Engine for MockEngine {
         database: &str,
         table: &str,
         column_name: &str,
-        new_column: &TableColumn,
+        new_column: TableColumn,
     ) -> Result<()> {
         todo!()
     }

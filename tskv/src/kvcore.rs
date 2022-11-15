@@ -712,7 +712,7 @@ impl Engine for TsKv {
         database: &str,
         table: &str,
         column_name: &str,
-        new_column: &TableColumn,
+        new_column: TableColumn,
     ) -> Result<()> {
         let db = self.get_db(database)?;
         db.read()

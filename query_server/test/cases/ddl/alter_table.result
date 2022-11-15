@@ -1,0 +1,119 @@
+-- EXECUTE SQL: DROP DATABASE IF EXISTS alter_table; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE DATABASE alter_table; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE test ( f0 BIGINT CODEC(NULL), TAGS(t0) ); --
+200 OK
+
+
+-- EXECUTE SQL: ALTER TABLE test DROP f0; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: table must hava a field"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test DROP t0; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: table must have a tag"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test DROP time; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: can't drop time column"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test ADD FIELD time BIGINT; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: column time already exists in table test"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test ADD TAG t0; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: column t0 already exists in table test"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test ADD FIELD f0 DOUBLE CODEC(DEFAULT); --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: column f0 already exists in table test"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test ADD TAG t1; --
+200 OK
+
+
+-- EXECUTE SQL: DESCRIBE TABLE test; --
+200 OK
+COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+time,TIMESTAMP,TIME,DEFAULT
+t0,STRING,TAG,DEFAULT
+f0,BIGINT,FIELD,NULL
+t1,STRING,TAG,DEFAULT
+
+
+-- EXECUTE SQL: ALTER TABLE test ADD FIELD f1 BIGINT CODEC(NULL); --
+200 OK
+
+
+-- EXECUTE SQL: DESCRIBE TABLE test; --
+200 OK
+COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+time,TIMESTAMP,TIME,DEFAULT
+t0,STRING,TAG,DEFAULT
+f0,BIGINT,FIELD,NULL
+t1,STRING,TAG,DEFAULT
+f1,BIGINT,FIELD,NULL
+
+
+-- EXECUTE SQL: ALTER TABLE test DROP f0; --
+200 OK
+
+
+-- EXECUTE SQL: ALTER TABLE test DROP f1; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: table must hava a field"}
+-- ERROR:  --
+
+-- EXECUTE SQL: DESCRIBE TABLE test; --
+200 OK
+COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+time,TIMESTAMP,TIME,DEFAULT
+t0,STRING,TAG,DEFAULT
+t1,STRING,TAG,DEFAULT
+f1,BIGINT,FIELD,NULL
+
+
+-- EXECUTE SQL: ALTER TABLE test ALTER f1 SET CODEC(DEFAULT); --
+200 OK
+
+
+-- EXECUTE SQL: DESCRIBE TABLE test; --
+200 OK
+COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+time,TIMESTAMP,TIME,DEFAULT
+t0,STRING,TAG,DEFAULT
+t1,STRING,TAG,DEFAULT
+f1,BIGINT,FIELD,DEFAULT
+
+
+-- EXECUTE SQL: ALTER TABLE test ALTER t0 SET CODEC(NULL); --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: tag does not support compression"}
+-- ERROR:  --
+
+-- EXECUTE SQL: ALTER TABLE test ALTER time SET CODEC(NULL); --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: can't modify codec type of time column"}
+-- ERROR:  --
+
+-- EXECUTE SQL: DESCRIBE TABLE test; --
+200 OK
+COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,COMPRESSION_CODEC
+time,TIMESTAMP,TIME,DEFAULT
+t0,STRING,TAG,DEFAULT
+t1,STRING,TAG,DEFAULT
+f1,BIGINT,FIELD,DEFAULT
+
+

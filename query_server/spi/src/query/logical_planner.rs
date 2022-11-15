@@ -11,7 +11,6 @@ use datafusion::{
     logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
     prelude::{col, Expr},
 };
-use models::codec::Encoding;
 use models::schema::DatabaseOptions;
 use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
@@ -179,9 +178,9 @@ pub enum AlterTableAction {
     AddColumn {
         table_column: TableColumn,
     },
-    AlterColumnEncoding {
+    AlterColumn {
         column_name: String,
-        encoding: Encoding,
+        new_column: TableColumn,
     },
     DropColumn {
         column_name: String,
