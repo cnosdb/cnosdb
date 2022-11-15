@@ -12,7 +12,7 @@
 
 -- EXECUTE SQL: DESCRIBE TABLE create_external_table.cpu; --
 200 OK
-FIELDNAME,TYPE
+COLUMN_NAME,DATA_TYPE
 cpu_hz,"Decimal128(10, 6)"
 temp,Float64
 version_num,Int64

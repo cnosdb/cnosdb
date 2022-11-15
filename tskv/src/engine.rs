@@ -35,6 +35,8 @@ pub trait Engine: Send + Sync + Debug {
 
     fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
+    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
+
     fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema>;
 
     fn drop_database(&self, database: &str) -> Result<()>;
@@ -169,6 +171,10 @@ impl Engine for MockEngine {
     }
 
     fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
+        todo!()
+    }
+
+    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
         todo!()
     }
 }

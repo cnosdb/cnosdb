@@ -22,16 +22,16 @@ pub trait MetaData: Send + Sync {
     fn catalog_name(&self) -> String;
     fn schema_name(&self) -> String;
     fn table(&self, name: TableReference) -> Result<TableSchema>;
+    fn database(&self, name: &str) -> Result<DatabaseSchema>;
     fn function(&self) -> FuncMetaManagerRef;
     fn drop_table(&self, name: &str) -> Result<()>;
     fn drop_database(&self, name: &str) -> Result<()>;
     fn create_table(&self, name: &str, table: TableSchema) -> Result<()>;
     fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()>;
     fn database_names(&self) -> Vec<String>;
-    fn describe_database(&self, name: &str) -> Result<Output>;
-    fn describe_table(&self, table_name: &str) -> Result<Output>;
     fn show_databases(&self) -> Result<Output>;
     fn show_tables(&self, database_name: &Option<String>) -> Result<Output>;
+    fn alter_database(&self, database: DatabaseSchema) -> Result<()>;
 }
 
 #[derive(Debug, Snafu)]

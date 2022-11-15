@@ -12,6 +12,7 @@ pub mod error;
 pub mod file_system;
 pub mod file_utils;
 pub mod index;
+pub mod iterator;
 pub mod kv_option;
 mod kvcore;
 pub mod memcache;

@@ -1,5 +1,11 @@
 use std::collections::HashMap;
 use std::ops::{Bound, RangeBounds};
+use std::task::Poll;
+
+use datafusion::arrow::error::ArrowError;
+use datafusion::physical_plan::metrics::{
+    self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
+};
 
 use datafusion::scalar::ScalarValue;
 use minivec::MiniVec;
@@ -13,9 +19,7 @@ use models::{FieldId, SeriesId, ValueType};
 use snafu::ResultExt;
 use trace::debug;
 
-use crate::stream::TskvSourceMetrics;
-
-use tskv::{
+use super::{
     engine::EngineRef,
     error::IndexErrSnafu,
     memcache::DataType,
@@ -32,8 +36,95 @@ use datafusion::arrow::{
 
 use models::predicate::domain::{ColumnDomains, Domain, Range, ValueEntry};
 use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
+
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
+
+/// Stores metrics about the table writer execution.
+#[derive(Debug)]
+pub struct TableScanMetrics {
+    baseline_metrics: BaselineMetrics,
+
+    partition: usize,
+    metrics: ExecutionPlanMetricsSet,
+}
+
+impl TableScanMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
+        let baseline_metrics = BaselineMetrics::new(metrics, partition);
+        Self {
+            baseline_metrics,
+            partition,
+            metrics: metrics.clone(),
+        }
+    }
+
+    pub fn tskv_metrics(&self) -> TskvSourceMetrics {
+        TskvSourceMetrics::new(&self.metrics.clone(), self.partition)
+    }
+
+    /// return the metric for cpu time spend in this operator
+    pub fn elapsed_compute(&self) -> &metrics::Time {
+        self.baseline_metrics.elapsed_compute()
+    }
+
+    /// Process a poll result of a stream producing output for an
+    /// operator, recording the output rows and stream done time and
+    /// returning the same poll result
+    pub fn record_poll(
+        &self,
+        poll: Poll<Option<std::result::Result<RecordBatch, ArrowError>>>,
+    ) -> Poll<Option<std::result::Result<RecordBatch, ArrowError>>> {
+        self.baseline_metrics.record_poll(poll)
+    }
+
+    /// Records the fact that this operator's execution is complete
+    /// (recording the `end_time` metric).
+    pub fn done(&self) {
+        self.baseline_metrics.done()
+    }
+}
+
+/// Stores metrics about the table writer execution.
+#[derive(Debug)]
+pub struct TskvSourceMetrics {
+    elapsed_point_to_record_batch: metrics::Time,
+    elapsed_field_scan: metrics::Time,
+    elapsed_series_scan: metrics::Time,
+}
+
+impl TskvSourceMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
+        let elapsed_point_to_record_batch =
+            MetricBuilder::new(metrics).subset_time("elapsed_point_to_record_batch", partition);
+
+        let elapsed_field_scan =
+            MetricBuilder::new(metrics).subset_time("elapsed_field_scan", partition);
+
+        let elapsed_series_scan =
+            MetricBuilder::new(metrics).subset_time("elapsed_series_scan", partition);
+
+        Self {
+            elapsed_point_to_record_batch,
+            elapsed_field_scan,
+            elapsed_series_scan,
+        }
+    }
+
+    pub fn elapsed_point_to_record_batch(&self) -> &metrics::Time {
+        &self.elapsed_point_to_record_batch
+    }
+
+    pub fn elapsed_field_scan(&self) -> &metrics::Time {
+        &self.elapsed_field_scan
+    }
+
+    pub fn elapsed_series_scan(&self) -> &metrics::Time {
+        &self.elapsed_series_scan
+    }
+}
 
 // 1. Tsm文件遍历： KeyCursor
 //  功能：根据输入参数遍历Tsm文件
@@ -279,6 +370,8 @@ impl FieldCursor {
         let mut opt_next = self.cache_data.get(self.cache_index + 1);
 
         while let (Some(top), Some(next)) = (opt_top, opt_next) {
+            // if timestamp is same, select next data
+            // deduplication
             if top.timestamp() == next.timestamp() {
                 self.cache_index += 1;
                 opt_top = Some(next);
@@ -479,7 +572,7 @@ impl RowIterator {
             .context(IndexErrSnafu)?
         {
             self.columns.clear();
-            let fields = self.option.table_schema.columns().clone();
+            let fields = self.option.table_schema.columns().to_vec();
             for item in fields {
                 let field_name = item.name.clone();
                 debug!("build series columns id:{:02X}, {:?}", id, item);
@@ -487,18 +580,14 @@ impl RowIterator {
                     ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
 
                     ColumnType::Tag => Box::new(TagCursor::new(
-                        String::from_utf8(key.tag_val(&item.name)).unwrap(),
+                        String::from_utf8(key.tag_val(&item.name))
+                            .map_err(|_| Error::ErrCharacterSet)?,
                         field_name,
                     )),
 
                     ColumnType::Field(vtype) => match vtype {
                         ValueType::Unknown => todo!(),
-
-                        ValueType::Float
-                        | ValueType::Integer
-                        | ValueType::Unsigned
-                        | ValueType::Boolean
-                        | ValueType::String => {
+                        _ => {
                             let cursor = FieldCursor::new(
                                 unite_id(item.id as u64, id),
                                 field_name,

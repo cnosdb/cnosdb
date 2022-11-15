@@ -96,10 +96,14 @@ impl UserCatalog {
 
         let info = DatabaseInfo {
             name: name.to_string(),
-            shard: schema.database_schema.config.shard_num as u32,
-            ttl: schema.database_schema.config.ttl.time_stamp(),
-            vnode_duration: schema.database_schema.config.vnode_duration.time_stamp(),
-            replications: schema.database_schema.config.replica as u32,
+            shard: schema.database_schema.config.shard_num_or_default() as u32,
+            ttl: schema.database_schema.config.ttl_or_default().time_stamp(),
+            vnode_duration: schema
+                .database_schema
+                .config
+                .vnode_duration_or_default()
+                .time_stamp(),
+            replications: schema.database_schema.config.replica_or_default() as u32,
             buckets: vec![],
         };
         self.coord

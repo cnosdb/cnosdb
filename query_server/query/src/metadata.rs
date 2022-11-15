@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use crate::catalog::{Database, UserCatalog, UserCatalogRef};
-use datafusion::arrow::array::{BooleanArray, StringArray};
+use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::physical_plan::common::SizedRecordBatchStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MemTrackingMetrics};
@@ -13,8 +13,7 @@ use datafusion::{
 };
 
 use coordinator::service::CoordinatorRef;
-use models::schema::{ColumnType, TableSchema};
-use models::ValueType;
+use models::schema::TableSchema;
 use spi::query::execution::Output;
 
 use datafusion::arrow::record_batch::RecordBatch;
@@ -23,6 +22,7 @@ use crate::table::ClusterTable;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
 use datafusion::datasource::provider_as_source;
 use models::schema::DatabaseSchema;
+
 use spi::catalog::{
     MetaData, MetaDataRef, MetadataError, Result, DEFAULT_CATALOG, DEFAULT_DATABASE,
 };
@@ -125,6 +125,14 @@ impl MetaData for LocalCatalogMeta {
         Ok(table)
     }
 
+    fn database(&self, name: &str) -> Result<DatabaseSchema> {
+        self.engine
+            .get_db_schema(name)
+            .ok_or(MetadataError::DatabaseNotExists {
+                database_name: name.to_string(),
+            })
+    }
+
     fn function(&self) -> FuncMetaManagerRef {
         self.func_manager.clone()
     }
@@ -174,154 +182,6 @@ impl MetaData for LocalCatalogMeta {
 
     fn database_names(&self) -> Vec<String> {
         self.catalog.schema_names()
-    }
-
-    fn describe_database(&self, name: &str) -> Result<Output> {
-        match self.engine.get_db_schema(name) {
-            None => Err(MetadataError::DatabaseNotExists {
-                database_name: name.to_string(),
-            }),
-            Some(db_cfg) => {
-                let schema = Arc::new(Schema::new(vec![
-                    Field::new("TTL", DataType::Utf8, false),
-                    Field::new("SHARD", DataType::Utf8, false),
-                    Field::new("VNODE_DURATION", DataType::Utf8, false),
-                    Field::new("REPLICA", DataType::Utf8, false),
-                    Field::new("PRECISION", DataType::Utf8, false),
-                ]));
-
-                let ttl = db_cfg.config.ttl.to_string();
-                let shard = db_cfg.config.shard_num.to_string();
-                let vnode_duration = db_cfg.config.vnode_duration.to_string();
-                let replica = db_cfg.config.replica.to_string();
-                let precision = db_cfg.config.precision.to_string();
-
-                let batch = RecordBatch::try_new(
-                    schema,
-                    vec![
-                        Arc::new(StringArray::from(vec![ttl.as_str()])),
-                        Arc::new(StringArray::from(vec![shard.as_str()])),
-                        Arc::new(StringArray::from(vec![vnode_duration.as_str()])),
-                        Arc::new(StringArray::from(vec![replica.as_str()])),
-                        Arc::new(StringArray::from(vec![precision.as_str()])),
-                    ],
-                )
-                .unwrap();
-
-                let batches = vec![Arc::new(batch)];
-
-                Ok(Output::StreamData(stream_from_batches(batches)))
-            }
-        }
-    }
-
-    fn describe_table(&self, name: &str) -> Result<Output> {
-        let table: TableReference = name.into();
-        let table_ref = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
-
-        // let table_ref = table.resolve(&catalog.catalog_name(), &catalog.schema_name());
-        let database_name = table_ref.schema.to_string();
-        let table_name = table.table().to_string();
-
-        match self
-            .engine
-            .get_table_schema(database_name.as_str(), table_name.as_str())
-            .unwrap()
-        {
-            None => Err(MetadataError::TableNotExists {
-                table_name: name.to_string(),
-            }),
-            Some(table_schema) => {
-                match table_schema {
-                    TableSchema::TsKvTableSchema(table_schema) => {
-                        let schema = Arc::new(Schema::new(vec![
-                            Field::new("FIELDNAME", DataType::Utf8, false),
-                            Field::new("TYPE", DataType::Utf8, false),
-                            Field::new("ISTAG", DataType::Boolean, false),
-                            Field::new("COMPRESSION", DataType::Utf8, false),
-                        ]));
-                        // fieldname    type        istag       compression
-                        //      time    Time,       No          codec
-                        //      c1      String      No          codec
-                        //      c2      uint64      No          default
-                        let columns = table_schema.columns();
-
-                        let mut name_column = vec![];
-                        let mut type_column = vec![];
-                        let mut tags = vec![];
-                        let mut compressions = vec![];
-
-                        for item in columns {
-                            let field_name = item.name.as_str();
-                            let field_type;
-                            let mut tag = false;
-
-                            match item.column_type {
-                                ColumnType::Tag => {
-                                    field_type = "STRING";
-                                    tag = true;
-                                }
-                                ColumnType::Time => field_type = "TIMESTAMP",
-                                ColumnType::Field(ValueType::Float) => field_type = "DOUBLE",
-                                ColumnType::Field(ValueType::Integer) => field_type = "BIGINT",
-                                ColumnType::Field(ValueType::Unsigned) => field_type = "UNSIGNED",
-                                ColumnType::Field(ValueType::String) => field_type = "STRING",
-                                ColumnType::Field(ValueType::Boolean) => field_type = "BOOLEAN",
-                                ColumnType::Field(ValueType::Unknown) => field_type = "UNKNOW",
-                            }
-
-                            let compression = item.encoding.as_str();
-                            name_column.push(field_name);
-                            type_column.push(field_type);
-                            tags.push(tag);
-                            compressions.push(compression);
-                        }
-
-                        let batch = RecordBatch::try_new(
-                            schema,
-                            vec![
-                                Arc::new(StringArray::from(name_column)),
-                                Arc::new(StringArray::from(type_column)),
-                                Arc::new(BooleanArray::from(tags)),
-                                Arc::new(StringArray::from(compressions)),
-                            ],
-                        )
-                        .unwrap();
-
-                        let batches = vec![Arc::new(batch)];
-
-                        Ok(Output::StreamData(stream_from_batches(batches)))
-                    }
-                    TableSchema::ExternalTableSchema(table_schema) => {
-                        let schema = Arc::new(Schema::new(vec![
-                            Field::new("FIELDNAME", DataType::Utf8, false),
-                            Field::new("TYPE", DataType::Utf8, false),
-                        ]));
-
-                        let mut name_column = vec![];
-                        let mut type_column = vec![];
-
-                        for item in table_schema.schema.fields.iter() {
-                            name_column.push(item.name().clone());
-                            type_column.push(item.data_type().to_string());
-                        }
-
-                        let batch = RecordBatch::try_new(
-                            schema,
-                            vec![
-                                Arc::new(StringArray::from(name_column)),
-                                Arc::new(StringArray::from(type_column)),
-                            ],
-                        )
-                        .unwrap();
-
-                        let batches = vec![Arc::new(batch)];
-
-                        Ok(Output::StreamData(stream_from_batches(batches)))
-                    }
-                }
-            }
-        }
     }
 
     fn show_databases(&self) -> Result<Output> {
@@ -382,6 +242,14 @@ impl MetaData for LocalCatalogMeta {
                 }
             }
         }
+    }
+
+    fn alter_database(&self, database: DatabaseSchema) -> Result<()> {
+        self.engine
+            .alter_database(&database)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
     }
 }
 

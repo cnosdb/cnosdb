@@ -17,8 +17,8 @@ use datafusion::{
 use models::predicate::domain::PredicateRef;
 use models::schema::TskvTableSchema;
 
-use crate::stream::{TableScanMetrics, TableScanStream};
-use tskv::engine::EngineRef;
+use crate::stream::TableScanStream;
+use tskv::{engine::EngineRef, iterator::TableScanMetrics};
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {
