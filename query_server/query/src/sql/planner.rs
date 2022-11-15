@@ -18,7 +18,7 @@ use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Ident, ObjectName, Query, Statement,
 };
 use datafusion::sql::TableReference;
-use models::schema::{ColumnType, TableColumn};
+use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
@@ -34,7 +34,6 @@ use spi::query::logical_planner::{
     DDLPlan, DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner,
     LogicalPlannerError, Plan, QueryPlan, SYSPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
     AlterTable, AlterTableAction,
-    ExternalSnafu,
 };
 use spi::query::session::IsiphoSessionCtx;
 
@@ -329,7 +328,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 id,
                 normalize_ident(&column_opt.name),
                 Self::make_data_type(&column_opt.data_type)?,
-                column_opt.encoding,
+                column_opt.encoding.unwrap_or_default(),
             )
         };
         Ok(col)
@@ -361,7 +360,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
-                let table_column = Self::column_opt_to_table_column(column, 0)?;
+                let table_column = Self::column_opt_to_table_column(column, ColumnId::default())?;
                 if table_schema.contains_column(&table_column.name) {
                     return Err(LogicalPlannerError::Semantic {
                         err: format!(
@@ -397,7 +396,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
                 if table_column.column_type.is_time() {
                     return Err(LogicalPlannerError::Semantic {
-                        err: "can't drop TIME column".to_string(),
+                        err: format!("can't drop {} column", TIME_FIELD_NAME),
                     });
                 }
 
@@ -409,27 +408,31 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 encoding,
             } => {
                 let column_name = normalize_ident(column_name);
-                match table_schema.column(&column_name) {
-                    Some(column) => {
-                        if column.column_type.is_tag() {
-                            return Err(LogicalPlannerError::Semantic {
-                                err: format!("tag does not support compression"),
-                            });
-                        }
+                let column = table_schema.column(&column_name).ok_or_else(|| {
+                    LogicalPlannerError::Semantic {
+                        err: format!(
+                            "column {} not exists in table {}",
+                            column_name, &table_schema.name
+                        ),
                     }
-                    None => {
-                        return Err(LogicalPlannerError::Semantic {
-                            err: format!(
-                                "column {} not exists in table {}",
-                                column_name, &table_schema.name
-                            ),
-                        })
-                    }
+                })?;
+                if column.column_type.is_tag() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "tag does not support compression".to_string(),
+                    });
                 }
 
-                AlterTableAction::AlterColumnEncoding {
+                if column.column_type.is_time() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!("can't modify codec type of {} column", TIME_FIELD_NAME),
+                    });
+                }
+                let mut new_column = column.clone();
+                new_column.encoding = encoding;
+
+                AlterTableAction::AlterColumn {
                     column_name,
-                    encoding,
+                    new_column,
                 }
             }
         };
@@ -535,7 +538,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             return Ok(());
         }
         // 数据类型 -> 压缩方式 校验
-        let encoding = column.encoding;
+        let encoding = column.encoding.unwrap_or_default();
         let is_ok = match column.data_type {
             SQLDataType::Timestamp(_) => encoding.is_timestamp_encoding(),
             SQLDataType::BigInt(_) => encoding.is_bigint_encoding(),

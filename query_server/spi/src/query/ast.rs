@@ -91,11 +91,11 @@ pub struct ColumnOption {
     pub name: Ident,
     pub is_tag: bool,
     pub data_type: DataType,
-    pub encoding: Encoding,
+    pub encoding: Option<Encoding>,
 }
 
 impl ColumnOption {
-    pub fn new_field(name: Ident, data_type: DataType, encoding: Encoding) -> Self {
+    pub fn new_field(name: Ident, data_type: DataType, encoding: Option<Encoding>) -> Self {
         Self {
             name,
             is_tag: false,
@@ -109,7 +109,7 @@ impl ColumnOption {
             name,
             is_tag: true,
             data_type: DataType::String,
-            encoding: Encoding::default(),
+            encoding: None,
         }
     }
 }

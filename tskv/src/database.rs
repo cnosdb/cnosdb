@@ -310,7 +310,7 @@ impl Database {
         &self,
         table: &str,
         column_name: &str,
-        new_column: &TableColumn,
+        new_column: TableColumn,
     ) -> IndexResult<()> {
         self.index
             .change_table_column(table, column_name, new_column)?;

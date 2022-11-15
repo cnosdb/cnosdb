@@ -187,13 +187,13 @@ impl TskvTableSchema {
         self.columns_index = columns_index;
     }
 
-    pub fn change_column(&mut self, col_name: &str, new_column: &TableColumn) {
+    pub fn change_column(&mut self, col_name: &str, new_column: TableColumn) {
         let id = match self.columns_index.get(col_name) {
             None => return,
             Some(id) => *id,
         };
         self.columns_index.insert(new_column.name.clone(), id);
-        self.columns[id] = new_column.clone();
+        self.columns[id] = new_column;
     }
 
     /// Get the metadata of the column according to the column name

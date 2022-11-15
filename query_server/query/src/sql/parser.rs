@@ -48,23 +48,6 @@ enum CnosKeyWord {
     QUERIES,
 }
 
-// impl CnosKeyWord {
-//     pub const fn as_str(&self) -> &'static str {
-//         match self {
-//             TAGS => "TAGS",
-//             CODEC => "CODEC",
-//             TAG => "TAG",
-//             FIELD => "field",
-//             TTL => "TTL",
-//             SHARD => "SHARD",
-//             VNODE_DURATION => "VNODE_DURATION",
-//             REPLICA => "REPLICA",
-//             PRECISION => "PRECISION",
-//             DATABASES => "DATABASES",
-//         }
-//     }
-// }
-
 impl FromStr for CnosKeyWord {
     type Err = ParserError;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
@@ -280,12 +263,8 @@ impl<'a> ExtParser<'a> {
         if self.parser.parse_keyword(Keyword::ADD) {
             self.parse_alter_table_add_column(table_name)
         } else if self.parser.parse_keyword(Keyword::ALTER) {
-            // [COLUMN]
-            let _ = self.parser.parse_keyword(Keyword::COLUMN);
             self.parse_alter_table_alter_column(table_name)
         } else if self.parser.parse_keyword(Keyword::DROP) {
-            // [COLUMN]
-            let _ = self.parser.parse_keyword(Keyword::COLUMN);
             self.parse_alter_table_drop_column(table_name)
         } else {
             self.expected("ADD or ALTER or DROP", self.parser.peek_token())
@@ -296,7 +275,11 @@ impl<'a> ExtParser<'a> {
         if self.parse_cnos_keyword(CnosKeyWord::FIELD) {
             let field_name = self.parser.parse_identifier()?;
             let data_type = self.parse_column_type()?;
-            let encoding = self.parse_codec_type()?;
+            let encoding = if self.peek_cnos_keyword().eq(&Ok(CnosKeyWord::CODEC)) {
+                Some(self.parse_codec_type()?)
+            } else {
+                None
+            };
             let column = ColumnOption::new_field(field_name, data_type, encoding);
             Ok(ExtStatement::AlterTable(AlterTable {
                 table_name,
@@ -626,9 +609,9 @@ impl<'a> ExtParser<'a> {
             let column_type = self.parse_column_type()?;
 
             let encoding = if self.parser.peek_token().eq(&Token::Comma) {
-                Encoding::Default
+                None
             } else {
-                self.parse_codec_type()?
+                Some(self.parse_codec_type()?)
             };
 
             field_columns.push(ColumnOption {
@@ -669,7 +652,7 @@ impl<'a> ExtParser<'a> {
                 name,
                 is_tag: true,
                 data_type: DataType::String,
-                encoding: Encoding::Unknown,
+                encoding: None,
             });
             let is_comma = self.consume_token(&Token::Comma);
             if self.consume_token(&Token::RParen) {
@@ -863,43 +846,43 @@ mod tests {
                             name: Ident::from("column6"),
                             is_tag: true,
                             data_type: DataType::String,
-                            encoding: Encoding::Unknown
+                            encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column7"),
                             is_tag: true,
                             data_type: DataType::String,
-                            encoding: Encoding::Unknown
+                            encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column1"),
                             is_tag: false,
                             data_type: DataType::BigInt(None),
-                            encoding: Encoding::Delta
+                            encoding: Some(Encoding::Delta)
                         },
                         ColumnOption {
                             name: Ident::from("column2"),
                             is_tag: false,
                             data_type: DataType::String,
-                            encoding: Encoding::Gzip
+                            encoding: Some(Encoding::Gzip)
                         },
                         ColumnOption {
                             name: Ident::from("column3"),
                             is_tag: false,
                             data_type: DataType::UnsignedBigInt(None),
-                            encoding: Encoding::Null
+                            encoding: Some(Encoding::Null)
                         },
                         ColumnOption {
                             name: Ident::from("column4"),
                             is_tag: false,
                             data_type: DataType::Boolean,
-                            encoding: Encoding::Default
+                            encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column5"),
                             is_tag: false,
                             data_type: DataType::Double,
-                            encoding: Encoding::Gorilla
+                            encoding: Some(Encoding::Gorilla)
                         }
                     ]
                 );
@@ -1061,9 +1044,9 @@ mod tests {
             ALTER TABLE m ADD TAG t;
             ALTER TABLE m ADD FIELD f BIGINT CODEC(DEFAULT);
             ALTER TABLE m DROP t;
-            ALTER TABLE m DROP COLUMN f;
+            ALTER TABLE m DROP f;
             ALTER TABLE m ALTER f SET CODEC(DEFAULT);
-            ALTER TABLE m ALTER COLUMN TIME SET CODEC(NULL);
+            ALTER TABLE m ALTER TIME SET CODEC(NULL);
         "#;
         let statement = ExtParser::parse_sql(sql).unwrap();
         let statement: Vec<AlterTable> = statement
@@ -1083,7 +1066,7 @@ mod tests {
                             name: Ident::from("t"),
                             is_tag: true,
                             data_type: DataType::String,
-                            encoding: Encoding::Default
+                            encoding: None
                         }
                     }
                 },
@@ -1094,7 +1077,7 @@ mod tests {
                             name: Ident::from("f"),
                             is_tag: false,
                             data_type: DataType::BigInt(None),
-                            encoding: Encoding::Default
+                            encoding: Some(Encoding::Default)
                         }
                     }
                 },

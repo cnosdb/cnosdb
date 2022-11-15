@@ -396,7 +396,7 @@ impl DBIndex {
         &self,
         tab: &str,
         name: &str,
-        new_column: &TableColumn,
+        new_column: TableColumn,
     ) -> IndexResult<()> {
         let mut schema = self.get_tskv_table_schema(tab)?;
         if schema.column(name).is_none() {

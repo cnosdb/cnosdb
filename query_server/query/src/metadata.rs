@@ -12,7 +12,7 @@ use datafusion::{
     sql::{planner::ContextProvider, TableReference},
 };
 
-use models::schema::TableSchema;
+use models::schema::{TableColumn, TableSchema};
 use spi::query::execution::Output;
 
 use datafusion::arrow::record_batch::RecordBatch;
@@ -237,6 +237,41 @@ impl MetaData for LocalCatalogMeta {
             .alter_database(&database)
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
+            })
+    }
+
+    fn alter_table_add_column(&self, table_name: &str, column: TableColumn) -> Result<()> {
+        let table_ref = TableReference::from(table_name)
+            .resolve(self.catalog_name.as_str(), self.database_name.as_str());
+        self.engine
+            .add_table_column(table_ref.schema, table_ref.table, column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
+    }
+
+    fn alter_table_alter_column(
+        &self,
+        table_name: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let table_ref = TableReference::from(table_name)
+            .resolve(self.catalog_name.as_str(), self.database_name.as_str());
+        self.engine
+            .change_table_column(table_ref.schema, table_ref.table, column_name, new_column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
+    }
+
+    fn alter_table_drop_column(&self, table_name: &str, column_name: &str) -> Result<()> {
+        let table_ref = TableReference::from(table_name)
+            .resolve(self.catalog_name.as_str(), self.database_name.as_str());
+        self.engine
+            .drop_table_column(table_ref.schema, table_ref.table, column_name)
+            .map_err(|e| MetadataError::InternalError {
+                error_msg: format!("{}", e),
             })
     }
 }

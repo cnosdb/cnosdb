@@ -2,7 +2,7 @@ use crate::query::execution::Output;
 use crate::query::function::FuncMetaManagerRef;
 use datafusion::catalog::catalog::CatalogProvider;
 use datafusion::catalog::TableReference;
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use snafu::Snafu;
 use std::any::Any;
 use std::sync::Arc;
@@ -32,6 +32,14 @@ pub trait MetaData: Send + Sync {
     fn show_databases(&self) -> Result<Output>;
     fn show_tables(&self, database_name: &Option<String>) -> Result<Output>;
     fn alter_database(&self, database: DatabaseSchema) -> Result<()>;
+    fn alter_table_add_column(&self, table_name: &str, column: TableColumn) -> Result<()>;
+    fn alter_table_alter_column(
+        &self,
+        table_name: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> Result<()>;
+    fn alter_table_drop_column(&self, table_name: &str, column_name: &str) -> Result<()>;
 }
 
 #[derive(Debug, Snafu)]
