@@ -323,13 +323,13 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_alter_table_alter_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
-        let field_name = self.parser.parse_identifier()?;
+        let column_name = self.parser.parse_identifier()?;
         self.parser.expect_keyword(Keyword::SET)?;
         let encoding = self.parse_codec_type()?;
         Ok(ExtStatement::AlterTable(AlterTable {
             table_name,
-            alter_action: AlterTableAction::AlterField {
-                field_name,
+            alter_action: AlterTableAction::AlterColumnEncoding {
+                column_name,
                 encoding,
             },
         }))
@@ -1112,15 +1112,15 @@ mod tests {
                 },
                 AlterTable {
                     table_name: ObjectName(vec![Ident::from("m")]),
-                    alter_action: AlterTableAction::AlterField {
-                        field_name: Ident::from("f"),
+                    alter_action: AlterTableAction::AlterColumnEncoding {
+                        column_name: Ident::from("f"),
                         encoding: Encoding::Default
                     }
                 },
                 AlterTable {
                     table_name: ObjectName(vec![Ident::from("m")]),
-                    alter_action: AlterTableAction::AlterField {
-                        field_name: Ident::from("TIME"),
+                    alter_action: AlterTableAction::AlterColumnEncoding {
+                        column_name: Ident::from("TIME"),
                         encoding: Encoding::Null
                     }
                 }

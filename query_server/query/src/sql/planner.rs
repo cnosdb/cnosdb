@@ -3,6 +3,7 @@ use std::option::Option;
 use std::sync::Arc;
 
 use datafusion::common::{DFField, ToDFSchema};
+use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::{
@@ -38,12 +39,15 @@ use spi::query::logical_planner::{
 use spi::query::session::IsiphoSessionCtx;
 
 use models::schema::{DatabaseOptions, Duration, Precision};
+use spi::catalog::MetadataError;
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 use crate::sql::parser::{normalize_ident, normalize_sql_object_name};
+use crate::table::ClusterTable;
+use spi::query::logical_planner::MetadataSnafu;
 
 /// CnosDB SQL query planner
 #[derive(Debug)]
@@ -232,7 +236,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             .collect::<Vec<String>>();
 
         // Get the metadata of the target table
-        let target_table = self.get_table_metadata(table_name.to_string())?;
+        let target_table = self.get_table_source(&table_name)?;
         let insert_columns = self.extract_column_names(columns.as_ref(), target_table.clone());
 
         // Check if the plan is legal
@@ -345,20 +349,89 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn table_to_alter(&self, statement: ASTAlterTable) -> Result<Plan> {
         let table_name = normalize_sql_object_name(&statement.table_name);
+        let table_provider = self.get_table_provider(&table_name)?;
+        let table_schema = table_provider
+            .as_any()
+            .downcast_ref::<ClusterTable>()
+            .ok_or_else(|| MetadataError::TableIsNotTsKv {
+                table_name: table_name.to_string(),
+            })
+            .context(MetadataSnafu)?
+            .table_schema();
+
         let alter_action = match statement.alter_action {
-            ASTAlterTableAction::AddColumn { column } => AlterTableAction::AddColumn {
-                table_column: Self::column_opt_to_table_column(column, 0)?,
-            },
-            ASTAlterTableAction::DropColumn { ref column_name } => AlterTableAction::DropColumn {
-                column_name: normalize_ident(column_name),
-            },
-            ASTAlterTableAction::AlterField {
-                ref field_name,
+            ASTAlterTableAction::AddColumn { column } => {
+                let table_column = Self::column_opt_to_table_column(column, 0)?;
+                if table_schema.contains_column(&table_column.name) {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!(
+                            "column {} already exists in table {}",
+                            &table_column.name, table_schema.name
+                        ),
+                    });
+                }
+                AlterTableAction::AddColumn { table_column }
+            }
+            ASTAlterTableAction::DropColumn { ref column_name } => {
+                let column_name = normalize_ident(column_name);
+                let table_column = table_schema.column(&column_name).ok_or_else(|| {
+                    LogicalPlannerError::Semantic {
+                        err: format!(
+                            "column {} not exists in table {}",
+                            &table_schema.name, column_name
+                        ),
+                    }
+                })?;
+
+                if table_column.column_type.is_tag() && table_schema.tag_num() == 1 {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "table must have a tag".to_string(),
+                    });
+                }
+
+                if table_column.column_type.is_field() && table_schema.field_num() == 1 {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "table must hava a field".to_string(),
+                    });
+                }
+
+                if table_column.column_type.is_time() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "can't drop TIME column".to_string(),
+                    });
+                }
+
+                AlterTableAction::DropColumn { column_name }
+            }
+
+            ASTAlterTableAction::AlterColumnEncoding {
+                ref column_name,
                 encoding,
-            } => AlterTableAction::AlterField {
-                field_name: normalize_ident(field_name),
-                encoding,
-            },
+            } => {
+                let column_name = normalize_ident(column_name);
+                match table_schema.column(&column_name) {
+                    Some(column) => {
+                        if column.column_type.is_tag() {
+                            return Err(LogicalPlannerError::Semantic {
+                                err: format!("tag does not support compression"),
+                            });
+                        }
+                    }
+                    None => {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!(
+                                "column {} not exists in table {}",
+                                column_name, &table_schema.name
+                            ),
+                        })
+                    }
+                }
+
+                AlterTableAction::AlterColumnEncoding {
+                    column_name,
+                    encoding,
+                }
+            }
         };
         Ok(Plan::DDL(DDLPlan::AlterTable(AlterTable {
             table_name,
@@ -500,11 +573,23 @@ impl<S: ContextProvider> SqlPlaner<S> {
         }
     }
 
-    fn get_table_metadata(&self, table_name: String) -> Result<Arc<dyn TableSource>> {
-        let table_ref = TableReference::from(table_name.as_str());
+    fn get_table_source(&self, table_name: &str) -> Result<Arc<dyn TableSource>> {
+        let table_ref = TableReference::from(table_name);
         self.schema_provider
             .get_table_provider(table_ref)
             .context(logical_planner::ExternalSnafu)
+    }
+
+    fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
+        let table_source = self.get_table_source(table_name)?;
+        source_as_provider(&table_source)
+            .map_err(|_| MetadataError::InvalidSchema {
+                error_msg: format!(
+                    "can't convert table source {} to table provider ",
+                    table_name
+                ),
+            })
+            .context(MetadataSnafu)
     }
 }
 
@@ -857,84 +942,5 @@ mod tests {
             },
             _ => panic!(),
         }
-    }
-
-    #[test]
-    fn test_alter_table() {
-        let sql = r#"
-            ALTER TABLE m ADD TAG t;
-            ALTER TABLE m ADD FIELD f BIGINT CODEC(DEFAULT);
-            ALTER TABLE m DROP t;
-            ALTER TABLE m DROP COLUMN f;
-            ALTER TABLE m ALTER f SET CODEC(DEFAULT);
-            ALTER TABLE m ALTER COLUMN TIME SET CODEC(NULL);
-        "#;
-        let statement = ExtParser::parse_sql(sql).unwrap();
-        let test = MockContext {};
-        let planner = SqlPlaner::new(test);
-        let plans: Vec<AlterTable> = statement
-            .into_iter()
-            .map(|s| {
-                let planner = planner.statement_to_plan(s).unwrap();
-                match planner {
-                    Plan::DDL(DDLPlan::AlterTable(p)) => p,
-                    _ => panic!("Expect AlterTable"),
-                }
-            })
-            .collect();
-
-        assert_eq!(
-            plans,
-            vec![
-                AlterTable {
-                    table_name: "m".to_string(),
-                    alter_action: AlterTableAction::AddColumn {
-                        table_column: TableColumn {
-                            id: 0,
-                            name: "t".to_string(),
-                            column_type: ColumnType::Tag,
-                            encoding: Encoding::Default
-                        }
-                    }
-                },
-                AlterTable {
-                    table_name: "m".to_string(),
-                    alter_action: AlterTableAction::AddColumn {
-                        table_column: TableColumn {
-                            id: 0,
-                            name: "f".to_string(),
-                            column_type: ColumnType::Field(ValueType::Integer),
-                            encoding: Encoding::Default
-                        }
-                    }
-                },
-                AlterTable {
-                    table_name: "m".to_string(),
-                    alter_action: AlterTableAction::DropColumn {
-                        column_name: "t".to_string()
-                    }
-                },
-                AlterTable {
-                    table_name: "m".to_string(),
-                    alter_action: AlterTableAction::DropColumn {
-                        column_name: "f".to_string()
-                    }
-                },
-                AlterTable {
-                    table_name: "m".to_string(),
-                    alter_action: AlterTableAction::AlterField {
-                        field_name: "f".to_string(),
-                        encoding: Encoding::Default,
-                    }
-                },
-                AlterTable {
-                    table_name: "m".to_string(),
-                    alter_action: AlterTableAction::AlterField {
-                        field_name: "time".to_string(),
-                        encoding: Encoding::Null
-                    }
-                }
-            ]
-        );
     }
 }

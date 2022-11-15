@@ -46,6 +46,9 @@ pub enum MetadataError {
     #[snafu(display("Table {} not exists.", table_name))]
     TableNotExists { table_name: String },
 
+    #[snafu(display("Table {} is not Tskv table", table_name))]
+    TableIsNotTsKv { table_name: String },
+
     #[snafu(display("Database {} already exists.", database_name))]
     DatabaseAlreadyExists { database_name: String },
 

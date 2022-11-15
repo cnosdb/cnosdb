@@ -218,27 +218,26 @@ impl TskvTableSchema {
     }
 
     pub fn fields(&self) -> Vec<TableColumn> {
-        let mut fields = Vec::with_capacity(self.columns.len());
-        for i in self.columns.iter() {
-            if i.column_type == ColumnType::Time || i.column_type == ColumnType::Tag {
-                continue;
-            }
-
-            fields.push(i.clone());
-        }
-
-        fields
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .cloned()
+            .collect()
     }
 
     /// Number of columns of ColumnType is Field
     pub fn field_num(&self) -> usize {
-        let mut ans = 0;
-        for i in self.columns.iter() {
-            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
-                ans += 1;
-            }
-        }
-        ans
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .count()
+    }
+
+    pub fn tag_num(&self) -> usize {
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_tag())
+            .count()
     }
 
     // return (table_field_id, index), index mean field location which column
@@ -270,6 +269,10 @@ impl TskvTableSchema {
         }
         size += size_of_val(&self);
         size
+    }
+
+    pub fn contains_column(&self, column_name: &str) -> bool {
+        self.columns_index.contains_key(column_name)
     }
 }
 
