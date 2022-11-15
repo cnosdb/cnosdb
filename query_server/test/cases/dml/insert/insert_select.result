@@ -15,13 +15,6 @@ test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
@@ -35,13 +28,6 @@ time,ta,tb,fa,fb
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
@@ -56,13 +42,6 @@ time,ta,tb,fa,fb
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --
@@ -78,13 +57,6 @@ time,ta,tb,fa,fb
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select * from public.test_insert_subquery order by fa, fb; --

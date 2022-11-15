@@ -6,7 +6,8 @@ use datafusion::common::{DFField, ToDFSchema};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::{
-    Explain, Extension, LogicalPlan, PlanType, Projection, TableSource, ToStringifiedPlan,
+    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableSource,
+    ToStringifiedPlan,
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
@@ -27,9 +28,9 @@ use spi::query::ast::{
     ExtStatement,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, AlterDatabase, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase,
-    DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
-    SYSPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
+    self, affected_row_expr, merge_affected_row_expr, AlterDatabase, CreateDatabase, CreateTable,
+    DDLPlan, DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner,
+    LogicalPlannerError, Plan, QueryPlan, SYSPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 
@@ -240,18 +241,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 insert_columns,
             )?;
 
-        // output variable for insert operation
-        let affected_row_expr = affected_row_expr();
-
-        // construct table writer logical node
-        let node = Arc::new(TableWriterPlanNode::new(
-            table_name,
-            target_table,
-            Arc::new(final_source_logical_plan),
-            vec![affected_row_expr],
-        ));
-
-        let df_plan = LogicalPlan::Extension(Extension { node });
+        let df_plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)
+            .context(logical_planner::ExternalSnafu)?;
 
         debug!("Insert plan:\n{}", df_plan.display_indent_schema());
 
@@ -531,6 +522,45 @@ fn semantic_check(
     Ok(())
 }
 
+fn table_write_plan_node(
+    table_name: String,
+    target_table: Arc<dyn TableSource>,
+    input: LogicalPlan,
+) -> std::result::Result<LogicalPlan, DataFusionError> {
+    // output variable for insert operation
+    let expr = input
+        .schema()
+        .fields()
+        .iter()
+        .last()
+        .map(|e| Expr::Column(e.qualified_column()));
+
+    debug_assert!(
+        expr.is_some(),
+        "invalid table write node's input logical plan"
+    );
+
+    let expr = unsafe { expr.unwrap_unchecked() };
+
+    let affected_row_expr = affected_row_expr(expr);
+
+    // construct table writer logical node
+    let node = Arc::new(TableWriterPlanNode::try_new(
+        table_name,
+        target_table,
+        Arc::new(input),
+        vec![affected_row_expr],
+    )?);
+
+    let df_plan = LogicalPlan::Extension(Extension { node });
+
+    let group_expr: Vec<Expr> = vec![];
+
+    LogicalPlanBuilder::from(df_plan)
+        .aggregate(group_expr, vec![merge_affected_row_expr()])?
+        .build()
+}
+
 impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
     fn create_logical_plan(
         &self,
@@ -545,7 +575,7 @@ impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
 mod tests {
     use crate::sql::parser::ExtParser;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-    use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
+    use datafusion::logical_expr::{Aggregate, AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
     use std::any::Any;
@@ -780,12 +810,17 @@ mod tests {
 
         match plan {
             Plan::Query(QueryPlan {
-                df_plan: LogicalPlan::Extension(Extension { node }),
-            }) => match node.as_any().downcast_ref::<TableWriterPlanNode>() {
-                Some(TableWriterPlanNode {
-                    target_table_name, ..
-                }) => {
-                    assert_eq!(target_table_name.deref(), "test_tb");
+                df_plan: LogicalPlan::Aggregate(Aggregate { input, .. }),
+            }) => match input.as_ref() {
+                LogicalPlan::Extension(Extension { node }) => {
+                    match node.as_any().downcast_ref::<TableWriterPlanNode>() {
+                        Some(TableWriterPlanNode {
+                            target_table_name, ..
+                        }) => {
+                            assert_eq!(target_table_name.deref(), "test_tb");
+                        }
+                        _ => panic!(),
+                    }
                 }
                 _ => panic!(),
             },

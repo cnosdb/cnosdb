@@ -1,4 +1,6 @@
-use datafusion::{error::DataFusionError, sql::sqlparser::parser::ParserError};
+use datafusion::{
+    arrow::datatypes::DataType, error::DataFusionError, sql::sqlparser::parser::ParserError,
+};
 use models::define_result;
 use snafu::Snafu;
 
@@ -13,6 +15,8 @@ pub mod optimizer;
 pub mod parser;
 pub mod physical_planner;
 pub mod session;
+
+pub const AFFECTED_ROWS: (&str, DataType) = ("rows", DataType::UInt64);
 
 define_result!(QueryError);
 

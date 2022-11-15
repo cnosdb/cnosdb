@@ -14,13 +14,6 @@
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, 12321); -- 0ms; --
@@ -69,13 +62,6 @@ rows
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 6
 
 -- EXECUTE SQL: select * from m0 order by time, t0, t1, f0; --
