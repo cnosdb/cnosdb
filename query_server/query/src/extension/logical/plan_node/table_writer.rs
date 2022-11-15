@@ -5,9 +5,10 @@ use std::{
 };
 
 use datafusion::{
-    common::DFSchemaRef,
+    common::{DFSchema, DFSchemaRef},
+    error::DataFusionError,
     logical_expr::TableSource,
-    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
+    logical_expr::{utils::exprlist_to_fields, LogicalPlan, UserDefinedLogicalNode},
     prelude::Expr,
 };
 
@@ -17,21 +18,28 @@ pub struct TableWriterPlanNode {
     pub target_table: Arc<dyn TableSource>,
     pub input: Arc<LogicalPlan>,
     pub output_exprs: Vec<Expr>,
+    pub schema: DFSchemaRef,
 }
 
 impl TableWriterPlanNode {
-    pub fn new(
+    pub fn try_new(
         target_table_name: String,
         target_table: Arc<dyn TableSource>,
         input: Arc<LogicalPlan>,
         output_exprs: Vec<Expr>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DataFusionError> {
+        let schema = Arc::new(DFSchema::new_with_metadata(
+            exprlist_to_fields(&output_exprs, input.as_ref())?,
+            input.schema().metadata().clone(),
+        )?);
+
+        Ok(Self {
             target_table_name,
             target_table,
             input,
             output_exprs,
-        }
+            schema,
+        })
     }
 
     pub fn target_table(&self) -> Arc<dyn TableSource> {
@@ -59,7 +67,7 @@ impl UserDefinedLogicalNode for TableWriterPlanNode {
     }
 
     fn schema(&self) -> &DFSchemaRef {
-        self.input.schema()
+        &self.schema
     }
 
     fn expressions(&self) -> Vec<Expr> {
@@ -87,12 +95,19 @@ impl UserDefinedLogicalNode for TableWriterPlanNode {
         exprs: &[Expr],
         inputs: &[LogicalPlan],
     ) -> Arc<dyn UserDefinedLogicalNode> {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
+        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
         Arc::new(TableWriterPlanNode {
             target_table_name: self.target_table_name.clone(),
             target_table: self.target_table.clone(),
             input: Arc::new(inputs[0].clone()),
             output_exprs: exprs.to_vec(),
+            schema: self.schema.clone(),
         })
     }
+}
+
+pub fn as_table_writer_plan_node(
+    node: &dyn UserDefinedLogicalNode,
+) -> Option<&TableWriterPlanNode> {
+    node.as_any().downcast_ref::<TableWriterPlanNode>()
 }

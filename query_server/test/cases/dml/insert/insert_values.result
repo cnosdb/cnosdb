@@ -15,13 +15,6 @@ test,ta=a1,tb=b1 fa=1,fb=2 3
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
@@ -35,13 +28,6 @@ time,ta,tb,fa,fb
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 3
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
@@ -128,13 +114,6 @@ fa
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:41:00', NULL, 56, 69, 77); --

@@ -3,13 +3,13 @@ use crate::{catalog::MetadataError, service::protocol::QueryId};
 use super::{
     ast::{ExtStatement, ObjectType},
     session::IsiphoSessionCtx,
+    AFFECTED_ROWS,
 };
 
 use datafusion::{
     error::DataFusionError,
-    logical_expr::{CreateExternalTable, LogicalPlan as DFPlan},
-    prelude::{lit, Expr},
-    scalar::ScalarValue,
+    logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
+    prelude::{col, Expr},
 };
 use models::schema::DatabaseOptions;
 use models::{define_result, schema::TableColumn};
@@ -174,6 +174,24 @@ pub trait LogicalPlanner {
 }
 
 /// TODO Additional output information
-pub fn affected_row_expr() -> Expr {
-    lit(ScalarValue::Null).alias("COUNT")
+pub fn affected_row_expr(arg: Expr) -> Expr {
+    // col(AFFECTED_ROWS.0)
+    Expr::AggregateFunction {
+        fun: AggregateFunction::Count,
+        args: vec![arg],
+        distinct: false,
+        filter: None,
+    }
+    .alias(AFFECTED_ROWS.0)
+}
+
+pub fn merge_affected_row_expr() -> Expr {
+    // lit(ScalarValue::Null).alias("COUNT")
+    Expr::AggregateFunction {
+        fun: AggregateFunction::Sum,
+        args: vec![col(AFFECTED_ROWS.0)],
+        distinct: false,
+        filter: None,
+    }
+    .alias(AFFECTED_ROWS.0)
 }

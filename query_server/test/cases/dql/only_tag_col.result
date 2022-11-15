@@ -18,13 +18,6 @@
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 16
 
 -- EXECUTE SQL: select t0 from m2; --
