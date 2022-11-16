@@ -34,35 +34,40 @@ impl VersionSet {
         opt: Arc<Options>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: UnboundedSender<FlushReq>,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut dbs = HashMap::new();
 
         for (id, ver) in ver_set {
             let name = ver.database().to_string();
             let seq = ver.last_seq;
 
-            let db: &mut Arc<RwLock<Database>> = dbs.entry(name.clone()).or_insert_with(|| {
-                Arc::new(RwLock::new(Database::new(
-                    DatabaseSchema::new(&name),
-                    opt.clone(),
-                )))
-            });
+            let db: &mut Arc<RwLock<Database>> =
+                dbs.entry(name.clone())
+                    .or_insert(Arc::new(RwLock::new(Database::new(
+                        DatabaseSchema::new(&name),
+                        opt.clone(),
+                    )?)));
 
             db.write().open_tsfamily(ver, flush_task_sender.clone());
         }
 
-        Self { dbs, opt }
+        Ok(Self { dbs, opt })
     }
 
     pub fn options(&self) -> Arc<Options> {
         self.opt.clone()
     }
 
-    pub fn create_db(&mut self, schema: DatabaseSchema) -> Arc<RwLock<Database>> {
-        self.dbs
+    pub fn create_db(&mut self, schema: DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+        let db = self
+            .dbs
             .entry(schema.name.clone())
-            .or_insert_with(|| Arc::new(RwLock::new(Database::new(schema, self.opt.clone()))))
-            .clone()
+            .or_insert(Arc::new(RwLock::new(Database::new(
+                schema,
+                self.opt.clone(),
+            )?)))
+            .clone();
+        Ok(db)
     }
 
     pub fn delete_db(&mut self, name: &String) -> Option<Arc<RwLock<Database>>> {
