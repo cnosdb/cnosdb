@@ -12,7 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
@@ -296,12 +296,37 @@ impl Database {
         (edits, files)
     }
 
+    pub fn add_table_column(&self, table: &str, column: TableColumn) -> IndexResult<()> {
+        self.index.add_table_column(table, column)?;
+        Ok(())
+    }
+
+    pub fn drop_table_column(&self, table: &str, column_name: &str) -> IndexResult<()> {
+        self.index.drop_table_column(table, column_name)?;
+        Ok(())
+    }
+
+    pub fn change_table_column(
+        &self,
+        table: &str,
+        column_name: &str,
+        new_column: &TableColumn,
+    ) -> IndexResult<()> {
+        self.index
+            .change_table_column(table, column_name, new_column)?;
+        Ok(())
+    }
+
     pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         self.index.get_series_key(sid)
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<TableSchema>> {
         self.index.get_table_schema(table_name)
+    }
+
+    pub fn get_tskv_table_schema(&self, table_name: &str) -> IndexResult<TskvTableSchema> {
+        self.index.get_tskv_table_schema(table_name)
     }
 
     pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {

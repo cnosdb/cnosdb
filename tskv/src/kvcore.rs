@@ -40,7 +40,8 @@ use crate::database::Database;
 use crate::file_system::file_manager::{self, init_file_manager, FileManager};
 use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
-use crate::Error::DatabaseNotFound;
+use crate::index::IndexError::TableNotFound;
+use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -347,6 +348,17 @@ impl TsKv {
             }
         }
     }
+
+    pub fn get_db(&self, database: &str) -> Result<Arc<RwLock<Database>>> {
+        let db = self
+            .version_set
+            .read()
+            .get_db(database)
+            .ok_or(DatabaseNotFound {
+                database: database.to_string(),
+            })?;
+        Ok(db)
+    }
 }
 
 #[async_trait::async_trait]
@@ -562,12 +574,12 @@ impl Engine for TsKv {
         &self,
         database: &str,
         series_ids: &[SeriesId],
-        field_ids: &[FieldId],
+        field_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()> {
         let storage_field_ids: Vec<u64> = series_ids
             .iter()
-            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
+            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
             .collect();
 
         if let Some(db) = self.version_set.read().get_db(database) {
@@ -661,6 +673,52 @@ impl Engine for TsKv {
             warn!("ts_family with db name '{}' not found.", db);
             Ok(None)
         }
+    }
+
+    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
+        let db = self.get_db(database)?;
+        db.read()
+            .add_table_column(table, column)
+            .context(IndexErrSnafu)?;
+        Ok(())
+    }
+
+    fn drop_table_column(&self, database: &str, table: &str, column_name: &str) -> Result<()> {
+        let db = self.get_db(database)?;
+        let schema = db
+            .read()
+            .get_tskv_table_schema(table)
+            .context(IndexErrSnafu)?;
+        let column_id = schema
+            .column(column_name)
+            .ok_or(Error::NotFoundField {
+                reason: column_name.to_string(),
+            })?
+            .id;
+        db.read()
+            .drop_table_column(table, column_name)
+            .context(IndexErrSnafu)?;
+        let sid = db
+            .read()
+            .get_index()
+            .get_series_id_list(table, &[])
+            .context(IndexErrSnafu)?;
+        self.delete_series(database, &sid, &[column_id], &TimeRange::all())?;
+        Ok(())
+    }
+
+    fn change_table_column(
+        &self,
+        database: &str,
+        table: &str,
+        column_name: &str,
+        new_column: &TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(database)?;
+        db.read()
+            .change_table_column(table, column_name, new_column)
+            .context(IndexErrSnafu)?;
+        Ok(())
     }
 }
 

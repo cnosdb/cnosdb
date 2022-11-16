@@ -10,7 +10,7 @@ pub struct AlterTableTask {
 
 impl AlterTableTask {
     pub fn new(stmt: AlterTable) -> AlterTableTask {
-        Self { _stmt:stmt }
+        Self { _stmt: stmt }
     }
 }
 #[async_trait]
