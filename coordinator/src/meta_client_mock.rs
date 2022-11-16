@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use models::meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet};
+use tokio::net::TcpStream;
 
 use crate::meta_client::{
-    AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, MetaResult,
+    AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaError, MetaManager, MetaResult,
 };
 
 #[derive(Default)]
@@ -17,6 +18,14 @@ impl AdminMeta for MockAdminMeta {
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
         Ok(NodeInfo::default())
     }
+
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
+        Err(MetaError::CommonError {
+            msg: "mock not implement node conn".to_string(),
+        })
+    }
+
+    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 }
 
 #[derive(Default)]

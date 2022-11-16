@@ -9,7 +9,7 @@ use std::{
 
 use crate::schema::TskvTableSchema;
 use crate::{Error, Result};
-use arrow_schema::SchemaRef;
+use arrow_schema::{Schema, SchemaRef};
 use datafusion::{
     arrow::datatypes::DataType, logical_expr::Expr, optimizer::utils::conjunction, prelude::Column,
     scalar::ScalarValue,
@@ -993,10 +993,11 @@ impl QueryExpr {
             buffer.append(&mut tmp);
         }
 
-        let mut tmp =
-            bincode::serialize(&option.df_schema).map_err(|err| Error::InvalidQueryExprMsg {
+        let mut tmp = bincode::serialize(option.df_schema.as_ref()).map_err(|err| {
+            Error::InvalidQueryExprMsg {
                 err: err.to_string(),
-            })?;
+            }
+        })?;
 
         buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
         buffer.append(&mut tmp);
@@ -1036,11 +1037,11 @@ impl QueryExpr {
         buffer.read_exact(&mut len_buf)?;
         let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
         buffer.read_exact(&mut data_buf)?;
-        let df_schema = bincode::deserialize::<SchemaRef>(&data_buf).map_err(|err| {
-            Error::InvalidQueryExprMsg {
+        let df_schema = bincode::deserialize::<Schema>(&data_buf)
+            .map(|val| Arc::new(val))
+            .map_err(|err| Error::InvalidQueryExprMsg {
                 err: err.to_string(),
-            }
-        })?;
+            })?;
 
         let mut len_buf: [u8; 4] = [0; 4];
         buffer.read_exact(&mut len_buf)?;

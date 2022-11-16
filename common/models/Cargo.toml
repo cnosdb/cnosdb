@@ -9,7 +9,7 @@ edition = "2021"
 protos = { path = "../protos" }
 utils = { path = "../utils" }
 
-arrow-schema = { workspace = true }
+arrow-schema = { workspace = true,  features = ["serde"] }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 datafusion = { workspace = true }

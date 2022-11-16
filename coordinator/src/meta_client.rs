@@ -6,8 +6,10 @@ use models::meta_data::*;
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::Snafu;
 use std::borrow::BorrowMut;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::{fmt::Debug, io};
+use tokio::net::TcpStream;
 
 use trace::info;
 
@@ -27,6 +29,14 @@ pub enum MetaError {
 
     #[snafu(display("Error: {}", msg))]
     CommonError { msg: String },
+}
+
+impl From<io::Error> for MetaError {
+    fn from(err: io::Error) -> Self {
+        MetaError::CommonError {
+            msg: err.to_string(),
+        }
+    }
 }
 
 pub type MetaResult<T> = Result<T, MetaError>;
@@ -55,6 +65,8 @@ pub trait AdminMeta {
     // fn heartbeat(&self); // update node status
 
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream>;
+    fn put_node_conn(&self, node_id: u64, conn: TcpStream);
 }
 
 #[async_trait::async_trait]
@@ -146,6 +158,7 @@ pub struct RemoteAdminMeta {
     cluster: String,
     meta_url: String,
     data_nodes: RwLock<HashMap<u64, NodeInfo>>,
+    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 
     client: MetaHttpClient,
 }
@@ -155,6 +168,7 @@ impl RemoteAdminMeta {
         Self {
             cluster,
             meta_url: meta_url.clone(),
+            conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
             client: MetaHttpClient::new(1, meta_url.clone()),
         }
@@ -207,6 +221,31 @@ impl AdminMeta for RemoteAdminMeta {
         }
 
         return Err(MetaError::NotFoundNode { id });
+    }
+
+    async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
+        {
+            let mut write = self.conn_map.write();
+            let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
+            if let Some(val) = entry.pop_front() {
+                return Ok(val);
+            }
+        }
+
+        let info = self.node_info_by_id(node_id)?;
+        let client = TcpStream::connect(info.tcp_addr).await?;
+
+        return Ok(client);
+    }
+
+    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
+        let mut write = self.conn_map.write();
+        let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
+
+        // close too more idle connection
+        if entry.len() < 32 {
+            entry.push_back(conn);
+        }
     }
 }
 

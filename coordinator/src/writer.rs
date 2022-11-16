@@ -150,8 +150,6 @@ pub struct PointWriter {
     kv_inst: EngineRef,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
-
-    conn_map: RwLock<HashMap<u64, VecDeque<TcpStream>>>,
 }
 
 impl PointWriter {
@@ -166,7 +164,6 @@ impl PointWriter {
             kv_inst,
             meta_manager,
             hh_sender,
-            conn_map: RwLock::new(HashMap::new()),
         }
     }
 
@@ -273,12 +270,16 @@ impl PointWriter {
             }
         }
 
-        let mut conn = self.get_node_conn(node_id).await?;
+        let mut conn = self
+            .meta_manager
+            .admin_meta()
+            .get_node_conn(node_id)
+            .await?;
         let req_cmd = WriteVnodeRequest { vnode_id, data };
         send_command(&mut conn, &CoordinatorTcpCmd::WriteVnodePointCmd(req_cmd)).await?;
         let rsp_cmd = recv_command(&mut conn).await?;
         if let CoordinatorTcpCmd::CommonResponseCmd(msg) = rsp_cmd {
-            self.put_node_conn(node_id, conn);
+            self.meta_manager.admin_meta().put_node_conn(node_id, conn);
             if msg.code == 0 {
                 return Ok(());
             } else {
@@ -288,31 +289,6 @@ impl PointWriter {
             }
         } else {
             return Err(CoordinatorError::UnExpectResponse);
-        }
-    }
-
-    async fn get_node_conn(&self, node_id: u64) -> CoordinatorResult<TcpStream> {
-        {
-            let mut write = self.conn_map.write();
-            let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
-            if let Some(val) = entry.pop_front() {
-                return Ok(val);
-            }
-        }
-
-        let info = self.meta_manager.admin_meta().node_info_by_id(node_id)?;
-        let client = TcpStream::connect(info.tcp_addr).await?;
-
-        return Ok(client);
-    }
-
-    fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
-        let mut write = self.conn_map.write();
-        let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
-
-        // close too more idle connection
-        if entry.len() < 32 {
-            entry.push_back(conn);
         }
     }
 }
