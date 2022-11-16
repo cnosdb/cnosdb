@@ -231,7 +231,7 @@ impl Summary {
                 opt.clone(),
                 HashMap::new(),
                 flush_task_sender,
-            ))),
+            )?)),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
@@ -345,7 +345,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender);
+        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender)?;
         Ok(vs)
     }
 
@@ -716,7 +716,8 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database));
+            .create_db(DatabaseSchema::new(&database))
+            .unwrap();
         for i in 0..40 {
             db.write()
                 .add_tsfamily(i, 0, summary_task_sender.clone(), flush_task_sender.clone());
@@ -760,7 +761,8 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database));
+            .create_db(DatabaseSchema::new(&database))
+            .unwrap();
         db.write().add_tsfamily(
             10,
             0,

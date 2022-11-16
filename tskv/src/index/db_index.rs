@@ -21,6 +21,7 @@ use snafu::ResultExt;
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
+use datafusion::parquet::data_type::AsBytes;
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
@@ -71,14 +72,19 @@ impl DbIndexMgr {
         }
     }
 
-    pub fn get_db_index(&mut self, schema: DatabaseSchema) -> Arc<DBIndex> {
-        let index = self.indexs.entry(schema.name.clone()).or_insert_with(|| {
-            Arc::new(DBIndex::new(
-                self.base_path.join(schema.name.clone()),
-                schema,
-            ))
-        });
-        index.clone()
+    pub fn get_db_index(&mut self, schema: DatabaseSchema) -> IndexResult<Arc<DBIndex>> {
+        let index = self.indexs.get(&schema.name);
+        match index {
+            None => {
+                let index = Arc::new(DBIndex::new(
+                    self.base_path.join(schema.name.clone()),
+                    schema.clone(),
+                )?);
+                self.indexs.insert(schema.name, index.clone());
+                Ok(index)
+            }
+            Some(index) => Ok(index.clone()),
+        }
     }
 
     pub fn remove_db_index(&mut self, db_name: &str) {
@@ -98,45 +104,53 @@ pub struct DBIndex {
 }
 
 impl DBIndex {
-    pub fn new(path: impl AsRef<Path>, db_schema: DatabaseSchema) -> Self {
+    pub fn new(path: impl AsRef<Path>, db_schema: DatabaseSchema) -> IndexResult<Self> {
         let path = path.as_ref();
         let storage = IndexEngine::new(path);
         let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
-        let schema = match storage.get(key.as_bytes()) {
-            Ok(v) => match v {
-                None => {
-                    store_db_schema(&key, &db_schema, &storage);
-                    db_schema
-                }
-                Some(v) => match bincode::deserialize::<DatabaseSchema>(&v) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        error!(
-                            "failed to deserialize db schema, because {}, maybe file damage",
-                            e
-                        );
-                        db_schema
-                    }
-                },
-            },
-            Err(_) => {
-                store_db_schema(&key, &db_schema, &storage);
+        let schema = match storage.get(key.as_bytes())? {
+            None => {
+                store_db_schema(&key, &db_schema, &storage)?;
                 db_schema
             }
+            Some(v) => bincode::deserialize::<DatabaseSchema>(&v).map_err(|e| {
+                IndexError::IndexStroage {
+                    msg: format!(
+                        "failed to deserialize db schema, because {}, maybe file damage",
+                        e
+                    ),
+                }
+            })?,
         };
-        Self {
+        let mut table_schemas = HashMap::new();
+        let tables = storage.prefix(TABLE_SCHEMA_PREFIX.as_bytes());
+        for kv in tables.flatten() {
+            let schema_str =
+                String::from_utf8(kv.1.to_vec()).map_err(|e| IndexError::IndexStroage {
+                    msg: "storage data is invalid".to_string(),
+                })?;
+            let table_schema = serde_json::from_str::<TableSchema>(&schema_str).map_err(|e| {
+                IndexError::IndexStroage {
+                    msg: "storage data is invalid".to_string(),
+                }
+            })?;
+            table_schemas.insert(table_schema.name(), table_schema);
+        }
+        let index = Self {
             storage,
             db_schema: RwLock::new(schema),
             series_cache: RwLock::new(HashMap::new()),
-            table_schema: RwLock::new(HashMap::new()),
+            table_schema: RwLock::new(table_schemas),
             path: path.into(),
-        }
+        };
+        Ok(index)
     }
 
-    pub fn alter_db_schema(&self, db_schema: DatabaseSchema) {
+    pub fn alter_db_schema(&self, db_schema: DatabaseSchema) -> IndexResult<()> {
         let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
-        store_db_schema(&key, &db_schema, &self.storage);
+        store_db_schema(&key, &db_schema, &self.storage)?;
         *self.db_schema.write() = db_schema;
+        Ok(())
     }
 
     pub fn get_sid_from_cache(&self, info: &Point) -> IndexResult<Option<u64>> {
@@ -700,19 +714,19 @@ impl DBIndex {
     }
 }
 
-fn store_db_schema(key: &str, db_schema: &DatabaseSchema, storage: &IndexEngine) {
-    match bincode::serialize(db_schema) {
-        Ok(v) => match storage.set(key.as_bytes(), &v) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("failed storage db schema, because : {:?}", e);
-            }
-        },
-        Err(e) => {
-            error!("failed serialize data : {:?}, because : {:?}", db_schema, e);
-        }
-    };
+fn store_db_schema(
+    key: &str,
+    db_schema: &DatabaseSchema,
+    storage: &IndexEngine,
+) -> IndexResult<()> {
+    storage.set(
+        key.as_bytes(),
+        &bincode::serialize(db_schema).map_err(|e| IndexError::IndexStroage {
+            msg: "failed serialized db schema".to_string(),
+        })?,
+    )?;
     storage.flush();
+    Ok(())
 }
 
 pub fn filter_range_to_index_key_range(

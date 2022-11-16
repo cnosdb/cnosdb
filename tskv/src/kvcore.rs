@@ -377,7 +377,7 @@ impl Engine for TsKv {
             None => self
                 .version_set
                 .write()
-                .create_db(DatabaseSchema::new(&db_name)),
+                .create_db(DatabaseSchema::new(&db_name))?,
         };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -432,7 +432,7 @@ impl Engine for TsKv {
         let db = self
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&db_name));
+            .create_db(DatabaseSchema::new(&db_name))?;
 
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -461,7 +461,7 @@ impl Engine for TsKv {
                 database: schema.name.clone(),
             });
         }
-        self.version_set.write().create_db(schema.clone());
+        self.version_set.write().create_db(schema.clone())?;
         Ok(())
     }
 
@@ -473,7 +473,7 @@ impl Engine for TsKv {
             .ok_or(DatabaseNotFound {
                 database: schema.name.clone(),
             })?;
-        db.write().alter_db_schema(schema.clone());
+        db.write().alter_db_schema(schema.clone())?;
         Ok(())
     }
 

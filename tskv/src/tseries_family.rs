@@ -1178,14 +1178,13 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new(
-            opt.clone(),
-            HashMap::new(),
-            flush_task_sender.clone(),
-        )));
+        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(
+            VersionSet::new(opt.clone(), HashMap::new(), flush_task_sender.clone()).unwrap(),
+        ));
         version_set
             .write()
-            .create_db(DatabaseSchema::new(&database));
+            .create_db(DatabaseSchema::new(&database))
+            .unwrap();
         let db = version_set.write().get_db(&database).unwrap();
 
         let ts_family_id = db

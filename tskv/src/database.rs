@@ -21,7 +21,7 @@ use trace::{debug, error, info};
 use crate::compaction::FlushReq;
 use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
-use crate::Error::InvalidPoint;
+use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
     error::{self, IndexErrSnafu, Result},
     memcache::{RowData, RowGroup},
@@ -47,19 +47,22 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
-        Self {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Result<Self> {
+        let db = Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(schema.clone()),
+                .get_db_index(schema.clone())
+                .context(IndexErrSnafu)?,
             name: schema.name,
             ts_families: HashMap::new(),
             opt,
-        }
+        };
+        Ok(db)
     }
 
-    pub fn alter_db_schema(&self, schema: DatabaseSchema) {
-        self.index.alter_db_schema(schema);
+    pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
+        self.index.alter_db_schema(schema).context(IndexErrSnafu)?;
+        Ok(())
     }
 
     pub fn open_tsfamily(
