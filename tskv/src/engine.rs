@@ -5,8 +5,9 @@ use crate::tsm::DataBlock;
 use crate::{Options, TimeRange, TsKv};
 use async_trait::async_trait;
 use datafusion::prelude::Column;
+use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
@@ -45,11 +46,23 @@ pub trait Engine: Send + Sync + Debug {
 
     fn list_tables(&self, database: &str) -> Result<Vec<String>>;
 
+    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()>;
+
+    fn drop_table_column(&self, database: &str, table: &str, column: &str) -> Result<()>;
+
+    fn change_table_column(
+        &self,
+        database: &str,
+        table: &str,
+        column_name: &str,
+        new_column: &TableColumn,
+    ) -> Result<()>;
+
     fn delete_series(
         &self,
         db: &str,
         sids: &[SeriesId],
-        field_ids: &[FieldId],
+        field_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()>;
 
@@ -130,7 +143,7 @@ impl Engine for MockEngine {
         &self,
         db: &str,
         sids: &[SeriesId],
-        field_ids: &[FieldId],
+        field_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()> {
         todo!()
@@ -167,6 +180,24 @@ impl Engine for MockEngine {
     }
 
     fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
+        todo!()
+    }
+
+    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
+        todo!()
+    }
+
+    fn drop_table_column(&self, database: &str, table: &str, column: &str) -> Result<()> {
+        todo!()
+    }
+
+    fn change_table_column(
+        &self,
+        database: &str,
+        table: &str,
+        column_name: &str,
+        new_column: &TableColumn,
+    ) -> Result<()> {
         todo!()
     }
 }

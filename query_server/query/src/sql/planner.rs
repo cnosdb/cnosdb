@@ -72,10 +72,9 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::ShowDatabases() => self.database_to_show(),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
+            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             // system statement
             ExtStatement::ShowQueries => Ok(Plan::SYSTEM(SYSPlan::ShowQueries)),
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
-            // ExtStatement::AlterTable(stmt) => self.
         }
     }
 

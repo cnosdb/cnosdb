@@ -21,6 +21,7 @@ use snafu::ResultExt;
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
+use libc::read;
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
@@ -258,9 +259,6 @@ impl DBIndex {
                 };
             }
             None => {
-                new_schema = true;
-                schema.name = table_name.clone();
-                schema.db = db_name;
                 let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
                 if let Some(data) = self.storage.get(key.as_bytes())? {
                     if let Ok(list) = bincode::deserialize(&data) {
@@ -270,9 +268,16 @@ impl DBIndex {
                             .ok_or(IndexError::NotFoundField)?
                         {
                             TableSchema::TsKvTableSchema(schema) => schema,
-                            _ => return Err(IndexError::TableNotFound { table: table_name }),
+                            _ => {
+                                fields.remove(&table_name);
+                                return Err(IndexError::TableNotFound { table: table_name });
+                            }
                         };
                     }
+                } else {
+                    schema.name = table_name.clone();
+                    schema.db = db_name;
+                    new_schema = true;
                 }
             }
         }
@@ -304,7 +309,7 @@ impl DBIndex {
                 }
                 None => {
                     schema_change = true;
-                    field.id = (schema.columns().len() + 1) as ColumnId;
+                    field.id = schema.next_column_id();
                     schema.add_column(field.clone());
                 }
             }
@@ -336,9 +341,85 @@ impl DBIndex {
         } else if schema_change {
             schema.schema_id += 1;
         }
-        let data = serde_json::to_string(&TableSchema::TsKvTableSchema(schema.clone())).unwrap();
+        let data =
+            serde_json::to_string(&TableSchema::TsKvTableSchema(schema.clone())).map_err(|_| {
+                IndexError::IndexStroage {
+                    msg: "failed to store schema in sled".to_string(),
+                }
+            })?;
+
         let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
         self.storage.set(key.as_bytes(), data.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn get_tskv_table_schema(&self, tab: &str) -> IndexResult<TskvTableSchema> {
+        let mut table_schema = self.table_schema.write();
+        let schema = table_schema.get_mut(tab).ok_or(IndexError::TableNotFound {
+            table: tab.to_string(),
+        })?;
+        let schema = match schema {
+            TableSchema::TsKvTableSchema(schema) => schema,
+            _ => {
+                return Err(IndexError::TableNotFound {
+                    table: tab.to_string(),
+                })
+            }
+        };
+        Ok(schema.clone())
+    }
+
+    pub fn store_table_schema(&self, tab: &str, schema: &TableSchema) -> IndexResult<()> {
+        self.table_schema
+            .write()
+            .insert(schema.name(), schema.clone());
+        let data = serde_json::to_string(schema).map_err(|_| IndexError::IndexStroage {
+            msg: "failed to store schema in sled".to_string(),
+        })?;
+        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
+        self.storage.set(key.as_bytes(), data.as_bytes())?;
+        self.flush()?;
+        Ok(())
+    }
+
+    pub fn add_table_column(&self, tab: &str, mut column: TableColumn) -> IndexResult<()> {
+        let mut schema = self.get_tskv_table_schema(tab)?;
+        if schema.column(&column.name).is_some() {
+            return Err(IndexError::ColumnAlreadyExists {
+                column: column.name,
+            });
+        }
+        column.id = schema.next_column_id();
+        schema.add_column(column);
+        schema.schema_id += 1;
+        self.store_table_schema(tab, &TableSchema::TsKvTableSchema(schema))?;
+        Ok(())
+    }
+
+    pub fn drop_table_column(&self, tab: &str, name: &str) -> IndexResult<()> {
+        let mut schema = self.get_tskv_table_schema(tab)?;
+        if schema.column(name).is_none() {
+            return Err(IndexError::NotFoundField);
+        }
+        schema.drop_column(name);
+        schema.schema_id += 1;
+        self.store_table_schema(tab, &TableSchema::TsKvTableSchema(schema))?;
+        Ok(())
+    }
+
+    pub fn change_table_column(
+        &self,
+        tab: &str,
+        name: &str,
+        new_column: &TableColumn,
+    ) -> IndexResult<()> {
+        let mut schema = self.get_tskv_table_schema(tab)?;
+        if schema.column(name).is_none() {
+            return Err(IndexError::NotFoundField);
+        }
+        schema.change_column(name, new_column);
+        schema.schema_id += 1;
+        self.store_table_schema(tab, &TableSchema::TsKvTableSchema(schema))?;
         Ok(())
     }
 

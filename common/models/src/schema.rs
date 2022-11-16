@@ -117,6 +117,7 @@ pub struct TskvTableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: SchemaId,
+    next_column_id: ColumnId,
 
     columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
@@ -129,6 +130,7 @@ impl Default for TskvTableSchema {
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
+            next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
         }
@@ -153,6 +155,7 @@ impl TskvTableSchema {
             db,
             name,
             schema_id: 0,
+            next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,
         }
@@ -167,6 +170,30 @@ impl TskvTableSchema {
                 self.columns.push(col);
                 self.columns.len() - 1
             });
+        self.next_column_id += 1;
+    }
+
+    /// drop column if exists
+    pub fn drop_column(&mut self, col_name: &str) {
+        if let Some(id) = self.columns_index.get(col_name) {
+            self.columns.remove(*id);
+        }
+        let columns_index = self
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| (e.name.clone(), idx))
+            .collect();
+        self.columns_index = columns_index;
+    }
+
+    pub fn change_column(&mut self, col_name: &str, new_column: &TableColumn) {
+        let id = match self.columns_index.get(col_name) {
+            None => return,
+            Some(id) => *id,
+        };
+        self.columns_index.insert(new_column.name.clone(), id);
+        self.columns[id] = new_column.clone();
     }
 
     /// Get the metadata of the column according to the column name
@@ -228,6 +255,12 @@ impl TskvTableSchema {
             map.insert(*id, i);
         }
         map
+    }
+
+    pub fn next_column_id(&mut self) -> ColumnId {
+        let ans = self.next_column_id;
+        self.next_column_id += 1;
+        ans
     }
 
     pub fn size(&self) -> usize {
