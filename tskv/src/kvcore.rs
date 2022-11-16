@@ -573,6 +573,7 @@ impl Engine for TsKv {
     fn delete_series(
         &self,
         database: &str,
+        table: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
         time_range: &TimeRange,
@@ -588,7 +589,7 @@ impl Engine for TsKv {
 
                 ts_family
                     .write()
-                    .delete_cache(&storage_field_ids, time_range);
+                    .delete_cache(table, &storage_field_ids, time_range);
 
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
@@ -703,7 +704,7 @@ impl Engine for TsKv {
             .get_index()
             .get_series_id_list(table, &[])
             .context(IndexErrSnafu)?;
-        self.delete_series(database, &sid, &[column_id], &TimeRange::all())?;
+        self.delete_series(database, table, &sid, &[column_id], &TimeRange::all())?;
         Ok(())
     }
 

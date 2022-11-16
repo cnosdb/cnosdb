@@ -423,7 +423,7 @@ pub(crate) fn delete_table_async(
             };
 
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
-                ts_family.write().delete_cache(&storage_fids, time_range);
+                ts_family.write().delete_table(&table, &sids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
                     column_file.add_tombstone(&storage_fids, time_range)?;

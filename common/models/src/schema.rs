@@ -208,6 +208,15 @@ impl TskvTableSchema {
         self.columns_index.get(name)
     }
 
+    pub fn column_name(&self, id: ColumnId) -> Option<&str> {
+        for column in self.columns.iter() {
+            if column.id == id {
+                return Some(&column.name);
+            }
+        }
+        None
+    }
+
     /// Get the metadata of the column according to the column index
     pub fn column_by_index(&self, idx: usize) -> Option<&TableColumn> {
         self.columns.get(idx)
