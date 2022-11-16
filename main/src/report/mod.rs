@@ -52,7 +52,7 @@ fn get_os_type() -> String {
 
 fn get_client() -> reqwest::Client {
     reqwest::ClientBuilder::new()
-        .use_native_tls()
+        // .use_native_tls()
         .build()
         .unwrap_or_default()
 }
@@ -66,7 +66,7 @@ lazy_static! {
     static ref CLIENT: reqwest::Client = get_client();
 }
 
-const USAGE_SERVER_URL: &str = "https://usage.cnosdb.com";
+const USAGE_SERVER_URL: &str = "http://usage.cnosdb.com";
 
 #[derive(Debug, Clone, Serialize)]
 struct ReportMessage<'a> {
