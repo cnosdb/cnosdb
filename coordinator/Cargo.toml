@@ -12,6 +12,7 @@ utils = { path = "../common/utils" }
 tskv = { path = "../tskv" }
 meta = { path = "../meta" }
 
+datafusion = { workspace = true }
 async-channel = "1.7.1"
 snafu = "0.7"
 flatbuffers = "2.1"

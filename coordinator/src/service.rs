@@ -4,8 +4,8 @@ use std::sync::Arc;
 use config::{ClusterConfig, HintedOffConfig};
 use models::consistency_level::ConsistencyLevel;
 use models::meta_data::DatabaseInfo;
-use models::predicate::domain::ColumnDomains;
-use models::schema::{DatabaseSchema, TableSchema};
+use models::predicate::domain::{ColumnDomains, PredicateRef};
+use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::*;
 
 use protos::kv_service::WritePointsRpcRequest;
@@ -15,11 +15,14 @@ use tokio::sync::oneshot;
 use tskv::engine::EngineRef;
 use tskv::TimeRange;
 
+use datafusion::arrow::datatypes::SchemaRef;
+
 use crate::command::{CoordinatorIntCmd, WritePointsRequest};
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use crate::meta_client_mock::MockMetaClient;
+use crate::reader::ReaderIterator;
 use crate::writer::{PointWriter, VnodeMapping};
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -35,11 +38,13 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<()>;
     fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
 
-    // async fn read_record(
-    //     &self,
-    //     tenant: &String,
-    //     option: &QueryOption,
-    // ) -> CoordinatorResult<RowIterator>;
+    async fn read_record(
+        &self,
+        tenant: &String,
+        filter: PredicateRef,
+        df_schema: SchemaRef,
+        table_schema: TskvTableSchema,
+    ) -> CoordinatorResult<ReaderIterator>;
 
     // fn create_db(&self, tenant: &String, info: &DatabaseSchema) -> CoordinatorResult<()>;
     // fn db_schema(&self, tenant: &String, name: &String) -> Option<DatabaseSchema>;
@@ -77,6 +82,16 @@ impl Coordinator for MockCoordinator {
         req: WritePointsRpcRequest,
     ) -> CoordinatorResult<()> {
         Ok(())
+    }
+
+    async fn read_record(
+        &self,
+        tenant: &String,
+        filter: PredicateRef,
+        df_schema: SchemaRef,
+        table_schema: TskvTableSchema,
+    ) -> CoordinatorResult<ReaderIterator> {
+        Ok(ReaderIterator::new())
     }
 }
 
@@ -180,5 +195,15 @@ impl Coordinator for CoordService {
         let result = receiver.await?;
 
         result
+    }
+
+    async fn read_record(
+        &self,
+        tenant: &String,
+        filter: PredicateRef,
+        df_schema: SchemaRef,
+        table_schema: TskvTableSchema,
+    ) -> CoordinatorResult<ReaderIterator> {
+        Ok(ReaderIterator::new())
     }
 }

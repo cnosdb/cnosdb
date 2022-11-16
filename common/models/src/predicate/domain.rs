@@ -2,16 +2,20 @@ use std::{
     cmp::{self, Ordering},
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
+    io::{BufReader, Read},
     ops::RangeBounds,
     sync::Arc,
 };
 
 use crate::schema::TskvTableSchema;
 use crate::{Error, Result};
+use arrow_schema::SchemaRef;
 use datafusion::{
     arrow::datatypes::DataType, logical_expr::Expr, optimizer::utils::conjunction, prelude::Column,
     scalar::ScalarValue,
 };
+
+use datafusion_proto::bytes::Serializeable;
 
 use super::transformation::RowExpressionToDomainsVisitor;
 
@@ -925,6 +929,7 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
 
 #[derive(Debug, Default)]
 pub struct Predicate {
+    exprs: Vec<Expr>,
     pushed_down_domains: ColumnDomains<Column>,
     limit: Option<usize>,
 }
@@ -932,6 +937,10 @@ pub struct Predicate {
 impl Predicate {
     pub fn limit(&self) -> Option<usize> {
         self.limit
+    }
+
+    pub fn exprs(&self) -> &[Expr] {
+        &self.exprs
     }
 
     pub fn filter(&self) -> &ColumnDomains<Column> {
@@ -950,12 +959,104 @@ impl Predicate {
         filters: &[Expr],
         _table_schema: &TskvTableSchema,
     ) -> Predicate {
+        self.exprs = filters.to_vec();
         if let Some(ref expr) = conjunction(filters.to_vec()) {
             if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
                 self.pushed_down_domains = domains;
             }
         }
         self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryExpr {
+    pub filters: Vec<Expr>,
+    pub df_schema: SchemaRef,
+    pub table_schema: TskvTableSchema,
+}
+
+impl QueryExpr {
+    pub fn encode(option: &QueryExpr) -> Result<Vec<u8>> {
+        let mut buffer = vec![];
+
+        buffer.append(&mut (option.filters.len() as u32).to_be_bytes().to_vec());
+        for item in option.filters.iter() {
+            let mut tmp = item
+                .to_bytes()
+                .map_err(|err| Error::InvalidQueryExprMsg {
+                    err: err.to_string(),
+                })?
+                .to_vec();
+
+            buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
+            buffer.append(&mut tmp);
+        }
+
+        let mut tmp =
+            bincode::serialize(&option.df_schema).map_err(|err| Error::InvalidQueryExprMsg {
+                err: err.to_string(),
+            })?;
+
+        buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
+        buffer.append(&mut tmp);
+
+        let mut tmp =
+            bincode::serialize(&option.table_schema).map_err(|err| Error::InvalidQueryExprMsg {
+                err: err.to_string(),
+            })?;
+
+        buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
+        buffer.append(&mut tmp);
+
+        Ok(buffer)
+    }
+
+    pub fn decode(buf: Vec<u8>) -> Result<QueryExpr> {
+        let mut buffer = BufReader::new(&*buf);
+
+        let mut count_buf: [u8; 4] = [0; 4];
+        buffer.read_exact(&mut count_buf)?;
+
+        let count = u32::from_be_bytes(count_buf);
+        let mut filters = Vec::with_capacity(count as usize);
+        for _i in 0..count {
+            let mut len_buf: [u8; 4] = [0; 4];
+            buffer.read_exact(&mut len_buf)?;
+            let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
+            buffer.read_exact(&mut data_buf)?;
+            let expr = Expr::from_bytes(&data_buf).map_err(|err| Error::InvalidQueryExprMsg {
+                err: err.to_string(),
+            })?;
+
+            filters.push(expr);
+        }
+
+        let mut len_buf: [u8; 4] = [0; 4];
+        buffer.read_exact(&mut len_buf)?;
+        let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
+        buffer.read_exact(&mut data_buf)?;
+        let df_schema = bincode::deserialize::<SchemaRef>(&data_buf).map_err(|err| {
+            Error::InvalidQueryExprMsg {
+                err: err.to_string(),
+            }
+        })?;
+
+        let mut len_buf: [u8; 4] = [0; 4];
+        buffer.read_exact(&mut len_buf)?;
+        let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
+        buffer.read_exact(&mut data_buf)?;
+        let table_schema = bincode::deserialize::<TskvTableSchema>(&data_buf).map_err(|err| {
+            Error::InvalidQueryExprMsg {
+                err: err.to_string(),
+            }
+        })?;
+
+        Ok(QueryExpr {
+            filters,
+            df_schema,
+            table_schema,
+        })
     }
 }
 

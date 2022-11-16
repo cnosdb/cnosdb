@@ -9,6 +9,7 @@ use models::{
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
 };
 
+use serde::{Deserialize, Serialize, Serializer};
 use tskv::{
     engine::EngineRef,
     iterator::{QueryOption, RowIterator, TableScanMetrics},
