@@ -11,6 +11,7 @@ use datafusion::{
     logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
     prelude::{col, Expr},
 };
+use models::codec::Encoding;
 use models::schema::DatabaseOptions;
 use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
@@ -71,6 +72,8 @@ pub enum DDLPlan {
     ShowDatabases(),
 
     AlterDatabase(AlterDatabase),
+
+    AlterTable(AlterTable),
 }
 
 #[derive(Debug, Clone)]
@@ -163,6 +166,26 @@ pub struct ShowTables {
 pub struct AlterDatabase {
     pub database_name: String,
     pub database_options: DatabaseOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterTable {
+    pub table_name: String,
+    pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterTableAction {
+    AddColumn {
+        table_column: TableColumn,
+    },
+    AlterField {
+        field_name: String,
+        encoding: Encoding,
+    },
+    DropColumn {
+        column_name: String,
+    },
 }
 
 pub trait LogicalPlanner {

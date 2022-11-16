@@ -11,8 +11,8 @@ use datafusion::sql::sqlparser::{
 use models::codec::Encoding;
 use snafu::ResultExt;
 use spi::query::ast::{
-    AlterDatabase, ColumnOption, CreateDatabase, CreateTable, DatabaseOptions, DescribeDatabase,
-    DescribeTable, DropObject, ExtStatement, ObjectType,
+    AlterDatabase, AlterTable, AlterTableAction, ColumnOption, CreateDatabase, CreateTable,
+    DatabaseOptions, DescribeDatabase, DescribeTable, DropObject, ExtStatement, ObjectType,
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
@@ -275,45 +275,65 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_alter_table(&mut self) -> Result<ExtStatement> {
-        // if self.parser.parse_keyword(Keyword::ADD) {
-        //     if self.parse_cnos_keyword(CnosKeyWord::FIELD) {
-        //         let ident = self.parser.parse_identifier()?;
-        //         let name = normalize_ident(&ident);
-        //         let column_type = self.parse_column_type()?;
-        //         let code_c_str = self.parse_codec_type()?;
-        //
-        //         self.parser.expected()
-        //     } else if self.parse_cnos_keyword(CnosKeyWord::TAG) {
-        //
-        //         self.expected_cnos_keyword()
-        //
-        //     } else {
-        //
-        //     }
-        // } else if self.parser.parse_keyword(Keyword::ALTER) {
-        //     if self.parse_cnos_keyword(CnosKeyWord::FIELD) {
-        //
-        //     } else {
-        //
-        //     }
-        //
-        // } else if self.parser.parse_keyword(Keyword::DROP) {
-        //     let column  = self.parser.parse_identifier()?;
-        //     normalize_ident(&column)
-        //
-        // } else {
-        //     self.expected("ADD or ALTER or DROP")
-        // }
-        parser_err!("not implementation")
+        let table_name = self.parser.parse_object_name()?;
+
+        if self.parser.parse_keyword(Keyword::ADD) {
+            self.parse_alter_table_add_column(table_name)
+        } else if self.parser.parse_keyword(Keyword::ALTER) {
+            // [COLUMN]
+            let _ = self.parser.parse_keyword(Keyword::COLUMN);
+            self.parse_alter_table_alter_column(table_name)
+        } else if self.parser.parse_keyword(Keyword::DROP) {
+            // [COLUMN]
+            let _ = self.parser.parse_keyword(Keyword::COLUMN);
+            self.parse_alter_table_drop_column(table_name)
+        } else {
+            self.expected("ADD or ALTER or DROP", self.parser.peek_token())
+        }
     }
 
-    // fn parse_alter_table_add_tag(&mut self) -> Result<ExtStatement> {
-    //     let token = self.parser.next_token();
-    //     self.parser.
-    //     if token.eq(&Token::)
-    // }
+    fn parse_alter_table_add_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::FIELD) {
+            let field_name = self.parser.parse_identifier()?;
+            let data_type = self.parse_column_type()?;
+            let encoding = self.parse_codec_type()?;
+            let column = ColumnOption::new_field(field_name, data_type, encoding);
+            Ok(ExtStatement::AlterTable(AlterTable {
+                table_name,
+                alter_action: AlterTableAction::AddColumn { column },
+            }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::TAG) {
+            let tag_name = self.parser.parse_identifier()?;
+            let column = ColumnOption::new_tag(tag_name);
+            Ok(ExtStatement::AlterTable(AlterTable {
+                table_name,
+                alter_action: AlterTableAction::AddColumn { column },
+            }))
+        } else {
+            self.expected("FIELD or TAG", self.parser.peek_token())
+        }
+    }
 
-    // fn parse_alter_table_alter_column(&mut self) -> Result<ExtStatement>
+    fn parse_alter_table_drop_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
+        let column_name = self.parser.parse_identifier()?;
+        Ok(ExtStatement::AlterTable(AlterTable {
+            table_name,
+            alter_action: AlterTableAction::DropColumn { column_name },
+        }))
+    }
+
+    fn parse_alter_table_alter_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
+        let field_name = self.parser.parse_identifier()?;
+        self.parser.expect_keyword(Keyword::SET)?;
+        let encoding = self.parse_codec_type()?;
+        Ok(ExtStatement::AlterTable(AlterTable {
+            table_name,
+            alter_action: AlterTableAction::AlterField {
+                field_name,
+                encoding,
+            },
+        }))
+    }
 
     fn parse_alter_database(&mut self) -> Result<ExtStatement> {
         let database_name = self.parser.parse_object_name()?;
@@ -604,7 +624,13 @@ impl<'a> ExtParser<'a> {
         loop {
             let name = self.parser.parse_identifier()?;
             let column_type = self.parse_column_type()?;
-            let encoding = self.parse_codec_type()?;
+
+            let encoding = if self.parser.peek_token().eq(&Token::Comma) {
+                Encoding::Default
+            } else {
+                self.parse_codec_type()?
+            };
+
             field_columns.push(ColumnOption {
                 name,
                 is_tag: false,
@@ -677,31 +703,32 @@ impl<'a> ExtParser<'a> {
         }
     }
 
-    fn parse_codec_type(&mut self) -> Result<Encoding> {
-        let token = self.parser.peek_token();
-        if let Token::Comma = token {
-            Ok(Encoding::Default)
-        } else {
-            let has_codec = self.parse_cnos_keyword(CnosKeyWord::CODEC);
-            if !has_codec {
-                return parser_err!(", is expected after column");
-            }
-            self.parser.expect_token(&Token::LParen)?;
-            let token = self.parser.next_token();
-            match token {
-                Token::Word(w) => {
-                    let encoding: Encoding = w.value.parse().map_err(|e| {
-                        ParserError::ParserError(format!("{} is not valid encoding", e))
-                    })?;
+    fn parse_codec_encoding(&mut self) -> Result<Encoding, String> {
+        self.parser
+            .peek_token()
+            .to_string()
+            .parse()
+            .map(|encoding| {
+                self.parser.next_token();
+                encoding
+            })
+    }
 
-                    self.parser.expect_token(&Token::RParen)?;
-                    Ok(encoding)
-                }
-                unexpected => {
-                    parser_err!(format!("{} is not a codec", unexpected))
-                }
-            }
+    fn parse_codec_type(&mut self) -> Result<Encoding> {
+        if !self.parse_cnos_keyword(CnosKeyWord::CODEC) {
+            return self.expected("CODEC or ','", self.parser.peek_token());
         }
+
+        self.parser.expect_token(&Token::LParen)?;
+        if self.parser.peek_token().eq(&Token::RParen) {
+            return parser_err!(format!("expect codec encoding type in ()"));
+        }
+        let encoding = match self.parse_codec_encoding() {
+            Ok(encoding) => encoding,
+            Err(str) => return parser_err!(format!("{} is not valid encoding", str)),
+        };
+        self.parser.expect_token(&Token::RParen)?;
+        Ok(encoding)
     }
 }
 
@@ -737,6 +764,7 @@ mod tests {
     use std::ops::Deref;
 
     use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
+    use spi::query::ast::AlterTable;
     use spi::query::ast::{DropObject, ExtStatement};
 
     use super::*;
@@ -1025,5 +1053,78 @@ mod tests {
     fn test_create_table_without_fields() {
         let sql = "CREATE TABLE test0(TAGS(column6, column7));";
         ExtParser::parse_sql(sql).unwrap();
+    }
+
+    #[test]
+    fn test_alter_table() {
+        let sql = r#"
+            ALTER TABLE m ADD TAG t;
+            ALTER TABLE m ADD FIELD f BIGINT CODEC(DEFAULT);
+            ALTER TABLE m DROP t;
+            ALTER TABLE m DROP COLUMN f;
+            ALTER TABLE m ALTER f SET CODEC(DEFAULT);
+            ALTER TABLE m ALTER COLUMN TIME SET CODEC(NULL);
+        "#;
+        let statement = ExtParser::parse_sql(sql).unwrap();
+        let statement: Vec<AlterTable> = statement
+            .into_iter()
+            .map(|s| match s {
+                ExtStatement::AlterTable(s) => s,
+                _ => panic!("Expect AlterTable"),
+            })
+            .collect();
+        assert_eq!(
+            statement,
+            vec![
+                AlterTable {
+                    table_name: ObjectName(vec![Ident::from("m")]),
+                    alter_action: AlterTableAction::AddColumn {
+                        column: ColumnOption {
+                            name: Ident::from("t"),
+                            is_tag: true,
+                            data_type: DataType::String,
+                            encoding: Encoding::Default
+                        }
+                    }
+                },
+                AlterTable {
+                    table_name: ObjectName(vec![Ident::from("m")]),
+                    alter_action: AlterTableAction::AddColumn {
+                        column: ColumnOption {
+                            name: Ident::from("f"),
+                            is_tag: false,
+                            data_type: DataType::BigInt(None),
+                            encoding: Encoding::Default
+                        }
+                    }
+                },
+                AlterTable {
+                    table_name: ObjectName(vec![Ident::from("m")]),
+                    alter_action: AlterTableAction::DropColumn {
+                        column_name: Ident::from("t")
+                    }
+                },
+                AlterTable {
+                    table_name: ObjectName(vec![Ident::from("m")]),
+                    alter_action: AlterTableAction::DropColumn {
+                        column_name: Ident::from("f")
+                    }
+                },
+                AlterTable {
+                    table_name: ObjectName(vec![Ident::from("m")]),
+                    alter_action: AlterTableAction::AlterField {
+                        field_name: Ident::from("f"),
+                        encoding: Encoding::Default
+                    }
+                },
+                AlterTable {
+                    table_name: ObjectName(vec![Ident::from("m")]),
+                    alter_action: AlterTableAction::AlterField {
+                        field_name: Ident::from("TIME"),
+                        encoding: Encoding::Null
+                    }
+                }
+            ]
+        );
     }
 }
