@@ -123,7 +123,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test4( column1 BIGINT CODEC(DEL), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: s is not valid encoding"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: DEL is not valid encoding"}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test5( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLE, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
@@ -137,7 +137,7 @@ time,column6,column7,column1,column2,column3,column4,column5
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test7( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: ) is not a codec"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: expect codec encoding type in ()"}
 -- ERROR:  --
 
 -- EXECUTE SQL: DROP DATABASE IF EXISTS createtable; --

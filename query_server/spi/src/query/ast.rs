@@ -27,6 +27,27 @@ pub enum ExtStatement {
     // system cmd
     ShowQueries,
     AlterDatabase(AlterDatabase),
+    AlterTable(AlterTable),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterTable {
+    pub table_name: ObjectName,
+    pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterTableAction {
+    AddColumn {
+        column: ColumnOption,
+    },
+    AlterField {
+        field_name: Ident,
+        encoding: Encoding,
+    },
+    DropColumn {
+        column_name: Ident,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +92,26 @@ pub struct ColumnOption {
     pub is_tag: bool,
     pub data_type: DataType,
     pub encoding: Encoding,
+}
+
+impl ColumnOption {
+    pub fn new_field(name: Ident, data_type: DataType, encoding: Encoding) -> Self {
+        Self {
+            name,
+            is_tag: false,
+            data_type,
+            encoding,
+        }
+    }
+
+    pub fn new_tag(name: Ident) -> Self {
+        Self {
+            name,
+            is_tag: true,
+            data_type: DataType::String,
+            encoding: Encoding::default(),
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]

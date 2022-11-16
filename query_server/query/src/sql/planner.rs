@@ -22,7 +22,8 @@ use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
 use spi::query::ast::{
-    AlterDatabase as ASTAlterDatabase, ColumnOption, CreateDatabase as ASTCreateDatabase,
+    AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
+    AlterTableAction as ASTAlterTableAction, ColumnOption, CreateDatabase as ASTCreateDatabase,
     CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions, DropObject,
     ExtStatement,
@@ -31,6 +32,8 @@ use spi::query::logical_planner::{
     self, affected_row_expr, merge_affected_row_expr, AlterDatabase, CreateDatabase, CreateTable,
     DDLPlan, DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner,
     LogicalPlannerError, Plan, QueryPlan, SYSPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
+    AlterTable, AlterTableAction,
+    ExternalSnafu,
 };
 use spi::query::session::IsiphoSessionCtx;
 
@@ -59,7 +62,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
-            ExtStatement::CreateTable(stmt) => self.table_to_plan(stmt),
+            ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt),
             ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt),
             ExtStatement::CreateUser(_) => todo!(),
             ExtStatement::Drop(s) => self.drop_object_to_plan(s),
@@ -71,6 +74,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
             // system statement
             ExtStatement::ShowQueries => Ok(Plan::SYSTEM(SYSPlan::ShowQueries)),
+            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
+            // ExtStatement::AlterTable(stmt) => self.
         }
     }
 
@@ -275,7 +280,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         .context(ExternalSnafu)
     }
 
-    pub fn table_to_plan(&self, statement: ASTCreateTable) -> Result<Plan> {
+    pub fn create_table_to_plan(&self, statement: ASTCreateTable) -> Result<Plan> {
         let ASTCreateTable {
             name,
             if_not_exists,
@@ -291,21 +296,9 @@ impl<S: ContextProvider> SqlPlaner<S> {
         schema.push(time_col);
 
         for column_opt in columns {
-            self.check_column(&column_opt)?;
-
             let col_id = id_generator.next_id() as ColumnId;
-
-            let col = if column_opt.is_tag {
-                TableColumn::new_tag_column(col_id, normalize_ident(&column_opt.name))
-            } else {
-                TableColumn::new(
-                    col_id,
-                    normalize_ident(&column_opt.name),
-                    self.make_data_type(&column_opt.data_type)?,
-                    column_opt.encoding,
-                )
-            };
-            schema.push(col);
+            let column = Self::column_opt_to_table_column(column_opt, col_id)?;
+            schema.push(column);
         }
 
         let mut column_name = HashSet::new();
@@ -323,6 +316,22 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })))
     }
 
+    fn column_opt_to_table_column(column_opt: ColumnOption, id: ColumnId) -> Result<TableColumn> {
+        Self::check_column_encoding(&column_opt)?;
+
+        let col = if column_opt.is_tag {
+            TableColumn::new_tag_column(id, normalize_ident(&column_opt.name))
+        } else {
+            TableColumn::new(
+                id,
+                normalize_ident(&column_opt.name),
+                Self::make_data_type(&column_opt.data_type)?,
+                column_opt.encoding,
+            )
+        };
+        Ok(col)
+    }
+
     fn database_to_describe(&self, statement: DescribeDatabaseOptions) -> Result<Plan> {
         Ok(Plan::DDL(DDLPlan::DescribeDatabase(DescribeDatabase {
             database_name: normalize_sql_object_name(&statement.database_name),
@@ -332,6 +341,29 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn table_to_describe(&self, opts: DescribeTableOptions) -> Result<Plan> {
         Ok(Plan::DDL(DDLPlan::DescribeTable(DescribeTable {
             table_name: normalize_sql_object_name(&opts.table_name),
+        })))
+    }
+
+    fn table_to_alter(&self, statement: ASTAlterTable) -> Result<Plan> {
+        let table_name = normalize_sql_object_name(&statement.table_name);
+        let alter_action = match statement.alter_action {
+            ASTAlterTableAction::AddColumn { column } => AlterTableAction::AddColumn {
+                table_column: Self::column_opt_to_table_column(column, 0)?,
+            },
+            ASTAlterTableAction::DropColumn { ref column_name } => AlterTableAction::DropColumn {
+                column_name: normalize_ident(column_name),
+            },
+            ASTAlterTableAction::AlterField {
+                ref field_name,
+                encoding,
+            } => AlterTableAction::AlterField {
+                field_name: normalize_ident(field_name),
+                encoding,
+            },
+        };
+        Ok(Plan::DDL(DDLPlan::AlterTable(AlterTable {
+            table_name,
+            alter_action,
         })))
     }
 
@@ -410,7 +442,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         Ok(duration)
     }
 
-    fn make_data_type(&self, data_type: &SQLDataType) -> Result<ColumnType> {
+    fn make_data_type(data_type: &SQLDataType) -> Result<ColumnType> {
         match data_type {
             // todo : should support get time unit for database
             SQLDataType::Timestamp(_) => Ok(ColumnType::Time),
@@ -425,7 +457,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         }
     }
 
-    fn check_column(&self, column: &ColumnOption) -> Result<()> {
+    fn check_column_encoding(column: &ColumnOption) -> Result<()> {
         // tag无压缩，直接返回
         if column.is_tag {
             return Ok(());
@@ -826,5 +858,84 @@ mod tests {
             },
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn test_alter_table() {
+        let sql = r#"
+            ALTER TABLE m ADD TAG t;
+            ALTER TABLE m ADD FIELD f BIGINT CODEC(DEFAULT);
+            ALTER TABLE m DROP t;
+            ALTER TABLE m DROP COLUMN f;
+            ALTER TABLE m ALTER f SET CODEC(DEFAULT);
+            ALTER TABLE m ALTER COLUMN TIME SET CODEC(NULL);
+        "#;
+        let statement = ExtParser::parse_sql(sql).unwrap();
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        let plans: Vec<AlterTable> = statement
+            .into_iter()
+            .map(|s| {
+                let planner = planner.statement_to_plan(s).unwrap();
+                match planner {
+                    Plan::DDL(DDLPlan::AlterTable(p)) => p,
+                    _ => panic!("Expect AlterTable"),
+                }
+            })
+            .collect();
+
+        assert_eq!(
+            plans,
+            vec![
+                AlterTable {
+                    table_name: "m".to_string(),
+                    alter_action: AlterTableAction::AddColumn {
+                        table_column: TableColumn {
+                            id: 0,
+                            name: "t".to_string(),
+                            column_type: ColumnType::Tag,
+                            encoding: Encoding::Default
+                        }
+                    }
+                },
+                AlterTable {
+                    table_name: "m".to_string(),
+                    alter_action: AlterTableAction::AddColumn {
+                        table_column: TableColumn {
+                            id: 0,
+                            name: "f".to_string(),
+                            column_type: ColumnType::Field(ValueType::Integer),
+                            encoding: Encoding::Default
+                        }
+                    }
+                },
+                AlterTable {
+                    table_name: "m".to_string(),
+                    alter_action: AlterTableAction::DropColumn {
+                        column_name: "t".to_string()
+                    }
+                },
+                AlterTable {
+                    table_name: "m".to_string(),
+                    alter_action: AlterTableAction::DropColumn {
+                        column_name: "f".to_string()
+                    }
+                },
+                AlterTable {
+                    table_name: "m".to_string(),
+                    alter_action: AlterTableAction::AlterField {
+                        field_name: "f".to_string(),
+                        encoding: Encoding::Default,
+                    }
+                },
+                AlterTable {
+                    table_name: "m".to_string(),
+                    alter_action: AlterTableAction::AlterField {
+                        field_name: "time".to_string(),
+                        encoding: Encoding::Null
+                    }
+                }
+            ]
+        );
     }
 }

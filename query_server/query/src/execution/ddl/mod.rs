@@ -9,6 +9,7 @@ use spi::query::execution::ExecutionError;
 
 use self::create_table::CreateTableTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
+use crate::execution::ddl::alter_table::AlterTableTask;
 use crate::execution::ddl::create_database::CreateDatabaseTask;
 use crate::execution::ddl::describe_database::DescribeDatabaseTask;
 use crate::execution::ddl::describe_table::DescribeTableTask;
@@ -20,6 +21,7 @@ use self::create_external_table::CreateExternalTableTask;
 use self::drop_object::DropObjectTask;
 
 mod alter_database;
+mod alter_table;
 mod create_database;
 mod create_external_table;
 mod create_table;
@@ -119,6 +121,7 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::ShowTables(sub_plan) => Box::new(ShowTablesTask::new(sub_plan.clone())),
             DDLPlan::ShowDatabases() => Box::new(ShowDatabasesTask::new()),
             DDLPlan::AlterDatabase(sub_plan) => Box::new(AlterDatabaseTask::new(sub_plan.clone())),
+            DDLPlan::AlterTable(sub_plan) => Box::new(AlterTableTask::new(sub_plan.clone())),
         }
     }
 }
