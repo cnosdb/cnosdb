@@ -21,7 +21,6 @@ use snafu::ResultExt;
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
-use libc::read;
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
@@ -258,10 +257,7 @@ impl DBIndex {
                             .ok_or(IndexError::NotFoundField)?
                         {
                             TableSchema::TsKvTableSchema(schema) => schema,
-                            _ => {
-                                fields.remove(&table_name);
-                                return Err(IndexError::TableNotFound { table: table_name });
-                            }
+                            _ => return Err(IndexError::TableNotFound { table: table_name }),
                         };
                     }
                 } else {

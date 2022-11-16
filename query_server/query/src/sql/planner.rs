@@ -30,10 +30,10 @@ use spi::query::ast::{
     ExtStatement,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, merge_affected_row_expr, AlterDatabase, CreateDatabase, CreateTable,
-    DDLPlan, DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu, LogicalPlanner,
-    LogicalPlannerError, Plan, QueryPlan, SYSPlan, MISMATCHED_COLUMNS, MISSING_COLUMN,
-    AlterTable, AlterTableAction,
+    self, affected_row_expr, merge_affected_row_expr, AlterDatabase, AlterTable, AlterTableAction,
+    CreateDatabase, CreateTable, DDLPlan, DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu,
+    LogicalPlanner, LogicalPlannerError, Plan, QueryPlan, SYSPlan, MISMATCHED_COLUMNS,
+    MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 

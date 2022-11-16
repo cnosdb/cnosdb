@@ -56,7 +56,7 @@ impl Client {
                 buffer.push('\n');
             }
         } else {
-            push_error(buffer, "");
+            push_error(buffer, "send error");
         }
     }
 

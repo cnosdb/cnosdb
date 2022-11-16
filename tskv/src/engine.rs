@@ -61,6 +61,7 @@ pub trait Engine: Send + Sync + Debug {
     fn delete_series(
         &self,
         db: &str,
+        tab: &str,
         sids: &[SeriesId],
         field_ids: &[ColumnId],
         time_range: &TimeRange,
@@ -142,6 +143,7 @@ impl Engine for MockEngine {
     fn delete_series(
         &self,
         db: &str,
+        tab: &str,
         sids: &[SeriesId],
         field_ids: &[ColumnId],
         time_range: &TimeRange,
