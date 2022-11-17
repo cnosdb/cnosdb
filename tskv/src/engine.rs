@@ -58,7 +58,14 @@ pub trait Engine: Send + Sync + Debug {
         new_column: TableColumn,
     ) -> Result<()>;
 
-    fn delete_data(
+    fn delete_columns(
+        &self,
+        database: &str,
+        series_ids: &[SeriesId],
+        field_ids: &[ColumnId],
+    ) -> Result<()>;
+
+    fn delete_series(
         &self,
         database: &str,
         series_ids: &[SeriesId],
@@ -139,7 +146,16 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    fn delete_data(
+    fn delete_columns(
+        &self,
+        database: &str,
+        series_ids: &[SeriesId],
+        field_ids: &[ColumnId],
+    ) -> Result<()> {
+        todo!()
+    }
+
+    fn delete_series(
         &self,
         database: &str,
         series_ids: &[SeriesId],
