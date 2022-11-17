@@ -60,7 +60,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
             err
         );
     }
-    let config: Config = match toml::from_str(&content) {
+    let mut config: Config = match toml::from_str(&content) {
         Ok(config) => config,
         Err(err) => panic!(
             "Failed to parse configurtion file '{}': {}",
@@ -68,6 +68,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Config {
             err
         ),
     };
+    config.wal.introspect();
     config
 }
 
@@ -261,6 +262,8 @@ pub struct WalConfig {
     pub max_file_size: u64,
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
+    #[serde(with = "duration", default = "WalConfig::default_sync_interval")]
+    pub sync_interval: Duration,
 }
 
 impl WalConfig {
@@ -284,6 +287,10 @@ impl WalConfig {
         false
     }
 
+    fn default_sync_interval() -> Duration {
+        Duration::from_secs(0)
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(cap) = std::env::var("CNOSDB_WAL_REQ_CHANNEL_CAP") {
             self.wal_req_channel_cap = cap.parse::<usize>().unwrap();
@@ -297,6 +304,11 @@ impl WalConfig {
         if let Ok(sync) = std::env::var("CNOSDB_WAL_SYNC") {
             self.sync = sync.as_str() == sync;
         }
+    }
+
+    pub fn introspect(&mut self) {
+        // Unit of wal.sync_interval is seconds
+        self.sync_interval = Duration::from_secs(self.sync_interval.as_secs());
     }
 }
 
@@ -561,7 +573,7 @@ max_file_size = "1G" # 1073741824
 
 # If true, fsync will be called after every wal writes.
 sync = false
-sync_interval = "0" # h, m, s
+sync_interval = "10s" # h, m, s
 
 [cache]
 max_buffer_size = "128M" # 134217728

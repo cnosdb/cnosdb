@@ -17,9 +17,6 @@ compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 max_compact_size = "2G" # 2147483648
 max_concurrent_compaction = 4
-dio_max_resident = 1024
-dio_max_non_resident = 1024
-dio_page_len_scale = 1
 strict_write = false
 
 [wal]
@@ -27,6 +24,7 @@ enabled = true
 path = '/tmp/cnosdb/2001/wal'
 max_file_size = "1G" # 1073741824
 sync = false
+sync_interval = "0" # h, m, s, ms, us, ns
 
 [cache]
 max_buffer_size = "128M" # 134217728
