@@ -17,7 +17,7 @@
 
 -- EXECUTE SQL: ALTER TABLE test DROP t0; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: table must have a tag"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: can't drop tag"}
 -- ERROR:  --
 
 -- EXECUTE SQL: ALTER TABLE test DROP time; --

@@ -382,9 +382,9 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     }
                 })?;
 
-                if table_column.column_type.is_tag() && table_schema.tag_num() == 1 {
+                if table_column.column_type.is_tag() {
                     return Err(LogicalPlannerError::Semantic {
-                        err: "table must have a tag".to_string(),
+                        err: "can't drop tag".to_string(),
                     });
                 }
 
