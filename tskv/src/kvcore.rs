@@ -192,48 +192,79 @@ impl TsKv {
         wal_manager
     }
 
-    fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        warn!("job 'WAL' starting.");
+    pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
+        async fn on_write(
+            wal_manager: &mut WalManager,
+            points: Arc<Vec<u8>>,
+            cb: oneshot::Sender<Result<(u64, usize)>>,
+            id: TseriesFamilyId,
+            tenant: Arc<Vec<u8>>,
+        ) {
+            let ret = wal_manager
+                .write(WalEntryType::Write, points, id, tenant)
+                .await;
+            let send_ret = cb.send(ret);
+            if let Err(e) = send_ret {
+                warn!("send WAL write result failed: {:?}", e);
+            }
+        }
+
+        async fn on_tick(wal_manager: &WalManager) {
+            if let Err(e) = wal_manager.sync().await {
+                error!("Failed flushing WAL file: {:?}", e);
+            }
+        }
+
+        async fn on_cancel(wal_manager: WalManager) {
+            info!("Job 'WAL' closing.");
+            if let Err(e) = wal_manager.close().await {
+                error!("Failed to close job 'WAL': {:?}", e);
+            }
+            info!("Job 'WAL' closed.");
+        }
+
+        info!("Job 'WAL' starting.");
         let mut close_receiver = self.close_sender.subscribe();
-        let f = async move {
-            loop {
-                tokio::select! {
-                    wal_task = receiver.recv() => {
-                        match wal_task {
-                            Some(WalTask::Write { id, points, tenant, cb }) => {
-                                // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, points, id, tenant).await;
-                                let send_ret = cb.send(ret);
-                                match send_ret {
-                                    Ok(wal_result) => {}
-                                    Err(err) => {
-                                        warn!("send WAL write result failed.")
-                                    }
-                                }
+        let _ = self.runtime.spawn(async move {
+            info!("Job 'WAL' started.");
+
+            let sync_interval = wal_manager.sync_interval();
+            if sync_interval == Duration::ZERO {
+                loop {
+                    tokio::select! {
+                        wal_task = receiver.recv() => {
+                            match wal_task {
+                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
+                                _ => break
                             }
-                            _ => {
-                                break;
-                            }
+                        }
+                        close_task = close_receiver.recv() => {
+                            on_cancel(wal_manager).await;
+                            break;
                         }
                     }
-                    close_task = close_receiver.recv() => {
-                        info!("job 'WAL' closing.");
-                        if let Err(e) = wal_manager.close().await {
-                            error!("Failed to close wal: {:?}", e);
-                        }
-                        info!("job 'WAL' closed.");
-                        if let Ok(tx) = close_task {
-                            if let Err(e) = tx.send(()).await {
-                                error!("Failed to send wal closed signal: {:?}", e);
+                }
+            } else {
+                let mut ticker = tokio::time::interval(sync_interval);
+                loop {
+                    tokio::select! {
+                        wal_task = receiver.recv() => {
+                            match wal_task {
+                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
+                                _ => break
                             }
                         }
-                        break;
+                        _ = ticker.tick() => {
+                            on_tick(&wal_manager).await;
+                        }
+                        close_task = close_receiver.recv() => {
+                            on_cancel(wal_manager).await;
+                            break;
+                        }
                     }
                 }
             }
-        };
-        self.runtime.spawn(f);
-        info!("job 'WAL' started.");
+        });
     }
 
     fn run_flush_job(

@@ -221,6 +221,10 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
+    pub async fn sync(&self) -> Result<()> {
+        self.inner.sync().await
+    }
+
     pub async fn close(mut self) -> Result<()> {
         info!(
             "Closing wal with sequence: [{}, {})",
@@ -456,8 +460,16 @@ impl WalManager {
         Ok(seq_gt_min_seq)
     }
 
+    pub async fn sync(&self) -> Result<()> {
+        self.current_file.sync().await
+    }
+
     pub async fn close(self) -> Result<()> {
         self.current_file.close().await
+    }
+
+    pub fn sync_interval(&self) -> std::time::Duration {
+        self.config.sync_interval
     }
 }
 
