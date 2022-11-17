@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use parking_lot::RwLock;
 use spi::catalog::MetadataError;
 use spi::catalog::Result;
@@ -32,9 +32,9 @@ impl UserCatalog {
                 })
             }
             Some(db) => {
-                let tables = db.table_names();
-                for i in tables {
-                    db.deregister_table(&i)?;
+                let tables = db.table_names()?;
+                for table in tables {
+                    db.deregister_table(&table)?;
                 }
             }
         }
@@ -47,20 +47,27 @@ impl UserCatalog {
         Ok(())
     }
 
-    pub fn schema_names(&self) -> Vec<String> {
-        let schemas = self.schemas.read();
-        schemas.keys().cloned().collect()
+    pub fn schema_names(&self) -> Result<Vec<String>> {
+        self.engine
+            .list_databases()
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
     }
 
     // get db_schema
-    pub fn schema(&self, name: &str) -> Option<Arc<Database>> {
+    pub fn schema(&self, name: &str) -> Result<Arc<Database>> {
         let schemas = self.schemas.read();
         return if let Some(v) = schemas.get(name) {
-            Some(v.clone())
+            Ok(v.clone())
         } else {
             drop(schemas);
             match self.engine.get_db_schema(name) {
-                None => return None,
+                None => {
+                    return Err(MetadataError::DatabaseNotExists {
+                        database_name: name.to_string(),
+                    })
+                }
                 Some(schema) => {
                     let mut schemas = self.schemas.write();
                     schemas.insert(
@@ -68,7 +75,7 @@ impl UserCatalog {
                         Arc::new(Database::new(name.to_string(), self.engine.clone(), schema)),
                     );
                     let v = schemas.get(name).unwrap();
-                    return Some(v.clone());
+                    return Ok(v.clone());
                 }
             }
         };
@@ -108,12 +115,15 @@ impl Database {
         }
     }
 
-    pub fn table_names(&self) -> Vec<String> {
-        let tables = self.tables.read();
-        tables.keys().cloned().collect()
+    pub fn table_names(&self) -> Result<Vec<String>> {
+        self.engine
+            .list_tables(&self.db_name)
+            .map_err(|_| MetadataError::DatabaseNotExists {
+                database_name: self.db_name.clone(),
+            })
     }
 
-    pub fn table(&self, name: &str) -> Option<TableSchema> {
+    pub fn table(&self, name: &str) -> Result<TableSchema> {
         // table schema may be changed after write, so get from storage engine directly
         // {
         //     let tables = self.tables.read();
@@ -125,15 +135,12 @@ impl Database {
         let mut tables = self.tables.write();
         if let Ok(Some(schema)) = self.engine.get_table_schema(&self.db_name, name) {
             tables.insert(name.to_owned(), schema.clone());
-            return Some(schema);
+            return Ok(schema);
         }
 
-        // get external table
-        if let Some(v) = tables.get(name) {
-            return Some(v.clone());
-        }
-
-        None
+        Err(MetadataError::DatabaseNotExists {
+            database_name: name.to_string(),
+        })
     }
 
     pub fn register_table(&self, name: String, table: TableSchema) -> Result<Option<TableSchema>> {
@@ -153,12 +160,46 @@ impl Database {
     pub fn deregister_table(&self, name: &str) -> Result<Option<TableSchema>> {
         let mut tables = self.tables.write();
 
+        let res = tables.remove(name);
+
         self.engine
             .drop_table(&self.db_name, name)
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })?;
 
-        Ok(tables.remove(name))
+        Ok(res)
+    }
+
+    pub fn table_add_column(&self, table: &str, column: TableColumn) -> Result<()> {
+        let _lock = self.tables.write();
+        self.engine
+            .add_table_column(&self.db_name, table, column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
+    }
+
+    pub fn table_drop_column(&self, table: &str, column: &str) -> Result<()> {
+        let _lock = self.tables.write();
+        self.engine
+            .drop_table_column(&self.db_name, table, column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
+    }
+
+    pub fn table_alter_column(
+        &self,
+        table: &str,
+        column: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let _lock = self.tables.write();
+        self.engine
+            .change_table_column(&self.db_name, table, column, new_column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
     }
 }

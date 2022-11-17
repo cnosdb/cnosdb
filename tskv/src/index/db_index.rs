@@ -460,12 +460,7 @@ impl DBIndex {
     }
 
     pub fn list_tables(&self) -> Vec<String> {
-        let mut tables = Vec::new();
-        for (table, _) in self.table_schema.read().iter() {
-            tables.push(table.clone())
-        }
-
-        tables
+        self.table_schema.read().keys().cloned().collect()
     }
 
     pub fn get_table_schema_by_series_id(
