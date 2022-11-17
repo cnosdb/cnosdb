@@ -221,11 +221,7 @@ impl SeriesData {
         self.groups.push(group);
     }
 
-    pub fn delete_data(&mut self, column_id: ColumnId, range: &TimeRange) {
-        if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
-            return;
-        }
-
+    pub fn delete_column(&mut self, column_id: ColumnId) {
         for item in self.groups.iter_mut() {
             let name = match item.schema.column_name(column_id) {
                 None => continue,
@@ -389,13 +385,13 @@ impl MemCache {
         true
     }
 
-    pub fn delete_data(&self, field_ids: &[FieldId], range: &TimeRange) {
+    pub fn delete_columns(&self, field_ids: &[FieldId]) {
         for fid in field_ids {
             let (column_id, sid) = utils::split_id(*fid);
             let index = (sid as usize) % self.part_count;
             let part = self.partions[index].read();
             if let Some(data) = part.get(&sid) {
-                data.write().delete_data(column_id, range);
+                data.write().delete_column(column_id);
             }
         }
     }

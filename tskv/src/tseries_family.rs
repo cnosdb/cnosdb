@@ -744,10 +744,10 @@ impl TseriesFamily {
             }
         }
     }
-    pub fn delete_cache(&self, field_ids: &[FieldId], time_range: &TimeRange) {
-        self.mut_cache.read().delete_data(field_ids, time_range);
+    pub fn delete_columns(&self, field_ids: &[FieldId]) {
+        self.mut_cache.read().delete_columns(field_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_data(field_ids, time_range);
+            memcache.read().delete_columns(field_ids);
         }
     }
 
@@ -1089,7 +1089,7 @@ mod test {
             tsf.mut_cache.read().get_data(0, |_| true, |_| true).len(),
             1
         );
-        tsf.delete_cache(
+        tsf.delete_series(
             &[0],
             &TimeRange {
                 min_ts: 0,

@@ -570,7 +570,35 @@ impl Engine for TsKv {
         recv_ret
     }
 
-    fn delete_data(
+    fn delete_columns(
+        &self,
+        database: &str,
+        series_ids: &[SeriesId],
+        field_ids: &[ColumnId],
+    ) -> Result<()> {
+        let storage_field_ids: Vec<u64> = series_ids
+            .iter()
+            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
+            .collect();
+
+        if let Some(db) = self.version_set.read().get_db(database) {
+            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+                ts_family.write().delete_columns(&storage_field_ids);
+
+                let version = ts_family.read().super_version();
+                for column_file in version
+                    .version
+                    .column_files(&storage_field_ids, &TimeRange::all())
+                {
+                    column_file.add_tombstone(&storage_field_ids, &TimeRange::all())?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn delete_series(
         &self,
         database: &str,
         series_ids: &[SeriesId],
@@ -585,20 +613,17 @@ impl Engine for TsKv {
         if let Some(db) = self.version_set.read().get_db(database) {
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
                 // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
-
                 ts_family
                     .write()
-                    .delete_cache(&storage_field_ids, time_range);
+                    .delete_series(&storage_field_ids, time_range);
 
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
                     column_file.add_tombstone(&storage_field_ids, time_range)?;
                 }
-
                 // TODO Start next flush or compaction.
             }
         }
-
         Ok(())
     }
 
@@ -703,7 +728,7 @@ impl Engine for TsKv {
             .get_index()
             .get_series_id_list(table, &[])
             .context(IndexErrSnafu)?;
-        self.delete_data(database, &sid, &[column_id], &TimeRange::all())?;
+        self.delete_columns(database, &sid, &[column_id])?;
         Ok(())
     }
 
