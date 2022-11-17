@@ -26,8 +26,8 @@ pub enum IndexError {
     #[snafu(display("Unrecognized version"))]
     Version,
 
-    #[snafu(display("Unrecognized FieldType"))]
-    FieldType,
+    #[snafu(display("Unrecognized FieldType: {}", msg))]
+    FieldType { msg: String },
 
     #[snafu(display("Not Found Field"))]
     NotFoundField,
