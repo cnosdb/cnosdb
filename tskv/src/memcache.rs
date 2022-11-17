@@ -221,42 +221,34 @@ impl SeriesData {
         self.groups.push(group);
     }
 
-    pub fn delete_data(&mut self, table: &str, column_id: ColumnId, range: &TimeRange) {
+    pub fn delete_data(&mut self, column_id: ColumnId, range: &TimeRange) {
         if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
             return;
         }
 
         for item in self.groups.iter_mut() {
-            if item.schema.name.eq(table) {
-                let name = match item.schema.column_name(column_id) {
-                    None => continue,
-                    Some(name) => name.to_string(),
-                };
-                let index = match item.schema.fields_id().get(&column_id) {
-                    None => {
-                        item.schema.drop_column(&name);
-                        continue;
-                    }
-                    Some(index) => *index,
-                };
-                for row in item.rows.iter_mut() {
-                    row.fields.remove(index);
-                }
-                item.schema.drop_column(&name);
-                item.schema.schema_id += 1;
+            let name = match item.schema.column_name(column_id) {
+                None => continue,
+                Some(name) => name.to_string(),
+            };
+            let index = match item.schema.fields_id().get(&column_id) {
+                None => continue,
+                Some(index) => *index,
+            };
+            for row in item.rows.iter_mut() {
+                row.fields.remove(index);
             }
+            item.schema.drop_column(&name);
+            item.schema.schema_id += 1;
         }
     }
 
-    pub fn delete_series(&mut self, table: &str, sid: SeriesId, range: &TimeRange) {
+    pub fn delete_series(&mut self, range: &TimeRange) {
         if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
             return;
         }
 
         for item in self.groups.iter_mut() {
-            if !item.schema.name.eq(table) {
-                continue;
-            }
             item.rows
                 .retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
         }
@@ -397,23 +389,23 @@ impl MemCache {
         true
     }
 
-    pub fn delete_data(&self, table: &str, field_ids: &[FieldId], range: &TimeRange) {
+    pub fn delete_data(&self, field_ids: &[FieldId], range: &TimeRange) {
         for fid in field_ids {
             let (column_id, sid) = utils::split_id(*fid);
             let index = (sid as usize) % self.part_count;
             let part = self.partions[index].read();
             if let Some(data) = part.get(&sid) {
-                data.write().delete_data(table, column_id, range);
+                data.write().delete_data(column_id, range);
             }
         }
     }
 
-    pub fn delete_series(&self, table: &str, sids: &[SeriesId], range: &TimeRange) {
+    pub fn delete_series(&self, sids: &[SeriesId], range: &TimeRange) {
         for sid in sids {
             let index = (*sid as usize) % self.part_count;
             let part = self.partions[index].read();
             if let Some(data) = part.get(sid) {
-                data.write().delete_series(table, *sid, range);
+                data.write().delete_series(range);
             }
         }
     }
