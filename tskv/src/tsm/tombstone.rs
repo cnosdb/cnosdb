@@ -14,10 +14,10 @@ use parking_lot::{Mutex, RwLock};
 use snafu::ResultExt;
 
 use super::DataBlock;
-use crate::file_system::file_manager;
+use crate::file_system::{file_manager, AsyncFile, IFile};
 use crate::{
     byte_utils, error,
-    file_system::{DmaFile, FileCursor, FileSync},
+    file_system::FileCursor,
     file_utils,
     tseries_family::{ColumnFile, TimeRange},
     Error, Result,
@@ -46,14 +46,18 @@ pub struct TsmTombstone {
     tomb_size: u64,
 
     path: PathBuf,
-    tomb_accessor: Option<DmaFile>,
+    tomb_accessor: Option<AsyncFile>,
 }
 
 impl TsmTombstone {
     pub async fn new(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
         let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
         let tomb_accessor = if file_manager::try_exists(&path) {
-            Some(file_manager::get_file_manager().open_create_file(&path)?)
+            Some(
+                file_manager::get_file_manager()
+                    .open_create_file(&path)
+                    .await?,
+            )
         } else {
             None
         };
@@ -75,11 +79,9 @@ impl TsmTombstone {
 
     #[cfg(test)]
     pub async fn with_path(path: impl AsRef<Path>) -> Result<Self> {
-        let file = file_manager::get_file_manager().create_file(&path)?;
+        let file = file_manager::get_file_manager().create_file(&path).await?;
         Self::write_header_to(&file).await?;
-        file.sync_data(FileSync::Hard)
-            .await
-            .context(error::IOSnafu)?;
+        file.sync_data().await.context(error::IOSnafu)?;
         let tomb_size = file.len();
 
         Ok(Self {
@@ -90,34 +92,18 @@ impl TsmTombstone {
         })
     }
 
-    pub fn open_for_read(path: impl AsRef<Path>, file_id: u64) -> Result<Option<Self>> {
-        let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
-        if !file_manager::try_exists(&path) {
-            return Ok(None);
-        }
-        let file = file_manager::get_file_manager().open_file(&path)?;
-        let tomb_size = file.len();
-
-        Ok(Some(Self {
-            tombstones: HashMap::new(),
-            tomb_size,
-            path,
-            tomb_accessor: Some(file),
-        }))
-    }
-
     pub async fn open_for_write(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
         let path = file_utils::make_tsm_tombstone_file_name(&path, file_id);
         let mut is_new = false;
         if !file_manager::try_exists(&path) {
             is_new = true;
         }
-        let file = file_manager::get_file_manager().open_create_file(&path)?;
+        let file = file_manager::get_file_manager()
+            .open_create_file(&path)
+            .await?;
         if is_new {
             Self::write_header_to(&file).await?;
-            file.sync_data(FileSync::Hard)
-                .await
-                .context(error::IOSnafu)?;
+            file.sync_data().await.context(error::IOSnafu)?;
         }
         let tomb_size = file.len();
 
@@ -141,7 +127,7 @@ impl TsmTombstone {
     }
 
     async fn load_all(
-        reader: &DmaFile,
+        reader: &AsyncFile,
         tombstones: &mut HashMap<FieldId, Vec<TimeRange>>,
     ) -> Result<()> {
         const HEADER_SIZE: usize = 4;
@@ -191,16 +177,16 @@ impl TsmTombstone {
 
     pub async fn add_range(&mut self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         if self.tomb_accessor.is_none() {
-            self.tomb_accessor =
-                Some(file_manager::get_file_manager().open_create_file(&self.path)?);
+            self.tomb_accessor = Some(
+                file_manager::get_file_manager()
+                    .open_create_file(&self.path)
+                    .await?,
+            );
         }
         let writer = self.tomb_accessor.as_ref().expect("initialized file");
         if writer.is_empty() {
             Self::write_header_to(writer).await?;
-            writer
-                .sync_data(FileSync::Hard)
-                .await
-                .context(error::IOSnafu)?;
+            writer.sync_data().await.context(error::IOSnafu)?;
         }
 
         for field_id in field_ids.iter() {
@@ -218,14 +204,14 @@ impl TsmTombstone {
         Ok(())
     }
 
-    async fn write_header_to(writer: &DmaFile) -> Result<usize> {
+    async fn write_header_to(writer: &AsyncFile) -> Result<usize> {
         writer
             .write_at(0, &TOMBSTONE_MAGIC.to_be_bytes()[..])
             .await
             .context(error::IOSnafu)
     }
 
-    async fn write_to(writer: &DmaFile, pos: u64, tombstone: &Tombstone) -> Result<usize> {
+    async fn write_to(writer: &AsyncFile, pos: u64, tombstone: &Tombstone) -> Result<usize> {
         let mut size = pos;
         size += writer
             .write_at(size, &tombstone.field_id.to_be_bytes()[..])
@@ -239,16 +225,12 @@ impl TsmTombstone {
             .write_at(size, &tombstone.time_range.max_ts.to_be_bytes()[..])
             .await
             .context(error::IOSnafu)? as u64;
-        writer.set_len(size);
         Ok((size - pos) as usize)
     }
 
     pub async fn flush(&self) -> Result<()> {
         if let Some(file) = self.tomb_accessor.as_ref() {
-            file.set_len(self.tomb_size);
-            file.sync_all(FileSync::Hard)
-                .await
-                .context(error::IOSnafu)?;
+            file.sync_data().await.context(error::IOSnafu)?;
         }
         Ok(())
     }

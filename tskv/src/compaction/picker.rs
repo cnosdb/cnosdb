@@ -20,7 +20,6 @@ use trace::{error, info};
 use crate::{
     compaction::CompactReq,
     error::Result,
-    file_system::DmaFile,
     kv_option::{Options, StorageOptions},
     tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version},
     LevelId, TimeRange, TseriesFamilyId,

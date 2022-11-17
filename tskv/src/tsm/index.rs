@@ -6,7 +6,6 @@ use super::{BlockMetaIterator, BLOCK_META_SIZE, FOOTER_SIZE, INDEX_META_SIZE};
 use crate::{
     byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{Error, Result},
-    file_system::DmaFile,
     tseries_family::TimeRange,
     tsm::{WriteTsmError, WriteTsmResult},
 };

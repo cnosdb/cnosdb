@@ -1,3 +1,4 @@
+use std::fs::OpenOptions;
 use std::{
     borrow::BorrowMut,
     fs,
@@ -5,11 +6,10 @@ use std::{
     sync::Arc,
 };
 
-use futures::channel::oneshot::{self, Sender};
 use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
 use snafu::{ResultExt, Snafu};
 
+use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
 use crate::{
     error,
     file_system::{self},
@@ -41,7 +41,7 @@ pub enum FileError {
 }
 
 pub struct FileManager {
-    file_system: Arc<file_system::FileSystemCache>,
+    fs_runtime: Arc<FsRuntime>,
 }
 
 pub fn get_file_manager() -> &'static FileManager {
@@ -51,61 +51,47 @@ pub fn get_file_manager() -> &'static FileManager {
 
 impl FileManager {
     fn new() -> Self {
-        let fs_options = file_system::Options::default();
         Self {
-            file_system: Arc::new(file_system::FileSystemCache::new(&fs_options)),
+            fs_runtime: Arc::new(FsRuntime::new_runtime()),
         }
     }
 
-    pub fn open_file_with(
+    pub async fn open_file_with(
         &self,
         path: impl AsRef<Path>,
-        options: &fs::OpenOptions,
-    ) -> Result<file_system::DmaFile> {
-        self.file_system
-            .open_with(&path, options)
+        options: OpenOptions,
+    ) -> Result<AsyncFile> {
+        AsyncFile::open(path.as_ref(), self.fs_runtime.clone(), options)
+            .await
             .context(error::OpenFileSnafu {
                 path: path.as_ref(),
             })
     }
 
-    pub fn open_file(&self, path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
-        self.file_system.open(&path).context(error::OpenFileSnafu {
-            path: path.as_ref(),
-        })
+    pub async fn open_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+        let options = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .clone();
+        AsyncFile::open(path.as_ref(), self.fs_runtime.clone(), options)
+            .await
+            .context(error::OpenFileSnafu {
+                path: path.as_ref(),
+            })
     }
 
-    pub fn create_file(&self, path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
+    pub async fn create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
         if let Some(p) = path.as_ref().parent() {
             if !try_exists(p) {
-                std::fs::create_dir_all(p).context(error::IOSnafu)?;
+                fs::create_dir_all(p).context(error::IOSnafu)?;
             }
         }
-        self.file_system
-            .create(&path)
-            .context(error::OpenFileSnafu {
-                path: path.as_ref(),
-            })
+        self.open_file(&path).await
     }
 
-    pub fn open_create_file(&self, path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
-        if try_exists(path.as_ref()) {
-            self.open_file(path)
-        } else {
-            self.create_file(path)
-        }
-    }
-
-    pub async fn sync_all(&self, sync: file_system::FileSync) -> Result<()> {
-        self.file_system
-            .sync_all(sync)
-            .context(error::SyncFileSnafu)
-    }
-
-    pub async fn sync_data(&self, sync: file_system::FileSync) -> Result<()> {
-        self.file_system
-            .sync_data(sync)
-            .context(error::SyncFileSnafu)
+    pub async fn open_create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+        self.create_file(path).await
     }
 }
 
@@ -144,34 +130,33 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
 }
 
 #[inline(always)]
-pub fn open_file(path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
-    get_file_manager().open_file(path)
+pub async fn open_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+    get_file_manager().open_file(path).await
 }
 
 #[inline(always)]
-pub fn create_file(path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
-    get_file_manager().create_file(path)
+pub async fn create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+    get_file_manager().create_file(path).await
 }
 
 #[inline(always)]
-pub fn open_create_file(path: impl AsRef<Path>) -> Result<file_system::DmaFile> {
-    get_file_manager().open_create_file(path)
+pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+    get_file_manager().open_create_file(path).await
 }
 
 #[cfg(test)]
 mod test {
+    use super::FileManager;
+    use crate::file_system::{file_manager, FileCursor, IFile};
+    use std::os::unix::io::FromRawFd;
+    use std::os::unix::prelude::AsRawFd;
     use std::sync::Arc;
-
-    use futures::channel::oneshot;
-    use tokio::runtime::Builder;
+    use libc::send;
+    use tokio::sync::{mpsc, oneshot};
     use trace::info;
 
-    use super::FileManager;
-    use crate::file_system::file_manager;
-    use crate::file_system::FileSync;
-
-    #[test]
-    fn test_get_instance() {
+    #[tokio::test]
+    async fn test_get_instance() {
         let file_manager_1 = file_manager::get_file_manager();
         info!("0x{:X}", file_manager_1 as *const FileManager as usize);
         let file_manager_2 = file_manager::get_file_manager();
@@ -187,5 +172,114 @@ mod test {
             file_manager_1 as *const FileManager as usize,
             &file_manager_3 as *const FileManager as usize
         );
+    }
+
+    async fn test_basic_io() {
+        println!("start basic io");
+        let file = file_manager::get_file_manager()
+            .open_file("fs.test1")
+            .await
+            .unwrap();
+        println!("start write");
+        let len = file.write_at(0, &[0, 1, 2, 3, 4]).await.unwrap();
+        println!("end write");
+        let mut buf = [0_u8; 2];
+        let size = file.read_at(1, &mut buf).await.unwrap();
+        assert_eq!(size, buf.len());
+        let expect = [1, 2];
+        assert_eq!(buf, expect);
+    }
+
+    async fn test_write() {
+        let mut len = 0;
+        let file = file_manager::get_file_manager()
+            .open_file("fs.test2")
+            .await
+            .unwrap();
+        for i in 0..1024 {
+            len += file.write_at(len, &[0, 1, 2, 3, 4]).await.unwrap() as u64;
+        }
+        let len = file.write_at(0, &[0, 1, 2, 3, 4]).await.unwrap();
+        let mut buf = [0_u8; 5];
+        let size = file.read_at(2, &mut buf).await.unwrap();
+        assert_eq!(size, buf.len());
+        let expect = [2_u8, 3, 4, 0, 1];
+        assert_eq!(buf, expect);
+    }
+
+    async fn test_truncate() {
+        let file = file_manager::get_file_manager()
+            .open_file("fs.test3")
+            .await
+            .unwrap();
+        let len = file.write_at(0, &[0, 1, 2, 3, 4, 5]).await.unwrap();
+        let mut buf = [0_u8; 2];
+        let size = file.read_at(1, &mut buf).await.unwrap();
+        assert_eq!(size, buf.len());
+        let expect = [1, 2];
+        assert_eq!(buf, expect);
+        file.truncate(3).await.unwrap();
+        let file1 = file_manager::get_file_manager()
+            .open_file("fs.test3")
+            .await
+            .unwrap();
+        assert_eq!(file1.len(), 3);
+    }
+
+    async fn test_cursor() {
+        let file = file_manager::get_file_manager()
+            .open_file("fs.test4")
+            .await
+            .unwrap();
+        let mut cursor: FileCursor = file.into();
+        for i in 0..1024 {
+            cursor.write(&[0, 1, 2, 3, 4]).await.unwrap();
+        }
+        cursor.set_pos(5);
+        let mut buf = [0_u8; 5];
+        let read = cursor.read(&mut buf).await.unwrap();
+        assert_eq!(buf, [0, 1, 2, 3, 4]);
+    }
+
+    #[tokio::test]
+     async fn test_all() {
+        test_basic_io().await;
+        test_write().await;
+        test_truncate().await;
+        test_cursor().await;
+    }
+
+    #[test]
+    #[cfg(feature = "io_uring")]
+    fn test_io_uring() {
+        tokio_uring::start(async {
+            let file = tokio_uring::fs::File::create("hello.txt").await.unwrap();
+            let (res, buf) = file.write_at(&b"hello"[..], 0).await;
+            let fd = file.as_raw_fd();
+            println!("main thread: file: {:?}, {:?}", file, fd);
+            let (sender, mut receiver) = mpsc::unbounded_channel();
+            drop(file);
+            let thread = std::thread::spawn(move || {
+                let fd = receiver.blocking_recv().unwrap();
+                println!("thread 2: fd {:?}", fd);
+                tokio_uring::start(async {
+                    tokio_uring::spawn(async move {
+                        let file2 = unsafe { tokio_uring::fs::File::from_raw_fd(fd) };
+                        println!("thread 2: file: {:?}, {:?}", file2, fd);
+                        let (res, buf) = file2.write_at(&b"hello world"[..], 0).await;
+                        let n = res.unwrap();
+                        println!("wrote {} bytes", n);
+                        // // Sync data to the file system.
+                        // file2.sync_all().await.unwrap();
+                        // // Close the file
+                        // file2.close().await.unwrap();
+                    })
+                    .await
+                    .unwrap()
+                })
+            });
+            sender.send(fd).unwrap();
+            thread.join().unwrap();
+        })
     }
 }

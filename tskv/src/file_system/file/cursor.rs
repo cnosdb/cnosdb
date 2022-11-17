@@ -1,19 +1,18 @@
+use std::io::ErrorKind;
 use std::{
-    convert::TryInto,
-    io::{Error, ErrorKind, Result, SeekFrom},
+    io::{Error, Result, SeekFrom},
     ops::Deref,
 };
 
-use super::DmaFile;
+use crate::file_system::file::async_file::{AsyncFile, IFile};
 
-#[derive(Clone)]
 pub struct FileCursor {
-    file: DmaFile,
+    file: AsyncFile,
     pos: u64,
 }
 
 impl FileCursor {
-    pub fn into_file(self) -> DmaFile {
+    pub fn into_file(self) -> AsyncFile {
         self.file
     }
 
@@ -62,62 +61,16 @@ impl FileCursor {
     }
 }
 
-impl From<DmaFile> for FileCursor {
-    fn from(file: DmaFile) -> Self {
+impl From<AsyncFile> for FileCursor {
+    fn from(file: AsyncFile) -> Self {
         FileCursor { file, pos: 0 }
     }
 }
 
 impl Deref for FileCursor {
-    type Target = DmaFile;
+    type Target = AsyncFile;
 
     fn deref(&self) -> &Self::Target {
         &self.file
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::io::{prelude::*, BufWriter};
-
-    use tempfile::NamedTempFile;
-
-    use crate::file_system::*;
-
-    #[tokio::test]
-    async fn copy() {
-        let fs = FileSystemCache::new(Options::default().max_resident(2).max_non_resident(2));
-
-        let file_len: usize = (fs.max_page_len() as f64 * 5.3) as usize;
-
-        let mut src = NamedTempFile::new().unwrap();
-        let dst = NamedTempFile::new().unwrap();
-        {
-            let mut f = BufWriter::new(&mut src);
-            for i in 0..file_len {
-                f.write_all(&[i as u8]).unwrap();
-            }
-            f.flush().unwrap();
-        }
-
-        {
-            let mut src_d = fs.open(src.path()).unwrap().into_cursor();
-            let mut dst_d = fs.open(dst.path()).unwrap().into_cursor();
-
-            let buf = &mut [0];
-            while src_d.read(buf).await.unwrap() == 1 {
-                dst_d.write(buf).await.unwrap();
-            }
-        }
-
-        {
-            let mut dst_d = fs.open(dst.path()).unwrap().into_cursor();
-            let buf = &mut [0];
-            for i in 0..file_len {
-                assert_eq!(dst_d.read(buf).await.unwrap(), 1);
-                assert_eq!(buf[0], i as u8);
-            }
-            assert_eq!(dst_d.read(buf).await.unwrap(), 0);
-        }
     }
 }

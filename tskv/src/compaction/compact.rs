@@ -16,7 +16,6 @@ use crate::{
     compaction::CompactReq,
     context::GlobalContext,
     error::{self, Result},
-    file_system::DmaFile,
     file_utils,
     kv_option::Options,
     memcache::DataType,

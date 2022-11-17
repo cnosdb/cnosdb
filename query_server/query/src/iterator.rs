@@ -15,7 +15,15 @@ use trace::debug;
 
 use crate::stream::TskvSourceMetrics;
 
-use tskv::{engine::EngineRef, error::IndexErrSnafu, memcache::DataType, tseries_family::{ColumnFile, SuperVersion, TimeRange}, tsm::{BlockMetaIterator, DataBlock, TsmReader}, ColumnFileId, Error, error};
+use tskv::{
+    engine::EngineRef,
+    error,
+    error::IndexErrSnafu,
+    memcache::DataType,
+    tseries_family::{ColumnFile, SuperVersion, TimeRange},
+    tsm::{BlockMetaIterator, DataBlock, TsmReader},
+    ColumnFileId, Error,
+};
 
 use datafusion::arrow::{
     array::{BooleanBuilder, Float64Builder, Int64Builder, StringBuilder, UInt64Builder},
@@ -501,7 +509,8 @@ impl RowIterator {
                                 field_name,
                                 vtype,
                                 self,
-                            ).await?;
+                            )
+                            .await?;
                             Box::new(cursor)
                         }
                     },
@@ -529,12 +538,16 @@ impl RowIterator {
             return Ok(None);
         }
 
-        self.build_series_columns(self.series[self.series_index]).await?;
+        self.build_series_columns(self.series[self.series_index])
+            .await?;
 
         Ok(Some(()))
     }
 
-    async fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
+    async fn collect_row_data(
+        &mut self,
+        builder: &mut [ArrayBuilderPtr],
+    ) -> Result<Option<()>, Error> {
         debug!("======collect_row_data=========");
         let timer = self.metrics.elapsed_field_scan().timer();
 

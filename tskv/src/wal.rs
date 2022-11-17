@@ -22,13 +22,14 @@ use trace::{debug, error, info, warn};
 
 use crate::engine;
 use crate::file_system::file_manager::{self, FileManager};
+use crate::file_system::{AsyncFile, IFile};
 use crate::tsm::codec::get_str_codec;
 use crate::{
     byte_utils,
     compaction::FlushReq,
     context::GlobalContext,
     error::{self, Error, Result},
-    file_system::{DmaFile, FileCursor, FileSync},
+    file_system::FileCursor,
     file_utils,
     kv_option::WalOptions,
     memcache::MemCache,
@@ -110,7 +111,7 @@ impl WalEntryBlock {
 
 struct WalWriter {
     id: u64,
-    file: DmaFile,
+    file: AsyncFile,
     size: u64,
     path: PathBuf,
     config: Arc<WalOptions>,
@@ -142,14 +143,14 @@ impl WalWriter {
         // Get file and check if new file
         let mut new_file = false;
         let file = if file_manager::try_exists(path) {
-            let f = file_manager::get_file_manager().open_file(path)?;
+            let f = file_manager::get_file_manager().open_file(path).await?;
             if f.is_empty() {
                 new_file = true;
             }
             f
         } else {
             new_file = true;
-            file_manager::get_file_manager().create_file(path)?
+            file_manager::get_file_manager().create_file(path).await?
         };
 
         // Get metadata; if new file then write header
@@ -192,7 +193,7 @@ impl WalWriter {
         let typ = (typ as u8).to_be_bytes();
         let crc = crc32fast::hash(&data).to_be_bytes();
         let len = (data.len() as u32).to_be_bytes();
-        println!("before byte {:?}",len);
+        println!("before byte {:?}", len);
 
         let bufs = &mut [
             IoSlice::new(&typ),
@@ -201,23 +202,21 @@ impl WalWriter {
             IoSlice::new(&len),
             IoSlice::new(&data),
         ][..];
-        pos += self.file
+        pos += self
+            .file
             .write_vec(pos, bufs)
             .await
             .context(error::IOSnafu)? as u64;
         seq += 1;
 
         if self.config.sync {
-            self.file
-                .sync_all(FileSync::Soft)
-                .await
-                .context(error::IOSnafu)?;
+            self.file.sync_data().await.context(error::IOSnafu)?;
         }
         // write & fsync succeed
         let written_size = (pos - self.size) as usize;
         self.size = pos;
         self.max_sequence = seq;
-        println!("size {}",self.size);
+        println!("size {}", self.size);
         println!("seq {}", self.max_sequence);
         println!("written_size {}", written_size);
         Ok((seq, written_size))
@@ -234,10 +233,7 @@ impl WalWriter {
             .context(error::IOSnafu)?;
 
         // Do fsync
-        self.file
-            .sync_all(FileSync::Hard)
-            .await
-            .context(error::IOSnafu)?;
+        self.file.sync_data().await.context(error::IOSnafu)?;
 
         Ok(())
     }
@@ -324,7 +320,7 @@ impl WalManager {
             if !file_manager::try_exists(&path) {
                 continue;
             }
-            let file = file_manager::get_file_manager().open_file(&path)?;
+            let file = file_manager::get_file_manager().open_file(&path).await?;
             if file.is_empty() {
                 continue;
             }
@@ -378,8 +374,8 @@ impl WalManager {
     }
 }
 
-pub async fn reader(f: DmaFile) -> Result<WalReader> {
-    WalReader::new(f.into_cursor()).await
+pub async fn reader(f: AsyncFile) -> Result<WalReader> {
+    WalReader::new(f.into()).await
 }
 
 pub struct WalReader {
@@ -430,7 +426,7 @@ impl WalReader {
             }
         };
         let data_len = byte_utils::decode_be_u32(key);
-        println!("after {}",data_len);
+        println!("after {}", data_len);
         println!("after byte {:?}", key);
         if data_len == 0 {
             return Ok(None);
@@ -470,6 +466,7 @@ mod test {
     use chrono::Utc;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
+    use serial_test::serial;
     use tokio::runtime;
 
     use config::get_config;
@@ -481,7 +478,7 @@ mod test {
     use crate::file_system::file_manager::{self, list_file_names, FileManager};
     use crate::tsm::codec::get_str_codec;
     use crate::{
-        file_system::{DmaFile, FileCursor, FileSync},
+        file_system::FileCursor,
         kv_option::WalOptions,
         wal::{self, WalEntryBlock, WalEntryType, WalManager, WalReader},
     };
@@ -548,7 +545,10 @@ mod test {
         let wal_files = list_file_names(&wal_dir);
         for wal_file in wal_files {
             let path = wal_dir.join(wal_file);
-            let file = file_manager::get_file_manager().open_file(&path).unwrap();
+            let file = file_manager::get_file_manager()
+                .open_file(&path)
+                .await
+                .unwrap();
             let cursor: FileCursor = file.into();
 
             let mut reader = WalReader::new(cursor).await.unwrap();
@@ -620,7 +620,9 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, Arc::new(enc_points)).await.unwrap();
+                mgr.write(WalEntryType::Write, Arc::new(enc_points))
+                    .await
+                    .unwrap();
             };
         }
 
@@ -628,6 +630,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_roll_wal_file() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
@@ -652,7 +655,9 @@ mod test {
                 .encode(&[&blk.buf], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, Arc::new(enc_points)).await.unwrap();
+            mgr.write(WalEntryType::Write, Arc::new(enc_points))
+                .await
+                .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -687,7 +692,9 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, Arc::new(enc_points)).await.unwrap();
+                mgr.write(WalEntryType::Write, Arc::new(enc_points))
+                    .await
+                    .unwrap();
             };
         }
 
@@ -695,13 +702,14 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn test_recover_from_wal() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4".to_string();
         let dir_summary = "/tmp/test/wal/summary4".to_string();
         let _ = std::fs::remove_dir_all(dir.clone());
-        let _ = std::fs::remove_dir_all(dir_summary.clone());// Ignore errors
+        let _ = std::fs::remove_dir_all(dir_summary.clone()); // Ignore errors
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir;
         global_config.storage.path = dir_summary;
@@ -718,7 +726,8 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                rt.block_on(mgr.write(WalEntryType::Write, Arc::new(enc_points))).expect("write succeed");
+                rt.block_on(mgr.write(WalEntryType::Write, Arc::new(enc_points)))
+                    .expect("write succeed");
             };
         }
 

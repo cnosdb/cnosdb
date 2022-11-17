@@ -2,7 +2,7 @@
 mod tests {
     use serial_test::serial;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tokio::runtime;
     use tokio::runtime::Runtime;
 
@@ -157,5 +157,61 @@ mod tests {
             tskv.write(request).await.unwrap();
         });
         println!("{:?}", tskv)
+    }
+
+    async fn async_func1() {
+        // println!("run async func1");
+        async_func3().await;
+    }
+
+    async fn async_func2() {
+        // println!("run async func2");
+    }
+
+    async fn async_func3() {
+        // println!("run async func3");
+    }
+
+    // #[tokio::test]
+
+    fn sync_func1() {
+        // println!("run sync func1");
+        sync_func3();
+    }
+
+    fn sync_func2() {
+        // println!("run sync func2");
+    }
+
+    fn sync_func3() {
+        // println!("run sync func3");
+    }
+
+    // #[test]
+    fn test_sync() {
+        for _ in 0..10000 {
+            sync_func1();
+            sync_func2();
+        }
+    }
+
+    async fn test_async() {
+        for _ in 0..10000 {
+            async_func1().await;
+            async_func2().await;
+        }
+    }
+    #[tokio::test]
+    async fn compare() {
+        let start = Instant::now();
+        test_async().await;
+        let duration = start.elapsed();
+
+        let start1 = Instant::now();
+        test_sync();
+        let duration1 = start1.elapsed();
+
+        println!("ASync Time elapsed  is: {:?}", duration);
+        println!("Sync Time elapsed  is: {:?}", duration1);
     }
 }

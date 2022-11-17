@@ -27,7 +27,6 @@ use crate::file_system::file_manager;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     error::{Error, Result},
-    file_system::{DmaFile, FileCursor},
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache},

@@ -4,22 +4,21 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::file_system::{file_manager, AsyncFile, IFile};
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use trace::error;
 
 use super::*;
-use crate::file_system::file_manager;
-use crate::file_system::{DmaFile, FileSync};
 
 pub struct Writer {
     path: PathBuf,
-    file: Mutex<DmaFile>,
+    file: Mutex<AsyncFile>,
 }
 
 impl Writer {
-    pub fn new(path: &Path) -> Option<Self> {
-        let file = match open_file(path) {
+    pub async fn new(path: &Path) -> Option<Self> {
+        let file = match open_file(path).await {
             Ok(v) => v,
             Err(e) => {
                 error!("failed to open file path : {:?}, in case {:?}", path, e);
@@ -114,7 +113,7 @@ impl Writer {
     pub async fn soft_sync(&self) -> RecordFileResult<()> {
         self.file
             .lock()
-            .sync_all(FileSync::Soft)
+            .sync_data()
             .await
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
@@ -122,7 +121,7 @@ impl Writer {
     pub async fn hard_sync(&self) -> RecordFileResult<()> {
         self.file
             .lock()
-            .sync_all(FileSync::Hard)
+            .sync_data()
             .await
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
@@ -130,7 +129,7 @@ impl Writer {
     pub async fn close(&mut self) -> RecordFileResult<()> {
         self.file
             .lock()
-            .sync_all(FileSync::Hard)
+            .sync_data()
             .await
             .map_err(|err| RecordFileError::SyncFile { source: err })
     }
@@ -144,20 +143,25 @@ impl Writer {
     }
 }
 
-impl From<&str> for Writer {
-    fn from(path: &str) -> Self {
-        Writer::new(&PathBuf::from(path)).unwrap()
-    }
-}
+// impl From<&str> for Writer {
+//     fn from(path: &str) -> Self {
+//         Writer::new(&PathBuf::from(path)).unwrap()
+//     }
+// }
 
 mod test {
-    use crate::record_file::{Reader, RecordFileError, Writer};
+    use std::path::PathBuf;
+
     use serial_test::serial;
+
+    use crate::record_file::{Reader, RecordFileError, Writer};
 
     #[tokio::test]
     #[serial]
     async fn test_writer() -> Result<(), RecordFileError> {
-        let mut w = Writer::from("/tmp/test.log_file");
+        let mut w = Writer::new(&PathBuf::from("/tmp/test.log_file"))
+            .await
+            .unwrap();
         for i in 0..10 {
             let pos = w.write_record(1, 1, &Vec::from("hello")).await?;
             println!("{}", pos);
@@ -170,7 +174,9 @@ mod test {
     }
 
     async fn test_reader_read_one() {
-        let r = Reader::from("/tmp/test.log_file");
+        let r = Reader::new(&PathBuf::from("/tmp/test.log_file"))
+            .await
+            .unwrap();
         let record = r.read_one(19).await.unwrap();
         println!(
             "{}, {}, {}, {:?}",
@@ -179,7 +185,9 @@ mod test {
     }
 
     async fn test_reader() {
-        let mut r = Reader::from("/tmp/test.log_file");
+        let mut r = Reader::new(&PathBuf::from("/tmp/test.log_file"))
+            .await
+            .unwrap();
 
         while let Ok(record) = r.read_record().await {
             println!(

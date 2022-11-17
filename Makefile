@@ -11,16 +11,16 @@ fmt:
 	cargo +nightly fmt --all
 
 clippy_check:
-	cargo clippy --workspace --all-features --all-targets -- -D warnings
+	cargo clippy --workspace  --all-targets -- -D warnings
 
 clippy:
-	cargo clippy --workspace --all-features --all-targets --fix
+	cargo clippy --workspace  --all-targets --fix
 
 build:
 	cargo build --all-features --all-targets
 
 test:
-	cargo test --workspace --all-features --exclude e2e_test
+	cargo test --workspace --exclude e2e_test
 
 check: fmt_check clippy_check build test docs_check
 

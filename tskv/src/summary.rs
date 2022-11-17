@@ -213,8 +213,9 @@ impl Summary {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let db = VersionEdit::new();
-        let mut w =
-            Writer::new(&file_utils::make_summary_file(opt.storage.summary_dir(), 0)).unwrap();
+        let mut w = Writer::new(&file_utils::make_summary_file(opt.storage.summary_dir(), 0))
+            .await
+            .unwrap();
         let buf = db.encode()?;
         let _ = w
             .write_record(1, EditType::SummaryEdit.into(), &buf)
@@ -242,9 +243,15 @@ impl Summary {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
-        let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
+        let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0))
+            .await
+            .unwrap();
         let ctx = Arc::new(GlobalContext::default());
-        let rd = Box::new(Reader::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap());
+        let rd = Box::new(
+            Reader::new(&file_utils::make_summary_file(&summary_path, 0))
+                .await
+                .unwrap(),
+        );
         let vs = Self::recover_version(rd, &ctx, opt.clone(), flush_task_sender).await?;
 
         Ok(Self {
@@ -416,7 +423,7 @@ impl Summary {
                     }
                 };
             }
-            self.writer = Writer::new(new_path).unwrap();
+            self.writer = Writer::new(new_path).await.unwrap();
             self.write_summary(edits).await?;
             match rename(new_path, old_path) {
                 Ok(_) => (),
@@ -427,7 +434,7 @@ impl Summary {
                     );
                 }
             };
-            self.writer = Writer::new(old_path).unwrap();
+            self.writer = Writer::new(old_path).await.unwrap();
         }
         Ok(())
     }
@@ -447,7 +454,7 @@ pub fn print_summary_statistics(path: impl AsRef<Path>) {
         .build()
         .unwrap();
     runtime.block_on(async move {
-        let mut reader = Reader::new(&path).unwrap();
+        let mut reader = Reader::new(&path).await.unwrap();
         println!("============================================================");
         let mut i = 0_usize;
         loop {

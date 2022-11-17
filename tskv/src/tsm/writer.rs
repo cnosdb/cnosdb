@@ -8,10 +8,10 @@ use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
 use utils::{BkdrHasher, BloomFilter};
 
-use crate::file_system::file_manager;
+use crate::file_system::{file_manager, IFile};
 use crate::{
     error::{self, Error, Result},
-    file_system::{DmaFile, FileCursor, FileSync},
+    file_system::FileCursor,
     file_utils,
     tsm::{
         BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
@@ -198,7 +198,7 @@ impl TsmWriter {
         tmp_path_str.push(".tmp");
         let tmp_path = PathBuf::from(tmp_path_str);
 
-        let writer = file_manager::create_file(&tmp_path)?.into_cursor();
+        let writer = file_manager::create_file(&tmp_path).await?.into();
         let mut w = Self {
             tmp_path,
             final_path,
@@ -332,10 +332,7 @@ impl TsmWriter {
                 path: self.final_path.clone(),
             });
         }
-        self.writer
-            .sync_all(FileSync::Hard)
-            .await
-            .context(IOSnafu)?;
+        self.writer.sync_data().await.context(IOSnafu)?;
         std::fs::rename(&self.tmp_path, &self.final_path).context(IOSnafu)?;
         self.finished = true;
         Ok(())
@@ -506,8 +503,8 @@ mod test {
     use models::{FieldId, ValueType};
 
     use crate::file_system::file_manager::{self, get_file_manager, FileManager};
+    use crate::file_system::IFile;
     use crate::{
-        file_system::FileSync,
         memcache::FieldVal,
         tsm::{
             codec::DataBlockEncoding, new_tsm_writer, ColumnReader, DataBlock, IndexReader,
@@ -537,7 +534,7 @@ mod test {
     }
 
     async fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, Vec<DataBlock>> {
-        let file = Arc::new(file_manager::open_file(&path).unwrap());
+        let file = Arc::new(file_manager::open_file(&path).await.unwrap());
         let len = file.len();
 
         let index = IndexReader::open(file.clone()).await.unwrap();

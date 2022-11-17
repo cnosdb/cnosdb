@@ -3,14 +3,9 @@
 // #![deny(unused_imports)]
 // #![deny(unused_must_use)]
 
-// mod async_file;
-mod cache;
 mod file;
 pub mod file_manager;
 
-pub use cache::PageId;
-pub use file::{
-    cursor::FileCursor,
-    system::{FileSystemCache, Options},
-    DmaFile, FileSync,
-};
+pub use file::async_file::AsyncFile;
+pub use file::async_file::IFile;
+pub use file::cursor::FileCursor;

@@ -7,9 +7,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::file_system::{AsyncFile, IFile};
 use async_recursion::async_recursion;
 use bytes::{Buf, BufMut};
-use file_system::DmaFile;
 use futures::future::ok;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
@@ -19,7 +19,7 @@ use super::*;
 
 pub struct Reader {
     path: PathBuf,
-    file: Mutex<DmaFile>,
+    file: Mutex<AsyncFile>,
     buf: Vec<u8>,
     pos: usize,
     buf_len: usize,
@@ -27,9 +27,9 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub fn new(path: impl AsRef<Path>) -> Option<Self> {
+    pub async fn new(path: impl AsRef<Path>) -> Option<Self> {
         let path = path.as_ref();
-        let file = match open_file(path) {
+        let file = match open_file(path).await {
             Ok(v) => v,
             Err(e) => {
                 error!("failed to open file path : {:?}, in case {:?}", path, e);
@@ -251,8 +251,8 @@ impl Reader {
     }
 }
 
-impl From<&str> for Reader {
-    fn from(path: &str) -> Self {
-        Reader::new(&PathBuf::from(path)).unwrap()
-    }
-}
+// impl From<&str> for Reader {
+//     fn from(path: &str) -> Self {
+//         Reader::new(&PathBuf::from(path)).unwrap()
+//     }
+// }

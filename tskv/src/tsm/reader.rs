@@ -9,11 +9,10 @@ use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 
-use crate::file_system::file_manager;
+use crate::file_system::{file_manager, AsyncFile, IFile};
 use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{self, Error, Result},
-    file_system::DmaFile,
     file_utils,
     tseries_family::TimeRange,
     tsm::{
@@ -53,7 +52,7 @@ impl From<ReadTsmError> for Error {
 
 /// Disk-based index reader
 pub struct IndexFile {
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     buf: [u8; 8],
 
     index_offset: u64,
@@ -64,7 +63,7 @@ pub struct IndexFile {
 }
 
 impl IndexFile {
-    pub async fn open(reader: Arc<DmaFile>) -> ReadTsmResult<Self> {
+    pub async fn open(reader: Arc<AsyncFile>) -> ReadTsmResult<Self> {
         let file_len = reader.len();
         let mut buf = [0_u8; 8];
         reader
@@ -220,7 +219,7 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
     println!("PointsCount: {}", points_cnt);
 }
 
-pub async fn load_index(reader: Arc<DmaFile>) -> ReadTsmResult<Index> {
+pub async fn load_index(reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
     let len = reader.len();
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
@@ -274,7 +273,7 @@ pub struct IndexReader {
 }
 
 impl IndexReader {
-    pub async fn open(reader: Arc<DmaFile>) -> Result<Self> {
+    pub async fn open(reader: Arc<AsyncFile>) -> Result<Self> {
         let idx = load_index(reader).await.context(error::ReadTsmSnafu)?;
 
         Ok(Self {
@@ -437,7 +436,7 @@ impl Iterator for BlockMetaIterator {
 
 #[derive(Clone)]
 pub struct TsmReader {
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     index_reader: Arc<IndexReader>,
     tombstone: Arc<RwLock<TsmTombstone>>,
 }
@@ -446,7 +445,7 @@ impl TsmReader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
         let path = tsm_path.as_ref().to_path_buf();
         let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
-        let tsm = Arc::new(file_manager::open_file(tsm_path)?);
+        let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
         let tsm_idx = IndexReader::open(tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tombstone = TsmTombstone::new(tombstone_path, tsm_id).await?;
@@ -526,13 +525,13 @@ impl TsmReader {
 }
 
 pub struct ColumnReader {
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     inner: BlockMetaIterator,
     buf: Vec<u8>,
 }
 
 impl ColumnReader {
-    pub fn new(reader: Arc<DmaFile>, inner: BlockMetaIterator) -> Self {
+    pub fn new(reader: Arc<AsyncFile>, inner: BlockMetaIterator) -> Self {
         Self {
             reader,
             inner,
@@ -565,7 +564,7 @@ impl ColumnReader {
 }
 
 async fn read_data_block(
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     buf: &mut [u8],
     field_type: ValueType,
     offset: u64,
