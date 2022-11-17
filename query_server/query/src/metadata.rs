@@ -97,10 +97,13 @@ impl MetaData for LocalCatalogMeta {
         let name = table.resolve(catalog_name, schema_name);
         // note: local mod dont support multiple catalog use DEFAULT_CATALOG
         // let catalog_name = name.catalog;
-        let schema = self.catalog.schema(name.schema)?;
-        schema
+        self.catalog
+            .schema(name.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: name.schema.to_string(),
+            })?
             .table(name.table)
-            .map_err(|_| MetadataError::TableNotExists {
+            .ok_or_else(|| MetadataError::TableNotExists {
                 table_name: name.table.to_string(),
             })
     }
@@ -121,7 +124,10 @@ impl MetaData for LocalCatalogMeta {
         let table: TableReference = name.into();
         let name = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
         self.catalog
-            .schema(name.schema)?
+            .schema(name.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: name.schema.to_string(),
+            })?
             .deregister_table(name.table)
             .map(|_| ())
     }
@@ -135,7 +141,10 @@ impl MetaData for LocalCatalogMeta {
         let table_ref = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
 
         self.catalog
-            .schema(table_ref.schema)?
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
             // Currently the SchemaProvider creates a temporary table
             .register_table(table.table().to_owned(), table_schema)
             .map(|_| ())
@@ -158,7 +167,12 @@ impl MetaData for LocalCatalogMeta {
             Some(v) => v.as_str(),
         };
 
-        self.catalog.schema(database_name)?.table_names()
+        self.catalog
+            .schema(database_name)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: database_name.to_string(),
+            })?
+            .table_names()
     }
 
     fn alter_database(&self, database: DatabaseSchema) -> Result<()> {
@@ -173,7 +187,10 @@ impl MetaData for LocalCatalogMeta {
         let table_ref = TableReference::from(table_name)
             .resolve(self.catalog_name.as_str(), self.database_name.as_str());
         self.catalog
-            .schema(table_ref.schema)?
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
             .table_add_column(table_ref.table, column)
     }
 
@@ -185,11 +202,12 @@ impl MetaData for LocalCatalogMeta {
     ) -> Result<()> {
         let table_ref = TableReference::from(table_name)
             .resolve(self.catalog_name.as_str(), self.database_name.as_str());
-        self.catalog.schema(table_ref.schema)?.table_alter_column(
-            table_ref.table,
-            column_name,
-            new_column,
-        )
+        self.catalog
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
+            .table_alter_column(table_ref.table, column_name, new_column)
     }
 
     fn alter_table_drop_column(&self, table_name: &str, column_name: &str) -> Result<()> {
@@ -197,7 +215,10 @@ impl MetaData for LocalCatalogMeta {
             .resolve(self.catalog_name.as_str(), self.database_name.as_str());
 
         self.catalog
-            .schema(table_ref.schema)?
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
             .table_drop_column(table_name, column_name)
     }
 }
