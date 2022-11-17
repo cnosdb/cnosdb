@@ -111,17 +111,18 @@ time,column6,column7,column1,column3,column4,column5
 1970-01-01T00:00:00.000000104,beijing,shanghai,-1234,1234,false,1.2
 
 -- EXECUTE SQL: ALTER TABLE test0 DROP column7; --
-200 OK
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: can't drop tag"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 200 OK
-time,column6,column1,column3,column4,column5
-1970-01-01T00:00:00.000000100,beijing,,1234,false,1.2
-1970-01-01T00:00:00.000000100,beijing,-1234,1234,false,1.2
-1970-01-01T00:00:00.000000103,beijing,-1234,1234,false,1.2
-1970-01-01T00:00:00.000000104,beijing,-1234,1234,false,1.2
+time,column6,column7,column1,column3,column4,column5
+1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2
+1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2
+1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2
+1970-01-01T00:00:00.000000104,beijing,shanghai,-1234,1234,false,1.2
 
 -- EXECUTE SQL: ALTER TABLE test0 ADD TAG column8; --
 200 OK
@@ -130,24 +131,25 @@ time,column6,column1,column3,column4,column5
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 200 OK
-time,column6,column1,column3,column4,column5,column8
-1970-01-01T00:00:00.000000100,beijing,,1234,false,1.2,
-1970-01-01T00:00:00.000000100,beijing,-1234,1234,false,1.2,
-1970-01-01T00:00:00.000000103,beijing,-1234,1234,false,1.2,
-1970-01-01T00:00:00.000000104,beijing,-1234,1234,false,1.2,
+time,column6,column7,column1,column3,column4,column5,column8
+1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2,
+1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2,
+1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2,
+1970-01-01T00:00:00.000000104,beijing,shanghai,-1234,1234,false,1.2,
 
 -- EXECUTE SQL: ALTER TABLE test0 ADD TAG column7; --
-200 OK
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: column column7 already exists in table test0"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 200 OK
-time,column6,column1,column3,column4,column5,column8,column7
-1970-01-01T00:00:00.000000100,beijing,,1234,false,1.2,,
-1970-01-01T00:00:00.000000100,beijing,-1234,1234,false,1.2,,shanghai
-1970-01-01T00:00:00.000000103,beijing,-1234,1234,false,1.2,,shanghai
-1970-01-01T00:00:00.000000104,beijing,-1234,1234,false,1.2,,shanghai
+time,column6,column7,column1,column3,column4,column5,column8
+1970-01-01T00:00:00.000000100,beijing,,,1234,false,1.2,
+1970-01-01T00:00:00.000000100,beijing,shanghai,-1234,1234,false,1.2,
+1970-01-01T00:00:00.000000103,beijing,shanghai,-1234,1234,false,1.2,
+1970-01-01T00:00:00.000000104,beijing,shanghai,-1234,1234,false,1.2,
 
 -- EXECUTE SQL: CREATE TABLE test1( column0 TIMESTAMP CODEC(DELTA), column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
