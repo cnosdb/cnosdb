@@ -64,7 +64,7 @@ fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TskvTableSchema {
     let table: TableReference = name.as_str().into();
     let catalog_name = catalog.catalog_name();
     let schema_name = catalog.schema_name();
-    let table_ref = table.resolve(&catalog_name, &schema_name);
+    let table_ref = table.resolve(catalog_name, schema_name);
 
     TskvTableSchema::new(
         table_ref.schema.to_string(),

@@ -80,7 +80,7 @@ impl QueryStateMachine {
         query_id: QueryId,
         query: Query,
         session: IsiphoSessionCtx,
-        catalog: Arc<dyn MetaData + Send + Sync>,
+        catalog: Arc<dyn MetaData>,
     ) -> Self {
         Self {
             query_id,
