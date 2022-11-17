@@ -56,18 +56,14 @@ impl UserCatalog {
     }
 
     // get db_schema
-    pub fn schema(&self, name: &str) -> Result<Arc<Database>> {
+    pub fn schema(&self, name: &str) -> Option<Arc<Database>> {
         let schemas = self.schemas.read();
         return if let Some(v) = schemas.get(name) {
-            Ok(v.clone())
+            Some(v.clone())
         } else {
             drop(schemas);
             match self.engine.get_db_schema(name) {
-                None => {
-                    return Err(MetadataError::DatabaseNotExists {
-                        database_name: name.to_string(),
-                    })
-                }
+                None => return None,
                 Some(schema) => {
                     let mut schemas = self.schemas.write();
                     schemas.insert(
@@ -75,7 +71,7 @@ impl UserCatalog {
                         Arc::new(Database::new(name.to_string(), self.engine.clone(), schema)),
                     );
                     let v = schemas.get(name).unwrap();
-                    return Ok(v.clone());
+                    return Some(v.clone());
                 }
             }
         };
@@ -123,7 +119,7 @@ impl Database {
             })
     }
 
-    pub fn table(&self, name: &str) -> Result<TableSchema> {
+    pub fn table(&self, name: &str) -> Option<TableSchema> {
         // table schema may be changed after write, so get from storage engine directly
         // {
         //     let tables = self.tables.read();
@@ -135,12 +131,10 @@ impl Database {
         let mut tables = self.tables.write();
         if let Ok(Some(schema)) = self.engine.get_table_schema(&self.db_name, name) {
             tables.insert(name.to_owned(), schema.clone());
-            return Ok(schema);
+            return Some(schema);
         }
 
-        Err(MetadataError::DatabaseNotExists {
-            database_name: name.to_string(),
-        })
+        None
     }
 
     pub fn register_table(&self, name: String, table: TableSchema) -> Result<Option<TableSchema>> {
