@@ -140,7 +140,8 @@ impl DBIndex {
     }
 
     pub fn get_sid_from_cache(&self, info: &Point) -> IndexResult<Option<u64>> {
-        let series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
+        let series_key = SeriesKey::from_flatbuffer(info)
+            .map_err(|e| IndexError::FieldType { msg: e.to_string() })?;
         let (hash_id, _) = utils::split_id(series_key.hash());
 
         if let Some(keys) = self.series_cache.read().get(&hash_id) {
@@ -153,7 +154,8 @@ impl DBIndex {
     }
 
     pub fn add_series_if_not_exists(&self, info: &Point) -> IndexResult<u64> {
-        let mut series_key = SeriesKey::from_flatbuffer(info).map_err(|e| IndexError::FieldType)?;
+        let mut series_key = SeriesKey::from_flatbuffer(info)
+            .map_err(|e| IndexError::FieldType { msg: e.to_string() })?;
 
         let (hash_id, _) = utils::split_id(series_key.hash());
         let stroage_key = format!("{}{}", SERIES_KEY_PREFIX, hash_id);
@@ -210,7 +212,13 @@ impl DBIndex {
                             field.type_().0,
                             v.column_type.field_type()
                         );
-                        return Err(IndexError::FieldType);
+                        return Err(IndexError::FieldType {
+                            msg: format!(
+                                "type mismatch, point: {}, schema: {}",
+                                field.type_().0,
+                                v.column_type.field_type()
+                            ),
+                        });
                     }
                 } else {
                     return Err(IndexError::NotFoundField);
@@ -221,7 +229,9 @@ impl DBIndex {
                 if let Some(v) = schema.column(&tag_name) {
                     if ColumnType::Tag != v.column_type {
                         trace::debug!("type mismatch, point: tag, schema: {}", &v.column_type);
-                        return Err(IndexError::FieldType);
+                        return Err(IndexError::FieldType {
+                            msg: format!("type mismatch, point: tag, schema: {}", &v.column_type),
+                        });
                     }
                 } else {
                     return Err(IndexError::NotFoundField);
@@ -284,7 +294,12 @@ impl DBIndex {
                             &v.column_type
                         );
                         trace::debug!("type mismatch, schema: {:?}", &schema);
-                        return Err(IndexError::FieldType);
+                        return Err(IndexError::FieldType {
+                            msg: format!(
+                                "type mismatch, point: {}, schema: {}, schema: {:?}",
+                                &field.column_type, &v.column_type, &schema
+                            ),
+                        });
                     }
                 }
                 None => {
