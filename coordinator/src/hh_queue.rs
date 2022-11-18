@@ -180,6 +180,12 @@ impl HintedOffManager {
     }
 }
 
+impl std::fmt::Debug for HintedOffManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
 pub struct HintedOffQueue {
     option: HintedOffOption,
 

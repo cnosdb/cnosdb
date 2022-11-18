@@ -42,6 +42,7 @@ impl ClusterTable {
             proj_schema,
             predicate,
             self.engine.clone(),
+            self.coord.clone(),
         )))
     }
 

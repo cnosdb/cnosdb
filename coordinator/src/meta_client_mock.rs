@@ -7,7 +7,7 @@ use crate::meta_client::{
     AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaError, MetaManager, MetaResult,
 };
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MockAdminMeta {}
 #[async_trait::async_trait]
 impl AdminMeta for MockAdminMeta {
@@ -28,7 +28,7 @@ impl AdminMeta for MockAdminMeta {
     fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MockMetaClient {}
 #[async_trait::async_trait]
 impl MetaClient for MockMetaClient {
@@ -74,7 +74,7 @@ impl MetaClient for MockMetaClient {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MockMetaManager {}
 #[async_trait::async_trait]
 impl MetaManager for MockMetaManager {

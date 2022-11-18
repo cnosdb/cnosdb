@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use coordinator::service::CoordinatorRef;
 use datafusion::{
     arrow::datatypes::SchemaRef,
     error::{DataFusionError, Result},
@@ -28,6 +29,7 @@ pub struct TskvExec {
     proj_schema: SchemaRef,
     filter: PredicateRef,
     engine: EngineRef,
+    coord: CoordinatorRef,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -39,6 +41,7 @@ impl TskvExec {
         proj_schema: SchemaRef,
         filter: PredicateRef,
         engine: EngineRef,
+        coord: CoordinatorRef,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
 
@@ -47,6 +50,7 @@ impl TskvExec {
             proj_schema,
             filter,
             engine,
+            coord,
             metrics,
         }
     }
@@ -85,6 +89,7 @@ impl ExecutionPlan for TskvExec {
             proj_schema: self.proj_schema.clone(),
             filter: self.filter.clone(),
             engine: self.engine.clone(),
+            coord: self.coord.clone(),
             metrics: self.metrics.clone(),
         }))
     }
@@ -101,6 +106,7 @@ impl ExecutionPlan for TskvExec {
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),
             self.schema(),
+            self.coord.clone(),
             self.filter(),
             batch_size,
             self.engine.clone(),

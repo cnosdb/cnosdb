@@ -27,6 +27,7 @@ use crate::NodeId;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Empty {}
 
+#[derive(Debug)]
 pub struct MetaHttpClient {
     //inner: reqwest::Client,
     pub leader: Arc<Mutex<(NodeId, String)>>,

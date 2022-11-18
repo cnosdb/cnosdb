@@ -41,19 +41,19 @@ impl From<io::Error> for MetaError {
 
 pub type MetaResult<T> = Result<T, MetaError>;
 
-pub type MetaClientRef = Arc<dyn MetaClient + Send + Sync>;
-pub type AdminMetaRef = Arc<dyn AdminMeta + Send + Sync>;
-pub type MetaRef = Arc<dyn MetaManager + Send + Sync>;
+pub type MetaClientRef = Arc<dyn MetaClient>;
+pub type AdminMetaRef = Arc<dyn AdminMeta>;
+pub type MetaRef = Arc<dyn MetaManager>;
 
 #[async_trait::async_trait]
-pub trait MetaManager {
+pub trait MetaManager: Send + Sync + Debug {
     fn node_id(&self) -> u64;
     fn admin_meta(&self) -> AdminMetaRef;
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
 }
 
 #[async_trait::async_trait]
-pub trait AdminMeta {
+pub trait AdminMeta: Send + Sync + Debug {
     // *数据节点上下线管理 */
     // fn data_nodes(&self) -> Vec<NodeInfo>;
     fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()>;
@@ -71,7 +71,7 @@ pub trait AdminMeta {
 }
 
 #[async_trait::async_trait]
-pub trait MetaClient {
+pub trait MetaClient: Send + Sync + Debug {
     fn sync_data(&self) -> MetaResult<()>;
     fn tenant_name(&self) -> &str;
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
@@ -102,6 +102,7 @@ pub trait MetaClient {
     fn print_data(&self) -> String;
 }
 
+#[derive(Debug)]
 pub struct RemoteMetaManager {
     config: ClusterConfig,
     node_info: NodeInfo,
@@ -162,6 +163,7 @@ impl MetaManager for RemoteMetaManager {
     }
 }
 
+#[derive(Debug)]
 pub struct RemoteAdminMeta {
     cluster: String,
     meta_url: String,
@@ -257,6 +259,7 @@ impl AdminMeta for RemoteAdminMeta {
     }
 }
 
+#[derive(Debug)]
 pub struct RemoteMetaClient {
     cluster: String,
     tenant: String,

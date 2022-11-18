@@ -1,3 +1,4 @@
+use coordinator::service::CoordinatorRef;
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
@@ -22,6 +23,7 @@ pub struct TableScanStream {
     proj_schema: SchemaRef,
     batch_size: usize,
     store_engine: EngineRef,
+    coord: CoordinatorRef,
 
     iterator: RowIterator,
 
@@ -32,6 +34,7 @@ impl TableScanStream {
     pub fn new(
         table_schema: TskvTableSchema,
         proj_schema: SchemaRef,
+        coord: CoordinatorRef,
         filter: PredicateRef,
         batch_size: usize,
         store_engine: EngineRef,
@@ -75,7 +78,7 @@ impl TableScanStream {
             metrics.tskv_metrics(),
         );
 
-        let iterator = match RowIterator::new(store_engine.clone(), option, 0) {
+        let iterator = match RowIterator::new(store_engine.clone(), option, 3) {
             Ok(it) => it,
             Err(err) => return Err(err),
         };
@@ -84,6 +87,7 @@ impl TableScanStream {
             proj_schema,
             batch_size,
             store_engine,
+            coord,
             iterator,
             metrics,
         })

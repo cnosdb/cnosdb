@@ -10,6 +10,7 @@ use models::*;
 
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
+//use std::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use trace::info;
@@ -30,7 +31,7 @@ use crate::writer::{PointWriter, VnodeMapping};
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
 #[async_trait::async_trait]
-pub trait Coordinator: Send + Sync {
+pub trait Coordinator: Send + Sync + Debug {
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> EngineRef;
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
@@ -60,7 +61,7 @@ pub trait Coordinator: Send + Sync {
     // fn drop_table(&self, tenant: &String, db: &String, table: &String) -> CoordinatorResult<()>;
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct MockCoordinator {}
 
 #[async_trait::async_trait]
@@ -96,6 +97,7 @@ impl Coordinator for MockCoordinator {
     }
 }
 
+#[derive(Debug)]
 pub struct CoordService {
     meta: MetaRef,
     kv_inst: EngineRef,
@@ -103,6 +105,7 @@ pub struct CoordService {
     handoff: Arc<HintedOffManager>,
     coord_sender: Sender<CoordinatorIntCmd>,
 }
+
 impl CoordService {
     pub fn new(
         kv_inst: EngineRef,

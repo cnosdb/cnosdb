@@ -145,6 +145,7 @@ impl<'a> VnodeMapping<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct PointWriter {
     node_id: u64,
     kv_inst: EngineRef,
