@@ -971,6 +971,7 @@ impl Predicate {
 
 #[derive(Debug, Clone)]
 pub struct QueryExpr {
+    pub vnode_ids: Vec<u32>,
     pub filters: Vec<Expr>,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
@@ -979,6 +980,11 @@ pub struct QueryExpr {
 impl QueryExpr {
     pub fn encode(option: &QueryExpr) -> Result<Vec<u8>> {
         let mut buffer = vec![];
+
+        buffer.append(&mut (option.vnode_ids.len() as u32).to_be_bytes().to_vec());
+        for item in option.vnode_ids.iter() {
+            buffer.append(&mut item.to_be_bytes().to_vec());
+        }
 
         buffer.append(&mut (option.filters.len() as u32).to_be_bytes().to_vec());
         for item in option.filters.iter() {
@@ -1018,7 +1024,14 @@ impl QueryExpr {
 
         let mut count_buf: [u8; 4] = [0; 4];
         buffer.read_exact(&mut count_buf)?;
+        let count = u32::from_be_bytes(count_buf);
+        let mut ids = Vec::with_capacity(count as usize);
+        for _i in 0..count {
+            buffer.read_exact(&mut count_buf)?;
+            ids.push(u32::from_be_bytes(count_buf));
+        }
 
+        buffer.read_exact(&mut count_buf)?;
         let count = u32::from_be_bytes(count_buf);
         let mut filters = Vec::with_capacity(count as usize);
         for _i in 0..count {
@@ -1054,6 +1067,7 @@ impl QueryExpr {
         })?;
 
         Ok(QueryExpr {
+            vnode_ids: ids,
             filters,
             df_schema,
             table_schema,

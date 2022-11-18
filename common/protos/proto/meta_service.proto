@@ -68,7 +68,7 @@ message VnodeInfo {
 }
 
 // **************Command********************
-message CommonResponse {
+message StatusResponse {
 	required bool ok = 1;
 	required uint64 term = 2;
 	required uint64 index = 3;

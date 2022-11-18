@@ -34,11 +34,19 @@ pub enum CoordinatorError {
     #[snafu(display("write vnode error: {}", msg))]
     WriteVnode { msg: String },
 
+    #[snafu(display("Error from models: {}", source))]
+    ModelsError { source: models::Error },
+
     #[snafu(display("Error from tskv: {}", source))]
     TskvError { source: tskv::Error },
 
     #[snafu(display("Error from tskv index: {}", source))]
     TskvIndexError { source: tskv::index::IndexError },
+
+    #[snafu(display("Error from arrow: {}", source))]
+    ArrowErrError {
+        source: datafusion::arrow::error::ArrowError,
+    },
 
     #[snafu(display("not found tenant: {}", name))]
     TenantNotFound { name: String },
@@ -83,6 +91,12 @@ impl From<tskv::Error> for CoordinatorError {
     }
 }
 
+impl From<datafusion::arrow::error::ArrowError> for CoordinatorError {
+    fn from(err: datafusion::arrow::error::ArrowError) -> Self {
+        CoordinatorError::ArrowErrError { source: err }
+    }
+}
+
 impl<T> From<tokio::sync::mpsc::error::SendError<T>> for CoordinatorError {
     fn from(err: tokio::sync::mpsc::error::SendError<T>) -> Self {
         CoordinatorError::ChannelSend {
@@ -102,6 +116,12 @@ impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
 impl From<tskv::index::IndexError> for CoordinatorError {
     fn from(err: tskv::index::IndexError) -> Self {
         CoordinatorError::TskvIndexError { source: err }
+    }
+}
+
+impl From<models::Error> for CoordinatorError {
+    fn from(err: models::Error) -> Self {
+        CoordinatorError::ModelsError { source: err }
     }
 }
 

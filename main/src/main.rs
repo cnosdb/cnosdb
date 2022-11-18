@@ -186,8 +186,11 @@ fn main() -> Result<(), std::io::Error> {
                         .expect("make dbms"),
                 );
 
-                let tcp_service =
-                    Box::new(TcpService::new(dbms.clone(), kv_inst.clone(), tcp_host));
+                let tcp_service = Box::new(TcpService::new(
+                    dbms.clone(),
+                    coord_service.clone(),
+                    tcp_host,
+                ));
 
                 let http_service = Box::new(HttpService::new(
                     dbms.clone(),

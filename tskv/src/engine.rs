@@ -67,7 +67,7 @@ pub trait Engine: Send + Sync + Debug {
     ) -> IndexResult<Vec<u64>>;
     fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
     fn get_series_key(&self, db: &str, sid: SeriesId) -> IndexResult<Option<SeriesKey>>;
-    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>>;
+    fn get_db_version(&self, db: &str, vnode_id: u32) -> Result<Option<Arc<SuperVersion>>>;
 }
 
 #[derive(Debug, Default)]
@@ -170,7 +170,7 @@ impl Engine for MockEngine {
         Ok(None)
     }
 
-    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
+    fn get_db_version(&self, db: &str, vnode_id: u32) -> Result<Option<Arc<SuperVersion>>> {
         todo!()
     }
 

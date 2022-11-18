@@ -32,7 +32,7 @@ impl AdminMeta for MockAdminMeta {
 pub struct MockMetaClient {}
 #[async_trait::async_trait]
 impl MetaClient for MockMetaClient {
-    fn open(&self) -> MetaResult<()> {
+    fn sync_data(&self) -> MetaResult<()> {
         Ok(())
     }
     fn tenant_name(&self) -> &str {
@@ -60,6 +60,15 @@ impl MetaClient for MockMetaClient {
         Ok(ReplcationSet::default())
     }
 
+    fn mapping_bucket(
+        &self,
+        db_name: &String,
+        start: i64,
+        end: i64,
+    ) -> MetaResult<Vec<BucketInfo>> {
+        Ok(vec![])
+    }
+
     fn print_data(&self) -> String {
         "".to_string()
     }
@@ -69,6 +78,10 @@ impl MetaClient for MockMetaClient {
 pub struct MockMetaManager {}
 #[async_trait::async_trait]
 impl MetaManager for MockMetaManager {
+    fn node_id(&self) -> u64 {
+        0
+    }
+
     fn admin_meta(&self) -> AdminMetaRef {
         Arc::new(MockAdminMeta::default())
     }

@@ -111,6 +111,18 @@ impl VersionSet {
         None
     }
 
+    pub fn get_tsfamily_by_name_id(
+        &self,
+        name: &str,
+        tf_id: u32,
+    ) -> Option<Arc<RwLock<TseriesFamily>>> {
+        if let Some(db) = self.dbs.get(name) {
+            return db.read().get_tsfamily(tf_id);
+        }
+
+        None
+    }
+
     // will delete in cluster version
     pub fn get_tsfamily_by_name(&self, name: &str) -> Option<Arc<RwLock<TseriesFamily>>> {
         if let Some(db) = self.dbs.get(name) {

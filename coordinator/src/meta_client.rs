@@ -47,6 +47,7 @@ pub type MetaRef = Arc<dyn MetaManager + Send + Sync>;
 
 #[async_trait::async_trait]
 pub trait MetaManager {
+    fn node_id(&self) -> u64;
     fn admin_meta(&self) -> AdminMetaRef;
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
 }
@@ -71,7 +72,7 @@ pub trait AdminMeta {
 
 #[async_trait::async_trait]
 pub trait MetaClient {
-    fn open(&self) -> MetaResult<()>;
+    fn sync_data(&self) -> MetaResult<()>;
     fn tenant_name(&self) -> &str;
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
     //fn drop_user(&self, name: &String) -> MetaResult<()>;
@@ -84,6 +85,9 @@ pub trait MetaClient {
 
     //fn databases(&self) -> Vec<String>;
     fn database_min_ts(&self, db: &String) -> Option<i64>;
+
+    fn mapping_bucket(&self, db_name: &String, start: i64, end: i64)
+        -> MetaResult<Vec<BucketInfo>>;
 
     fn locate_replcation_set_for_write(
         &self,
@@ -133,6 +137,10 @@ impl RemoteMetaManager {
 
 #[async_trait::async_trait]
 impl MetaManager for RemoteMetaManager {
+    fn node_id(&self) -> u64 {
+        self.config.node_id
+    }
+
     fn admin_meta(&self) -> AdminMetaRef {
         self.admin.clone()
     }
@@ -272,7 +280,7 @@ impl RemoteMetaClient {
 
 #[async_trait::async_trait]
 impl MetaClient for RemoteMetaClient {
-    fn open(&self) -> MetaResult<()> {
+    fn sync_data(&self) -> MetaResult<()> {
         let rsp = self
             .client
             .read_tenant_meta(&(self.cluster.clone(), self.tenant.clone()))
@@ -376,6 +384,19 @@ impl MetaClient for RemoteMetaClient {
 
         let bucket = self.create_bucket(db, ts)?;
         return Ok(bucket.vnode_for(hash_id));
+    }
+
+    fn mapping_bucket(
+        &self,
+        db_name: &String,
+        start: i64,
+        end: i64,
+    ) -> MetaResult<Vec<BucketInfo>> {
+        //todo improve performence
+        self.sync_data().unwrap();
+
+        let buckets = self.data.read().mapping_bucket(db_name, start, end);
+        return Ok(buckets);
     }
 
     fn print_data(&self) -> String {

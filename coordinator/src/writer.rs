@@ -278,9 +278,9 @@ impl PointWriter {
         let req_cmd = WriteVnodeRequest { vnode_id, data };
         send_command(&mut conn, &CoordinatorTcpCmd::WriteVnodePointCmd(req_cmd)).await?;
         let rsp_cmd = recv_command(&mut conn).await?;
-        if let CoordinatorTcpCmd::CommonResponseCmd(msg) = rsp_cmd {
+        if let CoordinatorTcpCmd::StatusResponseCmd(msg) = rsp_cmd {
             self.meta_manager.admin_meta().put_node_conn(node_id, conn);
-            if msg.code == 0 {
+            if msg.code == SUCCESS_RESPONSE_CODE {
                 return Ok(());
             } else {
                 return Err(CoordinatorError::WriteVnode {

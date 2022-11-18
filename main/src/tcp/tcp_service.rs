@@ -1,9 +1,18 @@
+use coordinator::meta_client::MetaRef;
+use coordinator::reader::{QueryExecutor, ReaderIterator};
+use coordinator::service::CoordinatorRef;
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::ok;
-use futures::Future;
+use futures::{executor, Future};
+use models::predicate::domain::Predicate;
 use snafu::ResultExt;
+use spi::catalog::DEFAULT_CATALOG;
 use spi::server::dbms::DBMSRef;
 use std::net::{self, SocketAddr};
 use tokio::io::BufReader;
+use tokio::sync::mpsc::Sender;
+use tskv::iterator::{QueryOption, TableScanMetrics};
 
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::{TcpListener, TcpStream};
@@ -18,7 +27,7 @@ use coordinator::command::*;
 use coordinator::errors::*;
 use protos::kv_service::WritePointsRpcRequest;
 
-use models::meta_data;
+use models::meta_data::{self, VnodeInfo};
 
 use crate::server;
 
@@ -29,16 +38,16 @@ use trace::{debug, error, info};
 pub struct TcpService {
     addr: SocketAddr,
     dbms: DBMSRef,
-    kv_inst: EngineRef,
+    coord: CoordinatorRef,
     handle: Option<ServiceHandle<()>>,
 }
 
 impl TcpService {
-    pub fn new(dbms: DBMSRef, kv_inst: EngineRef, addr: SocketAddr) -> Self {
+    pub fn new(dbms: DBMSRef, coord: CoordinatorRef, addr: SocketAddr) -> Self {
         Self {
             addr,
             dbms,
-            kv_inst,
+            coord,
             handle: None,
         }
     }
@@ -51,9 +60,9 @@ impl Service for TcpService {
 
         let addr = self.addr.clone();
         let dbms = self.dbms.clone();
-        let kv_inst = self.kv_inst.clone();
+        let coord = self.coord.clone();
 
-        let join_handle = tokio::spawn(service_run(addr, dbms, kv_inst));
+        let join_handle = tokio::spawn(service_run(addr, dbms, coord));
         self.handle = Some(ServiceHandle::new(
             "tcp service".to_string(),
             join_handle,
@@ -70,7 +79,7 @@ impl Service for TcpService {
     }
 }
 
-async fn service_run(addr: SocketAddr, dbms: DBMSRef, kv_inst: EngineRef) {
+async fn service_run(addr: SocketAddr, dbms: DBMSRef, coord: CoordinatorRef) {
     let listener = TcpListener::bind(addr.to_string()).await.unwrap();
     info!("tcp server start addr: {}", addr);
 
@@ -79,16 +88,15 @@ async fn service_run(addr: SocketAddr, dbms: DBMSRef, kv_inst: EngineRef) {
             Ok((client, address)) => {
                 debug!("tcp client address: {}", address);
 
-                let dbms_ = dbms.clone();
-                let kv_inst_ = kv_inst.clone();
+                let dbms = dbms.clone();
+                let coord = coord.clone();
                 let processor_fn = async move {
                     info!("process client begin");
-                    let result = process_client(client, dbms_, kv_inst_).await;
+                    let result = process_client(client, dbms, coord).await;
                     info!("process client result: {:#?}", result);
                 };
 
-                let _handler = tokio::spawn(processor_fn);
-                _handler.await.unwrap(); //todo
+                let _ = tokio::spawn(processor_fn);
             }
 
             Err(err) => {
@@ -102,19 +110,24 @@ async fn service_run(addr: SocketAddr, dbms: DBMSRef, kv_inst: EngineRef) {
 async fn process_client(
     mut client: TcpStream,
     dbms: DBMSRef,
-    kv_inst: EngineRef,
+    coord: CoordinatorRef,
 ) -> CoordinatorResult<()> {
-    //let mut client = client.into_std()?;
-    //client.set_nonblocking(false)?;
-
-    //let reader = BufReader::new(client);
-
     loop {
         let recv_cmd = recv_command(&mut client).await?;
         match recv_cmd {
-            CoordinatorTcpCmd::CommonResponseCmd(cmd) => {}
+            CoordinatorTcpCmd::StatusResponseCmd(cmd) => {}
+            CoordinatorTcpCmd::RecordBatchResponseCmd(_) => {}
             CoordinatorTcpCmd::WriteVnodePointCmd(cmd) => {
-                process_vnode_write_command(&mut client, cmd, kv_inst.clone()).await?;
+                process_vnode_write_command(&mut client, cmd, coord.store_engine()).await?;
+            }
+            CoordinatorTcpCmd::QueryRecordBatchCmd(cmd) => {
+                process_query_record_batch_command(
+                    &mut client,
+                    cmd,
+                    coord.store_engine(),
+                    coord.meta_manager(),
+                )
+                .await?;
             }
         }
     }
@@ -130,18 +143,99 @@ async fn process_vnode_write_command(
         points: cmd.data,
     };
 
-    let mut resp = CommonResponse {
+    let mut resp = StatusResponse {
         code: SUCCESS_RESPONSE_CODE,
         data: "".to_string(),
     };
     if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
         resp.code = -1;
         resp.data = err.to_string();
-        send_command(client, &CoordinatorTcpCmd::CommonResponseCmd(resp)).await?;
+        send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
         return Err(err.into());
     } else {
         info!("success write data to vnode: {}", cmd.vnode_id);
-        send_command(client, &CoordinatorTcpCmd::CommonResponseCmd(resp)).await?;
+        send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
         return Ok(());
+    }
+}
+
+async fn process_query_record_batch_command(
+    client: &mut TcpStream,
+    cmd: QueryRecordBatchRequest,
+    kv_inst: EngineRef,
+    meta: MetaRef,
+) -> CoordinatorResult<()> {
+    let (mut iterator, sender) = ReaderIterator::new();
+    let _ = tokio::spawn(query_record_batch(cmd, kv_inst, meta, sender));
+
+    loop {
+        if let Some(item) = iterator.next().await {
+            match item {
+                Ok(record) => {
+                    let resp = RecordBatchResponse { record };
+                    send_command(client, &CoordinatorTcpCmd::RecordBatchResponseCmd(resp)).await?;
+                }
+
+                Err(err) => {
+                    let resp = StatusResponse {
+                        code: FAILED_RESPONSE_CODE,
+                        data: err.to_string(),
+                    };
+
+                    send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
+                    break;
+                }
+            }
+        } else {
+            let resp = StatusResponse {
+                code: FINISH_RESPONSE_CODE,
+                data: "".to_string(),
+            };
+
+            send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+async fn query_record_batch(
+    cmd: QueryRecordBatchRequest,
+    kv_inst: EngineRef,
+    meta: MetaRef,
+    sender: Sender<CoordinatorResult<RecordBatch>>,
+) {
+    //todo TODO limit/batch_size/tenant
+
+    let filter = Arc::new(
+        Predicate::default()
+            .set_limit(None)
+            .push_down_filter(&cmd.expr.filters, &cmd.expr.table_schema),
+    );
+
+    let plan_metrics = ExecutionPlanMetricsSet::new();
+    let scan_metrics = TableScanMetrics::new(&plan_metrics, 0);
+    let option = QueryOption::new(
+        100,
+        DEFAULT_CATALOG.to_string(),
+        filter,
+        cmd.expr.df_schema,
+        cmd.expr.table_schema,
+        scan_metrics.tskv_metrics(),
+    );
+
+    let node_id = meta.node_id();
+    let mut vnodes = Vec::with_capacity(cmd.expr.vnode_ids.len());
+    for id in cmd.expr.vnode_ids.iter() {
+        vnodes.push(VnodeInfo { id: *id, node_id })
+    }
+
+    let executor = QueryExecutor::new(option, kv_inst, meta, sender.clone());
+    if let Err(err) = executor.local_node_executor(vnodes).await {
+        info!("select statement execute failed: {}", err.to_string());
+        let _ = sender.send(Err(err)).await;
+    } else {
+        info!("select statement execute success");
     }
 }

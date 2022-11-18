@@ -132,6 +132,23 @@ impl TenantMetaData {
 
         return None;
     }
+
+    pub fn mapping_bucket(&self, db_name: &String, start: i64, end: i64) -> Vec<BucketInfo> {
+        if let Some(db) = self.dbs.get(db_name) {
+            let mut result = vec![];
+            for item in db.buckets.iter() {
+                if end < item.start_time || start > item.end_time {
+                    continue;
+                }
+
+                result.push(item.clone());
+            }
+
+            return result;
+        }
+
+        return vec![];
+    }
 }
 
 pub fn get_time_range(ts: i64, duration: i64) -> (i64, i64) {

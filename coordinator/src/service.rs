@@ -12,23 +12,27 @@ use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
-use tskv::engine::EngineRef;
+use trace::info;
+use tskv::engine::{EngineRef, MockEngine};
 use tskv::TimeRange;
 
 use datafusion::arrow::datatypes::SchemaRef;
+use tskv::iterator::QueryOption;
 
-use crate::command::{CoordinatorIntCmd, WritePointsRequest};
+use crate::command::{CoordinatorIntCmd, SelectStatementRequest, WritePointsRequest};
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
-use crate::meta_client_mock::MockMetaClient;
-use crate::reader::ReaderIterator;
+use crate::meta_client_mock::{MockMetaClient, MockMetaManager};
+use crate::reader::{QueryExecutor, ReaderIterator, ReaderIteratorRef};
 use crate::writer::{PointWriter, VnodeMapping};
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
 #[async_trait::async_trait]
 pub trait Coordinator: Send + Sync {
+    fn meta_manager(&self) -> MetaRef;
+    fn store_engine(&self) -> EngineRef;
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
     async fn write_points(
         &self,
@@ -38,13 +42,7 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<()>;
     fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
 
-    async fn read_record(
-        &self,
-        tenant: &String,
-        filter: PredicateRef,
-        df_schema: SchemaRef,
-        table_schema: TskvTableSchema,
-    ) -> CoordinatorResult<ReaderIterator>;
+    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIteratorRef>;
 
     // fn create_db(&self, tenant: &String, info: &DatabaseSchema) -> CoordinatorResult<()>;
     // fn db_schema(&self, tenant: &String, name: &String) -> Option<DatabaseSchema>;
@@ -67,6 +65,14 @@ pub struct MockCoordinator {}
 
 #[async_trait::async_trait]
 impl Coordinator for MockCoordinator {
+    fn meta_manager(&self) -> MetaRef {
+        Arc::new(MockMetaManager::default())
+    }
+
+    fn store_engine(&self) -> EngineRef {
+        Arc::new(MockEngine::default())
+    }
+
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
         Some(Arc::new(MockMetaClient::default()))
     }
@@ -84,19 +90,15 @@ impl Coordinator for MockCoordinator {
         Ok(())
     }
 
-    async fn read_record(
-        &self,
-        tenant: &String,
-        filter: PredicateRef,
-        df_schema: SchemaRef,
-        table_schema: TskvTableSchema,
-    ) -> CoordinatorResult<ReaderIterator> {
-        Ok(ReaderIterator::new())
+    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIteratorRef> {
+        let (it, _) = ReaderIterator::new();
+        Ok(Arc::new(it))
     }
 }
 
 pub struct CoordService {
     meta: MetaRef,
+    kv_inst: EngineRef,
     writer: Arc<PointWriter>,
     handoff: Arc<HintedOffManager>,
     coord_sender: Sender<CoordinatorIntCmd>,
@@ -112,7 +114,7 @@ impl CoordService {
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
             cluster.node_id,
-            kv_inst,
+            kv_inst.clone(),
             meta_manager.clone(),
             hh_sender,
         ));
@@ -128,10 +130,11 @@ impl CoordService {
 
         let (coord_sender, coord_receiver) = mpsc::channel(1024);
         let coord = Arc::new(Self {
+            kv_inst,
+            coord_sender,
             meta: meta_manager,
             writer: point_writer,
             handoff: hh_manager,
-            coord_sender,
         });
         tokio::spawn(CoordService::coord_service(coord.clone(), coord_receiver));
 
@@ -142,23 +145,47 @@ impl CoordService {
         while let Some(request) = requests.recv().await {
             match request {
                 CoordinatorIntCmd::WritePointsCmd(req) => {
-                    tokio::spawn(CoordService::process_write_point_request(
-                        coord.clone(),
-                        req,
-                    ));
+                    tokio::spawn(CoordService::write_point_request(coord.clone(), req));
+                }
+                CoordinatorIntCmd::SelectStatementCmd(req) => {
+                    tokio::spawn(CoordService::select_statement_request(coord.clone(), req));
                 }
             }
         }
     }
 
-    async fn process_write_point_request(coord: Arc<CoordService>, req: WritePointsRequest) {
+    async fn write_point_request(coord: Arc<CoordService>, req: WritePointsRequest) {
         let result = coord.writer.write_points(&req, coord.handoff.clone()).await;
         req.sender.send(result).expect("successful");
+    }
+
+    async fn select_statement_request(coord: Arc<CoordService>, req: SelectStatementRequest) {
+        let executor = QueryExecutor::new(
+            req.option,
+            coord.kv_inst.clone(),
+            coord.meta.clone(),
+            req.sender.clone(),
+        );
+
+        if let Err(err) = executor.execute().await {
+            info!("select statement execute failed: {}", err.to_string());
+            let _ = req.sender.send(Err(err)).await;
+        } else {
+            info!("select statement execute success");
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl Coordinator for CoordService {
+    fn meta_manager(&self) -> MetaRef {
+        self.meta.clone()
+    }
+
+    fn store_engine(&self) -> EngineRef {
+        self.kv_inst.clone()
+    }
+
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
         self.meta.tenant_meta(tenant)
     }
@@ -197,13 +224,14 @@ impl Coordinator for CoordService {
         result
     }
 
-    async fn read_record(
-        &self,
-        tenant: &String,
-        filter: PredicateRef,
-        df_schema: SchemaRef,
-        table_schema: TskvTableSchema,
-    ) -> CoordinatorResult<ReaderIterator> {
-        Ok(ReaderIterator::new())
+    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIteratorRef> {
+        let (iterator, sender) = ReaderIterator::new();
+
+        let req = SelectStatementRequest { option, sender };
+        self.coord_sender
+            .send(CoordinatorIntCmd::SelectStatementCmd(req))
+            .await?;
+
+        Ok(Arc::new(iterator))
     }
 }

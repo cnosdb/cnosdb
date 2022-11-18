@@ -34,7 +34,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 
-use models::predicate::domain::{ColumnDomains, Domain, Range, ValueEntry};
+use models::predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry};
 use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 
 pub type CursorPtr = Box<dyn Cursor>;
@@ -87,7 +87,7 @@ impl TableScanMetrics {
 }
 
 /// Stores metrics about the table writer execution.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TskvSourceMetrics {
     elapsed_point_to_record_batch: metrics::Time,
     elapsed_field_scan: metrics::Time,
@@ -140,12 +140,80 @@ impl TskvSourceMetrics {
 // 5. 行数据到DataFusion的RecordBatch转换器
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
+#[derive(Debug, Clone)]
 pub struct QueryOption {
+    pub batch_size: usize,
+    pub tenant: String,
+    pub filter: PredicateRef,
+    pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
-    pub datafusion_schema: SchemaRef,
+    pub metrics: TskvSourceMetrics,
+
     pub time_filter: ColumnDomains<String>,
     pub tags_filter: ColumnDomains<String>,
     pub fields_filter: ColumnDomains<String>,
+}
+
+impl QueryOption {
+    pub fn new(
+        batch_size: usize,
+        tenant: String,
+        filter: PredicateRef,
+        df_schema: SchemaRef,
+        table_schema: TskvTableSchema,
+        metrics: TskvSourceMetrics,
+    ) -> Self {
+        let domains_filter = filter
+            .filter()
+            .translate_column(|c| table_schema.column(&c.name).cloned());
+
+        // 提取过滤条件
+        let time_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Time => Some(e.name.clone()),
+            _ => None,
+        });
+
+        let tags_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Tag => Some(e.name.clone()),
+            _ => None,
+        });
+
+        let fields_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Field(_) => Some(e.name.clone()),
+            _ => None,
+        });
+
+        Self {
+            batch_size,
+            tenant,
+            filter,
+            table_schema,
+            df_schema,
+            metrics,
+
+            time_filter,
+            tags_filter,
+            fields_filter,
+        }
+    }
+
+    pub fn parse_time_ranges(
+        filter: PredicateRef,
+        table_schema: TskvTableSchema,
+    ) -> Vec<TimeRange> {
+        let filter = filter
+            .filter()
+            .translate_column(|c| table_schema.column(&c.name).cloned());
+
+        let time_filter = filter.translate_column(|e| match e.column_type {
+            ColumnType::Time => Some(e.name.clone()),
+            _ => None,
+        });
+
+        let time_ranges: Vec<TimeRange> = filter_to_time_ranges(&time_filter);
+
+        time_ranges
+    }
 }
 
 pub struct FieldFileLocation {
@@ -505,7 +573,6 @@ pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRan
 }
 
 pub struct RowIterator {
-    batch_size: usize,
     series_index: usize,
     series: Vec<u64>,
     engine: EngineRef,
@@ -515,17 +582,13 @@ pub struct RowIterator {
 
     open_files: HashMap<ColumnFileId, TsmReader>,
 
+    batch_size: usize,
     metrics: TskvSourceMetrics,
 }
 
 impl RowIterator {
-    pub fn new(
-        metrics: TskvSourceMetrics,
-        engine: EngineRef,
-        option: QueryOption,
-        batch_size: usize,
-    ) -> Result<Self, Error> {
-        let version = engine.get_db_version(&option.table_schema.db)?;
+    pub fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
+        let version = engine.get_db_version(&option.table_schema.db, vnode_id)?;
 
         let series = engine
             .get_series_id_by_filter(
@@ -537,17 +600,19 @@ impl RowIterator {
 
         debug!("series number: {}", series.len());
 
+        let metrics = option.metrics.clone();
+        let batch_size = option.batch_size;
         Ok(Self {
             series,
             engine,
             option,
             version,
-            batch_size,
 
             columns: vec![],
             series_index: usize::MAX,
             open_files: HashMap::new(),
 
+            batch_size,
             metrics,
         })
     }
@@ -836,7 +901,7 @@ impl Iterator for RowIterator {
                 cols.push(item.finish())
             }
 
-            match RecordBatch::try_new(self.option.datafusion_schema.clone(), cols) {
+            match RecordBatch::try_new(self.option.df_schema.clone(), cols) {
                 Ok(batch) => Some(Ok(batch)),
                 Err(err) => Some(Err(Error::DataFusionNew {
                     reason: err.to_string(),

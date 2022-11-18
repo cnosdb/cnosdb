@@ -9,7 +9,7 @@ use models::{
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
 };
 
-use serde::{Deserialize, Serialize, Serializer};
+use spi::catalog::DEFAULT_CATALOG;
 use tskv::{
     engine::EngineRef,
     iterator::{QueryOption, RowIterator, TableScanMetrics},
@@ -66,37 +66,16 @@ impl TableScanStream {
         let proj_table_schema =
             TskvTableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
 
-        let filter = filter
-            .filter()
-            .translate_column(|c| proj_table_schema.column(&c.name).cloned());
-
-        // 提取过滤条件
-        let time_filter = filter.translate_column(|e| match e.column_type {
-            ColumnType::Time => Some(e.name.clone()),
-            _ => None,
-        });
-        let tags_filter = filter.translate_column(|e| match e.column_type {
-            ColumnType::Tag => Some(e.name.clone()),
-            _ => None,
-        });
-        let fields_filter = filter.translate_column(|e| match e.column_type {
-            ColumnType::Field(_) => Some(e.name.clone()),
-            _ => None,
-        });
-        let option = QueryOption {
-            table_schema: proj_table_schema,
-            datafusion_schema: proj_schema.clone(),
-            time_filter,
-            tags_filter,
-            fields_filter,
-        };
-
-        let iterator = match RowIterator::new(
-            metrics.tskv_metrics(),
-            store_engine.clone(),
-            option,
+        let option = QueryOption::new(
             batch_size,
-        ) {
+            DEFAULT_CATALOG.to_string(),
+            filter,
+            proj_schema.clone(),
+            proj_table_schema,
+            metrics.tskv_metrics(),
+        );
+
+        let iterator = match RowIterator::new(store_engine.clone(), option, 0) {
             Ok(it) => it,
             Err(err) => return Err(err),
         };
