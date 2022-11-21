@@ -22,8 +22,6 @@ use crate::{
     meta_client::MetaRef,
 };
 
-pub type ReaderIteratorRef = Arc<ReaderIterator>;
-
 #[derive(Debug)]
 pub struct ReaderIterator {
     receiver: Receiver<CoordinatorResult<RecordBatch>>,

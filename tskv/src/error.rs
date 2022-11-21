@@ -114,4 +114,7 @@ pub enum Error {
 
     #[snafu(display("table not found for {}", table_name))]
     NotFoundTable { table_name: String },
+
+    #[snafu(display("common error: {}", reason))]
+    CommonError { reason: String },
 }

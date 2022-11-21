@@ -114,6 +114,7 @@ async fn process_client(
 ) -> CoordinatorResult<()> {
     loop {
         let recv_cmd = recv_command(&mut client).await?;
+
         match recv_cmd {
             CoordinatorTcpCmd::StatusResponseCmd(cmd) => {}
             CoordinatorTcpCmd::RecordBatchResponseCmd(_) => {}

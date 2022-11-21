@@ -12,13 +12,13 @@ use datafusion::arrow::record_batch::RecordBatch;
 
 // use std::net::{TcpListener, TcpStream};
 use tokio::net::{TcpListener, TcpStream};
+use trace::info;
 use tskv::iterator::QueryOption;
 
 use crate::errors::{
     CoordinatorError::{self, *},
     CoordinatorResult,
 };
-use crate::reader::ReaderIteratorRef;
 
 /* ************************* tcp service command ********************************* */
 pub const STATUS_RESPONSE_COMMAND: u32 = 1;
@@ -162,8 +162,10 @@ impl QueryRecordBatchRequest {
         conn.read_exact(&mut tmp_buf).await?;
         let len = u32::from_be_bytes(tmp_buf);
 
-        let mut data = Vec::with_capacity(len as usize);
+        let mut data = vec![];
+        data.resize(len as usize, 0);
         conn.read_exact(&mut data).await?;
+
         let expr = QueryExpr::decode(data)?;
 
         Ok(QueryRecordBatchRequest { expr })

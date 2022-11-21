@@ -16,6 +16,7 @@ use datafusion::{
 };
 
 use datafusion_proto::bytes::Serializeable;
+use trace::info;
 
 use super::transformation::RowExpressionToDomainsVisitor;
 
@@ -994,27 +995,25 @@ impl QueryExpr {
                     err: err.to_string(),
                 })?
                 .to_vec();
-
             buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
             buffer.append(&mut tmp);
         }
 
-        let mut tmp = bincode::serialize(option.df_schema.as_ref()).map_err(|err| {
+        let tmp = serde_json::to_string(option.df_schema.as_ref()).map_err(|err| {
             Error::InvalidQueryExprMsg {
                 err: err.to_string(),
             }
         })?;
-
         buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
-        buffer.append(&mut tmp);
+        buffer.append(&mut tmp.into_bytes());
 
-        let mut tmp =
-            bincode::serialize(&option.table_schema).map_err(|err| Error::InvalidQueryExprMsg {
+        let tmp = serde_json::to_string(&option.table_schema).map_err(|err| {
+            Error::InvalidQueryExprMsg {
                 err: err.to_string(),
-            })?;
-
+            }
+        })?;
         buffer.append(&mut (tmp.len() as u32).to_be_bytes().to_vec());
-        buffer.append(&mut tmp);
+        buffer.append(&mut tmp.into_bytes());
 
         Ok(buffer)
     }
@@ -1037,7 +1036,8 @@ impl QueryExpr {
         for _i in 0..count {
             let mut len_buf: [u8; 4] = [0; 4];
             buffer.read_exact(&mut len_buf)?;
-            let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
+            let mut data_buf = vec![];
+            data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
             buffer.read_exact(&mut data_buf)?;
             let expr = Expr::from_bytes(&data_buf).map_err(|err| Error::InvalidQueryExprMsg {
                 err: err.to_string(),
@@ -1048,19 +1048,27 @@ impl QueryExpr {
 
         let mut len_buf: [u8; 4] = [0; 4];
         buffer.read_exact(&mut len_buf)?;
-        let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
+        let mut data_buf = vec![];
+        data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
         buffer.read_exact(&mut data_buf)?;
-        let df_schema = bincode::deserialize::<Schema>(&data_buf)
-            .map(|val| Arc::new(val))
-            .map_err(|err| Error::InvalidQueryExprMsg {
+        let data = String::from_utf8(data_buf).map_err(|err| Error::InvalidQueryExprMsg {
+            err: err.to_string(),
+        })?;
+        let df_schema =
+            serde_json::from_str::<Schema>(&data).map_err(|err| Error::InvalidQueryExprMsg {
                 err: err.to_string(),
             })?;
+        let df_schema = Arc::new(df_schema);
 
         let mut len_buf: [u8; 4] = [0; 4];
         buffer.read_exact(&mut len_buf)?;
-        let mut data_buf = Vec::with_capacity(u32::from_be_bytes(len_buf) as usize);
+        let mut data_buf = vec![];
+        data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
         buffer.read_exact(&mut data_buf)?;
-        let table_schema = bincode::deserialize::<TskvTableSchema>(&data_buf).map_err(|err| {
+        let data = String::from_utf8(data_buf).map_err(|err| Error::InvalidQueryExprMsg {
+            err: err.to_string(),
+        })?;
+        let table_schema = serde_json::from_str::<TskvTableSchema>(&data).map_err(|err| {
             Error::InvalidQueryExprMsg {
                 err: err.to_string(),
             }
@@ -1078,6 +1086,25 @@ impl QueryExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_shchema_encode_decode() {
+        use arrow_schema::*;
+        use std::collections::HashMap;
+
+        let field_a = Field::new("a", DataType::Int64, false);
+        let field_b = Field::new("b", DataType::Boolean, false);
+
+        let mut metadata: HashMap<String, String> = HashMap::new();
+        metadata.insert("row_count".to_string(), "100".to_string());
+
+        let schema = Arc::new(Schema::new_with_metadata(vec![field_a, field_b], metadata));
+
+        let buffer = serde_json::to_string(&schema.as_ref()).unwrap();
+        let df_schema = serde_json::from_str::<Schema>(&buffer).unwrap();
+
+        assert_eq!(schema.as_ref(), &df_schema);
+    }
 
     #[test]
     fn test_of_ranges() {

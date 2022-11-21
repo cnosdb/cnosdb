@@ -37,11 +37,14 @@ pub enum Error {
         err
     ))]
     Internal { err: String },
+
+    #[snafu(display("Invalid query expr message: {}", err))]
+    IOErrors { err: String },
 }
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
-        Error::InvalidQueryExprMsg {
+        Error::IOErrors {
             err: err.to_string(),
         }
     }

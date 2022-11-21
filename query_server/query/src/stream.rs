@@ -1,9 +1,9 @@
-use coordinator::service::CoordinatorRef;
+use coordinator::{reader::ReaderIterator, service::CoordinatorRef};
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
 };
-use futures::Stream;
+use futures::{executor::block_on, Stream};
 use models::codec::Encoding;
 use models::{
     predicate::domain::PredicateRef,
@@ -13,7 +13,7 @@ use models::{
 use spi::catalog::DEFAULT_CATALOG;
 use tskv::{
     engine::EngineRef,
-    iterator::{QueryOption, RowIterator, TableScanMetrics},
+    iterator::{QueryOption, TableScanMetrics},
 };
 
 use tskv::Error;
@@ -25,7 +25,7 @@ pub struct TableScanStream {
     store_engine: EngineRef,
     coord: CoordinatorRef,
 
-    iterator: RowIterator,
+    iterator: ReaderIterator,
 
     metrics: TableScanMetrics,
 }
@@ -78,9 +78,13 @@ impl TableScanStream {
             metrics.tskv_metrics(),
         );
 
-        let iterator = match RowIterator::new(store_engine.clone(), option, 3) {
+        let iterator = match block_on(coord.read_record(option)) {
             Ok(it) => it,
-            Err(err) => return Err(err),
+            Err(err) => {
+                return Err(Error::CommonError {
+                    reason: err.to_string(),
+                })
+            }
         };
 
         Ok(Self {
@@ -105,7 +109,7 @@ impl Stream for TableScanStream {
 
         let timer = this.metrics.elapsed_compute().timer();
 
-        let result = match this.iterator.next() {
+        let result = match block_on(this.iterator.next()) {
             Some(data) => match data {
                 Ok(batch) => std::task::Poll::Ready(Some(Ok(batch))),
                 Err(err) => {

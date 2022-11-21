@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 protos = { path = "../protos" }
 utils = { path = "../utils" }
+trace = { path = "../trace" }
 
 arrow-schema = { workspace = true,  features = ["serde"] }
 async-trait = { workspace = true }
@@ -16,6 +17,7 @@ datafusion = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
+serde_json = { workspace = true }
 datafusion-proto = { workspace = true }
 
 [dev-dependencies]

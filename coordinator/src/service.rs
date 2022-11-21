@@ -25,7 +25,7 @@ use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use crate::meta_client_mock::{MockMetaClient, MockMetaManager};
-use crate::reader::{QueryExecutor, ReaderIterator, ReaderIteratorRef};
+use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::writer::{PointWriter, VnodeMapping};
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
@@ -43,7 +43,7 @@ pub trait Coordinator: Send + Sync + Debug {
     ) -> CoordinatorResult<()>;
     fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
 
-    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIteratorRef>;
+    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
 
     // fn create_db(&self, tenant: &String, info: &DatabaseSchema) -> CoordinatorResult<()>;
     // fn db_schema(&self, tenant: &String, name: &String) -> Option<DatabaseSchema>;
@@ -91,9 +91,9 @@ impl Coordinator for MockCoordinator {
         Ok(())
     }
 
-    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIteratorRef> {
+    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
         let (it, _) = ReaderIterator::new();
-        Ok(Arc::new(it))
+        Ok(it)
     }
 }
 
@@ -227,7 +227,7 @@ impl Coordinator for CoordService {
         result
     }
 
-    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIteratorRef> {
+    async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {
         let (iterator, sender) = ReaderIterator::new();
 
         let req = SelectStatementRequest { option, sender };
@@ -235,6 +235,6 @@ impl Coordinator for CoordService {
             .send(CoordinatorIntCmd::SelectStatementCmd(req))
             .await?;
 
-        Ok(Arc::new(iterator))
+        Ok(iterator)
     }
 }
