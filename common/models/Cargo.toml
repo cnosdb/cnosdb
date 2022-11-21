@@ -16,6 +16,7 @@ datafusion = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }

@@ -11,6 +11,7 @@ pub mod utils;
 #[macro_use]
 pub mod error_code;
 pub mod arrow_array;
+pub mod oid;
 pub mod predicate;
 
 use parking_lot::RwLock;

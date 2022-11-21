@@ -1,5 +1,6 @@
 extern crate core;
 
+pub mod auth;
 pub mod catalog;
 mod data_source;
 pub mod dispatcher;
