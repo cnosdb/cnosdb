@@ -293,10 +293,6 @@ impl WalManager {
                 continue;
             }
             let mut reader = WalReader::open(&path).await?;
-            if reader.len() == 0 {
-                continue;
-            }
-
             if reader.is_empty() {
                 continue;
             }
@@ -315,6 +311,7 @@ impl WalManager {
         min_log_seq: u64,
     ) -> Result<bool> {
         let mut seq_gt_min_seq = false;
+        let decoder = get_str_codec(Encoding::Zstd);
         loop {
             match reader.next_wal_entry().await {
                 Ok(Some(e)) => {
@@ -325,9 +322,8 @@ impl WalManager {
                     seq_gt_min_seq = true;
                     match e.typ {
                         WalEntryType::Write => {
-                            let decoder = get_str_codec(Encoding::Zstd);
                             let mut dst = Vec::new();
-                            decoder.decode(&e.data(), &mut dst).context(DecodeSnafu)?;
+                            decoder.decode(e.data(), &mut dst).context(DecodeSnafu)?;
                             debug_assert_eq!(dst.len(), 1);
                             let req = WritePointsRpcRequest {
                                 version: 1,
@@ -499,7 +495,7 @@ mod test {
                 match reader.next_wal_entry().await {
                     Ok(Some(entry)) => {
                         let mut data_buf = Vec::new();
-                        decoder.decode(&entry.data(), &mut data_buf).unwrap();
+                        decoder.decode(entry.data(), &mut data_buf).unwrap();
                         let ori_data = data_iter.next().unwrap();
                         assert_eq!(data_buf[0].as_slice(), ori_data.as_ref().as_slice());
                         if is_flatbuffers {
@@ -523,7 +519,7 @@ mod test {
                 }
             }
         }
-        return Ok(());
+        Ok(())
     }
 
     #[tokio::test]
@@ -536,11 +532,14 @@ mod test {
 
         let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
         let coder = get_str_codec(Encoding::Zstd);
-        let data_vec = vec![Arc::new(b"hello".to_vec()); 10];
-        for d in data_vec.iter() {
+        let mut data_vec = Vec::new();
+        for _ in 0..10 {
+            let data = Arc::new(b"hello".to_vec());
+            data_vec.push(data.clone());
+
             let mut enc_points = Vec::new();
             coder
-                .encode(&[&d], &mut enc_points)
+                .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
 
@@ -633,7 +632,7 @@ mod test {
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4";
         let dir_summary = "/tmp/test/wal/4/summary";
-        let _ = std::fs::remove_dir_all(dir.clone());
+        let _ = std::fs::remove_dir_all(dir);
         let mut global_config = get_config("../config/config.toml");
         global_config.wal.path = dir.to_string();
         global_config.storage.path = dir_summary.to_string();

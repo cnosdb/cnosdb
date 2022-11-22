@@ -373,6 +373,7 @@ impl Database {
     }
 }
 
+#[allow(clippy::await_holding_lock)]
 pub(crate) async fn delete_table_async(
     database: String,
     table: String,

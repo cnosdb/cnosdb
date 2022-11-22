@@ -40,8 +40,9 @@ pub struct RawFile(Arc<StdFile>, Arc<Rio>);
 impl RawFile {
     #[cfg(not(feature = "io_uring"))]
     fn as_raw_fd(&self) -> RawFd {
-        return self.0.as_raw_fd();
+        self.0.as_raw_fd()
     }
+
     async fn pwrite(&self, pos: u64, data: &[u8]) -> Result<usize> {
         #[cfg(feature = "io_uring")]
         {

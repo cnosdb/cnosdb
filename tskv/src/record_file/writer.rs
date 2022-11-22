@@ -149,7 +149,7 @@ impl Writer {
     }
 
     pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
-        self.footer.clone()
+        self.footer
     }
 
     pub async fn sync(&self) -> Result<()> {

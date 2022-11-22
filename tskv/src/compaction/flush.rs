@@ -357,6 +357,7 @@ impl FlushTask {
     }
 }
 
+#[allow(clippy::await_holding_lock)]
 pub async fn run_flush_memtable_job(
     req: FlushReq,
     global_context: Arc<GlobalContext>,

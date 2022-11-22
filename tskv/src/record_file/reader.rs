@@ -206,7 +206,7 @@ impl Reader {
 
     /// Returns a clone of file footer.
     pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
-        self.footer.clone()
+        self.footer
     }
 
     async fn load_buf(&mut self) -> Result<()> {

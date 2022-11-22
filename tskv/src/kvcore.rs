@@ -315,6 +315,7 @@ impl TsKv {
     // }
 
     // Compact TSM files in database into bigger TSM files.
+    #[allow(clippy::await_holding_lock)]
     pub async fn compact(&self, database: &str) {
         let database = self.version_set.read().get_db(database);
         if let Some(db) = database {

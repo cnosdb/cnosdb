@@ -1132,6 +1132,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     pub async fn test_read_with_tomb() {
         let dir = PathBuf::from("db/tsm/test/0".to_string());
         if !file_manager::try_exists(&dir) {

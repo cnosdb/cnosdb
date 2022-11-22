@@ -44,7 +44,7 @@ impl FileCursor {
             p += self.write_at(p, buf.deref()).await? as u64;
         }
         let pos = self.pos;
-        self.seek(SeekFrom::Start(p.try_into().unwrap())).unwrap();
+        self.seek(SeekFrom::Start(p)).unwrap();
         Ok((p - pos) as usize)
     }
 

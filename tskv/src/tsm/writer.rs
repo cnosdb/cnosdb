@@ -350,8 +350,7 @@ pub async fn new_tsm_writer(
     } else {
         file_utils::make_tsm_file_name(dir, tsm_sequence)
     };
-    let res = TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size).await;
-    res
+    TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size).await
 }
 
 pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
