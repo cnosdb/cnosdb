@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    io::IoSlice,
     path::{Path, PathBuf},
 };
 
@@ -8,10 +9,9 @@ use protos::kv_service::FieldType;
 use snafu::{ResultExt, Snafu};
 use utils::{BkdrHasher, BloomFilter};
 
-use crate::file_system::{file_manager, IFile};
 use crate::{
     error::{self, Error, Result},
-    file_system::FileCursor,
+    file_system::{file_manager, FileCursor, IFile},
     file_utils,
     tsm::{
         BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry, IndexMeta,
@@ -57,8 +57,8 @@ use crate::{
 // └───────────────┴─────────┘
 
 const HEADER_LEN: u64 = 5;
-const TSM_MAGIC: u32 = 0x01346613;
-const VERSION: u8 = 1;
+const TSM_MAGIC: [u8; 4] = 0x01346613_u32.to_be_bytes();
+const VERSION: [u8; 1] = [1];
 
 pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
 
@@ -355,17 +355,18 @@ pub async fn new_tsm_writer(
 }
 
 pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
-    let start = writer.pos();
-    writer
-        .write(TSM_MAGIC.to_be_bytes().as_ref())
-        .await
-        .context(IOSnafu)?;
-    writer
-        .write(VERSION.to_be_bytes()[..].as_ref())
+    let size = writer
+        .write_vec(
+            [
+                IoSlice::new(TSM_MAGIC.as_slice()),
+                IoSlice::new(VERSION.as_slice()),
+            ]
+            .as_mut_slice(),
+        )
         .await
         .context(IOSnafu)?;
 
-    Ok((writer.pos() - start) as usize)
+    Ok(size)
 }
 
 async fn write_raw_data_to(
@@ -417,46 +418,23 @@ async fn write_block_to(
     }
 
     let offset = writer.pos();
-    let mut size = 0;
 
     // TODO Make encoding result streamable
     let (ts_buf, data_buf) = block
         .encode(0, block.len(), block.encodings())
         .context(EncodeSnafu)?;
-    // Write u32 hash for timestamps
-    writer
-        .write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
-        .await
-        .map(|s| {
-            size += s;
-        })
-        .context(IOSnafu)?;
-    // Write timestamp blocks
-    writer
-        .write(&ts_buf)
-        .await
-        .map(|s| {
-            size += s;
-        })
-        .context(IOSnafu)?;
 
-    let val_off = writer.pos();
-
-    // Write u32 hash for value blocks
-    writer
-        .write(&crc32fast::hash(&data_buf).to_be_bytes()[..])
+    let size = writer
+        .write_vec(
+            [
+                IoSlice::new(crc32fast::hash(&ts_buf).to_be_bytes().as_slice()),
+                IoSlice::new(&ts_buf),
+                IoSlice::new(crc32fast::hash(&data_buf).to_be_bytes().as_slice()),
+                IoSlice::new(&data_buf),
+            ]
+            .as_mut_slice(),
+        )
         .await
-        .map(|s| {
-            size += s;
-        })
-        .context(IOSnafu)?;
-    // Write value blocks
-    writer
-        .write(&data_buf)
-        .await
-        .map(|s| {
-            size += s;
-        })
         .context(IOSnafu)?;
 
     index_buf.insert_block_meta(
@@ -471,7 +449,7 @@ async fn write_block_to(
             count: block.len() as u32,
             offset,
             size: size as u64,
-            val_offset: val_off,
+            val_offset: offset + ts_buf.len() as u64 + 4, // CRC32 is 4 bytes
         },
     );
 
@@ -483,13 +461,17 @@ async fn write_footer_to(
     bloom_filter: &BloomFilter,
     index_offset: u64,
 ) -> WriteTsmResult<usize> {
-    let start = writer.pos();
-    writer.write(bloom_filter.bytes()).await.context(IOSnafu)?;
-    writer
-        .write(&index_offset.to_be_bytes()[..])
+    let size = writer
+        .write_vec(
+            [
+                IoSlice::new(bloom_filter.bytes()),
+                IoSlice::new(index_offset.to_be_bytes().as_slice()),
+            ]
+            .as_mut_slice(),
+        )
         .await
         .context(IOSnafu)?;
-    Ok((writer.pos() - start) as usize)
+    Ok(size)
 }
 
 #[cfg(test)]

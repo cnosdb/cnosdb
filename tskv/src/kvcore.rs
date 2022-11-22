@@ -151,7 +151,7 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::new(self.options.wal.clone()).await;
+        let wal_manager = WalManager::open(self.options.wal.clone()).await.unwrap();
 
         wal_manager
             .recover(self, self.global_ctx.clone())
@@ -366,9 +366,8 @@ impl Engine for TsKv {
         let mut seq = 0;
         if self.options.wal.enabled {
             let (cb, rx) = oneshot::channel();
-            let mut enc_points = Vec::new();
-            let coder = get_str_codec(Encoding::Snappy);
-            coder
+            let mut enc_points = Vec::with_capacity(points.len() / 2);
+            get_str_codec(Encoding::Snappy)
                 .encode(&[&points], &mut enc_points)
                 .map_err(|_| Error::Send)?;
             self.wal_sender

@@ -1,4 +1,3 @@
-use std::{io, slice, thread};
 use std::borrow::BorrowMut;
 use std::fs::{File as StdFile, OpenOptions};
 use std::io::{Bytes, Error, ErrorKind, IoSlice, Result, SeekFrom};
@@ -11,6 +10,7 @@ use std::path::Path;
 use std::ptr::null;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::{io, slice, thread};
 
 use async_trait::async_trait;
 use futures::{AsyncSeekExt, AsyncWriteExt};
@@ -22,22 +22,20 @@ use libc::{send, time};
 use snafu::ResultExt;
 use tokio::fs::File;
 use tokio::spawn;
-use tokio::sync::{mpsc, oneshot};
-use tokio::sync::oneshot::Sender;
 use tokio::task::spawn_blocking;
 
 use trace::{error, info};
 
-use crate::file_system::file::os::{check_err, FileId, open, pread, pwrite};
+use crate::file_system::file::os::{check_err, open, pread, pwrite, FileId};
 use crate::Options;
 
 #[derive(Debug)]
 #[cfg(not(feature = "io_uring"))]
-pub struct RawFile(StdFile);
+pub struct RawFile(Arc<StdFile>);
 
 #[derive(Debug)]
 #[cfg(feature = "io_uring")]
-pub struct RawFile(StdFile, Arc<Rio>);
+pub struct RawFile(Arc<StdFile>, Arc<Rio>);
 
 impl RawFile {
     #[cfg(not(feature = "io_uring"))]
@@ -63,10 +61,8 @@ impl RawFile {
     async fn pread(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
         #[cfg(feature = "io_uring")]
         {
-
             let completion = self.1.read_at(&self.0, &data, pos).await?;
             Ok(data.len())
-
         }
         #[cfg(not(feature = "io_uring"))]
         {
@@ -86,8 +82,8 @@ impl RawFile {
             Ok(())
         }
         #[cfg(not(feature = "io_uring"))]
-        unsafe {
-            let file = StdFile::from(OwnedFd::from_raw_fd(self.0.as_raw_fd()));
+        {
+            let file = self.0.clone();
             asyncify(move || file.sync_data()).await
         }
     }
@@ -95,25 +91,28 @@ impl RawFile {
     async fn truncate(&self, size: u64) -> Result<()> {
         #[cfg(feature = "io_uring")]
         unsafe {
-            let file = StdFile::from(OwnedFd::from_raw_fd(self.0.as_raw_fd()));
+            let file = self.0.clone();
             asyncify(move || file.set_len(size)).await
         }
         #[cfg(not(feature = "io_uring"))]
-        unsafe {
-            let file = StdFile::from(OwnedFd::from_raw_fd(self.0.as_raw_fd()));
+        {
+            let file = self.0.clone();
             asyncify(move || file.set_len(size)).await
         }
     }
 }
 
 pub(crate) async fn asyncify<F, T>(f: F) -> Result<T>
-    where
-        F: FnOnce() -> Result<T> + Send + 'static,
-        T: Send + 'static,
+where
+    F: FnOnce() -> Result<T> + Send + 'static,
+    T: Send + 'static,
 {
     match spawn_blocking(f).await {
         Ok(res) => res,
-        Err(_) => Err(Error::new(ErrorKind::Other, "background task failed")),
+        Err(e) => Err(Error::new(
+            ErrorKind::Other,
+            format!("background task failed: {:?}", e),
+        )),
     }
 }
 
@@ -121,7 +120,7 @@ unsafe impl Send for FsRuntime {}
 
 pub struct FsRuntime {
     #[cfg(feature = "io_uring")]
-    rio: Arc<Rio>
+    rio: Arc<Rio>,
 }
 
 impl FsRuntime {
@@ -131,7 +130,7 @@ impl FsRuntime {
         FsRuntime { rio }
     }
     #[cfg(not(feature = "io_uring"))]
-    pub fn new_runtime() -> Self{
+    pub fn new_runtime() -> Self {
         FsRuntime {}
     }
 }
@@ -148,7 +147,7 @@ pub trait IFile: Send {
 }
 
 pub struct AsyncFile {
-    inner: Arc<RawFile>,
+    inner: RawFile,
     ctx: Arc<FsRuntime>,
     size: u64,
 }
@@ -203,27 +202,19 @@ impl AsyncFile {
             let stat = unsafe { stat.assume_init() };
             let size = stat.st_size as u64;
             let inner = Arc::new(RawFile(file, ctx.rio.clone()));
-            Ok(AsyncFile {
-                inner,
-                ctx,
-                size,
-            })
+            Ok(AsyncFile { inner, ctx, size })
         }
         #[cfg(not(feature = "io_uring"))]
         {
             let file = asyncify(move || options.open(path)).await?;
-            let inner = Arc::new(RawFile(file));
+            let inner = RawFile(Arc::new(file));
             let mut stat = MaybeUninit::<libc::stat>::zeroed();
             // asyncify(move || check_err(unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) })).await?;
             check_err(unsafe { libc::fstat(inner.as_raw_fd(), stat.as_mut_ptr()) })?;
             let stat = unsafe { stat.assume_init() };
             let size = stat.st_size as u64;
             // let size = metadata.size() as u64;
-            Ok(AsyncFile {
-                inner,
-                ctx,
-                size,
-            })
+            Ok(AsyncFile { inner, ctx, size })
         }
     }
 }

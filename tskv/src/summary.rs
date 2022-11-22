@@ -5,7 +5,6 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use futures::TryFutureExt;
 use libc::write;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch::Receiver;
@@ -22,7 +21,7 @@ use crate::{
     error::{Error, Result},
     file_utils,
     kv_option::{Options, StorageOptions},
-    record_file::{Reader, RecordFileError, Writer},
+    record_file::{Reader, RecordDataType, RecordDataVersion, Writer},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
     LevelId, TseriesFamilyId,
@@ -192,12 +191,6 @@ impl Display for VersionEdit {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
-#[repr(u8)]
-enum EditType {
-    SummaryEdit, // 0
-}
-
 pub struct Summary {
     file_no: u64,
     version_set: Arc<RwLock<VersionSet>>,
@@ -213,17 +206,17 @@ impl Summary {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let db = VersionEdit::new();
-        let mut w = Writer::new(&file_utils::make_summary_file(opt.storage.summary_dir(), 0))
-            .await
-            .unwrap();
+        let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
+        let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
         let buf = db.encode()?;
         let _ = w
-            .write_record(1, EditType::SummaryEdit.into(), &buf)
-            .map_err(|e| Error::LogRecordErr { source: (e) })
+            .write_record(
+                RecordDataVersion::V1.into(),
+                RecordDataType::Summary.into(),
+                &[&buf],
+            )
             .await?;
-        w.hard_sync()
-            .map_err(|e| Error::LogRecordErr { source: e })
-            .await?;
+        w.sync().await?;
 
         Ok(Self {
             file_no: 0,
@@ -243,12 +236,11 @@ impl Summary {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
-        let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0))
-            .await
-            .unwrap();
+        let path = file_utils::make_summary_file(&summary_path, 0);
+        let writer = Writer::open(path, RecordDataType::Summary).await.unwrap();
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(
-            Reader::new(&file_utils::make_summary_file(&summary_path, 0))
+            Reader::open(&file_utils::make_summary_file(&summary_path, 0))
                 .await
                 .unwrap(),
         );
@@ -274,10 +266,7 @@ impl Summary {
         let mut databases: HashMap<TseriesFamilyId, String> = HashMap::default();
 
         loop {
-            let res = reader
-                .read_record()
-                .await
-                .map_err(|e| Error::LogRecordErr { source: (e) });
+            let res = reader.read_record().await;
             match res {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
@@ -291,7 +280,11 @@ impl Summary {
                         data.push(ed);
                     }
                 }
-                Err(_) => break,
+                Err(Error::Eof) => break,
+                Err(e) => {
+                    println!("Error reading record: {:?}", e);
+                    break;
+                }
             }
         }
 
@@ -366,13 +359,13 @@ impl Summary {
             let buf = edit.encode()?;
             let _ = self
                 .writer
-                .write_record(1, EditType::SummaryEdit.into(), &buf)
-                .map_err(|e| Error::LogRecordErr { source: (e) })
+                .write_record(
+                    RecordDataVersion::V1.into(),
+                    RecordDataType::Summary.into(),
+                    &[&buf],
+                )
                 .await?;
-            self.writer
-                .hard_sync()
-                .map_err(|e| Error::LogRecordErr { source: e })
-                .await?;
+            self.writer.sync().await?;
 
             tsf_version_edits
                 .entry(edit.tsf_id)
@@ -423,7 +416,9 @@ impl Summary {
                     }
                 };
             }
-            self.writer = Writer::new(new_path).await.unwrap();
+            self.writer = Writer::open(new_path, RecordDataType::Summary)
+                .await
+                .unwrap();
             self.write_summary(edits).await?;
             match rename(new_path, old_path) {
                 Ok(_) => (),
@@ -434,7 +429,9 @@ impl Summary {
                     );
                 }
             };
-            self.writer = Writer::new(old_path).await.unwrap();
+            self.writer = Writer::open(old_path, RecordDataType::Summary)
+                .await
+                .unwrap();
         }
         Ok(())
     }
@@ -448,76 +445,66 @@ impl Summary {
     }
 }
 
-pub fn print_summary_statistics(path: impl AsRef<Path>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(async move {
-        let mut reader = Reader::new(&path).await.unwrap();
-        println!("============================================================");
-        let mut i = 0_usize;
-        loop {
-            match reader.read_record().await {
-                Ok(record) => {
-                    let ve = VersionEdit::decode(&record.data).unwrap();
-                    println!("VersionEdit #{}", i);
+pub async fn print_summary_statistics(path: impl AsRef<Path>) {
+    let mut reader = Reader::open(&path).await.unwrap();
+    println!("============================================================");
+    let mut i = 0_usize;
+    loop {
+        match reader.read_record().await {
+            Ok(record) => {
+                let ve = VersionEdit::decode(&record.data).unwrap();
+                println!("VersionEdit #{}", i);
+                println!("------------------------------------------------------------");
+                i += 1;
+                if ve.add_tsf {
+                    println!("  Add ts_family: {}", ve.tsf_id);
                     println!("------------------------------------------------------------");
-                    i += 1;
-                    if ve.add_tsf {
-                        println!("  Add ts_family: {}", ve.tsf_id);
-                        println!("------------------------------------------------------------");
+                }
+                if ve.del_tsf {
+                    println!("  Delete ts_family: {}", ve.tsf_id);
+                    println!("------------------------------------------------------------");
+                }
+                if ve.has_seq_no {
+                    println!("  Presist sequence: {}", ve.seq_no);
+                    println!("------------------------------------------------------------");
+                }
+                if ve.has_file_id {
+                    if ve.add_files.is_empty() && ve.del_files.is_empty() {
+                        println!("  Add file: None. Delete file: None.");
                     }
-                    if ve.del_tsf {
-                        println!("  Delete ts_family: {}", ve.tsf_id);
-                        println!("------------------------------------------------------------");
-                    }
-                    if ve.has_seq_no {
-                        println!("  Presist sequence: {}", ve.seq_no);
-                        println!("------------------------------------------------------------");
-                    }
-                    if ve.has_file_id {
-                        if ve.add_files.is_empty() && ve.del_files.is_empty() {
-                            println!("  Add file: None. Delete file: None.");
-                        }
-                        if !ve.add_files.is_empty() {
-                            let mut buffer = String::new();
-                            ve.add_files.iter().for_each(|f| {
-                                buffer.push_str(
-                                    format!(
-                                        "{} (level: {}, {} B), ",
-                                        f.file_id, f.level, f.file_size
-                                    )
+                    if !ve.add_files.is_empty() {
+                        let mut buffer = String::new();
+                        ve.add_files.iter().for_each(|f| {
+                            buffer.push_str(
+                                format!("{} (level: {}, {} B), ", f.file_id, f.level, f.file_size)
                                     .as_str(),
-                                )
-                            });
-                            if !buffer.is_empty() {
-                                buffer.truncate(buffer.len() - 2);
-                            }
-                            println!("  Add file:[ {} ]", buffer);
+                            )
+                        });
+                        if !buffer.is_empty() {
+                            buffer.truncate(buffer.len() - 2);
                         }
-                        if !ve.del_files.is_empty() {
-                            let mut buffer = String::new();
-                            ve.del_files.iter().for_each(|f| {
-                                buffer.push_str(
-                                    format!("{} (level: {}), ", f.file_id, f.level).as_str(),
-                                )
-                            });
-                            if !buffer.is_empty() {
-                                buffer.truncate(buffer.len() - 2);
-                            }
-                            println!("  Delete file:[ {} ]", buffer);
+                        println!("  Add file:[ {} ]", buffer);
+                    }
+                    if !ve.del_files.is_empty() {
+                        let mut buffer = String::new();
+                        ve.del_files.iter().for_each(|f| {
+                            buffer
+                                .push_str(format!("{} (level: {}), ", f.file_id, f.level).as_str())
+                        });
+                        if !buffer.is_empty() {
+                            buffer.truncate(buffer.len() - 2);
                         }
+                        println!("  Delete file:[ {} ]", buffer);
                     }
                 }
-                Err(err) => match err {
-                    RecordFileError::Eof => break,
-                    _ => panic!("Errors when read summary file: {}", err),
-                },
             }
-            println!("============================================================");
+            Err(err) => match err {
+                Error::Eof => break,
+                _ => panic!("Errors when read summary file: {}", err),
+            },
         }
-    });
+        println!("============================================================");
+    }
 }
 
 pub struct SummaryProcessor {
@@ -601,14 +588,12 @@ mod test {
     use crate::{
         error,
         kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, EditType, Summary, VersionEdit},
+        summary::{CompactMeta, Summary, VersionEdit},
     };
 
     #[tokio::test]
     async fn test_summary() {
         let base_dir = "/tmp/test/summary/1".to_string();
-        let _ = fs::remove_dir_all(&base_dir);
-
         let mut config = get_config("../config/config.toml");
         config.storage.path = base_dir.clone();
         let opt = Arc::new(Options::from(&config));
@@ -637,9 +622,7 @@ mod test {
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
@@ -656,9 +639,7 @@ mod test {
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
@@ -704,9 +685,7 @@ mod test {
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
@@ -754,9 +733,7 @@ mod test {
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await

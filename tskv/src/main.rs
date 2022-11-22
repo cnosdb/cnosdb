@@ -61,7 +61,7 @@ async fn main() {
     if show_summary {
         if let Some(p) = summary_path {
             println!("Summary Path: {}", p);
-            tskv::print_summary_statistics(p);
+            tskv::print_summary_statistics(p).await;
         }
     }
 }

@@ -43,15 +43,8 @@ impl FileId {
     }
 }
 
-pub fn pread(file: RawFd, pos: u64, len:usize, ptr: u64) -> Result<usize> {
-    check_err_size(unsafe {
-        libc::pread(
-            file,
-            ptr as *mut _,
-            len as _,
-            pos as libc::off_t,
-        )
-    })
+pub fn pread(file: RawFd, pos: u64, len: usize, ptr: u64) -> Result<usize> {
+    check_err_size(unsafe { libc::pread(file, ptr as *mut _, len as _, pos as libc::off_t) })
 }
 
 pub fn pwrite(file: RawFd, pos: u64, len: usize, ptr: u64) -> Result<usize> {

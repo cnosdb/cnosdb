@@ -448,7 +448,7 @@ impl TsmReader {
         let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
         let tsm_idx = IndexReader::open(tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
-        let tombstone = TsmTombstone::new(tombstone_path, tsm_id).await?;
+        let tombstone = TsmTombstone::open(tombstone_path, tsm_id).await?;
         Ok(Self {
             reader: tsm,
             index_reader: Arc::new(tsm_idx),

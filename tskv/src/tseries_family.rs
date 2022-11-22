@@ -208,7 +208,7 @@ impl ColumnFile {
     pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open_for_write(dir, self.file_id).await?;
+        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
         tombstone.add_range(field_ids, time_range).await?;
         tombstone.flush().await?;
         Ok(())
@@ -1219,15 +1219,12 @@ mod test {
         let file = version.levels_info[1].files[0].clone();
 
         let dir = opt.storage.tsm_dir(&database, ts_family_id);
-        let mut tombstone = TsmTombstone::open_for_write(dir, file.file_id)
-            .await
-            .unwrap();
+        let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
         tombstone
             .add_range(&[0], &TimeRange::new(0, 0))
             .await
             .unwrap();
         tombstone.flush().await.unwrap();
-        tombstone.load().await.unwrap();
 
         version.levels_info[1]
             .read_column_file(

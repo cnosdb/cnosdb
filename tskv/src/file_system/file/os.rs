@@ -41,5 +41,4 @@ mod test {
         let id_len3 = FileId::file_size(&File::open(&path).unwrap()).unwrap();
         assert_eq!(id_len, id_len3);
     }
-
 }

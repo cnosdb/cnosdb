@@ -22,17 +22,26 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    #[snafu(display("Error with read file: {}", source))]
-    ReadFile { source: std::io::Error },
+    #[snafu(display("Error with read file '{}': {}", path.display(), source))]
+    ReadFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
-    #[snafu(display("Unable to write file: {}", source))]
-    WriteFile { source: std::io::Error },
+    #[snafu(display("Unable to write file '{}': {}", path.display(), source))]
+    WriteFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 
     #[snafu(display("Unable to sync file: {}", source))]
     SyncFile { source: std::io::Error },
 
     #[snafu(display("File {} has wrong name format: {}", file_name, message))]
     InvalidFileName { file_name: String, message: String },
+
+    #[snafu(display("File '{}' has wrong format: {}", path.display(), message))]
+    InvalidFileFormat { path: PathBuf, message: String },
 
     #[snafu(display("async file system stopped"))]
     Cancel,
@@ -53,10 +62,11 @@ pub enum Error {
     #[snafu(display("wal truncated"))]
     WalTruncated,
 
-    #[snafu(display("read record file block: {}", source))]
-    LogRecordErr {
-        source: crate::record_file::RecordFileError,
-    },
+    #[snafu(display("read/write record file block: {}", reason))]
+    RecordFileIo { reason: String },
+
+    #[snafu(display("Unexpected eof"))]
+    Eof,
 
     #[snafu(display("read record file block: {}", source))]
     Encode { source: bincode::Error },
@@ -111,4 +121,10 @@ pub enum Error {
 
     #[snafu(display("can't find tags in point or insert row"))]
     InvalidPoint,
+
+    #[snafu(display("Invalid parameter : {}", reason))]
+    InvalidParam { reason: String },
+
+    #[snafu(display("file has no footer"))]
+    NoFooter,
 }

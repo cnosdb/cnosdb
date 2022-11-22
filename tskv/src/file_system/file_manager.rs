@@ -146,14 +146,17 @@ pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
 
 #[cfg(test)]
 mod test {
-    use super::FileManager;
-    use crate::file_system::{file_manager, FileCursor, IFile};
-    use std::os::unix::io::FromRawFd;
     use std::os::unix::prelude::AsRawFd;
     use std::sync::Arc;
+    use std::{os::unix::io::FromRawFd, path::Path};
+
     use libc::send;
     use tokio::sync::{mpsc, oneshot};
     use trace::info;
+
+    use crate::file_system::{file_manager, FileCursor, IFile};
+
+    use super::FileManager;
 
     #[tokio::test]
     async fn test_get_instance() {
@@ -174,10 +177,10 @@ mod test {
         );
     }
 
-    async fn test_basic_io() {
+    async fn test_basic_io(dir: impl AsRef<Path>) {
         println!("start basic io");
         let file = file_manager::get_file_manager()
-            .open_file("fs.test1")
+            .open_file(dir.as_ref().join("fs.test1"))
             .await
             .unwrap();
         println!("start write");
@@ -190,10 +193,10 @@ mod test {
         assert_eq!(buf, expect);
     }
 
-    async fn test_write() {
+    async fn test_write(dir: impl AsRef<Path>) {
         let mut len = 0;
         let file = file_manager::get_file_manager()
-            .open_file("fs.test2")
+            .open_file(dir.as_ref().join("fs.test2"))
             .await
             .unwrap();
         for i in 0..1024 {
@@ -207,9 +210,10 @@ mod test {
         assert_eq!(buf, expect);
     }
 
-    async fn test_truncate() {
+    async fn test_truncate(dir: impl AsRef<Path>) {
+        let path = dir.as_ref().join("fs.test3");
         let file = file_manager::get_file_manager()
-            .open_file("fs.test3")
+            .open_file(&path)
             .await
             .unwrap();
         let len = file.write_at(0, &[0, 1, 2, 3, 4, 5]).await.unwrap();
@@ -220,15 +224,15 @@ mod test {
         assert_eq!(buf, expect);
         file.truncate(3).await.unwrap();
         let file1 = file_manager::get_file_manager()
-            .open_file("fs.test3")
+            .open_file(path)
             .await
             .unwrap();
         assert_eq!(file1.len(), 3);
     }
 
-    async fn test_cursor() {
+    async fn test_cursor(dir: impl AsRef<Path>) {
         let file = file_manager::get_file_manager()
-            .open_file("fs.test4")
+            .open_file(dir.as_ref().join("fs.test4"))
             .await
             .unwrap();
         let mut cursor: FileCursor = file.into();
@@ -242,18 +246,23 @@ mod test {
     }
 
     #[tokio::test]
-     async fn test_all() {
-        test_basic_io().await;
-        test_write().await;
-        test_truncate().await;
-        test_cursor().await;
+    async fn test_all() {
+        let dir = "/tmp/test/file_manager";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        test_basic_io(dir).await;
+        test_write(dir).await;
+        test_truncate(dir).await;
+        test_cursor(dir).await;
     }
 
     #[test]
     #[cfg(feature = "io_uring")]
     fn test_io_uring() {
         tokio_uring::start(async {
-            let file = tokio_uring::fs::File::create("hello.txt").await.unwrap();
+            let file = tokio_uring::fs::File::create("/tmp/test/file_manager/hello.txt")
+                .await
+                .unwrap();
             let (res, buf) = file.write_at(&b"hello"[..], 0).await;
             let fd = file.as_raw_fd();
             println!("main thread: file: {:?}, {:?}", file, fd);

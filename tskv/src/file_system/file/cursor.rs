@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use std::io::{ErrorKind, IoSlice};
 use std::{
     io::{Error, Result, SeekFrom},
     ops::Deref,
@@ -38,11 +38,23 @@ impl FileCursor {
         Ok(size)
     }
 
+    pub async fn write_vec<'a>(&mut self, bufs: &'a mut [IoSlice<'a>]) -> Result<usize> {
+        let mut p = self.pos;
+        for buf in bufs {
+            p += self.write_at(p, buf.deref()).await? as u64;
+        }
+        let pos = self.pos;
+        self.seek(SeekFrom::Start(p.try_into().unwrap())).unwrap();
+        Ok((p - pos) as usize)
+    }
+
     pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
         self.pos = match pos {
             SeekFrom::Start(pos) => Some(pos),
             SeekFrom::End(delta) => {
                 if delta >= 0 {
+                    // TODO: AsyncFile::len() cannot get current length after
+                    // an appending write.
                     self.len().checked_add(delta as u64)
                 } else {
                     self.len().checked_sub(-delta as u64)
