@@ -3,27 +3,28 @@ use std::{any::Any, sync::Arc};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::SchemaRef,
+    common::DFSchemaRef,
     datasource::{TableProvider, TableType},
     error::{DataFusionError, Result},
     execution::context::SessionState,
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan},
 };
-use models::{
-    predicate::domain::{Predicate, PredicateRef},
-    schema::TableSchema,
-};
+use models::predicate::domain::{Predicate, PredicateRef};
+use models::schema::TskvTableSchema;
 use spi::catalog::MetadataError;
 use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
-    extension::physical::plan_node::table_writer::TableWriterExec, tskv_exec::TskvExec,
+    extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
+    tskv_exec::TskvExec,
 };
 
+#[derive(Clone)]
 pub struct ClusterTable {
     engine: EngineRef,
-    schema: TableSchema,
+    schema: TskvTableSchema,
 }
 
 impl ClusterTable {
@@ -42,7 +43,7 @@ impl ClusterTable {
         )))
     }
 
-    pub fn new(engine: EngineRef, schema: TableSchema) -> Self {
+    pub fn new(engine: EngineRef, schema: TskvTableSchema) -> Self {
         ClusterTable { engine, schema }
     }
 
@@ -63,7 +64,28 @@ impl ClusterTable {
         )))
     }
 
-    pub fn table_schema(&self) -> &TableSchema {
+    pub async fn tag_scan(
+        &self,
+        _ctx: &SessionState,
+        projected_schema: &DFSchemaRef,
+        filters: &[Expr],
+        limit: Option<usize>,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        let filter = Arc::new(
+            Predicate::default()
+                .set_limit(limit)
+                .push_down_filter(filters, &self.schema),
+        );
+
+        Ok(Arc::new(TagScanExec::new(
+            Arc::new(self.schema.clone()),
+            Arc::new(projected_schema.as_ref().into()),
+            filter,
+            self.engine.clone(),
+        )))
+    }
+
+    pub fn table_schema(&self) -> &TskvTableSchema {
         &self.schema
     }
 
@@ -113,7 +135,7 @@ impl TableProvider for ClusterTable {
 ///
 /// 1. If the projection contains the time column, it must contain the field column, otherwise an error will be reported
 pub fn valid_project(
-    schema: &TableSchema,
+    schema: &TskvTableSchema,
     projection: &Option<Vec<usize>>,
 ) -> std::result::Result<(), MetadataError> {
     let mut field_count = 0;

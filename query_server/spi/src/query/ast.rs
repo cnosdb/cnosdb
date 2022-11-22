@@ -2,6 +2,7 @@ use std::fmt;
 
 use datafusion::sql::sqlparser::ast::{DataType, Ident, ObjectName};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
+use models::codec::Encoding;
 
 /// Statement representations
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,37 @@ pub enum ExtStatement {
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
     //todo:  insert/update/alter
+
+    // system cmd
+    ShowQueries,
+    AlterDatabase(AlterDatabase),
+    AlterTable(AlterTable),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterTable {
+    pub table_name: ObjectName,
+    pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterTableAction {
+    AddColumn {
+        column: ColumnOption,
+    },
+    AlterColumnEncoding {
+        column_name: Ident,
+        encoding: Encoding,
+    },
+    DropColumn {
+        column_name: Ident,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterDatabase {
+    pub name: ObjectName,
+    pub options: DatabaseOptions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +91,27 @@ pub struct ColumnOption {
     pub name: Ident,
     pub is_tag: bool,
     pub data_type: DataType,
-    pub codec: String,
+    pub encoding: Option<Encoding>,
+}
+
+impl ColumnOption {
+    pub fn new_field(name: Ident, data_type: DataType, encoding: Option<Encoding>) -> Self {
+        Self {
+            name,
+            is_tag: false,
+            data_type,
+            encoding,
+        }
+    }
+
+    pub fn new_tag(name: Ident) -> Self {
+        Self {
+            name,
+            is_tag: true,
+            data_type: DataType::String,
+            encoding: None,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]

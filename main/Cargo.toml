@@ -1,6 +1,6 @@
 [package]
 name = "main"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -24,7 +24,7 @@ backtrace = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
-ctrlc = { workspace = true }
+ctrlc = { workspace = true, features = ["termination"] }
 datafusion = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
@@ -42,6 +42,8 @@ tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-mult
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
 warp = { workspace = true, features = ["tls"] }
+os_info = {workspace = true}
+reqwest = { workspace = true, features = ["native-tls", "json"] }
 
 [dev-dependencies]
 reqwest = "0.11"

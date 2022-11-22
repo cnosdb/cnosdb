@@ -2,16 +2,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::{
+    datasource::source_as_provider,
     error::DataFusionError,
     execution::context::SessionState,
-    logical_plan::{source_as_provider, LogicalPlan, UserDefinedLogicalNode},
+    logical_expr::{LogicalPlan, UserDefinedLogicalNode},
     physical_plan::{displayable, planner::ExtensionPlanner, ExecutionPlan, PhysicalPlanner},
 };
 use trace::debug;
 use trace::trace;
 
 use crate::{
-    extension::logical::plan_node::table_writer::TableWriterPlanNode, table::ClusterTable,
+    extension::logical::plan_node::table_writer::{as_table_writer_plan_node, TableWriterPlanNode},
+    table::ClusterTable,
 };
 
 use datafusion::error::Result;
@@ -72,8 +74,4 @@ impl ExtensionPlanner for TableWriterPlanner {
             },
         )
     }
-}
-
-fn as_table_writer_plan_node(node: &dyn UserDefinedLogicalNode) -> Option<&TableWriterPlanNode> {
-    node.as_any().downcast_ref::<TableWriterPlanNode>()
 }

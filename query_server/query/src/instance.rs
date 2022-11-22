@@ -8,8 +8,10 @@ use spi::{
     server::BuildSnafu,
     server::Result,
     server::{LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
-    service::protocol::{Query, QueryHandle},
+    service::protocol::{Query, QueryHandle, QueryId},
 };
+
+use tskv::kv_option::Options;
 
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::extension::expr::load_all_functions;
@@ -38,9 +40,32 @@ impl DatabaseManagerSystem for Cnosdbms {
 
         Ok(QueryHandle::new(id, query.clone(), result))
     }
+
+    fn metrics(&self) -> String {
+        let infos = self.query_dispatcher.running_query_infos();
+        let status = self.query_dispatcher.running_query_status();
+
+        format!(
+            "infos: {}\nstatus: {}\n",
+            infos
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join(","),
+            status
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+
+    fn cancel(&self, query_id: &QueryId) {
+        self.query_dispatcher.cancel_query(query_id);
+    }
 }
 
-pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
+pub fn make_cnosdbms(engine: EngineRef, options: Options) -> Result<Cnosdbms> {
     // todo: add query config
     // for now only support local mode
     let mut function_manager = SimpleFunctionMetadataManager::default();
@@ -58,12 +83,15 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
     // TODO wrap, and num_threads configurable
     let scheduler = Arc::new(Scheduler::new(num_cpus::get() * 2));
 
+    let queries_limit = options.query.max_server_connections;
+
     let simple_query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_metadata(meta)
         .with_session_factory(session_factory)
         .with_parser(parser)
         .with_optimizer(optimizer)
         .with_scheduler(scheduler)
+        .with_queries_limit(queries_limit)
         .build()
         .context(BuildSnafu)?;
 
@@ -75,6 +103,7 @@ pub fn make_cnosdbms(engine: EngineRef) -> Result<Cnosdbms> {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
+    use config::get_config;
     use std::ops::DerefMut;
     use trace::debug;
 
@@ -82,7 +111,6 @@ mod tests {
     use datafusion::arrow::{
         datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
     };
-    use futures::StreamExt;
     use spi::{
         catalog::DEFAULT_CATALOG,
         query::execution::Output,
@@ -122,10 +150,7 @@ mod tests {
         for ele in result.result().iter_mut() {
             match ele {
                 Output::StreamData(data) => {
-                    while let Some(next) = data.next().await {
-                        let batch = next.unwrap();
-                        actual.push(batch);
-                    }
+                    actual.append(data);
                 }
                 Output::Nil(_) => {
                     let batch = RecordBatch::new_empty(Arc::new(Schema::empty()));
@@ -138,7 +163,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple_sql() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let config = get_config("../../config/config.toml");
+        let opt = Options::from(&config);
+        let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
         let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
 
@@ -191,8 +218,9 @@ mod tests {
     #[ignore]
     async fn test_topk_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let config = get_config("../../config/config.toml");
+        let opt = Options::from(&config);
+        let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
         let sql = format!(
             "SELECT * FROM
@@ -224,8 +252,9 @@ mod tests {
     #[tokio::test]
     async fn test_topk_desc_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let config = get_config("../../config/config.toml");
+        let opt = Options::from(&config);
+        let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
         let mut result = exec_sql(
             &db,
@@ -257,7 +286,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_csv_table() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let config = get_config("../../config/config.toml");
+        let opt = Options::from(&config);
+        let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],
@@ -309,7 +340,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_parquet_table() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let config = get_config("../../config/config.toml");
+        let opt = Options::from(&config);
+        let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],
@@ -353,7 +386,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_json_table() {
-        let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
+        let config = get_config("../config/config.toml");
+        let opt = Options::from(&config);
+        let db = make_cnosdbms(Arc::new(MockEngine::default()), opt).unwrap();
 
         assert_batches_eq!(
             vec!["++", "++", "++",],

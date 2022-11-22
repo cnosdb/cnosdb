@@ -32,7 +32,7 @@ use datafusion::arrow::{
 };
 
 use models::predicate::domain::{ColumnDomains, Domain, Range, ValueEntry};
-use models::schema::{ColumnType, TableSchema, TIME_FIELD, TIME_FIELD_NAME};
+use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 pub type CursorPtr = Box<dyn Cursor>;
 pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 
@@ -51,7 +51,7 @@ pub type ArrayBuilderPtr = Box<dyn ArrayBuilder>;
 //  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 
 pub struct QueryOption {
-    pub table_schema: TableSchema,
+    pub table_schema: TskvTableSchema,
     pub datafusion_schema: SchemaRef,
     pub time_filter: ColumnDomains<String>,
     pub tags_filter: ColumnDomains<String>,
@@ -283,7 +283,9 @@ impl FieldCursor {
         let mut opt_next = self.cache_data.get(self.cache_index + 1);
 
         while let (Some(top), Some(next)) = (opt_top, opt_next) {
-            if top == next {
+            // if timestamp is same, select next data
+            // deduplication
+            if top.timestamp() == next.timestamp() {
                 self.cache_index += 1;
                 opt_top = Some(next);
                 opt_next = self.cache_data.get(self.cache_index + 1);
@@ -484,7 +486,7 @@ impl RowIterator {
             .context(IndexErrSnafu)?
         {
             self.columns.clear();
-            let fields = self.option.table_schema.columns().clone();
+            let fields = self.option.table_schema.columns().to_vec();
             for item in fields {
                 let field_name = item.name.clone();
                 debug!("build series columns id:{:02X}, {:?}", id, item);
@@ -492,18 +494,14 @@ impl RowIterator {
                     ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
 
                     ColumnType::Tag => Box::new(TagCursor::new(
-                        String::from_utf8(key.tag_val(&item.name)).unwrap(),
+                        String::from_utf8(key.tag_val(&item.name))
+                            .map_err(|_| Error::ErrCharacterSet)?,
                         field_name,
                     )),
 
                     ColumnType::Field(vtype) => match vtype {
                         ValueType::Unknown => todo!(),
-
-                        ValueType::Float
-                        | ValueType::Integer
-                        | ValueType::Unsigned
-                        | ValueType::Boolean
-                        | ValueType::String => {
+                        _ => {
                             let cursor = FieldCursor::new(
                                 unite_id(item.id as u64, id),
                                 field_name,

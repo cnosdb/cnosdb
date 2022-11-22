@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{logical_plan::LogicalPlan, physical_plan::ExecutionPlan};
+use datafusion::{logical_expr::LogicalPlan, physical_plan::ExecutionPlan};
 
 use super::{session::IsiphoSessionCtx, Result};
 

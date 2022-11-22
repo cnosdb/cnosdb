@@ -4,7 +4,6 @@ use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::arrow::json::{ArrayWriter, LineDelimitedWriter};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
-use futures::TryStreamExt;
 use spi::query::execution::Output;
 use spi::service::protocol::QueryHandle;
 use std::str::FromStr;
@@ -125,15 +124,18 @@ impl FromStr for ResultFormat {
 pub async fn fetch_record_batches(res: &mut QueryHandle) -> ArrowResult<Vec<RecordBatch>> {
     let mut actual = vec![];
 
+    trace::trace!("try collect result for: {}", res.query().content());
+
     for ele in res.result().iter_mut() {
         match ele {
             Output::StreamData(stream) => {
-                let mut result = stream.try_collect::<Vec<RecordBatch>>().await?;
-                actual.append(&mut result);
+                actual.append(stream);
             }
             Output::Nil(_) => {}
         }
     }
+
+    trace::trace!("successfully collected result of {}", res.query().content());
 
     Ok(actual)
 }
@@ -160,9 +162,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )
         .unwrap();
@@ -190,9 +192,9 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(Int32Array::from_slice(&[1, 2, 3])),
-                Arc::new(Int32Array::from_slice(&[4, 5, 6])),
-                Arc::new(Int32Array::from_slice(&[7, 8, 9])),
+                Arc::new(Int32Array::from_slice([1, 2, 3])),
+                Arc::new(Int32Array::from_slice([4, 5, 6])),
+                Arc::new(Int32Array::from_slice([7, 8, 9])),
             ],
         )
         .unwrap();

@@ -8,7 +8,8 @@ use std::{
     sync::Arc,
 };
 
-use models::schema::TableSchema;
+use models::codec::Encoding;
+use models::schema::TskvTableSchema;
 use models::utils::split_id;
 use models::{
     utils as model_utils, ColumnId, FieldId, FieldInfo, RwLockRef, SeriesId, SeriesKey, Timestamp,
@@ -188,12 +189,14 @@ impl FlushTask {
             // Write the merged data into files.
             for (field_id, dlt_blks, tsm_blks) in merged_series_data {
                 let (table_field_id, _) = split_id(field_id);
-                let encoding = DataBlockEncoding(
+                let encoding = DataBlockEncoding::new(
+                    Encoding::Default,
                     field_id_code_type_map
                         .get(&table_field_id)
                         .copied()
-                        .unwrap_or(0),
+                        .unwrap_or_default(),
                 );
+
                 if !dlt_blks.is_empty() {
                     if delta_writer.is_none() {
                         let writer = self.new_writer(true).await?;
@@ -231,9 +234,9 @@ impl FlushTask {
         self.finish_flush_mem_caches(delta_writer, tsm_writer).await
     }
 
-    fn build_codec_map(&self, schema: &TableSchema, map: &mut HashMap<ColumnId, u8>) {
+    fn build_codec_map(&self, schema: &TskvTableSchema, map: &mut HashMap<ColumnId, Encoding>) {
         for i in schema.columns().iter() {
-            map.insert(i.id, i.codec);
+            map.insert(i.id, i.encoding);
         }
     }
 
@@ -262,13 +265,13 @@ impl FlushTask {
                 for (ts, v) in values {
                     if ts > max_level_ts {
                         tsm_blk.insert(v.data_value(ts));
-                        if tsm_blk.len() as usize >= data_block_size {
+                        if tsm_blk.len() >= data_block_size {
                             tsm_blocks.push(tsm_blk);
                             tsm_blk = DataBlock::new(data_block_size, *typ);
                         }
                     } else {
                         delta_blk.insert(v.data_value(ts));
-                        if delta_blk.len() as usize >= data_block_size {
+                        if delta_blk.len() >= data_block_size {
                             delta_blocks.push(delta_blk);
                             delta_blk = DataBlock::new(data_block_size, *typ);
                         }
@@ -368,7 +371,7 @@ pub async fn run_flush_memtable_job(
             return Ok(());
         }
         for (tf, mem) in req.mems {
-            let mem_vec = tsf_caches.entry(tf).or_insert(Vec::new());
+            let mem_vec = tsf_caches.entry(tf).or_default();
             mem_vec.push(mem.clone());
         }
     }
@@ -400,7 +403,7 @@ pub async fn run_flush_memtable_job(
             .await?;
 
             if let Err(e) = compact_task_sender.send(*tsf_id) {
-                log_error!(e);
+                warn!("failed to send compact task, {}", e);
             }
         }
     }
@@ -413,8 +416,8 @@ pub async fn run_flush_memtable_job(
         cb: task_state_sender,
     };
 
-    if summary_task_sender.send(task).is_err() {
-        error!("failed to send Summary task,the edits not be loaded!")
+    if let Err(e) = summary_task_sender.send(task) {
+        warn!("failed to send Summary task, {}", e);
     }
     Ok(())
 }
@@ -426,7 +429,8 @@ pub mod flush_tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use models::schema::{ColumnType, TableColumn, TableSchema};
+    use models::codec::Encoding;
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
     use utils::dedup_front_by_key;
@@ -449,18 +453,18 @@ pub mod flush_tests {
 
     use super::FlushTask;
 
-    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TableSchema {
+    pub fn default_with_field_id(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
             .iter()
             .map(|i| TableColumn {
                 id: *i,
                 name: i.to_string(),
                 column_type: ColumnType::Field(ValueType::Unknown),
-                codec: 0,
+                encoding: Encoding::Default,
             })
             .collect();
 
-        TableSchema::new("public".to_string(), "".to_string(), fields)
+        TskvTableSchema::new("public".to_string(), "".to_string(), fields)
     }
 
     #[test]

@@ -1,11 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::Arc;
 
+use datafusion::common::{DFField, ToDFSchema};
+use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::TableSource;
-use datafusion::logical_plan::plan::{Analyze, Explain, Extension, Projection};
-use datafusion::logical_plan::{DFField, LogicalPlan, PlanType, ToDFSchema, ToStringifiedPlan};
+use datafusion::logical_expr::logical_plan::Analyze;
+use datafusion::logical_expr::{
+    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableSource,
+    ToStringifiedPlan,
+};
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
@@ -14,33 +18,35 @@ use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Ident, ObjectName, Query, Statement,
 };
 use datafusion::sql::TableReference;
-use models::schema::{ColumnType, TableColumn};
+use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
 use spi::query::ast::{
-    ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
-    DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
-    DescribeTable as DescribeTableOptions, DropObject, ExtStatement,
+    AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
+    AlterTableAction as ASTAlterTableAction, ColumnOption, CreateDatabase as ASTCreateDatabase,
+    CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
+    DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions, DropObject,
+    ExtStatement,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, CreateDatabase, CreateTable, DDLPlan, DescribeDatabase, DescribeTable,
-    DropPlan, ExternalSnafu, LogicalPlanner, LogicalPlannerError, Plan, QueryPlan,
-    MISMATCHED_COLUMNS, MISSING_COLUMN,
+    self, affected_row_expr, merge_affected_row_expr, AlterDatabase, AlterTable, AlterTableAction,
+    CreateDatabase, CreateTable, DDLPlan, DescribeDatabase, DescribeTable, DropPlan, ExternalSnafu,
+    LogicalPlanner, LogicalPlannerError, Plan, QueryPlan, SYSPlan, MISMATCHED_COLUMNS,
+    MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 
-use models::codec::{
-    codec_name_to_codec, BIGINT_CODEC, BOOLEAN_CODEC, DOUBLE_CODEC, STRING_CODEC, TIMESTAMP_CODEC,
-    UNSIGNED_BIGINT_CODEC,
-};
 use models::schema::{DatabaseOptions, Duration, Precision};
+use spi::catalog::MetadataError;
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 use crate::sql::parser::{normalize_ident, normalize_sql_object_name};
+use crate::table::ClusterTable;
+use spi::query::logical_planner::MetadataSnafu;
 
 /// CnosDB SQL query planner
 #[derive(Debug)]
@@ -59,7 +65,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
-            ExtStatement::CreateTable(stmt) => self.table_to_plan(stmt),
+            ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt),
             ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt),
             ExtStatement::CreateUser(_) => todo!(),
             ExtStatement::Drop(s) => self.drop_object_to_plan(s),
@@ -68,6 +74,10 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt),
             ExtStatement::ShowDatabases() => self.database_to_show(),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
+            ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
+            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
+            // system statement
+            ExtStatement::ShowQueries => Ok(Plan::SYSTEM(SYSPlan::ShowQueries)),
         }
     }
 
@@ -93,6 +103,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 source,
                 ..
             } => self.insert_to_plan(sql_object_name, sql_column_names, source),
+            Statement::Kill { id, .. } => Ok(Plan::SYSTEM(SYSPlan::KillQuery(id.into()))),
             _ => Err(LogicalPlannerError::NotImplemented {
                 err: stmt.to_string(),
             }),
@@ -224,7 +235,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             .collect::<Vec<String>>();
 
         // Get the metadata of the target table
-        let target_table = self.get_table_metadata(table_name.to_string())?;
+        let target_table = self.get_table_source(&table_name)?;
         let insert_columns = self.extract_column_names(columns.as_ref(), target_table.clone());
 
         // Check if the plan is legal
@@ -237,18 +248,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 insert_columns,
             )?;
 
-        // output variable for insert operation
-        let affected_row_expr = affected_row_expr();
-
-        // construct table writer logical node
-        let node = Arc::new(TableWriterPlanNode::new(
-            table_name,
-            target_table,
-            Arc::new(final_source_logical_plan),
-            vec![affected_row_expr],
-        ));
-
-        let df_plan = LogicalPlan::Extension(Extension { node });
+        let df_plan = table_write_plan_node(table_name, target_table, final_source_logical_plan)
+            .context(logical_planner::ExternalSnafu)?;
 
         debug!("Insert plan:\n{}", df_plan.display_indent_schema());
 
@@ -281,7 +282,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         .context(ExternalSnafu)
     }
 
-    pub fn table_to_plan(&self, statement: ASTCreateTable) -> Result<Plan> {
+    pub fn create_table_to_plan(&self, statement: ASTCreateTable) -> Result<Plan> {
         let ASTCreateTable {
             name,
             if_not_exists,
@@ -297,28 +298,40 @@ impl<S: ContextProvider> SqlPlaner<S> {
         schema.push(time_col);
 
         for column_opt in columns {
-            self.check_column(&column_opt)?;
-
             let col_id = id_generator.next_id() as ColumnId;
+            let column = Self::column_opt_to_table_column(column_opt, col_id)?;
+            schema.push(column);
+        }
 
-            let col = if column_opt.is_tag {
-                TableColumn::new_tag_column(col_id, normalize_ident(&column_opt.name))
-            } else {
-                TableColumn::new(
-                    col_id,
-                    normalize_ident(&column_opt.name),
-                    self.make_data_type(&column_opt.data_type)?,
-                    codec_name_to_codec(&column_opt.codec),
-                )
-            };
-
-            schema.push(col)
+        let mut column_name = HashSet::new();
+        for col in schema.iter() {
+            if !column_name.insert(col.name.as_str()) {
+                return Err(LogicalPlannerError::Semantic {
+                    err: "Field or Tag name should not have same".to_string(),
+                });
+            }
         }
         Ok(Plan::DDL(DDLPlan::CreateTable(CreateTable {
             schema,
             name: normalize_sql_object_name(&name),
             if_not_exists,
         })))
+    }
+
+    fn column_opt_to_table_column(column_opt: ColumnOption, id: ColumnId) -> Result<TableColumn> {
+        Self::check_column_encoding(&column_opt)?;
+
+        let col = if column_opt.is_tag {
+            TableColumn::new_tag_column(id, normalize_ident(&column_opt.name))
+        } else {
+            TableColumn::new(
+                id,
+                normalize_ident(&column_opt.name),
+                Self::make_data_type(&column_opt.data_type)?,
+                column_opt.encoding.unwrap_or_default(),
+            )
+        };
+        Ok(col)
     }
 
     fn database_to_describe(&self, statement: DescribeDatabaseOptions) -> Result<Plan> {
@@ -330,6 +343,102 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn table_to_describe(&self, opts: DescribeTableOptions) -> Result<Plan> {
         Ok(Plan::DDL(DDLPlan::DescribeTable(DescribeTable {
             table_name: normalize_sql_object_name(&opts.table_name),
+        })))
+    }
+
+    fn table_to_alter(&self, statement: ASTAlterTable) -> Result<Plan> {
+        let table_name = normalize_sql_object_name(&statement.table_name);
+        let table_provider = self.get_table_provider(&table_name)?;
+        let table_schema = table_provider
+            .as_any()
+            .downcast_ref::<ClusterTable>()
+            .ok_or_else(|| MetadataError::TableIsNotTsKv {
+                table_name: table_name.to_string(),
+            })
+            .context(MetadataSnafu)?
+            .table_schema();
+
+        let alter_action = match statement.alter_action {
+            ASTAlterTableAction::AddColumn { column } => {
+                let table_column = Self::column_opt_to_table_column(column, ColumnId::default())?;
+                if table_schema.contains_column(&table_column.name) {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!(
+                            "column {} already exists in table {}",
+                            &table_column.name, table_schema.name
+                        ),
+                    });
+                }
+                AlterTableAction::AddColumn { table_column }
+            }
+            ASTAlterTableAction::DropColumn { ref column_name } => {
+                let column_name = normalize_ident(column_name);
+                let table_column = table_schema.column(&column_name).ok_or_else(|| {
+                    LogicalPlannerError::Semantic {
+                        err: format!(
+                            "column {} not exists in table {}",
+                            &table_schema.name, column_name
+                        ),
+                    }
+                })?;
+
+                if table_column.column_type.is_tag() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "can't drop tag".to_string(),
+                    });
+                }
+
+                if table_column.column_type.is_field() && table_schema.field_num() == 1 {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "table must hava a field".to_string(),
+                    });
+                }
+
+                if table_column.column_type.is_time() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!("can't drop {} column", TIME_FIELD_NAME),
+                    });
+                }
+
+                AlterTableAction::DropColumn { column_name }
+            }
+
+            ASTAlterTableAction::AlterColumnEncoding {
+                ref column_name,
+                encoding,
+            } => {
+                let column_name = normalize_ident(column_name);
+                let column = table_schema.column(&column_name).ok_or_else(|| {
+                    LogicalPlannerError::Semantic {
+                        err: format!(
+                            "column {} not exists in table {}",
+                            column_name, &table_schema.name
+                        ),
+                    }
+                })?;
+                if column.column_type.is_tag() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "tag does not support compression".to_string(),
+                    });
+                }
+
+                if column.column_type.is_time() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!("can't modify codec type of {} column", TIME_FIELD_NAME),
+                    });
+                }
+                let mut new_column = column.clone();
+                new_column.encoding = encoding;
+
+                AlterTableAction::AlterColumn {
+                    column_name,
+                    new_column,
+                }
+            }
+        };
+        Ok(Plan::DDL(DDLPlan::AlterTable(AlterTable {
+            table_name,
+            alter_action,
         })))
     }
 
@@ -357,32 +466,38 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })))
     }
 
+    fn database_to_alter(&self, stmt: ASTAlterDatabase) -> Result<Plan> {
+        let ASTAlterDatabase { name, options } = stmt;
+        let options = self.make_database_option(options)?;
+        Ok(Plan::DDL(DDLPlan::AlterDatabase(AlterDatabase {
+            database_name: normalize_sql_object_name(&name),
+            database_options: options,
+        })))
+    }
+
     fn make_database_option(&self, options: ASTDatabaseOptions) -> Result<DatabaseOptions> {
         let mut plan_options = DatabaseOptions::default();
         if let Some(ttl) = options.ttl {
-            plan_options.ttl = self.str_to_duration(&ttl)?;
+            plan_options.with_ttl(self.str_to_duration(&ttl)?);
         }
         if let Some(replica) = options.replica {
-            plan_options.replica = replica
+            plan_options.with_replica(replica);
         }
         if let Some(shard_num) = options.shard_num {
-            plan_options.shard_num = shard_num
+            plan_options.with_shard_num(shard_num);
         }
         if let Some(vnode_duration) = options.vnode_duration {
-            plan_options.vnode_duration = self.str_to_duration(&vnode_duration)?
+            plan_options.with_vnode_duration(self.str_to_duration(&vnode_duration)?);
         }
         if let Some(precision) = options.precision {
-            plan_options.precision = match Precision::new(&precision) {
-                None => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!(
-                            "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                            precision
-                        ),
-                    })
-                }
-                Some(v) => v,
-            }
+            plan_options.with_precision(Precision::new(&precision).ok_or(
+                LogicalPlannerError::Semantic {
+                    err: format!(
+                        "{} is not a valid precision, use like 'ms', 'us', 'ns'",
+                        precision
+                    ),
+                },
+            )?);
         }
         Ok(plan_options)
     }
@@ -402,7 +517,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         Ok(duration)
     }
 
-    fn make_data_type(&self, data_type: &SQLDataType) -> Result<ColumnType> {
+    fn make_data_type(data_type: &SQLDataType) -> Result<ColumnType> {
         match data_type {
             // todo : should support get time unit for database
             SQLDataType::Timestamp(_) => Ok(ColumnType::Time),
@@ -417,30 +532,27 @@ impl<S: ContextProvider> SqlPlaner<S> {
         }
     }
 
-    fn check_column(&self, column: &ColumnOption) -> Result<()> {
+    fn check_column_encoding(column: &ColumnOption) -> Result<()> {
         // tag无压缩，直接返回
         if column.is_tag {
             return Ok(());
         }
         // 数据类型 -> 压缩方式 校验
+        let encoding = column.encoding.unwrap_or_default();
         let is_ok = match column.data_type {
-            SQLDataType::Timestamp(_) => {
-                TIMESTAMP_CODEC.contains(&column.codec.to_uppercase().as_str())
-            }
-            SQLDataType::BigInt(_) => BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str()),
-            SQLDataType::UnsignedBigInt(_) => {
-                UNSIGNED_BIGINT_CODEC.contains(&column.codec.to_uppercase().as_str())
-            }
-            SQLDataType::Double => DOUBLE_CODEC.contains(&column.codec.to_uppercase().as_str()),
-            SQLDataType::String => STRING_CODEC.contains(&column.codec.to_uppercase().as_str()),
-            SQLDataType::Boolean => BOOLEAN_CODEC.contains(&column.codec.to_uppercase().as_str()),
+            SQLDataType::Timestamp(_) => encoding.is_timestamp_encoding(),
+            SQLDataType::BigInt(_) => encoding.is_bigint_encoding(),
+            SQLDataType::UnsignedBigInt(_) => encoding.is_unsigned_encoding(),
+            SQLDataType::Double => encoding.is_double_encoding(),
+            SQLDataType::String => encoding.is_string_encoding(),
+            SQLDataType::Boolean => encoding.is_bool_encoding(),
             _ => false,
         };
         if !is_ok {
             return Err(LogicalPlannerError::Semantic {
                 err: format!(
-                    "Unsupported codec type {} for {}",
-                    column.codec, column.data_type
+                    "Unsupported encoding type {:?} for {}",
+                    column.encoding, column.data_type
                 ),
             });
         }
@@ -464,11 +576,23 @@ impl<S: ContextProvider> SqlPlaner<S> {
         }
     }
 
-    fn get_table_metadata(&self, table_name: String) -> Result<Arc<dyn TableSource>> {
-        let table_ref = TableReference::from(table_name.as_str());
+    fn get_table_source(&self, table_name: &str) -> Result<Arc<dyn TableSource>> {
+        let table_ref = TableReference::from(table_name);
         self.schema_provider
             .get_table_provider(table_ref)
             .context(logical_planner::ExternalSnafu)
+    }
+
+    fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
+        let table_source = self.get_table_source(table_name)?;
+        source_as_provider(&table_source)
+            .map_err(|_| MetadataError::InvalidSchema {
+                error_msg: format!(
+                    "can't convert table source {} to table provider ",
+                    table_name
+                ),
+            })
+            .context(MetadataSnafu)
     }
 }
 
@@ -517,6 +641,45 @@ fn semantic_check(
     Ok(())
 }
 
+fn table_write_plan_node(
+    table_name: String,
+    target_table: Arc<dyn TableSource>,
+    input: LogicalPlan,
+) -> std::result::Result<LogicalPlan, DataFusionError> {
+    // output variable for insert operation
+    let expr = input
+        .schema()
+        .fields()
+        .iter()
+        .last()
+        .map(|e| Expr::Column(e.qualified_column()));
+
+    debug_assert!(
+        expr.is_some(),
+        "invalid table write node's input logical plan"
+    );
+
+    let expr = unsafe { expr.unwrap_unchecked() };
+
+    let affected_row_expr = affected_row_expr(expr);
+
+    // construct table writer logical node
+    let node = Arc::new(TableWriterPlanNode::try_new(
+        table_name,
+        target_table,
+        Arc::new(input),
+        vec![affected_row_expr],
+    )?);
+
+    let df_plan = LogicalPlan::Extension(Extension { node });
+
+    let group_expr: Vec<Expr> = vec![];
+
+    LogicalPlanBuilder::from(df_plan)
+        .aggregate(group_expr, vec![merge_affected_row_expr()])?
+        .build()
+}
+
 impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
     fn create_logical_plan(
         &self,
@@ -531,7 +694,7 @@ impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
 mod tests {
     use crate::sql::parser::ExtParser;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-    use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource};
+    use datafusion::logical_expr::{Aggregate, AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
     use std::any::Any;
@@ -540,6 +703,7 @@ mod tests {
 
     use super::*;
     use datafusion::error::Result;
+    use models::codec::Encoding;
 
     #[derive(Debug)]
     struct MockContext {}
@@ -627,9 +791,63 @@ mod tests {
             .statement_to_plan(statements.pop_back().unwrap())
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateTable(create)) = plan {
-            let ans = format!("{:?}", create);
-            let expected = "CreateTable { schema: [TableColumn { id: 0, name: \"time\", column_type: Time, codec: 0 }, TableColumn { id: 1, name: \"column6\", column_type: Tag, codec: 0 }, TableColumn { id: 2, name: \"column7\", column_type: Tag, codec: 0 }, TableColumn { id: 3, name: \"column1\", column_type: Field(Integer), codec: 2 }, TableColumn { id: 4, name: \"column2\", column_type: Field(String), codec: 4 }, TableColumn { id: 5, name: \"column3\", column_type: Field(Unsigned), codec: 1 }, TableColumn { id: 6, name: \"column4\", column_type: Field(Boolean), codec: 0 }, TableColumn { id: 7, name: \"column5\", column_type: Field(Float), codec: 6 }], name: \"test\", if_not_exists: true }";
-            assert_eq!(ans, expected);
+            assert_eq!(
+                create,
+                CreateTable {
+                    schema: vec![
+                        TableColumn {
+                            id: 0,
+                            name: "time".to_string(),
+                            column_type: ColumnType::Time,
+                            encoding: Encoding::Default
+                        },
+                        TableColumn {
+                            id: 1,
+                            name: "column6".to_string(),
+                            column_type: ColumnType::Tag,
+                            encoding: Encoding::Default,
+                        },
+                        TableColumn {
+                            id: 2,
+                            name: "column7".to_string(),
+                            column_type: ColumnType::Tag,
+                            encoding: Encoding::Default,
+                        },
+                        TableColumn {
+                            id: 3,
+                            name: "column1".to_string(),
+                            column_type: ColumnType::Field(ValueType::Integer),
+                            encoding: Encoding::Delta,
+                        },
+                        TableColumn {
+                            id: 4,
+                            name: "column2".to_string(),
+                            column_type: ColumnType::Field(ValueType::String),
+                            encoding: Encoding::Gzip,
+                        },
+                        TableColumn {
+                            id: 5,
+                            name: "column3".to_string(),
+                            column_type: ColumnType::Field(ValueType::Unsigned),
+                            encoding: Encoding::Null,
+                        },
+                        TableColumn {
+                            id: 6,
+                            name: "column4".to_string(),
+                            column_type: ColumnType::Field(ValueType::Boolean),
+                            encoding: Encoding::Default,
+                        },
+                        TableColumn {
+                            id: 7,
+                            name: "column5".to_string(),
+                            column_type: ColumnType::Field(ValueType::Float),
+                            encoding: Encoding::Gorilla,
+                        }
+                    ],
+                    name: "test".to_string(),
+                    if_not_exists: true
+                }
+            );
         } else {
             panic!("expected create table plan")
         }
@@ -647,11 +865,51 @@ mod tests {
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan {
             let ans = format!("{:?}", create);
-            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Duration { time_num: 10, unit: Day }, shard_num: 5, vnode_duration: Duration { time_num: 3, unit: Day }, replica: 10, precision: US } }"#;
+            println!("{ans}");
+            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some(Duration { time_num: 10, unit: Day }), shard_num: Some(5), vnode_duration: Some(Duration { time_num: 3, unit: Day }), replica: Some(10), precision: Some(US) } }"#;
             assert_eq!(ans, expected);
         } else {
             panic!("expected create table plan")
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_filed_name_same() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,presssure DOUBLE,TAGS(station));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_tag_name_same() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,station));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Field or Tag name should not have same")]
+    fn test_create_table_tag_field_same_name() {
+        let sql = "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station,presssure));";
+        let mut statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        let test = MockContext {};
+        let planner = SqlPlaner::new(test);
+        planner
+            .statement_to_plan(statements.pop_back().unwrap())
+            .unwrap();
     }
 
     #[test]
@@ -671,12 +929,17 @@ mod tests {
 
         match plan {
             Plan::Query(QueryPlan {
-                df_plan: LogicalPlan::Extension(Extension { node }),
-            }) => match node.as_any().downcast_ref::<TableWriterPlanNode>() {
-                Some(TableWriterPlanNode {
-                    target_table_name, ..
-                }) => {
-                    assert_eq!(target_table_name.deref(), "test_tb");
+                df_plan: LogicalPlan::Aggregate(Aggregate { input, .. }),
+            }) => match input.as_ref() {
+                LogicalPlan::Extension(Extension { node }) => {
+                    match node.as_any().downcast_ref::<TableWriterPlanNode>() {
+                        Some(TableWriterPlanNode {
+                            target_table_name, ..
+                        }) => {
+                            assert_eq!(target_table_name.deref(), "test_tb");
+                        }
+                        _ => panic!(),
+                    }
                 }
                 _ => panic!(),
             },

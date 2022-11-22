@@ -3,9 +3,11 @@ use std::{collections::VecDeque, result};
 use datafusion::{
     arrow::datatypes::DataType,
     error::DataFusionError,
-    logical_plan::Column,
-    logical_plan::{ExprVisitable, ExpressionVisitor, Operator, Recursion},
-    prelude::Expr,
+    logical_expr::{
+        expr_visitor::{ExprVisitable, ExpressionVisitor, Recursion},
+        BinaryExpr, Operator,
+    },
+    prelude::{Column, Expr},
     scalar::ScalarValue,
 };
 
@@ -78,6 +80,7 @@ impl NormalizedSimpleComparison {
             | ScalarValue::LargeUtf8(_)
             | ScalarValue::Binary(_)
             | ScalarValue::LargeBinary(_)
+            | ScalarValue::FixedSizeBinary(_, _)
             | ScalarValue::Date32(_)
             | ScalarValue::Date64(_)
             | ScalarValue::Time64(_)
@@ -172,7 +175,7 @@ impl ExpressionVisitor for RowExpressionToDomainsVisitor<'_> {
 
     fn post_visit(self, expr: &Expr) -> datafusion::common::Result<Self> {
         match expr {
-            Expr::BinaryExpr { left, op, right } => {
+            Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
                 match op {
                     // stack中为expr，清空，生成domain
                     Operator::Eq
@@ -294,8 +297,7 @@ mod tests {
 
     use datafusion::{
         logical_expr::{binary_expr, expr_fn::col},
-        logical_plan::{and, or, Operator},
-        prelude::{in_list, lit, random},
+        prelude::{and, in_list, lit, or, random},
     };
 
     /// resolves the domain of the specified expression
@@ -415,16 +417,22 @@ mod tests {
     }
 
     fn get_tuple_date64_and_expr_with_except_column_domains() -> (Expr, ColumnDomains<Column>) {
-        let epoch_l = NaiveDate::from_ymd(1970, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_l = NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_m = NaiveDate::from_ymd(2022, 12, 31)
-            .and_hms(1, 1, 1)
+        let epoch_m = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_h = NaiveDate::from_ymd(2000, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_h = NaiveDate::from_ymd_opt(2000, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
         let epoch_h_expr = Expr::Literal(ScalarValue::Date64(Some(epoch_h.timestamp())));
@@ -918,12 +926,16 @@ mod tests {
         let port_low = binary_expr(col("port"), Operator::LtEq, lit(20000));
         let port_high = binary_expr(col("port"), Operator::GtEq, lit(10000));
 
-        let epoch_l = NaiveDate::from_ymd(1970, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_l = NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_m = NaiveDate::from_ymd(2022, 12, 31)
-            .and_hms(1, 1, 1)
+        let epoch_m = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
         let filter_d2 = binary_expr(col("time"), Operator::Lt, lit(epoch_m.timestamp_micros()));
@@ -1000,12 +1012,16 @@ mod tests {
         let host_low = binary_expr(col("host"), Operator::LtEq, lit("host099"));
         let host_high = binary_expr(col("host"), Operator::GtEq, lit("host200"));
 
-        let epoch_l = NaiveDate::from_ymd(1970, 1, 1)
-            .and_hms(1, 1, 1)
+        let epoch_l = NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_m = NaiveDate::from_ymd(2022, 12, 31)
-            .and_hms(1, 1, 1)
+        let epoch_m = NaiveDate::from_ymd_opt(2022, 12, 31)
+            .expect("invalid or out-of-range date")
+            .and_hms_opt(1, 1, 1)
+            .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
         let filter_d2 = binary_expr(col("time"), Operator::Lt, lit(epoch_m.timestamp_micros()));

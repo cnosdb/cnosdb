@@ -325,7 +325,7 @@ impl WalManager {
                     seq_gt_min_seq = true;
                     match e.typ {
                         WalEntryType::Write => {
-                            let decoder = get_str_codec(Encoding::Snappy);
+                            let decoder = get_str_codec(Encoding::Zstd);
                             let mut dst = Vec::new();
                             decoder.decode(&e.data(), &mut dst).context(DecodeSnafu)?;
                             debug_assert_eq!(dst.len(), 1);
@@ -494,7 +494,7 @@ mod test {
 
             let mut data_iter = data.iter();
             let mut reader = WalReader::open(&path).await.unwrap();
-            let decoder = get_str_codec(Encoding::Snappy);
+            let decoder = get_str_codec(Encoding::Zstd);
             loop {
                 match reader.next_wal_entry().await {
                     Ok(Some(entry)) => {
@@ -535,7 +535,7 @@ mod test {
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
-        let coder = get_str_codec(Encoding::Snappy);
+        let coder = get_str_codec(Encoding::Zstd);
         let data_vec = vec![Arc::new(b"hello".to_vec()); 10];
         for d in data_vec.iter() {
             let mut enc_points = Vec::new();
@@ -571,7 +571,7 @@ mod test {
         let database = "test_db".to_string();
         let table = "test_table".to_string();
         let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
-        let coder = get_str_codec(Encoding::Snappy);
+        let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
         for _i in 0..1 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -605,7 +605,7 @@ mod test {
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = WalManager::open(Arc::new(wal_config)).await.unwrap();
-        let coder = get_str_codec(Encoding::Snappy);
+        let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 
         for i in 0..10 {
@@ -640,7 +640,7 @@ mod test {
         let wal_config = WalOptions::from(&global_config);
 
         let mut mgr = rt.block_on(WalManager::open(Arc::new(wal_config))).unwrap();
-        let coder = get_str_codec(Encoding::Snappy);
+        let coder = get_str_codec(Encoding::Zstd);
         let mut data_vec: Vec<Arc<Vec<u8>>> = Vec::new();
 
         for _i in 0..10 {
@@ -661,8 +661,15 @@ mod test {
         let opt = kv_option::Options::from(&global_config);
         let tskv = rt.block_on(TsKv::open(opt, rt.clone())).unwrap();
         let ver = tskv.get_db_version("db0").unwrap().unwrap();
-        let expect = r#"range: TimeRange { min_ts: 1, max_ts: 1 }, rows: [RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }], size: 736 }] } })]"#;
-        let ans = format!("{:?}", ver.caches.mut_cache.read().read_series_data());
-        assert_eq!(&ans[573..], expect);
+        let expected = r#"[RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }]"#;
+        let ans = format!(
+            "{:?}",
+            ver.caches.mut_cache.read().read_series_data()[0]
+                .1
+                .read()
+                .groups[0]
+                .rows
+        );
+        assert_eq!(&ans, expected);
     }
 }

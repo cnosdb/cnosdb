@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
 use snafu::ResultExt;
 use spi::catalog::MetaDataRef;
+use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::Output;
 use spi::{
     query::{
@@ -18,7 +19,7 @@ use spi::{
     service::protocol::{Query, QueryId},
 };
 
-use spi::query::QueryError::BuildQueryDispatcher;
+use spi::query::QueryError::{self, BuildQueryDispatcher};
 use spi::query::{LogicalPlannerSnafu, Result};
 
 use crate::metadata::MetadataProvider;
@@ -26,11 +27,14 @@ use crate::{
     execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
 };
 
+use super::query_tracker::QueryTracker;
+
 pub struct SimpleQueryDispatcher {
     metadata: MetaDataRef,
     session_factory: Arc<IsiphoSessionCtxFactory>,
     // TODO resource manager
-    // TODO query tracker
+    // query tracker
+    query_tracker: Arc<QueryTracker>,
     // parser
     parser: Arc<dyn Parser + Send + Sync>,
     // get query execution factory
@@ -51,11 +55,11 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         QueryId::next_id()
     }
 
-    fn get_query_info(&self, _id: &QueryId) {
+    fn query_info(&self, _id: &QueryId) {
         // TODO
     }
 
-    async fn execute_query(&self, _id: QueryId, query: &Query) -> Result<Vec<Output>> {
+    async fn execute_query(&self, query_id: QueryId, query: &Query) -> Result<Vec<Output>> {
         let mut results = vec![];
 
         let session = self
@@ -72,9 +76,17 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let statements = self.parser.parse(query.content())?;
 
+        // not allow multi statement
+        if statements.len() > 1 {
+            return Err(QueryError::MultiStatement {
+                num: statements.len(),
+                sql: query.content().to_string(),
+            });
+        }
+
         for stmt in statements.iter() {
-            // TODO save query_state_machine，track query state
             let query_state_machine = Arc::new(QueryStateMachine::begin(
+                query_id,
                 query.clone(),
                 session.clone(),
                 metadata.clone(),
@@ -90,8 +102,24 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         Ok(results)
     }
 
-    fn cancel_query(&self, _id: &QueryId) {
-        // TODO
+    fn running_query_infos(&self) -> Vec<QueryInfo> {
+        self.query_tracker
+            .running_queries()
+            .iter()
+            .map(|e| e.info())
+            .collect()
+    }
+
+    fn running_query_status(&self) -> Vec<QueryStatus> {
+        self.query_tracker
+            .running_queries()
+            .iter()
+            .map(|e| e.status())
+            .collect()
+    }
+
+    fn cancel_query(&self, id: &QueryId) {
+        self.query_tracker.query(id).map(|e| e.cancel());
     }
 }
 
@@ -109,9 +137,13 @@ impl SimpleQueryDispatcher {
             .context(LogicalPlannerSnafu)?;
         query_state_machine.end_analyze();
 
-        // begin execute
-        self.query_execution_factory
-            .create_query_execution(logical_plan, query_state_machine.clone())
+        let execution = self
+            .query_execution_factory
+            .create_query_execution(logical_plan, query_state_machine.clone());
+
+        // TrackedQuery.drop() is called implicitly when the value goes out of scope,
+        self.query_tracker
+            .try_track_query(query_state_machine.query_id, execution)?
             .start()
             .await
     }
@@ -126,6 +158,8 @@ pub struct SimpleQueryDispatcherBuilder {
     optimizer: Option<Arc<dyn Optimizer + Send + Sync>>,
     // TODO 需要封装 scheduler
     scheduler: Option<Arc<Scheduler>>,
+
+    queries_limit: usize,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -154,6 +188,11 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_queries_limit(mut self, limit: u32) -> Self {
+        self.queries_limit = limit as usize;
+        self
+    }
+
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
         let metadata = self.metadata.ok_or_else(|| BuildQueryDispatcher {
             err: "lost of metadata".to_string(),
@@ -174,13 +213,20 @@ impl SimpleQueryDispatcherBuilder {
             err: "lost of scheduler".to_string(),
         })?;
 
-        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(optimizer, scheduler));
+        let query_tracker = Arc::new(QueryTracker::new(self.queries_limit));
+
+        let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
+            optimizer,
+            scheduler,
+            query_tracker.clone(),
+        ));
 
         Ok(SimpleQueryDispatcher {
             metadata,
             session_factory,
             parser,
             query_execution_factory,
+            query_tracker,
         })
     }
 }

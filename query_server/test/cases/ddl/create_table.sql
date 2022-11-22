@@ -28,6 +28,22 @@ select ALL * from createtable.test0;
 select ALL * from test0;
 select ALL * from public.test0;
 
+ALTER TABLE test0 DROP column2;
+
+select ALL * from test0;
+
+ALTER TABLE test0 DROP column7;
+
+SELECT ALL * FROM test0;
+
+ALTER TABLE test0 ADD TAG column8;
+
+SELECT ALL * FROM test0;
+
+ALTER TABLE test0 ADD TAG column7;
+
+SELECT ALL * FROM test0;
+
 
 CREATE TABLE test1(
     column0 TIMESTAMP CODEC(DELTA),
@@ -101,5 +117,18 @@ CREATE TABLE IF NOT EXISTS test7(
     column4 BOOLEAN,
     column5 DOUBLE CODEC(GORILLA),
     TAGS(column6, column7));
+
+DROP TABLE test0;
+
+SELECT ALL * FROM test0;
+
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column8, column7));
+
+SELECT ALL * FROM test0;
 
 DROP DATABASE IF EXISTS createtable;
