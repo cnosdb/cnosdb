@@ -20,11 +20,7 @@ use config::TLSConfig;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, Line};
-use metrics::{
-    gather_metrics_as_prometheus_string, incr_point_write_failed, incr_point_write_success,
-    incr_query_read_failed, incr_query_read_success, sample_point_write_latency,
-    sample_query_read_latency,
-};
+use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
 use models::error_code::ErrorCode;
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
@@ -39,6 +35,7 @@ use trace::debug;
 use trace::info;
 use tskv::engine::EngineRef;
 use warp::hyper::body::Bytes;
+use warp::hyper::Body;
 use warp::reject::MethodNotAllowed;
 use warp::reject::MissingHeader;
 use warp::reject::PayloadTooLarge;
@@ -130,41 +127,30 @@ impl HttpService {
             .and(self.with_dbms())
             .and_then(
                 |req: Bytes, header: Header, param: SqlParam, dbms: DBMSRef| async move {
-                    let req_log = format!(
+                    let start = Instant::now();
+                    debug!(
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
                     );
-                    debug!(req_log);
 
                     // Parse req、header and param to construct query request
-                    let query_req = construct_query(req, &header, param);
+                    let query = construct_query(req, &header, param).map_err(|e| {
+                        sample_query_read_duration("", "", false, 0.0);
+                        reject::custom(e)
+                    })?;
+                    let result = sql_handle(&query, header, dbms).await.map_err(|e| {
+                        trace::error!("Failed to handle http sql request, err: {}", e);
+                        reject::custom(e)
+                    });
+                    let user = query.context().user_info().user.as_str();
+                    let db = query.context().database();
 
-                    let result = match query_req {
-                        Ok(ref q) => {
-                            let start = Instant::now();
-
-                            let result = sql_handle(q, header, dbms).await;
-
-                            sample_query_read_latency(
-                                q.context().catalog(),
-                                q.context().database(),
-                                start.elapsed().as_millis() as f64,
-                            );
-
-                            result.map_err(|e| {
-                                trace::error!("Failed to handle http sql request, err: {}", e);
-                                reject::custom(e)
-                            })
-                        }
-                        Err(e) => Err(reject::custom(e)),
-                    };
-
-                    match result {
-                        Ok(_) => incr_query_read_success(),
-                        Err(_) => incr_query_read_failed(),
-                    }
-
-                    trace::trace!("Response {}", req_log);
+                    sample_query_read_duration(
+                        user,
+                        db,
+                        result.is_ok(),
+                        start.elapsed().as_millis() as f64,
+                    );
                     result
                 },
             )
@@ -183,34 +169,26 @@ impl HttpService {
             .and_then(
                 |req: Bytes, header: Header, param: WriteParam, kv_inst: EngineRef| async move {
                     let start = Instant::now();
+                    let user = match header.try_get_basic_auth() {
+                        Ok(u) => u.user,
+                        Err(e) => return Err(reject::custom(e)),
+                    };
+                    let db = &param.db;
                     let lines = String::from_utf8_lossy(req.as_ref());
                     let line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
                             .context(ParseLineProtocolSnafu)?;
-                    let points = parse_lines_to_points(&param.db, &line_protocol_lines)?;
+                    let points = parse_lines_to_points(db, &line_protocol_lines)?;
                     let req = WritePointsRpcRequest { version: 1, points };
                     let resp = kv_inst.write(req).await.context(TskvSnafu);
 
-                    let user_info = match header.try_get_basic_auth() {
-                        Ok(u) => u,
-                        Err(e) => return Err(reject::custom(e)),
-                    };
-
-                    sample_point_write_latency(
-                        &user_info.user,
-                        &param.db,
+                    sample_point_write_duration(
+                        &user,
+                        db,
+                        resp.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
-                    match resp {
-                        Ok(_) => {
-                            incr_point_write_success();
-                            Ok(ResponseBuilder::ok())
-                        }
-                        Err(e) => {
-                            incr_point_write_failed();
-                            Err(reject::custom(e))
-                        }
-                    }
+                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
     }
@@ -218,8 +196,10 @@ impl HttpService {
     fn metrics(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("api" / "v1" / "metrics")
-            .map(|| warp::reply::json(&gather_metrics_as_prometheus_string()))
+        warp::path!("metrics").map(|| {
+            debug!("prometheus access");
+            warp::reply::Response::new(Body::from(gather_metrics()))
+        })
     }
 }
 
