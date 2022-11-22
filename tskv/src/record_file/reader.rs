@@ -50,7 +50,7 @@ impl Reader {
         };
         let records_len = if footer_pos == file.len() {
             // If there is no footer
-            file.len()
+            file.len() - FILE_MAGIC_NUMBER_LEN as u64
         } else {
             file.len() - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
         };

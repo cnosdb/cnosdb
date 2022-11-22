@@ -53,6 +53,7 @@ impl Writer {
             // For writed file, skip to footer position, next write is at (file.len() - footer_len).
             // Note that footer_len may be zero.
             let seek_pos_end = footer_data.map(|f| f.len()).unwrap_or(0);
+            // TODO: truncate this file using seek_pos_end.
             cursor
                 .seek(SeekFrom::End(-(seek_pos_end as i64)))
                 .context(error::IOSnafu)?;
