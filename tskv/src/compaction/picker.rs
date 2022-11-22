@@ -273,7 +273,7 @@ impl LevelCompactionPicker {
                 picking_time_range = *file.time_range();
                 prev_non_overlaped_idx = i;
             }
-            picking_file_size += file.size() as u64;
+            picking_file_size += file.size();
             if picking_file_size > max_compact_size && prev_non_overlaped_idx > 0 {
                 break;
             }
@@ -438,7 +438,7 @@ mod test {
         let mut level_infos = LevelInfo::init_levels(database.clone(), opt.storage.clone());
         let mut max_level_ts = 0_i64;
         let ts_family_id = 0;
-        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
+        let tsm_dir = &opt.storage.tsm_dir(&database, ts_family_id);
         for lvl_desc in levels_sketch.iter() {
             max_level_ts = max_level_ts.max(lvl_desc.2);
             let mut col_files = Vec::new();
@@ -451,7 +451,7 @@ mod test {
                     TimeRange::new(file_desc.1, file_desc.2),
                     file_desc.3,
                     lvl_desc.0 == 0,
-                    make_tsm_file_name(&tsm_dir, file_desc.0),
+                    make_tsm_file_name(tsm_dir, file_desc.0),
                 );
                 if file_desc.4 {
                     col.mark_compacting();

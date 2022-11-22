@@ -119,8 +119,11 @@ pub enum Error {
     #[snafu(display("unknown type"))]
     UnKnowType,
 
-    #[snafu(display("can't find tags in point or insert row"))]
+    #[snafu(display("tags or fields can't be empty"))]
     InvalidPoint,
+
+    #[snafu(display("table not found for {}", table_name))]
+    NotFoundTable { table_name: String },
 
     #[snafu(display("Invalid parameter : {}", reason))]
     InvalidParam { reason: String },

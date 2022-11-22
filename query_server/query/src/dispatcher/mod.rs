@@ -1,2 +1,2 @@
 pub mod manager;
-mod query_tracker;
+pub mod query_tracker;

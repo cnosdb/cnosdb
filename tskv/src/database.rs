@@ -12,7 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::{DatabaseSchema, TableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
@@ -21,9 +21,9 @@ use trace::{debug, error, info};
 use crate::compaction::FlushReq;
 use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
-use crate::Error::InvalidPoint;
+use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
-    error::{self, Result},
+    error::{self, IndexErrSnafu, Result},
     memcache::{RowData, RowGroup},
     version_set::VersionSet,
     Error, TimeRange, TseriesFamilyId,
@@ -47,15 +47,22 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
-        Self {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Result<Self> {
+        let db = Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(schema.clone()),
+                .get_db_index(schema.clone())
+                .context(IndexErrSnafu)?,
             name: schema.name,
             ts_families: HashMap::new(),
             opt,
-        }
+        };
+        Ok(db)
+    }
+
+    pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
+        self.index.alter_db_schema(schema).context(IndexErrSnafu)?;
+        Ok(())
     }
 
     pub fn open_tsfamily(
@@ -96,7 +103,6 @@ impl Database {
         &mut self,
         tsf_id: u32,
         seq_no: u64,
-        file_id: u64,
         summary_task_sender: UnboundedSender<SummaryTask>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Arc<RwLock<TseriesFamily>> {
@@ -104,7 +110,7 @@ impl Database {
             tsf_id,
             self.name.clone(),
             self.opt.storage.clone(),
-            file_id,
+            seq_no,
             LevelInfo::init_levels(self.name.clone(), self.opt.storage.clone()),
             i64::MIN,
         ));
@@ -173,7 +179,7 @@ impl Database {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
-            self.build_row_data(&mut map, point, sid)
+            self.build_row_data(&mut map, point, sid)?
         }
         Ok(map)
     }
@@ -194,7 +200,7 @@ impl Database {
                 }
             }
 
-            self.build_row_data(&mut map, point, sid)
+            self.build_row_data(&mut map, point, sid)?
         }
         Ok(map)
     }
@@ -204,27 +210,26 @@ impl Database {
         map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
         point: Point,
         sid: u64,
-    ) {
-        let table_name = String::from_utf8(point.table().unwrap().to_vec()).unwrap();
-        let table_schema = match self.index.get_table_schema(&table_name) {
-            Ok(schema) => match schema {
-                None => {
-                    error!("failed get schema for table {}", table_name);
-                    return;
-                }
-                Some(schema) => schema,
-            },
-            Err(_) => {
-                error!("failed get schema for table {}", table_name);
-                return;
-            }
+    ) -> Result<()> {
+        let table_name = String::from_utf8(point.tab().unwrap().to_vec()).unwrap();
+        let table_schema = self
+            .index
+            .get_table_schema(&table_name)
+            .context(IndexErrSnafu)?;
+        let table_schema = match table_schema {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+        let table_schema = match table_schema {
+            TableSchema::TsKvTableSchema(schema) => schema,
+            _ => return Err(Error::NotFoundTable { table_name }),
         };
 
         let row = RowData::point_to_row_data(point, &table_schema);
         let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-            schema: TableSchema::default(),
+            schema: TskvTableSchema::default(),
             rows: vec![],
             range: TimeRange {
                 min_ts: i64::MAX,
@@ -241,10 +246,13 @@ impl Database {
         entry.size += row.size();
         //todo: remove this copy
         entry.rows.push(row);
+        Ok(())
     }
 
     fn build_index(&self, info: &Point) -> Result<u64> {
-        if info.tags().ok_or(InvalidPoint)?.is_empty() {
+        if info.tags().ok_or(InvalidPoint)?.is_empty()
+            || info.fields().ok_or(InvalidPoint)?.is_empty()
+        {
             return Err(InvalidPoint);
         }
         if let Some(id) = self
@@ -291,12 +299,37 @@ impl Database {
         (edits, files)
     }
 
+    pub fn add_table_column(&self, table: &str, column: TableColumn) -> IndexResult<()> {
+        self.index.add_table_column(table, column)?;
+        Ok(())
+    }
+
+    pub fn drop_table_column(&self, table: &str, column_name: &str) -> IndexResult<()> {
+        self.index.drop_table_column(table, column_name)?;
+        Ok(())
+    }
+
+    pub fn change_table_column(
+        &self,
+        table: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> IndexResult<()> {
+        self.index
+            .change_table_column(table, column_name, new_column)?;
+        Ok(())
+    }
+
     pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         self.index.get_series_key(sid)
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<TableSchema>> {
         self.index.get_table_schema(table_name)
+    }
+
+    pub fn get_tskv_table_schema(&self, table_name: &str) -> IndexResult<TskvTableSchema> {
+        self.index.get_tskv_table_schema(table_name)
     }
 
     pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {
@@ -378,6 +411,10 @@ pub(crate) async fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
+            let fields = match fields {
+                TableSchema::TsKvTableSchema(schema) => schema,
+                _ => return Err(Error::NotFoundTable { table_name: table }),
+            };
             let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()
@@ -389,7 +426,7 @@ pub(crate) async fn delete_table_async(
             };
 
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
-                ts_family.write().delete_cache(&storage_fids, time_range);
+                ts_family.write().delete_series(&sids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
                     column_file.add_tombstone(&storage_fids, time_range).await?;

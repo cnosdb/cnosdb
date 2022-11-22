@@ -14,82 +14,54 @@
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, 12321); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f1) VALUES(631407052613557553, 'TRUE'), (7486831592909450783, 'TRUE'); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f2) VALUES(5867172425191822176, 888), (3986678807649375642, 999); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t0) VALUES(5414775681413349294, 't000'); -- 1ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-1
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t1) VALUES(5414775681413349294, 't111'); -- 1ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-1
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, t0, t1, f0, f1, f2, f3, f4) VALUES (1, 'a', 'b', 11, '11', 11, true, 11.11), (2, 'a', 'c', 12, '11', 11, false, 11.11), (3, 'b', 'b', 13, '11', 11, false, 11.11), (4, 'b', 'a', 14, '11', 11, true, 11.11), (5, 'a', 'a', 11, '11', 11, true, 11.11), (6, 'b', 'c', 15, '11', 11, false, 11.11); -- 1ms; --
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 6
 
 -- EXECUTE SQL: select * from m0 order by time, t0, t1, f0; --

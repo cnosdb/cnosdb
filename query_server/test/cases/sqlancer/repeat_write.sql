@@ -5,6 +5,14 @@ m0,ta=ta f1=false 1
 m0,ta=ta f0=429351833,f1=TRUE 8891772176273175126
 m0,ta=ta f1=false 1
 m0,ta=ta f0=429351833,f1=TRUE 8891772176273175126
+
+m0,ta=ta f0=1,f1=true 2
+m0,ta=ta f0=2 2
+
+m0,ta=ta f0=1 3
+m0,ta=ta f0=2 3
+m0,ta=ta f1=false 3
+m0,ta=ta f1=true 3
 --#LP_END
 SELECT ALL *  FROM m0;
 -- SELECT COUNT(*) FROM m0;

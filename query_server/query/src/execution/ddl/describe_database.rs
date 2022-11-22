@@ -1,10 +1,15 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
+use datafusion::arrow::array::StringArray;
+use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::error::DataFusionError;
 use snafu::ResultExt;
 use spi::catalog::MetaDataRef;
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
+use std::sync::Arc;
 
 pub struct DescribeDatabaseTask {
     stmt: DescribeDatabase,
@@ -30,7 +35,38 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
 }
 
 fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    catalog
-        .describe_database(database_name)
-        .context(execution::MetadataSnafu)
+    let db_cfg = catalog
+        .database(database_name)
+        .context(execution::MetadataSnafu)?;
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("TTL", DataType::Utf8, false),
+        Field::new("SHARD", DataType::Utf8, false),
+        Field::new("VNODE_DURATION", DataType::Utf8, false),
+        Field::new("REPLICA", DataType::Utf8, false),
+        Field::new("PRECISION", DataType::Utf8, false),
+    ]));
+
+    let ttl = db_cfg.config.ttl_or_default().to_string();
+    let shard = db_cfg.config.shard_num_or_default().to_string();
+    let vnode_duration = db_cfg.config.vnode_duration_or_default().to_string();
+    let replica = db_cfg.config.replica_or_default().to_string();
+    let precision = db_cfg.config.precision_or_default().to_string();
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec![ttl.as_str()])),
+            Arc::new(StringArray::from(vec![shard.as_str()])),
+            Arc::new(StringArray::from(vec![vnode_duration.as_str()])),
+            Arc::new(StringArray::from(vec![replica.as_str()])),
+            Arc::new(StringArray::from(vec![precision.as_str()])),
+        ],
+    )
+    .map_err(|e| ExecutionError::External {
+        source: DataFusionError::ArrowError(e),
+    })?;
+
+    let batches = vec![batch];
+
+    Ok(Output::StreamData(batches))
 }

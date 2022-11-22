@@ -128,7 +128,7 @@ mod test_points {
         );
         // build series_info
         let db = Some(fb.create_vector("test_db".as_bytes()));
-        let table = Some(fb.create_vector("test_tab".as_bytes()));
+        let tab = Some(fb.create_vector("test_tab".as_bytes()));
         let fields = Some(fb.create_vector(&[field]));
         let tags = Some(fb.create_vector(&[tag]));
         // build point
@@ -136,7 +136,7 @@ mod test_points {
             &mut fb,
             &models::PointArgs {
                 db,
-                table,
+                tab,
                 tags,
                 fields,
                 timestamp: 1,

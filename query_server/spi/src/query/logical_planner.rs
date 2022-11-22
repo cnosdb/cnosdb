@@ -1,15 +1,15 @@
-use crate::catalog::MetadataError;
+use crate::{catalog::MetadataError, service::protocol::QueryId};
 
 use super::{
     ast::{ExtStatement, ObjectType},
     session::IsiphoSessionCtx,
+    AFFECTED_ROWS,
 };
 
 use datafusion::{
     error::DataFusionError,
-    logical_plan::{CreateExternalTable, LogicalPlan as DFPlan},
-    prelude::{lit, Expr},
-    scalar::ScalarValue,
+    logical_expr::{AggregateFunction, CreateExternalTable, LogicalPlan as DFPlan},
+    prelude::{col, Expr},
 };
 use models::schema::DatabaseOptions;
 use models::{define_result, schema::TableColumn};
@@ -43,6 +43,8 @@ pub enum Plan {
     Query(QueryPlan),
     /// Query plan
     DDL(DDLPlan),
+    /// Query plan
+    SYSTEM(SYSPlan),
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +69,16 @@ pub enum DDLPlan {
     ShowTables(Option<String>),
 
     ShowDatabases(),
+
+    AlterDatabase(AlterDatabase),
+
+    AlterTable(AlterTable),
+}
+
+#[derive(Debug, Clone)]
+pub enum SYSPlan {
+    ShowQueries,
+    KillQuery(QueryId),
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +161,32 @@ pub struct ShowTables {
     pub database_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterDatabase {
+    pub database_name: String,
+    pub database_options: DatabaseOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterTable {
+    pub table_name: String,
+    pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterTableAction {
+    AddColumn {
+        table_column: TableColumn,
+    },
+    AlterColumn {
+        column_name: String,
+        new_column: TableColumn,
+    },
+    DropColumn {
+        column_name: String,
+    },
+}
+
 pub trait LogicalPlanner {
     fn create_logical_plan(
         &self,
@@ -158,6 +196,24 @@ pub trait LogicalPlanner {
 }
 
 /// TODO Additional output information
-pub fn affected_row_expr() -> Expr {
-    lit(ScalarValue::Null).alias("COUNT")
+pub fn affected_row_expr(arg: Expr) -> Expr {
+    // col(AFFECTED_ROWS.0)
+    Expr::AggregateFunction {
+        fun: AggregateFunction::Count,
+        args: vec![arg],
+        distinct: false,
+        filter: None,
+    }
+    .alias(AFFECTED_ROWS.0)
+}
+
+pub fn merge_affected_row_expr() -> Expr {
+    // lit(ScalarValue::Null).alias("COUNT")
+    Expr::AggregateFunction {
+        fun: AggregateFunction::Sum,
+        args: vec![col(AFFECTED_ROWS.0)],
+        distinct: false,
+        filter: None,
+    }
+    .alias(AFFECTED_ROWS.0)
 }

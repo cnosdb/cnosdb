@@ -657,7 +657,7 @@ mod test {
             let field_id = idx.field_id();
             for blk_meta in idx.block_iterator() {
                 let blk = tsm_reader.get_data_block(&blk_meta).await.unwrap();
-                data.entry(field_id).or_insert(vec![]).push(blk);
+                data.entry(field_id).or_default().push(blk);
             }
         }
         data

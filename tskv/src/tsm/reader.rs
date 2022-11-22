@@ -418,7 +418,7 @@ impl Iterator for BlockMetaIterator {
     type Item = BlockMeta;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.block_meta_idx > self.block_meta_idx_end as usize {
+        if self.block_meta_idx > self.block_meta_idx_end {
             return None;
         }
         let ret = Some(get_data_block_meta_unchecked(
@@ -606,7 +606,7 @@ pub fn decode_data_block(
             Ok(DataBlock::F64 {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::Integer => {
@@ -618,7 +618,7 @@ pub fn decode_data_block(
             Ok(DataBlock::I64 {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::Boolean => {
@@ -630,7 +630,7 @@ pub fn decode_data_block(
             Ok(DataBlock::Bool {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::String => {
@@ -642,7 +642,7 @@ pub fn decode_data_block(
             Ok(DataBlock::Str {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         ValueType::Unsigned => {
@@ -654,7 +654,7 @@ pub fn decode_data_block(
             Ok(DataBlock::U64 {
                 ts,
                 val,
-                enc: DataBlockEncoding::combine(ts_encoding, val_encoding),
+                enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
         _ => Err(ReadTsmError::Decode {
@@ -736,10 +736,7 @@ pub mod tsm_reader_tests {
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
                 let data_blk = reader.get_data_block(&blk).await.unwrap();
-                read_data
-                    .entry(idx.field_id())
-                    .or_insert(Vec::new())
-                    .push(data_blk);
+                read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }
         assert_eq!(expected_data.len(), read_data.len());
@@ -787,10 +784,7 @@ pub mod tsm_reader_tests {
         for idx in reader.index_iterator_opt(2) {
             for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
                 let data_blk = reader.get_data_block(&blk).await.unwrap();
-                read_data
-                    .entry(idx.field_id())
-                    .or_insert(Vec::new())
-                    .push(data_blk);
+                read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }
         assert_eq!(expected_data.len(), read_data.len());

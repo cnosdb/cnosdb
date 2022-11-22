@@ -20,63 +20,56 @@ m4,t0=t0,t1=t1,t2=t2 f0=0I 0
 -- EXECUTE SQL: INSERT m0(TIME, f0, f1) VALUES(4283635885038645395, TRUE, 0.4131558313302025), (6292339431914973050, TRUE, 0.5540439337463335); -- 1ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f1, t0) VALUES(1041670293467254361, 0.507623643211476, '916053861'), (3174128646074400477, 0.47166914414715877, NULL); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, FALSE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(631407052613557553, TRUE), (7486831592909450783, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m0(TIME, f0) VALUES(5867172425191822176, TRUE), (3986678807649375642, TRUE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m1(TIME, f1) VALUES(7488251815539246350, FALSE); -- 0ms; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: can't find tags in point or insert row"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT m3(TIME, t0) VALUES(5414775681413349294, ''); -- 1ms; --
 -- AFTER_SORT --
-200 OK
-rows
-0
-0
-0
-0
-0
-0
-0
-1
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT m4.t2 FROM m4; --
 -- AFTER_SORT --
 200 OK
 t2
-
+t2
 
 -- EXECUTE SQL: SELECT m4.t2 FROM m4 WHERE FALSE UNION ALL SELECT ALL m4.t2 FROM m4 WHERE NOT (FALSE) UNION ALL SELECT ALL m4.t2 FROM m4 WHERE (FALSE) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t2
-
+t2
 
 -- EXECUTE SQL: SELECT * FROM m1 ORDER BY m1.t0 ASC; --
 -- AFTER_SORT --
@@ -111,7 +104,7 @@ f0,t0,t1
 -- EXECUTE SQL: SELECT m3.f0, m3.t0, m3.t1 FROM m3 WHERE CAST(CAST(CAST(CAST(m3.t0 AS BIGINT) AS STRING) AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(- (CAST(((((m1.t0)||(1765622571)))>=(((m1.f0)||(-1441159514)))) AS BIGINT))) FROM m1; --
@@ -130,7 +123,7 @@ MAX(m4.f0)
 -- AFTER_SORT --
 200 OK
 t2,t0
-
+t2,t0
 
 -- EXECUTE SQL: SELECT m4.t2, m4.t0 FROM m4 WHERE FALSE; --
 -- AFTER_SORT --
@@ -141,7 +134,7 @@ t2,t0
 -- AFTER_SORT --
 200 OK
 t2,t0
-
+t2,t0
 
 -- EXECUTE SQL: SELECT ALL m4.t2, m4.t0 FROM m4 WHERE (FALSE) IS NULL; --
 -- AFTER_SORT --
@@ -152,7 +145,8 @@ t2,t0
 -- AFTER_SORT --
 200 OK
 t0
-
+916053861
+t0
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN))) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) UNION ALL SELECT m0.t0 FROM m0 WHERE (NOT (((NOT (m0.f0)) IS UNKNOWN) BETWEEN SYMMETRIC (CAST((m0.f0) IS UNKNOWN AS BOOLEAN)) AND (CAST(CAST(415483039 AS BIGINT) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
@@ -197,7 +191,7 @@ false,t0,0.0
 -- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0 WHERE CAST(CAST(- (CAST(m0.t0 AS BIGINT)) AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BOOL_OR((((((((m3.t1)||(m3.f0)))||(CAST(0.033755319906666026 AS BOOLEAN))))LIKE(CAST(CAST(m3.f1 AS BIGINT) AS STRING)))) IS FALSE) FROM m3; --
@@ -222,13 +216,13 @@ false
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE CAST(0.9301634332886752 AS BOOLEAN); --
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT BIT_AND(-1155506580) FROM m2; --
 -- AFTER_SORT --
@@ -322,7 +316,7 @@ f0,t0
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m3.t1 FROM m3 WHERE (((((m3.t1)||(m3.f0)))||(((m3.t0)||(m3.f1))))) NOT IN ('t6i4<y}et') UNION ALL SELECT m3.t1 FROM m3 WHERE NOT ((((((m3.t1)||(m3.f0)))||(((m3.t0)||(m3.f1))))) NOT IN ('t6i4<y}et')) UNION ALL SELECT ALL m3.t1 FROM m3 WHERE ((((((m3.t1)||(m3.f0)))||(((m3.t0)||(m3.f1))))) NOT IN ('t6i4<y}et')) IS NULL; --
 -- AFTER_SORT --
@@ -354,9 +348,9 @@ f1,f0,t0
 
 -- EXECUTE SQL: SELECT MAX(CAST(CAST(((((-512080491)+(1953842239)))%(CAST(m2.t0 AS BIGINT))) AS BIGINT) AS STRING)) FROM m2; --
 -- AFTER_SORT --
-200 OK
-MAX(Int64(-512080491) + Int64(1953842239) % m2.t0)
-""
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1; --
 -- AFTER_SORT --
@@ -438,7 +432,7 @@ f1
 -- AFTER_SORT --
 200 OK
 t2,t0
-
+t2,t0
 
 -- EXECUTE SQL: SELECT ALL m4.t2, m4.t0 FROM m4 WHERE (((((m4.t1)||(FALSE)))||(CAST(m4.f0 AS BIGINT)))) IN ('5-5ylbN2f', '*''{lcA', ''); --
 -- AFTER_SORT --
@@ -496,13 +490,13 @@ time,t0,t1,t2,f0
 -- AFTER_SORT --
 200 OK
 t0,t1
-
+t0,t1
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t1 FROM m4 WHERE (((TRUE) IN (FALSE, TRUE, FALSE)) IS FALSE) IS FALSE; --
 -- AFTER_SORT --
 200 OK
 t0,t1
-
+t0,t1
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t1 FROM m4 WHERE NOT ((((TRUE) IN (FALSE, TRUE, FALSE)) IS FALSE) IS FALSE); --
 -- AFTER_SORT --
@@ -523,7 +517,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m4.f0 FROM m4 WHERE (- (CAST(m4.t1 AS BIGINT))) NOT IN (779308539, -1573694652) UNION ALL SELECT m4.f0 FROM m4 WHERE NOT ((- (CAST(m4.t1 AS BIGINT))) NOT IN (779308539, -1573694652)) UNION ALL SELECT ALL m4.f0 FROM m4 WHERE ((- (CAST(m4.t1 AS BIGINT))) NOT IN (779308539, -1573694652)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0; --
@@ -645,7 +639,7 @@ t0,t1,false,0
 -- EXECUTE SQL: SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE ((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING))) UNION ALL SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE NOT (((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING)))) UNION ALL SELECT m3.t0, m3.t1, m3.f1, m3.f0 FROM m3 WHERE (((((((((m3.t0)||(m3.f1)))||(NOT (FALSE))))||(NOT (CAST(m3.t0 AS BOOLEAN)))))>(CAST(CAST(- (m3.f0) AS BOOLEAN) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4; --
@@ -687,7 +681,7 @@ t0,0,t1,t2
 -- EXECUTE SQL: SELECT SUM(- (((+ (CAST(m1.f0 AS BIGINT)))/(CAST(((m1.t0)>(m1.f0)) AS BIGINT))))) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.t0, m2.f1 FROM m2; --
@@ -739,7 +733,7 @@ f0,false
 -- EXECUTE SQL: SELECT COUNT(((m3.f0)*(- (CAST(CAST(m3.t1 AS STRING) AS BIGINT))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3; --
@@ -775,7 +769,7 @@ t0,0,t1
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0, m4.t1 FROM m4 WHERE ((CAST(((CAST(m4.t1 AS BIGINT))IS NOT DISTINCT FROM(((m4.f0)-(m4.f0)))) AS STRING))LIKE(CAST(+ (- (m4.f0)) AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BIT_OR(m3.f0) FROM m3; --
@@ -833,13 +827,13 @@ false,0,t0,t1
 -- EXECUTE SQL: SELECT SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT))) FROM m0; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT)))  as agg0 FROM m0 WHERE FALSE UNION ALL SELECT SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT)))  as agg0 FROM m0 WHERE NOT (FALSE) UNION ALL SELECT ALL SUM(- (CAST(CAST(((m0.t0)||(m0.f1)) AS BIGINT) AS BIGINT)))  as agg0 FROM m0 WHERE (FALSE) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 't00.0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
@@ -1014,7 +1008,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL COUNT(+ (CAST(((m1.f0)||(((m1.f0)LIKE(m1.t0)))) AS BIGINT))) FROM m1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'f00' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'f00' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.f0 FROM m3; --
@@ -1060,7 +1054,7 @@ f0
 -- EXECUTE SQL: SELECT ALL m3.f0 FROM m3 WHERE ((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE)) UNION ALL SELECT m3.f0 FROM m3 WHERE NOT (((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE))) UNION ALL SELECT ALL m3.f0 FROM m3 WHERE (((((((CAST(CAST(((m3.t0)||('-436419271')) AS BIGINT) AS BOOLEAN))OR(CAST(CAST(((m3.t0)||(m3.f0)) AS BIGINT) AS BOOLEAN))))OR((CAST(m3.f0 AS BIGINT)) NOT IN (-1775866416, -458215714, -1147259432))))AND(((((((((((m3.f1)OR(m3.f1)))OR(m3.f1)))AND(m3.f1)))OR(m3.f1))) IS NULL) IS FALSE))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0-436419271' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0-436419271' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL SUM(0.7069601217262456) FROM m0; --
@@ -1079,7 +1073,7 @@ SUM(Float64(0.7069601217262456))
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE NOT ((+ (1827659846)) NOT IN (-1398969998)); --
 -- AFTER_SORT --
@@ -1090,7 +1084,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE (NOT ((+ (1827659846)) NOT IN (-1398969998))) IS NULL; --
 -- AFTER_SORT --
@@ -1141,14 +1135,14 @@ SUM(Int64(-996695851))
 -- EXECUTE SQL: SELECT MAX(m2.f1) FROM m2 ORDER BY m2.f1 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1)'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1)'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0 FROM m3; --
 -- AFTER_SORT --
 200 OK
 t1,t0
-
+t1,t0
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0 FROM m3 WHERE (((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0') UNION ALL SELECT m3.t1, m3.t0 FROM m3 WHERE NOT ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) UNION ALL SELECT ALL m3.t1, m3.t0 FROM m3 WHERE ((((CAST(m3.t1 AS STRING))LIKE(((m3.t1)||(m3.f1))))) NOT IN (TRUE, TRUE, '0')) IS NULL; --
 -- AFTER_SORT --
@@ -1171,13 +1165,13 @@ f1,t0
 -- AFTER_SORT --
 200 OK
 t1,t0,t2
-
+t1,t0,t2
 
 -- EXECUTE SQL: SELECT m4.t1, m4.t0, m4.t2 FROM m4 WHERE (CAST(0.45727184971342283 AS STRING)) NOT IN ('K꟧w', 'c঄঄C∮'); --
 -- AFTER_SORT --
 200 OK
 t1,t0,t2
-
+t1,t0,t2
 
 -- EXECUTE SQL: SELECT BIT_OR(574679056) FROM m0; --
 -- AFTER_SORT --
@@ -1282,12 +1276,13 @@ t0,0,t1,t2
 -- AFTER_SORT --
 200 OK
 t0,t1
-
+t0,t1
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t1 FROM m4 WHERE CAST(CAST(m4.t2 AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
-200 OK
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't2' to value of Boolean type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -1304,7 +1299,8 @@ f1
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2, m4.t1 FROM m4 ORDER BY m4.t2 DESC; --
 -- AFTER_SORT --
 200 OK
-
+t0,t2,t1
+t0,t2,t1
 
 -- EXECUTE SQL: SELECT m4.t0, m4.t2, m4.t1 FROM m4 WHERE ((CAST(CAST(((m4.t2)||(m4.f0)) AS STRING) AS STRING))<=(CAST(((CAST(m4.f0 AS BIGINT))/(((797420618)-(1252885071)))) AS STRING))); --
 -- AFTER_SORT --
@@ -1332,7 +1328,7 @@ t1,0,t0,t2
 -- EXECUTE SQL: SELECT m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE CAST(m4.t2 AS BOOLEAN) UNION ALL SELECT m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(m4.t2 AS BOOLEAN)) UNION ALL SELECT ALL m4.t1, m4.f0, m4.t0, m4.t2 FROM m4 WHERE (CAST(m4.t2 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't2' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't2' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2; --
@@ -1344,7 +1340,7 @@ false,f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE ((((((((m2.f1)||(1052801116)))||(((m2.f1)||(m2.f0)))))||(CAST(CAST(m2.f1 AS STRING) AS BIGINT))))LIKE(CAST((CAST(FALSE AS BOOLEAN)) IS UNKNOWN AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.t1, m3.f1 FROM m3; --
@@ -1375,13 +1371,13 @@ MIN(Float64(0.5545125075521484) || m2.f0 < m2.f0 IN (Map { iter: Iter([Boolean(t
 -- AFTER_SORT --
 200 OK
 t2,t0,t1
-
+t2,t0,t1
 
 -- EXECUTE SQL: SELECT ALL m4.t2, m4.t0, m4.t1 FROM m4 WHERE TRUE UNION ALL SELECT m4.t2, m4.t0, m4.t1 FROM m4 WHERE NOT (TRUE) UNION ALL SELECT m4.t2, m4.t0, m4.t1 FROM m4 WHERE (TRUE) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t2,t0,t1
-
+t2,t0,t1
 
 -- EXECUTE SQL: SELECT m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -1404,7 +1400,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE (((CAST(CAST(m2.f1 AS STRING) AS BOOLEAN)) IS FALSE)AND((CAST(m2.f0 AS BOOLEAN)) IS UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f1' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR(TRUE) FROM m4; --
@@ -1568,7 +1564,7 @@ false,0
 -- EXECUTE SQL: SELECT ALL MAX(((((CAST(CAST(FALSE AS STRING) AS STRING))||(CAST(((m4.t0)<=(m4.t2)) AS STRING))))IS DISTINCT FROM(((((CAST(TRUE AS STRING))||((('?X')||(m4.t1)))))||(m4.f0))))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.t0 FROM m0; --
@@ -1587,12 +1583,13 @@ false,t0
 -- AFTER_SORT --
 200 OK
 t0
+t0
 
-
--- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 WHERE (CAST(+ (CAST(m3.t0 AS BIGINT)) AS BOOLEAN)) IS UNKNOWN; --
+-- EXECUTE SQL: SELECT ALL m3.t0 FROM (select t0 from m3 order by t0 limit 1) WHERE (CAST(+ (CAST(m3.t0 AS BIGINT)) AS BOOLEAN)) IS UNKNOWN; --
 -- AFTER_SORT --
-200 OK
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -1621,7 +1618,7 @@ SUM(Float64(0.9609833329171376))
 -- EXECUTE SQL: SELECT ALL MIN(((((CAST(- (+ (m4.f0)) AS BOOLEAN))OR(CAST(0.18361102209351832 AS BOOLEAN))))OR(CAST(0.14149015016136468 AS BOOLEAN)))) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_AND(CAST(CAST(((((m4.t0)||(m4.f0)))||(CAST(m4.f0 AS BIGINT))) AS BIGINT) AS BIGINT)) FROM m4; --
@@ -1645,25 +1642,25 @@ false,0.0,t0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1, m0.t0 FROM m0 WHERE (0.5980307755514246) BETWEEN (0.06659352029120968) AND (+ (((+ (2073602548))+(CAST(m0.t0 AS BIGINT))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE NOT ((0.5980307755514246) BETWEEN (0.06659352029120968) AND (+ (((+ (2073602548))+(CAST(m0.t0 AS BIGINT)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0 WHERE ((0.5980307755514246) BETWEEN (0.06659352029120968) AND (+ (((+ (2073602548))+(CAST(m0.t0 AS BIGINT)))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT SUM(0.6096484376459871) FROM m1 ORDER BY m1.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm1.t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm1'.'t0'. Valid fields are 'SUM(Float64(0.6096484376459871))'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR((((((((((((m2.f1)LIKE(m2.f1)))OR(((m2.f0)AND(m2.f0)))))OR((0.5546139751565915) IN (0.3276204101429546))))AND((m2.t0) BETWEEN ('0.6468887984268011') AND (m2.f1)))) BETWEEN SYMMETRIC ((((m2.f0) BETWEEN SYMMETRIC (m2.f0) AND (m2.f0))AND(m2.f0))) AND (((CAST(m2.f0 AS STRING))LIKE(CAST(m2.f0 AS STRING)))))<=((+ (- (1120541685))) IS NOT NULL))) FROM m2; --
@@ -1876,19 +1873,19 @@ false,0.0
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE (CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0 WHERE NOT ((CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1 FROM m0 WHERE ((CAST(m0.t0 AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0, m3.f0 FROM m3; --
@@ -1929,7 +1926,8 @@ false,f1,t0
 -- AFTER_SORT --
 200 OK
 t0
-
+916053861
+t0
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE NOT (NOT (((CAST(m0.f1 AS STRING))LIKE(CAST(-1694794127 AS STRING))))); --
 -- AFTER_SORT --
@@ -1952,12 +1950,12 @@ MAX(Float64(0.11902110991187975))
 -- AFTER_SORT --
 200 OK
 t0,t2
-
+t0,t2
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2 FROM m4 WHERE CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN) UNION ALL SELECT m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) UNION ALL SELECT ALL m4.t0, m4.t2 FROM m4 WHERE (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '11' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '11' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
@@ -2009,7 +2007,8 @@ t0,t1,0
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 ORDER BY m3.t1 DESC; --
 -- AFTER_SORT --
 200 OK
-
+t0
+t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE ((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN UNION ALL SELECT m3.t0 FROM m3 WHERE NOT (((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN) UNION ALL SELECT m3.t0 FROM m3 WHERE (((((((NOT (m3.f1))AND(TRUE)))AND((('')LIKE(m3.t1))))) IS FALSE) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
@@ -2021,7 +2020,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m4.t0 FROM m4 WHERE (((m4.t0)||(((m4.f0)IS DISTINCT FROM(m4.f0))))) IN ('', 'ylNEDW?'); --
 -- AFTER_SORT --
@@ -2102,7 +2101,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE NOT (CAST(CAST(CAST(m2.t0 AS STRING) AS STRING) AS BOOLEAN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.t0 FROM m2; --
@@ -2236,7 +2235,7 @@ f0,t2,t1
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m4.t0 FROM m4 WHERE (3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604) UNION ALL SELECT ALL m4.t0 FROM m4 WHERE NOT ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) UNION ALL SELECT m4.t0 FROM m4 WHERE ((3.99847122E8) NOT IN (0.6940150660530665, 0.902131412197604)) IS NULL; --
 -- AFTER_SORT --
@@ -2248,7 +2247,8 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-
+916053861
+t0
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE (((((m0.t0)||(m0.f0)))||(CAST(m0.t0 AS STRING)))) NOT IN ('Hp', ''); --
 -- AFTER_SORT --
@@ -2302,13 +2302,13 @@ t2,0
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE FALSE UNION ALL SELECT ALL m4.t1 FROM m4 WHERE NOT (FALSE) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE (FALSE) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT ALL m3.f0, m3.t1, m3.f1, m3.t0 FROM m3; --
 -- AFTER_SORT --
@@ -2348,7 +2348,7 @@ time,t0,t1,t2,f0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 WHERE NOT ((((m3.f0)*(m3.f0))) IN (2007382636)); --
 -- AFTER_SORT --
@@ -2545,13 +2545,13 @@ t0,0,t1,false
 -- AFTER_SORT --
 200 OK
 t2
-
+t2
 
 -- EXECUTE SQL: SELECT m4.t2 FROM m4 WHERE TRUE; --
 -- AFTER_SORT --
 200 OK
 t2
-
+t2
 
 -- EXECUTE SQL: SELECT m4.t2 FROM m4 WHERE NOT (TRUE); --
 -- AFTER_SORT --
@@ -2745,7 +2745,7 @@ false,t0,0.0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE ((CAST(CAST(((m3.t0)LIKE(m3.t0)) AS BIGINT) AS STRING))IS NOT DISTINCT FROM(CAST(CAST(CAST(m3.f0 AS STRING) AS STRING) AS STRING))); --
 -- AFTER_SORT --
@@ -2795,7 +2795,7 @@ f0,false
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m2.t0 FROM m2 WHERE (- (CAST(m2.f0 AS BIGINT))) NOT IN (-1500810744); --
 -- AFTER_SORT --
@@ -2846,19 +2846,19 @@ f1,t0,false
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE (CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -2892,7 +2892,7 @@ f1
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2 WHERE (((- (817932306))%(CAST(m2.f0 AS BIGINT)))) NOT IN (694810662, -319337649, -1259189301); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1; --
@@ -2944,7 +2944,7 @@ false
 -- EXECUTE SQL: SELECT COUNT(- (+ (((((m3.f0)%(m3.f0)))-(CAST(m3.f1 AS BIGINT)))))) FROM m3; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Arrow error: Divide by zero error"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1; --
@@ -2968,19 +2968,20 @@ COUNT(Float64(0.5249418544831504))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE NOT (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f10' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f10' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.t0 FROM m2; --
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m2.t0 FROM m2 WHERE (NOT (CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN))) IS UNKNOWN UNION ALL SELECT ALL m2.t0 FROM m2 WHERE NOT ((NOT (CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN))) IS UNKNOWN) UNION ALL SELECT m2.t0 FROM m2 WHERE ((NOT (CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
-200 OK
-
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+-- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -3010,13 +3011,13 @@ false,t0
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT ALL m4.t1 FROM m4 WHERE TRUE; --
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE NOT (TRUE); --
 -- AFTER_SORT --
@@ -3049,19 +3050,19 @@ time,t0,t1,f0,f1
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Divide by zero error"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -3092,7 +3093,8 @@ t0,false,0.0
 -- AFTER_SORT --
 200 OK
 t0
-
+916053861
+t0
 
 -- EXECUTE SQL: SELECT ALL m0.t0 FROM m0 WHERE CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN)) UNION ALL SELECT ALL m0.t0 FROM m0 WHERE (CAST((((CAST(m0.f1 AS BOOLEAN))=((m0.f0) BETWEEN (m0.f0) AND (m0.f0)))) BETWEEN (m0.f0) AND (((NOT (m0.f0))OR(CAST(m0.f0 AS BOOLEAN)))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
@@ -3110,7 +3112,7 @@ SUM(Float64(0.2270785075878876))
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m4.t0 FROM m4 WHERE (0.48791563994884113) IN (0.780135220930507, 0.5604948451284412, 0.6007404384359013); --
 -- AFTER_SORT --
@@ -3121,7 +3123,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m4.t0 FROM m4 WHERE ((0.48791563994884113) IN (0.780135220930507, 0.5604948451284412, 0.6007404384359013)) IS NULL; --
 -- AFTER_SORT --
@@ -3132,7 +3134,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t1,t0
-
+t1,t0
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.t0 FROM m3 WHERE NOT (m3.f1); --
 -- AFTER_SORT --
@@ -3189,7 +3191,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL * FROM m0 WHERE NOT ((((((((CAST(m0.f1 AS BIGINT)) IS NULL)OR(((CAST(-1906695061 AS STRING))LIKE(((m0.t0)||(TRUE)))))))AND(CAST(CAST(m0.t0 AS STRING) AS BOOLEAN))))OR(((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))OR(((m0.t0)IS DISTINCT FROM(m0.t0))))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.t0 FROM m1; --
@@ -3243,7 +3245,7 @@ t1,0
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f0 FROM m3 WHERE CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN) UNION ALL SELECT ALL m3.t1, m3.f0 FROM m3 WHERE NOT (CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN)) UNION ALL SELECT ALL m3.t1, m3.f0 FROM m3 WHERE (CAST(((((((m3.t1)||(m3.t1)))||(CAST(m3.t0 AS STRING))))||(CAST(- (m3.f0) AS BIGINT))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't1t1t00' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't1t1t00' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m2.f1, m2.f0, m2.t0 FROM m2 ORDER BY m2.f0 DESC; --
@@ -3262,7 +3264,7 @@ f1,false,t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE NOT (NOT ((m1.f1) IN (TRUE, TRUE))); --
 -- AFTER_SORT --
@@ -3323,7 +3325,7 @@ f0,t0
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE NOT ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f1 FROM m3; --
@@ -3358,7 +3360,7 @@ MAX(m3.f0)
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT ALL m4.t1 FROM m4 WHERE NOT ((((((((((TRUE)AND(FALSE)))OR(TRUE)))OR((FALSE) IS FALSE)))AND(FALSE))) IS FALSE); --
 -- AFTER_SORT --
@@ -3369,7 +3371,7 @@ t1
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE (NOT ((((((((((TRUE)AND(FALSE)))OR(TRUE)))OR((FALSE) IS FALSE)))AND(FALSE))) IS FALSE)) IS NULL; --
 -- AFTER_SORT --
@@ -3380,7 +3382,7 @@ t1
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE NOT (((m1.f0)!=(CAST(NOT (m1.f1) AS STRING)))) UNION ALL SELECT m1.t0 FROM m1 WHERE NOT (NOT (((m1.f0)!=(CAST(NOT (m1.f1) AS STRING))))) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE (NOT (((m1.f0)!=(CAST(NOT (m1.f1) AS STRING))))) IS NULL; --
 -- AFTER_SORT --
@@ -3397,7 +3399,7 @@ MIN(Float64(0.22987745635426093))
 -- EXECUTE SQL: SELECT ALL COUNT(26056234) FROM m2; --
 -- AFTER_SORT --
 200 OK
-COUNT(UInt8(1))
+COUNT(Int64(26056234))
 1
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(CAST(((712230685)-(NULL)) AS STRING) AS BIGINT))) FROM m0; --
@@ -3427,7 +3429,7 @@ t0,false
 -- EXECUTE SQL: SELECT m1.t0, m1.f1 FROM m1 WHERE ((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972))) UNION ALL SELECT m1.t0, m1.f1 FROM m1 WHERE NOT (((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972)))) UNION ALL SELECT m1.t0, m1.f1 FROM m1 WHERE (((((m1.f1)OR(NOT (CAST(((m1.t0)||(2038183158)) AS BOOLEAN)))))AND((- (-721725046)) NOT IN (0.5544287962532598, 0.6049615636568972)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't02038183158' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't02038183158' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(0.5759978377746883 AS BIGINT)) FROM m0; --
@@ -3511,7 +3513,7 @@ time,t0,t1,f0,f1
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE NOT (TRUE); --
 -- AFTER_SORT --
@@ -3522,7 +3524,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3 WHERE (NOT (TRUE)) IS NULL; --
 -- AFTER_SORT --
@@ -3533,7 +3535,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE ((CAST(m4.f0 AS STRING)) NOT IN ('^')) IS FALSE UNION ALL SELECT ALL m4.t1 FROM m4 WHERE NOT (((CAST(m4.f0 AS STRING)) NOT IN ('^')) IS FALSE) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE (((CAST(m4.f0 AS STRING)) NOT IN ('^')) IS FALSE) IS NULL; --
 -- AFTER_SORT --
@@ -3550,14 +3552,14 @@ f1,false
 -- EXECUTE SQL: SELECT m2.f1, m2.f0 FROM m2 WHERE (CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE UNION ALL SELECT ALL m2.f1, m2.f0 FROM m2 WHERE NOT ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) UNION ALL SELECT m2.f1, m2.f0 FROM m2 WHERE ((CAST(CAST(CAST(m2.t0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS TRUE) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t0 FROM m3; --
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE (NOT ((CAST(- (m3.f0) AS DOUBLE)) IS NULL)) IS NULL; --
 -- AFTER_SORT --
@@ -3696,7 +3698,7 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT ALL m3.t1 FROM m3 WHERE NOT (CAST((351281739) BETWEEN SYMMETRIC (((m3.f0)/(m3.f0))) AND (+ (m3.f0)) AS BOOLEAN)); --
 -- AFTER_SORT --
@@ -3730,7 +3732,7 @@ f0,t1
 -- EXECUTE SQL: SELECT MAX(+ (CAST(((((m2.f1)||(m2.f1)))LIKE((('C')||(m2.t0)))) AS BIGINT))) FROM m2 ORDER BY m2.f1 DESC, m2.f0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm2.f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm2'.'f1'. Valid fields are 'MAX(m2.f1 || m2.f1 LIKE Utf8(\"C\") || m2.t0 )'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t1, m3.t0, m3.f1 FROM m3; --
@@ -3764,7 +3766,7 @@ t0,f0,false
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE (((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913)) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE NOT ((((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913))) UNION ALL SELECT ALL m1.t0, m1.f0, m1.f1 FROM m1 WHERE ((((-24313008) NOT IN (0.5789588919379464, 0.6440105044101978, 0.7972080808201099)) IS FALSE) BETWEEN ((((((((((m1.f0)LIKE(m1.f0))) IS TRUE)AND(CAST(- (-1020801281) AS BOOLEAN))))AND(((((m1.f0)||(-1729544348)))LIKE(((m1.f0)||(-720546436)))))))AND((CAST(m1.t0 AS BIGINT)) IS NULL))) AND ((0.22813901513261792) NOT IN (0.8213931760851978, 0.47525756645462913))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m2.f1, m2.t0 FROM m2; --
@@ -3829,12 +3831,12 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m2.t0 FROM m2 WHERE NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN))) UNION ALL SELECT m2.t0 FROM m2 WHERE NOT (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) UNION ALL SELECT ALL m2.t0 FROM m2 WHERE (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f10' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f10' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(+ (- (1007863218)) AS BIGINT))) FROM m2; --
@@ -3864,7 +3866,7 @@ f1
 -- EXECUTE SQL: SELECT ALL MIN((((((m4.f0)+(m4.f0)))*(- (m4.f0)))) IN (0.15344075890540054)) FROM m4; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BOOL_OR((CAST(CAST(CAST(m4.f0 AS BOOLEAN) AS BOOLEAN) AS BOOLEAN)) IS UNKNOWN) FROM m4; --
@@ -3889,7 +3891,7 @@ false,t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m3.t0 FROM m3 WHERE m3.f1 UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (m3.f1) UNION ALL SELECT m3.t0 FROM m3 WHERE (m3.f1) IS NULL; --
 -- AFTER_SORT --
@@ -3901,7 +3903,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE CAST(((CAST(((m4.f0)*(m4.f0)) AS BIGINT))<=(CAST(CAST(m4.f0 AS STRING) AS BIGINT))) AS BOOLEAN); --
 -- AFTER_SORT --
@@ -3913,7 +3915,7 @@ t1
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE (NOT ((m4.f0) IN (1324253038, -768959031))) IS NOT UNKNOWN; --
 -- AFTER_SORT --
@@ -3935,7 +3937,7 @@ t1
 -- AFTER_SORT --
 200 OK
 t1
-
+t1
 
 -- EXECUTE SQL: SELECT m4.t1 FROM m4 WHERE CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN) UNION ALL SELECT ALL m4.t1 FROM m4 WHERE NOT (CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN)) UNION ALL SELECT m4.t1 FROM m4 WHERE (CAST(((CAST((m4.t1) BETWEEN SYMMETRIC (m4.t1) AND (m4.t2) AS STRING))||(CAST(CAST(1193577717 AS BIGINT) AS STRING))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
@@ -4078,7 +4080,7 @@ t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE ((FALSE) IS TRUE) IS NULL; --
 -- AFTER_SORT --
@@ -4123,7 +4125,7 @@ t0,t2,0,t1
 -- AFTER_SORT --
 200 OK
 MAX(m0.t0)
-""
+t0
 
 -- EXECUTE SQL: SELECT BOOL_AND(((NOT (((((((((m0.f0)OR(m0.f0)))AND(m0.f0)))AND(m0.f0)))AND(m0.f0)))) IS NOT UNKNOWN) IS NULL) FROM m0 ORDER BY m0.f0 DESC; --
 -- AFTER_SORT --
@@ -4134,7 +4136,7 @@ MAX(m0.t0)
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(NOT (((m3.t0)IS DISTINCT FROM(m3.t1))) AS STRING) AS BIGINT)) FROM m3 ORDER BY m3.t0 DESC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm3.t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm3'.'t0'. Valid fields are 'COUNT(NOT m3.t0 IS DISTINCT FROM m3.t1)'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.f1 FROM m0; --
@@ -4170,7 +4172,7 @@ false
 -- EXECUTE SQL: SELECT ALL m2.f0 FROM m2 WHERE CAST(CAST(((((m2.f1)||(1876346506)))||(CAST(m2.f0 AS BIGINT))) AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f118763465060' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f118763465060' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1 FROM m0; --
@@ -4309,7 +4311,7 @@ time,t0,t1,f0,f1
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT m4.t0 FROM m4 WHERE ((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING))) UNION ALL SELECT m4.t0 FROM m4 WHERE NOT (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) UNION ALL SELECT m4.t0 FROM m4 WHERE (((CAST(CAST(CAST(4.76629951E8 AS STRING) AS STRING) AS STRING))LIKE(CAST(0.7601884972814399 AS STRING)))) IS NULL; --
 -- AFTER_SORT --
@@ -4484,12 +4486,12 @@ f0,false,t0
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE CAST(m1.f0 AS BOOLEAN) UNION ALL SELECT m1.t0 FROM m1 WHERE NOT (CAST(m1.f0 AS BOOLEAN)) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE (CAST(m1.f0 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Boolean type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'f0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --
@@ -4529,7 +4531,7 @@ false,t0
 -- EXECUTE SQL: SELECT ALL SUM(CAST(TRUE AS BIGINT)) FROM m1 ORDER BY m1.f0 ASC; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'common_sub_expression_eliminate' failed due to unexpected error: Schema error: No field named 'm1.f0'. Valid fields are 'SUM(Boolean(true))'.. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: Schema error: No field named 'm1'.'f0'. Valid fields are 'SUM(Boolean(true))'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0, m0.f1, m0.t0 FROM m0; --
@@ -4731,12 +4733,13 @@ SUM(Float64(0.871191940974261))
 -- AFTER_SORT --
 200 OK
 t0
-
+916053861
+t0
 
 -- EXECUTE SQL: SELECT m0.t0 FROM m0 WHERE CAST(CAST(((CAST(m0.f0 AS STRING))||(0.9687889995913347)) AS BIGINT) AS BOOLEAN) UNION ALL SELECT m0.t0 FROM m0 WHERE NOT (CAST(CAST(((CAST(m0.f0 AS STRING))||(0.9687889995913347)) AS BIGINT) AS BOOLEAN)) UNION ALL SELECT m0.t0 FROM m0 WHERE (CAST(CAST(((CAST(m0.f0 AS STRING))||(0.9687889995913347)) AS BIGINT) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string '00.9687889995913347' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '00.9687889995913347' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m4; --
@@ -4761,13 +4764,13 @@ SUM(Int64(797300273))
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE (+ (((1425453881)+(492272238)))) IN (0.5344276994073869) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE NOT ((+ (((1425453881)+(492272238)))) IN (0.5344276994073869)) UNION ALL SELECT m1.t0 FROM m1 WHERE ((+ (((1425453881)+(492272238)))) IN (0.5344276994073869)) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t0
-
+t0
 
 -- EXECUTE SQL: SELECT ALL m3.f1, m3.f0, m3.t0, m3.t1 FROM m3 ORDER BY m3.t1 DESC; --
 -- AFTER_SORT --
@@ -4824,7 +4827,7 @@ t1,false,0
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f1, m3.f0 FROM m3 WHERE ((CAST(+ (((m3.f0)+(m3.f0))) AS STRING))>(CAST(CAST(m3.t0 AS BIGINT) AS STRING))) UNION ALL SELECT ALL m3.t1, m3.f1, m3.f0 FROM m3 WHERE NOT (((CAST(+ (((m3.f0)+(m3.f0))) AS STRING))>(CAST(CAST(m3.t0 AS BIGINT) AS STRING)))) UNION ALL SELECT m3.t1, m3.f1, m3.f0 FROM m3 WHERE (((CAST(+ (((m3.f0)+(m3.f0))) AS STRING))>(CAST(CAST(m3.t0 AS BIGINT) AS STRING)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 't0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t0 FROM m4; --
@@ -4948,7 +4951,7 @@ time,t0,t1,t2,f0
 -- EXECUTE SQL: SELECT ALL MIN(CAST(+ (((((-1020629854)-(94972736)))/(CAST(616702680 AS BIGINT)))) AS BOOLEAN)) FROM m2; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Internal error: Min/Max accumulator not implemented for type Boolean. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1; --

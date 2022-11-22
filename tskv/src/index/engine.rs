@@ -15,15 +15,19 @@ pub struct IndexEngine {
 impl IndexEngine {
     pub fn new(index_dir: impl AsRef<Path>) -> IndexEngine {
         let index_dir = index_dir.as_ref();
-        let _ = fs::create_dir_all(&index_dir);
+        let _ = fs::create_dir_all(index_dir);
 
         let config = sled::Config::new()
-            .path(&index_dir)
+            .path(index_dir)
             .cache_capacity(128 * 1024 * 1024)
             .mode(sled::Mode::HighThroughput);
 
         let db = config.open().unwrap_or_else(|err| {
-            panic!("open database at '{}' failed: {}", index_dir.display(), err)
+            panic!(
+                "open database at '{}' failed: {:?}",
+                index_dir.display(),
+                err
+            )
         });
         db.set_merge_operator(concatenate_merge);
 

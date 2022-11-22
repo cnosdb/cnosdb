@@ -44,10 +44,13 @@ src="https://codebeat.co/badges/23007af1-7b99-419c-81a8-7bfb6dac31b9"/></a>
 
 <img src="docs/source/_static/img/u.jpg" width="300" alt=""/>
 
+## 使用CnosDB
+
+点击[使用CnosDB](docs/quick-start-cn.md)快速开始
+
 ## 社区贡献指南
 
-- 上手编译代码请参考[快速上手](docs/get-started.md)。
-- 请参照[贡献指南](CONTRIBUTING.md)成为CnosDB的Contributor。
+请参照[贡献指南](CONTRIBUTING.md)成为CnosDB的Contributor。
 
 ## 联系我们
 

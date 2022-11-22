@@ -555,7 +555,7 @@ mod test {
         ]);
 
         let file_name = "_000001.tsm";
-        write_to_tsm(&dir, file_name, &data).await;
+        write_to_tsm(dir, file_name, &data).await;
         check_tsm(dir.join(file_name), &data).await;
     }
 

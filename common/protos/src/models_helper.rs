@@ -51,7 +51,7 @@ mod test {
     ) -> WIPOffset<Point<'a>> {
         let mut point_builder = PointBuilder::new(fbb);
         point_builder.add_db(db);
-        point_builder.add_table(table);
+        point_builder.add_tab(table);
         point_builder.add_tags(tags);
         point_builder.add_fields(fields);
         point_builder.add_timestamp(timestamp);
@@ -95,7 +95,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -149,7 +149,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -224,7 +224,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -268,7 +268,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(db),
+                db: Some(db),
                 points: Some(points),
             },
         )
@@ -320,7 +320,7 @@ mod test {
         Points::create(
             fbb,
             &PointsArgs {
-                database: Some(database),
+                db: Some(database),
                 points: Some(points),
             },
         )

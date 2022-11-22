@@ -154,7 +154,7 @@ impl TsmTombstone {
 
             self.tombstones
                 .entry(*field_id)
-                .or_insert(Vec::new())
+                .or_default()
                 .push(*time_range);
         }
         Ok(())

@@ -22,7 +22,7 @@ use trace::{error, info, warn};
 
 use crate::tsm::DataBlock;
 use crate::{byte_utils, error::Result, tseries_family::TimeRange, TseriesFamilyId};
-use models::schema::{TableColumn, TableSchema};
+use models::schema::{TableColumn, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use parking_lot::{RwLock, RwLockReadGuard};
 use snafu::OptionExt;
@@ -113,7 +113,7 @@ pub struct RowData {
 }
 
 impl RowData {
-    pub fn point_to_row_data(p: fb_models::Point, schema: &TableSchema) -> RowData {
+    pub fn point_to_row_data(p: fb_models::Point, schema: &TskvTableSchema) -> RowData {
         let fields = match p.fields() {
             None => {
                 let mut fields = Vec::with_capacity(schema.field_num());
@@ -192,7 +192,7 @@ impl From<fb_models::Point<'_>> for RowData {
 
 #[derive(Debug)]
 pub struct RowGroup {
-    pub schema: TableSchema,
+    pub schema: TskvTableSchema,
     pub range: TimeRange,
     pub rows: Vec<RowData>,
     /// total size in stack and heap
@@ -221,7 +221,25 @@ impl SeriesData {
         self.groups.push(group);
     }
 
-    pub fn delete_data(&mut self, range: &TimeRange) {
+    pub fn delete_column(&mut self, column_id: ColumnId) {
+        for item in self.groups.iter_mut() {
+            let name = match item.schema.column_name(column_id) {
+                None => continue,
+                Some(name) => name.to_string(),
+            };
+            let index = match item.schema.fields_id().get(&column_id) {
+                None => continue,
+                Some(index) => *index,
+            };
+            for row in item.rows.iter_mut() {
+                row.fields.remove(index);
+            }
+            item.schema.drop_column(&name);
+            item.schema.schema_id += 1;
+        }
+    }
+
+    pub fn delete_series(&mut self, range: &TimeRange) {
         if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
             return;
         }
@@ -260,7 +278,7 @@ impl SeriesData {
         res
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, &TableSchema, &Vec<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, &TskvTableSchema, &Vec<RowData>)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, &g.schema, &g.rows))
@@ -316,7 +334,7 @@ impl MemCache {
             flushed: false,
             flushing: false,
 
-            part_count: parts as usize,
+            part_count: parts,
 
             seq_no: AtomicU64::new(seq),
             cache_size: AtomicU64::new(0),
@@ -367,13 +385,23 @@ impl MemCache {
         true
     }
 
-    pub fn delete_data(&self, field_ids: &[FieldId], range: &TimeRange) {
+    pub fn delete_columns(&self, field_ids: &[FieldId]) {
         for fid in field_ids {
-            let (_, sid) = utils::split_id(*fid);
+            let (column_id, sid) = utils::split_id(*fid);
             let index = (sid as usize) % self.part_count;
             let part = self.partions[index].read();
             if let Some(data) = part.get(&sid) {
-                data.write().delete_data(range);
+                data.write().delete_column(column_id);
+            }
+        }
+    }
+
+    pub fn delete_series(&self, sids: &[SeriesId], range: &TimeRange) {
+        for sid in sids {
+            let index = (*sid as usize) % self.part_count;
+            let part = self.partions[index].read();
+            if let Some(data) = part.get(sid) {
+                data.write().delete_series(range);
             }
         }
     }
@@ -470,7 +498,7 @@ impl Display for DataType {
 #[cfg(test)]
 pub(crate) mod test {
     use bytes::buf;
-    use models::schema::TableSchema;
+    use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use std::mem::{size_of, size_of_val};
 
@@ -482,7 +510,7 @@ pub(crate) mod test {
         cache: &mut MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
-        mut schema: TableSchema,
+        mut schema: TskvTableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {

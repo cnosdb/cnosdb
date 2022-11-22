@@ -7,27 +7,32 @@
 //!         - Column #3
 //!         - Column #4
 
-use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
+use std::str::FromStr;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use arrow_schema::Schema;
 use datafusion::arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
+    DataType as ArrowDataType, Field as ArrowField, SchemaRef, TimeUnit,
 };
-use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::Expr;
-use datafusion::physical_plan::ExecutionPlan;
+use datafusion::datasource::file_format::avro::AvroFormat;
+use datafusion::datasource::file_format::csv::CsvFormat;
+use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::datasource::file_format::json::JsonFormat;
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::file_format::FileFormat;
+use datafusion::datasource::listing::ListingOptions;
+use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
+use crate::codec::Encoding;
 use crate::{ColumnId, SchemaId, ValueType};
 
-pub type TableSchemaRef = Arc<TableSchema>;
+pub type TableSchemaRef = Arc<TskvTableSchema>;
 
 pub const TIME_FIELD_NAME: &str = "time";
 
@@ -35,30 +40,104 @@ pub const FIELD_ID: &str = "_field_id";
 pub const TAG: &str = "_tag";
 pub const TIME_FIELD: &str = "time";
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TableSchema {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum TableSchema {
+    TsKvTableSchema(TskvTableSchema),
+    ExternalTableSchema(ExternalTableSchema),
+}
+
+impl TableSchema {
+    pub fn name(&self) -> String {
+        match self {
+            TableSchema::TsKvTableSchema(schema) => schema.name.clone(),
+            TableSchema::ExternalTableSchema(schema) => schema.name.clone(),
+        }
+    }
+
+    pub fn db(&self) -> String {
+        match self {
+            TableSchema::TsKvTableSchema(schema) => schema.db.clone(),
+            TableSchema::ExternalTableSchema(schema) => schema.db.clone(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ExternalTableSchema {
+    pub db: String,
+    pub name: String,
+    pub file_compression_type: String,
+    pub file_type: String,
+    pub location: String,
+    pub target_partitions: usize,
+    pub table_partition_cols: Vec<String>,
+    pub has_header: bool,
+    pub delimiter: u8,
+    pub schema: Schema,
+}
+
+impl ExternalTableSchema {
+    pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
+        let file_format: Arc<dyn FileFormat> = match FileType::from_str(&self.file_type)? {
+            FileType::CSV => Arc::new(
+                CsvFormat::default()
+                    .with_has_header(self.has_header)
+                    .with_delimiter(self.delimiter)
+                    .with_file_compression_type(
+                        FileCompressionType::from_str(&self.file_compression_type).map_err(
+                            |_| {
+                                DataFusionError::Execution(
+                                    "Only known FileCompressionTypes can be ListingTables!"
+                                        .to_string(),
+                                )
+                            },
+                        )?,
+                    ),
+            ),
+            FileType::PARQUET => Arc::new(ParquetFormat::default()),
+            FileType::AVRO => Arc::new(AvroFormat::default()),
+            FileType::JSON => Arc::new(JsonFormat::default().with_file_compression_type(
+                FileCompressionType::from_str(&self.file_compression_type)?,
+            )),
+        };
+
+        Ok(ListingOptions {
+            format: file_format,
+            collect_stat: false,
+            file_extension: FileType::from_str(&self.file_type)?
+                .get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?,
+            target_partitions: self.target_partitions,
+            table_partition_cols: self.table_partition_cols.clone(),
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TskvTableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: SchemaId,
+    next_column_id: ColumnId,
 
     columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
     columns_index: HashMap<String, usize>,
 }
 
-impl Default for TableSchema {
+impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
+            next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
         }
     }
 }
 
-impl TableSchema {
+impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
 
@@ -76,6 +155,7 @@ impl TableSchema {
             db,
             name,
             schema_id: 0,
+            next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,
         }
@@ -90,6 +170,30 @@ impl TableSchema {
                 self.columns.push(col);
                 self.columns.len() - 1
             });
+        self.next_column_id += 1;
+    }
+
+    /// drop column if exists
+    pub fn drop_column(&mut self, col_name: &str) {
+        if let Some(id) = self.columns_index.get(col_name) {
+            self.columns.remove(*id);
+        }
+        let columns_index = self
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| (e.name.clone(), idx))
+            .collect();
+        self.columns_index = columns_index;
+    }
+
+    pub fn change_column(&mut self, col_name: &str, new_column: TableColumn) {
+        let id = match self.columns_index.get(col_name) {
+            None => return,
+            Some(id) => *id,
+        };
+        self.columns_index.insert(new_column.name.clone(), id);
+        self.columns[id] = new_column;
     }
 
     /// Get the metadata of the column according to the column name
@@ -104,37 +208,45 @@ impl TableSchema {
         self.columns_index.get(name)
     }
 
+    pub fn column_name(&self, id: ColumnId) -> Option<&str> {
+        for column in self.columns.iter() {
+            if column.id == id {
+                return Some(&column.name);
+            }
+        }
+        None
+    }
+
     /// Get the metadata of the column according to the column index
     pub fn column_by_index(&self, idx: usize) -> Option<&TableColumn> {
         self.columns.get(idx)
     }
 
-    pub fn columns(&self) -> &Vec<TableColumn> {
+    pub fn columns(&self) -> &[TableColumn] {
         &self.columns
     }
 
     pub fn fields(&self) -> Vec<TableColumn> {
-        let mut fields = Vec::with_capacity(self.columns.len());
-        for i in self.columns.iter() {
-            if i.column_type == ColumnType::Time || i.column_type == ColumnType::Tag {
-                continue;
-            }
-
-            fields.push(i.clone());
-        }
-
-        fields
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .cloned()
+            .collect()
     }
 
     /// Number of columns of ColumnType is Field
     pub fn field_num(&self) -> usize {
-        let mut ans = 0;
-        for i in self.columns.iter() {
-            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
-                ans += 1;
-            }
-        }
-        ans
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .count()
+    }
+
+    pub fn tag_num(&self) -> usize {
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_tag())
+            .count()
     }
 
     // return (table_field_id, index), index mean field location which column
@@ -153,6 +265,12 @@ impl TableSchema {
         map
     }
 
+    pub fn next_column_id(&mut self) -> ColumnId {
+        let ans = self.next_column_id;
+        self.next_column_id += 1;
+        ans
+    }
+
     pub fn size(&self) -> usize {
         let mut size = 0;
         for i in self.columns.iter() {
@@ -161,30 +279,9 @@ impl TableSchema {
         size += size_of_val(&self);
         size
     }
-}
 
-#[async_trait]
-impl TableProvider for TableSchema {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn schema(&self) -> SchemaRef {
-        todo!()
-    }
-
-    fn table_type(&self) -> TableType {
-        todo!()
-    }
-
-    async fn scan(
-        &self,
-        _ctx: &SessionState,
-        _projection: &Option<Vec<usize>>,
-        _filters: &[Expr],
-        _limit: Option<usize>,
-    ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
-        todo!()
+    pub fn contains_column(&self, column_name: &str) -> bool {
+        self.columns_index.contains_key(column_name)
     }
 }
 
@@ -197,7 +294,7 @@ pub struct TableColumn {
     pub id: ColumnId,
     pub name: String,
     pub column_type: ColumnType,
-    pub codec: u8,
+    pub encoding: Encoding,
 }
 
 impl From<&TableColumn> for ArrowField {
@@ -218,12 +315,12 @@ impl From<TableColumn> for ArrowField {
 }
 
 impl TableColumn {
-    pub fn new(id: ColumnId, name: String, column_type: ColumnType, codec: u8) -> Self {
+    pub fn new(id: ColumnId, name: String, column_type: ColumnType, encoding: Encoding) -> Self {
         Self {
             id,
             name,
             column_type,
-            codec,
+            encoding,
         }
     }
     pub fn new_with_default(name: String, column_type: ColumnType) -> Self {
@@ -231,7 +328,7 @@ impl TableColumn {
             id: 0,
             name,
             column_type,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -240,7 +337,7 @@ impl TableColumn {
             id,
             name: TIME_FIELD_NAME.to_string(),
             column_type: ColumnType::Time,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -249,7 +346,7 @@ impl TableColumn {
             id,
             name,
             column_type: ColumnType::Tag,
-            codec: 0,
+            encoding: Encoding::Default,
         }
     }
 
@@ -309,6 +406,15 @@ impl ColumnType {
             _ => "Error filed type not supported",
         }
     }
+
+    pub fn as_column_type_str(&self) -> &'static str {
+        match self {
+            Self::Tag => "TAG",
+            Self::Field(_) => "FIELD",
+            Self::Time => "TIME",
+        }
+    }
+
     pub fn field_type(&self) -> u8 {
         match self {
             Self::Field(ValueType::Float) => 0,
@@ -329,6 +435,21 @@ impl ColumnType {
             4 => Self::Field(ValueType::String),
             5 => Self::Time,
             _ => Self::Field(ValueType::Unknown),
+        }
+    }
+
+    pub fn to_sql_type_str(&self) -> &'static str {
+        match self {
+            Self::Tag => "STRING",
+            Self::Time => "TIMESTAMP",
+            Self::Field(value_type) => match value_type {
+                ValueType::String => "STRING",
+                ValueType::Integer => "BIGINT",
+                ValueType::Unsigned => "BIGINT UNSIGNED",
+                ValueType::Float => "DOUBLE",
+                ValueType::Boolean => "BOOLEAN",
+                ValueType::Unknown => "UNKNOWN",
+            },
         }
     }
 }
@@ -369,35 +490,95 @@ impl DatabaseSchema {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseOptions {
     // data keep time
-    pub ttl: Duration,
+    ttl: Option<Duration>,
 
-    pub shard_num: u64,
+    shard_num: Option<u64>,
     // shard coverage time range
-    pub vnode_duration: Duration,
+    vnode_duration: Option<Duration>,
 
-    pub replica: u64,
+    replica: Option<u64>,
     // timestamp percision
-    pub precision: Precision,
+    precision: Option<Precision>,
 }
 
-impl Default for DatabaseOptions {
-    fn default() -> Self {
-        Self {
-            ttl: Duration {
-                time_num: 365,
-                unit: DurationUnit::Day,
-            },
-            shard_num: 1,
-            vnode_duration: Duration {
-                time_num: 365,
-                unit: DurationUnit::Day,
-            },
-            replica: 1,
-            precision: Precision::NS,
-        }
+impl DatabaseOptions {
+    pub const DEFAULT_TTL: Duration = Duration {
+        time_num: 365,
+        unit: DurationUnit::Day,
+    };
+    pub const DEFAULT_SHARD_NUM: u64 = 1;
+    pub const DEFAULT_REPLICA: u64 = 1;
+    pub const DEFAULT_VNODE_DURATION: Duration = Duration {
+        time_num: 365,
+        unit: DurationUnit::Day,
+    };
+    pub const DEFAULT_PRECISION: Precision = Precision::NS;
+
+    pub fn ttl(&self) -> &Option<Duration> {
+        &self.ttl
+    }
+
+    pub fn ttl_or_default(&self) -> &Duration {
+        self.ttl.as_ref().unwrap_or(&DatabaseOptions::DEFAULT_TTL)
+    }
+
+    pub fn shard_num(&self) -> &Option<u64> {
+        &self.shard_num
+    }
+
+    pub fn shard_num_or_default(&self) -> u64 {
+        self.shard_num.unwrap_or(DatabaseOptions::DEFAULT_SHARD_NUM)
+    }
+
+    pub fn vnode_duration(&self) -> &Option<Duration> {
+        &self.vnode_duration
+    }
+
+    pub fn vnode_duration_or_default(&self) -> &Duration {
+        self.vnode_duration
+            .as_ref()
+            .unwrap_or(&DatabaseOptions::DEFAULT_VNODE_DURATION)
+    }
+
+    pub fn replica(&self) -> &Option<u64> {
+        &self.replica
+    }
+
+    pub fn replica_or_default(&self) -> u64 {
+        self.replica.unwrap_or(DatabaseOptions::DEFAULT_REPLICA)
+    }
+
+    pub fn precision(&self) -> &Option<Precision> {
+        &self.precision
+    }
+
+    pub fn precision_or_default(&self) -> &Precision {
+        self.precision
+            .as_ref()
+            .unwrap_or(&DatabaseOptions::DEFAULT_PRECISION)
+    }
+
+    pub fn with_ttl(&mut self, ttl: Duration) {
+        self.ttl = Some(ttl);
+    }
+
+    pub fn with_shard_num(&mut self, shard_num: u64) {
+        self.shard_num = Some(shard_num);
+    }
+
+    pub fn with_vnode_duration(&mut self, vnode_duration: Duration) {
+        self.vnode_duration = Some(vnode_duration);
+    }
+
+    pub fn with_replica(&mut self, replica: u64) {
+        self.replica = Some(replica);
+    }
+
+    pub fn with_precision(&mut self, precision: Precision) {
+        self.precision = Some(precision)
     }
 }
 

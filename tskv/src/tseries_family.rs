@@ -444,7 +444,7 @@ impl Version {
         for ve in version_edits {
             if !ve.add_files.is_empty() {
                 ve.add_files.into_iter().for_each(|f| {
-                    added_files.entry(f.level).or_insert(Vec::new()).push(f);
+                    added_files.entry(f.level).or_default().push(f);
                 });
             }
             if !ve.del_files.is_empty() {
@@ -743,10 +743,17 @@ impl TseriesFamily {
             }
         }
     }
-    pub fn delete_cache(&self, field_ids: &[FieldId], time_range: &TimeRange) {
-        self.mut_cache.read().delete_data(field_ids, time_range);
+    pub fn delete_columns(&self, field_ids: &[FieldId]) {
+        self.mut_cache.read().delete_columns(field_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().delete_data(field_ids, time_range);
+            memcache.read().delete_columns(field_ids);
+        }
+    }
+
+    pub fn delete_series(&self, sids: &[SeriesId], time_range: &TimeRange) {
+        self.mut_cache.read().delete_series(sids, time_range);
+        for memcache in self.immut_cache.iter() {
+            memcache.read().delete_series(sids, time_range);
         }
     }
 
@@ -1082,7 +1089,7 @@ mod test {
             tsf.mut_cache.read().get_data(0, |_| true, |_| true).len(),
             1
         );
-        tsf.delete_cache(
+        tsf.delete_series(
             &[0],
             &TimeRange {
                 min_ts: 0,
@@ -1160,6 +1167,9 @@ mod test {
         let flush_seq = FlushReq { mems: req_mem };
 
         let base_dir = "/tmp/test/ts_family/test_read_with_tomb".to_string();
+        let _ = std::fs::remove_dir(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
+
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
         let mut global_config = get_config("../config/config.toml");
@@ -1168,25 +1178,18 @@ mod test {
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(VersionSet::new(
-            opt.clone(),
-            HashMap::new(),
-            flush_task_sender.clone(),
-        )));
+        let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(
+            VersionSet::new(opt.clone(), HashMap::new(), flush_task_sender.clone()).unwrap(),
+        ));
         version_set
             .write()
-            .create_db(DatabaseSchema::new(&database));
+            .create_db(DatabaseSchema::new(&database))
+            .unwrap();
         let db = version_set.write().get_db(&database).unwrap();
 
         let ts_family_id = db
             .write()
-            .add_tsfamily(
-                0,
-                0,
-                0,
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-            )
+            .add_tsfamily(0, 0, summary_task_sender.clone(), flush_task_sender.clone())
             .read()
             .tf_id();
 

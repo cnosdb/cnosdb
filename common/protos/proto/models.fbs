@@ -26,14 +26,14 @@ table Field {
 
 table Point {
     db: [ubyte];
-    table: [ubyte];
+    tab: [ubyte];
     tags: [Tag];
     fields: [Field];
     timestamp: int64;
 }
 
 table Points {
-    database: [ubyte];
+    db: [ubyte];
     points: [Point];
 }
 

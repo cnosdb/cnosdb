@@ -8,7 +8,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::schema::{is_time_column, ColumnType, TableColumn, TableSchema, TIME_FIELD_NAME};
+use models::schema::{is_time_column, ColumnType, TableColumn, TskvTableSchema, TIME_FIELD_NAME};
 use models::{define_result, ValueType};
 use paste::paste;
 use protos::models::Point;
@@ -99,7 +99,7 @@ macro_rules! arrow_array_to_offset_array {
 
 pub fn record_batch_to_points_flat_buffer(
     record_batch: &RecordBatch,
-    table_schema: TableSchema,
+    table_schema: TskvTableSchema,
 ) -> Result<Vec<u8>> {
     let mut fbb = FlatBufferBuilder::new();
 
@@ -155,7 +155,7 @@ fn construct_row_based_points(
     column_schemas: &[&Field],
     time_col_array: Vec<Option<i64>>,
     num_rows: usize,
-    schema: TableSchema,
+    schema: TskvTableSchema,
 ) -> Result<Vec<u8>> {
     let mut point_offsets = Vec::with_capacity(num_rows);
     // row-based
@@ -217,7 +217,7 @@ fn construct_row_based_points(
 
         let point_args = PointArgs {
             db: Some(fbb.create_vector(schema.db.as_bytes())),
-            table: Some(fbb.create_vector(schema.name.as_bytes())),
+            tab: Some(fbb.create_vector(schema.name.as_bytes())),
             tags: Some(fbb.create_vector(&tags)),
             fields: Some(fbb.create_vector(&fields)),
             timestamp: time,
@@ -231,7 +231,7 @@ fn construct_row_based_points(
     let points = Points::create(
         fbb,
         &PointsArgs {
-            database: Some(fbb_db),
+            db: Some(fbb_db),
             points: Some(points_raw),
         },
     );

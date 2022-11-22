@@ -1,12 +1,37 @@
-pub const TIMESTAMP_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
-pub const BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
-pub const UNSIGNED_BIGINT_CODEC: [&str; 4] = ["DEFAULT", "NULL", "DELTA", "QUANTILE"];
-pub const DOUBLE_CODEC: [&str; 4] = ["DEFAULT", "NULL", "GORILLA", "QUANTILE"];
-pub const STRING_CODEC: [&str; 7] = ["DEFAULT", "NULL", "GZIP", "BZIP", "ZSTD", "SNAPPY", "ZLIB"];
-pub const BOOLEAN_CODEC: [&str; 3] = ["DEFAULT", "NULL", "BITPACK"];
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
-#[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub const BIGINT_CODEC: [Encoding; 4] = [
+    Encoding::Default,
+    Encoding::Null,
+    Encoding::Delta,
+    Encoding::Quantile,
+];
+// Because timestamp, bigint, and unsigned bigint are all integers,
+// so their compression algorithms are the same
+pub const TIMESTAMP_CODEC: [Encoding; 4] = BIGINT_CODEC;
+pub const UNSIGNED_BIGINT_CODEC: [Encoding; 4] = BIGINT_CODEC;
+
+pub const DOUBLE_CODEC: [Encoding; 4] = [
+    Encoding::Default,
+    Encoding::Null,
+    Encoding::Gorilla,
+    Encoding::Quantile,
+];
+
+pub const STRING_CODEC: [Encoding; 7] = [
+    Encoding::Default,
+    Encoding::Null,
+    Encoding::Gzip,
+    Encoding::Bzip,
+    Encoding::Zstd,
+    Encoding::Snappy,
+    Encoding::Zlib,
+];
+
+pub const BOOLEAN_CODEC: [Encoding; 3] = [Encoding::Default, Encoding::Null, Encoding::BitPack];
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash)]
 pub enum Encoding {
     Default = 0,
     Null = 1,
@@ -22,9 +47,72 @@ pub enum Encoding {
     Unknown = 15,
 }
 
+impl Encoding {
+    pub fn is_timestamp_encoding(&self) -> bool {
+        TIMESTAMP_CODEC.contains(self)
+    }
+
+    pub fn is_bigint_encoding(&self) -> bool {
+        BIGINT_CODEC.contains(self)
+    }
+
+    pub fn is_unsigned_encoding(&self) -> bool {
+        UNSIGNED_BIGINT_CODEC.contains(self)
+    }
+
+    pub fn is_double_encoding(&self) -> bool {
+        DOUBLE_CODEC.contains(self)
+    }
+
+    pub fn is_string_encoding(&self) -> bool {
+        STRING_CODEC.contains(self)
+    }
+
+    pub fn is_bool_encoding(&self) -> bool {
+        BOOLEAN_CODEC.contains(self)
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Encoding::Default => "DEFAULT",
+            Encoding::Null => "NULL",
+            Encoding::Delta => "DELTA",
+            Encoding::Quantile => "QUANTILE",
+            Encoding::Gzip => "GZIP",
+            Encoding::Bzip => "BZIP",
+            Encoding::Gorilla => "GORILLA",
+            Encoding::Snappy => "SNAPPY",
+            Encoding::Zstd => "ZSTD",
+            Encoding::Zlib => "ZLIB",
+            Encoding::BitPack => "BITPACK",
+            Encoding::Unknown => "UNKNOWN",
+        }
+    }
+}
+
 impl Default for Encoding {
     fn default() -> Self {
         Encoding::Default
+    }
+}
+
+impl FromStr for Encoding {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "DEFAULT" => Ok(Self::Default),
+            "NULL" => Ok(Self::Null),
+            "DELTA" => Ok(Self::Delta),
+            "QUANTILE" => Ok(Self::Quantile),
+            "GZIP" => Ok(Self::Gzip),
+            "BZIP" => Ok(Self::Bzip),
+            "GORILLA" => Ok(Self::Gorilla),
+            "SNAPPY" => Ok(Self::Snappy),
+            "ZSTD" => Ok(Self::Zstd),
+            "ZLIB" => Ok(Self::Zlib),
+            "BITPACK" => Ok(Self::BitPack),
+            _ => Err(s.to_string()),
+        }
     }
 }
 
@@ -44,39 +132,5 @@ impl From<u8> for Encoding {
             10 => Encoding::BitPack,
             _ => Encoding::Unknown,
         }
-    }
-}
-
-pub fn codec_to_codec_name(codec: u8) -> String {
-    match Encoding::from(codec) {
-        Encoding::Default => "Default".to_string(),
-        Encoding::Null => "Null".to_string(),
-        Encoding::Delta => "Delta".to_string(),
-        Encoding::Quantile => "Quantile".to_string(),
-        Encoding::Gzip => "Gzip".to_string(),
-        Encoding::Bzip => "Bzip".to_string(),
-        Encoding::Gorilla => "Gorilla".to_string(),
-        Encoding::Snappy => "Snappy".to_string(),
-        Encoding::Zstd => "Zstd".to_string(),
-        Encoding::Zlib => "Zlib".to_string(),
-        Encoding::BitPack => "BitPack".to_string(),
-        Encoding::Unknown => "Unknown".to_string(),
-    }
-}
-
-pub fn codec_name_to_codec(codec_name: &str) -> u8 {
-    match codec_name {
-        "DEFAULT" => 0,
-        "NULL" => 1,
-        "DELTA" => 2,
-        "QUANTILE" => 3,
-        "GZIP" => 4,
-        "BZIP" => 5,
-        "GORILLA" => 6,
-        "SNAPPY" => 7,
-        "ZSTD" => 8,
-        "ZLIB" => 9,
-        "BITPACK" => 10,
-        _ => 15,
     }
 }

@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::Path;
@@ -224,7 +225,7 @@ impl Summary {
                 opt.clone(),
                 HashMap::new(),
                 flush_task_sender,
-            ))),
+            )?)),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
@@ -265,12 +266,14 @@ impl Summary {
         let mut edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::default();
         let mut databases: HashMap<TseriesFamilyId, String> = HashMap::default();
 
+        let mut tsf_id = 0;
         loop {
             let res = reader.read_record().await;
             match res {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.add_tsf {
+                        tsf_id = max(ed.tsf_id, tsf_id);
                         edits.insert(ed.tsf_id, vec![]);
                         databases.insert(ed.tsf_id, ed.tsf_name.clone());
                     } else if ed.del_tsf {
@@ -287,6 +290,7 @@ impl Summary {
                 }
             }
         }
+        ctx.set_tsfamily_id(tsf_id);
 
         let mut versions = HashMap::new();
         let mut has_seq_no = false;
@@ -341,7 +345,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender);
+        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender)?;
         Ok(vs)
     }
 
@@ -369,7 +373,7 @@ impl Summary {
 
             tsf_version_edits
                 .entry(edit.tsf_id)
-                .or_insert(Vec::new())
+                .or_default()
                 .push(edit.clone());
             if edit.has_seq_no {
                 tsf_min_seq.insert(edit.tsf_id, edit.seq_no);
@@ -652,6 +656,7 @@ mod test {
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
+        assert_eq!(summary.ctx.tsfamily_id(), 100);
 
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
@@ -697,15 +702,11 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database));
+            .create_db(DatabaseSchema::new(&database))
+            .unwrap();
         for i in 0..40 {
-            db.write().add_tsfamily(
-                i,
-                0,
-                0,
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-            );
+            db.write()
+                .add_tsfamily(i, 0, summary_task_sender.clone(), flush_task_sender.clone());
             let mut edit = VersionEdit::new();
             edit.add_tsfamily(i, database.clone());
             edits.push(edit.clone());
@@ -744,10 +745,10 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database));
+            .create_db(DatabaseSchema::new(&database))
+            .unwrap();
         db.write().add_tsfamily(
             10,
-            0,
             0,
             summary_task_sender.clone(),
             flush_task_sender.clone(),

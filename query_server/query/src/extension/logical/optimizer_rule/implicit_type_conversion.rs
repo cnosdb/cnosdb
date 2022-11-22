@@ -3,14 +3,13 @@ use std::{mem, sync::Arc};
 use datafusion::arrow::compute::CastOptions;
 use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::arrow::{compute, compute::kernels::cast_utils::string_to_timestamp_nanos};
-use datafusion::logical_expr::{utils, ExprSchemable};
+use datafusion::common::DFSchemaRef;
+use datafusion::logical_expr::expr_rewriter::{ExprRewritable, ExprRewriter};
+use datafusion::logical_expr::{utils, Between, BinaryExpr, ExprSchemable};
 use datafusion::{
     arrow::datatypes::DataType,
     error::{DataFusionError, Result},
-    logical_plan::{
-        plan::Filter, DFSchemaRef, Expr, ExprRewritable, ExprRewriter, LogicalPlan, Operator,
-        TableScan,
-    },
+    logical_expr::{Expr, Filter, LogicalPlan, Operator, TableScan},
     optimizer::{optimizer::OptimizerRule, OptimizerConfig},
     scalar::ScalarValue,
 };
@@ -39,17 +38,17 @@ impl OptimizerRule for ImplicitTypeConversion {
     fn optimize(
         &self,
         plan: &LogicalPlan,
-        optimizer_config: &mut OptimizerConfig,
+        _optimizer_config: &mut OptimizerConfig,
     ) -> Result<LogicalPlan> {
         let mut rewriter = DataTypeRewriter {
             schemas: plan.all_schemas(),
         };
 
         match plan {
-            LogicalPlan::Filter(Filter { predicate, input }) => Ok(LogicalPlan::Filter(Filter {
-                predicate: predicate.clone().rewrite(&mut rewriter)?,
-                input: Arc::new(self.optimize(input, optimizer_config)?),
-            })),
+            LogicalPlan::Filter(filter) => Ok(LogicalPlan::Filter(Filter::try_new(
+                filter.predicate().clone().rewrite(&mut rewriter)?,
+                Arc::new(self.optimize(filter.input().as_ref(), _optimizer_config)?),
+            )?)),
             LogicalPlan::TableScan(TableScan {
                 table_name,
                 source,
@@ -89,11 +88,12 @@ impl OptimizerRule for ImplicitTypeConversion {
             | LogicalPlan::DropView { .. }
             | LogicalPlan::Values { .. }
             | LogicalPlan::Distinct { .. }
+            | LogicalPlan::SetVariable { .. }
             | LogicalPlan::Analyze { .. } => {
                 let inputs = plan.inputs();
                 let new_inputs = inputs
                     .iter()
-                    .map(|plan| self.optimize(plan, optimizer_config))
+                    .map(|plan| self.optimize(plan, _optimizer_config))
                     .collect::<Result<Vec<_>>>()?;
 
                 let expr = plan
@@ -210,7 +210,7 @@ impl<'a> DataTypeRewriter<'a> {
 impl<'a> ExprRewriter for DataTypeRewriter<'a> {
     fn mutate(&mut self, expr: Expr) -> Result<Expr> {
         let new_expr = match expr {
-            Expr::BinaryExpr { left, op, right } => match op {
+            Expr::BinaryExpr(BinaryExpr { left, op, right }) => match op {
                 Operator::Eq
                 | Operator::NotEq
                 | Operator::Lt
@@ -218,24 +218,24 @@ impl<'a> ExprRewriter for DataTypeRewriter<'a> {
                 | Operator::Gt
                 | Operator::GtEq => {
                     let (left, right) = self.convert_data_type_if_necessary(left, right)?;
-                    Expr::BinaryExpr { left, op, right }
+                    Expr::BinaryExpr(BinaryExpr { left, op, right })
                 }
-                _ => Expr::BinaryExpr { left, op, right },
+                _ => Expr::BinaryExpr(BinaryExpr { left, op, right }),
             },
-            Expr::Between {
+            Expr::Between(Between {
                 expr,
                 negated,
                 low,
                 high,
-            } => {
+            }) => {
                 let (expr, low) = self.convert_data_type_if_necessary(expr, low)?;
                 let (expr, high) = self.convert_data_type_if_necessary(expr, high)?;
-                Expr::Between {
+                Expr::Between(Between {
                     expr,
                     negated,
                     low,
                     high,
-                }
+                })
             }
             Expr::InList {
                 expr,
@@ -309,10 +309,9 @@ mod tests {
 
     use datafusion::arrow::datatypes::TimeUnit;
 
-    use datafusion::{
-        logical_plan::{DFField, DFSchema},
-        prelude::col,
-    };
+    use datafusion::common::{DFField, DFSchema};
+    use datafusion::logical_expr::expr_rewriter::ExprRewritable;
+    use datafusion::prelude::col;
 
     use super::*;
 
@@ -638,16 +637,16 @@ mod tests {
         // Timestamp(ms) c6 between "2021-09-07 16:00:00" and "2021-09-07 17:00:00"
         let date_string = "2021-09-07 16:00:00".to_string();
         let date_string2 = "2021-09-07 17:00:00".to_string();
-        let exp = Expr::Between {
+        let exp = Expr::Between(Between {
             expr: Box::new(col("c6")),
             negated: false,
             low: Box::new(Expr::Literal(ScalarValue::Utf8(Some(date_string.clone())))),
             high: Box::new(Expr::Literal(ScalarValue::Utf8(Some(date_string2.clone())))),
-        };
+        });
         let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
         assert_eq!(
             rewrite_exp,
-            Expr::Between {
+            Expr::Between(Between {
                 expr: Box::new(col("c6")),
                 negated: false,
                 low: Box::new(Expr::Literal(ScalarValue::TimestampMillisecond(
@@ -666,22 +665,22 @@ mod tests {
                     ),
                     None
                 ),))
-            }
+            })
         );
 
         // Timestamp(ms) c6 between 1642141472 and 1642141472
         let timestamp_int_low = 1642141472;
         let timestamp_int_high = 1642141474;
-        let exp = Expr::Between {
+        let exp = Expr::Between(Between {
             expr: Box::new(col("c6")),
             negated: false,
             low: Box::new(Expr::Literal(ScalarValue::Int64(Some(timestamp_int_low)))),
             high: Box::new(Expr::Literal(ScalarValue::Int64(Some(timestamp_int_high)))),
-        };
+        });
         let rewrite_exp = exp.rewrite(&mut rewriter).unwrap();
         assert_eq!(
             rewrite_exp,
-            Expr::Between {
+            Expr::Between(Between {
                 expr: Box::new(col("c6")),
                 negated: false,
                 low: Box::new(Expr::Literal(ScalarValue::TimestampMillisecond(
@@ -692,7 +691,7 @@ mod tests {
                     Some(timestamp_int_high),
                     None
                 ),))
-            }
+            })
         );
     }
 

@@ -9,10 +9,9 @@ use std::{
 use once_cell::sync::OnceCell;
 use snafu::{ResultExt, Snafu};
 
-use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
 use crate::{
     error,
-    file_system::{self},
+    file_system::file::async_file::{AsyncFile, FsRuntime},
     Error, Result,
 };
 
@@ -40,12 +39,13 @@ pub enum FileError {
     Cancel,
 }
 
+static INSTANCE: OnceCell<FileManager> = OnceCell::new();
+
 pub struct FileManager {
     fs_runtime: Arc<FsRuntime>,
 }
 
 pub fn get_file_manager() -> &'static FileManager {
-    static INSTANCE: OnceCell<FileManager> = OnceCell::new();
     INSTANCE.get_or_init(FileManager::new)
 }
 
