@@ -23,5 +23,6 @@ runs:
       shell: bash
       run: |
         echo "Installing ${{ inputs.rust-version }}"
+        source "$HOME/.cargo/env"
         rustup toolchain install ${{ inputs.rust-version }}
         rustup default ${{ inputs.rust-version }}
