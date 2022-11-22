@@ -88,7 +88,7 @@ use crate::http::http_service::HttpService;
 use crate::report::ReportService;
 use crate::rpc::grpc_service::GrpcService;
 use mem_allocator::Jemalloc;
-use metrics::{init_query_metrics_recorder, init_tskv_metrics_recorder};
+use metrics::init_tskv_metrics_recorder;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;
@@ -124,7 +124,6 @@ fn main() -> Result<(), std::io::Error> {
         .expect("Invalid http_host");
 
     init_tskv_metrics_recorder();
-    init_query_metrics_recorder();
 
     runtime.clone().block_on(async move {
         match &cli.subcmd {
