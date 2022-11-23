@@ -2,6 +2,7 @@
 mod tests {
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use serial_test::serial;
+    use std::path::Path;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     use tokio::runtime;
@@ -19,9 +20,11 @@ mod tests {
     use tskv::file_system::file_manager;
     use tskv::{kv_option, TsKv};
 
-    fn get_tskv() -> (Arc<Runtime>, TsKv) {
+    fn get_tskv(dir: impl AsRef<Path>) -> (Arc<Runtime>, TsKv) {
+        let dir = dir.as_ref();
         let mut global_config = get_config("../config/config.toml");
-        global_config.wal.path = "/tmp/test/wal".to_string();
+        global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
+        global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
@@ -32,7 +35,7 @@ mod tests {
     #[serial]
     fn test_kvcore_init() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        get_tskv();
+        get_tskv("/tmp/test/kvcore/kvcore_init");
         dbg!("Ok");
     }
 
@@ -41,7 +44,7 @@ mod tests {
     fn test_kvcore_write() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
 
-        let (rt, tskv) = get_tskv();
+        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_write");
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
@@ -59,7 +62,7 @@ mod tests {
     #[serial]
     fn test_kvcore_flush() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv();
+        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_flush");
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
@@ -83,14 +86,16 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists("data/db/data/db/tsm/0"))
+        assert!(file_manager::try_exists(
+            "/tmp/test/kvcore/kvcore_flush/data/db/tsm/0"
+        ))
     }
 
     #[test]
     #[ignore]
     fn test_kvcore_big_write() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv();
+        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_big_write");
 
         for _ in 0..100 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -110,7 +115,7 @@ mod tests {
     #[serial]
     fn test_kvcore_flush_delta() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv();
+        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_flush_delta");
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
@@ -134,8 +139,12 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists("data/db/data/db/tsm/0"));
-        assert!(file_manager::try_exists("data/db/data/db/delta/0"));
+        assert!(file_manager::try_exists(
+            "/tmp/test/kvcore/kvcore_flush_delta/data/db/tsm/0"
+        ));
+        assert!(file_manager::try_exists(
+            "/tmp/test/kvcore/kvcore_flush_delta/data/db/delta/0"
+        ));
     }
 
     #[tokio::test]
@@ -152,7 +161,7 @@ mod tests {
     #[serial]
     fn test_kvcore_build_row_data() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (rt, tskv) = get_tskv();
+        let (rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_build_row_data");
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
         let points = models_helper::create_random_points_include_delta(&mut fbb, 20);
         fbb.finish(points, None);
@@ -169,7 +178,7 @@ mod tests {
     #[serial]
     fn test_kvcore_create_table() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (_rt, tskv) = get_tskv();
+        let (_rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_create_table");
         tskv.create_database(&DatabaseSchema::new("public"))
             .unwrap();
         tskv.create_database(&DatabaseSchema::new("test")).unwrap();

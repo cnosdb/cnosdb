@@ -841,8 +841,13 @@ mod test {
         //! - Lv.2: [ (1, 1~1000), (2, 1001~2000) ]
         //! - Lv.3: [ ]
         //! - Lv.4: [ ]
-        let global_config = get_config("../config/config.toml");
+        let dir = "/tmp/test/ts_family/1";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
+
         let database = "test".to_string();
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
@@ -935,8 +940,13 @@ mod test {
         //! - Lv.2: [ (5, 3001~3150) ]
         //! - Lv.3: [ (6, 1~2000) ]
         //! - Lv.4: [ ]
-        let global_config = get_config("../config/config.toml");
+        let dir = "/tmp/test/ts_family/2";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
+
         let database = "test".to_string();
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
@@ -1044,9 +1054,14 @@ mod test {
 
     #[tokio::test]
     pub async fn test_tsf_delete() {
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let global_config = get_config("../config/config.toml");
+        let dir = "/tmp/test/ts_family/tsf_delete";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
+
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "db".to_string();
         let tsf = TseriesFamily::new(
             0,
@@ -1134,16 +1149,6 @@ mod test {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     pub async fn test_read_with_tomb() {
-        let dir = PathBuf::from("db/tsm/test/0".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
-
-        let dir = PathBuf::from("data/db".to_string());
-        if !file_manager::try_exists(&dir) {
-            std::fs::create_dir_all(&dir).unwrap();
-        }
-
         let mem = MemCache::new(0, 1000, 0);
         let row_group = RowGroup {
             schema: default_with_field_id(vec![0, 1, 2]),
@@ -1167,15 +1172,15 @@ mod test {
         let req_mem = vec![(0, mem)];
         let flush_seq = FlushReq { mems: req_mem };
 
-        let base_dir = "/tmp/test/ts_family/test_read_with_tomb".to_string();
-        let _ = std::fs::remove_dir(&base_dir);
-        std::fs::create_dir_all(&base_dir).unwrap();
+        let dir = "/tmp/test/ts_family/read_with_tomb";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
+        let opt = Arc::new(Options::from(&global_config));
 
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
-        let mut global_config = get_config("../config/config.toml");
-        global_config.storage.path = base_dir;
-        let opt = Arc::new(Options::from(&global_config));
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();

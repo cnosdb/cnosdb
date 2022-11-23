@@ -38,9 +38,6 @@ pub struct StorageConfig {
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
-    pub dio_max_resident: usize,
-    pub dio_max_non_resident: usize,
-    pub dio_page_len_scale: usize,
     pub strict_write: bool,
 }
 
@@ -63,15 +60,6 @@ impl StorageConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
             self.max_compact_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_RESIDENT") {
-            self.dio_max_resident = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_NON_RESIDENT") {
-            self.dio_max_non_resident = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_PAGE_LEN_SCALE") {
-            self.dio_page_len_scale = size.parse::<usize>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
             self.strict_write = size.parse::<bool>().unwrap();
@@ -180,7 +168,7 @@ pub fn get_config(path: &str) -> Config {
 fn test() {
     let config_str = r#"
 [query]
-max_server_connections = 10240 
+max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
 [storage]
@@ -190,9 +178,6 @@ max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
 compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
-dio_max_resident = 1024
-dio_max_non_resident = 1024
-dio_page_len_scale = 1
 strict_write = true
 
 [wal]

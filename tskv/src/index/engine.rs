@@ -5,6 +5,7 @@ use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 
 use sled;
+use trace::debug;
 
 #[derive(Debug)]
 pub struct IndexEngine {
@@ -22,13 +23,11 @@ impl IndexEngine {
             .cache_capacity(128 * 1024 * 1024)
             .mode(sled::Mode::HighThroughput);
 
-        let db = config.open().unwrap_or_else(|err| {
-            panic!(
-                "open database at '{}' failed: {:?}",
-                index_dir.display(),
-                err
-            )
-        });
+        debug!("Creating index engine using config: {:?}", &config);
+        let db = match config.open() {
+            Ok(d) => d,
+            Err(e) => panic!("open database at '{}' failed: {:?}", index_dir.display(), e),
+        };
         db.set_merge_operator(concatenate_merge);
 
         Self {

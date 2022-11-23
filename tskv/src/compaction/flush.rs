@@ -487,10 +487,12 @@ pub mod flush_tests {
 
     #[tokio::test]
     async fn test_flush() {
-        let config = config::get_config("../config/config.toml");
+        let mut config = config::get_config("../config/config.toml");
+        config.storage.path = "/tmp/test/flush/test_flush".to_string();
+        config.log.path = "/tmp/test/flush/test_flush/logs".to_string();
         trace::init_default_global_tracing(&config.log.path, "tskv.log", "debug");
 
-        let dir = PathBuf::from_str("/tmp/test/flush/test_flush").unwrap();
+        let dir: PathBuf = config.storage.path.clone().into();
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let tsm_dir = dir.join("tsm");
@@ -502,104 +504,22 @@ pub mod flush_tests {
             MemCache::new(1, 16, 0),
         ];
 
-        put_rows_to_cache(
-            &mut caches[0],
-            1,
-            1,
-            default_with_field_id(vec![0, 1, 2]),
-            (3, 4),
-            false,
-        );
-        put_rows_to_cache(
-            &mut caches[0],
-            1,
-            2,
-            default_with_field_id(vec![0, 1, 3]),
-            (1, 2),
-            false,
-        );
-        put_rows_to_cache(
-            &mut caches[0],
-            1,
-            3,
-            default_with_field_id(vec![0, 1, 2, 3]),
-            (5, 5),
-            true,
-        );
-        put_rows_to_cache(
-            &mut caches[0],
-            1,
-            3,
-            default_with_field_id(vec![0, 1, 2, 3]),
-            (5, 6),
-            false,
-        );
-
-        put_rows_to_cache(
-            &mut caches[1],
-            2,
-            1,
-            default_with_field_id(vec![0, 1, 2]),
-            (9, 10),
-            false,
-        );
-        put_rows_to_cache(
-            &mut caches[1],
-            2,
-            2,
-            default_with_field_id(vec![0, 1, 3]),
-            (7, 8),
-            false,
-        );
-        put_rows_to_cache(
-            &mut caches[1],
-            2,
-            3,
-            default_with_field_id(vec![0, 1, 2, 3]),
-            (11, 11),
-            true,
-        );
-        put_rows_to_cache(
-            &mut caches[1],
-            2,
-            3,
-            default_with_field_id(vec![0, 1, 2, 3]),
-            (11, 12),
-            false,
-        );
-
-        put_rows_to_cache(
-            &mut caches[2],
-            3,
-            1,
-            default_with_field_id(vec![0, 1, 2]),
-            (15, 16),
-            false,
-        );
-        put_rows_to_cache(
-            &mut caches[2],
-            3,
-            2,
-            default_with_field_id(vec![0, 1, 3]),
-            (13, 14),
-            false,
-        );
-        put_rows_to_cache(
-            &mut caches[2],
-            3,
-            3,
-            default_with_field_id(vec![0, 1, 2, 3]),
-            (17, 17),
-            true,
-        );
-        put_rows_to_cache(
-            &mut caches[2],
-            3,
-            3,
-            default_with_field_id(vec![0, 1, 2, 3]),
-            (17, 18),
-            false,
-        );
+        #[rustfmt::skip]
+        let _skip_fmt = {
+            put_rows_to_cache(&mut caches[0], 1, 1, default_with_field_id(vec![0, 1, 2]), (3, 4), false);
+            put_rows_to_cache(&mut caches[0], 1, 2, default_with_field_id(vec![0, 1, 3]), (1, 2), false);
+            put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 5), true);
+            put_rows_to_cache(&mut caches[0], 1, 3, default_with_field_id(vec![0, 1, 2, 3]), (5, 6), false);
+            put_rows_to_cache(&mut caches[1], 2, 1, default_with_field_id(vec![0, 1, 2]), (9, 10), false);
+            put_rows_to_cache(&mut caches[1], 2, 2, default_with_field_id(vec![0, 1, 3]), (7, 8), false);
+            put_rows_to_cache(&mut caches[1], 2, 3, default_with_field_id(vec![0, 1, 2, 3]), (11, 11), true);
+            put_rows_to_cache(&mut caches[1], 2, 3, default_with_field_id(vec![0, 1, 2, 3]), (11, 12), false);
+            put_rows_to_cache(&mut caches[2], 3, 1, default_with_field_id(vec![0, 1, 2]), (15, 16), false);
+            put_rows_to_cache(&mut caches[2], 3, 2, default_with_field_id(vec![0, 1, 3]), (13, 14), false);
+            put_rows_to_cache(&mut caches[2], 3, 3, default_with_field_id(vec![0, 1, 2, 3]), (17, 17), true);
+            put_rows_to_cache(&mut caches[2], 3, 3, default_with_field_id(vec![0, 1, 2, 3]), (17, 18), false);
+            "skip_fmt"
+        };
 
         let max_level_ts = 10;
 

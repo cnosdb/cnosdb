@@ -590,9 +590,10 @@ mod test {
     use crate::file_system::file_manager;
     use crate::tseries_family::LevelInfo;
     use crate::{
+        compaction::FlushReq,
         error,
         kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, Summary, VersionEdit},
+        summary::{CompactMeta, Summary, SummaryTask, VersionEdit},
     };
 
     #[tokio::test]
@@ -602,28 +603,56 @@ mod test {
         config.storage.path = base_dir.clone();
         let opt = Arc::new(Options::from(&config));
 
+        let (summary_task_sender, mut summary_task_receiver) =
+            mpsc::unbounded_channel::<SummaryTask>();
+        let summary_job_mock = tokio::spawn(async move {
+            println!("Mock summary job started (test_summary).");
+            while let Some(t) = summary_task_receiver.recv().await {
+                // Do nothing
+                let _ = t.cb.send(Ok(()));
+            }
+            println!("Mock summary job finished (test_summary).");
+        });
+        let (flush_task_sender, mut flush_task_receiver) = mpsc::unbounded_channel::<FlushReq>();
+        let flush_job_mock = tokio::spawn(async move {
+            println!("Mock flush job started (test_summary).");
+            while let Some(t) = flush_task_receiver.recv().await {
+                // Do nothing
+            }
+            println!("Mock flush job finished (test_summary).");
+        });
+
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_summary_recover");
-        test_summary_recover(opt.clone()).await;
+        test_summary_recover(opt.clone(), flush_task_sender.clone()).await;
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_tsf_num_recover");
-        test_tsf_num_recover(opt.clone()).await;
+        test_tsf_num_recover(opt.clone(), flush_task_sender.clone()).await;
 
         println!("Running test: test_version_edit");
         test_version_edit();
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_0");
-        test_recover_summary_with_roll_0(opt.clone()).await;
+        test_recover_summary_with_roll_0(
+            opt.clone(),
+            summary_task_sender.clone(),
+            flush_task_sender.clone(),
+        )
+        .await;
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_1");
-        test_recover_summary_with_roll_1(opt).await;
+        test_recover_summary_with_roll_1(opt, summary_task_sender, flush_task_sender).await;
+
+        let _ = tokio::join!(summary_job_mock, flush_job_mock);
     }
 
-    async fn test_summary_recover(opt: Arc<Options>) {
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
+    async fn test_summary_recover(
+        opt: Arc<Options>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+    ) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -634,13 +663,16 @@ mod test {
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+
+        let summary = Summary::recover(opt.clone(), flush_task_sender)
             .await
             .unwrap();
     }
 
-    async fn test_tsf_num_recover(opt: Arc<Options>) {
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
+    async fn test_tsf_num_recover(
+        opt: Arc<Options>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+    ) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -652,16 +684,17 @@ mod test {
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
+
         let mut summary = Summary::recover(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
-
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+
+        let summary = Summary::recover(opt.clone(), flush_task_sender)
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
@@ -685,8 +718,11 @@ mod test {
     }
 
     // tips : we can use a small max_summary_size
-    async fn test_recover_summary_with_roll_0(opt: Arc<Options>) {
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
+    async fn test_recover_summary_with_roll_0(
+        opt: Arc<Options>,
+        summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+    ) {
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -696,8 +732,6 @@ mod test {
             .await
             .unwrap();
 
-        let (summary_task_sender, _) = mpsc::unbounded_channel();
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let mut edits = vec![];
         let db = summary
             .version_set
@@ -722,15 +756,17 @@ mod test {
         }
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+        let summary = Summary::recover(opt.clone(), flush_task_sender)
             .await
             .unwrap();
-
         assert_eq!(summary.version_set.read().tsf_num(), 20);
     }
 
-    async fn test_recover_summary_with_roll_1(opt: Arc<Options>) {
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
+    async fn test_recover_summary_with_roll_1(
+        opt: Arc<Options>,
+        summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+    ) {
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -740,8 +776,6 @@ mod test {
             .await
             .unwrap();
 
-        let (summary_task_sender, _) = mpsc::unbounded_channel();
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let db = summary
             .version_set
             .write()
@@ -795,10 +829,9 @@ mod test {
 
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+        let summary = Summary::recover(opt.clone(), flush_task_sender)
             .await
             .unwrap();
-
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
         assert_eq!(tsf.read().version().last_seq, 1);
