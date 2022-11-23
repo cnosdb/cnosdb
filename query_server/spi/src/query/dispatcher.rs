@@ -3,6 +3,8 @@ use std::time::Duration;
 use crate::query::execution::Output;
 use crate::service::protocol::{Query, QueryId};
 use async_trait::async_trait;
+use models::auth::user::User;
+use models::oid::Oid;
 
 use super::execution::QueryState;
 use super::Result;
@@ -17,7 +19,13 @@ pub trait QueryDispatcher: Send + Sync {
 
     fn query_info(&self, id: &QueryId);
 
-    async fn execute_query(&self, id: QueryId, query: &Query) -> Result<Vec<Output>>;
+    async fn execute_query(
+        &self,
+        tenant_id: Oid,
+        user: User,
+        id: QueryId,
+        query: &Query,
+    ) -> Result<Vec<Output>>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;
 

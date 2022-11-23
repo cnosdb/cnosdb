@@ -77,7 +77,7 @@ async fn create_exernal_table(
 
     let schema = build_table_schema(
         stmt,
-        query_state_machine.session.database().to_string(),
+        query_state_machine.session.default_database().to_string(),
         &state,
     )
     .await?;

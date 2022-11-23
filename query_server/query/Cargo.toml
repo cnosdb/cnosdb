@@ -10,6 +10,7 @@ tskv = { path = "../../tskv" }
 models = { path = "../../common/models" }
 config = { path = "../../config" }
 spi = { path = "../spi" }
+coordinator = { path = "../../coordinator" }
 
 async-trait = { workspace = true }
 datafusion = { workspace = true }

@@ -1,16 +1,77 @@
 use std::{
-    cell::{Ref, RefCell},
     collections::{HashMap, HashSet},
+    sync::Arc,
 };
 
+use async_trait::async_trait;
 use models::oid::{Id, Identifier, MemoryOidGenerator, Oid, OidGenerator};
 use parking_lot::RwLock;
 
-use super::{
+use models::auth::{
     privilege::DatabasePrivilege,
     role::{CustomTenantRole, CustomTenantRoleRef, SystemTenantRole, TenantRole},
     AuthError, Result,
 };
+
+#[async_trait]
+pub trait RoleMeta {
+    async fn create_tenant(&mut self, tenant_id: Oid) -> Result<()>;
+    async fn drop_tenant(&mut self, tenant_id: &Oid) -> Result<bool>;
+    async fn tenants_of_user(&mut self, user_id: &Oid) -> Result<Option<&HashSet<Oid>>>;
+    async fn tenants(&mut self) -> Result<HashSet<&Oid>>;
+    async fn create_custom_role_of_tenant(
+        &mut self,
+        tenant_id: &Oid,
+        role_name: String,
+        system_role: SystemTenantRole,
+        additiona_privileges: HashMap<String, DatabasePrivilege>,
+    ) -> Result<()>;
+    async fn grant_privilege_to_custom_role_of_tenant(
+        &mut self,
+        database_name: String,
+        privilege: DatabasePrivilege,
+        role_name: &str,
+        tenant_id: &Oid,
+    ) -> Result<()>;
+    async fn revoke_privilege_from_custom_role_of_tenant(
+        &mut self,
+        database_name: &str,
+        privilege: &DatabasePrivilege,
+        role_name: &str,
+        tenant_id: &Oid,
+    ) -> Result<bool>;
+    async fn drop_custom_role_of_tenant(
+        &mut self,
+        role_name: &str,
+        tenant_id: &Oid,
+    ) -> Result<bool>;
+    async fn custom_roles_of_tenant(&self, tenant_id: &Oid) -> Result<Vec<CustomTenantRole<Oid>>>;
+    async fn custom_role_of_tenant(
+        &self,
+        role_name: &str,
+        tenant_id: &Oid,
+    ) -> Result<Option<CustomTenantRole<Oid>>>;
+    async fn add_member_with_role_to_tenant(
+        &mut self,
+        user_id: Oid,
+        role: TenantRole<Oid>,
+        tenant_id: Oid,
+    ) -> Result<()>;
+    async fn remove_member_from_tenant(&mut self, user_id: Oid, tenant_id: Oid) -> Result<()>;
+    async fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> Result<bool>;
+    async fn reasign_member_role_in_tenant(
+        &mut self,
+        user_id: Oid,
+        role: TenantRole<Oid>,
+        tenant_id: Oid,
+    ) -> Result<()>;
+    async fn member_role_of_tenant(
+        &self,
+        user_id: &Oid,
+        tenant_id: &Oid,
+    ) -> Result<TenantRole<Oid>>;
+    async fn members_of_tenant(&self, tenant_id: &Oid) -> Result<Option<HashSet<&Oid>>>;
+}
 
 #[derive(Default)]
 pub struct TenantRoleManager {
@@ -23,8 +84,9 @@ pub struct TenantRoleManager {
     oid_generator: MemoryOidGenerator,
 }
 
-impl TenantRoleManager {
-    pub async fn create_tenant(&mut self, tenant_id: Oid) -> Result<()> {
+#[async_trait]
+impl RoleMeta for TenantRoleManager {
+    async fn create_tenant(&mut self, tenant_id: Oid) -> Result<()> {
         let _lock = self.lock.write();
 
         if self.tenant_acls.contains_key(&tenant_id) {
@@ -41,30 +103,30 @@ impl TenantRoleManager {
         Ok(())
     }
 
-    pub async fn drop_tenant(&mut self, tenant_id: &Oid) -> Result<bool> {
+    async fn drop_tenant(&mut self, tenant_id: &Oid) -> Result<bool> {
         let _lock = self.lock.write();
 
         Ok(self.tenant_acls.remove(tenant_id).is_some())
     }
 
-    pub async fn tenants_of_member(&mut self, user_id: &Oid) -> Result<Option<&HashSet<Oid>>> {
+    async fn tenants_of_user(&mut self, user_id: &Oid) -> Result<Option<&HashSet<Oid>>> {
         let _lock = self.lock.write();
 
         Ok(self.user_tenant_map.get(user_id))
     }
 
-    pub async fn tenants(&mut self) -> Result<HashSet<&Oid>> {
+    async fn tenants(&mut self) -> Result<HashSet<&Oid>> {
         let _lock = self.lock.write();
 
         Ok(self.tenant_acls.keys().collect())
     }
 
-    pub async fn create_custom_role_of_tenant(
+    async fn create_custom_role_of_tenant(
         &mut self,
         tenant_id: &Oid,
         role_name: String,
         system_role: SystemTenantRole,
-        additiona_privileges: HashMap<Oid, DatabasePrivilege>,
+        additiona_privileges: HashMap<String, DatabasePrivilege>,
     ) -> Result<()> {
         let id = self
             .oid_generator
@@ -85,9 +147,9 @@ impl TenantRoleManager {
             ))
     }
 
-    pub async fn grant_privilege_to_custom_role_of_tenant(
+    async fn grant_privilege_to_custom_role_of_tenant(
         &mut self,
-        database_id: Oid,
+        database_name: String,
         privilege: DatabasePrivilege,
         role_name: &str,
         tenant_id: &Oid,
@@ -97,12 +159,12 @@ impl TenantRoleManager {
         self.tenant_acls
             .get_mut(tenant_id)
             .ok_or(AuthError::TenantNotFound)?
-            .grant_privilege_to_custom_role(database_id, privilege, role_name)
+            .grant_privilege_to_custom_role(database_name, privilege, role_name)
     }
 
-    pub async fn revoke_privilege_from_custom_role_of_tenant(
+    async fn revoke_privilege_from_custom_role_of_tenant(
         &mut self,
-        database_id: &Oid,
+        database_name: &str,
         privilege: &DatabasePrivilege,
         role_name: &str,
         tenant_id: &Oid,
@@ -112,10 +174,10 @@ impl TenantRoleManager {
         self.tenant_acls
             .get_mut(tenant_id)
             .ok_or(AuthError::TenantNotFound)?
-            .revoke_privilege_from_custom_role(database_id, privilege, role_name)
+            .revoke_privilege_from_custom_role(database_name, privilege, role_name)
     }
 
-    pub async fn drop_custom_role_of_tenant(
+    async fn drop_custom_role_of_tenant(
         &mut self,
         role_name: &str,
         tenant_id: &Oid,
@@ -128,10 +190,7 @@ impl TenantRoleManager {
             .drop_custom_role(role_name)
     }
 
-    pub async fn custom_roles_of_tenant(
-        &self,
-        tenant_id: &Oid,
-    ) -> Result<Vec<Ref<CustomTenantRole<Oid>>>> {
+    async fn custom_roles_of_tenant(&self, tenant_id: &Oid) -> Result<Vec<CustomTenantRole<Oid>>> {
         let _lock = self.lock.read();
 
         self.tenant_acls
@@ -140,11 +199,11 @@ impl TenantRoleManager {
             .custom_roles()
     }
 
-    pub async fn custom_role_of_tenant(
+    async fn custom_role_of_tenant(
         &self,
         role_name: &str,
         tenant_id: &Oid,
-    ) -> Result<Option<Ref<CustomTenantRole<Oid>>>> {
+    ) -> Result<Option<CustomTenantRole<Oid>>> {
         let _lock = self.lock.read();
 
         self.tenant_acls
@@ -153,7 +212,7 @@ impl TenantRoleManager {
             .custom_role(role_name)
     }
 
-    pub async fn add_member_with_role_to_tenant(
+    async fn add_member_with_role_to_tenant(
         &mut self,
         user_id: Oid,
         role: TenantRole<Oid>,
@@ -174,7 +233,7 @@ impl TenantRoleManager {
         Ok(())
     }
 
-    pub async fn remove_member_from_tenant(&mut self, user_id: Oid, tenant_id: Oid) -> Result<()> {
+    async fn remove_member_from_tenant(&mut self, user_id: Oid, tenant_id: Oid) -> Result<()> {
         let _lock = self.lock.read();
 
         if let Some(acl) = self.tenant_acls.get_mut(&tenant_id) {
@@ -190,13 +249,13 @@ impl TenantRoleManager {
         Ok(())
     }
 
-    pub async fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> Result<bool> {
+    async fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> Result<bool> {
         let _lock = self.lock.write();
 
         Ok(self.user_tenant_map.remove(user_id).is_some())
     }
 
-    pub async fn reasign_member_role_in_tenant(
+    async fn reasign_member_role_in_tenant(
         &mut self,
         user_id: Oid,
         role: TenantRole<Oid>,
@@ -213,7 +272,7 @@ impl TenantRoleManager {
         Ok(())
     }
 
-    pub async fn member_role_of_tenant(
+    async fn member_role_of_tenant(
         &self,
         user_id: &Oid,
         tenant_id: &Oid,
@@ -239,7 +298,7 @@ impl TenantRoleManager {
         Ok(role)
     }
 
-    pub async fn members_of_tenant(&self, tenant_id: &Oid) -> Result<Option<HashSet<&Oid>>> {
+    async fn members_of_tenant(&self, tenant_id: &Oid) -> Result<Option<HashSet<&Oid>>> {
         let _lock = self.lock.read();
 
         if let Some(acl) = self.tenant_acls.get(tenant_id) {
@@ -332,7 +391,7 @@ where
         // 通过后，将自定义权限添加到custom_roles中
         self.custom_roles.insert(
             custom_role_name.to_string(),
-            Box::new(RefCell::new(custom_role)),
+            Arc::new(RwLock::new(custom_role)),
         );
 
         Ok(())
@@ -341,7 +400,7 @@ where
     ///
     fn grant_privilege_to_custom_role(
         &mut self,
-        database_ident: T,
+        database_name: String,
         privilege: DatabasePrivilege,
         custom_role_name: &str,
     ) -> Result<()> {
@@ -350,14 +409,14 @@ where
         self.custom_roles
             .get_mut(custom_role_name)
             .ok_or(AuthError::RoleNotFound)?
-            .borrow_mut()
-            .grant_privilege(database_ident, privilege)
+            .write()
+            .grant_privilege(database_name, privilege)
     }
     /// Err:
     ///
     fn revoke_privilege_from_custom_role(
         &mut self,
-        database_ident: &T,
+        database_name: &str,
         privilege: &DatabasePrivilege,
         custom_role_name: &str,
     ) -> Result<bool> {
@@ -366,8 +425,8 @@ where
         self.custom_roles
             .get_mut(custom_role_name)
             .ok_or(AuthError::RoleNotFound)?
-            .borrow_mut()
-            .revoke_privilege(database_ident, privilege)
+            .write()
+            .revoke_privilege(database_name, privilege)
     }
     /// Err:
     ///
@@ -378,18 +437,24 @@ where
     }
     /// Err:
     ///
-    fn custom_role(&self, custom_role_name: &str) -> Result<Option<Ref<CustomTenantRole<T>>>> {
+    fn custom_role(&self, custom_role_name: &str) -> Result<Option<CustomTenantRole<T>>> {
         let _lock = self.lock.write();
 
-        Ok(self.custom_roles.get(custom_role_name).map(|e| e.borrow()))
+        Ok(self
+            .custom_roles
+            .get(custom_role_name)
+            .map(|e| e.read().clone()))
     }
     /// Err:
     ///
-    fn custom_roles(&self) -> Result<Vec<Ref<CustomTenantRole<T>>>> {
+    fn custom_roles(&self) -> Result<Vec<CustomTenantRole<T>>> {
         let _lock = self.lock.write();
 
-        let result: Vec<Ref<CustomTenantRole<T>>> =
-            self.custom_roles.values().map(|e| e.borrow()).collect();
+        let result: Vec<CustomTenantRole<T>> = self
+            .custom_roles
+            .values()
+            .map(|e| e.read().clone())
+            .collect();
 
         Ok(result)
     }
@@ -397,7 +462,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::auth::privilege::{Privilege, TenantObjectPrivilege};
+    use models::auth::privilege::{Privilege, TenantObjectPrivilege};
 
     use super::*;
 
@@ -604,11 +669,11 @@ mod tests {
             .await
             .expect("create_custom_role_of_tenant");
 
-        let database_id = id_generator.next_oid().await.expect("id_generator");
+        let database_name = "database_name";
         let privilege = DatabasePrivilege::Write;
         manager
             .grant_privilege_to_custom_role_of_tenant(
-                database_id,
+                database_name.to_string(),
                 privilege.clone(),
                 &role_name,
                 &tenant_id,
@@ -624,7 +689,7 @@ mod tests {
                 .expect("role exists");
             let privileges = role.to_privileges(&tenant_id);
             let expect_privilege = Privilege::TenantObject(
-                TenantObjectPrivilege::Database(privilege, Some(database_id)),
+                TenantObjectPrivilege::Database(privilege, Some(database_name.to_string())),
                 Some(tenant_id),
             );
             assert!(privileges.contains(&expect_privilege));
@@ -666,11 +731,11 @@ mod tests {
             .await
             .expect("create_custom_role_of_tenant");
 
-        let database_id = id_generator.next_oid().await.expect("id_generator");
+        let database_name = "database_name";
         let privilege = DatabasePrivilege::Write;
         manager
             .grant_privilege_to_custom_role_of_tenant(
-                database_id,
+                database_name.to_string(),
                 privilege.clone(),
                 &role_name,
                 &tenant_id,
@@ -686,7 +751,7 @@ mod tests {
                 .expect("role exists");
             let privileges = role.to_privileges(&tenant_id);
             let expect_privilege = Privilege::TenantObject(
-                TenantObjectPrivilege::Database(privilege.clone(), Some(database_id)),
+                TenantObjectPrivilege::Database(privilege.clone(), Some(database_name.to_string())),
                 Some(tenant_id),
             );
             assert!(privileges.contains(&expect_privilege));
@@ -694,7 +759,7 @@ mod tests {
 
         let success = manager
             .revoke_privilege_from_custom_role_of_tenant(
-                &database_id,
+                database_name,
                 &privilege,
                 &role_name,
                 &tenant_id,
@@ -711,7 +776,7 @@ mod tests {
                 .expect("role exists");
             let privileges = role.to_privileges(&tenant_id);
             let expect_privilege = Privilege::TenantObject(
-                TenantObjectPrivilege::Database(privilege.clone(), Some(database_id)),
+                TenantObjectPrivilege::Database(privilege.clone(), Some(database_name.to_string())),
                 Some(tenant_id),
             );
             assert!(!privileges.contains(&expect_privilege));
@@ -719,7 +784,7 @@ mod tests {
 
         let success = manager
             .revoke_privilege_from_custom_role_of_tenant(
-                &database_id,
+                database_name,
                 &privilege,
                 &role_name,
                 &tenant_id,

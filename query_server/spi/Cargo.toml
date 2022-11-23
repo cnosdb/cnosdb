@@ -10,3 +10,4 @@ models = { path = "../../common/models" }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true, features = ["backtraces"] }
+derive_builder = { workspace = true }

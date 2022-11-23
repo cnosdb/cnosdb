@@ -1,9 +1,22 @@
 use std::collections::HashMap;
 
-use models::oid::{MemoryOidGenerator, OidGenerator};
+use async_trait::async_trait;
+use models::{
+    auth::user::UserOptions,
+    oid::{MemoryOidGenerator, OidGenerator},
+};
 use parking_lot::RwLock;
 
-use super::{user::UserDesc, AuthError, Result};
+use models::auth::{user::UserDesc, AuthError, Result};
+
+#[async_trait]
+pub trait UserMeta {
+    async fn create_user(&mut self, name: String, options: UserOptions) -> Result<&UserDesc>;
+    async fn user(&self, name: &str) -> Result<Option<&UserDesc>>;
+    async fn users(&self) -> Result<Vec<&UserDesc>>;
+    async fn drop_user(&mut self, name: &str) -> Result<bool>;
+    async fn rename_user(&mut self, old_name: &str, new_name: String) -> Result<()>;
+}
 
 #[derive(Default)]
 pub struct UserManager {
@@ -11,13 +24,14 @@ pub struct UserManager {
     // user name -> user desc
     // Store in meta(user name -> user desc)
     users: HashMap<String, UserDesc>,
-    oid_generator: MemoryOidGenerator,
 
     lock: RwLock<()>,
+    oid_generator: MemoryOidGenerator,
 }
 
-impl UserManager {
-    pub async fn create_user(&mut self, name: String, password: String) -> Result<()> {
+#[async_trait]
+impl UserMeta for UserManager {
+    async fn create_user(&mut self, name: String, options: UserOptions) -> Result<&UserDesc> {
         let oid = self
             .oid_generator
             .next_oid()
@@ -30,32 +44,32 @@ impl UserManager {
             return Err(AuthError::UserAlreadyExists { user: name.clone() });
         }
 
-        let user_desc = UserDesc::new(oid, name.clone(), password);
+        let user_desc = UserDesc::new(oid, name.clone(), options);
 
-        self.users.insert(name, user_desc);
+        self.users.insert(name.clone(), user_desc);
 
-        Ok(())
+        Ok(unsafe { self.users.get(&name).unwrap_unchecked() })
     }
 
-    pub async fn user(&self, name: &str) -> Result<Option<&UserDesc>> {
+    async fn user(&self, name: &str) -> Result<Option<&UserDesc>> {
         let _lock = self.lock.read();
 
         Ok(self.users.get(name))
     }
 
-    pub async fn users(&self) -> Result<Vec<&UserDesc>> {
+    async fn users(&self) -> Result<Vec<&UserDesc>> {
         let _lock = self.lock.read();
 
         Ok(self.users.values().collect())
     }
 
-    pub async fn drop_user(&mut self, name: &str) -> Result<bool> {
+    async fn drop_user(&mut self, name: &str) -> Result<bool> {
         let _lock = self.lock.write();
 
         Ok(self.users.remove(name).is_some())
     }
 
-    pub async fn rename_user(&mut self, old_name: &str, new_name: String) -> Result<()> {
+    async fn rename_user(&mut self, old_name: &str, new_name: String) -> Result<()> {
         let _lock = self.lock.write();
 
         let new_user = self
@@ -82,7 +96,7 @@ mod tests {
         let mut manager = UserManager::default();
 
         let name = "test".to_string();
-        let password = "123456".to_string();
+        let password = UserOptions::default();
 
         manager
             .create_user(name.clone(), password.clone())
@@ -95,7 +109,6 @@ mod tests {
             .expect("query user")
             .expect("user exists");
         assert_eq!(&name, user.name());
-        assert!(user.check_password(&password));
 
         let success = manager.drop_user(&name).await.expect("drop user");
         assert!(success);
@@ -112,14 +125,14 @@ mod tests {
         let mut manager = UserManager::default();
 
         let users = vec![
-            ("test1".to_string(), "123456".to_string()),
-            ("test2".to_string(), "123456".to_string()),
-            ("test3".to_string(), "123456".to_string()),
+            "test1".to_string(),
+            "test2".to_string(),
+            "test3".to_string(),
         ];
 
-        for (name, password) in &users {
+        for name in &users {
             manager
-                .create_user(name.clone(), password.clone())
+                .create_user(name.clone(), UserOptions::default())
                 .await
                 .expect("create user");
         }
@@ -129,7 +142,7 @@ mod tests {
         assert_eq!(users.len(), users_desc.len());
 
         for desc in users_desc {
-            let exists = users.iter().any(|e| e.0 == desc.name());
+            let exists = users.iter().any(|e| e == desc.name());
             assert!(exists)
         }
     }

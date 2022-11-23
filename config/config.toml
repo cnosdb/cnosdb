@@ -32,7 +32,7 @@ max_buffer_size = 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
 
 [log]
-level = 'info'
+level = 'debug'
 path = 'data/log'
 
 [security]

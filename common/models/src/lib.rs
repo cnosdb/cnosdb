@@ -11,6 +11,8 @@ pub mod utils;
 #[macro_use]
 pub mod error_code;
 pub mod arrow_array;
+pub mod auth;
+pub mod object_reference;
 pub mod oid;
 pub mod predicate;
 

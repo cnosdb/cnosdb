@@ -1,8 +1,8 @@
-use std::hash::Hash;
+use std::{fmt::Display, hash::Hash};
 
 use uuid::Uuid;
 
-pub trait Id: Eq + Hash + Clone {}
+pub trait Id: Eq + Hash + Clone + Display {}
 
 pub trait Identifier<T> {
     fn id(&self) -> &T;

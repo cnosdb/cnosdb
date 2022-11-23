@@ -38,6 +38,12 @@ pub trait MetaData: Send + Sync {
         new_column: TableColumn,
     ) -> Result<()>;
     fn alter_table_drop_column(&self, table_name: &str, column_name: &str) -> Result<()>;
+
+    // tenant
+    // fn create_tenant(&self, name: String, options: TenantOptions) -> Result<Tenant>;
+    // fn alter_tenant(&self, tenant_id: Oid, options: TenantOptions) -> Result<()>;
+    // fn tenant(&self, name: &str) -> Result<Tenant>;
+    // fn drop_tenant(&self, name: &str) -> Result<bool>;
 }
 
 #[derive(Debug, Snafu)]
@@ -45,6 +51,15 @@ pub trait MetaData: Send + Sync {
 pub enum MetadataError {
     #[snafu(display("External err: {}", message))]
     External { message: String },
+
+    #[snafu(display("User {} already exists.", user_name))]
+    UserAlreadyExists { user_name: String },
+
+    #[snafu(display("Role {} already exists.", role_name))]
+    RoleAlreadyExists { role_name: String },
+
+    #[snafu(display("Tenant {} already exists.", tenant_name))]
+    TenantAlreadyExists { tenant_name: String },
 
     #[snafu(display("Table {} already exists.", table_name))]
     TableAlreadyExists { table_name: String },

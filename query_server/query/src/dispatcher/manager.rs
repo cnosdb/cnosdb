@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
+use models::auth::user::User;
+use models::oid::Oid;
 use snafu::ResultExt;
 use spi::catalog::MetaDataRef;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
@@ -59,17 +61,25 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         // TODO
     }
 
-    async fn execute_query(&self, query_id: QueryId, query: &Query) -> Result<Vec<Output>> {
+    async fn execute_query(
+        &self,
+        tenant_id: Oid,
+        user: User,
+        query_id: QueryId,
+        query: &Query,
+    ) -> Result<Vec<Output>> {
         let mut results = vec![];
 
-        let session = self
-            .session_factory
-            .create_isipho_session_ctx(query.context().clone());
+        let session = self.session_factory.create_isipho_session_ctx(
+            query.context().clone(),
+            tenant_id,
+            user,
+        );
 
         let metadata = self
             .metadata
-            .with_catalog(session.catalog())
-            .with_database(session.database());
+            .with_catalog(session.tenant())
+            .with_database(session.default_database());
         let scheme_provider = MetadataProvider::new(metadata.clone());
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);

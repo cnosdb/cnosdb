@@ -8,12 +8,13 @@
 //!         - Column #4
 
 use std::collections::HashMap;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
 use std::str::FromStr;
 
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use arrow_schema::Schema;
@@ -30,6 +31,7 @@ use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
 use crate::codec::Encoding;
+use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
 pub type TableSchemaRef = Arc<TskvTableSchema>;
@@ -665,5 +667,44 @@ impl Duration {
             time_num,
             unit: time_unit,
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Tenant {
+    id: Oid,
+    name: String,
+    options: TenantOptions,
+}
+
+impl Identifier<Oid> for Tenant {
+    fn id(&self) -> &Oid {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Tenant {
+    pub fn options(&self) -> &TenantOptions {
+        &self.options
+    }
+}
+
+#[derive(Debug, Default, Clone, Builder)]
+#[builder(setter(into, strip_option), default)]
+pub struct TenantOptions {
+    pub comment: Option<String>,
+}
+
+impl Display for TenantOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref e) = self.comment {
+            write!(f, "comment={},", e)?;
+        }
+
+        Ok(())
     }
 }

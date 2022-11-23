@@ -7,38 +7,61 @@ use spi::{
     server::dbms::DatabaseManagerSystem,
     server::BuildSnafu,
     server::Result,
-    server::{LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
+    server::{AuthSnafu, LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
     service::protocol::{Query, QueryHandle, QueryId},
 };
 
 use tskv::kv_option::Options;
 
-use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
-use crate::extension::expr::load_all_functions;
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::LocalCatalogMeta;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
+use crate::{
+    auth::{
+        auth_client::{AuthClient, AuthClientMock},
+        auth_control::AccessControl,
+    },
+    dispatcher::manager::SimpleQueryDispatcher,
+    function::simple_func_manager::SimpleFunctionMetadataManager,
+};
+use crate::{
+    dispatcher::manager::SimpleQueryDispatcherBuilder, extension::expr::load_all_functions,
+};
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
 
-pub struct Cnosdbms {
+pub struct Cnosdbms<A, D> {
+    // TODO access control
+    access_control: AccessControl<A>,
     // query dispatcher & query execution
-    query_dispatcher: Arc<dyn QueryDispatcher>,
+    query_dispatcher: D,
 }
 
 #[async_trait]
-impl DatabaseManagerSystem for Cnosdbms {
+impl<A, D> DatabaseManagerSystem for Cnosdbms<A, D>
+where
+    A: AuthClient,
+    D: QueryDispatcher,
+{
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
-        let id = self.query_dispatcher.create_query_id();
+        let query_id = self.query_dispatcher.create_query_id();
+
+        let user = self
+            .access_control
+            .access_check(query.context().user_info())
+            .context(AuthSnafu)?;
+        let tenant_id = self
+            .access_control
+            .tenant_id(query.context().tenant())
+            .context(AuthSnafu)?;
 
         let result = self
             .query_dispatcher
-            .execute_query(id, query)
+            .execute_query(tenant_id, user, query_id, query)
             .await
             .context(QuerySnafu)?;
 
-        Ok(QueryHandle::new(id, query.clone(), result))
+        Ok(QueryHandle::new(query_id, query.clone(), result))
     }
 
     fn metrics(&self) -> String {
@@ -65,7 +88,10 @@ impl DatabaseManagerSystem for Cnosdbms {
     }
 }
 
-pub fn make_cnosdbms(engine: EngineRef, options: Options) -> Result<Cnosdbms> {
+pub fn make_cnosdbms(
+    engine: EngineRef,
+    options: Options,
+) -> Result<Cnosdbms<AuthClientMock, SimpleQueryDispatcher>> {
     // todo: add query config
     // for now only support local mode
     let mut function_manager = SimpleFunctionMetadataManager::default();
@@ -85,7 +111,7 @@ pub fn make_cnosdbms(engine: EngineRef, options: Options) -> Result<Cnosdbms> {
 
     let queries_limit = options.query.max_server_connections;
 
-    let simple_query_dispatcher = SimpleQueryDispatcherBuilder::default()
+    let query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_metadata(meta)
         .with_session_factory(session_factory)
         .with_parser(parser)
@@ -95,8 +121,13 @@ pub fn make_cnosdbms(engine: EngineRef, options: Options) -> Result<Cnosdbms> {
         .build()
         .context(BuildSnafu)?;
 
+    // TODO
+    let auth_mock = Arc::new(AuthClientMock::new());
+    let access_control = AccessControl::new(auth_mock);
+
     Ok(Cnosdbms {
-        query_dispatcher: Arc::new(simple_query_dispatcher),
+        access_control,
+        query_dispatcher,
     })
 }
 
@@ -104,6 +135,7 @@ pub fn make_cnosdbms(engine: EngineRef, options: Options) -> Result<Cnosdbms> {
 mod tests {
     use chrono::Utc;
     use config::get_config;
+    use models::auth::user::UserInfo;
     use std::ops::DerefMut;
     use trace::debug;
 
@@ -112,9 +144,7 @@ mod tests {
         datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
     };
     use spi::{
-        catalog::DEFAULT_CATALOG,
-        query::execution::Output,
-        service::protocol::{ContextBuilder, UserInfo},
+        catalog::DEFAULT_CATALOG, query::execution::Output, service::protocol::ContextBuilder,
     };
     use tskv::engine::MockEngine;
 
@@ -135,10 +165,15 @@ mod tests {
         };
     }
 
-    async fn exec_sql(db: &Cnosdbms, sql: &str) -> Vec<RecordBatch> {
+    async fn exec_sql<A, D>(db: &Cnosdbms<A, D>, sql: &str) -> Vec<RecordBatch>
+    where
+        A: AuthClient,
+        D: QueryDispatcher,
+    {
         let user = UserInfo {
             user: DEFAULT_CATALOG.to_string(),
             password: "todo".to_string(),
+            private_key: None,
         };
         let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
 

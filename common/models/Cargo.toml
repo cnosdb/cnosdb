@@ -17,6 +17,8 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
 uuid = { workspace = true }
+derive_builder = { workspace = true }
+openssl = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
