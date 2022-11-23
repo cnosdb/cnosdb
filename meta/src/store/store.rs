@@ -13,9 +13,8 @@ use openraft::StorageError;
 
 use crate::store::StateMachine;
 use crate::store::Store;
-use crate::NodeId;
 use crate::ExampleTypeConfig;
-
+use crate::NodeId;
 
 impl Store {
     #[tracing::instrument(level = "debug", skip(self))]
@@ -129,8 +128,7 @@ impl Store {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn load_latest_snapshot(
         &self,
-    ) -> Result<Option<Snapshot<ExampleTypeConfig, Cursor<Vec<u8>>>>, StorageError<NodeId>>
-    {
+    ) -> Result<Option<Snapshot<ExampleTypeConfig, Cursor<Vec<u8>>>>, StorageError<NodeId>> {
         tracing::debug!("load_latest_snapshot: start");
 
         match &*self.current_snapshot.read().await {
@@ -171,7 +169,6 @@ impl Store {
                     last_log_id: last_applied_log,
                     snapshot_id,
                 };
-                
 
                 tracing::debug!("load_latest_snapshot: meta {:?}", meta);
 

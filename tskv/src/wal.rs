@@ -1,3 +1,4 @@
+use datafusion::parquet::data_type::AsBytes;
 use std::{
     io::SeekFrom,
     marker::PhantomData,
@@ -19,7 +20,6 @@ use protos::kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRow
 use protos::models as fb_models;
 use trace::{debug, error, info, warn};
 
-use crate::engine;
 use crate::file_system::file_manager::{self, FileManager};
 use crate::tsm::codec::get_str_codec;
 use crate::{
@@ -33,15 +33,17 @@ use crate::{
     memcache::MemCache,
     version_set::VersionSet,
 };
+use crate::{engine, TseriesFamilyId};
 
 const SEGMENT_HEADER_SIZE: usize = 32;
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
-const BLOCK_HEADER_SIZE: usize = 17;
+const BLOCK_HEADER_SIZE: usize = 21;
 
 pub enum WalTask {
     Write {
+        id: TseriesFamilyId,
         points: Arc<Vec<u8>>,
         // (seq_no, written_size)
         cb: oneshot::Sender<Result<(u64, usize)>>,
@@ -70,6 +72,7 @@ impl From<u8> for WalEntryType {
 
 pub struct WalEntryBlock {
     pub typ: WalEntryType,
+    pub id: TseriesFamilyId,
     pub seq: u64,
     pub crc: u32,
     pub len: u32,
@@ -81,6 +84,7 @@ impl WalEntryBlock {
         Self {
             typ,
             seq: 0,
+            id: 0,
             crc: crc32fast::hash(buf),
             len: buf.len() as u32,
             buf: buf.into(),
@@ -89,12 +93,14 @@ impl WalEntryBlock {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let typ = WalEntryType::from(bytes[0]);
-        let seq = byte_utils::decode_be_u64(&bytes[1..9]);
-        let crc = byte_utils::decode_be_u32(&bytes[9..13]);
-        let len = byte_utils::decode_be_u32(&bytes[13..17]);
+        let id = byte_utils::decode_be_u32(&bytes[1..5]);
+        let seq = byte_utils::decode_be_u64(&bytes[5..13]);
+        let crc = byte_utils::decode_be_u32(&bytes[13..17]);
+        let len = byte_utils::decode_be_u32(&bytes[17..21]);
         let buf = bytes[17..].to_vec();
         Self {
             typ,
+            id,
             seq,
             crc,
             len,
@@ -179,7 +185,12 @@ impl WalWriter {
         })
     }
 
-    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> Result<(u64, usize)> {
+    pub async fn write(
+        &mut self,
+        typ: WalEntryType,
+        data: &[u8],
+        id: TseriesFamilyId,
+    ) -> Result<(u64, usize)> {
         let typ = typ as u8;
         let mut pos = self.size;
         let mut seq = self.max_sequence;
@@ -187,6 +198,10 @@ impl WalWriter {
         self.file
             // write type
             .write_at(pos, &[typ])
+            .and_then(|size| {
+                pos += size as u64;
+                self.file.write_at(pos, &id.to_be_bytes())
+            })
             .and_then(|size| {
                 // write seq
                 pos += size as u64;
@@ -305,9 +320,14 @@ impl WalManager {
         Ok(())
     }
 
-    pub async fn write(&mut self, typ: WalEntryType, data: &[u8]) -> Result<(u64, usize)> {
+    pub async fn write(
+        &mut self,
+        typ: WalEntryType,
+        data: &[u8],
+        id: TseriesFamilyId,
+    ) -> Result<(u64, usize)> {
         self.roll_wal_file().await?;
-        self.current_file.write(typ, data).await
+        self.current_file.write(typ, data, id).await
     }
 
     pub async fn recover(
@@ -351,7 +371,7 @@ impl WalManager {
                                     version: 1,
                                     points: dst[0].to_vec(),
                                 };
-                                engine.write_from_wal(req, e.seq).await.unwrap();
+                                engine.write_from_wal(e.id, req, e.seq).await.unwrap();
                             }
                             WalEntryType::Delete => {
                                 // TODO delete a memcache entry
@@ -420,9 +440,10 @@ impl WalReader {
             return Ok(None);
         }
         let typ = self.block_header_buf[0];
-        let seq = byte_utils::decode_be_u64(self.block_header_buf[1..9].into());
-        let crc = byte_utils::decode_be_u32(self.block_header_buf[9..13].into());
-        let key = match self.block_header_buf[13..17].try_into() {
+        let id = byte_utils::decode_be_u32(self.block_header_buf[1..5].into());
+        let seq = byte_utils::decode_be_u64(self.block_header_buf[5..13].into());
+        let crc = byte_utils::decode_be_u32(self.block_header_buf[13..17].into());
+        let key = match self.block_header_buf[17..21].try_into() {
             Ok(v) => v,
             Err(e) => {
                 error!("failed try into block header buf : {:?}", e);
@@ -451,6 +472,7 @@ impl WalReader {
 
         Ok(Some(WalEntryBlock {
             typ: typ.into(),
+            id,
             seq,
             crc,
             len: read_bytes as u32,
@@ -462,17 +484,19 @@ impl WalReader {
 #[cfg(test)]
 mod test {
     use core::panic;
+    use std::time::Duration;
     use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
 
     use chrono::Utc;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use tokio::runtime;
+    use tokio::time::sleep;
 
     use config::get_config;
     use models::codec::Encoding;
     use protos::{models as fb_models, models_helper};
-    use trace::init_default_global_tracing;
+    use trace::{info, init_default_global_tracing};
 
     use crate::engine::Engine;
     use crate::file_system::file_manager::{self, list_file_names, FileManager};
@@ -617,7 +641,9 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, &enc_points).await.unwrap();
+                mgr.write(WalEntryType::Write, &enc_points, 0)
+                    .await
+                    .unwrap();
             };
         }
 
@@ -649,7 +675,9 @@ mod test {
                 .encode(&[&blk.buf], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, &enc_points).await.unwrap();
+            mgr.write(WalEntryType::Write, &enc_points, 0)
+                .await
+                .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -684,7 +712,9 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, &enc_points).await.unwrap();
+                mgr.write(WalEntryType::Write, &enc_points, 0)
+                    .await
+                    .unwrap();
             };
         }
 
@@ -714,7 +744,7 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                rt.block_on(mgr.write(WalEntryType::Write, &enc_points))
+                rt.block_on(mgr.write(WalEntryType::Write, &enc_points, 10))
                     .unwrap();
             };
         }
@@ -722,9 +752,10 @@ mod test {
         check_wal_files(mgr.current_dir);
         let opt = kv_option::Options::from(&global_config);
         let tskv = rt.block_on(TsKv::open(opt, rt.clone())).unwrap();
-        let ver = tskv.get_db_version("db0", 0).unwrap().unwrap();
+        let ver = tskv.get_db_version("db0", 10).unwrap().unwrap();
+        assert_eq!(ver.ts_family_id, 10);
         let expect = r#"range: TimeRange { min_ts: 1, max_ts: 1 }, rows: [RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }], size: 736 }] } })]"#;
         let ans = format!("{:?}", ver.caches.mut_cache.read().read_series_data());
-        assert_eq!(&ans[622..], expect);
+        assert_eq!(&ans[628..], expect);
     }
 }

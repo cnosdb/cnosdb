@@ -40,6 +40,7 @@ use crate::database::Database;
 use crate::file_system::file_manager::{self, init_file_manager, FileManager};
 use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
+use crate::tseries_family::TseriesFamily;
 use crate::Error::DatabaseNotFound;
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
@@ -177,9 +178,9 @@ impl TsKv {
                 tokio::select! {
                     wal_task = receiver.recv() => {
                         match wal_task {
-                            Some(WalTask::Write { points, cb }) => {
+                            Some(WalTask::Write { id, points, cb }) => {
                                 // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, &points).await;
+                                let ret = wal_manager.write(WalEntryType::Write, &points, id).await;
                                 let send_ret = cb.send(ret);
                                 match send_ret {
                                     Ok(wal_result) => {}
@@ -353,7 +354,7 @@ impl TsKv {
 impl Engine for TsKv {
     async fn write(
         &self,
-        id: u32,
+        id: TseriesFamilyId,
         write_batch: WritePointsRpcRequest,
     ) -> Result<WritePointsRpcResponse> {
         let points = Arc::new(write_batch.points);
@@ -383,6 +384,7 @@ impl Engine for TsKv {
                 .map_err(|_| Error::Send)?;
             self.wal_sender
                 .send(WalTask::Write {
+                    id,
                     cb,
                     points: Arc::new(enc_points),
                 })
@@ -411,6 +413,7 @@ impl Engine for TsKv {
 
     async fn write_from_wal(
         &self,
+        id: TseriesFamilyId,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
@@ -428,11 +431,11 @@ impl Engine for TsKv {
 
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
-        let opt_tsf = db.read().get_tsfamily_random();
+        let opt_tsf = db.read().get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
-                self.global_ctx.tsfamily_id_next(),
+                id,
                 seq,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),

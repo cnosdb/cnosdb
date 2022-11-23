@@ -20,8 +20,8 @@ use openraft::RaftNetworkFactory;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::NodeId;
 use crate::ExampleTypeConfig;
+use crate::NodeId;
 
 pub struct Connections {
     pub clients: Arc<HashMap<String, reqwest::Client>>,
@@ -116,8 +116,7 @@ impl RaftNetwork<ExampleTypeConfig> for ExampleNetworkConnection {
     async fn send_vote(
         &mut self,
         req: VoteRequest<NodeId>,
-    ) -> Result<VoteResponse<NodeId>, RPCError<ExampleTypeConfig, VoteError<NodeId>>>
-    {
+    ) -> Result<VoteResponse<NodeId>, RPCError<ExampleTypeConfig, VoteError<NodeId>>> {
         self.owner
             .send_rpc(self.target, self.target_node.as_ref(), "raft-vote", req)
             .await
