@@ -552,9 +552,7 @@ impl Engine for TsKv {
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
-        self.runtime
-            .block_on(database::delete_table_async(database, table, version_set))?;
-        Ok(())
+        futures::executor::block_on(database::delete_table_async(database, table, version_set))
     }
 
     fn delete_columns(

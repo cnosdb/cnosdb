@@ -31,6 +31,9 @@ pub struct Args {
     /// work thread num
     #[clap(short, long, value_parser, default_value = "4")]
     pub thread: usize,
+
+    #[clap(short, long)]
+    pub pattern: Option<String>,
 }
 
 fn default_case_path() -> Result<PathBuf> {
@@ -63,7 +66,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     let case_path = default_case_path()?;
-    let mut groups = TestGroups::load(&case_path)?;
+    let mut groups = TestGroups::load(&case_path, ARGS.pattern.clone())?;
 
     let ping = rt.block_on(CLIENT.ping());
     //TODO (ADD startup db)
