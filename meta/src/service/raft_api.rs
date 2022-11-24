@@ -1,22 +1,21 @@
+use actix_web::get;
 use actix_web::post;
 use actix_web::web;
 use actix_web::web::Data;
 use actix_web::Responder;
+use openraft::error::Infallible;
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::VoteRequest;
-use web::Json;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
-use actix_web::get;
-use openraft::error::Infallible;
 use openraft::Node;
 use openraft::RaftMetrics;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use web::Json;
 
 use crate::meta_app::MetaApp;
-use crate::NodeId;
 use crate::ExampleTypeConfig;
-
+use crate::NodeId;
 
 #[post("/raft-vote")]
 pub async fn vote(
@@ -45,7 +44,6 @@ pub async fn snapshot(
     Ok(Json(res))
 }
 
-
 #[post("/add-learner")]
 pub async fn add_learner(
     app: Data<MetaApp>,
@@ -68,7 +66,6 @@ pub async fn change_membership(
     let res = app.raft.change_membership(req.0, true, false).await;
     Ok(Json(res))
 }
-
 
 #[post("/init")]
 pub async fn init(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {

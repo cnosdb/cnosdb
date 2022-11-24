@@ -2,7 +2,7 @@ use crate::error::Result;
 use crate::index::IndexResult;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
-use crate::{Options, TimeRange, TsKv};
+use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
 use async_trait::async_trait;
 use datafusion::prelude::Column;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
@@ -29,6 +29,7 @@ pub trait Engine: Send + Sync + Debug {
 
     async fn write_from_wal(
         &self,
+        id: u32,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
@@ -94,6 +95,7 @@ impl Engine for MockEngine {
 
     async fn write_from_wal(
         &self,
+        id: u32,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {

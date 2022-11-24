@@ -1,3 +1,3 @@
 pub mod api;
-pub mod raft_api;
 pub mod connection;
+pub mod raft_api;

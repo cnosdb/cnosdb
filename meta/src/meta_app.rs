@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use openraft::Config;
 
-use crate::NodeId;
 use crate::ExampleRaft;
+use crate::NodeId;
 use crate::Store;
 
 pub struct MetaApp {
