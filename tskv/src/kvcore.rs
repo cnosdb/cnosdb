@@ -25,7 +25,7 @@ use tokio::{
 use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
-use models::schema::{DatabaseSchema, TableColumn, TableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
     ValueType,
@@ -41,7 +41,6 @@ use crate::file_system::file_manager::{self, init_file_manager, FileManager};
 use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
 use crate::tseries_family::TseriesFamily;
-use crate::index::IndexError::TableNotFound;
 use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
@@ -63,6 +62,8 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
+use crate::error::SchemaSnafu;
+
 
 #[derive(Debug)]
 pub struct TsKv {
@@ -498,7 +499,7 @@ impl Engine for TsKv {
 
     fn list_tables(&self, database: &str) -> Result<Vec<String>> {
         if let Some(db) = self.version_set.read().get_db(database) {
-            Ok(db.read().get_index().list_tables())
+            Ok(db.read().get_schemas().list_tables())
         } else {
             error!("Database {}, not found", database);
             Err(Error::DatabaseNotFound {
@@ -542,19 +543,26 @@ impl Engine for TsKv {
     }
 
     fn create_table(&self, schema: &TableSchema) -> Result<()> {
-        if let Some(db) = self.version_set.write().get_db(&schema.db()) {
+        // todo: remove this
+        let schema = match schema {
+            TableSchema::TsKvTableSchema(schema) => {schema}
+            TableSchema::ExternalTableSchema(_) => {
+                return Err(Error::Cancel)
+            }
+        };
+        if let Some(db) = self.version_set.write().get_db(&schema.db) {
             db.read()
-                .get_index()
+                .get_schemas()
                 .create_table(schema)
                 .map_err(|e| {
                     error!("failed create database '{}'", e);
                     e
                 })
-                .context(IndexErrSnafu)
+                .context(SchemaSnafu)
         } else {
-            error!("Database {}, not found", schema.db());
+            error!("Database {}, not found", schema.db);
             Err(Error::DatabaseNotFound {
-                database: schema.db(),
+                database: schema.db.clone(),
             })
         }
     }
@@ -638,11 +646,13 @@ impl Engine for TsKv {
         if let Some(db) = self.version_set.read().get_db(name) {
             let val = db
                 .read()
-                .get_table_schema(tab)
-                .context(error::IndexErrSnafu)?;
-            return Ok(val);
+                .get_table_schema(tab)?;
+            // todo: remove this
+            return match val {
+                None => Ok(None),
+                Some(schema) => Ok(Some(TableSchema::TsKvTableSchema(schema)))
+            }
         }
-
         Ok(None)
     }
 
@@ -710,8 +720,7 @@ impl Engine for TsKv {
     fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
         let db = self.get_db(database)?;
         db.read()
-            .add_table_column(table, column)
-            .context(IndexErrSnafu)?;
+            .add_table_column(table, column)?;
         Ok(())
     }
 
@@ -719,8 +728,7 @@ impl Engine for TsKv {
         let db = self.get_db(database)?;
         let schema = db
             .read()
-            .get_tskv_table_schema(table)
-            .context(IndexErrSnafu)?;
+            .get_table_schema(table)?.ok_or(Error::NotFoundTable {table_name: table.to_string()})?;
         let column_id = schema
             .column(column_name)
             .ok_or(Error::NotFoundField {
@@ -728,8 +736,7 @@ impl Engine for TsKv {
             })?
             .id;
         db.read()
-            .drop_table_column(table, column_name)
-            .context(IndexErrSnafu)?;
+            .drop_table_column(table, column_name)?;
         let sid = db
             .read()
             .get_index()
@@ -748,8 +755,7 @@ impl Engine for TsKv {
     ) -> Result<()> {
         let db = self.get_db(database)?;
         db.read()
-            .change_table_column(table, column_name, new_column)
-            .context(IndexErrSnafu)?;
+            .change_table_column(table, column_name, new_column)?;
         Ok(())
     }
 }

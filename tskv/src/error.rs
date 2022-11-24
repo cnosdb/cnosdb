@@ -7,6 +7,7 @@ use crate::{
     tsm::{ReadTsmError, WriteTsmError},
     wal,
 };
+use crate::schema::error::SchemaError;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -117,4 +118,7 @@ pub enum Error {
 
     #[snafu(display("common error: {}", reason))]
     CommonError { reason: String },
+
+    #[snafu(display("Error with schema action {}", source))]
+    Schema { source: SchemaError},
 }
