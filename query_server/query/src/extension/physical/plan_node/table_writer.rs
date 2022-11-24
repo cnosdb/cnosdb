@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use datafusion::{
     arrow::{
         array::UInt64Array,
-        datatypes::{DataType, Field, Schema, SchemaRef},
+        datatypes::{Field, Schema, SchemaRef},
         record_batch::RecordBatch,
     },
     error::DataFusionError,
@@ -17,6 +17,7 @@ use datafusion::{
     },
 };
 use futures::TryStreamExt;
+use spi::query::AFFECTED_ROWS;
 use std::{any::Any, fmt::Debug, sync::Arc};
 
 use datafusion::error::Result;
@@ -28,9 +29,11 @@ use crate::data_source::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 pub struct TableWriterExec {
     input: Arc<dyn ExecutionPlan>,
-    schema: TskvTableSchema,
+    table: TskvTableSchema,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
+
+    schema: SchemaRef,
 
     record_batch_sink_privider: Arc<dyn RecordBatchSinkProvider>,
 }
@@ -38,14 +41,21 @@ pub struct TableWriterExec {
 impl TableWriterExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
-        schema: TskvTableSchema,
+        table: TskvTableSchema,
         record_batch_sink_privider: Arc<dyn RecordBatchSinkProvider>,
     ) -> Self {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            AFFECTED_ROWS.0,
+            AFFECTED_ROWS.1,
+            false,
+        )]));
+
         Self {
             input,
-            schema,
+            table,
             metrics: ExecutionPlanMetricsSet::new(),
             record_batch_sink_privider,
+            schema,
         }
     }
 }
@@ -64,7 +74,7 @@ impl ExecutionPlan for TableWriterExec {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.input.schema()
+        self.schema.clone()
     }
 
     fn output_partitioning(&self) -> Partitioning {
@@ -97,8 +107,9 @@ impl ExecutionPlan for TableWriterExec {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(TableWriterExec {
             input: children[0].clone(),
-            schema: self.schema.clone(),
+            table: self.table.clone(),
             metrics: self.metrics.clone(),
+            schema: self.schema.clone(),
             record_batch_sink_privider: self.record_batch_sink_privider.clone(),
         }))
     }
@@ -124,7 +135,13 @@ impl ExecutionPlan for TableWriterExec {
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(
             self.schema(),
-            futures::stream::once(do_write(input, record_batch_sink, metrics)).try_flatten(),
+            futures::stream::once(do_write(
+                self.schema.clone(),
+                input,
+                record_batch_sink,
+                metrics,
+            ))
+            .try_flatten(),
         )))
     }
 
@@ -132,13 +149,25 @@ impl ExecutionPlan for TableWriterExec {
         match t {
             DisplayFormatType::Default => {
                 let schemas: Vec<String> = self
-                    .schema
+                    .table
                     .columns()
                     .iter()
                     .map(|v| format!("{} := {}", v.name, v.column_type))
                     .collect();
 
-                write!(f, "TableWriterExec: schema=[{}]", schemas.join(", "),)?;
+                let outputs = self
+                    .schema
+                    .fields
+                    .iter()
+                    .map(|v| v.name().to_string())
+                    .collect::<Vec<_>>();
+
+                write!(
+                    f,
+                    "TableWriterExec: schema=[{}], output=[{}]",
+                    schemas.join(", "),
+                    outputs.join(", ")
+                )?;
 
                 Ok(())
             }
@@ -155,6 +184,7 @@ impl ExecutionPlan for TableWriterExec {
 }
 
 async fn do_write(
+    schema: SchemaRef,
     mut input: SendableRecordBatchStream,
     record_batch_sink: Box<dyn RecordBatchSink>,
     metrics: TableWriterMetrics,
@@ -177,18 +207,16 @@ async fn do_write(
 
     metrics.done();
 
-    aggregate_statistiction(metrics)
+    aggregate_statistiction(schema, metrics)
 }
 
-fn aggregate_statistiction(metrics: TableWriterMetrics) -> Result<SendableRecordBatchStream> {
+fn aggregate_statistiction(
+    schema: SchemaRef,
+    metrics: TableWriterMetrics,
+) -> Result<SendableRecordBatchStream> {
     let rows_writed = metrics.rows_writed().value();
 
     let output_rows_col = Arc::new(UInt64Array::from(vec![rows_writed as u64]));
-    let schema = Arc::new(Schema::new(vec![Field::new(
-        "rows",
-        DataType::UInt64,
-        false,
-    )]));
 
     let batch = Arc::new(RecordBatch::try_new(schema.clone(), vec![output_rows_col])?);
 

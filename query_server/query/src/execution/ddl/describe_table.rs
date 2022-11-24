@@ -1,5 +1,4 @@
 use crate::execution::ddl::DDLDefinitionTask;
-use crate::metadata::stream_from_batches;
 use async_trait::async_trait;
 use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
@@ -72,8 +71,8 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)
             .context(ExternalSnafu)?;
-            let batches = vec![Arc::new(batch)];
-            Ok(Output::StreamData(stream_from_batches(batches)))
+            let batches = vec![batch];
+            Ok(Output::StreamData(batches))
         }
         TableSchema::ExternalTableSchema(external_schema) => {
             let mut name = StringBuilder::new();
@@ -92,8 +91,8 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)
             .context(ExternalSnafu)?;
-            let batches = vec![Arc::new(batch)];
-            Ok(Output::StreamData(stream_from_batches(batches)))
+            let batches = vec![batch];
+            Ok(Output::StreamData(batches))
         }
     }
 }

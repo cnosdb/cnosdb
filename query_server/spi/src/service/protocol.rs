@@ -1,10 +1,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::catalog::DEFAULT_DATABASE;
+use models::auth::user::UserInfo;
+
+use crate::catalog::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use crate::query::execution::Output;
 use crate::query::session::IsiphoSessionConfig;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryId(u64);
 
 impl QueryId {
@@ -15,10 +17,16 @@ impl QueryId {
     }
 }
 
-#[derive(Clone)]
-pub struct UserInfo {
-    pub user: String,
-    pub password: String,
+impl From<u64> for QueryId {
+    fn from(u: u64) -> Self {
+        QueryId(u)
+    }
+}
+
+impl ToString for QueryId {
+    fn to_string(&self) -> String {
+        self.0.to_string()
+    }
 }
 
 #[derive(Clone)]
@@ -28,13 +36,14 @@ pub struct Context {
     // security certification info
     // ...
     user_info: UserInfo,
+    tenant: String,
     database: String,
     session_config: IsiphoSessionConfig,
 }
 
 impl Context {
-    pub fn catalog(&self) -> &str {
-        &self.user_info.user
+    pub fn tenant(&self) -> &str {
+        &self.tenant
     }
 
     pub fn database(&self) -> &str {
@@ -52,6 +61,7 @@ impl Context {
 
 pub struct ContextBuilder {
     user_info: UserInfo,
+    tenant: String,
     database: String,
     session_config: IsiphoSessionConfig,
 }
@@ -60,9 +70,17 @@ impl ContextBuilder {
     pub fn new(user_info: UserInfo) -> Self {
         Self {
             user_info,
+            tenant: DEFAULT_CATALOG.to_string(),
             database: DEFAULT_DATABASE.to_string(),
             session_config: Default::default(),
         }
+    }
+
+    pub fn with_tenant(mut self, tenant: Option<String>) -> Self {
+        if let Some(tenant) = tenant {
+            self.tenant = tenant
+        }
+        self
     }
 
     pub fn with_database(mut self, database: Option<String>) -> Self {
@@ -84,6 +102,7 @@ impl ContextBuilder {
     pub fn build(self) -> Context {
         Context {
             user_info: self.user_info,
+            tenant: self.tenant,
             database: self.database,
             session_config: self.session_config,
         }

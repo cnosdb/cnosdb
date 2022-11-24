@@ -18,52 +18,24 @@
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(102, 222, 333, 'tag12', 'tag22'); --
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(103, 333, 222, 'tag13', 'tag23'); --
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT m2(TIME, f0, f1, t0, t1) VALUES(104, 444, 111, 'tag14', 'tag24'); --
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select time from m2; --

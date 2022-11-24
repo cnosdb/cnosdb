@@ -4,7 +4,7 @@ use coordinator::service::CoordinatorRef;
 
 use models::{
     meta_data::DatabaseInfo,
-    schema::{DatabaseSchema, TableSchema},
+    schema::{DatabaseSchema, TableColumn, TableSchema},
 };
 use parking_lot::RwLock;
 
@@ -40,9 +40,9 @@ impl UserCatalog {
                 })
             }
             Some(db) => {
-                let tables = db.table_names();
-                for i in tables {
-                    db.deregister_table(&i)?;
+                let tables = db.table_names()?;
+                for table in tables {
+                    db.deregister_table(&table)?;
                 }
             }
         }
@@ -55,9 +55,12 @@ impl UserCatalog {
         Ok(())
     }
 
-    pub fn schema_names(&self) -> Vec<String> {
-        let schemas = self.schemas.read();
-        schemas.keys().cloned().collect()
+    pub fn schema_names(&self) -> Result<Vec<String>> {
+        self.engine
+            .list_databases()
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
     }
 
     // get db_schema
@@ -156,9 +159,12 @@ impl Database {
         }
     }
 
-    pub fn table_names(&self) -> Vec<String> {
-        let tables = self.tables.read();
-        tables.keys().cloned().collect()
+    pub fn table_names(&self) -> Result<Vec<String>> {
+        self.engine
+            .list_tables(&self.db_name)
+            .map_err(|_| MetadataError::DatabaseNotExists {
+                database_name: self.db_name.clone(),
+            })
     }
 
     pub fn table(&self, name: &str) -> Option<TableSchema> {
@@ -176,29 +182,27 @@ impl Database {
             return Some(schema);
         }
 
-        // get external table
-        if let Some(v) = tables.get(name) {
-            return Some(v.clone());
-        }
-
         None
     }
 
     pub fn register_table(&self, name: String, table: TableSchema) -> Result<Option<TableSchema>> {
-        if self.table_exist(name.as_str()) {
+        let mut tables = self.tables.write();
+        if tables.contains_key(name.as_str()) {
             return Err(MetadataError::TableAlreadyExists { table_name: name });
         }
+
         self.engine
             .create_table(&table)
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })?;
-        let mut tables = self.tables.write();
         Ok(tables.insert(name, table))
     }
 
     pub fn deregister_table(&self, name: &str) -> Result<Option<TableSchema>> {
         let mut tables = self.tables.write();
+
+        let res = tables.remove(name);
 
         self.engine
             .drop_table(&self.db_name, name)
@@ -206,11 +210,38 @@ impl Database {
                 message: format!("{}", e),
             })?;
 
-        Ok(tables.remove(name))
+        Ok(res)
     }
 
-    pub fn table_exist(&self, name: &str) -> bool {
-        let tables = self.tables.read();
-        tables.contains_key(name)
+    pub fn table_add_column(&self, table: &str, column: TableColumn) -> Result<()> {
+        let _lock = self.tables.write();
+        self.engine
+            .add_table_column(&self.db_name, table, column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
+    }
+
+    pub fn table_drop_column(&self, table: &str, column: &str) -> Result<()> {
+        let _lock = self.tables.write();
+        self.engine
+            .drop_table_column(&self.db_name, table, column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
+    }
+
+    pub fn table_alter_column(
+        &self,
+        table: &str,
+        column: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let _lock = self.tables.write();
+        self.engine
+            .change_table_column(&self.db_name, table, column, new_column)
+            .map_err(|e| MetadataError::External {
+                message: format!("{}", e),
+            })
     }
 }

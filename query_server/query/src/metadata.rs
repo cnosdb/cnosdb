@@ -1,8 +1,7 @@
 use std::any::Any;
 
 use crate::catalog::{Database, UserCatalog, UserCatalogRef};
-use datafusion::arrow::array::StringArray;
-use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::arrow::datatypes::DataType;
 use datafusion::physical_plan::common::SizedRecordBatchStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MemTrackingMetrics};
 use datafusion::physical_plan::SendableRecordBatchStream;
@@ -13,8 +12,7 @@ use datafusion::{
 };
 
 use coordinator::service::CoordinatorRef;
-use models::schema::TableSchema;
-use spi::query::execution::Output;
+use models::schema::{TableColumn, TableSchema};
 
 use datafusion::arrow::record_batch::RecordBatch;
 
@@ -76,14 +74,14 @@ impl MetaData for LocalCatalogMeta {
         self
     }
 
-    fn with_catalog(&self, catalog_name: &str) -> Arc<dyn MetaData + Send + Sync> {
+    fn with_catalog(&self, catalog_name: &str) -> Arc<dyn MetaData> {
         let mut metadata = self.clone();
         metadata.catalog_name = catalog_name.to_string();
 
         Arc::new(metadata)
     }
 
-    fn with_database(&self, database: &str) -> Arc<dyn MetaData + Send + Sync> {
+    fn with_database(&self, database: &str) -> Arc<dyn MetaData> {
         let mut metadata = self.clone();
         metadata.database_name = database.to_string();
 
@@ -92,37 +90,29 @@ impl MetaData for LocalCatalogMeta {
 
     //todo: local mode dont support multi-tenant
 
-    fn catalog_name(&self) -> String {
-        self.catalog_name.clone()
+    fn catalog_name(&self) -> &str {
+        self.catalog_name.as_str()
     }
 
-    fn schema_name(&self) -> String {
-        self.database_name.clone()
+    fn schema_name(&self) -> &str {
+        self.database_name.as_str()
     }
 
     fn table(&self, table: TableReference) -> Result<TableSchema> {
         let catalog_name = self.catalog_name();
         let schema_name = self.schema_name();
-        let name = table.resolve(&catalog_name, &schema_name);
+        let name = table.resolve(catalog_name, schema_name);
         // note: local mod dont support multiple catalog use DEFAULT_CATALOG
         // let catalog_name = name.catalog;
-        let schema = match self.catalog.schema(name.schema) {
-            None => {
-                return Err(MetadataError::DatabaseNotExists {
-                    database_name: name.schema.to_string(),
-                });
-            }
-            Some(s) => s,
-        };
-        let table = match schema.table(name.table) {
-            None => {
-                return Err(MetadataError::TableNotExists {
-                    table_name: name.table.to_string(),
-                });
-            }
-            Some(t) => t,
-        };
-        Ok(table)
+        self.catalog
+            .schema(name.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: name.schema.to_string(),
+            })?
+            .table(name.table)
+            .ok_or_else(|| MetadataError::TableNotExists {
+                table_name: name.table.to_string(),
+            })
     }
 
     fn database(&self, name: &str) -> Result<DatabaseSchema> {
@@ -140,14 +130,13 @@ impl MetaData for LocalCatalogMeta {
     fn drop_table(&self, name: &str) -> Result<()> {
         let table: TableReference = name.into();
         let name = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
-        let schema = self.catalog.schema(name.schema);
-        if let Some(db) = schema {
-            return db.deregister_table(name.table).map(|_| ());
-        }
-
-        Err(MetadataError::DatabaseNotExists {
-            database_name: name.schema.to_string(),
-        })
+        self.catalog
+            .schema(name.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: name.schema.to_string(),
+            })?
+            .deregister_table(name.table)
+            .map(|_| ())
     }
 
     fn drop_database(&self, name: &str) -> Result<()> {
@@ -180,68 +169,22 @@ impl MetaData for LocalCatalogMeta {
             .map(|_| ())
     }
 
-    fn database_names(&self) -> Vec<String> {
+    fn database_names(&self) -> Result<Vec<String>> {
         self.catalog.schema_names()
     }
 
-    fn show_databases(&self) -> Result<Output> {
-        let dbs = self.engine.list_databases();
-
-        match dbs {
-            Ok(databases) => {
-                let schema = Arc::new(Schema::new(vec![Field::new(
-                    "Database",
-                    DataType::Utf8,
-                    false,
-                )]));
-
-                let batch =
-                    RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(databases))])
-                        .unwrap();
-
-                let batches = vec![Arc::new(batch)];
-
-                Ok(Output::StreamData(stream_from_batches(batches)))
-            }
-            Err(err) => Err(MetadataError::InternalError {
-                error_msg: err.to_string(),
-            }),
-        }
-    }
-
-    fn show_tables(&self, name: &Option<String>) -> Result<Output> {
+    fn show_tables(&self, name: &Option<String>) -> Result<Vec<String>> {
         let database_name = match name {
             None => self.database_name.as_str(),
             Some(v) => v.as_str(),
         };
 
-        match self.catalog.schema(database_name) {
-            None => Err(MetadataError::DatabaseNotExists {
+        self.catalog
+            .schema(database_name)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: database_name.to_string(),
-            }),
-            Some(_db_cfgs) => {
-                let schema = Arc::new(Schema::new(vec![Field::new(
-                    "Table",
-                    DataType::Utf8,
-                    false,
-                )]));
-
-                match self.engine.list_tables(database_name) {
-                    Ok(tables) => {
-                        let batch =
-                            RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(tables))])
-                                .unwrap();
-
-                        let batches = vec![Arc::new(batch)];
-
-                        Ok(Output::StreamData(stream_from_batches(batches)))
-                    }
-                    Err(err) => Err(MetadataError::InternalError {
-                        error_msg: err.to_string(),
-                    }),
-                }
-            }
-        }
+            })?
+            .table_names()
     }
 
     fn alter_database(&self, database: DatabaseSchema) -> Result<()> {
@@ -250,6 +193,45 @@ impl MetaData for LocalCatalogMeta {
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })
+    }
+
+    fn alter_table_add_column(&self, table_name: &str, column: TableColumn) -> Result<()> {
+        let table_ref = TableReference::from(table_name)
+            .resolve(self.catalog_name.as_str(), self.database_name.as_str());
+        self.catalog
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
+            .table_add_column(table_ref.table, column)
+    }
+
+    fn alter_table_alter_column(
+        &self,
+        table_name: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let table_ref = TableReference::from(table_name)
+            .resolve(self.catalog_name.as_str(), self.database_name.as_str());
+        self.catalog
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
+            .table_alter_column(table_ref.table, column_name, new_column)
+    }
+
+    fn alter_table_drop_column(&self, table_name: &str, column_name: &str) -> Result<()> {
+        let table_ref = TableReference::from(table_name)
+            .resolve(self.catalog_name.as_str(), self.database_name.as_str());
+
+        self.catalog
+            .schema(table_ref.schema)
+            .ok_or_else(|| MetadataError::DatabaseNotExists {
+                database_name: table_ref.schema.to_string(),
+            })?
+            .table_drop_column(table_name, column_name)
     }
 }
 
@@ -297,7 +279,7 @@ impl ContextProvider for MetadataProvider {
             Err(_) => {
                 let catalog_name = self.meta.catalog_name();
                 let schema_name = self.meta.schema_name();
-                let resolved_name = name.resolve(&catalog_name, &schema_name);
+                let resolved_name = name.resolve(catalog_name, schema_name);
                 Err(DataFusionError::Plan(format!(
                     "failed to resolve user:{}  db: {}, table: {}",
                     resolved_name.catalog, resolved_name.schema, resolved_name.table

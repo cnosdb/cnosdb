@@ -1,11 +1,13 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{DataType, Ident, ObjectName};
+use datafusion::sql::sqlparser::ast::{DataType, Ident, ObjectName, SqlOption, Value};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 
+use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
+
 /// Statement representations
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ExtStatement {
     /// ANSI SQL AST node
     SqlStatement(Box<Statement>),
@@ -13,17 +15,48 @@ pub enum ExtStatement {
     CreateExternalTable(CreateExternalTable),
     CreateTable(CreateTable),
     CreateDatabase(CreateDatabase),
+    CreateTenant(CreateTenant),
     CreateUser(CreateUser),
+    CreateRole(CreateRole),
 
-    Drop(DropObject),
-    DropUser(DropUser),
+    DropDatabaseObject(DropDatabaseObject),
+    DropTenantObject(DropTenantObject),
+    DropGlobalObject(DropGlobalObject),
+
+    GrantRevoke(GrantRevoke),
 
     DescribeTable(DescribeTable),
     DescribeDatabase(DescribeDatabase),
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
     //todo:  insert/update/alter
+
+    // system cmd
+    ShowQueries,
     AlterDatabase(AlterDatabase),
+    AlterTable(AlterTable),
+    AlterTenant(AlterTenant),
+    AlterUser(AlterUser),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterTable {
+    pub table_name: ObjectName,
+    pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterTableAction {
+    AddColumn {
+        column: ColumnOption,
+    },
+    AlterColumnEncoding {
+        column_name: Ident,
+        encoding: Encoding,
+    },
+    DropColumn {
+        column_name: Ident,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,11 +65,42 @@ pub struct AlterDatabase {
     pub options: DatabaseOptions,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DropObject {
+#[derive(Debug, Clone)]
+pub struct AlterTenant {
+    /// tenant name
+    pub name: Ident,
+    pub operation: AlterTenantOperation,
+}
+
+#[derive(Debug, Clone)]
+pub enum AlterTenantOperation {
+    // Ident: user_name, Ident: role_name
+    AddUser(Ident, Ident),
+    // Ident: user_name, Ident: role_name
+    SetUser(Ident, Ident),
+    RemoveUser(Ident),
+    Set(SqlOption),
+}
+
+#[derive(Debug, Clone)]
+pub struct DropDatabaseObject {
     pub object_name: ObjectName,
     pub if_exist: bool,
-    pub obj_type: ObjectType,
+    pub obj_type: DatabaseObjectType,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropTenantObject {
+    pub object_name: Ident,
+    pub if_exist: bool,
+    pub obj_type: TenantObjectType,
+}
+
+#[derive(Debug, Clone)]
+pub struct DropGlobalObject {
+    pub object_name: Ident,
+    pub if_exist: bool,
+    pub obj_type: GlobalObjectType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,10 +109,62 @@ pub struct DescribeObject {
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DropUser {}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateUser {}
+#[derive(Debug, Clone)]
+pub struct CreateUser {
+    pub if_not_exists: bool,
+    /// User name
+    pub name: Ident,
+    pub with_options: Vec<SqlOption>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AlterUser {
+    /// User name
+    pub name: Ident,
+    pub operation: AlterUserOperation,
+}
+
+#[derive(Debug, Clone)]
+pub enum AlterUserOperation {
+    RenameTo(Ident),
+    Set(SqlOption),
+}
+
+#[derive(Debug, Clone)]
+pub struct GrantRevoke {
+    pub is_grant: bool,
+    pub privileges: Vec<Privilege>,
+    pub role_name: Ident,
+}
+
+#[derive(Debug, Clone)]
+pub struct Privilege {
+    pub action: Action,
+    pub database: Ident,
+}
+
+#[derive(Debug, Clone)]
+pub enum Action {
+    Read,
+    Write,
+    All,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateRole {
+    pub if_not_exists: bool,
+    /// Role name
+    pub name: Ident,
+    pub inherit: Option<Ident>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTenant {
+    pub name: Ident,
+    pub if_not_exists: bool,
+    pub with_options: Vec<SqlOption>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateDatabase {
     pub name: ObjectName,
@@ -67,7 +183,27 @@ pub struct ColumnOption {
     pub name: Ident,
     pub is_tag: bool,
     pub data_type: DataType,
-    pub encoding: Encoding,
+    pub encoding: Option<Encoding>,
+}
+
+impl ColumnOption {
+    pub fn new_field(name: Ident, data_type: DataType, encoding: Option<Encoding>) -> Self {
+        Self {
+            name,
+            is_tag: false,
+            data_type,
+            encoding,
+        }
+    }
+
+    pub fn new_tag(name: Ident) -> Self {
+        Self {
+            name,
+            is_tag: true,
+            data_type: DataType::String,
+            encoding: None,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -112,5 +248,19 @@ impl fmt::Display for ObjectType {
             ObjectType::Table => "TABLE",
             ObjectType::Database => "DATABASE",
         })
+    }
+}
+
+pub fn parse_bool_value(value: Value) -> std::result::Result<bool, String> {
+    match value {
+        Value::Boolean(s) => Ok(s),
+        _ => Err(format!("expected boolean value, but found : {}", value)),
+    }
+}
+
+pub fn parse_string_value(value: Value) -> std::result::Result<String, String> {
+    match value {
+        Value::SingleQuotedString(s) => Ok(s),
+        _ => Err(format!("expected string value, but found : {}", value)),
     }
 }

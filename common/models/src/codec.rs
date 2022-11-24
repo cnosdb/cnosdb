@@ -111,7 +111,7 @@ impl FromStr for Encoding {
             "ZSTD" => Ok(Self::Zstd),
             "ZLIB" => Ok(Self::Zlib),
             "BITPACK" => Ok(Self::BitPack),
-            _ => Err("s".to_string()),
+            _ => Err(s.to_string()),
         }
     }
 }

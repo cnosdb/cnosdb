@@ -12,7 +12,8 @@ use trace::debug;
 use trace::trace;
 
 use crate::{
-    extension::logical::plan_node::table_writer::TableWriterPlanNode, table::ClusterTable,
+    extension::logical::plan_node::table_writer::{as_table_writer_plan_node, TableWriterPlanNode},
+    table::ClusterTable,
 };
 
 use datafusion::error::Result;
@@ -73,8 +74,4 @@ impl ExtensionPlanner for TableWriterPlanner {
             },
         )
     }
-}
-
-fn as_table_writer_plan_node(node: &dyn UserDefinedLogicalNode) -> Option<&TableWriterPlanNode> {
-    node.as_any().downcast_ref::<TableWriterPlanNode>()
 }

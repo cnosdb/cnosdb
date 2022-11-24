@@ -19,6 +19,9 @@ serde = { workspace = true }
 snafu = { workspace = true }
 serde_json = { workspace = true }
 datafusion-proto = { workspace = true }
+uuid = { workspace = true }
+derive_builder = { workspace = true }
+openssl = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }

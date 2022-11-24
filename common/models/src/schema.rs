@@ -8,12 +8,13 @@
 //!         - Column #4
 
 use std::collections::HashMap;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
 use std::str::FromStr;
 
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use arrow_schema::Schema;
@@ -30,6 +31,7 @@ use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
 use crate::codec::Encoding;
+use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
 pub type TableSchemaRef = Arc<TskvTableSchema>;
@@ -117,6 +119,7 @@ pub struct TskvTableSchema {
     pub db: String,
     pub name: String,
     pub schema_id: SchemaId,
+    next_column_id: ColumnId,
 
     columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
@@ -129,6 +132,7 @@ impl Default for TskvTableSchema {
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
+            next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
         }
@@ -153,6 +157,7 @@ impl TskvTableSchema {
             db,
             name,
             schema_id: 0,
+            next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,
         }
@@ -167,6 +172,30 @@ impl TskvTableSchema {
                 self.columns.push(col);
                 self.columns.len() - 1
             });
+        self.next_column_id += 1;
+    }
+
+    /// drop column if exists
+    pub fn drop_column(&mut self, col_name: &str) {
+        if let Some(id) = self.columns_index.get(col_name) {
+            self.columns.remove(*id);
+        }
+        let columns_index = self
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| (e.name.clone(), idx))
+            .collect();
+        self.columns_index = columns_index;
+    }
+
+    pub fn change_column(&mut self, col_name: &str, new_column: TableColumn) {
+        let id = match self.columns_index.get(col_name) {
+            None => return,
+            Some(id) => *id,
+        };
+        self.columns_index.insert(new_column.name.clone(), id);
+        self.columns[id] = new_column;
     }
 
     /// Get the metadata of the column according to the column name
@@ -181,6 +210,15 @@ impl TskvTableSchema {
         self.columns_index.get(name)
     }
 
+    pub fn column_name(&self, id: ColumnId) -> Option<&str> {
+        for column in self.columns.iter() {
+            if column.id == id {
+                return Some(&column.name);
+            }
+        }
+        None
+    }
+
     /// Get the metadata of the column according to the column index
     pub fn column_by_index(&self, idx: usize) -> Option<&TableColumn> {
         self.columns.get(idx)
@@ -191,27 +229,26 @@ impl TskvTableSchema {
     }
 
     pub fn fields(&self) -> Vec<TableColumn> {
-        let mut fields = Vec::with_capacity(self.columns.len());
-        for i in self.columns.iter() {
-            if i.column_type == ColumnType::Time || i.column_type == ColumnType::Tag {
-                continue;
-            }
-
-            fields.push(i.clone());
-        }
-
-        fields
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .cloned()
+            .collect()
     }
 
     /// Number of columns of ColumnType is Field
     pub fn field_num(&self) -> usize {
-        let mut ans = 0;
-        for i in self.columns.iter() {
-            if i.column_type != ColumnType::Tag && i.column_type != ColumnType::Time {
-                ans += 1;
-            }
-        }
-        ans
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .count()
+    }
+
+    pub fn tag_num(&self) -> usize {
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_tag())
+            .count()
     }
 
     // return (table_field_id, index), index mean field location which column
@@ -230,6 +267,12 @@ impl TskvTableSchema {
         map
     }
 
+    pub fn next_column_id(&mut self) -> ColumnId {
+        let ans = self.next_column_id;
+        self.next_column_id += 1;
+        ans
+    }
+
     pub fn size(&self) -> usize {
         let mut size = 0;
         for i in self.columns.iter() {
@@ -237,6 +280,10 @@ impl TskvTableSchema {
         }
         size += size_of_val(&self);
         size
+    }
+
+    pub fn contains_column(&self, column_name: &str) -> bool {
+        self.columns_index.contains_key(column_name)
     }
 }
 
@@ -628,5 +675,44 @@ impl Duration {
             DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
             DurationUnit::Day => self.time_num as i64 * 24 * 3600 * 1000000000,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Tenant {
+    id: Oid,
+    name: String,
+    options: TenantOptions,
+}
+
+impl Identifier<Oid> for Tenant {
+    fn id(&self) -> &Oid {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Tenant {
+    pub fn options(&self) -> &TenantOptions {
+        &self.options
+    }
+}
+
+#[derive(Debug, Default, Clone, Builder)]
+#[builder(setter(into, strip_option), default)]
+pub struct TenantOptions {
+    pub comment: Option<String>,
+}
+
+impl Display for TenantOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref e) = self.comment {
+            write!(f, "comment={},", e)?;
+        }
+
+        Ok(())
     }
 }

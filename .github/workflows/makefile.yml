@@ -55,7 +55,7 @@ jobs:
 
   integration-test:
     name: "Integration Test"
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         rust: [stable]

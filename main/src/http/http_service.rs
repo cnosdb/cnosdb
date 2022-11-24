@@ -160,7 +160,7 @@ impl HttpService {
                             let result = sql_handle(q, header, dbms).await;
 
                             sample_query_read_latency(
-                                q.context().catalog(),
+                                q.context().tenant(),
                                 q.context().database(),
                                 start.elapsed().as_millis() as f64,
                             );

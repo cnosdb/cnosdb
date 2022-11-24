@@ -1,5 +1,4 @@
 use crate::execution::ddl::DDLDefinitionTask;
-use crate::metadata::stream_from_batches;
 use async_trait::async_trait;
 use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
@@ -67,7 +66,7 @@ fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output
         source: DataFusionError::ArrowError(e),
     })?;
 
-    let batches = vec![Arc::new(batch)];
+    let batches = vec![batch];
 
-    Ok(Output::StreamData(stream_from_batches(batches)))
+    Ok(Output::StreamData(batches))
 }

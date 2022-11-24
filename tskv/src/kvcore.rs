@@ -41,7 +41,8 @@ use crate::file_system::file_manager::{self, init_file_manager, FileManager};
 use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
 use crate::tseries_family::TseriesFamily;
-use crate::Error::DatabaseNotFound;
+use crate::index::IndexError::TableNotFound;
+use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -348,6 +349,17 @@ impl TsKv {
             }
         }
     }
+
+    pub fn get_db(&self, database: &str) -> Result<Arc<RwLock<Database>>> {
+        let db = self
+            .version_set
+            .read()
+            .get_db(database)
+            .ok_or(DatabaseNotFound {
+                database: database.to_string(),
+            })?;
+        Ok(db)
+    }
 }
 
 #[async_trait::async_trait]
@@ -370,7 +382,7 @@ impl Engine for TsKv {
             None => self
                 .version_set
                 .write()
-                .create_db(DatabaseSchema::new(&db_name)),
+                .create_db(DatabaseSchema::new(&db_name))?,
         };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -427,7 +439,7 @@ impl Engine for TsKv {
         let db = self
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&db_name));
+            .create_db(DatabaseSchema::new(&db_name))?;
 
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -456,7 +468,7 @@ impl Engine for TsKv {
                 database: schema.name.clone(),
             });
         }
-        self.version_set.write().create_db(schema.clone());
+        self.version_set.write().create_db(schema.clone())?;
         Ok(())
     }
 
@@ -468,7 +480,7 @@ impl Engine for TsKv {
             .ok_or(DatabaseNotFound {
                 database: schema.name.clone(),
             })?;
-        db.write().alter_db_schema(schema.clone());
+        db.write().alter_db_schema(schema.clone())?;
         Ok(())
     }
 
@@ -565,35 +577,60 @@ impl Engine for TsKv {
         recv_ret
     }
 
+    fn delete_columns(
+        &self,
+        database: &str,
+        series_ids: &[SeriesId],
+        field_ids: &[ColumnId],
+    ) -> Result<()> {
+        let storage_field_ids: Vec<u64> = series_ids
+            .iter()
+            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
+            .collect();
+
+        if let Some(db) = self.version_set.read().get_db(database) {
+            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+                ts_family.write().delete_columns(&storage_field_ids);
+
+                let version = ts_family.read().super_version();
+                for column_file in version
+                    .version
+                    .column_files(&storage_field_ids, &TimeRange::all())
+                {
+                    column_file.add_tombstone(&storage_field_ids, &TimeRange::all())?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn delete_series(
         &self,
         database: &str,
         series_ids: &[SeriesId],
-        field_ids: &[FieldId],
+        field_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()> {
         let storage_field_ids: Vec<u64> = series_ids
             .iter()
-            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
+            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
             .collect();
 
         if let Some(db) = self.version_set.read().get_db(database) {
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
                 // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
-
                 ts_family
                     .write()
-                    .delete_cache(&storage_field_ids, time_range);
+                    .delete_series(&storage_field_ids, time_range);
 
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
                     column_file.add_tombstone(&storage_field_ids, time_range)?;
                 }
-
                 // TODO Start next flush or compaction.
             }
         }
-
         Ok(())
     }
 
@@ -668,6 +705,52 @@ impl Engine for TsKv {
             warn!("ts_family with db name '{}' not found.", db);
             Ok(None)
         }
+    }
+
+    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
+        let db = self.get_db(database)?;
+        db.read()
+            .add_table_column(table, column)
+            .context(IndexErrSnafu)?;
+        Ok(())
+    }
+
+    fn drop_table_column(&self, database: &str, table: &str, column_name: &str) -> Result<()> {
+        let db = self.get_db(database)?;
+        let schema = db
+            .read()
+            .get_tskv_table_schema(table)
+            .context(IndexErrSnafu)?;
+        let column_id = schema
+            .column(column_name)
+            .ok_or(Error::NotFoundField {
+                reason: column_name.to_string(),
+            })?
+            .id;
+        db.read()
+            .drop_table_column(table, column_name)
+            .context(IndexErrSnafu)?;
+        let sid = db
+            .read()
+            .get_index()
+            .get_series_id_list(table, &[])
+            .context(IndexErrSnafu)?;
+        self.delete_columns(database, &sid, &[column_id])?;
+        Ok(())
+    }
+
+    fn change_table_column(
+        &self,
+        database: &str,
+        table: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(database)?;
+        db.read()
+            .change_table_column(table, column_name, new_column)
+            .context(IndexErrSnafu)?;
+        Ok(())
     }
 }
 

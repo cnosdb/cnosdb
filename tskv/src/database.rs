@@ -12,7 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
-use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
 use protos::models::{Point, Points};
@@ -21,7 +21,7 @@ use trace::{debug, error, info};
 use crate::compaction::FlushReq;
 use crate::index::{index_manger, IndexError, IndexResult};
 use crate::tseries_family::LevelInfo;
-use crate::Error::InvalidPoint;
+use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
     error::{self, IndexErrSnafu, Result},
     memcache::{RowData, RowGroup},
@@ -47,19 +47,22 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Self {
-        Self {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Result<Self> {
+        let db = Self {
             index: db_index::index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(schema.clone()),
+                .get_db_index(schema.clone())
+                .context(IndexErrSnafu)?,
             name: schema.name,
             ts_families: HashMap::new(),
             opt,
-        }
+        };
+        Ok(db)
     }
 
-    pub fn alter_db_schema(&self, schema: DatabaseSchema) {
-        self.index.alter_db_schema(schema);
+    pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
+        self.index.alter_db_schema(schema).context(IndexErrSnafu)?;
+        Ok(())
     }
 
     pub fn open_tsfamily(
@@ -296,12 +299,37 @@ impl Database {
         (edits, files)
     }
 
+    pub fn add_table_column(&self, table: &str, column: TableColumn) -> IndexResult<()> {
+        self.index.add_table_column(table, column)?;
+        Ok(())
+    }
+
+    pub fn drop_table_column(&self, table: &str, column_name: &str) -> IndexResult<()> {
+        self.index.drop_table_column(table, column_name)?;
+        Ok(())
+    }
+
+    pub fn change_table_column(
+        &self,
+        table: &str,
+        column_name: &str,
+        new_column: TableColumn,
+    ) -> IndexResult<()> {
+        self.index
+            .change_table_column(table, column_name, new_column)?;
+        Ok(())
+    }
+
     pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
         self.index.get_series_key(sid)
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<TableSchema>> {
         self.index.get_table_schema(table_name)
+    }
+
+    pub fn get_tskv_table_schema(&self, table_name: &str) -> IndexResult<TskvTableSchema> {
+        self.index.get_tskv_table_schema(table_name)
     }
 
     pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {
@@ -402,7 +430,7 @@ pub(crate) fn delete_table_async(
             };
 
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
-                ts_family.write().delete_cache(&storage_fids, time_range);
+                ts_family.write().delete_series(&sids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
                     column_file.add_tombstone(&storage_fids, time_range)?;

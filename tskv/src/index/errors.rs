@@ -26,8 +26,8 @@ pub enum IndexError {
     #[snafu(display("Unrecognized version"))]
     Version,
 
-    #[snafu(display("Unrecognized FieldType"))]
-    FieldType,
+    #[snafu(display("Unrecognized FieldType: {}", msg))]
+    FieldType { msg: String },
 
     #[snafu(display("Not Found Field"))]
     NotFoundField,
@@ -46,6 +46,9 @@ pub enum IndexError {
 
     #[snafu(display("table '{}' not found", table))]
     TableNotFound { table: String },
+
+    #[snafu(display("column '{}' already exists", column))]
+    ColumnAlreadyExists { column: String },
 }
 
 impl From<sled::Error> for IndexError {

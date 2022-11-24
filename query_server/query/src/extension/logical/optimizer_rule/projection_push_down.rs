@@ -9,6 +9,7 @@ use datafusion::common::{
 use datafusion::datasource::source_as_provider;
 use datafusion::datasource::TableProvider;
 use datafusion::logical_expr::utils::grouping_set_to_exprlist;
+use datafusion::logical_expr::Extension;
 use datafusion::logical_expr::{
     logical_plan::{
         builder::{build_join_schema, LogicalPlanBuilder},
@@ -23,6 +24,9 @@ use std::{
     sync::Arc,
 };
 
+use crate::extension::logical::plan_node::table_writer::{
+    as_table_writer_plan_node, TableWriterPlanNode,
+};
 use crate::table::ClusterTable;
 
 /// An adapter to [ProjectionPushDown].
@@ -481,6 +485,17 @@ fn optimize_plan(
         | LogicalPlan::CrossJoin(_)
         | LogicalPlan::Distinct(_)
         | LogicalPlan::Extension { .. } => {
+            if let LogicalPlan::Extension(Extension { node }) = plan {
+                if let Some(TableWriterPlanNode { input, .. }) =
+                    as_table_writer_plan_node(node.as_ref())
+                {
+                    // table write node need all schema fields
+                    input.schema().fields().iter().for_each(|e| {
+                        new_required_columns.insert(e.qualified_column());
+                    });
+                }
+            }
+
             let expr = plan.expressions();
             // collect all required columns by this plan
             exprlist_to_columns(&expr, &mut new_required_columns)?;

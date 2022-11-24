@@ -15,13 +15,6 @@ test,ta=a1,tb=b1 fa=1,fb=2 3
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
@@ -35,13 +28,6 @@ time,ta,tb,fa,fb
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 3
 
 -- EXECUTE SQL: select * from public.test order by fa, fb; --
@@ -128,30 +114,23 @@ fa
 -- AFTER_SORT --
 200 OK
 rows
-0
-0
-0
-0
-0
-0
-0
 1
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:41:00', NULL, 56, 69, 77); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:42:00', 'XiaoMaiDao', NULL, NULL, NULL); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 
 -- EXECUTE SQL: INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:43:00', NULL, NULL, NULL, NULL); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Fetch result: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Tskv operator, err: tags or fields can't be empty"}
 -- ERROR:  --
 

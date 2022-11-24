@@ -45,6 +45,6 @@ mod test {
     #[test]
     fn open_() {
         let tmpf = NamedTempFile::new().unwrap();
-        open(&tmpf.path(), OpenOptions::new().read(true)).unwrap();
+        open(tmpf.path(), OpenOptions::new().read(true)).unwrap();
     }
 }

@@ -96,7 +96,9 @@ warp = { version = "0.3" }
 walkdir = "2.3.2"
 zstd = "0.11.2"
 os_info = {version = "3"}
-# exclude = ["client"]
+uuid = { version = "1.1", features = ["v4"] }
+derive_builder = "0.11"
+openssl = "0.10.28"
 
 [profile.dev]
 lto = false
