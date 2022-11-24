@@ -42,9 +42,6 @@ pub struct StorageConfig {
     pub base_file_size: u64,
     pub compact_trigger: u32,
     pub max_compact_size: u64,
-    pub dio_max_resident: usize,
-    pub dio_max_non_resident: usize,
-    pub dio_page_len_scale: usize,
     pub strict_write: bool,
 }
 
@@ -67,15 +64,6 @@ impl StorageConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
             self.max_compact_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_RESIDENT") {
-            self.dio_max_resident = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_MAX_NON_RESIDENT") {
-            self.dio_max_non_resident = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_DIO_PAGE_LEN_SCALE") {
-            self.dio_page_len_scale = size.parse::<usize>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
             self.strict_write = size.parse::<bool>().unwrap();
@@ -268,6 +256,7 @@ dio_max_resident = 1024
 dio_max_non_resident = 1024
 dio_page_len_scale = 10
 strict_write = false
+strict_write = true
 
 [wal]
 enabled = true

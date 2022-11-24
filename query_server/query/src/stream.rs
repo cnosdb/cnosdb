@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 use coordinator::{reader::ReaderIterator, service::CoordinatorRef};
+use std::task::Poll;
+
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},
     physical_plan::RecordBatchStream,
@@ -103,21 +105,19 @@ impl Stream for TableScanStream {
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
+    ) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
         let timer = this.metrics.elapsed_compute().timer();
-
-        let result = match block_on(this.iterator.next()) {
+        let res = block_on(this.iterator.next());
+        let result = match res {
             Some(data) => match data {
-                Ok(batch) => std::task::Poll::Ready(Some(Ok(batch))),
-                Err(err) => {
-                    std::task::Poll::Ready(Some(Err(ArrowError::CastError(err.to_string()))))
-                }
+                Ok(batch) => Poll::Ready(Some(Ok(batch))),
+                Err(err) => Poll::Ready(Some(Err(ArrowError::CastError(err.to_string())))),
             },
             None => {
                 this.metrics.done();
-                std::task::Poll::Ready(None)
+                Poll::Ready(None)
             }
         };
 

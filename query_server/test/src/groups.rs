@@ -112,8 +112,8 @@ pub struct TestGroups {
 }
 
 impl TestGroups {
-    pub fn load(path: &PathBuf) -> Result<Self> {
-        let cases = search_cases(path)?;
+    pub fn load(path: &PathBuf, pattern: Option<String>) -> Result<Self> {
+        let cases = search_cases(path, pattern)?;
         let toml_str = fs::read_to_string(path.join("TestGroups.toml")).unwrap();
         let mut res: TestGroups = toml::from_str(&toml_str).unwrap();
         res.load_cases(cases);
