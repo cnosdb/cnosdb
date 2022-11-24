@@ -27,6 +27,12 @@ pub struct Connections {
     pub clients: Arc<HashMap<String, reqwest::Client>>,
 }
 
+impl Default for Connections {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Connections {
     pub fn new() -> Self {
         Self {

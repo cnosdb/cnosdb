@@ -106,7 +106,7 @@ impl Store {
                     let index = s2.next();
                     let _snapshot_id = s2.next();
 
-                    let index = u64::from_str_radix(index.unwrap(), 10).unwrap();
+                    let index = index.unwrap().parse::<u64>().unwrap();
                     if index > max_index {
                         max_index = index;
                         latest_snapshot_file = f_name;

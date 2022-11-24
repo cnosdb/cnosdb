@@ -30,6 +30,7 @@ tracing = "0.1"
 tracing-futures = "0.2"
 ureq = { version = "2.5.0", features = ["json", "charset"] }
 
+
 [dev-dependencies]
 anyhow = "1.0.32"
 maplit = "1.0.2"

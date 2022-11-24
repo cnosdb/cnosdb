@@ -56,7 +56,8 @@ pub struct BucketInfo {
 impl BucketInfo {
     pub fn vnode_for(&self, id: u64) -> ReplcationSet {
         let index = id as usize % self.shard_group.len();
-        return self.shard_group[index].clone();
+
+        self.shard_group[index].clone()
     }
 }
 
@@ -130,7 +131,7 @@ impl TenantMetaData {
             }
         }
 
-        return None;
+        None
     }
 
     pub fn mapping_bucket(&self, db_name: &String, start: i64, end: i64) -> Vec<BucketInfo> {
@@ -147,7 +148,7 @@ impl TenantMetaData {
             return result;
         }
 
-        return vec![];
+        vec![]
     }
 }
 
@@ -185,15 +186,15 @@ pub fn allocation_replication_set(
             id: incr_id,
             vnodes: vec![],
         };
-        incr_id = incr_id + 1;
+        incr_id += 1;
 
         for _ in 0..replica {
             repl_set.vnodes.push(VnodeInfo {
                 id: incr_id,
                 node_id: nodes.get((index % node_count) as usize).unwrap().id,
             });
-            incr_id = incr_id + 1;
-            index = index + 1;
+            incr_id += 1;
+            index += 1;
         }
 
         group.push(repl_set);

@@ -29,6 +29,9 @@ pub enum MetaError {
     #[snafu(display("Not Found Data Node: {}", id))]
     NotFoundNode { id: u64 },
 
+    #[snafu(display("Request meta cluster error: {}", msg))]
+    MetaClientErr { msg: String },
+
     #[snafu(display("Error: {}", msg))]
     CommonError { msg: String },
 }

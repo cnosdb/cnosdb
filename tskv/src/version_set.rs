@@ -104,7 +104,7 @@ impl VersionSet {
     pub fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
         for db in self.dbs.values() {
             if let Some(v) = db.read().get_tsfamily(tf_id) {
-                return Some(v.clone());
+                return Some(v);
             }
         }
 

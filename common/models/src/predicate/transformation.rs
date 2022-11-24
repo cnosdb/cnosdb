@@ -1,3 +1,4 @@
+#[warn(deprecated)]
 use std::{collections::VecDeque, result};
 
 use datafusion::{

@@ -26,7 +26,7 @@ pub async fn write(app: Data<MetaApp>, req: Json<KvReq>) -> actix_web::Result<im
         Err(err) => KvResp {
             err_code: -1,
             meta_data: TenantMetaData::new(),
-            err_msg: format!("raft write error: {}", err.to_string()),
+            err_msg: format!("raft write error: {}", err),
         },
     };
 
@@ -43,8 +43,11 @@ pub async fn read(
 
     let sm = app.store.state_machine.read().await;
 
-    let mut response = KvResp::default();
-    response.meta_data = sm.to_tenant_meta_data(&cluster, &tenant);
+    let response = KvResp {
+        err_code: 0,
+        err_msg: "".to_string(),
+        meta_data: sm.to_tenant_meta_data(&cluster, &tenant),
+    };
 
     let res: Result<KvResp, Infallible> = Ok(response);
     Ok(Json(res))
@@ -76,7 +79,7 @@ pub async fn read_all(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     for (k, v) in sm.data.iter() {
         response = response + &format!("* {}: {}\n", k, v);
     }
-    response = response + &"*-------------------------------------------------------\n".to_string();
+    response += "*-------------------------------------------------------\n";
 
     Ok(response)
 }

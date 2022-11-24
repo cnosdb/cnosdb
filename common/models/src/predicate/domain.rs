@@ -1030,7 +1030,7 @@ impl QueryExpr {
             data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
             reader.read_exact(&mut data_buf)?;
 
-            return Ok(data_buf);
+            Ok(data_buf)
         };
 
         let mut buffer = BufReader::new(&*buf);

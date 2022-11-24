@@ -78,9 +78,9 @@ pub struct StateMachineContent {
     pub sequance: u64,
 }
 
-pub fn children_fullpath(path: &String, map: &BTreeMap<String, String>) -> Vec<String> {
-    let mut path = path.clone();
-    if !path.ends_with("/") {
+pub fn children_fullpath(path: &str, map: &BTreeMap<String, String>) -> Vec<String> {
+    let mut path = path.to_owned();
+    if !path.ends_with('/') {
         path.push('/');
     }
 
@@ -88,10 +88,10 @@ pub fn children_fullpath(path: &String, map: &BTreeMap<String, String>) -> Vec<S
     for (key, _) in map.range(path.clone()..) {
         match key.strip_prefix(path.as_str()) {
             Some(val) => {
-                if let Some(_) = val.find('/') {
+                if val.find('/').is_some() {
                     continue;
                 }
-                if val.to_string() == "" {
+                if val.is_empty() {
                     continue;
                 }
 
@@ -116,7 +116,7 @@ fn fetch_and_add_incr_id(cluster: &String, map: &mut BTreeMap<String, String>, c
 
     map.insert(id_key, (id_num + count).to_string());
 
-    return id_num;
+    id_num
 }
 
 pub fn get_struct<'a, T: Deserialize<'a>>(
@@ -130,11 +130,11 @@ pub fn get_struct<'a, T: Deserialize<'a>>(
 }
 
 pub fn children_data<'a, T: Deserialize<'a>>(
-    path: &String,
+    path: &str,
     map: &'a BTreeMap<String, String>,
 ) -> HashMap<String, T> {
-    let mut path = path.clone();
-    if !path.ends_with("/") {
+    let mut path = path.to_owned();
+    if !path.ends_with('/') {
         path.push('/');
     }
 
@@ -339,22 +339,16 @@ impl Restore for Arc<Store> {
                     .log_id
             });
 
-        match first {
-            Some(x) => {
-                tracing::debug!("restore: first log id = {:?}", x);
-                let mut ld = self.last_purged_log_id.write().await;
-                *ld = Some(x);
-            }
-            None => {}
+        if let Some(x) = first {
+            tracing::debug!("restore: first log id = {:?}", x);
+            let mut ld = self.last_purged_log_id.write().await;
+            *ld = Some(x);
         }
 
         let snapshot = self.get_current_snapshot().await.unwrap();
 
-        match snapshot {
-            Some(ss) => {
-                self.install_snapshot(&ss.meta, ss.snapshot).await.unwrap();
-            }
-            None => {}
+        if let Some(ss) = snapshot {
+            self.install_snapshot(&ss.meta, ss.snapshot).await.unwrap();
         }
     }
 }
@@ -523,7 +517,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
         for entry in entries {
             log.insert(
                 entry.log_id.index.to_be_bytes(),
-                IVec::from(serde_json::to_vec(&*entry).unwrap()),
+                IVec::from(serde_json::to_vec(entry).unwrap()),
             )
             .unwrap();
         }
@@ -628,8 +622,12 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                         sm.data.insert(key.clone(), value.clone());
                         info!("WRITE: {} :{}", key, value);
 
-                        let mut resp = KvResp::default();
-                        resp.meta_data = sm.to_tenant_meta_data(cluster, tenant);
+                        let resp = KvResp {
+                            err_code: 0,
+                            err_msg: "".to_string(),
+                            meta_data: sm.to_tenant_meta_data(cluster, tenant),
+                        };
+
                         res.push(resp);
                     }
 
@@ -787,7 +785,7 @@ fn process_create_bucket(
             .collect();
 
     let now = utils::now_timestamp();
-    if node_list.len() == 0 || db_info.shard == 0 || db_info.replications > node_list.len() as u32 {
+    if node_list.is_empty() || db_info.shard == 0 || db_info.replications > node_list.len() as u32 {
         return KvResp {
             err_code: -1,
             meta_data: TenantMetaData::new(),
@@ -803,8 +801,12 @@ fn process_create_bucket(
         };
     }
 
-    let mut bucket = BucketInfo::default();
-    bucket.id = fetch_and_add_incr_id(cluster, &mut sm.data, 1);
+    let mut bucket = BucketInfo {
+        id: fetch_and_add_incr_id(cluster, &mut sm.data, 1),
+        start_time: 0,
+        end_time: 0,
+        shard_group: vec![],
+    };
     (bucket.start_time, bucket.end_time) = get_time_range(*ts, db_info.vnode_duration);
     let (group, used) = allocation_replication_set(
         node_list,
@@ -821,14 +823,13 @@ fn process_create_bucket(
     sm.data.insert(key.clone(), val.clone());
     info!("WRITE: {} :{}", key, val);
 
-    return KvResp::default();
+    KvResp::default()
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::BTreeMap;
 
-    use models::meta_data::NodeInfo;
     use serde::{Deserialize, Serialize};
 
     use crate::{client::MetaHttpClient, store::children_fullpath};
@@ -852,8 +853,8 @@ mod test {
             println!("{key}  : {value}");
         }
 
-        let nodes = children_fullpath(&"/root/tenant".to_string(), &map);
-        print!("nodes: {:?}\n", nodes);
+        let nodes = children_fullpath("/root/tenant", &map);
+        println!("nodes: {:?}", nodes);
     }
 
     //{"Set":{"key":"foo","value":"bar111"}}
@@ -905,40 +906,5 @@ mod test {
             value: "vxxxxxx".to_string(),
         });
         println!("write: {:#?}\n", rsp);
-    }
-
-    #[tokio::test]
-    async fn test_allocation_replication_set() {
-        let mut nodes = vec![];
-        let mut node = NodeInfo::default();
-
-        node.id = 1;
-        nodes.push(node.clone());
-        node.id = 2;
-        nodes.push(node.clone());
-        node.id = 3;
-        nodes.push(node.clone());
-        node.id = 4;
-        nodes.push(node.clone());
-        node.id = 5;
-        nodes.push(node.clone());
-        node.id = 6;
-        nodes.push(node.clone());
-
-        let (group, id) = super::allocation_replication_set(nodes, 3, 3, 10);
-
-        print!("{} \n {:#?}\n", id, group);
-
-        let mut map = HashMap::new();
-        map.insert("k1".to_string(), "v1".to_string());
-        modify_hashmap(&mut map);
-
-        print!("{:#?}", map)
-    }
-
-    fn modify_hashmap(map: &mut HashMap<String, String>) {
-        for i in 100..200 {
-            map.insert(i.to_string(), i.to_string());
-        }
     }
 }

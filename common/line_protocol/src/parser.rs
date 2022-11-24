@@ -108,7 +108,7 @@ impl Line<'_> {
     pub fn hash_id(&mut self) -> u64 {
         if self.hash_id == 0 {
             self.tags
-                .sort_by(|a, b| -> Ordering { a.0.partial_cmp(&b.0).unwrap() });
+                .sort_by(|a, b| -> Ordering { a.0.partial_cmp(b.0).unwrap() });
 
             let mut hasher = BkdrHasher::new();
             hasher.hash_with(self.measurement.as_bytes());
@@ -120,7 +120,7 @@ impl Line<'_> {
             self.hash_id = hasher.number()
         }
 
-        return self.hash_id;
+        self.hash_id
     }
 }
 
