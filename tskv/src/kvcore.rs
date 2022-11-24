@@ -41,8 +41,7 @@ use trace::{debug, error, info, trace, warn};
 
 use crate::database::Database;
 use crate::error::SchemaSnafu;
-use crate::file_system::file_manager::{self, init_file_manager, FileManager};
-use crate::file_system::Options as FileOptions;
+use crate::file_system::file_manager::{self, FileManager};
 use crate::index::index_manger;
 use crate::tseries_family::TseriesFamily;
 use crate::Error::{DatabaseNotFound, IndexErr};
@@ -90,12 +89,6 @@ impl TsKv {
     ) -> Result<TsKv> {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let shared_options = Arc::new(opt);
-        init_file_manager(
-            FileOptions::default()
-                .max_resident(shared_options.storage.dio_max_resident)
-                .max_non_resident(shared_options.storage.dio_max_non_resident)
-                .page_len_scale(shared_options.storage.dio_page_len_scale),
-        );
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -176,7 +169,7 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::new(self.options.wal.clone());
+        let wal_manager = WalManager::open(self.options.wal.clone()).await.unwrap();
 
         wal_manager
             .recover(self, self.global_ctx.clone())
@@ -196,7 +189,7 @@ impl TsKv {
                         match wal_task {
                             Some(WalTask::Write { id, points, tenant, cb }) => {
                                 // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, &points, id, &tenant).await;
+                                let ret = wal_manager.write(WalEntryType::Write, points, id, tenant).await;
                                 let send_ret = cb.send(ret);
                                 match send_ret {
                                     Ok(wal_result) => {}
@@ -247,7 +240,8 @@ impl TsKv {
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
-                .unwrap();
+                .await
+                .unwrap()
             }
         };
         self.runtime.spawn(f);
@@ -272,7 +266,7 @@ impl TsKv {
                         let database = req.database.clone();
                         let compact_ts_family = req.ts_family_id;
                         let out_level = req.out_level;
-                        match compaction::run_compaction_job(req, ctx.clone()) {
+                        match compaction::run_compaction_job(req, ctx.clone()).await {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
@@ -293,7 +287,7 @@ impl TsKv {
                             }
                             Err(e) => {
                                 incr_compaction_failed();
-                                error!("Compaction job failed: {}", e);
+                                error!("Compaction job failed: {:?}", e);
                             }
                         }
                     }
@@ -336,14 +330,15 @@ impl TsKv {
     // }
 
     // Compact TSM files in database into bigger TSM files.
-    pub fn compact(&self, tenant: &str, database: &str) {
+    #[allow(clippy::await_holding_lock)]
+    pub async fn compact(&self, tenant: &str, database: &str) {
         let database = self.version_set.read().get_db(tenant, database);
         if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().ts_families() {
                 let compact_req = ts_family.read().pick_compaction();
                 if let Some(req) = compact_req {
-                    match compaction::run_compaction_job(req, self.global_ctx.clone()) {
+                    match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some(version_edit)) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
                             let ret = self.summary_task_sender.send(SummaryTask {
@@ -357,7 +352,7 @@ impl TsKv {
                             info!("There is nothing to compact.");
                         }
                         Err(e) => {
-                            error!("Compaction job failed: {}", e);
+                            error!("Compaction job failed: {:?}", e);
                         }
                     }
                 }
@@ -419,9 +414,8 @@ impl Engine for TsKv {
         let mut seq = 0;
         if self.options.wal.enabled {
             let (cb, rx) = oneshot::channel();
-            let mut enc_points = Vec::new();
-            let coder = get_str_codec(Encoding::Zstd);
-            coder
+            let mut enc_points = Vec::with_capacity(points.len() / 2);
+            get_str_codec(Encoding::Zstd)
                 .encode(&[&points], &mut enc_points)
                 .map_err(|_| Error::Send)?;
             self.wal_sender
@@ -494,62 +488,6 @@ impl Engine for TsKv {
         });
     }
 
-    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
-    //     if self
-    //         .version_set
-    //         .read()
-    //         .db_exists(schema.tenant_name(), schema.database_name())
-    //     {
-    //         return Err(Error::DatabaseAlreadyExists {
-    //             database: schema.database_name().to_string(),
-    //         });
-    //     }
-    //     let db = self
-    //         .version_set
-    //         .write()
-    //         .create_db(schema.clone(), self.meta_manager.clone())?;
-    //     Ok(db)
-    // }
-
-    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
-    //     let db = self
-    //         .version_set
-    //         .write()
-    //         .get_db(schema.tenant_name(), schema.database_name())
-    //         .ok_or(DatabaseNotFound {
-    //             database: schema.database_name().to_string(),
-    //         })?;
-    //     db.write().alter_db_schema(schema.clone())?;
-    //     Ok(())
-    // }
-
-    // fn list_databases(&self) -> Result<Vec<String>> {
-    //     let version_set = self.version_set.read();
-    //     let dbs = version_set.get_all_db();
-
-    //     let mut db = Vec::new();
-    //     for (name, _) in dbs.iter() {
-    //         db.push(name.clone())
-    //     }
-
-    //     Ok(db)
-    // }
-
-    // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>> {
-    //     if let Some(db) = self.version_set.read().get_db(tenant_name, database) {
-    //         db.read().get_schemas().list_tables().context(SchemaSnafu)
-    //     } else {
-    //         error!("Database {}, not found", database);
-    //         Err(Error::DatabaseNotFound {
-    //             database: database.to_string(),
-    //         })
-    //     }
-    // }
-
-    // fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>> {
-    //     self.version_set.read().get_db_schema(tenant, database)
-    // }
-
     fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
         if let Some(db) = self.version_set.read().get_db(tenant, &database) {
             let mut db_wlock = db.write();
@@ -595,41 +533,14 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
-    //     if let Some(db) = self.version_set.write().get_db(&schema.tenant, &schema.db) {
-    //         db.read()
-    //             .get_schemas()
-    //             .create_table(schema)
-    //             .map_err(|e| {
-    //                 error!("failed create database '{}'", e);
-    //                 e
-    //             })
-    //             .context(SchemaSnafu)
-    //     } else {
-    //         error!("Database {}, not found", schema.db);
-    //         Err(Error::DatabaseNotFound {
-    //             database: schema.db.clone(),
-    //         })
-    //     }
-    // }
 
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
-
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
         let tenant = tenant.to_string();
-        let handle = std::thread::spawn(move || {
-            database::delete_table_async(tenant, database, table, version_set)
-        });
-        let recv_ret = match handle.join() {
-            Ok(ret) => ret,
-            Err(e) => panic::resume_unwind(e),
-        };
-
-        // TODO Release global DropTable flag.
-        recv_ret
+        futures::executor::block_on(database::delete_table_async(tenant, database, table, version_set))
     }
 
     fn delete_columns(
@@ -653,7 +564,9 @@ impl Engine for TsKv {
                     .version
                     .column_files(&storage_field_ids, &TimeRange::all())
                 {
-                    column_file.add_tombstone(&storage_field_ids, &TimeRange::all())?;
+                    self.runtime.block_on(
+                        column_file.add_tombstone(&storage_field_ids, &TimeRange::all()),
+                    )?;
                 }
             }
         }
@@ -673,9 +586,10 @@ impl Engine for TsKv {
             .iter()
             .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
             .collect();
-
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+        let res = self.version_set.read().get_db(tenant, database);
+        if let Some(db) = res {
+            let readable_db = db.read();
+            for (ts_family_id, ts_family) in readable_db.ts_families() {
                 // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
                 ts_family
                     .write()
@@ -683,7 +597,8 @@ impl Engine for TsKv {
 
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
-                    column_file.add_tombstone(&storage_field_ids, time_range)?;
+                    self.runtime
+                        .block_on(column_file.add_tombstone(&storage_field_ids, time_range))?;
                 }
                 // TODO Start next flush or compaction.
             }

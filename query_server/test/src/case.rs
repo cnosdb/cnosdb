@@ -119,7 +119,7 @@ impl Display for Case {
 }
 
 /// search all cases
-pub fn search_cases(path: &PathBuf) -> Result<Vec<Case>> {
+pub fn search_cases(path: &PathBuf, pattern: Option<String>) -> Result<Vec<Case>> {
     let mut sql_files: Vec<PathBuf> = Vec::new();
     let mut result_files: Vec<PathBuf> = Vec::new();
 
@@ -128,6 +128,11 @@ pub fn search_cases(path: &PathBuf) -> Result<Vec<Case>> {
         let path = entry.path();
         if path.is_dir() {
             continue;
+        }
+        if let Some(ref pat) = pattern {
+            if path.file_stem().ok_or(Error::CaseSearch)?.ne(pat.as_str()) {
+                continue;
+            }
         }
 
         if path.extension().ok_or(Error::CaseSearch)?.eq("sql") {

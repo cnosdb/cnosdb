@@ -101,7 +101,7 @@ pub struct CoordService {
 }
 
 impl CoordService {
-    pub fn new(
+    pub async fn new(
         kv_inst: EngineRef,
         cluster: ClusterConfig,
         handoff_cfg: HintedOffConfig,
@@ -116,7 +116,7 @@ impl CoordService {
             hh_sender,
         ));
 
-        let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()));
+        let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()).await);
         tokio::spawn(HintedOffManager::write_handoff_job(
             hh_manager.clone(),
             hh_receiver,

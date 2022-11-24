@@ -45,18 +45,24 @@ impl Client {
         }
         let request = request_build.unwrap();
 
-        if let Ok(resp) = self.client.execute(request).await {
-            let status_code = resp.status();
-            buffer.push_str(status_code.to_string().as_str());
-            buffer.push('\n');
-            push_query_result(buffer, query, resp).await;
-            if !status_code.is_success() {
-                push_error(buffer, "");
-            } else {
+        match self.client.execute(request).await {
+            Ok(resp) => {
+                let status_code = resp.status();
+                buffer.push_str(status_code.to_string().as_str());
                 buffer.push('\n');
+                push_query_result(buffer, query, resp).await;
+                if !status_code.is_success() {
+                    push_error(buffer, "");
+                } else {
+                    buffer.push('\n');
+                }
             }
-        } else {
-            push_error(buffer, "send error");
+            Err(e) => {
+                push_error(
+                    buffer,
+                    format!("send error ({:?}) for query ({})", e, query.as_str()).as_str(),
+                );
+            }
         }
     }
 

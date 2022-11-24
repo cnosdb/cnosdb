@@ -27,7 +27,6 @@ use crate::file_system::file_manager;
 use crate::{
     compaction::{CompactReq, FlushReq, LevelCompactionPicker, Picker},
     error::{Error, Result},
-    file_system::{DmaFile, FileCursor},
     file_utils::{make_delta_file_name, make_tsm_file_name},
     kv_option::{CacheOptions, Options, StorageOptions},
     memcache::{DataType, MemCache},
@@ -206,12 +205,12 @@ impl ColumnFile {
         false
     }
 
-    pub fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open_for_write(dir, self.file_id)?;
-        tombstone.add_range(field_ids, time_range)?;
-        tombstone.flush()?;
+        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
+        tombstone.add_range(field_ids, time_range).await?;
+        tombstone.flush().await?;
         Ok(())
     }
 }
@@ -263,10 +262,10 @@ pub struct FieldFileLocation {
 }
 
 impl FieldFileLocation {
-    pub fn peek(&mut self) -> Result<Option<DataType>, Error> {
+    pub async fn peek(&mut self) -> Result<Option<DataType>, Error> {
         if self.read_index >= self.data_block.len() {
             if let Some(meta) = self.block_it.next() {
-                let blk = self.reader.get_data_block(&meta)?;
+                let blk = self.reader.get_data_block(&meta).await?;
                 self.read_index = 0;
                 self.data_block = blk;
             } else {
@@ -363,7 +362,7 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub fn read_column_file(
+    pub async fn read_column_file(
         &self,
         tf_id: u32,
         field_id: FieldId,
@@ -375,7 +374,7 @@ impl LevelInfo {
                 continue;
             }
 
-            let tsm_reader = match TsmReader::open(file.file_path()) {
+            let tsm_reader = match TsmReader::open(file.file_path()).await {
                 Ok(tr) => tr,
                 Err(e) => {
                     error!("failed to load tsm reader, in case {:?}", e);
@@ -384,7 +383,7 @@ impl LevelInfo {
             };
             for idx in tsm_reader.index_iterator_opt(field_id) {
                 for blk in idx.block_iterator_opt(time_range) {
-                    if let Ok(blk) = tsm_reader.get_data_block(&blk) {
+                    if let Ok(blk) = tsm_reader.get_data_block(&blk).await {
                         data.push(blk);
                     }
                 }
@@ -801,6 +800,11 @@ mod test {
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
 
+    use config::get_config;
+    use models::schema::DatabaseSchema;
+    use models::{Timestamp, ValueType};
+    use trace::info;
+
     use crate::compaction::flush_tests::default_with_field_id;
     use crate::file_system::file_manager;
     use crate::file_utils::{self, make_tsm_file_name};
@@ -842,8 +846,13 @@ mod test {
         //! - Lv.2: [ (1, 1~1000), (2, 1001~2000) ]
         //! - Lv.3: [ ]
         //! - Lv.4: [ ]
-        let global_config = get_config("../config/config.toml");
+        let dir = "/tmp/test/ts_family/1";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
+
         let database = "test".to_string();
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
@@ -936,8 +945,13 @@ mod test {
         //! - Lv.2: [ (5, 3001~3150) ]
         //! - Lv.3: [ (6, 1~2000) ]
         //! - Lv.4: [ ]
-        let global_config = get_config("../config/config.toml");
+        let dir = "/tmp/test/ts_family/2";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
+
         let database = "test".to_string();
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
@@ -1045,9 +1059,14 @@ mod test {
 
     #[tokio::test]
     pub async fn test_tsf_delete() {
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let global_config = get_config("../config/config.toml");
+        let dir = "/tmp/test/ts_family/tsf_delete";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
+
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "db".to_string();
         let tsf = TseriesFamily::new(
             0,
@@ -1133,6 +1152,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     pub async fn test_read_with_tomb() {
         let cluster_options = ClusterConfig::default();
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
@@ -1169,12 +1189,15 @@ mod test {
         let req_mem = vec![(0, mem)];
         let flush_seq = FlushReq { mems: req_mem };
 
-        let base_dir = "/tmp/test/ts_family/test_read_with_tomb".to_string();
+        let dir = "/tmp/test/ts_family/read_with_tomb";
+        let _ = std::fs::remove_dir(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = get_config("../config/config.toml");
+        global_config.storage.path = dir.to_string();
+        let opt = Arc::new(Options::from(&global_config));
+
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
-        let mut global_config = get_config("../config/config.toml");
-        global_config.storage.path = base_dir;
-        let opt = Arc::new(Options::from(&global_config));
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
@@ -1209,6 +1232,7 @@ mod test {
             summary_task_sender,
             compact_task_sender,
         )
+        .await
         .unwrap();
 
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
@@ -1218,30 +1242,36 @@ mod test {
             .get_tsfamily_by_name("cnosdb", &database)
             .unwrap();
         let version = tsf.write().version();
-        version.levels_info[1].read_column_file(
-            ts_family_id,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1]
+            .read_column_file(
+                ts_family_id,
+                0,
+                &TimeRange {
+                    max_ts: 0,
+                    min_ts: 0,
+                },
+            )
+            .await;
 
         let file = version.levels_info[1].files[0].clone();
 
         let dir = opt.storage.tsm_dir(&database, ts_family_id);
-        let mut tombstone = TsmTombstone::open_for_write(dir, file.file_id).unwrap();
-        tombstone.add_range(&[0], &TimeRange::new(0, 0)).unwrap();
-        tombstone.flush().unwrap();
-        tombstone.load().unwrap();
+        let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
+        tombstone
+            .add_range(&[0], &TimeRange::new(0, 0))
+            .await
+            .unwrap();
+        tombstone.flush().await.unwrap();
 
-        version.levels_info[1].read_column_file(
-            0,
-            0,
-            &TimeRange {
-                max_ts: 0,
-                min_ts: 0,
-            },
-        );
+        version.levels_info[1]
+            .read_column_file(
+                0,
+                0,
+                &TimeRange {
+                    max_ts: 0,
+                    min_ts: 0,
+                },
+            )
+            .await;
     }
 }

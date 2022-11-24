@@ -12,11 +12,12 @@ use winapi::{
     um::{fileapi::*, minwinbase::OVERLAPPED, winbase::FILE_FLAG_NO_BUFFERING},
 };
 
+//todo:
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FileId(u64);
 
 impl FileId {
-    pub fn of(file: &File) -> Result<(FileId, u64)> {
+    pub fn file_size(file: &File) -> Result<(FileId, u64)> {
         let mut info = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
         check_err(unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) })?;
         let info = unsafe { info.assume_init() };

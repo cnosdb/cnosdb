@@ -27,10 +27,10 @@ mod test {
         let mut tmpf = NamedTempFile::new().unwrap();
         tmpf.as_file_mut().set_len(42).unwrap();
 
-        let id_len = FileId::of(&File::open(&tmpf).unwrap()).unwrap();
+        let id_len = FileId::file_size(&File::open(&tmpf).unwrap()).unwrap();
         assert_eq!(id_len.1, 42);
 
-        let id_len2 = FileId::of(&File::open(&tmpf).unwrap()).unwrap();
+        let id_len2 = FileId::file_size(&File::open(&tmpf).unwrap()).unwrap();
         assert_eq!(id_len, id_len2);
 
         let mut path = tmpf.path().to_path_buf();
@@ -38,13 +38,7 @@ mod test {
         path.pop();
         path.push(".");
         path.push(filename);
-        let id_len3 = FileId::of(&File::open(&path).unwrap()).unwrap();
+        let id_len3 = FileId::file_size(&File::open(&path).unwrap()).unwrap();
         assert_eq!(id_len, id_len3);
-    }
-
-    #[test]
-    fn open_() {
-        let tmpf = NamedTempFile::new().unwrap();
-        open(tmpf.path(), OpenOptions::new().read(true)).unwrap();
     }
 }

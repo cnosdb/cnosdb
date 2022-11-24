@@ -190,7 +190,7 @@ fn main() -> Result<(), std::io::Error> {
                     kv_inst.clone(),
                     global_config.cluster.clone(),
                     global_config.hintedoff.clone(),
-                );
+                ).await;
 
                 let dbms = Arc::new(
                     make_cnosdbms(kv_inst.clone(), coord_service.clone(), query_options)
