@@ -91,9 +91,8 @@ async fn service_run(addr: SocketAddr, dbms: DBMSRef, coord: CoordinatorRef) {
                 let dbms = dbms.clone();
                 let coord = coord.clone();
                 let processor_fn = async move {
-                    info!("process client begin");
                     let result = process_client(client, dbms, coord).await;
-                    info!("process client result: {:#?}", result);
+                    info!("process client {} result: {:#?}", address, result);
                 };
 
                 let _ = tokio::spawn(processor_fn);
@@ -207,19 +206,17 @@ async fn query_record_batch(
     meta: MetaRef,
     sender: Sender<CoordinatorResult<RecordBatch>>,
 ) {
-    //todo TODO limit/batch_size/tenant
-
     let filter = Arc::new(
         Predicate::default()
-            .set_limit(None)
+            .set_limit(cmd.args.limit)
             .push_down_filter(&cmd.expr.filters, &cmd.expr.table_schema),
     );
 
     let plan_metrics = ExecutionPlanMetricsSet::new();
     let scan_metrics = TableScanMetrics::new(&plan_metrics, 0);
     let option = QueryOption::new(
-        100,
-        DEFAULT_CATALOG.to_string(),
+        cmd.args.batch_size,
+        cmd.args.tenant.clone(),
         filter,
         cmd.expr.df_schema,
         cmd.expr.table_schema,
@@ -227,8 +224,8 @@ async fn query_record_batch(
     );
 
     let node_id = meta.node_id();
-    let mut vnodes = Vec::with_capacity(cmd.expr.vnode_ids.len());
-    for id in cmd.expr.vnode_ids.iter() {
+    let mut vnodes = Vec::with_capacity(cmd.args.vnode_ids.len());
+    for id in cmd.args.vnode_ids.iter() {
         vnodes.push(VnodeInfo { id: *id, node_id })
     }
 

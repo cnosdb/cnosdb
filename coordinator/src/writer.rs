@@ -168,11 +168,7 @@ impl PointWriter {
         }
     }
 
-    pub async fn write_points(
-        &self,
-        req: &WritePointsRequest,
-        hh_manager: Arc<HintedOffManager>,
-    ) -> CoordinatorResult<()> {
+    pub async fn write_points(&self, req: &WritePointsRequest) -> CoordinatorResult<()> {
         let meta_client =
             self.meta_manager
                 .tenant_meta(&req.tenant)
@@ -199,12 +195,7 @@ impl PointWriter {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
-                let request = self.warp_write_to_node(
-                    vnode.id,
-                    vnode.node_id,
-                    points.data.clone(),
-                    hh_manager.clone(),
-                );
+                let request = self.write_to_node(vnode.id, vnode.node_id, points.data.clone());
                 requests.push(request);
             }
         }
@@ -214,70 +205,72 @@ impl PointWriter {
         Ok(())
     }
 
-    async fn warp_write_to_node(
-        &self,
-        vnode_id: u32,
-        node_id: u64,
-        data: Vec<u8>,
-        hh_manager: Arc<HintedOffManager>,
-    ) -> CoordinatorResult<()> {
-        match self.write_to_node(vnode_id, node_id, data.clone()).await {
-            Ok(_) => {
-                debug!(
-                    "write data to node: {}[vnode: {}] success!",
-                    node_id, vnode_id
-                );
-                return Ok(());
-            }
-            Err(err) => {
-                debug!(
-                    "write data to node: {} [vnode: {}] failed; {}!",
-                    node_id,
-                    vnode_id,
-                    err.to_string()
-                );
-
-                let (sender, receiver) = oneshot::channel();
-                let request = HintedOffWriteReq {
-                    node_id,
-                    sender,
-                    block: HintedOffBlock::new(now_timestamp(), vnode_id, data),
-                };
-
-                self.hh_sender.send(request).await?;
-                let result = receiver.await?;
-
-                return result;
-            }
-        }
-    }
-
-    pub async fn write_to_node(
+    async fn write_to_node(
         &self,
         vnode_id: u32,
         node_id: u64,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id {
-            let req = WritePointsRpcRequest {
-                version: 1,
-                points: data.clone(),
-            };
+            let result = self.write_to_locat_node(vnode_id, data).await;
+            debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
-            if let Err(err) = self.kv_inst.write(vnode_id, req).await {
-                return Err(err.into());
-            } else {
-                return Ok(());
-            }
+            return result;
         }
 
+        if let Err(err) = self
+            .write_to_remote_node(vnode_id, node_id, data.clone())
+            .await
+        {
+            info!(
+                "write data to remote {}({}) failed; {}!",
+                node_id,
+                vnode_id,
+                err.to_string()
+            );
+
+            return self.write_to_handoff(vnode_id, node_id, data).await;
+        }
+
+        debug!("write data to remote {}({}) success!", node_id, vnode_id);
+        return Ok(());
+    }
+
+    async fn write_to_handoff(
+        &self,
+        vnode_id: u32,
+        node_id: u64,
+        data: Vec<u8>,
+    ) -> CoordinatorResult<()> {
+        let (sender, receiver) = oneshot::channel();
+        let block = HintedOffBlock::new(now_timestamp(), vnode_id, data);
+        let request = HintedOffWriteReq {
+            node_id,
+            sender,
+            block,
+        };
+
+        self.hh_sender.send(request).await?;
+        let result = receiver.await?;
+
+        return result;
+    }
+
+    pub async fn write_to_remote_node(
+        &self,
+        vnode_id: u32,
+        node_id: u64,
+        data: Vec<u8>,
+    ) -> CoordinatorResult<()> {
         let mut conn = self
             .meta_manager
             .admin_meta()
             .get_node_conn(node_id)
             .await?;
+
         let req_cmd = WriteVnodeRequest { vnode_id, data };
         send_command(&mut conn, &CoordinatorTcpCmd::WriteVnodePointCmd(req_cmd)).await?;
+
         let rsp_cmd = recv_command(&mut conn).await?;
         if let CoordinatorTcpCmd::StatusResponseCmd(msg) = rsp_cmd {
             self.meta_manager.admin_meta().put_node_conn(node_id, conn);
@@ -290,6 +283,19 @@ impl PointWriter {
             }
         } else {
             return Err(CoordinatorError::UnExpectResponse);
+        }
+    }
+
+    async fn write_to_locat_node(&self, vnode_id: u32, data: Vec<u8>) -> CoordinatorResult<()> {
+        let req = WritePointsRpcRequest {
+            version: 1,
+            points: data.clone(),
+        };
+
+        if let Err(err) = self.kv_inst.write(vnode_id, req).await {
+            return Err(err.into());
+        } else {
+            return Ok(());
         }
     }
 }

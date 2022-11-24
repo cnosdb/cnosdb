@@ -156,7 +156,7 @@ impl HintedOffManager {
                 Ok(block) => {
                     loop {
                         if let Ok(_) = writer
-                            .write_to_node(block.vnode_id, node_id, block.data.clone())
+                            .write_to_remote_node(block.vnode_id, node_id, block.data.clone())
                             .await
                         {
                             break;

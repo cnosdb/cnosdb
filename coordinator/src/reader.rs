@@ -4,7 +4,7 @@ use datafusion::arrow::{datatypes::SchemaRef, record_batch::RecordBatch};
 use futures::future::ok;
 use models::{
     meta_data::VnodeInfo,
-    predicate::domain::{PredicateRef, QueryExpr},
+    predicate::domain::{PredicateRef, QueryArgs, QueryExpr},
     schema::TskvTableSchema,
     utils::now_timestamp,
 };
@@ -17,7 +17,10 @@ use tskv::{
 };
 
 use crate::{
-    command::{recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest},
+    command::{
+        recv_command, send_command, CoordinatorTcpCmd, QueryRecordBatchRequest,
+        FAILED_RESPONSE_CODE,
+    },
     errors::{CoordinatorError, CoordinatorResult},
     meta_client::MetaRef,
 };
@@ -98,13 +101,18 @@ impl QueryExecutor {
         for item in vnodes.iter() {
             vnode_ids.push(item.id);
         }
-        let expr = QueryExpr {
+        let args = QueryArgs {
             vnode_ids,
+            tenant: self.option.tenant.clone(),
+            limit: self.option.filter.limit(),
+            batch_size: self.option.batch_size,
+        };
+        let expr = QueryExpr {
             filters: self.option.filter.exprs().to_vec(),
             df_schema: self.option.df_schema.clone(),
             table_schema: self.option.table_schema.clone(),
         };
-        let req_cmd = QueryRecordBatchRequest { expr };
+        let req_cmd = QueryRecordBatchRequest { args, expr };
         send_command(&mut conn, &CoordinatorTcpCmd::QueryRecordBatchCmd(req_cmd)).await?;
 
         loop {
@@ -112,6 +120,10 @@ impl QueryExecutor {
             match rsp_cmd {
                 CoordinatorTcpCmd::StatusResponseCmd(rsp) => {
                     info!("remote node execute status: {:?}", rsp);
+                    if rsp.code == FAILED_RESPONSE_CODE {
+                        return Err(CoordinatorError::CommonError { msg: rsp.data });
+                    }
+
                     break;
                 }
 
@@ -179,8 +191,8 @@ impl QueryExecutor {
                         continue;
                     }
 
-                    let index = now_timestamp() as usize % repl.vnodes.len();
-                    let vnode = repl.vnodes[index].clone();
+                    let random = now_timestamp() as usize % repl.vnodes.len();
+                    let vnode = repl.vnodes[random].clone();
 
                     let list = vnode_mapping.entry(vnode.node_id).or_insert(vec![]);
                     list.push(vnode);

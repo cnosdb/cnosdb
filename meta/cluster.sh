@@ -1,4 +1,5 @@
 #!/bin/sh
+
 rm -rf /tmp/cnosdb/meta
 
 set -o errexit
@@ -47,7 +48,7 @@ sleep 1
 
 echo "Start 3 uninitialized metasrv_test servers..."
 
-nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21001 > /dev/null &
+nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > /dev/null &
 echo "Server 1 started"
 sleep 1
 
@@ -78,55 +79,3 @@ echo "Node 2 added as leaner"
 rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
 echo "Node 3 added as leaner"
 sleep 1
-
-sleep 100000000
-
-
-echo "Get metrics from the leader, after adding 2 learners"
-sleep 2
-echo
-rpc 21001/metrics
-sleep 1
-
-echo "Changing membership from [1] to 3 nodes cluster: [1, 2, 3]"
-echo
-rpc 21001/change-membership '[1, 2, 3]'
-sleep 1
-echo "Membership changed"
-sleep 1
-
-echo "Get metrics from the leader again"
-sleep 1
-echo
-rpc 21001/metrics
-sleep 1
-
-echo "Write data on leader"
-sleep 1
-echo
-rpc 21001/write '{"Set":{"key":"foo","value":"bar"}}'
-sleep 1
-echo "Data written"
-sleep 1
-
-echo "Read on every node, including the leader"
-sleep 1
-echo "Read from node 1"
-echo
-rpc 21001/read  '"foo"'
-echo "Read from node 2"
-echo
-rpc 21002/read  '"foo"'
-echo "Read from node 3"
-echo
-rpc 21003/read  '"foo"'
-
-##############################################################{
-
-echo "Killing all nodes in 3s..."
-sleep 1
-echo "Killing all nodes in 2s..."
-sleep 1
-echo "Killing all nodes in 1s..."
-sleep 1
-kill

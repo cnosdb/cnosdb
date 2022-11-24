@@ -16,7 +16,7 @@ use datafusion::{
 };
 
 use datafusion_proto::bytes::Serializeable;
-use trace::info;
+use serde::{Deserialize, Serialize};
 
 use super::transformation::RowExpressionToDomainsVisitor;
 
@@ -970,9 +970,17 @@ impl Predicate {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QueryArgs {
+    pub tenant: String,
+    pub vnode_ids: Vec<u32>,
+
+    pub limit: Option<usize>,
+    pub batch_size: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct QueryExpr {
-    pub vnode_ids: Vec<u32>,
     pub filters: Vec<Expr>,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchema,
@@ -981,11 +989,6 @@ pub struct QueryExpr {
 impl QueryExpr {
     pub fn encode(option: &QueryExpr) -> Result<Vec<u8>> {
         let mut buffer = vec![];
-
-        buffer.append(&mut (option.vnode_ids.len() as u32).to_be_bytes().to_vec());
-        for item in option.vnode_ids.iter() {
-            buffer.append(&mut item.to_be_bytes().to_vec());
-        }
 
         buffer.append(&mut (option.filters.len() as u32).to_be_bytes().to_vec());
         for item in option.filters.iter() {
@@ -1019,26 +1022,25 @@ impl QueryExpr {
     }
 
     pub fn decode(buf: Vec<u8>) -> Result<QueryExpr> {
+        let decode_data_len_val = |reader: &mut BufReader<&[u8]>| -> Result<Vec<u8>> {
+            let mut len_buf: [u8; 4] = [0; 4];
+            reader.read_exact(&mut len_buf)?;
+
+            let mut data_buf = vec![];
+            data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
+            reader.read_exact(&mut data_buf)?;
+
+            return Ok(data_buf);
+        };
+
         let mut buffer = BufReader::new(&*buf);
 
         let mut count_buf: [u8; 4] = [0; 4];
         buffer.read_exact(&mut count_buf)?;
         let count = u32::from_be_bytes(count_buf);
-        let mut ids = Vec::with_capacity(count as usize);
-        for _i in 0..count {
-            buffer.read_exact(&mut count_buf)?;
-            ids.push(u32::from_be_bytes(count_buf));
-        }
-
-        buffer.read_exact(&mut count_buf)?;
-        let count = u32::from_be_bytes(count_buf);
         let mut filters = Vec::with_capacity(count as usize);
         for _i in 0..count {
-            let mut len_buf: [u8; 4] = [0; 4];
-            buffer.read_exact(&mut len_buf)?;
-            let mut data_buf = vec![];
-            data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
-            buffer.read_exact(&mut data_buf)?;
+            let data_buf = decode_data_len_val(&mut buffer)?;
             let expr = Expr::from_bytes(&data_buf).map_err(|err| Error::InvalidQueryExprMsg {
                 err: err.to_string(),
             })?;
@@ -1046,11 +1048,7 @@ impl QueryExpr {
             filters.push(expr);
         }
 
-        let mut len_buf: [u8; 4] = [0; 4];
-        buffer.read_exact(&mut len_buf)?;
-        let mut data_buf = vec![];
-        data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
-        buffer.read_exact(&mut data_buf)?;
+        let data_buf = decode_data_len_val(&mut buffer)?;
         let data = String::from_utf8(data_buf).map_err(|err| Error::InvalidQueryExprMsg {
             err: err.to_string(),
         })?;
@@ -1060,11 +1058,7 @@ impl QueryExpr {
             })?;
         let df_schema = Arc::new(df_schema);
 
-        let mut len_buf: [u8; 4] = [0; 4];
-        buffer.read_exact(&mut len_buf)?;
-        let mut data_buf = vec![];
-        data_buf.resize(u32::from_be_bytes(len_buf) as usize, 0);
-        buffer.read_exact(&mut data_buf)?;
+        let data_buf = decode_data_len_val(&mut buffer)?;
         let data = String::from_utf8(data_buf).map_err(|err| Error::InvalidQueryExprMsg {
             err: err.to_string(),
         })?;
@@ -1075,7 +1069,6 @@ impl QueryExpr {
         })?;
 
         Ok(QueryExpr {
-            vnode_ids: ids,
             filters,
             df_schema,
             table_schema,
