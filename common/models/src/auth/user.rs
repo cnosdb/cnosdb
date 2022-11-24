@@ -130,14 +130,15 @@ impl<'a> AuthType<'a> {
 
         match self {
             Self::Password(e) => {
-                let password = e.ok_or_else(|| AuthError::PasswordNotSet)?;
-                if password != user_info.password {
-                    return Err(AuthError::AccessDenied {
-                        user_name: user_name.to_string(),
-                        auth_type: "password".to_string(),
-                        err: "".to_string(),
-                    });
-                }
+                let _password = e.ok_or_else(|| AuthError::PasswordNotSet)?;
+                // TODO Do not enable password authentication for now
+                // if password != user_info.password {
+                //     return Err(AuthError::AccessDenied {
+                //         user_name: user_name.to_string(),
+                //         auth_type: "password".to_string(),
+                //         err: "".to_string(),
+                //     });
+                // }
 
                 Ok(())
             }

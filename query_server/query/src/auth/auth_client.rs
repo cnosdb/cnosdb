@@ -172,7 +172,7 @@ impl AuthClient for AuthClientMock {
         _role_name: &str,
         _tenant_id: &Oid,
     ) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn revoke_privilege_from_custom_role_of_tenant(
@@ -182,15 +182,15 @@ impl AuthClient for AuthClientMock {
         _role_name: &str,
         _tenant_id: &Oid,
     ) -> Result<bool> {
-        todo!()
+        Ok(true)
     }
 
     fn drop_custom_role_of_tenant(&mut self, _role_name: &str, _tenant_id: &Oid) -> Result<bool> {
-        todo!()
+        Ok(true)
     }
 
     fn custom_roles_of_tenant(&self, _tenant_id: &Oid) -> Result<Vec<CustomTenantRole<Oid>>> {
-        todo!()
+        Ok(vec![])
     }
 
     fn custom_role_of_tenant(
@@ -198,7 +198,7 @@ impl AuthClient for AuthClientMock {
         _role_name: &str,
         _tenant_id: &Oid,
     ) -> Result<Option<CustomTenantRole<Oid>>> {
-        todo!()
+        Ok(None)
     }
 
     fn add_member_with_role_to_tenant(
@@ -207,15 +207,15 @@ impl AuthClient for AuthClientMock {
         _role: TenantRoleIdentifier,
         _tenant_id: Oid,
     ) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn remove_member_from_tenant(&mut self, _user_id: Oid, _tenant_id: Oid) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn remove_member_from_all_tenants(&mut self, _user_id: &Oid) -> Result<bool> {
-        todo!()
+        Ok(true)
     }
 
     fn reasign_member_role_in_tenant(
@@ -224,14 +224,14 @@ impl AuthClient for AuthClientMock {
         _role: TenantRoleIdentifier,
         _tenant_id: Oid,
     ) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn member_role_of_tenant(&self, _user_id: &Oid, _tenant_id: &Oid) -> Result<TenantRole<Oid>> {
-        todo!()
+        Ok(TenantRole::System(SystemTenantRole::Owner))
     }
 
     fn members_of_tenant(&self, _tenant_id: &Oid) -> Result<Option<HashSet<&Oid>>> {
-        todo!()
+        Ok(None)
     }
 }
