@@ -16,6 +16,8 @@ use crate::store::Store;
 use crate::ExampleTypeConfig;
 use crate::NodeId;
 
+type SnapshotType = Snapshot<ExampleTypeConfig, Cursor<Vec<u8>>>;
+
 impl Store {
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn write_snapshot(&self) -> io::Result<()> {
@@ -79,40 +81,37 @@ impl Store {
             let mut s1 = f_name.split('.');
             let file = s1.next();
             let ext = s1.next();
-            match ext.unwrap() {
-                "bin" => {
-                    tracing::debug!("file: {:?}", file);
-                    let mut s3 = file.unwrap().split('+');
-                    let prefix = s3.next();
+            if ext.unwrap() == "bin" {
+                tracing::debug!("file: {:?}", file);
+                let mut s3 = file.unwrap().split('+');
+                let prefix = s3.next();
 
-                    match prefix {
-                        Some(p) => {
-                            if p != self.config.instance_prefix {
-                                continue;
-                            }
+                match prefix {
+                    Some(p) => {
+                        if p != self.config.instance_prefix {
+                            continue;
                         }
-                        None => continue,
                     }
-                    let node_id = s3.next().unwrap();
-                    if node_id != self.node_id.to_string() {
-                        continue;
-                    };
-                    let snapshot_id = s3.next().unwrap();
-
-                    let mut s2 = snapshot_id.split('-');
-                    //TODO:
-                    let _term_id = s2.next();
-                    let _node_id = s2.next();
-                    let index = s2.next();
-                    let _snapshot_id = s2.next();
-
-                    let index = index.unwrap().parse::<u64>().unwrap();
-                    if index > max_index {
-                        max_index = index;
-                        latest_snapshot_file = f_name;
-                    }
+                    None => continue,
                 }
-                _ => (),
+                let node_id = s3.next().unwrap();
+                if node_id != self.node_id.to_string() {
+                    continue;
+                };
+                let snapshot_id = s3.next().unwrap();
+
+                let mut s2 = snapshot_id.split('-');
+                //TODO:
+                let _term_id = s2.next();
+                let _node_id = s2.next();
+                let index = s2.next();
+                let _snapshot_id = s2.next();
+
+                let index = index.unwrap().parse::<u64>().unwrap();
+                if index > max_index {
+                    max_index = index;
+                    latest_snapshot_file = f_name;
+                }
             }
         }
         if !latest_snapshot_file.is_empty() {
@@ -126,9 +125,7 @@ impl Store {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn load_latest_snapshot(
-        &self,
-    ) -> Result<Option<Snapshot<ExampleTypeConfig, Cursor<Vec<u8>>>>, StorageError<NodeId>> {
+    pub async fn load_latest_snapshot(&self) -> Result<Option<SnapshotType>, StorageError<NodeId>> {
         tracing::debug!("load_latest_snapshot: start");
 
         match &*self.current_snapshot.read().await {

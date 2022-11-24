@@ -55,7 +55,9 @@ impl Connections {
         let addr = target_node.map(|x| &x.addr).unwrap();
         let url = format!("http://{}/{}", addr, uri);
         let clients = Arc::get_mut(&mut self.clients).unwrap();
-        let client = clients.entry(url.clone()).or_insert(reqwest::Client::new());
+        let client = clients
+            .entry(url.clone())
+            .or_insert_with(reqwest::Client::new);
 
         let resp = client
             .post(url)

@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::io::Cursor;
@@ -32,6 +34,7 @@ use sled::{Db, IVec};
 use tokio::sync::RwLock;
 use trace::info;
 use tracing;
+
 pub mod config;
 pub mod store;
 
