@@ -13,6 +13,8 @@ use tokio::net::TcpStream;
 
 use trace::info;
 
+use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
+
 #[derive(Snafu, Debug)]
 pub enum MetaError {
     #[snafu(display("Not Found Field"))]
@@ -77,13 +79,19 @@ pub trait MetaClient: Send + Sync + Debug {
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
     //fn drop_user(&self, name: &String) -> MetaResult<()>;
 
-    fn create_db(&self, name: &String, policy: &DatabaseInfo) -> MetaResult<()>;
-    //fn drop_db(&self, name: &String) -> MetaResult<()>;
+    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()>;
+    fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>>;
+    fn list_databases(&self) -> MetaResult<Vec<String>>;
+    fn drop_db(&self, name: &String) -> MetaResult<()>;
+
+    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
+    fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>>;
+    fn list_tables(&self, db: &String) -> MetaResult<Vec<String>>;
+    fn drop_table(&self, db: &String, table: &String) -> MetaResult<()>;
 
     fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo>;
     //fn drop_bucket(&self, db: &String, id: u64) -> MetaResult<()>;
 
-    //fn databases(&self) -> Vec<String>;
     fn database_min_ts(&self, db: &String) -> Option<i64>;
 
     fn mapping_bucket(&self, db_name: &String, start: i64, end: i64)
@@ -96,9 +104,6 @@ pub trait MetaClient: Send + Sync + Debug {
         ts: i64,
     ) -> MetaResult<ReplcationSet>;
 
-    // fn create_table(&self);
-    // fn drop_table(&self);
-    // fn get_table_schema(&self);
     fn print_data(&self) -> String;
 }
 
@@ -308,8 +313,8 @@ impl MetaClient for RemoteMetaClient {
         return &self.tenant;
     }
 
-    fn create_db(&self, name: &String, info: &DatabaseInfo) -> MetaResult<()> {
-        if let Some(_) = self.data.read().dbs.get(name) {
+    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
+        if let Some(_) = self.data.read().dbs.get(&info.name) {
             return Ok(());
         }
 
@@ -334,6 +339,34 @@ impl MetaClient for RemoteMetaClient {
         }
 
         return Ok(());
+    }
+
+    fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
+        todo!()
+    }
+
+    fn list_databases(&self) -> MetaResult<Vec<String>> {
+        todo!()
+    }
+
+    fn drop_db(&self, name: &String) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
+        todo!()
+    }
+
+    fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
+        todo!()
+    }
+
+    fn drop_table(&self, db: &String, table: &String) -> MetaResult<()> {
+        todo!()
     }
 
     fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo> {

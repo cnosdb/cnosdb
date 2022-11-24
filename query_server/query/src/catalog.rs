@@ -106,8 +106,17 @@ impl UserCatalog {
             replications: schema.database_schema.config.replica_or_default() as u32,
             buckets: vec![],
         };
-        self.coord
-            .create_db(&DEFAULT_CATALOG.to_string(), info)
+
+        let tenant = &DEFAULT_CATALOG.to_string();
+        let meta_client = self
+            .coord
+            .tenant_meta(&tenant)
+            .ok_or(MetadataError::InternalError {
+                error_msg: format!("can't found tenant {}", tenant),
+            })?;
+
+        meta_client
+            .create_db(&info)
             .map_err(|err| MetadataError::InternalError {
                 error_msg: err.to_string(),
             })?;

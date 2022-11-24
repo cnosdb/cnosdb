@@ -10,7 +10,6 @@ use models::*;
 
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
-//use std::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use trace::info;
@@ -41,24 +40,8 @@ pub trait Coordinator: Send + Sync + Debug {
         level: ConsistencyLevel,
         request: WritePointsRpcRequest,
     ) -> CoordinatorResult<()>;
-    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()>;
 
     async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
-
-    // fn create_db(&self, tenant: &String, info: &DatabaseSchema) -> CoordinatorResult<()>;
-    // fn db_schema(&self, tenant: &String, name: &String) -> Option<DatabaseSchema>;
-    // fn list_databases(&self, tenant: &String) -> CoordinatorResult<Vec<String>>;
-    // fn drop_db(&self, tenant: &String, name: &String) -> CoordinatorResult<()>;
-
-    // fn create_table(&self, tenant: &String, schema: &TableSchema) -> CoordinatorResult<()>;
-    // fn table_schema(
-    //     &self,
-    //     tenant: &String,
-    //     db: &String,
-    //     table: &String,
-    // ) -> CoordinatorResult<Option<TableSchema>>;
-    // fn list_tables(&self, tenant: &String, db: &String) -> CoordinatorResult<Vec<String>>;
-    // fn drop_table(&self, tenant: &String, db: &String, table: &String) -> CoordinatorResult<()>;
 }
 
 #[derive(Debug, Default)]
@@ -76,10 +59,6 @@ impl Coordinator for MockCoordinator {
 
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
         Some(Arc::new(MockMetaClient::default()))
-    }
-
-    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()> {
-        Ok(())
     }
 
     async fn write_points(
@@ -191,18 +170,6 @@ impl Coordinator for CoordService {
 
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
         self.meta.tenant_meta(tenant)
-    }
-
-    fn create_db(&self, tenant: &String, info: DatabaseInfo) -> CoordinatorResult<()> {
-        let meta = self
-            .tenant_meta(tenant)
-            .ok_or(CoordinatorError::TenantNotFound {
-                name: tenant.clone(),
-            })?;
-
-        meta.create_db(&info.name, &info)?;
-
-        Ok(())
     }
 
     async fn write_points(

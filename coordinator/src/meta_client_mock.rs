@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use models::meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet};
+use models::{
+    meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet},
+    schema::TskvTableSchema,
+};
 use tokio::net::TcpStream;
 
 use crate::meta_client::{
@@ -39,7 +42,35 @@ impl MetaClient for MockMetaClient {
         ""
     }
 
-    fn create_db(&self, name: &String, policy: &DatabaseInfo) -> MetaResult<()> {
+    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
+        Ok(())
+    }
+
+    fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
+        Ok(Some(DatabaseInfo::default()))
+    }
+
+    fn list_databases(&self) -> MetaResult<Vec<String>> {
+        Ok(vec![])
+    }
+
+    fn drop_db(&self, name: &String) -> MetaResult<()> {
+        Ok(())
+    }
+
+    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+        Ok(())
+    }
+
+    fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
+        Ok(Some(TskvTableSchema::default()))
+    }
+
+    fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
+        Ok(vec![])
+    }
+
+    fn drop_table(&self, db: &String, table: &String) -> MetaResult<()> {
         Ok(())
     }
 
