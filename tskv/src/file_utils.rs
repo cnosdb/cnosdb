@@ -84,7 +84,7 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
     let path = tsm_path.as_ref();
     let file_name = path
         .file_name()
-        .expect("path must not be ..")
+        .expect("path must not be '..'")
         .to_str()
         .expect("file name must be UTF-8 string");
     if file_name.len() == 1 {

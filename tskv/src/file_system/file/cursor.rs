@@ -1,19 +1,18 @@
+use std::io::{ErrorKind, IoSlice};
 use std::{
-    convert::TryInto,
-    io::{Error, ErrorKind, Result, SeekFrom},
+    io::{Error, Result, SeekFrom},
     ops::Deref,
 };
 
-use super::DmaFile;
+use crate::file_system::file::async_file::{AsyncFile, IFile};
 
-#[derive(Clone)]
 pub struct FileCursor {
-    file: DmaFile,
+    file: AsyncFile,
     pos: u64,
 }
 
 impl FileCursor {
-    pub fn into_file(self) -> DmaFile {
+    pub fn into_file(self) -> AsyncFile {
         self.file
     }
 
@@ -25,18 +24,28 @@ impl FileCursor {
         self.pos = pos;
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let read = self.file.read_at(self.pos, buf)?;
+    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let read = self.file.read_at(self.pos, buf).await?;
         self.seek(SeekFrom::Current(read.try_into().unwrap()))
             .unwrap();
         Ok(read)
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let size = self.file.write_at(self.pos, buf)?;
+    pub async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let size = self.file.write_at(self.pos, buf).await?;
         self.seek(SeekFrom::Current(buf.len().try_into().unwrap()))
             .unwrap();
         Ok(size)
+    }
+
+    pub async fn write_vec<'a>(&mut self, bufs: &'a mut [IoSlice<'a>]) -> Result<usize> {
+        let mut p = self.pos;
+        for buf in bufs {
+            p += self.write_at(p, buf.deref()).await? as u64;
+        }
+        let pos = self.pos;
+        self.seek(SeekFrom::Start(p)).unwrap();
+        Ok((p - pos) as usize)
     }
 
     pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
@@ -44,6 +53,8 @@ impl FileCursor {
             SeekFrom::Start(pos) => Some(pos),
             SeekFrom::End(delta) => {
                 if delta >= 0 {
+                    // TODO: AsyncFile::len() cannot get current length after
+                    // an appending write.
                     self.len().checked_add(delta as u64)
                 } else {
                     self.len().checked_sub(-delta as u64)
@@ -62,62 +73,16 @@ impl FileCursor {
     }
 }
 
-impl From<DmaFile> for FileCursor {
-    fn from(file: DmaFile) -> Self {
+impl From<AsyncFile> for FileCursor {
+    fn from(file: AsyncFile) -> Self {
         FileCursor { file, pos: 0 }
     }
 }
 
 impl Deref for FileCursor {
-    type Target = DmaFile;
+    type Target = AsyncFile;
 
     fn deref(&self) -> &Self::Target {
         &self.file
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::io::{prelude::*, BufWriter};
-
-    use tempfile::NamedTempFile;
-
-    use crate::file_system::*;
-
-    #[test]
-    fn copy() {
-        let fs = FileSystemCache::new(Options::default().max_resident(2).max_non_resident(2));
-
-        let file_len: usize = (fs.max_page_len() as f64 * 5.3) as usize;
-
-        let mut src = NamedTempFile::new().unwrap();
-        let dst = NamedTempFile::new().unwrap();
-        {
-            let mut f = BufWriter::new(&mut src);
-            for i in 0..file_len {
-                f.write_all(&[i as u8]).unwrap();
-            }
-            f.flush().unwrap();
-        }
-
-        {
-            let mut src_d = fs.open(src.path()).unwrap().into_cursor();
-            let mut dst_d = fs.open(dst.path()).unwrap().into_cursor();
-
-            let buf = &mut [0];
-            while src_d.read(buf).unwrap() == 1 {
-                dst_d.write(buf).unwrap();
-            }
-        }
-
-        {
-            let mut dst_d = fs.open(dst.path()).unwrap().into_cursor();
-            let buf = &mut [0];
-            for i in 0..file_len {
-                assert_eq!(dst_d.read(buf).unwrap(), 1);
-                assert_eq!(buf[0], i as u8);
-            }
-            assert_eq!(dst_d.read(buf).unwrap(), 0);
-        }
     }
 }

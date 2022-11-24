@@ -111,7 +111,7 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
-    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default => {
                 let filter = self.filter();

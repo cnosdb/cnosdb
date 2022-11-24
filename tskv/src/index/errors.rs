@@ -5,21 +5,6 @@ use sled;
 
 #[derive(Snafu, Debug)]
 pub enum IndexError {
-    #[snafu(display("Error with write record file: {}", source))]
-    WriteFile {
-        source: record_file::RecordFileError,
-    },
-
-    #[snafu(display("Error with read record file: {}", source))]
-    ReadFile {
-        source: record_file::RecordFileError,
-    },
-
-    #[snafu(display("Error with write close file: {}", source))]
-    CloseFile {
-        source: record_file::RecordFileError,
-    },
-
     #[snafu(display("Unrecognized action"))]
     Action,
 

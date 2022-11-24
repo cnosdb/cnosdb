@@ -37,8 +37,8 @@ use protos::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::database::Database;
-use crate::file_system::file_manager::{self, init_file_manager, FileManager};
-use crate::file_system::Options as FileOptions;
+use crate::file_system::file_manager;
+use crate::file_system::file_manager::FileManager;
 use crate::index::index_manger;
 use crate::index::IndexError::TableNotFound;
 use crate::Error::{DatabaseNotFound, IndexErr};
@@ -80,12 +80,6 @@ pub struct TsKv {
 impl TsKv {
     pub async fn open(opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
         let shared_options = Arc::new(opt);
-        init_file_manager(
-            FileOptions::default()
-                .max_resident(shared_options.storage.dio_max_resident)
-                .max_non_resident(shared_options.storage.dio_max_non_resident)
-                .page_len_scale(shared_options.storage.dio_page_len_scale),
-        );
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
@@ -160,7 +154,7 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::new(self.options.wal.clone());
+        let wal_manager = WalManager::open(self.options.wal.clone()).await.unwrap();
 
         wal_manager
             .recover(self, self.global_ctx.clone())
@@ -180,7 +174,7 @@ impl TsKv {
                         match wal_task {
                             Some(WalTask::Write { points, cb }) => {
                                 // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, &points).await;
+                                let ret = wal_manager.write(WalEntryType::Write, points).await;
                                 let send_ret = cb.send(ret);
                                 match send_ret {
                                     Ok(wal_result) => {}
@@ -231,7 +225,8 @@ impl TsKv {
                     summary_task_sender.clone(),
                     compact_task_sender.clone(),
                 )
-                .unwrap();
+                .await
+                .unwrap()
             }
         };
         self.runtime.spawn(f);
@@ -256,7 +251,7 @@ impl TsKv {
                         let database = req.database.clone();
                         let compact_ts_family = req.ts_family_id;
                         let out_level = req.out_level;
-                        match compaction::run_compaction_job(req, ctx.clone()) {
+                        match compaction::run_compaction_job(req, ctx.clone()).await {
                             Ok(Some(version_edit)) => {
                                 incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
@@ -277,7 +272,7 @@ impl TsKv {
                             }
                             Err(e) => {
                                 incr_compaction_failed();
-                                error!("Compaction job failed: {}", e);
+                                error!("Compaction job failed: {:?}", e);
                             }
                         }
                     }
@@ -320,14 +315,15 @@ impl TsKv {
     // }
 
     // Compact TSM files in database into bigger TSM files.
-    pub fn compact(&self, database: &str) {
+    #[allow(clippy::await_holding_lock)]
+    pub async fn compact(&self, database: &str) {
         let database = self.version_set.read().get_db(database);
         if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().ts_families() {
                 let compact_req = ts_family.read().pick_compaction();
                 if let Some(req) = compact_req {
-                    match compaction::run_compaction_job(req, self.global_ctx.clone()) {
+                    match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some(version_edit)) => {
                             let (summary_tx, summary_rx) = oneshot::channel();
                             let ret = self.summary_task_sender.send(SummaryTask {
@@ -341,7 +337,7 @@ impl TsKv {
                             info!("There is nothing to compact.");
                         }
                         Err(e) => {
-                            error!("Compaction job failed: {}", e);
+                            error!("Compaction job failed: {:?}", e);
                         }
                     }
                 }
@@ -384,9 +380,8 @@ impl Engine for TsKv {
         let mut seq = 0;
         if self.options.wal.enabled {
             let (cb, rx) = oneshot::channel();
-            let mut enc_points = Vec::new();
-            let coder = get_str_codec(Encoding::Zstd);
-            coder
+            let mut enc_points = Vec::with_capacity(points.len() / 2);
+            get_str_codec(Encoding::Zstd)
                 .encode(&[&points], &mut enc_points)
                 .map_err(|_| Error::Send)?;
             self.wal_sender
@@ -540,7 +535,7 @@ impl Engine for TsKv {
                 .get_index()
                 .create_table(schema)
                 .map_err(|e| {
-                    error!("failed create database '{}'", e);
+                    error!("failed create database '{:?}'", e);
                     e
                 })
                 .context(IndexErrSnafu)
@@ -554,20 +549,10 @@ impl Engine for TsKv {
 
     fn drop_table(&self, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
-
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
-        let handle = std::thread::spawn(move || {
-            database::delete_table_async(database.to_string(), table.to_string(), version_set)
-        });
-        let recv_ret = match handle.join() {
-            Ok(ret) => ret,
-            Err(e) => panic::resume_unwind(e),
-        };
-
-        // TODO Release global DropTable flag.
-        recv_ret
+        futures::executor::block_on(database::delete_table_async(database, table, version_set))
     }
 
     fn delete_columns(
@@ -590,7 +575,9 @@ impl Engine for TsKv {
                     .version
                     .column_files(&storage_field_ids, &TimeRange::all())
                 {
-                    column_file.add_tombstone(&storage_field_ids, &TimeRange::all())?;
+                    self.runtime.block_on(
+                        column_file.add_tombstone(&storage_field_ids, &TimeRange::all()),
+                    )?;
                 }
             }
         }
@@ -609,9 +596,10 @@ impl Engine for TsKv {
             .iter()
             .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
             .collect();
-
-        if let Some(db) = self.version_set.read().get_db(database) {
-            for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+        let res = self.version_set.read().get_db(database);
+        if let Some(db) = res {
+            let readable_db = db.read();
+            for (ts_family_id, ts_family) in readable_db.ts_families() {
                 // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
                 ts_family
                     .write()
@@ -619,7 +607,8 @@ impl Engine for TsKv {
 
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_field_ids, time_range) {
-                    column_file.add_tombstone(&storage_field_ids, time_range)?;
+                    self.runtime
+                        .block_on(column_file.add_tombstone(&storage_field_ids, time_range))?;
                 }
                 // TODO Start next flush or compaction.
             }
@@ -771,6 +760,81 @@ mod test {
         let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
             .await
             .unwrap();
-        tskv.compact("public");
+        tskv.compact("public").await;
     }
+
+    // async fn prepare(tskv: &TsKv, database: &str, table: &str, time_range: &TimeRange) {
+    //     let mut fbb = FlatBufferBuilder::new();
+    //     let points = models_helper::create_random_points_with_delta(&mut fbb, 10);
+    //     fbb.finish(points, None);
+    //     let points_data = fbb.finished_data();
+    //
+    //     let write_batch = protos::kv_service::WritePointsRpcRequest {
+    //         version: 1,
+    //         points: points_data.to_vec(),
+    //     };
+    //     tskv.write(write_batch).await.unwrap();
+    //
+    //     {
+    //         let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
+    //         let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
+    //
+    //         let field_ids: Vec<ColumnId> = table_schema.columns().iter().map(|f| f.id).collect();
+    //         // let result: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> =
+    //         // tskv.read(database, series_ids, time_range, field_ids);
+    //         // println!("Result items: {}", result.len());
+    //     }
+    // }
+    // #[test]
+    // #[ignore]
+    // fn test_drop_table_database() {
+    //     let base_dir = "/tmp/test/tskv/drop_table".to_string();
+    //     let _ = std::fs::remove_dir_all(&base_dir);
+    //     trace::init_default_global_tracing("tskv_log", "tskv.log", "debug");
+    //
+    //     let runtime = Arc::new(
+    //         runtime::Builder::new_multi_thread()
+    //             .enable_all()
+    //             .build()
+    //             .unwrap(),
+    //     );
+    //
+    //     runtime.clone().block_on(async move {
+    //         let mut config = get_config("../config/config.toml").clone();
+    //         config.storage.path = base_dir;
+    //         // TODO Add test case for `max_buffer_size = 0`.
+    //         // config.cache.max_buffer_size = 0;
+    //         let opt = Options::from(&config);
+    //         let tskv = TsKv::open(opt, runtime).await.unwrap();
+    //
+    //         let database = "db";
+    //         let table = "table";
+    //         let time_range = TimeRange::new(i64::MIN, i64::MAX);
+    //
+    //         prepare(&tskv, database, table, &time_range).await;
+    //
+    //         tskv.drop_table(database, table).unwrap();
+    //
+    //         {
+    //             let table_schema = tskv.get_table_schema(database, table).unwrap();
+    //             assert!(table_schema.is_none());
+    //
+    //             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
+    //             assert!(series_ids.is_empty());
+    //         }
+    //
+    //         tskv.drop_database(database).unwrap();
+    //
+    //         {
+    //             let db = tskv.version_set.read().get_db(database);
+    //             assert!(db.is_none());
+    //
+    //             let table_schema = tskv.get_table_schema(database, table).unwrap();
+    //             assert!(table_schema.is_none());
+    //
+    //             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
+    //             assert!(series_ids.is_empty());
+    //         }
+    //     });
+    // }
 }
