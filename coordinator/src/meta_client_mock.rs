@@ -62,6 +62,10 @@ impl MetaClient for MockMetaClient {
         Ok(())
     }
 
+    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+        Ok(())
+    }
+
     fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
         Ok(Some(TskvTableSchema::default()))
     }

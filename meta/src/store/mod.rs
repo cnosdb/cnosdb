@@ -61,6 +61,7 @@ pub enum KvReq {
     },
 
     CreateTable(String, String, TskvTableSchema),
+    UpdateTable(String, String, TskvTableSchema),
 
     Set {
         key: String,
@@ -638,6 +639,22 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                     }
 
                     KvReq::CreateTable(cluster, tenant, schema) => {
+                        let key =
+                            KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
+                        let value = serde_json::to_string(schema).unwrap();
+                        sm.data.insert(key.clone(), value.clone());
+                        info!("WRITE: {} :{}", key, value);
+
+                        let resp = KvResp {
+                            err_code: 0,
+                            err_msg: "".to_string(),
+                            meta_data: sm.to_tenant_meta_data(cluster, tenant),
+                        };
+
+                        res.push(resp);
+                    }
+
+                    KvReq::UpdateTable(cluster, tenant, schema) => {
                         let key =
                             KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
                         let value = serde_json::to_string(schema).unwrap();

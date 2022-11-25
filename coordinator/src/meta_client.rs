@@ -88,6 +88,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn drop_db(&self, name: &String) -> MetaResult<()>;
 
     fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
+    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
     fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>>;
     fn list_tables(&self, db: &String) -> MetaResult<Vec<String>>;
     fn drop_table(&self, db: &String, table: &String) -> MetaResult<()>;
@@ -398,6 +399,30 @@ impl MetaClient for RemoteMetaClient {
         self.sync_data()?;
         let val = self.data.read().table_schema(db, table);
         Ok(val)
+    }
+
+    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+        let req = KvReq::UpdateTable(self.cluster.clone(), self.tenant.clone(), schema.clone());
+
+        let rsp = self
+            .client
+            .write(&req)
+            .map_err(|err| MetaError::CommonError {
+                msg: format!("create table err: {}", err.to_string()),
+            })?;
+
+        if rsp.err_code < 0 {
+            return Err(MetaError::CommonError {
+                msg: format!("create table err: {} {}", rsp.err_code, rsp.err_msg),
+            });
+        }
+
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        return Ok(());
     }
 
     fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
