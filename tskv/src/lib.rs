@@ -23,6 +23,7 @@ pub mod tseries_family;
 pub mod tsm;
 mod version_set;
 mod wal;
+pub mod schema;
 
 pub use error::{Error, Result};
 pub use kv_option::Options;
