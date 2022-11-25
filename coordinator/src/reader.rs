@@ -170,11 +170,13 @@ impl QueryExecutor {
     }
 
     fn map_vnode(&self) -> CoordinatorResult<HashMap<u64, Vec<VnodeInfo>>> {
-        let meta = self.meta_manager.tenant_meta(&self.option.tenant).ok_or(
-            CoordinatorError::TenantNotFound {
+        let meta = self
+            .meta_manager
+            .tenant_manager()
+            .tenant_meta(&self.option.tenant)
+            .ok_or(CoordinatorError::TenantNotFound {
                 name: self.option.tenant.clone(),
-            },
-        )?;
+            })?;
 
         let mut vnode_mapping: HashMap<u64, Vec<VnodeInfo>> = HashMap::new();
         for item in QueryOption::parse_time_ranges(

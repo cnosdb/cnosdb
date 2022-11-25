@@ -19,7 +19,9 @@ use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
+use crate::error::SchemaSnafu;
 use crate::index::{index_manger, IndexError, IndexResult};
+use crate::schema::schemas::DBschemas;
 use crate::tseries_family::LevelInfo;
 use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
@@ -35,8 +37,6 @@ use crate::{
     summary::{CompactMeta, SummaryTask, VersionEdit},
     tseries_family::{TseriesFamily, Version},
 };
-use crate::schema::schemas::DBschemas;
-use crate::error::SchemaSnafu;
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
 
@@ -63,7 +63,7 @@ impl Database {
         Ok(db)
     }
 
-    pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()>{
+    pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
         self.schemas.alter_db_schema(schema).context(SchemaSnafu)
     }
 
@@ -298,12 +298,16 @@ impl Database {
     }
 
     pub fn add_table_column(&self, table: &str, column: TableColumn) -> Result<()> {
-        self.schemas.add_table_column(table, column).context(SchemaSnafu)?;
+        self.schemas
+            .add_table_column(table, column)
+            .context(SchemaSnafu)?;
         Ok(())
     }
 
     pub fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
-        self.schemas.drop_table_column(table, column_name).context(SchemaSnafu)?;
+        self.schemas
+            .drop_table_column(table, column_name)
+            .context(SchemaSnafu)?;
         Ok(())
     }
 
@@ -314,7 +318,8 @@ impl Database {
         new_column: TableColumn,
     ) -> Result<()> {
         self.schemas
-            .change_table_column(table, column_name, new_column).context(SchemaSnafu)?;
+            .change_table_column(table, column_name, new_column)
+            .context(SchemaSnafu)?;
         Ok(())
     }
 
@@ -323,16 +328,19 @@ impl Database {
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchema>> {
-        self.schemas.get_table_schema(table_name).context(SchemaSnafu)
+        self.schemas
+            .get_table_schema(table_name)
+            .context(SchemaSnafu)
     }
 
     pub fn get_table_schema_by_series_id(&self, sid: u64) -> Result<Option<TskvTableSchema>> {
         let key = self.index.get_series_key(sid).context(IndexErrSnafu)?;
         match key {
             None => Ok(None),
-            Some(series_key) => {
-                self.schemas.get_table_schema(&series_key.table).context(SchemaSnafu)
-            }
+            Some(series_key) => self
+                .schemas
+                .get_table_schema(&series_key.table)
+                .context(SchemaSnafu),
         }
     }
 

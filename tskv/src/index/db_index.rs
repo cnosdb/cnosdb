@@ -74,9 +74,7 @@ impl DbIndexMgr {
         let index = self.indexs.get(name);
         match index {
             None => {
-                let index = Arc::new(DBIndex::new(
-                    self.base_path.join(name),
-                ));
+                let index = Arc::new(DBIndex::new(self.base_path.join(name)));
                 self.indexs.insert(name.to_string(), index.clone());
                 index
             }

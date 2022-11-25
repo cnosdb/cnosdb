@@ -18,12 +18,12 @@ mod kvcore;
 pub mod memcache;
 mod reader;
 mod record_file;
+pub mod schema;
 mod summary;
 pub mod tseries_family;
 pub mod tsm;
 mod version_set;
 mod wal;
-pub mod schema;
 
 pub use error::{Error, Result};
 pub use kv_option::Options;

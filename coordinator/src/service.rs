@@ -169,7 +169,7 @@ impl Coordinator for CoordService {
     }
 
     fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
-        self.meta.tenant_meta(tenant)
+        self.meta.tenant_manager().tenant_meta(tenant)
     }
 
     async fn write_points(

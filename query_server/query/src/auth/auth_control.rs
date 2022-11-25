@@ -1,37 +1,35 @@
 use std::sync::Arc;
 
-use super::auth_client::AuthClient;
+use coordinator::meta_client::MetaRef;
 use models::{
     auth::{
         user::{AuthType, User, UserInfo},
         AuthError,
     },
-    oid::Oid,
+    oid::{Identifier, Oid},
 };
 
-pub type AccessControlRef<T> = Arc<AccessControl<T>>;
+pub type AccessControlRef = Arc<AccessControl>;
 
 pub type Result<T> = std::result::Result<T, AuthError>;
 
-pub struct AccessControl<T> {
-    auth_client: Arc<T>,
+pub struct AccessControl {
+    meta_manager: MetaRef,
 }
 
-impl<T> AccessControl<T> {
-    pub fn new(auth_client: Arc<T>) -> Self {
-        Self { auth_client }
+impl AccessControl {
+    pub fn new(meta_manager: MetaRef) -> Self {
+        Self { meta_manager }
     }
 }
 
-impl<T> AccessControl<T>
-where
-    T: AuthClient,
-{
+impl AccessControl {
     pub fn access_check(&self, user_info: &UserInfo) -> Result<User> {
         let user_name = user_info.user.as_str();
 
         let user = self
-            .auth_client
+            .meta_manager
+            .user_manager()
             .user_with_privileges(user_name)?
             .ok_or_else(|| AuthError::UserNotFound {
                 user: user_name.to_string(),
@@ -44,10 +42,16 @@ where
         Ok(user)
     }
 
-    pub fn tenant_id(&self, _tenant_name: &str) -> Result<Oid> {
-        // TODO 查询租户信息，不存在则直接报错
+    pub fn tenant_id(&self, tenant_name: &str) -> Result<Oid> {
+        // 查询租户信息，不存在则直接报错
         // tenant(&self, tenant_name: &str) -> Result<Tenant>;
         // Tenant::id(&self) -> &Oid
-        Ok(0_u128)
+        let tenant_client = self
+            .meta_manager
+            .tenant_manager()
+            .tenant_meta(tenant_name)
+            .ok_or_else(|| AuthError::TenantNotFound)?;
+
+        Ok(*tenant_client.tenant().id())
     }
 }

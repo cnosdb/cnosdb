@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-use parking_lot::RwLock;
-use models::codec::Encoding;
-use models::{ColumnId, SeriesId};
-use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
-use protos::models::Point;
 use crate::schema::error::{Result, SchemaError};
+use models::codec::Encoding;
+use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::{ColumnId, SeriesId};
+use parking_lot::RwLock;
+use protos::models::Point;
+use std::collections::HashMap;
 use trace::{error, warn};
-
 
 const TIME_STAMP_NAME: &str = "time";
 
@@ -23,7 +22,7 @@ impl DBschemas {
         // todo: get all table schemas from meta
         Ok(Self {
             db_schema: RwLock::new(db_schema),
-            table_schema: RwLock::new(table_schema)
+            table_schema: RwLock::new(table_schema),
         })
     }
 
@@ -74,7 +73,7 @@ impl DBschemas {
         let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().to_vec()) };
         let mut fields = self.table_schema.write();
         let mut new_schema = false;
-        let schema = fields.entry(table_name.clone()).or_insert_with(||{
+        let schema = fields.entry(table_name.clone()).or_insert_with(|| {
             let mut schema = TskvTableSchema::default();
             schema.name = table_name.clone();
             schema.db = db_name.clone();
@@ -177,11 +176,13 @@ impl DBschemas {
     }
 
     pub fn add_table_column(&self, tab: &str, mut column: TableColumn) -> Result<()> {
-        let mut schema = self.get_table_schema(tab)?.ok_or(SchemaError::TableNotFound {table: tab.to_string()})?;
+        let mut schema = self
+            .get_table_schema(tab)?
+            .ok_or(SchemaError::TableNotFound {
+                table: tab.to_string(),
+            })?;
         if schema.column(&column.name).is_some() {
-            return Err(SchemaError::ColumnAlreadyExists {
-                name: column.name,
-            });
+            return Err(SchemaError::ColumnAlreadyExists { name: column.name });
         }
         column.id = schema.next_column_id();
         schema.add_column(column);
@@ -190,7 +191,11 @@ impl DBschemas {
     }
 
     pub fn drop_table_column(&self, tab: &str, name: &str) -> Result<()> {
-        let mut schema = self.get_table_schema(tab)?.ok_or(SchemaError::TableNotFound {table: tab.to_string()})?;
+        let mut schema = self
+            .get_table_schema(tab)?
+            .ok_or(SchemaError::TableNotFound {
+                table: tab.to_string(),
+            })?;
         if schema.column(name).is_none() {
             return Err(SchemaError::NotFoundField);
         }
@@ -205,7 +210,11 @@ impl DBschemas {
         name: &str,
         new_column: TableColumn,
     ) -> Result<()> {
-        let mut schema = self.get_table_schema(tab)?.ok_or(SchemaError::TableNotFound {table: tab.to_string()})?;
+        let mut schema = self
+            .get_table_schema(tab)?
+            .ok_or(SchemaError::TableNotFound {
+                table: tab.to_string(),
+            })?;
         if schema.column(name).is_none() {
             return Err(SchemaError::NotFoundField);
         }
@@ -214,4 +223,3 @@ impl DBschemas {
         Ok(())
     }
 }
-

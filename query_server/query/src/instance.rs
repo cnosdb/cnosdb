@@ -18,11 +18,7 @@ use crate::metadata::LocalCatalogMeta;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 use crate::{
-    auth::{
-        auth_client::{AuthClient, AuthClientMock},
-        auth_control::AccessControl,
-    },
-    dispatcher::manager::SimpleQueryDispatcher,
+    auth::auth_control::AccessControl, dispatcher::manager::SimpleQueryDispatcher,
     function::simple_func_manager::SimpleFunctionMetadataManager,
 };
 use crate::{
@@ -31,17 +27,16 @@ use crate::{
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
 
-pub struct Cnosdbms<A, D> {
+pub struct Cnosdbms<D> {
     // TODO access control
-    access_control: AccessControl<A>,
+    access_control: AccessControl,
     // query dispatcher & query execution
     query_dispatcher: D,
 }
 
 #[async_trait]
-impl<A, D> DatabaseManagerSystem for Cnosdbms<A, D>
+impl<D> DatabaseManagerSystem for Cnosdbms<D>
 where
-    A: AuthClient,
     D: QueryDispatcher,
 {
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
@@ -93,14 +88,14 @@ pub fn make_cnosdbms(
     engine: EngineRef,
     coord: CoordinatorRef,
     options: Options,
-) -> Result<Cnosdbms<AuthClientMock, SimpleQueryDispatcher>> {
+) -> Result<Cnosdbms<SimpleQueryDispatcher>> {
     // todo: add query config
     // for now only support local mode
     let mut function_manager = SimpleFunctionMetadataManager::default();
     load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
 
     let meta = Arc::new(
-        LocalCatalogMeta::new_with_default(engine, coord, Arc::new(function_manager))
+        LocalCatalogMeta::new_with_default(engine, coord.clone(), Arc::new(function_manager))
             .context(MetaDataSnafu)?,
     );
 
@@ -123,9 +118,8 @@ pub fn make_cnosdbms(
         .build()
         .context(BuildSnafu)?;
 
-    // TODO
-    let auth_mock = Arc::new(AuthClientMock::new());
-    let access_control = AccessControl::new(auth_mock);
+    let meta_manager = coord.meta_manager();
+    let access_control = AccessControl::new(meta_manager);
 
     Ok(Cnosdbms {
         access_control,
@@ -168,9 +162,8 @@ mod tests {
         };
     }
 
-    async fn exec_sql<A, D>(db: &Cnosdbms<A, D>, sql: &str) -> Vec<RecordBatch>
+    async fn exec_sql<D>(db: &Cnosdbms<D>, sql: &str) -> Vec<RecordBatch>
     where
-        A: AuthClient,
         D: QueryDispatcher,
     {
         let user = UserInfo {

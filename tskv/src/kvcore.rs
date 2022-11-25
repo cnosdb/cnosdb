@@ -37,6 +37,7 @@ use protos::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::database::Database;
+use crate::error::SchemaSnafu;
 use crate::file_system::file_manager::{self, init_file_manager, FileManager};
 use crate::file_system::Options as FileOptions;
 use crate::index::index_manger;
@@ -62,8 +63,6 @@ use crate::{
     wal::{self, WalEntryType, WalManager, WalTask},
     Error, Task, TseriesFamilyId,
 };
-use crate::error::SchemaSnafu;
-
 
 #[derive(Debug)]
 pub struct TsKv {
@@ -545,10 +544,8 @@ impl Engine for TsKv {
     fn create_table(&self, schema: &TableSchema) -> Result<()> {
         // todo: remove this
         let schema = match schema {
-            TableSchema::TsKvTableSchema(schema) => {schema}
-            TableSchema::ExternalTableSchema(_) => {
-                return Err(Error::Cancel)
-            }
+            TableSchema::TsKvTableSchema(schema) => schema,
+            TableSchema::ExternalTableSchema(_) => return Err(Error::Cancel),
         };
         if let Some(db) = self.version_set.write().get_db(&schema.db) {
             db.read()
@@ -644,14 +641,12 @@ impl Engine for TsKv {
 
     fn get_table_schema(&self, name: &str, tab: &str) -> Result<Option<TableSchema>> {
         if let Some(db) = self.version_set.read().get_db(name) {
-            let val = db
-                .read()
-                .get_table_schema(tab)?;
+            let val = db.read().get_table_schema(tab)?;
             // todo: remove this
             return match val {
                 None => Ok(None),
-                Some(schema) => Ok(Some(TableSchema::TsKvTableSchema(schema)))
-            }
+                Some(schema) => Ok(Some(TableSchema::TsKvTableSchema(schema))),
+            };
         }
         Ok(None)
     }
@@ -719,8 +714,7 @@ impl Engine for TsKv {
 
     fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
         let db = self.get_db(database)?;
-        db.read()
-            .add_table_column(table, column)?;
+        db.read().add_table_column(table, column)?;
         Ok(())
     }
 
@@ -728,15 +722,17 @@ impl Engine for TsKv {
         let db = self.get_db(database)?;
         let schema = db
             .read()
-            .get_table_schema(table)?.ok_or(Error::NotFoundTable {table_name: table.to_string()})?;
+            .get_table_schema(table)?
+            .ok_or(Error::NotFoundTable {
+                table_name: table.to_string(),
+            })?;
         let column_id = schema
             .column(column_name)
             .ok_or(Error::NotFoundField {
                 reason: column_name.to_string(),
             })?
             .id;
-        db.read()
-            .drop_table_column(table, column_name)?;
+        db.read().drop_table_column(table, column_name)?;
         let sid = db
             .read()
             .get_index()
