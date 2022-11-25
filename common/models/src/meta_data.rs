@@ -2,25 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-// pub const CREATE_NODE_COMMAND: u32 = 1;
-// pub const DELETE_NODE_COMMAND: u32 = 2;
-// pub const CREATE_DATABASE_COMMAND: u32 = 3;
-// pub const DROP_DATABASE_COMMAND: u32 = 4;
-// pub const UPDATE_RETENTION_POLICY_COMMAND: u32 = 5;
-// pub const CREATE_BUCKET_COMMAND: u32 = 6;
-// pub const DELETE_BUCKET_COMMAND: u32 = 7;
-// pub const CREATE_USER_COMMAND: u32 = 8;
-// pub const DROP_USER_COMMAND: u32 = 9;
-// pub const UPDATE_USER_COMMAND: u32 = 10;
-// pub const CREATE_DATA_NODE_COMMAND: u32 = 11;
-// pub const UPDATE_DATA_NODE_COMMAND: u32 = 12;
-// pub const DELETE_DATA_NODE_COMMAND: u32 = 13;
-// pub const CREATE_META_NODE_COMMAND: u32 = 14;
-// pub const UPDATE_META_NODE_COMMAND: u32 = 15;
-// pub const DELETE_META_NODE_COMMAND: u32 = 16;
-// pub const DROP_VNODE_COMMAND: u32 = 17;
-// pub const UPDATE_VNODE_OWNERS_COMMAND: u32 = 18;
-// pub const WRITE_VNODE_POINT_COMMAND: u32 = 19;
+use crate::schema::TskvTableSchema;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Resource {
@@ -86,7 +68,9 @@ pub struct DatabaseInfo {
     pub ttl: i64,
     pub vnode_duration: i64,
     pub replications: u32,
+
     pub buckets: Vec<BucketInfo>,
+    pub tables: HashMap<String, TskvTableSchema>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -105,6 +89,16 @@ impl TenantMetaData {
             dbs: HashMap::new(),
             data_nodes: HashMap::new(),
         }
+    }
+
+    pub fn table_schema(&self, db: &String, tab: &String) -> Option<TskvTableSchema> {
+        if let Some(info) = self.dbs.get(db) {
+            if let Some(schema) = info.tables.get(tab) {
+                return Some(schema.clone());
+            }
+        }
+
+        None
     }
 
     pub fn database_min_ts(&self, name: &String) -> Option<i64> {

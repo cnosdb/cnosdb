@@ -9,6 +9,7 @@ use std::sync::Mutex;
 
 use crate::ExampleTypeConfig;
 use crate::NodeId;
+use models::schema::TskvTableSchema;
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
@@ -58,6 +59,8 @@ pub enum KvReq {
         db: String,
         ts: i64,
     },
+
+    CreateTable(String, String, TskvTableSchema),
 
     Set {
         key: String,
@@ -622,6 +625,22 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                     KvReq::CreateDB(cluster, tenant, db) => {
                         let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
                         let value = serde_json::to_string(db).unwrap();
+                        sm.data.insert(key.clone(), value.clone());
+                        info!("WRITE: {} :{}", key, value);
+
+                        let resp = KvResp {
+                            err_code: 0,
+                            err_msg: "".to_string(),
+                            meta_data: sm.to_tenant_meta_data(cluster, tenant),
+                        };
+
+                        res.push(resp);
+                    }
+
+                    KvReq::CreateTable(cluster, tenant, schema) => {
+                        let key =
+                            KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
+                        let value = serde_json::to_string(schema).unwrap();
                         sm.data.insert(key.clone(), value.clone());
                         info!("WRITE: {} :{}", key, value);
 

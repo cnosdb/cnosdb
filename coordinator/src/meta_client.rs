@@ -317,22 +317,18 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
-        if let Some(_) = self.data.read().dbs.get(&info.name) {
-            return Ok(());
-        }
-
         let req = KvReq::CreateDB(self.cluster.clone(), self.tenant.clone(), info.clone());
 
         let rsp = self
             .client
             .write(&req)
             .map_err(|err| MetaError::CommonError {
-                msg: format!("create bucket err: {}", err.to_string()),
+                msg: format!("create db err: {}", err.to_string()),
             })?;
 
         if rsp.err_code < 0 {
             return Err(MetaError::CommonError {
-                msg: format!("create bucket err: {} {}", rsp.err_code, rsp.err_msg),
+                msg: format!("create db err: {} {}", rsp.err_code, rsp.err_msg),
             });
         }
 
@@ -345,11 +341,25 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
-        todo!()
+        if let Some(db) = self.data.read().dbs.get(name) {
+            return Ok(Some(db.clone()));
+        }
+
+        self.sync_data()?;
+        if let Some(db) = self.data.read().dbs.get(name) {
+            return Ok(Some(db.clone()));
+        }
+
+        Ok(None)
     }
 
     fn list_databases(&self) -> MetaResult<Vec<String>> {
-        todo!()
+        let mut list = vec![];
+        for (k, _) in self.data.read().dbs.iter() {
+            list.push(k.clone());
+        }
+
+        Ok(list)
     }
 
     fn drop_db(&self, name: &String) -> MetaResult<()> {
@@ -357,15 +367,48 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
-        todo!()
+        let req = KvReq::CreateTable(self.cluster.clone(), self.tenant.clone(), schema.clone());
+
+        let rsp = self
+            .client
+            .write(&req)
+            .map_err(|err| MetaError::CommonError {
+                msg: format!("create table err: {}", err.to_string()),
+            })?;
+
+        if rsp.err_code < 0 {
+            return Err(MetaError::CommonError {
+                msg: format!("create table err: {} {}", rsp.err_code, rsp.err_msg),
+            });
+        }
+
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        return Ok(());
     }
 
     fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
-        todo!()
+        if let Some(val) = self.data.read().table_schema(db, table) {
+            return Ok(Some(val));
+        }
+
+        self.sync_data()?;
+        let val = self.data.read().table_schema(db, table);
+        Ok(val)
     }
 
     fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
-        todo!()
+        let mut list = vec![];
+        if let Some(info) = self.data.read().dbs.get(db) {
+            for (k, _) in info.tables.iter() {
+                list.push(k.clone());
+            }
+        }
+
+        Ok(list)
     }
 
     fn drop_table(&self, db: &String, table: &String) -> MetaResult<()> {

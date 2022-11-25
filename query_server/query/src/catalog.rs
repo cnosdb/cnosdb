@@ -108,6 +108,8 @@ impl UserCatalog {
                 .time_stamp(),
             replications: schema.database_schema.config.replica_or_default() as u32,
             buckets: vec![],
+
+            tables: HashMap::new(),
         };
 
         let tenant = &DEFAULT_CATALOG.to_string();
