@@ -12,6 +12,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::runtime::Runtime;
 use trace::{info, init_global_tracing};
 use tskv::TsKv;
+mod flight_sql;
 mod http;
 mod report;
 mod rpc;

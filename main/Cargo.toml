@@ -26,6 +26,7 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 ctrlc = { workspace = true, features = ["termination"] }
+arrow-flight = { workspace = true, features = ["flight-sql-experimental"]}
 datafusion = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
@@ -48,3 +49,12 @@ reqwest = { workspace = true, features = ["native-tls", "json"] }
 
 [dev-dependencies]
 reqwest = "0.11"
+prost-types ={ version = "0.11.2"}
+
+[[example]]
+name = "flight_sql_server"
+path = "examples/flight_sql_server.rs"
+
+[[example]]
+name = "flight_rpc_server"
+path = "examples/flight_rpc_server.rs"

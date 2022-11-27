@@ -11,7 +11,7 @@ chrono = { workspace = true }
 flatbuffers = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true}
 
 [build-dependencies]
 prost-build = { workspace = true }

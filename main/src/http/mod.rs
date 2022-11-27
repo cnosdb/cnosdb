@@ -15,7 +15,7 @@ use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 
 use self::response::ResponseBuilder;
 
-mod header;
+pub mod header;
 pub mod http_service;
 mod response;
 mod result_format;
