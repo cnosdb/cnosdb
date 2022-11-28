@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::store::state_machine::{CommandResp, WriteCommand};
+use crate::store::state_machine::*;
 use crate::ExampleTypeConfig;
 use crate::NodeId;
 
@@ -59,6 +59,13 @@ impl MetaHttpClient {
         req: &String,
     ) -> Result<Vec<NodeInfo>, RPCError<ExampleTypeConfig, Infallible>> {
         self.do_send_rpc_to_leader("data_nodes", Some(req))
+    }
+
+    pub fn read_test<T>(&self, req: &String) -> Result<T, RPCError<ExampleTypeConfig, Infallible>>
+    where
+        T: Serialize + DeserializeOwned,
+    {
+        self.do_send_rpc_to_leader("read_test", Some(req))
     }
 
     //////////////////////////////////////////////////
@@ -176,5 +183,23 @@ impl MetaHttpClient {
             .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
         res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{client::MetaHttpClient, store::state_machine::*};
+
+    #[tokio::test]
+    async fn test_meta_client() {
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let rsp = client.read_test::<Response1>(&"".to_string());
+        println!("{:?}", rsp);
+
+        // if let Some(val) = rsp.downcast_ref::<Respone1>() {
+        //     println!("======={:?}", val);
+        // } else {
+        //     println!("=======Not");
+        // }
     }
 }

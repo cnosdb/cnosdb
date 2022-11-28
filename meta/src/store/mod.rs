@@ -390,7 +390,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                     res.push(CommandResp::default())
                 }
 
-                EntryPayload::Normal(ref req) => res.push(sm.process_command(req)),
+                EntryPayload::Normal(ref req) => res.push(sm.process_write_command(req)),
             };
         }
         Ok(res)

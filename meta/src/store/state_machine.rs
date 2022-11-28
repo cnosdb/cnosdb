@@ -2,9 +2,7 @@ use crate::NodeId;
 use models::schema::TskvTableSchema;
 
 use openraft::EffectiveMembership;
-
 use openraft::LogId;
-
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::from_str;
@@ -36,13 +34,39 @@ pub enum WriteCommand {
     },
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ReadCommand {
+    DataNodes(String),              //cluster
+    TenaneMetaData(String, String), // cluster tenant
+}
+
+pub trait Response:
+    std::fmt::Debug + Serialize + for<'a> Deserialize<'a> + Clone + Default
+{
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct CommandResp {
     pub err_code: i32,
     pub err_msg: String,
-
     pub meta_data: TenantMetaData,
 }
+
+// pub trait Respone: Serialize + DeserializeOwned {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct Response1 {
+    pub code: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct Response2 {
+    pub msg: String,
+}
+
+impl Response for Response1 {}
+
+impl Response for Response2 {}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct StateMachineContent {
@@ -232,7 +256,7 @@ impl StateMachine {
         meta
     }
 
-    pub fn process_command(&mut self, req: &WriteCommand) -> CommandResp {
+    pub fn process_write_command(&mut self, req: &WriteCommand) -> CommandResp {
         info!("meta process command {:?}", req);
 
         match req {
@@ -449,13 +473,8 @@ impl StateMachine {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
-
     use serde::{Deserialize, Serialize};
-
-    use crate::client::MetaHttpClient;
-
-    use super::WriteCommand;
+    use std::collections::BTreeMap;
 
     #[tokio::test]
     async fn test_btree_map() {

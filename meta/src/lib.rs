@@ -15,7 +15,7 @@ use actix_web::HttpServer;
 use openraft::Config;
 use openraft::Raft;
 use openraft::SnapshotPolicy;
-use store::state_machine::{CommandResp, WriteCommand};
+use store::state_machine::*;
 
 pub mod client;
 pub mod meta_app;
