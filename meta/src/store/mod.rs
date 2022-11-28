@@ -31,6 +31,7 @@ use sled::{Db, IVec};
 use tokio::sync::RwLock;
 use tracing;
 
+pub mod command;
 pub mod config;
 pub mod state_machine;
 pub mod store;

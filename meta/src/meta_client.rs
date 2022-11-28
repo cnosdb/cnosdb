@@ -12,7 +12,7 @@ use snafu::Snafu;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::{fmt::Debug, io};
-use store::state_machine;
+use store::command;
 use tokio::net::TcpStream;
 
 use trace::info;
@@ -53,6 +53,14 @@ pub enum MetaError {
 impl From<io::Error> for MetaError {
     fn from(err: io::Error) -> Self {
         MetaError::CommonError {
+            msg: err.to_string(),
+        }
+    }
+}
+
+impl From<client::WriteError> for MetaError {
+    fn from(err: client::WriteError) -> Self {
+        MetaError::MetaClientErr {
             msg: err.to_string(),
         }
     }
@@ -253,16 +261,9 @@ impl RemoteAdminMeta {
 #[async_trait::async_trait]
 impl AdminMeta for RemoteAdminMeta {
     fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()> {
-        let req = state_machine::WriteCommand::AddDataNode(self.cluster.clone(), node.clone());
-
-        let rsp = self
-            .client
-            .write(&req)
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("add data node err: {}", err.to_string()),
-            })?;
-
-        if rsp.err_code < 0 {
+        let req = command::WriteCommand::AddDataNode(self.cluster.clone(), node.clone());
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        if rsp.err_code != command::META_REQUEST_SUCCESS {
             return Err(MetaError::CommonError {
                 msg: format!("add data node err: {} {}", rsp.err_code, rsp.err_msg),
             });
@@ -276,19 +277,11 @@ impl AdminMeta for RemoteAdminMeta {
             return Ok(val.clone());
         }
 
-        match self.client.read_data_nodes(&self.cluster) {
-            Ok(val) => {
-                let mut nodes = self.data_nodes.write();
-                for item in val.iter() {
-                    nodes.insert(item.id, item.clone());
-                }
-            }
-
-            Err(err) => {
-                return Err(MetaError::CommonError {
-                    msg: err.to_string(),
-                });
-            }
+        let req = command::ReadCommand::DataNodes(self.cluster.clone());
+        let resp = self.client.read::<Vec<NodeInfo>>(&req)?;
+        let mut nodes = self.data_nodes.write();
+        for item in resp.iter() {
+            nodes.insert(item.id, item.clone());
         }
 
         if let Some(val) = self.data_nodes.read().get(&id) {
@@ -346,44 +339,20 @@ impl RemoteMetaClient {
     }
 
     fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
-        let rsp = self
-            .client
-            .read_tenant_meta(&(self.cluster.clone(), self.tenant.name().to_string()))
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("open meta err: {}", err.to_string()),
-            })?;
-
-        if rsp.err_code < 0 {
+        let req = command::ReadCommand::TenaneMetaData(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+        );
+        let resp = self.client.read::<command::TenaneMetaDataResp>(&req)?;
+        if resp.err_code < 0 {
             return Err(MetaError::CommonError {
-                msg: format!("open meta err: {} {}", rsp.err_code, rsp.err_msg),
+                msg: format!("open meta err: {} {}", resp.err_code, resp.err_msg),
             });
         }
 
         let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
-        }
-
-        Ok(())
-    }
-
-    fn write_request_and_update(&self, req: &state_machine::WriteCommand) -> MetaResult<()> {
-        let rsp = self
-            .client
-            .write(&req)
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("write request err: {}", err.to_string()),
-            })?;
-
-        let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
-        }
-
-        if rsp.err_code < 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("write request err: {} {}", rsp.err_code, rsp.err_msg),
-            });
+        if resp.meta_data.version > data.version {
+            *data = resp.meta_data;
         }
 
         Ok(())
@@ -475,13 +444,26 @@ impl MetaClient for RemoteMetaClient {
     // tenant role end
 
     fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
-        let req = state_machine::WriteCommand::CreateDB(
+        let req = command::WriteCommand::CreateDB(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             info.clone(),
         );
 
-        self.write_request_and_update(&req)
+        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        // todo db already exist
+        // if rsp.err_code != command::META_REQUEST_SUCCESS {
+        //     return Err(MetaError::CommonError {
+        //         msg: format!("add data node err: {} {}", rsp.err_code, rsp.err_msg),
+        //     });
+        // }
+
+        Ok(())
     }
 
     fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
@@ -511,13 +493,21 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
-        let req = state_machine::WriteCommand::CreateTable(
+        let req = command::WriteCommand::CreateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             schema.clone(),
         );
 
-        self.write_request_and_update(&req)
+        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        // todo table already exist
+
+        Ok(())
     }
 
     fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
@@ -531,13 +521,21 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
-        let req = state_machine::WriteCommand::UpdateTable(
+        let req = command::WriteCommand::UpdateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             schema.clone(),
         );
 
-        self.write_request_and_update(&req)
+        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        // todo table not exist
+
+        Ok(())
     }
 
     fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
@@ -556,14 +554,24 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo> {
-        let req = state_machine::WriteCommand::CreateBucket {
+        let req = command::WriteCommand::CreateBucket {
             cluster: self.cluster.clone(),
             tenant: self.tenant.name().to_string(),
             db: db.clone(),
             ts,
         };
 
-        self.write_request_and_update(&req)?;
+        let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        if rsp.err_code < 0 {
+            return Err(MetaError::MetaClientErr {
+                msg: format!("create bucket err: {} {}", rsp.err_code, rsp.err_msg),
+            });
+        }
 
         if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
             return Ok(bucket.clone());

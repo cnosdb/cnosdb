@@ -3,19 +3,24 @@ use actix_web::post;
 use actix_web::web;
 use actix_web::web::Data;
 use actix_web::Responder;
-use models::meta_data::NodeInfo;
 use models::meta_data::TenantMetaData;
 use openraft::error::CheckIsLeaderError;
-use openraft::error::Infallible;
 use openraft::raft::ClientWriteRequest;
 use openraft::EntryPayload;
 use web::Json;
 
-use crate::meta_app::MetaApp;
-
+use crate::store::command::*;
+use crate::MetaApp;
 use crate::NodeId;
 
-use crate::store::state_machine::*;
+#[post("/read")]
+pub async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Result<impl Responder> {
+    let sm = app.store.state_machine.read().await;
+
+    let response = sm.process_read_command(&req.0);
+
+    Ok(response)
+}
 
 #[post("/write")]
 pub async fn write(
@@ -25,63 +30,26 @@ pub async fn write(
     let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
     let response = match app.raft.client_write(request).await {
         Ok(val) => val.data,
-        Err(err) => CommandResp {
-            err_code: -1,
+        Err(err) => TenaneMetaDataResp {
+            err_code: META_REQUEST_FAILED,
             meta_data: TenantMetaData::new(),
             err_msg: format!("raft write error: {}", err),
-        },
+        }
+        .to_string(),
     };
 
-    let res: Result<CommandResp, Infallible> = Ok(response);
-    Ok(Json(res))
-}
-
-#[post("/read")]
-pub async fn read(
-    app: Data<MetaApp>,
-    req: Json<(String, String)>,
-) -> actix_web::Result<impl Responder> {
-    let (cluster, tenant) = req.0;
-
-    let sm = app.store.state_machine.read().await;
-
-    let response = CommandResp {
-        err_code: 0,
-        err_msg: "".to_string(),
-        meta_data: sm.to_tenant_meta_data(&cluster, &tenant),
-    };
-
-    let res: Result<CommandResp, Infallible> = Ok(response);
-    Ok(Json(res))
-}
-
-#[post("/data_nodes")]
-pub async fn data_nodes(
-    app: Data<MetaApp>,
-    req: Json<String>,
-) -> actix_web::Result<impl Responder> {
-    let cluster = req.0;
-
-    let sm = app.store.state_machine.read().await;
-
-    let response = children_data::<NodeInfo>(&KeyPath::data_nodes(&cluster), &sm.data)
-        .into_values()
-        .collect();
-
-    let res: Result<Vec<NodeInfo>, Infallible> = Ok(response);
-
-    Ok(Json(res))
+    Ok(response)
 }
 
 #[get("/read_all")]
 pub async fn read_all(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
 
-    let mut response = "*---------------------------------------------------------\n".to_string();
+    let mut response = "******--------------------------------------------******\n".to_string();
     for (k, v) in sm.data.iter() {
         response = response + &format!("* {}: {}\n", k, v);
     }
-    response += "*-------------------------------------------------------\n";
+    response += "******----------------------------------------------******\n";
 
     Ok(response)
 }

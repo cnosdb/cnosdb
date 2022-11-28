@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::meta_app::MetaApp;
 use crate::service::api;
 use crate::service::connection::Connections;
 use crate::service::raft_api;
@@ -15,17 +14,26 @@ use actix_web::HttpServer;
 use openraft::Config;
 use openraft::Raft;
 use openraft::SnapshotPolicy;
+use store::command::*;
 use store::state_machine::*;
 
 pub mod client;
-pub mod meta_app;
 pub mod meta_client;
 pub mod meta_client_mock;
 pub mod service;
 pub mod store;
 pub mod tenant_manager;
 pub mod user_manager;
+
 pub type NodeId = u64;
+
+pub struct MetaApp {
+    pub id: NodeId,
+    pub addr: String,
+    pub raft: ExampleRaft,
+    pub store: Arc<Store>,
+    pub config: Arc<Config>,
+}
 
 openraft::declare_raft_types!(
     pub ExampleTypeConfig: D = WriteCommand, R = CommandResp, NodeId = NodeId
@@ -70,7 +78,6 @@ pub async fn start_raft_node(node_id: NodeId, http_addr: String) -> std::io::Res
             .service(api::write)
             .service(api::read)
             .service(api::read_all)
-            .service(api::data_nodes)
             .service(api::consistent_read)
     })
     .keep_alive(Duration::from_secs(5));

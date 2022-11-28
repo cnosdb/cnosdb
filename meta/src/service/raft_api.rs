@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use web::Json;
 
-use crate::meta_app::MetaApp;
 use crate::ExampleTypeConfig;
+use crate::MetaApp;
 use crate::NodeId;
 
 #[post("/raft-vote")]

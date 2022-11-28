@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use models::meta_data::NodeInfo;
 use openraft::error::AddLearnerError;
 use openraft::error::CheckIsLeaderError;
 use openraft::error::ClientWriteError;
@@ -19,10 +18,14 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::store::state_machine::*;
+use crate::meta_client::MetaError;
+use crate::meta_client::MetaResult;
+use crate::store::command::*;
+use crate::store::state_machine::CommandResp;
 use crate::ExampleTypeConfig;
 use crate::NodeId;
 
+pub type WriteError = RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Empty {}
 
@@ -40,32 +43,37 @@ impl MetaHttpClient {
         }
     }
 
-    pub fn write(
-        &self,
-        req: &WriteCommand,
-    ) -> Result<CommandResp, RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>> {
-        self.send_rpc_to_leader("write", Some(req))
-    }
-
-    pub fn read_tenant_meta(
-        &self,
-        req: &(String, String),
-    ) -> Result<CommandResp, RPCError<ExampleTypeConfig, Infallible>> {
-        self.do_send_rpc_to_leader("read", Some(req))
-    }
-
-    pub fn read_data_nodes(
-        &self,
-        req: &String,
-    ) -> Result<Vec<NodeInfo>, RPCError<ExampleTypeConfig, Infallible>> {
-        self.do_send_rpc_to_leader("data_nodes", Some(req))
-    }
-
-    pub fn read_test<T>(&self, req: &String) -> Result<T, RPCError<ExampleTypeConfig, Infallible>>
+    pub fn read<T>(&self, req: &ReadCommand) -> MetaResult<T>
     where
-        T: Serialize + DeserializeOwned,
+        T: for<'a> Deserialize<'a>,
     {
-        self.do_send_rpc_to_leader("read_test", Some(req))
+        let rsp = self.do_request("read", Some(req))?;
+
+        let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
+            msg: err.to_string(),
+        })?;
+
+        Ok(rsp)
+    }
+
+    pub fn write<T>(&self, req: &WriteCommand) -> MetaResult<T>
+    where
+        T: for<'a> Deserialize<'a>,
+    {
+        let rsp = self.do_request("write", Some(req))?;
+
+        let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
+            msg: err.to_string(),
+        })?;
+
+        Ok(rsp)
+    }
+
+    fn do_request<Req>(&self, uri: &str, req: Option<&Req>) -> Result<CommandResp, WriteError>
+    where
+        Req: Serialize + 'static,
+    {
+        self.send_rpc_to_leader(uri, req)
     }
 
     //////////////////////////////////////////////////
@@ -188,12 +196,16 @@ impl MetaHttpClient {
 
 #[cfg(test)]
 mod test {
-    use crate::{client::MetaHttpClient, store::state_machine::*};
+    use models::meta_data::NodeInfo;
+
+    use crate::client::MetaHttpClient;
+    use crate::ReadCommand;
 
     #[tokio::test]
     async fn test_meta_client() {
         let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
-        let rsp = client.read_test::<Response1>(&"".to_string());
+        let cmd = ReadCommand::DataNodes("cluster_xxx".to_string());
+        let rsp = client.read::<Vec<NodeInfo>>(&cmd);
         println!("{:?}", rsp);
 
         // if let Some(val) = rsp.downcast_ref::<Respone1>() {

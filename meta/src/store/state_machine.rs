@@ -7,66 +7,15 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::from_str;
 
-use trace::info;
-
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use trace::info;
 
 use models::{meta_data::*, utils};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum WriteCommand {
-    AddDataNode(String, NodeInfo),
-    CreateDB(String, String, DatabaseInfo),
-    CreateBucket {
-        cluster: String,
-        tenant: String,
-        db: String,
-        ts: i64,
-    },
+use super::command::*;
 
-    CreateTable(String, String, TskvTableSchema),
-    UpdateTable(String, String, TskvTableSchema),
-
-    Set {
-        key: String,
-        value: String,
-    },
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ReadCommand {
-    DataNodes(String),              //cluster
-    TenaneMetaData(String, String), // cluster tenant
-}
-
-pub trait Response:
-    std::fmt::Debug + Serialize + for<'a> Deserialize<'a> + Clone + Default
-{
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct CommandResp {
-    pub err_code: i32,
-    pub err_msg: String,
-    pub meta_data: TenantMetaData,
-}
-
-// pub trait Respone: Serialize + DeserializeOwned {}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct Response1 {
-    pub code: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct Response2 {
-    pub msg: String,
-}
-
-impl Response for Response1 {}
-
-impl Response for Response2 {}
+pub type CommandResp = String;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct StateMachineContent {
@@ -256,8 +205,30 @@ impl StateMachine {
         meta
     }
 
+    pub fn process_read_command(&self, req: &ReadCommand) -> CommandResp {
+        info!("meta process read command {:?}", req);
+
+        match req {
+            ReadCommand::DataNodes(cluster) => {
+                let response: Vec<NodeInfo> =
+                    children_data::<NodeInfo>(&KeyPath::data_nodes(&cluster), &self.data)
+                        .into_values()
+                        .collect();
+
+                serde_json::to_string(&response).unwrap()
+            }
+
+            ReadCommand::TenaneMetaData(cluster, tenant) => TenaneMetaDataResp {
+                err_code: META_REQUEST_SUCCESS,
+                err_msg: "".to_string(),
+                meta_data: self.to_tenant_meta_data(&cluster, &tenant),
+            }
+            .to_string(),
+        }
+    }
+
     pub fn process_write_command(&mut self, req: &WriteCommand) -> CommandResp {
-        info!("meta process command {:?}", req);
+        info!("meta process write command {:?}", req);
 
         match req {
             WriteCommand::Set { key, value } => {
@@ -300,7 +271,7 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        CommandResp::default()
+        serde_json::to_string(&StatusResponse::default()).unwrap()
     }
 
     fn process_create_db(
@@ -322,11 +293,12 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        CommandResp {
-            err_code: 0,
+        TenaneMetaDataResp {
+            err_code: META_REQUEST_SUCCESS,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
         }
+        .to_string()
     }
 
     fn process_create_table(
@@ -348,11 +320,12 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        CommandResp {
-            err_code: 0,
+        TenaneMetaDataResp {
+            err_code: META_REQUEST_SUCCESS,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
         }
+        .to_string()
     }
 
     fn process_update_table(
@@ -364,14 +337,15 @@ impl StateMachine {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
         if let Some(val) = get_struct::<TskvTableSchema>(&key, &self.data) {
             if val.schema_id + 1 != schema.schema_id {
-                return CommandResp {
-                    err_code: -1,
+                return TenaneMetaDataResp {
+                    err_code: META_REQUEST_FAILED,
                     err_msg: format!(
                         "update table schema conflict {}->{}",
                         val.schema_id, schema.schema_id
                     ),
                     meta_data: self.to_tenant_meta_data(cluster, tenant),
-                };
+                }
+                .to_string();
             }
         }
 
@@ -379,11 +353,12 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        CommandResp {
-            err_code: 0,
+        TenaneMetaDataResp {
+            err_code: META_REQUEST_SUCCESS,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
         }
+        .to_string()
     }
 
     fn process_create_bucket(
@@ -397,22 +372,24 @@ impl StateMachine {
         let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), &self.data);
         for (_, val) in buckets.iter() {
             if *ts >= val.start_time && *ts < val.end_time {
-                return CommandResp {
-                    err_code: 0,
+                return TenaneMetaDataResp {
+                    err_code: META_REQUEST_SUCCESS,
                     err_msg: "".to_string(),
                     meta_data: self.to_tenant_meta_data(cluster, tenant),
-                };
+                }
+                .to_string();
             }
         }
 
         let db_info = match get_struct::<DatabaseInfo>(&db_path, &self.data) {
             Some(info) => info,
             None => {
-                return CommandResp {
-                    err_code: -1,
+                return TenaneMetaDataResp {
+                    err_code: META_REQUEST_FAILED,
                     meta_data: TenantMetaData::new(),
                     err_msg: format!("database {} is not exist", db),
-                };
+                }
+                .to_string();
             }
         };
 
@@ -426,19 +403,21 @@ impl StateMachine {
             || db_info.shard == 0
             || db_info.replications > node_list.len() as u32
         {
-            return CommandResp {
-                err_code: -1,
+            return TenaneMetaDataResp {
+                err_code: META_REQUEST_FAILED,
                 meta_data: TenantMetaData::new(),
                 err_msg: format!("database {} attribute invalid!", db),
-            };
+            }
+            .to_string();
         }
 
         if *ts < now - db_info.ttl {
-            return CommandResp {
-                err_code: -1,
+            return TenaneMetaDataResp {
+                err_code: META_REQUEST_FAILED,
                 meta_data: TenantMetaData::new(),
                 err_msg: format!("database {} create expired bucket not permit!", db),
-            };
+            }
+            .to_string();
         }
 
         let mut bucket = BucketInfo {
@@ -463,11 +442,12 @@ impl StateMachine {
         self.data.insert(key.clone(), val.clone());
         info!("WRITE: {} :{}", key, val);
 
-        CommandResp {
-            err_code: 0,
+        TenaneMetaDataResp {
+            err_code: META_REQUEST_SUCCESS,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
         }
+        .to_string()
     }
 }
 
