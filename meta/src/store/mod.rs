@@ -422,7 +422,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                     res.push(KvResp::default())
                 }
 
-                EntryPayload::Normal(ref req) => res.push(sm.process_kv_req(req)),
+                EntryPayload::Normal(ref req) => res.push(sm.process_command(req)),
             };
         }
         Ok(res)
@@ -536,7 +536,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, fmt::Error};
 
     use serde::{Deserialize, Serialize};
 

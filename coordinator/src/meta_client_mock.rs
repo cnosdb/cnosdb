@@ -35,9 +35,6 @@ impl AdminMeta for MockAdminMeta {
 pub struct MockMetaClient {}
 #[async_trait::async_trait]
 impl MetaClient for MockMetaClient {
-    fn sync_data(&self) -> MetaResult<()> {
-        Ok(())
-    }
     fn tenant_name(&self) -> &str {
         ""
     }

@@ -77,7 +77,6 @@ pub trait AdminMeta: Send + Sync + Debug {
 
 #[async_trait::async_trait]
 pub trait MetaClient: Send + Sync + Debug {
-    fn sync_data(&self) -> MetaResult<()>;
     fn tenant_name(&self) -> &str;
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
     //fn drop_user(&self, name: &String) -> MetaResult<()>;
@@ -288,11 +287,8 @@ impl RemoteMetaClient {
             client: MetaHttpClient::new(1, meta_url.clone()),
         }
     }
-}
 
-#[async_trait::async_trait]
-impl MetaClient for RemoteMetaClient {
-    fn sync_data(&self) -> MetaResult<()> {
+    fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
         let rsp = self
             .client
             .read_tenant_meta(&(self.cluster.clone(), self.tenant.clone()))
@@ -313,6 +309,32 @@ impl MetaClient for RemoteMetaClient {
 
         Ok(())
     }
+
+    fn write_request_and_update(&self, req: &KvReq) -> MetaResult<()> {
+        let rsp = self
+            .client
+            .write(&req)
+            .map_err(|err| MetaError::CommonError {
+                msg: format!("write request err: {}", err.to_string()),
+            })?;
+
+        let mut data = self.data.write();
+        if rsp.meta_data.version > data.version {
+            *data = rsp.meta_data;
+        }
+
+        if rsp.err_code < 0 {
+            return Err(MetaError::CommonError {
+                msg: format!("write request err: {} {}", rsp.err_code, rsp.err_msg),
+            });
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl MetaClient for RemoteMetaClient {
     fn tenant_name(&self) -> &str {
         return &self.tenant;
     }
@@ -320,25 +342,7 @@ impl MetaClient for RemoteMetaClient {
     fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
         let req = KvReq::CreateDB(self.cluster.clone(), self.tenant.clone(), info.clone());
 
-        let rsp = self
-            .client
-            .write(&req)
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("create db err: {}", err.to_string()),
-            })?;
-
-        if rsp.err_code < 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("create db err: {} {}", rsp.err_code, rsp.err_msg),
-            });
-        }
-
-        let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
-        }
-
-        return Ok(());
+        self.write_request_and_update(&req)
     }
 
     fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
@@ -346,7 +350,7 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(db.clone()));
         }
 
-        self.sync_data()?;
+        self.sync_all_tenant_metadata()?;
         if let Some(db) = self.data.read().dbs.get(name) {
             return Ok(Some(db.clone()));
         }
@@ -370,25 +374,7 @@ impl MetaClient for RemoteMetaClient {
     fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
         let req = KvReq::CreateTable(self.cluster.clone(), self.tenant.clone(), schema.clone());
 
-        let rsp = self
-            .client
-            .write(&req)
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("create table err: {}", err.to_string()),
-            })?;
-
-        if rsp.err_code < 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("create table err: {} {}", rsp.err_code, rsp.err_msg),
-            });
-        }
-
-        let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
-        }
-
-        return Ok(());
+        self.write_request_and_update(&req)
     }
 
     fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
@@ -396,7 +382,7 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(val));
         }
 
-        self.sync_data()?;
+        self.sync_all_tenant_metadata()?;
         let val = self.data.read().table_schema(db, table);
         Ok(val)
     }
@@ -404,25 +390,7 @@ impl MetaClient for RemoteMetaClient {
     fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
         let req = KvReq::UpdateTable(self.cluster.clone(), self.tenant.clone(), schema.clone());
 
-        let rsp = self
-            .client
-            .write(&req)
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("create table err: {}", err.to_string()),
-            })?;
-
-        if rsp.err_code < 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("create table err: {} {}", rsp.err_code, rsp.err_msg),
-            });
-        }
-
-        let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
-        }
-
-        return Ok(());
+        self.write_request_and_update(&req)
     }
 
     fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
@@ -448,25 +416,9 @@ impl MetaClient for RemoteMetaClient {
             ts,
         };
 
-        let rsp = self
-            .client
-            .write(&req)
-            .map_err(|err| MetaError::CommonError {
-                msg: format!("create bucket err: {}", err.to_string()),
-            })?;
+        self.write_request_and_update(&req)?;
 
-        if rsp.err_code < 0 {
-            return Err(MetaError::CommonError {
-                msg: format!("create bucket err: {} {}", rsp.err_code, rsp.err_msg),
-            });
-        }
-
-        let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
-        }
-
-        if let Some(bucket) = data.bucket_by_timestamp(db, ts) {
+        if let Some(bucket) = self.data.read().bucket_by_timestamp(db, ts) {
             return Ok(bucket.clone());
         }
 
@@ -499,8 +451,8 @@ impl MetaClient for RemoteMetaClient {
         start: i64,
         end: i64,
     ) -> MetaResult<Vec<BucketInfo>> {
-        //todo improve performence
-        self.sync_data().unwrap();
+        //todo improve performence,watch the meta
+        self.sync_all_tenant_metadata().unwrap();
 
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
         return Ok(buckets);

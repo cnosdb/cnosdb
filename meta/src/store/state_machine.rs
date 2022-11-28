@@ -104,7 +104,7 @@ pub fn children_data<'a, T: Deserialize<'a>>(
 // **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
 // **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
-// **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [BucketInfo] schema相关信息
+// **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
 pub struct KeyPath {}
 impl KeyPath {
     pub fn incr_id(cluster: &String) -> String {
@@ -197,12 +197,19 @@ impl StateMachine {
                 &self.data,
             );
             val.buckets = buckets.into_values().collect();
+
+            val.tables = children_data::<TskvTableSchema>(
+                &KeyPath::tenant_schemas(cluster, tenant, key),
+                &self.data,
+            );
         }
 
         meta
     }
 
-    pub fn process_kv_req(&mut self, req: &KvReq) -> KvResp {
+    pub fn process_command(&mut self, req: &KvReq) -> KvResp {
+        info!("meta process command {:?}", req);
+
         match req {
             KvReq::Set { key, value } => {
                 self.data.insert(key.clone(), value.clone());
@@ -254,6 +261,14 @@ impl StateMachine {
         db: &DatabaseInfo,
     ) -> KvResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
+        if self.data.contains_key(&key) {
+            return KvResp {
+                err_code: -1,
+                err_msg: "database already exist".to_string(),
+                meta_data: self.to_tenant_meta_data(cluster, tenant),
+            };
+        }
+
         let value = serde_json::to_string(db).unwrap();
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
@@ -272,6 +287,14 @@ impl StateMachine {
         schema: &TskvTableSchema,
     ) -> KvResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
+        if self.data.contains_key(&key) {
+            return KvResp {
+                err_code: -1,
+                err_msg: "table already exist".to_string(),
+                meta_data: self.to_tenant_meta_data(cluster, tenant),
+            };
+        }
+
         let value = serde_json::to_string(schema).unwrap();
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
@@ -290,6 +313,19 @@ impl StateMachine {
         schema: &TskvTableSchema,
     ) -> KvResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
+        if let Some(val) = get_struct::<TskvTableSchema>(&key, &self.data) {
+            if val.schema_id + 1 != schema.schema_id {
+                return KvResp {
+                    err_code: -1,
+                    err_msg: format!(
+                        "update table schema conflict {}->{}",
+                        val.schema_id, schema.schema_id
+                    ),
+                    meta_data: self.to_tenant_meta_data(cluster, tenant),
+                };
+            }
+        }
+
         let value = serde_json::to_string(schema).unwrap();
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
@@ -312,7 +348,11 @@ impl StateMachine {
         let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), &self.data);
         for (_, val) in buckets.iter() {
             if *ts >= val.start_time && *ts < val.end_time {
-                return KvResp::default();
+                return KvResp {
+                    err_code: 0,
+                    err_msg: "".to_string(),
+                    meta_data: self.to_tenant_meta_data(cluster, tenant),
+                };
             }
         }
 
@@ -374,9 +414,10 @@ impl StateMachine {
         self.data.insert(key.clone(), val.clone());
         info!("WRITE: {} :{}", key, val);
 
-        let mut resp = KvResp::default();
-        resp.meta_data = self.to_tenant_meta_data(cluster, tenant);
-
-        return resp;
+        KvResp {
+            err_code: 0,
+            err_msg: "".to_string(),
+            meta_data: self.to_tenant_meta_data(cluster, tenant),
+        }
     }
 }
