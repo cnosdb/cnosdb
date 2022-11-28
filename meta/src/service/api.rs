@@ -17,21 +17,24 @@ use crate::NodeId;
 
 use crate::store::state_machine::children_data;
 use crate::store::state_machine::KeyPath;
-use crate::store::state_machine::{KvReq, KvResp};
+use crate::store::state_machine::{CommandResp, WriteCommand};
 
 #[post("/write")]
-pub async fn write(app: Data<MetaApp>, req: Json<KvReq>) -> actix_web::Result<impl Responder> {
+pub async fn write(
+    app: Data<MetaApp>,
+    req: Json<WriteCommand>,
+) -> actix_web::Result<impl Responder> {
     let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
     let response = match app.raft.client_write(request).await {
         Ok(val) => val.data,
-        Err(err) => KvResp {
+        Err(err) => CommandResp {
             err_code: -1,
             meta_data: TenantMetaData::new(),
             err_msg: format!("raft write error: {}", err),
         },
     };
 
-    let res: Result<KvResp, Infallible> = Ok(response);
+    let res: Result<CommandResp, Infallible> = Ok(response);
     Ok(Json(res))
 }
 
@@ -44,13 +47,13 @@ pub async fn read(
 
     let sm = app.store.state_machine.read().await;
 
-    let response = KvResp {
+    let response = CommandResp {
         err_code: 0,
         err_msg: "".to_string(),
         meta_data: sm.to_tenant_meta_data(&cluster, &tenant),
     };
 
-    let res: Result<KvResp, Infallible> = Ok(response);
+    let res: Result<CommandResp, Infallible> = Ok(response);
     Ok(Json(res))
 }
 

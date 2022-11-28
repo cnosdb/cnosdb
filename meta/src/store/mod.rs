@@ -6,7 +6,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::store::state_machine::KvResp;
+use crate::store::state_machine::CommandResp;
 use crate::ExampleTypeConfig;
 use crate::NodeId;
 use openraft::async_trait::async_trait;
@@ -373,7 +373,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     async fn apply_to_state_machine(
         &mut self,
         entries: &[&Entry<ExampleTypeConfig>],
-    ) -> Result<Vec<KvResp>, StorageError<NodeId>> {
+    ) -> Result<Vec<CommandResp>, StorageError<NodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
         let mut sm = self.state_machine.write().await;
@@ -384,10 +384,10 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
             sm.last_applied_log = Some(entry.log_id);
 
             match entry.payload {
-                EntryPayload::Blank => res.push(KvResp::default()),
+                EntryPayload::Blank => res.push(CommandResp::default()),
                 EntryPayload::Membership(ref mem) => {
                     sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
-                    res.push(KvResp::default())
+                    res.push(CommandResp::default())
                 }
 
                 EntryPayload::Normal(ref req) => res.push(sm.process_command(req)),

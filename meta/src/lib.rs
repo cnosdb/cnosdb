@@ -15,7 +15,7 @@ use actix_web::HttpServer;
 use openraft::Config;
 use openraft::Raft;
 use openraft::SnapshotPolicy;
-use store::state_machine::{KvReq, KvResp};
+use store::state_machine::{CommandResp, WriteCommand};
 
 pub mod client;
 pub mod meta_app;
@@ -24,7 +24,7 @@ pub mod store;
 pub type NodeId = u64;
 
 openraft::declare_raft_types!(
-    pub ExampleTypeConfig: D = KvReq, R = KvResp, NodeId = NodeId
+    pub ExampleTypeConfig: D = WriteCommand, R = CommandResp, NodeId = NodeId
 );
 
 pub type ExampleRaft = Raft<ExampleTypeConfig, Connections, Arc<Store>>;

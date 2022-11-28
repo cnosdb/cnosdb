@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::store::state_machine::{KvReq, KvResp};
+use crate::store::state_machine::{CommandResp, WriteCommand};
 use crate::ExampleTypeConfig;
 use crate::NodeId;
 
@@ -42,15 +42,15 @@ impl MetaHttpClient {
 
     pub fn write(
         &self,
-        req: &KvReq,
-    ) -> Result<KvResp, RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>> {
+        req: &WriteCommand,
+    ) -> Result<CommandResp, RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>> {
         self.send_rpc_to_leader("write", Some(req))
     }
 
     pub fn read_tenant_meta(
         &self,
         req: &(String, String),
-    ) -> Result<KvResp, RPCError<ExampleTypeConfig, Infallible>> {
+    ) -> Result<CommandResp, RPCError<ExampleTypeConfig, Infallible>> {
         self.do_send_rpc_to_leader("read", Some(req))
     }
 

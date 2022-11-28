@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use models::{meta_data::*, utils};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum KvReq {
+pub enum WriteCommand {
     AddDataNode(String, NodeInfo),
     CreateDB(String, String, DatabaseInfo),
     CreateBucket {
@@ -37,7 +37,7 @@ pub enum KvReq {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct KvResp {
+pub struct CommandResp {
     pub err_code: i32,
     pub err_msg: String,
 
@@ -232,34 +232,34 @@ impl StateMachine {
         meta
     }
 
-    pub fn process_command(&mut self, req: &KvReq) -> KvResp {
+    pub fn process_command(&mut self, req: &WriteCommand) -> CommandResp {
         info!("meta process command {:?}", req);
 
         match req {
-            KvReq::Set { key, value } => {
+            WriteCommand::Set { key, value } => {
                 self.data.insert(key.clone(), value.clone());
                 info!("WRITE: {} :{}", key, value);
 
-                return KvResp::default();
+                return CommandResp::default();
             }
 
-            KvReq::AddDataNode(cluster, node) => {
+            WriteCommand::AddDataNode(cluster, node) => {
                 return self.process_add_date_node(cluster, node);
             }
 
-            KvReq::CreateDB(cluster, tenant, db) => {
+            WriteCommand::CreateDB(cluster, tenant, db) => {
                 return self.process_create_db(cluster, tenant, db);
             }
 
-            KvReq::CreateTable(cluster, tenant, schema) => {
+            WriteCommand::CreateTable(cluster, tenant, schema) => {
                 return self.process_create_table(cluster, tenant, schema);
             }
 
-            KvReq::UpdateTable(cluster, tenant, schema) => {
+            WriteCommand::UpdateTable(cluster, tenant, schema) => {
                 return self.process_update_table(cluster, tenant, schema);
             }
 
-            KvReq::CreateBucket {
+            WriteCommand::CreateBucket {
                 cluster,
                 tenant,
                 db,
@@ -270,13 +270,13 @@ impl StateMachine {
         }
     }
 
-    fn process_add_date_node(&mut self, cluster: &String, node: &NodeInfo) -> KvResp {
+    fn process_add_date_node(&mut self, cluster: &String, node: &NodeInfo) -> CommandResp {
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        KvResp::default()
+        CommandResp::default()
     }
 
     fn process_create_db(
@@ -284,7 +284,7 @@ impl StateMachine {
         cluster: &String,
         tenant: &String,
         db: &DatabaseInfo,
-    ) -> KvResp {
+    ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
         // if self.data.contains_key(&key) {
         //     return KvResp {
@@ -298,7 +298,7 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        KvResp {
+        CommandResp {
             err_code: 0,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
@@ -310,7 +310,7 @@ impl StateMachine {
         cluster: &String,
         tenant: &String,
         schema: &TskvTableSchema,
-    ) -> KvResp {
+    ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
         // if self.data.contains_key(&key) {
         //     return KvResp {
@@ -324,7 +324,7 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        KvResp {
+        CommandResp {
             err_code: 0,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
@@ -336,11 +336,11 @@ impl StateMachine {
         cluster: &String,
         tenant: &String,
         schema: &TskvTableSchema,
-    ) -> KvResp {
+    ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
         if let Some(val) = get_struct::<TskvTableSchema>(&key, &self.data) {
             if val.schema_id + 1 != schema.schema_id {
-                return KvResp {
+                return CommandResp {
                     err_code: -1,
                     err_msg: format!(
                         "update table schema conflict {}->{}",
@@ -355,7 +355,7 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        KvResp {
+        CommandResp {
             err_code: 0,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
@@ -368,12 +368,12 @@ impl StateMachine {
         tenant: &String,
         db: &String,
         ts: &i64,
-    ) -> KvResp {
+    ) -> CommandResp {
         let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
         let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), &self.data);
         for (_, val) in buckets.iter() {
             if *ts >= val.start_time && *ts < val.end_time {
-                return KvResp {
+                return CommandResp {
                     err_code: 0,
                     err_msg: "".to_string(),
                     meta_data: self.to_tenant_meta_data(cluster, tenant),
@@ -384,7 +384,7 @@ impl StateMachine {
         let db_info = match get_struct::<DatabaseInfo>(&db_path, &self.data) {
             Some(info) => info,
             None => {
-                return KvResp {
+                return CommandResp {
                     err_code: -1,
                     meta_data: TenantMetaData::new(),
                     err_msg: format!("database {} is not exist", db),
@@ -402,7 +402,7 @@ impl StateMachine {
             || db_info.shard == 0
             || db_info.replications > node_list.len() as u32
         {
-            return KvResp {
+            return CommandResp {
                 err_code: -1,
                 meta_data: TenantMetaData::new(),
                 err_msg: format!("database {} attribute invalid!", db),
@@ -410,7 +410,7 @@ impl StateMachine {
         }
 
         if *ts < now - db_info.ttl {
-            return KvResp {
+            return CommandResp {
                 err_code: -1,
                 meta_data: TenantMetaData::new(),
                 err_msg: format!("database {} create expired bucket not permit!", db),
@@ -439,7 +439,7 @@ impl StateMachine {
         self.data.insert(key.clone(), val.clone());
         info!("WRITE: {} :{}", key, val);
 
-        KvResp {
+        CommandResp {
             err_code: 0,
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
@@ -455,7 +455,7 @@ mod test {
 
     use crate::client::MetaHttpClient;
 
-    use super::KvReq;
+    use super::WriteCommand;
 
     #[tokio::test]
     async fn test_btree_map() {
