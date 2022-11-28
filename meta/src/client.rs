@@ -19,9 +19,8 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::store::KvResp;
+use crate::store::state_machine::{KvReq, KvResp};
 use crate::ExampleTypeConfig;
-use crate::KvReq;
 use crate::NodeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

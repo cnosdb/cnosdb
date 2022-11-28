@@ -16,8 +16,33 @@ use std::collections::HashMap;
 
 use models::{meta_data::*, utils};
 
-use super::KvReq;
-use super::KvResp;
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum KvReq {
+    AddDataNode(String, NodeInfo),
+    CreateDB(String, String, DatabaseInfo),
+    CreateBucket {
+        cluster: String,
+        tenant: String,
+        db: String,
+        ts: i64,
+    },
+
+    CreateTable(String, String, TskvTableSchema),
+    UpdateTable(String, String, TskvTableSchema),
+
+    Set {
+        key: String,
+        value: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct KvResp {
+    pub err_code: i32,
+    pub err_msg: String,
+
+    pub meta_data: TenantMetaData,
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct StateMachineContent {
@@ -419,5 +444,75 @@ impl StateMachine {
             err_msg: "".to_string(),
             meta_data: self.to_tenant_meta_data(cluster, tenant),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Serialize};
+
+    use crate::client::MetaHttpClient;
+
+    use super::KvReq;
+
+    #[tokio::test]
+    async fn test_btree_map() {
+        let mut map = BTreeMap::new();
+        map.insert("/root/tenant".to_string(), "tenant_v".to_string());
+        map.insert("/root/tenant/db1".to_string(), "123_v".to_string());
+        map.insert("/root/tenant/db2".to_string(), "456_v".to_string());
+        map.insert("/root/tenant/db1/".to_string(), "123/_v".to_string());
+        map.insert("/root/tenant/db1/table1".to_string(), "123_v".to_string());
+        map.insert("/root/tenant/123".to_string(), "123_v".to_string());
+        map.insert("/root/tenant/456".to_string(), "456_v".to_string());
+
+        let begin = "/root/tenant/".to_string();
+        let end = "/root/tenant/|".to_string();
+        for (key, value) in map.range(begin..end) {
+            println!("{key}  : {value}");
+        }
+    }
+
+    //{"Set":{"key":"foo","value":"bar111"}}
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Command1 {
+        id: u32,
+        name: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct Command2 {
+        id: u32,
+        name: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub enum Command {
+        // Test1 { id: u32, name: String },
+        // Test2 { id: u32, name: String },
+        Test1(Command1),
+    }
+
+    #[tokio::test]
+    async fn test_json() {
+        let cmd = Command::Test1(Command1 {
+            id: 100,
+            name: "test".to_string(),
+        });
+
+        let str = serde_json::to_vec(&cmd).unwrap();
+        print!("\n1 === {}=== \n", String::from_utf8(str).unwrap());
+
+        let str = serde_json::to_string(&cmd).unwrap();
+        print!("\n2 === {}=== \n", str);
+
+        let tup = ("test1".to_string(), "test2".to_string());
+        let str = serde_json::to_string(&tup).unwrap();
+        print!("\n3 === {}=== \n", str);
+
+        let str = serde_json::to_string(&"xxx".to_string()).unwrap();
+        print!("\n4 === {}=== \n", str);
     }
 }

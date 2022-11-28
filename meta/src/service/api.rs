@@ -13,12 +13,11 @@ use web::Json;
 
 use crate::meta_app::MetaApp;
 
-use crate::store::KvReq;
-use crate::store::KvResp;
 use crate::NodeId;
 
 use crate::store::state_machine::children_data;
 use crate::store::state_machine::KeyPath;
+use crate::store::state_machine::{KvReq, KvResp};
 
 #[post("/write")]
 pub async fn write(app: Data<MetaApp>, req: Json<KvReq>) -> actix_web::Result<impl Responder> {

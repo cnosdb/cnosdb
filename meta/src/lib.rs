@@ -5,8 +5,6 @@ use crate::meta_app::MetaApp;
 use crate::service::api;
 use crate::service::connection::Connections;
 use crate::service::raft_api;
-use crate::store::KvReq;
-use crate::store::KvResp;
 use crate::store::Restore;
 use crate::store::Store;
 use actix_web::middleware;
@@ -17,6 +15,7 @@ use actix_web::HttpServer;
 use openraft::Config;
 use openraft::Raft;
 use openraft::SnapshotPolicy;
+use store::state_machine::{KvReq, KvResp};
 
 pub mod client;
 pub mod meta_app;

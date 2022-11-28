@@ -6,9 +6,9 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::store::state_machine::KvResp;
 use crate::ExampleTypeConfig;
 use crate::NodeId;
-use models::schema::TskvTableSchema;
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
@@ -27,8 +27,6 @@ use openraft::StateMachineChanges;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
-use serde::Deserialize;
-use serde::Serialize;
 use sled::{Db, IVec};
 use tokio::sync::RwLock;
 use tracing;
@@ -39,42 +37,12 @@ pub mod store;
 
 use crate::store::config::Config;
 
-use models::meta_data::*;
-
 use self::state_machine::StateMachine;
 
 #[derive(Debug)]
 pub struct SnapshotInfo {
     pub meta: SnapshotMeta<NodeId>,
     pub data: Vec<u8>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum KvReq {
-    AddDataNode(String, NodeInfo),
-    CreateDB(String, String, DatabaseInfo),
-    CreateBucket {
-        cluster: String,
-        tenant: String,
-        db: String,
-        ts: i64,
-    },
-
-    CreateTable(String, String, TskvTableSchema),
-    UpdateTable(String, String, TskvTableSchema),
-
-    Set {
-        key: String,
-        value: String,
-    },
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct KvResp {
-    pub err_code: i32,
-    pub err_msg: String,
-
-    pub meta_data: TenantMetaData,
 }
 
 #[derive(Debug)]
@@ -531,85 +499,5 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                 }))
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::{collections::BTreeMap, fmt::Error};
-
-    use serde::{Deserialize, Serialize};
-
-    use crate::client::MetaHttpClient;
-
-    use super::KvReq;
-
-    #[tokio::test]
-    async fn test_btree_map() {
-        let mut map = BTreeMap::new();
-        map.insert("/root/tenant".to_string(), "tenant_v".to_string());
-        map.insert("/root/tenant/db1".to_string(), "123_v".to_string());
-        map.insert("/root/tenant/db2".to_string(), "456_v".to_string());
-        map.insert("/root/tenant/db1/".to_string(), "123/_v".to_string());
-        map.insert("/root/tenant/db1/table1".to_string(), "123_v".to_string());
-        map.insert("/root/tenant/123".to_string(), "123_v".to_string());
-        map.insert("/root/tenant/456".to_string(), "456_v".to_string());
-
-        let begin = "/root/tenant/".to_string();
-        let end = "/root/tenant/|".to_string();
-        for (key, value) in map.range(begin..end) {
-            println!("{key}  : {value}");
-        }
-    }
-
-    //{"Set":{"key":"foo","value":"bar111"}}
-    #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct Command1 {
-        id: u32,
-        name: String,
-    }
-
-    #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct Command2 {
-        id: u32,
-        name: String,
-    }
-
-    #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub enum Command {
-        // Test1 { id: u32, name: String },
-        // Test2 { id: u32, name: String },
-        Test1(Command1),
-    }
-
-    #[tokio::test]
-    async fn test_json() {
-        let cmd = Command::Test1(Command1 {
-            id: 100,
-            name: "test".to_string(),
-        });
-
-        let str = serde_json::to_vec(&cmd).unwrap();
-        print!("\n1 === {}=== \n", String::from_utf8(str).unwrap());
-
-        let str = serde_json::to_string(&cmd).unwrap();
-        print!("\n2 === {}=== \n", str);
-
-        let tup = ("test1".to_string(), "test2".to_string());
-        let str = serde_json::to_string(&tup).unwrap();
-        print!("\n3 === {}=== \n", str);
-
-        let str = serde_json::to_string(&"xxx".to_string()).unwrap();
-        print!("\n4 === {}=== \n", str);
-    }
-
-    #[tokio::test]
-    async fn test_meta_client() {
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
-        let rsp = client.write(&KvReq::Set {
-            key: "kxxxxxx".to_string(),
-            value: "vxxxxxx".to_string(),
-        });
-        println!("write: {:#?}\n", rsp);
     }
 }

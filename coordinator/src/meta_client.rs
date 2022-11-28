@@ -1,7 +1,7 @@
 use config::ClusterConfig;
 use futures::future::ok;
 use meta::client::MetaHttpClient;
-use meta::store::KvReq;
+use meta::store::state_machine;
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
 use models::meta_data::*;
@@ -251,7 +251,7 @@ impl RemoteAdminMeta {
 #[async_trait::async_trait]
 impl AdminMeta for RemoteAdminMeta {
     fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()> {
-        let req = meta::store::KvReq::AddDataNode(self.cluster.clone(), node.clone());
+        let req = state_machine::KvReq::AddDataNode(self.cluster.clone(), node.clone());
 
         let rsp = self
             .client
@@ -365,7 +365,7 @@ impl RemoteMetaClient {
         Ok(())
     }
 
-    fn write_request_and_update(&self, req: &KvReq) -> MetaResult<()> {
+    fn write_request_and_update(&self, req: &state_machine::KvReq) -> MetaResult<()> {
         let rsp = self
             .client
             .write(&req)
@@ -473,7 +473,7 @@ impl MetaClient for RemoteMetaClient {
     // tenant role end
 
     fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
-        let req = KvReq::CreateDB(
+        let req = state_machine::KvReq::CreateDB(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             info.clone(),
@@ -509,7 +509,7 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
-        let req = KvReq::CreateTable(
+        let req = state_machine::KvReq::CreateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             schema.clone(),
@@ -529,7 +529,7 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
-        let req = KvReq::UpdateTable(
+        let req = state_machine::KvReq::UpdateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             schema.clone(),
@@ -554,7 +554,7 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo> {
-        let req = meta::store::KvReq::CreateBucket {
+        let req = state_machine::KvReq::CreateBucket {
             cluster: self.cluster.clone(),
             tenant: self.tenant.name().to_string(),
             db: db.clone(),
