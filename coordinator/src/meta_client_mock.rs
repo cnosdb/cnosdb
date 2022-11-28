@@ -1,13 +1,25 @@
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use models::{
+    auth::{
+        privilege::DatabasePrivilege,
+        role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier},
+    },
     meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet},
-    schema::TskvTableSchema,
+    oid::Oid,
+    schema::{Tenant, TenantOptions, TskvTableSchema},
 };
 use tokio::net::TcpStream;
 
-use crate::meta_client::{
-    AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaError, MetaManager, MetaResult,
+use crate::{
+    meta_client::{
+        AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaError, MetaManager, MetaResult,
+        TenantManager, TenantManagerRef, UserManagerRef,
+    },
+    user_manager::UserManagerMock,
 };
 
 #[derive(Default, Debug)]
@@ -31,12 +43,21 @@ impl AdminMeta for MockAdminMeta {
     fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
 }
 
-#[derive(Default, Debug)]
-pub struct MockMetaClient {}
-#[async_trait::async_trait]
+#[derive(Debug)]
+pub struct MockMetaClient {
+    tenant: Tenant,
+}
+
+impl Default for MockMetaClient {
+    fn default() -> Self {
+        let tenant = Tenant::new(0_u128, "mock".to_string(), TenantOptions::default());
+        Self { tenant }
+    }
+}
+
 impl MetaClient for MockMetaClient {
-    fn tenant_name(&self) -> &str {
-        ""
+    fn tenant(&self) -> &Tenant {
+        &self.tenant
     }
 
     fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
@@ -104,11 +125,70 @@ impl MetaClient for MockMetaClient {
     fn print_data(&self) -> String {
         "".to_string()
     }
+
+    fn add_member_with_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRole<Oid>> {
+        todo!()
+    }
+
+    fn members(&self) -> MetaResult<Option<HashSet<&Oid>>> {
+        todo!()
+    }
+
+    fn reasign_member_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn remove_member(&mut self, user_id: Oid) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn create_custom_role(
+        &mut self,
+        role_name: String,
+        system_role: SystemTenantRole,
+        additiona_privileges: HashMap<String, DatabasePrivilege>,
+    ) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
+        todo!()
+    }
+
+    fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
+        todo!()
+    }
+
+    fn grant_privilege_to_custom_role(
+        &mut self,
+        database_name: String,
+        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        role_name: &str,
+    ) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn revoke_privilege_from_custom_role(
+        &mut self,
+        database_name: &str,
+        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        role_name: &str,
+    ) -> MetaResult<bool> {
+        todo!()
+    }
+
+    fn drop_custom_role(&mut self, role_name: &str) -> MetaResult<bool> {
+        todo!()
+    }
 }
 
 #[derive(Default, Debug)]
 pub struct MockMetaManager {}
-#[async_trait::async_trait]
+
 impl MetaManager for MockMetaManager {
     fn node_id(&self) -> u64 {
         0
@@ -118,7 +198,36 @@ impl MetaManager for MockMetaManager {
         Arc::new(MockAdminMeta::default())
     }
 
-    fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
-        Some(Arc::new(MockMetaClient::default()))
+    fn user_manager(&self) -> UserManagerRef {
+        Arc::new(UserManagerMock::default())
+    }
+
+    fn tenant_manager(&self) -> TenantManagerRef {
+        Arc::new(TenantManagerMock::default())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct TenantManagerMock {}
+
+impl TenantManager for TenantManagerMock {
+    fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef> {
+        todo!()
+    }
+
+    fn tenant(&self, name: &str) -> MetaResult<Tenant> {
+        todo!()
+    }
+
+    fn alter_tenant(&self, tenant_id: Oid, options: TenantOptions) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn drop_tenant(&self, name: &str) -> MetaResult<()> {
+        todo!()
+    }
+
+    fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
+        todo!()
     }
 }

@@ -696,6 +696,10 @@ impl Identifier<Oid> for Tenant {
 }
 
 impl Tenant {
+    pub fn new(id: Oid, name: String, options: TenantOptions) -> Self {
+        Self { id, name, options }
+    }
+
     pub fn options(&self) -> &TenantOptions {
         &self.options
     }

@@ -261,13 +261,13 @@ impl StateMachine {
         db: &DatabaseInfo,
     ) -> KvResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
-        if self.data.contains_key(&key) {
-            return KvResp {
-                err_code: -1,
-                err_msg: "database already exist".to_string(),
-                meta_data: self.to_tenant_meta_data(cluster, tenant),
-            };
-        }
+        // if self.data.contains_key(&key) {
+        //     return KvResp {
+        //         err_code: -1,
+        //         err_msg: "database already exist".to_string(),
+        //         meta_data: self.to_tenant_meta_data(cluster, tenant),
+        //     };
+        // }
 
         let value = serde_json::to_string(db).unwrap();
         self.data.insert(key.clone(), value.clone());
@@ -287,13 +287,13 @@ impl StateMachine {
         schema: &TskvTableSchema,
     ) -> KvResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
-        if self.data.contains_key(&key) {
-            return KvResp {
-                err_code: -1,
-                err_msg: "table already exist".to_string(),
-                meta_data: self.to_tenant_meta_data(cluster, tenant),
-            };
-        }
+        // if self.data.contains_key(&key) {
+        //     return KvResp {
+        //         err_code: -1,
+        //         err_msg: "table already exist".to_string(),
+        //         meta_data: self.to_tenant_meta_data(cluster, tenant),
+        //     };
+        // }
 
         let value = serde_json::to_string(schema).unwrap();
         self.data.insert(key.clone(), value.clone());

@@ -169,12 +169,13 @@ impl PointWriter {
     }
 
     pub async fn write_points(&self, req: &WritePointsRequest) -> CoordinatorResult<()> {
-        let meta_client =
-            self.meta_manager
-                .tenant_meta(&req.tenant)
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: req.tenant.clone(),
-                })?;
+        let meta_client = self
+            .meta_manager
+            .tenant_manager()
+            .tenant_meta(&req.tenant)
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: req.tenant.clone(),
+            })?;
 
         let mut mapping = VnodeMapping::new();
         let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
