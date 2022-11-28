@@ -1,5 +1,3 @@
-use crate::meta_client;
-
 use snafu::Snafu;
 use std::{fmt::Debug, io};
 
@@ -69,8 +67,8 @@ pub enum CoordinatorError {
     CommonError { msg: String },
 }
 
-impl From<meta_client::MetaError> for CoordinatorError {
-    fn from(err: meta_client::MetaError) -> Self {
+impl From<meta::meta_client::MetaError> for CoordinatorError {
+    fn from(err: meta::meta_client::MetaError) -> Self {
         CoordinatorError::MetaRequest {
             msg: err.to_string(),
         }

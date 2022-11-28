@@ -22,8 +22,9 @@ use crate::{
         FAILED_RESPONSE_CODE,
     },
     errors::{CoordinatorError, CoordinatorResult},
-    meta_client::MetaRef,
 };
+
+use meta::meta_client::MetaRef;
 
 #[derive(Debug)]
 pub struct ReaderIterator {

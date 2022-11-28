@@ -10,6 +10,7 @@ tskv = { path = "../../tskv" }
 models = { path = "../../common/models" }
 utils = { path = "../../common/utils" }
 config = { path = "../../config" }
+meta = { path = "../../meta" }
 coordinator = { path = "../../coordinator" }
 spi = { path = "../spi" }
 

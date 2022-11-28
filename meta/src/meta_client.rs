@@ -1,25 +1,27 @@
+#![allow(dead_code, unused_imports, unused_variables)]
+
+use client::MetaHttpClient;
 use config::ClusterConfig;
-use futures::future::ok;
-use meta::client::MetaHttpClient;
-use meta::store::state_machine;
 use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use snafu::Snafu;
-use std::borrow::BorrowMut;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::{fmt::Debug, io};
+use store::state_machine;
 use tokio::net::TcpStream;
 
 use trace::info;
 
-use models::schema::{DatabaseSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema};
+use models::schema::{Tenant, TenantOptions, TskvTableSchema};
 
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{UserManager, UserManagerMock};
+use crate::{client, store};
 
 #[derive(Snafu, Debug)]
 pub enum MetaError {

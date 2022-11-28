@@ -131,7 +131,7 @@ pub fn make_cnosdbms(
 mod tests {
     use chrono::Utc;
     use config::get_config;
-    use coordinator::{meta_client_mock::MockMetaManager, service::MockCoordinator};
+    use coordinator::service::MockCoordinator;
     use models::auth::user::UserInfo;
     use std::ops::DerefMut;
     use trace::debug;

@@ -13,6 +13,7 @@ protos = { path = "../common/protos" }
 query = { path = "../query_server/query" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
+meta = { path = "../meta" }
 coordinator = { path = "../coordinator" }
 spi = { path = "../query_server/spi" }
 mem_allocator = { path = "../common/mem_allocator" }

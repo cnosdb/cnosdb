@@ -1,10 +1,10 @@
-use coordinator::meta_client::MetaRef;
 use coordinator::reader::{QueryExecutor, ReaderIterator};
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::future::ok;
 use futures::{executor, Future};
+use meta::meta_client::MetaRef;
 use models::predicate::domain::Predicate;
 use snafu::ResultExt;
 use spi::catalog::DEFAULT_CATALOG;

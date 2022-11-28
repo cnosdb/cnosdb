@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_imports, unused_variables)]
 use std::{collections::HashMap, sync::Arc};
 
 use models::{

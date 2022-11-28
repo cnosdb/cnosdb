@@ -19,8 +19,12 @@ use store::state_machine::*;
 
 pub mod client;
 pub mod meta_app;
+pub mod meta_client;
+pub mod meta_client_mock;
 pub mod service;
 pub mod store;
+pub mod tenant_manager;
+pub mod user_manager;
 pub type NodeId = u64;
 
 openraft::declare_raft_types!(

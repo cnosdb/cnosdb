@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use coordinator::meta_client::MetaRef;
+use meta::meta_client::MetaRef;
 use models::{
     auth::{
         user::{AuthType, User, UserInfo},

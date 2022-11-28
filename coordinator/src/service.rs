@@ -16,14 +16,15 @@ use trace::info;
 use tskv::engine::{EngineRef, MockEngine};
 use tskv::TimeRange;
 
+use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
+use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
+
 use datafusion::arrow::datatypes::SchemaRef;
 use tskv::iterator::QueryOption;
 
 use crate::command::{CoordinatorIntCmd, SelectStatementRequest, WritePointsRequest};
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
-use crate::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
-use crate::meta_client_mock::{MockMetaClient, MockMetaManager};
 use crate::reader::{QueryExecutor, ReaderIterator};
 use crate::writer::{PointWriter, VnodeMapping};
 

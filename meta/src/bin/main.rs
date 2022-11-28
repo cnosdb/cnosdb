@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports, unused_variables)]
+
 use clap::Parser;
 use meta::service::connection::Connections;
 use meta::store::Store;

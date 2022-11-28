@@ -2,9 +2,9 @@
 
 use clap::{Parser, Subcommand};
 use coordinator::hh_queue::HintedOffManager;
-use coordinator::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use coordinator::service::CoordService;
 use coordinator::writer::PointWriter;
+use meta::meta_client::{MetaClientRef, MetaRef, RemoteMetaManager};
 use models::meta_data::NodeInfo;
 use once_cell::sync::Lazy;
 use query::instance::make_cnosdbms;

@@ -20,12 +20,12 @@ use crate::server::{Service, ServiceHandle};
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::hh_queue::HintedOffManager;
-use coordinator::meta_client::MetaClientRef;
 use coordinator::writer::{PointWriter, VnodeMapping};
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, Line};
+use meta::meta_client::MetaClientRef;
 use metrics::{
     gather_metrics_as_prometheus_string, incr_point_write_failed, incr_point_write_success,
     incr_query_read_failed, incr_query_read_success, sample_point_write_latency,

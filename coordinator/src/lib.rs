@@ -3,10 +3,6 @@
 pub mod command;
 pub mod errors;
 pub mod hh_queue;
-pub mod meta_client;
-pub mod meta_client_mock;
 pub mod reader;
 pub mod service;
-pub mod tenant_manager;
-pub mod user_manager;
 pub mod writer;

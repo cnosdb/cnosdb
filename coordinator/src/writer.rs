@@ -11,6 +11,7 @@ use snafu::ResultExt;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 //use std::net::{TcpListener, TcpStream};
+use meta::meta_client::{MetaClientRef, MetaRef};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Sender;
@@ -23,7 +24,7 @@ use crate::command::*;
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::hh_queue::{HintedOffBlock, HintedOffWriteReq};
-use crate::meta_client::{MetaClientRef, MetaRef};
+
 use trace::debug;
 use trace::info;
 
