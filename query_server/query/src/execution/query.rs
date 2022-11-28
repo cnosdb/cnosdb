@@ -56,22 +56,25 @@ impl SqlQueryExecution {
 
         // begin schedule
         self.query_state_machine.begin_schedule();
-        let execution_result = self
+        let stream = self
             .scheduler
             .schedule(
                 optimized_physical_plan,
                 self.query_state_machine.session.inner().task_ctx(),
             )
             .context(ScheduleSnafu)?
-            .stream()
-            .try_collect::<Vec<_>>()
-            .await
-            .map_err(|source| QueryError::Execution {
-                source: ExecutionError::Arrow { source },
-            })?;
+            .stream();
+        let schema_ref = stream.schema();
+        let execution_result =
+            stream
+                .try_collect::<Vec<_>>()
+                .await
+                .map_err(|source| QueryError::Execution {
+                    source: ExecutionError::Arrow { source },
+                })?;
         self.query_state_machine.end_schedule();
 
-        Ok(Output::StreamData(execution_result))
+        Ok(Output::StreamData(schema_ref, execution_result))
     }
 }
 

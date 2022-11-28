@@ -36,10 +36,10 @@ fn show_databases(catalog: MetaDataRef) -> Result<Output, ExecutionError> {
         false,
     )]));
 
-    let batch = RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(databases))])
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(StringArray::from(databases))])
         .map_err(datafusion::error::DataFusionError::ArrowError)
         .context(ExternalSnafu)?;
     let batches = vec![batch];
 
-    Ok(Output::StreamData(batches))
+    Ok(Output::StreamData(schema, batches))
 }

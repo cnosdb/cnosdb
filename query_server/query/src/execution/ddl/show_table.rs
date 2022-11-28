@@ -41,11 +41,11 @@ fn show_tables(
         false,
     )]));
 
-    let batch = RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(tables))])
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(StringArray::from(tables))])
         .map_err(datafusion::error::DataFusionError::ArrowError)
         .context(ExternalSnafu)?;
 
     let batches = vec![batch];
 
-    Ok(Output::StreamData(batches))
+    Ok(Output::StreamData(schema, batches))
 }

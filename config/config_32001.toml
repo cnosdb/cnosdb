@@ -45,6 +45,7 @@ meta = '127.0.0.1:21001'
 http_server = '127.0.0.1:32001'
 grpc_server = '127.0.0.1:32002'
 tcp_server = '127.0.0.1:32003'
+flight_rpc_server = '127.0.0.1:32004'
 
 [hintedoff]
 enable = true

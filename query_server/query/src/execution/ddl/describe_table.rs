@@ -61,7 +61,7 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
             ]));
 
             let batch = RecordBatch::try_new(
-                schema,
+                schema.clone(),
                 vec![
                     Arc::new(name.finish()),
                     Arc::new(data_type.finish()),
@@ -72,7 +72,7 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
             .map_err(datafusion::error::DataFusionError::ArrowError)
             .context(ExternalSnafu)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(batches))
+            Ok(Output::StreamData(schema, batches))
         }
         TableSchema::ExternalTableSchema(external_schema) => {
             let mut name = StringBuilder::new();
@@ -86,13 +86,13 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
                 Field::new("DATA_TYPE", DataType::Utf8, false),
             ]));
             let batch = RecordBatch::try_new(
-                schema,
+                schema.clone(),
                 vec![Arc::new(name.finish()), Arc::new(data_type.finish())],
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)
             .context(ExternalSnafu)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(batches))
+            Ok(Output::StreamData(schema, batches))
         }
     }
 }

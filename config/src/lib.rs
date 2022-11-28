@@ -188,6 +188,7 @@ pub struct ClusterConfig {
     pub http_server: String,
     pub grpc_server: String,
     pub tcp_server: String,
+    pub flight_rpc_server: String,
 }
 
 impl ClusterConfig {
@@ -212,6 +213,10 @@ impl ClusterConfig {
 
         if let Ok(val) = std::env::var("CNOSDB_TCP_SERVER") {
             self.tcp_server = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_FLIGHT_RPC_SERVER") {
+            self.flight_rpc_server = val;
         }
     }
 }

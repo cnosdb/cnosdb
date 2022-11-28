@@ -173,23 +173,9 @@ mod tests {
         };
         let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
 
-        // let db = make_cnosdbms(Arc::new(MockEngine::default())).unwrap();
-        let mut actual = vec![];
+        let result = db.execute(&query).await.unwrap();
 
-        let mut result = db.execute(&query).await.unwrap();
-
-        for ele in result.result().iter_mut() {
-            match ele {
-                Output::StreamData(data) => {
-                    actual.append(data);
-                }
-                Output::Nil(_) => {
-                    let batch = RecordBatch::new_empty(Arc::new(Schema::empty()));
-                    actual.push(batch);
-                }
-            }
-        }
-        actual
+        result.result().chunk_result().to_vec()
     }
 
     #[tokio::test]

@@ -100,6 +100,8 @@ os_info = {version = "3"}
 uuid = { version = "1.1", features = ["v4"] }
 derive_builder = "0.11"
 openssl = "0.10.28"
+moka = "0.9.6"
+prost-types ={ version = "0.11.2"}
 
 [profile.dev]
 lto = false

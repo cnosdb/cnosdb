@@ -47,8 +47,8 @@ mod tests {
 
         let data = "A quick brown fox jumps over the lazy dog.";
 
-        let private_key_pem = fs::read("tests/data/rsa/rsa_key.p8").unwrap();
-        let public_key_pem = fs::read("tests/data/rsa/rsa_key.pub").unwrap();
+        let private_key_pem = fs::read("tests/resource/rsa/rsa_key.p8").unwrap();
+        let public_key_pem = fs::read("tests/resource/rsa/rsa_key.pub").unwrap();
 
         // Encrypt with public key
         let rsa = Rsa::public_key_from_pem(&public_key_pem).unwrap();
@@ -76,8 +76,8 @@ mod tests {
     fn test_verify() {
         let passphrase = "123456";
 
-        let private_key_pem = fs::read("tests/data/rsa/rsa_key.p8").unwrap();
-        let public_key_pem = fs::read("tests/data/rsa/rsa_key.pub").unwrap();
+        let private_key_pem = fs::read("tests/resource/rsa/rsa_key.p8").unwrap();
+        let public_key_pem = fs::read("tests/resource/rsa/rsa_key.pub").unwrap();
 
         let xx = verify(&private_key_pem, passphrase, &public_key_pem).unwrap();
         assert!(xx);

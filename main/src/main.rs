@@ -102,6 +102,7 @@ enum SubCommand {
     // Query {},
 }
 
+use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::HttpService;
 use crate::report::ReportService;
 use crate::rpc::grpc_service::GrpcService;
@@ -152,6 +153,11 @@ fn main() -> Result<(), std::io::Error> {
         .grpc_server
         .parse::<SocketAddr>()
         .expect("Invalid grpc_host");
+    let flight_rpc_host = global_config
+        .cluster
+        .flight_rpc_server
+        .parse::<SocketAddr>()
+        .expect("Invalid flight_rpc_host");
     let http_host = global_config
         .cluster
         .http_server
@@ -209,12 +215,16 @@ fn main() -> Result<(), std::io::Error> {
                     global_config.security.tls_config.clone(),
                 ));
 
+                let flight_sql_service =
+                    Box::new(FlightSqlServiceAdapter::new(dbms.clone(), flight_rpc_host));
+
                 let report_service = Box::new(ReportService::new());
 
                 let mut server_builder = server::Builder::default()
                     .add_service(http_service)
                     .add_service(grpc_service)
-                    .add_service(tcp_service);
+                    .add_service(tcp_service)
+                    .add_service(flight_sql_service);
 
                 if !global_config.reporting_disabled.unwrap_or(false) {
                     server_builder = server_builder.add_service(report_service);

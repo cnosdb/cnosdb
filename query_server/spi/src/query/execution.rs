@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
@@ -50,9 +51,34 @@ pub trait QueryExecution: Send + Sync {
 // pub trait Output {
 //     fn as_any(&self) -> &dyn Any;
 // }
+#[derive(Clone)]
 pub enum Output {
-    StreamData(Vec<RecordBatch>),
+    StreamData(SchemaRef, Vec<RecordBatch>),
     Nil(()),
+}
+
+impl Output {
+    pub fn schema(&self) -> SchemaRef {
+        match self {
+            Self::StreamData(schema, _) => schema.clone(),
+            Self::Nil(_) => Arc::new(Schema::empty()),
+        }
+    }
+
+    pub fn chunk_result(&self) -> &[RecordBatch] {
+        match self {
+            Self::StreamData(_, result) => result,
+            Self::Nil(_) => &[],
+        }
+    }
+
+    pub fn num_rows(&self) -> usize {
+        self.chunk_result()
+            .iter()
+            .map(|e| e.num_rows())
+            .reduce(|p, c| p + c)
+            .unwrap_or(0)
+    }
 }
 
 pub trait QueryExecutionFactory {
