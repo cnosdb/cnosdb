@@ -39,24 +39,37 @@ pub const META_REQUEST_TABLE_EXIST: i32 = 2;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct StatusResponse {
-    pub err_code: i32,
-    pub err_msg: String,
+    pub code: i32,
+    pub msg: String,
 }
 
 impl StatusResponse {
-    pub fn new(err_code: i32, err_msg: String) -> Self {
-        Self { err_code, err_msg }
+    pub fn new(code: i32, msg: String) -> Self {
+        Self { code, msg }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct TenaneMetaDataResp {
-    pub err_code: i32,
-    pub err_msg: String,
-    pub meta_data: TenantMetaData,
+    pub status: StatusResponse,
+    pub data: TenantMetaData,
 }
 
 impl TenaneMetaDataResp {
+    pub fn new(code: i32, msg: String) -> Self {
+        Self {
+            status: StatusResponse::new(code, msg),
+            data: TenantMetaData::new(),
+        }
+    }
+
+    pub fn new_from_data(code: i32, msg: String, data: TenantMetaData) -> Self {
+        let mut rsp = TenaneMetaDataResp::new(code, msg);
+        rsp.data = data;
+
+        rsp
+    }
+
     pub fn to_string(&self) -> String {
         serde_json::to_string(&self).unwrap()
     }

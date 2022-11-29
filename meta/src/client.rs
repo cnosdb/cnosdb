@@ -196,22 +196,26 @@ impl MetaHttpClient {
 
 #[cfg(test)]
 mod test {
-    use models::meta_data::NodeInfo;
+    use crate::{client::MetaHttpClient, store::command};
 
-    use crate::client::MetaHttpClient;
-    use crate::ReadCommand;
+    use models::meta_data::NodeInfo;
 
     #[tokio::test]
     async fn test_meta_client() {
         let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
-        let cmd = ReadCommand::DataNodes("cluster_xxx".to_string());
-        let rsp = client.read::<Vec<NodeInfo>>(&cmd);
+
+        let cluster = "cluster_xxx".to_string();
+        let mut node = NodeInfo::default();
+        node.id = 111;
+        node.http_addr = "127.0.0.1:8888".to_string();
+        let req = command::WriteCommand::AddDataNode(cluster.clone(), node.clone());
+        let rsp = client.write::<command::StatusResponse>(&req);
+        println!("{:?}", serde_json::to_string(&req).unwrap());
         println!("{:?}", rsp);
 
-        // if let Some(val) = rsp.downcast_ref::<Respone1>() {
-        //     println!("======={:?}", val);
-        // } else {
-        //     println!("=======Not");
-        // }
+        let req = command::ReadCommand::DataNodes(cluster.clone());
+        let rsp = client.read::<Vec<NodeInfo>>(&req);
+        println!("{:?}", serde_json::to_string(&req).unwrap());
+        println!("{:?}", rsp);
     }
 }

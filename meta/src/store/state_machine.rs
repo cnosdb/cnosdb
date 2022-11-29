@@ -218,11 +218,11 @@ impl StateMachine {
                 serde_json::to_string(&response).unwrap()
             }
 
-            ReadCommand::TenaneMetaData(cluster, tenant) => TenaneMetaDataResp {
-                err_code: META_REQUEST_SUCCESS,
-                err_msg: "".to_string(),
-                meta_data: self.to_tenant_meta_data(&cluster, &tenant),
-            }
+            ReadCommand::TenaneMetaData(cluster, tenant) => TenaneMetaDataResp::new_from_data(
+                META_REQUEST_SUCCESS,
+                "".to_string(),
+                self.to_tenant_meta_data(cluster, tenant),
+            )
             .to_string(),
         }
     }
@@ -293,11 +293,11 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        TenaneMetaDataResp {
-            err_code: META_REQUEST_SUCCESS,
-            err_msg: "".to_string(),
-            meta_data: self.to_tenant_meta_data(cluster, tenant),
-        }
+        TenaneMetaDataResp::new_from_data(
+            META_REQUEST_SUCCESS,
+            "".to_string(),
+            self.to_tenant_meta_data(cluster, tenant),
+        )
         .to_string()
     }
 
@@ -320,11 +320,11 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        TenaneMetaDataResp {
-            err_code: META_REQUEST_SUCCESS,
-            err_msg: "".to_string(),
-            meta_data: self.to_tenant_meta_data(cluster, tenant),
-        }
+        TenaneMetaDataResp::new_from_data(
+            META_REQUEST_SUCCESS,
+            "".to_string(),
+            self.to_tenant_meta_data(cluster, tenant),
+        )
         .to_string()
     }
 
@@ -337,14 +337,14 @@ impl StateMachine {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
         if let Some(val) = get_struct::<TskvTableSchema>(&key, &self.data) {
             if val.schema_id + 1 != schema.schema_id {
-                return TenaneMetaDataResp {
-                    err_code: META_REQUEST_FAILED,
-                    err_msg: format!(
+                return TenaneMetaDataResp::new_from_data(
+                    META_REQUEST_FAILED,
+                    format!(
                         "update table schema conflict {}->{}",
                         val.schema_id, schema.schema_id
                     ),
-                    meta_data: self.to_tenant_meta_data(cluster, tenant),
-                }
+                    self.to_tenant_meta_data(cluster, tenant),
+                )
                 .to_string();
             }
         }
@@ -353,11 +353,11 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
-        TenaneMetaDataResp {
-            err_code: META_REQUEST_SUCCESS,
-            err_msg: "".to_string(),
-            meta_data: self.to_tenant_meta_data(cluster, tenant),
-        }
+        TenaneMetaDataResp::new_from_data(
+            META_REQUEST_SUCCESS,
+            "".to_string(),
+            self.to_tenant_meta_data(cluster, tenant),
+        )
         .to_string()
     }
 
@@ -372,11 +372,11 @@ impl StateMachine {
         let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), &self.data);
         for (_, val) in buckets.iter() {
             if *ts >= val.start_time && *ts < val.end_time {
-                return TenaneMetaDataResp {
-                    err_code: META_REQUEST_SUCCESS,
-                    err_msg: "".to_string(),
-                    meta_data: self.to_tenant_meta_data(cluster, tenant),
-                }
+                return TenaneMetaDataResp::new_from_data(
+                    META_REQUEST_SUCCESS,
+                    "".to_string(),
+                    self.to_tenant_meta_data(cluster, tenant),
+                )
                 .to_string();
             }
         }
@@ -384,11 +384,10 @@ impl StateMachine {
         let db_info = match get_struct::<DatabaseInfo>(&db_path, &self.data) {
             Some(info) => info,
             None => {
-                return TenaneMetaDataResp {
-                    err_code: META_REQUEST_FAILED,
-                    meta_data: TenantMetaData::new(),
-                    err_msg: format!("database {} is not exist", db),
-                }
+                return TenaneMetaDataResp::new(
+                    META_REQUEST_FAILED,
+                    format!("database {} is not exist", db),
+                )
                 .to_string();
             }
         };
@@ -403,20 +402,18 @@ impl StateMachine {
             || db_info.shard == 0
             || db_info.replications > node_list.len() as u32
         {
-            return TenaneMetaDataResp {
-                err_code: META_REQUEST_FAILED,
-                meta_data: TenantMetaData::new(),
-                err_msg: format!("database {} attribute invalid!", db),
-            }
+            return TenaneMetaDataResp::new(
+                META_REQUEST_FAILED,
+                format!("database {} attribute invalid!", db),
+            )
             .to_string();
         }
 
         if *ts < now - db_info.ttl {
-            return TenaneMetaDataResp {
-                err_code: META_REQUEST_FAILED,
-                meta_data: TenantMetaData::new(),
-                err_msg: format!("database {} create expired bucket not permit!", db),
-            }
+            return TenaneMetaDataResp::new(
+                META_REQUEST_FAILED,
+                format!("database {} create expired bucket not permit!", db),
+            )
             .to_string();
         }
 
@@ -442,11 +439,11 @@ impl StateMachine {
         self.data.insert(key.clone(), val.clone());
         info!("WRITE: {} :{}", key, val);
 
-        TenaneMetaDataResp {
-            err_code: META_REQUEST_SUCCESS,
-            err_msg: "".to_string(),
-            meta_data: self.to_tenant_meta_data(cluster, tenant),
-        }
+        TenaneMetaDataResp::new_from_data(
+            META_REQUEST_SUCCESS,
+            "".to_string(),
+            self.to_tenant_meta_data(cluster, tenant),
+        )
         .to_string()
     }
 }

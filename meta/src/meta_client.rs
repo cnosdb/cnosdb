@@ -263,9 +263,9 @@ impl AdminMeta for RemoteAdminMeta {
     fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()> {
         let req = command::WriteCommand::AddDataNode(self.cluster.clone(), node.clone());
         let rsp = self.client.write::<command::StatusResponse>(&req)?;
-        if rsp.err_code != command::META_REQUEST_SUCCESS {
+        if rsp.code != command::META_REQUEST_SUCCESS {
             return Err(MetaError::CommonError {
-                msg: format!("add data node err: {} {}", rsp.err_code, rsp.err_msg),
+                msg: format!("add data node err: {} {}", rsp.code, rsp.msg),
             });
         }
 
@@ -344,15 +344,15 @@ impl RemoteMetaClient {
             self.tenant.name().to_string(),
         );
         let resp = self.client.read::<command::TenaneMetaDataResp>(&req)?;
-        if resp.err_code < 0 {
+        if resp.status.code < 0 {
             return Err(MetaError::CommonError {
-                msg: format!("open meta err: {} {}", resp.err_code, resp.err_msg),
+                msg: format!("open meta err: {} {}", resp.status.code, resp.status.msg),
             });
         }
 
         let mut data = self.data.write();
-        if resp.meta_data.version > data.version {
-            *data = resp.meta_data;
+        if resp.data.version > data.version {
+            *data = resp.data;
         }
 
         Ok(())
@@ -452,8 +452,8 @@ impl MetaClient for RemoteMetaClient {
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
+        if rsp.data.version > data.version {
+            *data = rsp.data;
         }
 
         // todo db already exist
@@ -501,8 +501,8 @@ impl MetaClient for RemoteMetaClient {
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
+        if rsp.data.version > data.version {
+            *data = rsp.data;
         }
 
         // todo table already exist
@@ -529,8 +529,8 @@ impl MetaClient for RemoteMetaClient {
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
+        if rsp.data.version > data.version {
+            *data = rsp.data;
         }
 
         // todo table not exist
@@ -563,13 +563,13 @@ impl MetaClient for RemoteMetaClient {
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         let mut data = self.data.write();
-        if rsp.meta_data.version > data.version {
-            *data = rsp.meta_data;
+        if rsp.data.version > data.version {
+            *data = rsp.data;
         }
 
-        if rsp.err_code < 0 {
+        if rsp.status.code < 0 {
             return Err(MetaError::MetaClientErr {
-                msg: format!("create bucket err: {} {}", rsp.err_code, rsp.err_msg),
+                msg: format!("create bucket err: {} {}", rsp.status.code, rsp.status.msg),
             });
         }
 

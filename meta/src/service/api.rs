@@ -3,13 +3,14 @@ use actix_web::post;
 use actix_web::web;
 use actix_web::web::Data;
 use actix_web::Responder;
-use models::meta_data::TenantMetaData;
 use openraft::error::CheckIsLeaderError;
+use openraft::error::Infallible;
 use openraft::raft::ClientWriteRequest;
 use openraft::EntryPayload;
 use web::Json;
 
 use crate::store::command::*;
+use crate::store::state_machine::CommandResp;
 use crate::MetaApp;
 use crate::NodeId;
 
@@ -17,9 +18,10 @@ use crate::NodeId;
 pub async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
 
-    let response = sm.process_read_command(&req.0);
+    let res = sm.process_read_command(&req.0);
 
-    Ok(response)
+    let response: Result<CommandResp, Infallible> = Ok(res);
+    Ok(Json(response))
 }
 
 #[post("/write")]
@@ -28,17 +30,16 @@ pub async fn write(
     req: Json<WriteCommand>,
 ) -> actix_web::Result<impl Responder> {
     let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
-    let response = match app.raft.client_write(request).await {
+    let res = match app.raft.client_write(request).await {
         Ok(val) => val.data,
-        Err(err) => TenaneMetaDataResp {
-            err_code: META_REQUEST_FAILED,
-            meta_data: TenantMetaData::new(),
-            err_msg: format!("raft write error: {}", err),
+        Err(err) => {
+            TenaneMetaDataResp::new(META_REQUEST_FAILED, format!("raft write error: {}", err))
+                .to_string()
         }
-        .to_string(),
     };
 
-    Ok(response)
+    let response: Result<CommandResp, Infallible> = Ok(res);
+    Ok(Json(response))
 }
 
 #[get("/read_all")]
