@@ -279,9 +279,11 @@ impl AdminMeta for RemoteAdminMeta {
 
         let req = command::ReadCommand::DataNodes(self.cluster.clone());
         let resp = self.client.read::<Vec<NodeInfo>>(&req)?;
-        let mut nodes = self.data_nodes.write();
-        for item in resp.iter() {
-            nodes.insert(item.id, item.clone());
+        {
+            let mut nodes = self.data_nodes.write();
+            for item in resp.iter() {
+                nodes.insert(item.id, item.clone());
+            }
         }
 
         if let Some(val) = self.data_nodes.read().get(&id) {
@@ -456,7 +458,7 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.data;
         }
 
-        // todo db already exist
+        // TODO db already exist
         // if rsp.err_code != command::META_REQUEST_SUCCESS {
         //     return Err(MetaError::CommonError {
         //         msg: format!("add data node err: {} {}", rsp.err_code, rsp.err_msg),
@@ -505,7 +507,7 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.data;
         }
 
-        // todo table already exist
+        // TODO table already exist
 
         Ok(())
     }
@@ -533,7 +535,7 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.data;
         }
 
-        // todo table not exist
+        // TODO table not exist
 
         Ok(())
     }
@@ -562,9 +564,11 @@ impl MetaClient for RemoteMetaClient {
         };
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
-        let mut data = self.data.write();
-        if rsp.data.version > data.version {
-            *data = rsp.data;
+        {
+            let mut data = self.data.write();
+            if rsp.data.version > data.version {
+                *data = rsp.data;
+            }
         }
 
         if rsp.status.code < 0 {
@@ -597,6 +601,7 @@ impl MetaClient for RemoteMetaClient {
         }
 
         let bucket = self.create_bucket(db, ts)?;
+
         return Ok(bucket.vnode_for(hash_id));
     }
 
@@ -606,8 +611,8 @@ impl MetaClient for RemoteMetaClient {
         start: i64,
         end: i64,
     ) -> MetaResult<Vec<BucketInfo>> {
-        //todo improve performence,watch the meta
-        self.sync_all_tenant_metadata().unwrap();
+        // TODO improve performence,watch the meta
+        self.sync_all_tenant_metadata()?;
 
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
         return Ok(buckets);

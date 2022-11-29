@@ -1,19 +1,13 @@
-use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use openraft::error::AddLearnerError;
-use openraft::error::CheckIsLeaderError;
 use openraft::error::ClientWriteError;
 use openraft::error::ForwardToLeader;
-use openraft::error::Infallible;
-use openraft::error::InitializeError;
+
 use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RemoteError;
-use openraft::raft::AddLearnerResponse;
-use openraft::raft::ClientWriteResponse;
-use openraft::RaftMetrics;
+
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -77,40 +71,6 @@ impl MetaHttpClient {
     }
 
     //////////////////////////////////////////////////
-    pub fn consistent_read(
-        &self,
-        req: &String,
-    ) -> Result<String, RPCError<ExampleTypeConfig, CheckIsLeaderError<NodeId>>> {
-        self.do_send_rpc_to_leader("consistent_read", Some(req))
-    }
-
-    pub fn init(&self) -> Result<(), RPCError<ExampleTypeConfig, InitializeError<NodeId>>> {
-        self.do_send_rpc_to_leader("init", Some(&Empty {}))
-    }
-
-    pub fn add_learner(
-        &self,
-        req: (NodeId, String),
-    ) -> Result<AddLearnerResponse<NodeId>, RPCError<ExampleTypeConfig, AddLearnerError<NodeId>>>
-    {
-        self.send_rpc_to_leader("add-learner", Some(&req))
-    }
-
-    pub fn change_membership(
-        &self,
-        req: &BTreeSet<NodeId>,
-    ) -> Result<
-        ClientWriteResponse<ExampleTypeConfig>,
-        RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>,
-    > {
-        self.send_rpc_to_leader("change-membership", Some(req))
-    }
-
-    pub fn metrics(
-        &self,
-    ) -> Result<RaftMetrics<ExampleTypeConfig>, RPCError<ExampleTypeConfig, Infallible>> {
-        self.do_send_rpc_to_leader("metrics", None::<&()>)
-    }
 
     fn send_rpc_to_leader<Req, Resp, Err>(
         &self,
