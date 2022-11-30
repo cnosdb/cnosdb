@@ -35,11 +35,11 @@ impl Display for ValueType {
 impl From<u8> for ValueType {
     fn from(value: u8) -> Self {
         match value {
-            0 => Self::Float,
-            1 => Self::Integer,
-            2 => Self::Boolean,
-            3 => Self::String,
-            4 => Self::Unsigned,
+            1 => Self::Float,
+            2 => Self::Integer,
+            3 => Self::Boolean,
+            4 => Self::String,
+            5 => Self::Unsigned,
             _ => Self::Unknown,
         }
     }
@@ -48,12 +48,12 @@ impl From<u8> for ValueType {
 impl From<ValueType> for u8 {
     fn from(value: ValueType) -> Self {
         match value {
-            ValueType::Float => 0,
-            ValueType::Integer => 1,
-            ValueType::Boolean => 2,
-            ValueType::String => 3,
-            ValueType::Unsigned => 4,
-            ValueType::Unknown => 5,
+            ValueType::Float => 1,
+            ValueType::Integer => 2,
+            ValueType::Boolean => 3,
+            ValueType::String => 4,
+            ValueType::Unsigned => 5,
+            ValueType::Unknown => 100,
         }
     }
 }
