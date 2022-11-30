@@ -8,15 +8,13 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::schema::{
-    is_time_column, ColumnType, TableColumn, TableSchemaRef, TskvTableSchema, TIME_FIELD_NAME,
-};
+use models::schema::{is_time_column, ColumnType, TableColumn, TableSchemaRef, TIME_FIELD_NAME};
 use models::{define_result, ValueType};
 use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
-use std::sync::Arc;
+
 use trace::debug;
 
 define_result!(PointUtilError);

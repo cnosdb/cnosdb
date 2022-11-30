@@ -1,6 +1,6 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{DataType, Expr, Ident, ObjectName, Offset, TableFactor};
+use datafusion::sql::sqlparser::ast::{DataType, Expr, Ident, ObjectName, Offset};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 
