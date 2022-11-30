@@ -13,7 +13,8 @@ use datafusion::{
 };
 use meta::error::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
-use models::schema::TskvTableSchema;
+use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
@@ -24,7 +25,7 @@ use crate::{
 #[derive(Clone)]
 pub struct ClusterTable {
     coord: CoordinatorRef,
-    schema: TskvTableSchema,
+    schema: TskvTableSchemaRef,
 }
 
 impl ClusterTable {
@@ -44,7 +45,10 @@ impl ClusterTable {
     }
 
     pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        ClusterTable { coord, schema }
+        ClusterTable {
+            coord,
+            schema: Arc::new(schema),
+        }
     }
 
     pub async fn write(
@@ -78,15 +82,15 @@ impl ClusterTable {
         );
 
         Ok(Arc::new(TagScanExec::new(
-            Arc::new(self.schema.clone()),
+            self.schema.clone(),
             Arc::new(projected_schema.as_ref().into()),
             filter,
             self.coord.clone(),
         )))
     }
 
-    pub fn table_schema(&self) -> &TskvTableSchema {
-        &self.schema
+    pub fn table_schema(&self) -> TskvTableSchemaRef {
+        self.schema.clone()
     }
 
     // Check and return the projected schema

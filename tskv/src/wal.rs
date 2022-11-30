@@ -22,8 +22,8 @@
 
 use datafusion::parquet::data_type::AsBytes;
 use std::{
-    string::String,
     path::{Path, PathBuf},
+    string::String,
     sync::Arc,
 };
 
@@ -33,6 +33,7 @@ use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
+use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     byte_utils,
@@ -44,7 +45,6 @@ use crate::{
     tsm::{codec::get_str_codec, DecodeSnafu, EncodeSnafu},
 };
 use crate::{engine, TseriesFamilyId};
-use crate::byte_utils::{decode_be_u32, decode_be_u64};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
@@ -188,8 +188,13 @@ impl WalWriter {
     }
 
     /// Writes data, returns data sequence and data size.
-    pub async fn write(&mut self, typ: WalEntryType, data: Arc<Vec<u8>>, id: TseriesFamilyId,
-                       tenant: Arc<Vec<u8>>,) -> Result<(u64, usize)> {
+    pub async fn write(
+        &mut self,
+        typ: WalEntryType,
+        data: Arc<Vec<u8>>,
+        id: TseriesFamilyId,
+        tenant: Arc<Vec<u8>>,
+    ) -> Result<(u64, usize)> {
         let mut seq = self.max_sequence;
         let tenant_len = tenant.len() as u64;
 
@@ -198,7 +203,15 @@ impl WalWriter {
             .write_record(
                 RecordDataVersion::V1 as u8,
                 RecordDataType::Wal as u8,
-                [&[typ as u8][..], &seq.to_be_bytes(), &id.to_be_bytes(), &tenant_len.to_be_bytes(), &tenant, &data].as_slice(),
+                [
+                    &[typ as u8][..],
+                    &seq.to_be_bytes(),
+                    &id.to_be_bytes(),
+                    &tenant_len.to_be_bytes(),
+                    &tenant,
+                    &data,
+                ]
+                .as_slice(),
             )
             .await?;
         seq += 1;
@@ -293,7 +306,7 @@ impl WalManager {
     pub async fn write(
         &mut self,
         typ: WalEntryType,
-        data:Arc<Vec<u8>>,
+        data: Arc<Vec<u8>>,
         id: TseriesFamilyId,
         tenant: Arc<Vec<u8>>,
     ) -> Result<(u64, usize)> {
@@ -355,7 +368,8 @@ impl WalManager {
                                 points: dst[0].to_vec(),
                             };
                             let id = e.vnode_id();
-                            let tenant = unsafe{ String::from_utf8_unchecked(e.tenant().to_vec())};
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
                             engine.write_from_wal(id, &tenant, req, seq).await.unwrap();
                         }
                         WalEntryType::Delete => {
@@ -466,8 +480,8 @@ impl WalReader {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::time::Duration;
     use std::path::Path;
+    use std::time::Duration;
     use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
 
     use chrono::Utc;
@@ -575,9 +589,14 @@ mod test {
             let mut dec_points = Vec::new();
             coder.decode(&enc_points, &mut dec_points).unwrap();
 
-            mgr.write(WalEntryType::Write, Arc::new(enc_points), 0, Arc::new("cnosdb".as_bytes().to_vec()))
-                .await
-                .unwrap();
+            mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                0,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            )
+            .await
+            .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -614,9 +633,14 @@ mod test {
                 .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, Arc::new(enc_points), 0, Arc::new("cnosdb".as_bytes().to_vec()))
-                .await
-                .unwrap();
+            mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                0,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            )
+            .await
+            .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -645,9 +669,14 @@ mod test {
                 .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, Arc::new(enc_points), 0, Arc::new("cnosdb".as_bytes().to_vec()))
-                .await
-                .unwrap();
+            mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                0,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            )
+            .await
+            .unwrap();
         }
         // Do not close wal manager, so footer won't write.
 
@@ -679,8 +708,13 @@ mod test {
                 .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            rt.block_on(mgr.write(WalEntryType::Write, Arc::new(enc_points), 10, Arc::new("cnosdb".as_bytes().to_vec())))
-                .expect("write succeed");
+            rt.block_on(mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                10,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            ))
+            .expect("write succeed");
         }
         rt.block_on(mgr.close()).unwrap();
         rt.block_on(check_wal_files(dir, data_vec, true)).unwrap();

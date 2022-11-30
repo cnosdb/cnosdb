@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
+use datafusion::sql::sqlparser::ast::{Ident, Statement};
 use datafusion::sql::sqlparser::{
     ast::{DataType, ObjectName},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -15,10 +16,9 @@ use spi::query::ast::{
     AlterTenantOperation, AlterUser, AlterUserOperation, ColumnOption, CreateDatabase, CreateRole,
     CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
     DropDatabaseObject, DropGlobalObject, DropTenantObject, ExtStatement, GrantRevoke, Privilege,
+    ShowSeries,
 };
-use spi::query::logical_planner::{
-    normalize_sql_object_name, DatabaseObjectType, GlobalObjectType, TenantObjectType,
-};
+use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
 use trace::debug;
@@ -65,6 +65,8 @@ enum CnosKeyWord {
 
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     REMOVE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    SERIES,
 }
 
 impl FromStr for CnosKeyWord {
@@ -88,6 +90,7 @@ impl FromStr for CnosKeyWord {
             "WRITE" => Ok(CnosKeyWord::WRITE),
             "ALL" => Ok(CnosKeyWord::ALL),
             "REMOVE" => Ok(CnosKeyWord::REMOVE),
+            "SERIES" => Ok(CnosKeyWord::SERIES),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -140,6 +143,7 @@ impl<'a> ExtParser<'a> {
         let dialect = &GenericDialect {};
         ExtParser::parse_sql_with_dialect(sql, dialect)
     }
+
     /// Parse a SQL statement and produce a set of statements
     pub fn parse_sql_with_dialect(
         sql: &str,
@@ -227,11 +231,48 @@ impl<'a> ExtParser<'a> {
             self.parse_show_tables()
         } else if self.parse_cnos_keyword(CnosKeyWord::DATABASES) {
             self.parse_show_databases()
+        } else if self.parse_cnos_keyword(CnosKeyWord::SERIES) {
+            self.parse_show_series()
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else {
             self.expected("tables/databases", self.parser.peek_token())
         }
+    }
+
+    fn parse_show_series(&mut self) -> Result<ExtStatement> {
+        let database_name = if self.parser.parse_keyword(Keyword::ON) {
+            Some(self.parser.parse_object_name()?)
+        } else {
+            None
+        };
+        self.parser.expect_keyword(Keyword::FROM)?;
+        let table = self.parser.parse_object_name()?;
+        let selection = if self.parser.parse_keyword(Keyword::WHERE) {
+            Some(self.parser.parse_expr()?)
+        } else {
+            None
+        };
+
+        let mut limit = None;
+        let mut offset = None;
+
+        for _x in 0..2 {
+            if limit.is_none() && self.parser.parse_keyword(Keyword::LIMIT) {
+                limit = self.parser.parse_limit()?
+            }
+
+            if offset.is_none() && self.parser.parse_keyword(Keyword::OFFSET) {
+                offset = Some(self.parser.parse_offset()?)
+            }
+        }
+        Ok(ExtStatement::ShowSeries(ShowSeries {
+            database_name,
+            table,
+            selection,
+            limit,
+            offset,
+        }))
     }
 
     fn parse_show_queries(&mut self) -> Result<ExtStatement> {
@@ -243,7 +284,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_show_tables(&mut self) -> Result<ExtStatement> {
-        if self.consume_token(&Token::make_keyword("ON")) {
+        if self.parser.parse_keyword(Keyword::ON) {
             let database_name = self.parser.parse_object_name()?;
             Ok(ExtStatement::ShowTables(Some(database_name)))
         } else {
@@ -981,6 +1022,62 @@ fn parse_file_type(s: &str) -> Result<String, ParserError> {
     Ok(s.to_uppercase())
 }
 
+/// Normalize a SQL object name
+pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+    sql_object_name
+        .0
+        .iter()
+        .map(normalize_ident)
+        .collect::<Vec<String>>()
+        .join(".")
+}
+
+// Normalize an identifier to a lowercase string unless the identifier is quoted.
+pub fn normalize_ident(id: &Ident) -> String {
+    match id.quote_style {
+        Some(_) => id.value.clone(),
+        None => id.value.to_ascii_lowercase(),
+    }
+}
+
+// merge "catalog.db" and "db.table" to "catalog.db.table"
+// if a.b and b.c => a.b.c
+// if a.b and c.d => None
+pub fn merge_object_name(
+    mut db: Option<ObjectName>,
+    table: Option<ObjectName>,
+) -> Option<ObjectName> {
+    let (db, table) = match (db, table) {
+        (Some(db), Some(table)) => (db, table),
+        (Some(db), None) => return Some(db),
+        (None, Some(table)) => return Some(table),
+        (None, None) => return None,
+    };
+
+    let mut db: Vec<Ident> = db.0;
+    let mut table: Vec<Ident> = table.0;
+    if db.is_empty() {
+        return Some(ObjectName(table));
+    }
+    if table.len() == 1 {
+        db.append(&mut table);
+        return Some(ObjectName(table));
+    }
+
+    if let Some(db_name) = db.last() {
+        if let Some(table_db_name) = table.get(table.len() - 2) {
+            if !db_name.eq(table_db_name) {
+                return None;
+            } else {
+                let ident = table.remove(table.len() - 1);
+                db.push(ident);
+                return Some(ObjectName(db));
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
@@ -988,6 +1085,7 @@ mod tests {
     use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
     use spi::query::ast::AlterTable;
     use spi::query::ast::{DropDatabaseObject, ExtStatement};
+    use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
 
     use super::*;
 

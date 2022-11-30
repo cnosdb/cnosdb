@@ -126,7 +126,6 @@ fn create_record_batch(
         )
         .collect();
     let keys: Vec<&str> = keys.iter().map(|e| &**e).collect();
-
     let values = create_data(batch_size, 0.5);
 
     // Integer values between [0, u64::MAX].

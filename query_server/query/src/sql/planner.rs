@@ -25,7 +25,7 @@ use models::auth::privilege::{
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::object_reference::ObjectReference;
 use models::oid::{Identifier, Oid};
-use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
+use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
@@ -34,17 +34,16 @@ use spi::query::ast::{
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
     ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
     DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
-    DescribeTable as DescribeTableOptions, ExtStatement,
+    DescribeTable as DescribeTableOptions, ExtStatement, ShowSeries as ASTShowSeries,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, merge_affected_row_expr, normalize_ident, normalize_sql_object_name,
-    sql_options_to_tenant_options, sql_options_to_user_options, AlterDatabase, AlterTable,
-    AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
-    AlterUser, AlterUserAction, CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser,
-    DDLPlan, DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject,
-    DropGlobalObject, DropTenantObject, ExternalSnafu, GlobalObjectType, GrantRevoke,
-    LogicalPlanner, LogicalPlannerError, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
-    TenantObjectType, MISMATCHED_COLUMNS, MISSING_COLUMN,
+    self, affected_row_expr, merge_affected_row_expr, sql_options_to_tenant_options,
+    sql_options_to_user_options, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
+    CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DDLPlan, DatabaseObjectType,
+    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
+    ExternalSnafu, GlobalObjectType, GrantRevoke, LogicalPlanner, LogicalPlannerError, Plan,
+    PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType, MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 
@@ -55,6 +54,7 @@ use trace::{debug, warn};
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 use crate::metadata::{ContextProviderExtension, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
+use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 use crate::table::ClusterTable;
 use spi::query::logical_planner::MetadataSnafu;
 
@@ -92,6 +92,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ExtStatement::ShowDatabases() => self.database_to_show(session),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
+            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(stmt),
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
@@ -562,15 +563,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
     fn table_to_alter(&self, statement: ASTAlterTable) -> Result<PlanWithPrivileges> {
         let table_name = normalize_sql_object_name(&statement.table_name);
-        let table_provider = self.get_table_provider(&table_name)?;
-        let table_schema = table_provider
-            .as_any()
-            .downcast_ref::<ClusterTable>()
-            .ok_or_else(|| MetaError::TableNotFound {
-                table: table_name.to_string(),
-            })
-            .context(MetadataSnafu)?
-            .table_schema();
+        let table_schema = self.get_tskv_schema(&table_name)?;
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
@@ -683,6 +676,30 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![],
+        })
+    }
+
+    fn show_series_to_plan(&self, mut stmt: ASTShowSeries) -> Result<PlanWithPrivileges> {
+        let database_name = std::mem::take(&mut stmt.database_name);
+        let table_name = {
+            let mut res = ObjectName(vec![]);
+            std::mem::swap(&mut stmt.table, &mut res);
+            res
+        };
+        let table = match merge_object_name(database_name, Some(table_name)) {
+            Some(table) => table,
+            None => {
+                return Err(LogicalPlannerError::Semantic {
+                    err: format!("db conflict with table"),
+                })
+            }
+        };
+        let table = normalize_sql_object_name(&table);
+        let table_schema = self.get_tskv_schema(&table)?;
+        // let tags = table_schema.columns().iter().filter(|c| c.column_type.is_tag()).collect::<Vec<&Column>>();
+
+        Err(LogicalPlannerError::NotImplemented {
+            err: "".to_string(),
         })
     }
 
@@ -1176,6 +1193,18 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         }));
 
         Ok(PlanWithPrivileges { plan, privileges })
+    }
+
+    fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
+        Ok(self
+            .get_table_provider(&table_name)?
+            .as_any()
+            .downcast_ref::<ClusterTable>()
+            .ok_or_else(|| MetaError::TableNotFound {
+                table: table_name.to_string(),
+            })
+            .context(MetadataSnafu)?
+            .table_schema())
     }
 }
 

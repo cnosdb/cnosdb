@@ -687,18 +687,18 @@ mod test {
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let mut summary = Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let mut summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary =
-            Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
-                .await
-                .unwrap();
+        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
     }
 

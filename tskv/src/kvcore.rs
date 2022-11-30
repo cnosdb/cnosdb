@@ -533,14 +533,18 @@ impl Engine for TsKv {
         Ok(())
     }
 
-
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
         let tenant = tenant.to_string();
-        futures::executor::block_on(database::delete_table_async(tenant, database, table, version_set))
+        futures::executor::block_on(database::delete_table_async(
+            tenant,
+            database,
+            table,
+            version_set,
+        ))
     }
 
     fn delete_columns(

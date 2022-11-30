@@ -338,7 +338,9 @@ impl HintedOffWriter {
         Ok(())
     }
 
-    async fn reade_header(cursor: &mut FileCursor) -> CoordinatorResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
+    async fn reade_header(
+        cursor: &mut FileCursor,
+    ) -> CoordinatorResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
 
         cursor.seek(SeekFrom::Start(0))?;
@@ -351,8 +353,14 @@ impl HintedOffWriter {
         let mut pos = self.size;
 
         pos += self.file.write_at(pos, &block.ts.to_be_bytes()).await? as u64;
-        pos += self.file.write_at(pos, &block.vnode_id.to_be_bytes()).await? as u64;
-        pos += self.file.write_at(pos, &block.data_len.to_be_bytes()).await? as u64;
+        pos += self
+            .file
+            .write_at(pos, &block.vnode_id.to_be_bytes())
+            .await? as u64;
+        pos += self
+            .file
+            .write_at(pos, &block.data_len.to_be_bytes())
+            .await? as u64;
         pos += self.file.write_at(pos, &block.data).await? as u64;
 
         debug!(
