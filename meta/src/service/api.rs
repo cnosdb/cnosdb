@@ -44,11 +44,11 @@ pub async fn write(
 pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
 
-    let mut response = "******--------------------------------------------******\n".to_string();
+    let mut response = format!("******----------version: {}-------******\n", sm.version());
     for (k, v) in sm.data.iter() {
         response = response + &format!("* {}: {}\n", k, v);
     }
-    response += "******----------------------------------------------******\n";
+    response += "******--------------------------------------******\n";
 
     Ok(response)
 }

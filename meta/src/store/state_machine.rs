@@ -178,13 +178,17 @@ impl StateMachine {
         self.data = content.data.clone();
     }
 
-    pub fn to_tenant_meta_data(&self, cluster: &String, tenant: &String) -> TenantMetaData {
-        let mut meta = TenantMetaData::new();
-
+    pub fn version(&self) -> u64 {
         if let Some(val) = self.last_applied_log {
-            meta.version = val.index
+            return val.index;
         }
 
+        return 0;
+    }
+
+    pub fn to_tenant_meta_data(&self, cluster: &String, tenant: &String) -> TenantMetaData {
+        let mut meta = TenantMetaData::new();
+        meta.version = self.version();
         meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
         meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data);
 
