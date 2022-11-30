@@ -34,7 +34,7 @@ use crate::codec::Encoding;
 use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
-pub type TableSchemaRef = Arc<TskvTableSchema>;
+pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
 pub const TIME_FIELD_NAME: &str = "time";
 
@@ -217,8 +217,8 @@ impl TskvTableSchema {
     }
 
     /// Get the index of the column
-    pub fn column_index(&self, name: &str) -> Option<&usize> {
-        self.columns_index.get(name)
+    pub fn column_index(&self, name: &str) -> Option<usize> {
+        self.columns_index.get(name).cloned()
     }
 
     pub fn column_name(&self, id: ColumnId) -> Option<&str> {

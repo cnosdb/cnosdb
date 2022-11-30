@@ -8,12 +8,15 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
-use models::schema::{is_time_column, ColumnType, TableColumn, TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::{
+    is_time_column, ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME,
+};
 use models::{define_result, ValueType};
 use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
+use std::sync::Arc;
 use trace::debug;
 
 define_result!(PointUtilError);
@@ -99,7 +102,7 @@ macro_rules! arrow_array_to_offset_array {
 
 pub fn record_batch_to_points_flat_buffer(
     record_batch: &RecordBatch,
-    table_schema: TskvTableSchema,
+    table_schema: TskvTableSchemaRef,
 ) -> Result<Vec<u8>> {
     let mut fbb = FlatBufferBuilder::new();
 
@@ -155,7 +158,7 @@ fn construct_row_based_points(
     column_schemas: &[&Field],
     time_col_array: Vec<Option<i64>>,
     num_rows: usize,
-    schema: TskvTableSchema,
+    schema: TskvTableSchemaRef,
 ) -> Result<Vec<u8>> {
     let mut point_offsets = Vec::with_capacity(num_rows);
     // row-based

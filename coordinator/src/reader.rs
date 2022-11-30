@@ -157,7 +157,7 @@ impl QueryExecutor {
     async fn local_vnode_executor(&self, vnode: VnodeInfo) -> CoordinatorResult<()> {
         let mut iterator = RowIterator::new(self.kv_inst.clone(), self.option.clone(), vnode.id)?;
 
-        while let Some(data)  =  iterator.next().await {
+        while let Some(data) = iterator.next().await {
             match data {
                 Ok(val) => {
                     self.sender.send(Ok(val)).await?;

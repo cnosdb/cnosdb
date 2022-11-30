@@ -28,8 +28,8 @@ use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, Line};
 use meta::meta_client::MetaClientRef;
-use models::consistency_level::ConsistencyLevel;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
+use models::consistency_level::ConsistencyLevel;
 use models::error_code::ErrorCode;
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
@@ -151,10 +151,11 @@ impl HttpService {
                     );
 
                     // Parse req、header and param to construct query request
-                    let query = construct_query(req, &header, param, dbms.clone()).map_err(|e| {
-                        sample_query_read_duration("", "", false, 0.0);
-                        reject::custom(e)
-                    })?;
+                    let query =
+                        construct_query(req, &header, param, dbms.clone()).map_err(|e| {
+                            sample_query_read_duration("", "", false, 0.0);
+                            reject::custom(e)
+                        })?;
                     let result = sql_handle(&query, header, dbms).await.map_err(|e| {
                         trace::error!("Failed to handle http sql request, err: {}", e);
                         reject::custom(e)
