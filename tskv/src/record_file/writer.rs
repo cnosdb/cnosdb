@@ -96,7 +96,7 @@ impl Writer {
         let data_len = data_len.to_be_bytes();
         hasher.update(&data_len);
         for d in data.iter() {
-            hasher.update(*d);
+            hasher.update(d);
         }
         let data_crc = hasher.finalize().to_be_bytes();
 
@@ -107,7 +107,7 @@ impl Writer {
         write_buf.push(IoSlice::new(&data_len));
         write_buf.push(IoSlice::new(&data_crc));
         for d in data {
-            write_buf.push(IoSlice::new(*d));
+            write_buf.push(IoSlice::new(d));
         }
 
         // Write record header and record data.
