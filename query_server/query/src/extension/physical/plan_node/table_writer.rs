@@ -22,27 +22,27 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use datafusion::error::Result;
 use futures::StreamExt;
-use models::schema::TskvTableSchema;
+use models::schema::{TableSchemaRef, TskvTableSchema};
 use trace::debug;
 
 use crate::data_source::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 pub struct TableWriterExec {
     input: Arc<dyn ExecutionPlan>,
-    table: TskvTableSchema,
+    table: TableSchemaRef,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
 
     schema: SchemaRef,
 
-    record_batch_sink_privider: Arc<dyn RecordBatchSinkProvider>,
+    record_batch_sink_provider: Arc<dyn RecordBatchSinkProvider>,
 }
 
 impl TableWriterExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
-        table: TskvTableSchema,
-        record_batch_sink_privider: Arc<dyn RecordBatchSinkProvider>,
+        table: TableSchemaRef,
+        record_batch_sink_provider: Arc<dyn RecordBatchSinkProvider>,
     ) -> Self {
         let schema = Arc::new(Schema::new(vec![Field::new(
             AFFECTED_ROWS.0,
@@ -54,7 +54,7 @@ impl TableWriterExec {
             input,
             table,
             metrics: ExecutionPlanMetricsSet::new(),
-            record_batch_sink_privider,
+            record_batch_sink_provider,
             schema,
         }
     }
@@ -110,7 +110,7 @@ impl ExecutionPlan for TableWriterExec {
             table: self.table.clone(),
             metrics: self.metrics.clone(),
             schema: self.schema.clone(),
-            record_batch_sink_privider: self.record_batch_sink_privider.clone(),
+            record_batch_sink_provider: self.record_batch_sink_provider.clone(),
         }))
     }
 
@@ -128,7 +128,7 @@ impl ExecutionPlan for TableWriterExec {
 
         let input = self.input.execute(partition, context)?;
         let record_batch_sink = self
-            .record_batch_sink_privider
+            .record_batch_sink_provider
             .create_batch_sink(&self.metrics, partition);
 
         let metrics = TableWriterMetrics::new(&self.metrics, partition);
