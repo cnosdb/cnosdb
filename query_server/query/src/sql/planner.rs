@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::Arc;
 
-use datafusion::common::{DFField, ToDFSchema};
+use datafusion::common::{Column, DFField, ToDFSchema};
 use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::{
-    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableSource,
-    ToStringifiedPlan,
+    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableScan,
+    TableSource, ToStringifiedPlan,
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
@@ -18,7 +18,7 @@ use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Ident, ObjectName, Query, Statement,
 };
 use datafusion::sql::TableReference;
-use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
+use models::schema::{ColumnType, TableColumn, TableSchemaRef, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
@@ -27,7 +27,7 @@ use spi::query::ast::{
     AlterTableAction as ASTAlterTableAction, ColumnOption, CreateDatabase as ASTCreateDatabase,
     CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions, DropObject,
-    ExtStatement,
+    ExtStatement, ShowSeries as ASTShowSeries,
 };
 use spi::query::logical_planner::{
     self, affected_row_expr, merge_affected_row_expr, AlterDatabase, AlterTable, AlterTableAction,
@@ -44,7 +44,7 @@ use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use trace::debug;
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
-use crate::sql::parser::{normalize_ident, normalize_sql_object_name};
+use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 use crate::table::ClusterTable;
 use spi::query::logical_planner::MetadataSnafu;
 
@@ -74,6 +74,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt),
             ExtStatement::ShowDatabases() => self.database_to_show(),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
+            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             // system statement
@@ -348,15 +349,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn table_to_alter(&self, statement: ASTAlterTable) -> Result<Plan> {
         let table_name = normalize_sql_object_name(&statement.table_name);
-        let table_provider = self.get_table_provider(&table_name)?;
-        let table_schema = table_provider
-            .as_any()
-            .downcast_ref::<ClusterTable>()
-            .ok_or_else(|| MetadataError::TableIsNotTsKv {
-                table_name: table_name.to_string(),
-            })
-            .context(MetadataSnafu)?
-            .table_schema();
+        let table_schema = self.get_tskv_schema(&table_name)?;
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
@@ -450,6 +443,30 @@ impl<S: ContextProvider> SqlPlaner<S> {
         Ok(Plan::DDL(DDLPlan::ShowTables(
             database.map(|db_name| normalize_sql_object_name(&db_name)),
         )))
+    }
+
+    fn show_series_to_plan(&self, mut stmt: ASTShowSeries) -> Result<Plan> {
+        let database_name = std::mem::take(&mut stmt.database_name);
+        let table_name = {
+            let mut res = ObjectName(vec![]);
+            std::mem::swap(&mut stmt.table, &mut res);
+            res
+        };
+        let table = match merge_object_name(database_name, Some(table_name)) {
+            Some(table) => table,
+            None => {
+                return Err(LogicalPlannerError::Semantic {
+                    err: format!("db conflict with table"),
+                })
+            }
+        };
+        let table = normalize_sql_object_name(&table);
+        let table_schema = self.get_tskv_schema(&table)?;
+        // let tags = table_schema.columns().iter().filter(|c| c.column_type.is_tag()).collect::<Vec<&Column>>();
+
+        Err(LogicalPlannerError::NotImplemented {
+            err: "".to_string(),
+        })
     }
 
     fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<Plan> {
@@ -593,6 +610,18 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 ),
             })
             .context(MetadataSnafu)
+    }
+
+    fn get_tskv_schema(&self, table_name: &str) -> Result<TableSchemaRef> {
+        Ok(self
+            .get_table_provider(&table_name)?
+            .as_any()
+            .downcast_ref::<ClusterTable>()
+            .ok_or_else(|| MetadataError::TableIsNotTsKv {
+                table_name: table_name.to_string(),
+            })
+            .context(MetadataSnafu)?
+            .table_schema())
     }
 }
 

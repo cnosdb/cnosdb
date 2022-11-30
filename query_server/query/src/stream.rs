@@ -1,4 +1,5 @@
 use futures::executor::block_on;
+use std::sync::Arc;
 use std::task::Poll;
 
 use datafusion::{
@@ -10,6 +11,7 @@ use datafusion::{
 };
 use futures::Stream;
 use models::codec::Encoding;
+use models::schema::TableSchemaRef;
 use models::{
     predicate::domain::PredicateRef,
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
@@ -33,7 +35,7 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(
-        table_schema: TskvTableSchema,
+        table_schema: TableSchemaRef,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         batch_size: usize,
@@ -66,8 +68,11 @@ impl TableScanStream {
             }
         }
 
-        let proj_table_schema =
-            TskvTableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
+        let proj_table_schema = TskvTableSchema::new(
+            table_schema.db.clone(),
+            table_schema.name.clone(),
+            proj_fileds,
+        );
 
         let filter = filter
             .filter()

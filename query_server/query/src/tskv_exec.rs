@@ -15,7 +15,7 @@ use datafusion::{
     },
 };
 use models::predicate::domain::PredicateRef;
-use models::schema::TskvTableSchema;
+use models::schema::{TableSchemaRef, TskvTableSchema};
 
 use crate::stream::{TableScanMetrics, TableScanStream};
 use tskv::engine::EngineRef;
@@ -24,7 +24,7 @@ use tskv::engine::EngineRef;
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
-    table_schema: TskvTableSchema,
+    table_schema: TableSchemaRef,
     proj_schema: SchemaRef,
     filter: PredicateRef,
     engine: EngineRef,
@@ -35,7 +35,7 @@ pub struct TskvExec {
 
 impl TskvExec {
     pub(crate) fn new(
-        table_schema: TskvTableSchema,
+        table_schema: TableSchemaRef,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         engine: EngineRef,

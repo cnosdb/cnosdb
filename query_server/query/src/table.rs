@@ -11,7 +11,7 @@ use datafusion::{
     physical_plan::{project_schema, ExecutionPlan},
 };
 use models::predicate::domain::{Predicate, PredicateRef};
-use models::schema::TskvTableSchema;
+use models::schema::{TableSchemaRef, TskvTableSchema};
 use spi::catalog::MetadataError;
 use tskv::engine::EngineRef;
 
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Clone)]
 pub struct ClusterTable {
     engine: EngineRef,
-    schema: TskvTableSchema,
+    schema: TableSchemaRef,
 }
 
 impl ClusterTable {
@@ -44,7 +44,10 @@ impl ClusterTable {
     }
 
     pub fn new(engine: EngineRef, schema: TskvTableSchema) -> Self {
-        ClusterTable { engine, schema }
+        ClusterTable {
+            engine,
+            schema: Arc::new(schema),
+        }
     }
 
     pub async fn write(
@@ -78,15 +81,15 @@ impl ClusterTable {
         );
 
         Ok(Arc::new(TagScanExec::new(
-            Arc::new(self.schema.clone()),
+            self.schema.clone(),
             Arc::new(projected_schema.as_ref().into()),
             filter,
             self.engine.clone(),
         )))
     }
 
-    pub fn table_schema(&self) -> &TskvTableSchema {
-        &self.schema
+    pub fn table_schema(&self) -> TableSchemaRef {
+        self.schema.clone()
     }
 
     // Check and return the projected schema
