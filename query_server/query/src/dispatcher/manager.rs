@@ -67,9 +67,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         user: User,
         query_id: QueryId,
         query: &Query,
-    ) -> Result<Vec<Output>> {
-        let mut results = vec![];
-
+    ) -> Result<Output> {
         let session = self.session_factory.create_isipho_session_ctx(
             query.context().clone(),
             tenant_id,
@@ -94,22 +92,20 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             });
         }
 
-        for stmt in statements.iter() {
-            let query_state_machine = Arc::new(QueryStateMachine::begin(
-                query_id,
-                query.clone(),
-                session.clone(),
-                metadata.clone(),
-            ));
+        let stmt = statements[0].clone();
 
-            let result = self
-                .execute_statement(stmt.clone(), &logical_planner, query_state_machine)
-                .await?;
+        let query_state_machine = Arc::new(QueryStateMachine::begin(
+            query_id,
+            query.clone(),
+            session.clone(),
+            metadata.clone(),
+        ));
 
-            results.push(result);
-        }
+        let result = self
+            .execute_statement(stmt, &logical_planner, query_state_machine)
+            .await?;
 
-        Ok(results)
+        Ok(result)
     }
 
     fn running_query_infos(&self) -> Vec<QueryInfo> {

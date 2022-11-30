@@ -53,7 +53,7 @@ fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output
     let precision = db_cfg.config.precision_or_default().to_string();
 
     let batch = RecordBatch::try_new(
-        schema,
+        schema.clone(),
         vec![
             Arc::new(StringArray::from(vec![ttl.as_str()])),
             Arc::new(StringArray::from(vec![shard.as_str()])),
@@ -68,5 +68,5 @@ fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output
 
     let batches = vec![batch];
 
-    Ok(Output::StreamData(batches))
+    Ok(Output::StreamData(schema, batches))
 }

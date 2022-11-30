@@ -395,9 +395,9 @@ async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Resp
 
     let fmt = ResultFormat::try_from(header.get_accept())?;
 
-    let mut result = dbms.execute(query).await.context(QuerySnafu)?;
+    let result = dbms.execute(query).await.context(QuerySnafu)?;
 
-    let batches = fetch_record_batches(&mut result)
+    let batches = fetch_record_batches(result)
         .await
         .map_err(|e| HttpError::FetchResult {
             reason: format!("{}", e),

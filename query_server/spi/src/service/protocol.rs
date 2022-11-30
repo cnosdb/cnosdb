@@ -23,6 +23,26 @@ impl From<u64> for QueryId {
     }
 }
 
+impl TryFrom<Vec<u8>> for QueryId {
+    type Error = String;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        if bytes.len() != 8 {
+            return Err(format!("Incorrect content: {:?}", &bytes));
+        }
+
+        let len_bytes: [u8; 8] = unsafe { bytes[0..8].try_into().unwrap_unchecked() };
+
+        Ok(Self(u64::from_le_bytes(len_bytes)))
+    }
+}
+
+impl From<QueryId> for Vec<u8> {
+    fn from(val: QueryId) -> Self {
+        val.0.to_le_bytes().into()
+    }
+}
+
 impl ToString for QueryId {
     fn to_string(&self) -> String {
         self.0.to_string()
@@ -130,15 +150,15 @@ impl Query {
     }
 }
 
+#[derive(Clone)]
 pub struct QueryHandle {
     id: QueryId,
     query: Query,
-    result: Vec<Output>,
+    result: Output,
 }
 
 impl QueryHandle {
-    #[inline(always)]
-    pub fn new(id: QueryId, query: Query, result: Vec<Output>) -> Self {
+    pub fn new(id: QueryId, query: Query, result: Output) -> Self {
         Self { id, query, result }
     }
 
@@ -150,11 +170,7 @@ impl QueryHandle {
         &self.query
     }
 
-    pub fn cancel(&self) {
-        // TODO
-    }
-
-    pub fn result(&mut self) -> &mut Vec<Output> {
-        self.result.as_mut()
+    pub fn result(self) -> Output {
+        self.result
     }
 }

@@ -25,7 +25,7 @@ pub trait QueryDispatcher: Send + Sync {
         user: User,
         id: QueryId,
         query: &Query,
-    ) -> Result<Vec<Output>>;
+    ) -> Result<Output>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;
 
