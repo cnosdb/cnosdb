@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::option::Option;
 use std::sync::Arc;
 
-use datafusion::common::{Column, DFField, ToDFSchema};
+use datafusion::common::{DFField, ToDFSchema};
 use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::{
-    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableScan,
-    TableSource, ToStringifiedPlan,
+    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableSource,
+    ToStringifiedPlan,
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
@@ -456,12 +456,12 @@ impl<S: ContextProvider> SqlPlaner<S> {
             Some(table) => table,
             None => {
                 return Err(LogicalPlannerError::Semantic {
-                    err: format!("db conflict with table"),
+                    err: "db conflict with table".to_string(),
                 })
             }
         };
         let table = normalize_sql_object_name(&table);
-        let table_schema = self.get_tskv_schema(&table)?;
+        let _table_schema = self.get_tskv_schema(&table)?;
         // let tags = table_schema.columns().iter().filter(|c| c.column_type.is_tag()).collect::<Vec<&Column>>();
 
         Err(LogicalPlannerError::NotImplemented {
@@ -614,7 +614,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
     fn get_tskv_schema(&self, table_name: &str) -> Result<TableSchemaRef> {
         Ok(self
-            .get_table_provider(&table_name)?
+            .get_table_provider(table_name)?
             .as_any()
             .downcast_ref::<ClusterTable>()
             .ok_or_else(|| MetadataError::TableIsNotTsKv {

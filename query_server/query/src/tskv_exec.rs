@@ -15,7 +15,7 @@ use datafusion::{
     },
 };
 use models::predicate::domain::PredicateRef;
-use models::schema::{TableSchemaRef, TskvTableSchema};
+use models::schema::TableSchemaRef;
 
 use crate::stream::{TableScanMetrics, TableScanStream};
 use tskv::engine::EngineRef;

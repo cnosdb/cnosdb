@@ -1,9 +1,8 @@
 use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
-use std::sync::Arc;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
-use models::schema::{TableSchemaRef, TskvTableSchema};
+use models::schema::TableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use trace::debug;

@@ -96,7 +96,7 @@ impl TsmTombstone {
     pub async fn with_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let parent = path.parent().expect("a valid tsm/tombstone file path");
-        let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
+        let tsm_id = file_utils::get_tsm_file_id_by_path(path)?;
         Self::open(parent, tsm_id).await
     }
 

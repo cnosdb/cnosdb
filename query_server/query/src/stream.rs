@@ -1,5 +1,5 @@
 use futures::executor::block_on;
-use std::sync::Arc;
+
 use std::task::Poll;
 
 use datafusion::{
