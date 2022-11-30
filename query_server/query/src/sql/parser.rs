@@ -1043,10 +1043,7 @@ pub fn normalize_ident(id: &Ident) -> String {
 // merge "catalog.db" and "db.table" to "catalog.db.table"
 // if a.b and b.c => a.b.c
 // if a.b and c.d => None
-pub fn merge_object_name(
-    mut db: Option<ObjectName>,
-    table: Option<ObjectName>,
-) -> Option<ObjectName> {
+pub fn merge_object_name(db: Option<ObjectName>, table: Option<ObjectName>) -> Option<ObjectName> {
     let (db, table) = match (db, table) {
         (Some(db), Some(table)) => (db, table),
         (Some(db), None) => return Some(db),

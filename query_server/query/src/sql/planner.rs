@@ -690,12 +690,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             Some(table) => table,
             None => {
                 return Err(LogicalPlannerError::Semantic {
-                    err: format!("db conflict with table"),
+                    err: "db conflict with table".to_string(),
                 })
             }
         };
         let table = normalize_sql_object_name(&table);
-        let table_schema = self.get_tskv_schema(&table)?;
+        let _table_schema = self.get_tskv_schema(&table)?;
         // let tags = table_schema.columns().iter().filter(|c| c.column_type.is_tag()).collect::<Vec<&Column>>();
 
         Err(LogicalPlannerError::NotImplemented {
@@ -1197,7 +1197,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
     fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
         Ok(self
-            .get_table_provider(&table_name)?
+            .get_table_provider(table_name)?
             .as_any()
             .downcast_ref::<ClusterTable>()
             .ok_or_else(|| MetaError::TableNotFound {

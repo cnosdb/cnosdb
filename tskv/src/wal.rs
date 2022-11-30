@@ -527,7 +527,7 @@ mod test {
         is_flatbuffers: bool,
     ) -> Result<()> {
         let wal_dir = wal_dir.as_ref();
-        let wal_files = list_file_names(&wal_dir);
+        let wal_files = list_file_names(wal_dir);
         for wal_file in wal_files {
             let path = wal_dir.join(wal_file);
 

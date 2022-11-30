@@ -16,7 +16,7 @@ use paste::paste;
 use protos::models::Point;
 use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, TagBuilder};
 use snafu::Snafu;
-use std::sync::Arc;
+
 use trace::debug;
 
 define_result!(PointUtilError);

@@ -2,7 +2,6 @@ use async_trait::async_trait;
 
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::record_batch::RecordBatch;
-use std::sync::Arc;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
