@@ -176,6 +176,26 @@ impl<'a> ExtParser<'a> {
                     self.parser.next_token();
                     self.parse_create()
                 }
+                Keyword::EXPLAIN => {
+                    if self
+                        .parser
+                        .parse_keywords(&[Keyword::EXPLAIN, Keyword::SHOW])
+                    {
+                        // let statement = self.parse_show()?;
+                        //     Err(ParserError::ParserError("NotImplement".to_string()))
+                        // } else if self.parser.parse_keywords(&[
+                        //     Keyword::EXPLAIN,
+                        //     Keyword::ANALYZE,
+                        //     Keyword::SHOW,
+                        // ]) {
+                        // TODO: Implement EXPLAIN SHOW SERIES
+                        Err(ParserError::ParserError("NotImplement".to_string()))
+                    } else {
+                        Ok(ExtStatement::SqlStatement(Box::new(
+                            self.parser.parse_statement()?,
+                        )))
+                    }
+                }
                 _ => Ok(ExtStatement::SqlStatement(Box::new(
                     self.parser.parse_statement()?,
                 ))),

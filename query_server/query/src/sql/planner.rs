@@ -1,14 +1,16 @@
 use std::collections::{HashMap, HashSet};
+use std::iter;
 use std::option::Option;
 use std::sync::Arc;
 
-use datafusion::common::{DFField, ToDFSchema};
+use datafusion::common::{Column, DFField, ToDFSchema};
 use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
+use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
-    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableSource,
-    ToStringifiedPlan,
+    BinaryExpr, BuiltinScalarFunction, Explain, Extension, LogicalPlan, LogicalPlanBuilder,
+    Operator, PlanType, Projection, TableSource, ToStringifiedPlan,
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
@@ -460,13 +462,170 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 })
             }
         };
-        let table = normalize_sql_object_name(&table);
-        let _table_schema = self.get_tskv_schema(&table)?;
-        // let tags = table_schema.columns().iter().filter(|c| c.column_type.is_tag()).collect::<Vec<&Column>>();
 
-        Err(LogicalPlannerError::NotImplemented {
-            err: "".to_string(),
-        })
+        let table_name = normalize_sql_object_name(&table);
+        let table_source = self.get_table_source(&table_name)?;
+        let table_schema = self.get_tskv_schema(&table_name)?;
+        let table_df_schema = table_source
+            .schema()
+            .to_dfschema_ref()
+            .context(logical_planner::ExternalSnafu)?;
+        let sql_to_rel = SqlToRel::new(&self.schema_provider);
+
+        let selection = match stmt.selection {
+            Some(expr) => Some(
+                sql_to_rel
+                    .sql_to_rex(expr, &table_df_schema, &mut HashMap::new())
+                    .context(logical_planner::ExternalSnafu)?,
+            ),
+            None => None,
+        };
+
+        // check
+        let mut columns = HashSet::new();
+        let mut _contain_time = false;
+        if let Some(selection) = &selection {
+            expr_to_columns(selection, &mut columns).context(ExternalSnafu)?;
+        }
+
+        for column in columns.iter() {
+            match table_schema.column(&column.name) {
+                Some(table_column) => {
+                    if table_column.column_type.is_field() {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!(
+                                "SHOW SERIES does not support where clause contains field {}",
+                                column
+                            ),
+                        });
+                    } else if table_column.column_type.is_time() {
+                        _contain_time = true;
+                    }
+                }
+
+                None => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!("column {} does not exits", column),
+                    })
+                }
+            }
+        }
+
+        // let projection = table_schema
+        //     .columns()
+        //     .iter()
+        //     .enumerate()
+        //     .filter(|(_, c)| c.column_type.is_tag())
+        //     .map(|(i, _)| i)
+        //     .collect();
+
+        let plan_build = LogicalPlanBuilder::scan(&table_name, table_source.clone(), None)
+            .context(ExternalSnafu)?;
+        debug!("show series scan build {:#?}", plan_build);
+        let plan_build = if let Some(selection) = selection {
+            plan_build
+                .filter(selection)
+                .context(logical_planner::ExternalSnafu)?
+        } else {
+            plan_build
+        };
+        debug!("show series selection build {:#?}", plan_build);
+        let plan_build = plan_build
+            .distinct()
+            .context(logical_planner::ExternalSnafu)?;
+
+        debug!("show series distinct build {:#?}", plan_build);
+
+        let skip = match stmt.offset {
+            Some(offset) => match sql_to_rel
+                .sql_to_rex(offset.value, &table_df_schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?
+            {
+                Expr::Literal(ScalarValue::Int64(Some(m))) => {
+                    if m < 0 {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!("OFFSET must be >= 0, '{}' was provided.", m),
+                        });
+                    } else {
+                        m as usize
+                    }
+                }
+                _ => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The OFFSET clause must be a constant of BIGINT type".to_string(),
+                    })
+                }
+            },
+            None => 0,
+        };
+
+        let fetch = match stmt.limit {
+            Some(exp) => match sql_to_rel
+                .sql_to_rex(exp, &table_df_schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?
+            {
+                Expr::Literal(ScalarValue::Int64(Some(n))) => {
+                    if n < 0 {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!("LIMIT must be >= 0, '{}' was provided.", n),
+                        });
+                    } else {
+                        Some(n as usize)
+                    }
+                }
+                _ => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The LIMIT clause must be a constant of BIGINT type".to_string(),
+                    })
+                }
+            },
+            None => None,
+        };
+
+        let tags = table_schema
+            .columns()
+            .iter()
+            .filter(|c| c.column_type.is_tag())
+            .collect::<Vec<&TableColumn>>();
+
+        let tag_concat_expr_iter = tags.iter().map(|tag| {
+            Expr::BinaryExpr(BinaryExpr {
+                left: Box::new(Expr::Literal(ScalarValue::Utf8(Some(format!(
+                    "{}=",
+                    &tag.name
+                ))))),
+                op: Operator::StringConcat,
+                right: Box::new(Expr::Column(Column {
+                    relation: Some(table_schema.name.clone()),
+                    name: tag.name.to_string(),
+                })),
+            })
+        });
+        let concat_ws_args = iter::once(Expr::Literal(ScalarValue::Utf8(Some(",".to_string()))))
+            .chain(
+                iter::once(Expr::Literal(ScalarValue::Utf8(Some(
+                    table_schema.name.clone(),
+                ))))
+                .chain(tag_concat_expr_iter),
+            )
+            .collect::<Vec<Expr>>();
+
+        let concat_ws = Expr::ScalarFunction {
+            fun: BuiltinScalarFunction::ConcatWithSeparator,
+            args: concat_ws_args,
+        };
+
+        let plan_build = plan_build
+            .project_with_alias(iter::once(concat_ws), Some("key".to_string()))
+            .context(logical_planner::ExternalSnafu)?;
+
+        debug!("show series projection build {:#?}", plan_build);
+        let plan_build = plan_build
+            .limit(skip, fetch)
+            .context(logical_planner::ExternalSnafu)?;
+        debug!("show series limit build {:#?}", plan_build);
+        let plan = plan_build.build().context(logical_planner::ExternalSnafu)?;
+        Ok(Plan::Query(QueryPlan { df_plan: plan }))
     }
 
     fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<Plan> {
