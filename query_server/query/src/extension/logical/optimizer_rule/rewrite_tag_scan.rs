@@ -11,7 +11,6 @@ use datafusion::{
 use crate::{extension::logical::plan_node::tag_scan::TagScanPlanNode, table::ClusterTable};
 
 use datafusion::error::Result;
-use trace::debug;
 
 /// Convert query statement to query tag operation
 ///
@@ -34,11 +33,6 @@ impl OptimizerRule for RewriteTagScan {
             fetch,
         }) = plan
         {
-            assert_eq!(
-                projected_schema.fields().len(),
-                projection.as_ref().unwrap().len()
-            );
-            debug!("{:?}, {:?}", projection, projected_schema);
             if let Some(cluster_table) = source_as_provider(source)?
                 .as_any()
                 .downcast_ref::<ClusterTable>()

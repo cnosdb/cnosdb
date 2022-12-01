@@ -401,7 +401,6 @@ pub(crate) async fn delete_table_async(
             .del_table_schema(&table)
             .context(error::IndexErrSnafu)?;
 
-        println!("{:?}", &sids);
         for sid in sids.iter() {
             index.del_series_info(*sid).context(error::IndexErrSnafu)?;
         }

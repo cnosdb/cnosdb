@@ -9,7 +9,7 @@ edition = "2021"
 clap = { workspace = true, features = ["derive"] }
 lazy_static = { workspace = true }
 nom = { workspace = true }
-prettydiff = { workspace = true }
+diff = "0.1.13"
 reqwest = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
