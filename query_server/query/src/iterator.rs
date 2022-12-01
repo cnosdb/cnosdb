@@ -142,11 +142,11 @@ impl Cursor for TimeCursor {
 //-----------Tag Cursor----------------
 pub struct TagCursor {
     name: String,
-    value: String,
+    value: Option<String>,
 }
 
 impl TagCursor {
-    pub fn new(value: String, name: String) -> Self {
+    pub fn new(name: String, value: Option<String>) -> Self {
         Self { name, value }
     }
 }
@@ -168,9 +168,10 @@ impl Cursor for TagCursor {
     async fn next(&mut self, _ts: i64) {}
 
     async fn peek(&mut self) -> Result<Option<DataType>, Error> {
-        let data = DataType::Str(0, MiniVec::from(self.value.as_bytes()));
-
-        Ok(Some(data))
+        match &self.value {
+            Some(value) => Ok(Some(DataType::Str(0, MiniVec::from(value.as_bytes())))),
+            None => Ok(None),
+        }
     }
 }
 
@@ -493,11 +494,16 @@ impl RowIterator {
                 let column: CursorPtr = match item.column_type {
                     ColumnType::Time => Box::new(TimeCursor::new(0, field_name)),
 
-                    ColumnType::Tag => Box::new(TagCursor::new(
-                        String::from_utf8(key.tag_val(&item.name))
-                            .map_err(|_| Error::ErrCharacterSet)?,
-                        field_name,
-                    )),
+                    ColumnType::Tag => {
+                        let tag_val = match key.tag_val(&item.name) {
+                            Some(val) => {
+                                Some(String::from_utf8(val).map_err(|_| Error::ErrCharacterSet)?)
+                            }
+                            None => None,
+                        };
+
+                        Box::new(TagCursor::new(field_name, tag_val))
+                    }
 
                     ColumnType::Field(vtype) => match vtype {
                         ValueType::Unknown => todo!(),

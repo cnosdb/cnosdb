@@ -846,12 +846,15 @@ pub fn merge_object_name(db: Option<ObjectName>, table: Option<ObjectName>) -> O
 
     let mut db: Vec<Ident> = db.0;
     let mut table: Vec<Ident> = table.0;
+    debug!("merge_object_name: db: {:#?} table: {:#?}", db, table);
+
     if db.is_empty() {
         return Some(ObjectName(table));
     }
+
     if table.len() == 1 {
         db.append(&mut table);
-        return Some(ObjectName(table));
+        return Some(ObjectName(db));
     }
 
     if let Some(db_name) = db.last() {

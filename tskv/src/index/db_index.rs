@@ -594,7 +594,6 @@ impl DBIndex {
     pub fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
         let mut result: Vec<u64> = vec![];
         if tags.is_empty() {
-            debug!("{:?}", format!("{}.", tab).as_bytes());
             let mut it = self.storage.prefix(format!("{}.", tab).as_bytes());
             for kv in it.by_ref() {
                 if let Ok(kv) = kv {

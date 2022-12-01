@@ -9,7 +9,7 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
-    BinaryExpr, BuiltinScalarFunction, Explain, Extension, LogicalPlan, LogicalPlanBuilder,
+    BinaryExpr, BuiltinScalarFunction, Case, Explain, Extension, LogicalPlan, LogicalPlanBuilder,
     Operator, PlanType, Projection, TableSource, ToStringifiedPlan,
 };
 use datafusion::prelude::{cast, lit, Expr};
@@ -508,6 +508,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         };
 
         let table_name = normalize_sql_object_name(&table);
+        debug!("table name: {}", table_name);
         let table_source = self.get_table_source(&table_name)?;
         let table_schema = self.get_tskv_schema(&table_name)?;
         let table_df_schema = table_source
@@ -555,8 +556,9 @@ impl<S: ContextProvider> SqlPlaner<S> {
             }
         }
 
-        let mut plan_build = LogicalPlanBuilder::scan(&table_name, table_source.clone(), None)
-            .context(ExternalSnafu)?;
+        let mut plan_build =
+            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)
+                .context(ExternalSnafu)?;
         if let Some(selection) = selection {
             plan_build = plan_build
                 .filter(selection)
@@ -586,18 +588,23 @@ impl<S: ContextProvider> SqlPlaner<S> {
 
         // concat tag_key=tag_value projection
         let tag_concat_expr_iter = tags.iter().map(|tag| {
-            Expr::BinaryExpr(BinaryExpr {
+            let column_expr = Box::new(Expr::Column(Column::new(
+                Some(&table_schema.name),
+                &tag.name,
+            )));
+            let is_null_expr = Box::new(column_expr.clone().is_null());
+            let when_then_expr = vec![(is_null_expr, Box::new(Expr::Literal(ScalarValue::Null)))];
+            let else_expr = Some(Box::new(Expr::BinaryExpr(BinaryExpr {
                 left: Box::new(Expr::Literal(ScalarValue::Utf8(Some(format!(
                     "{}=",
                     &tag.name
                 ))))),
                 op: Operator::StringConcat,
-                right: Box::new(Expr::Column(Column {
-                    relation: Some(table_schema.name.clone()),
-                    name: tag.name.to_string(),
-                })),
-            })
+                right: column_expr,
+            })));
+            Expr::Case(Case::new(None, when_then_expr, else_expr))
         });
+
         let concat_ws_args = iter::once(Expr::Literal(ScalarValue::Utf8(Some(",".to_string()))))
             .chain(
                 iter::once(Expr::Literal(ScalarValue::Utf8(Some(
@@ -609,9 +616,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
         let concat_ws = Expr::ScalarFunction {
             fun: BuiltinScalarFunction::ConcatWithSeparator,
             args: concat_ws_args,
-        };
+        }
+        .alias("key");
+        debug!("concat_ws: {}", concat_ws);
         plan_build = plan_build
-            .project_with_alias(iter::once(concat_ws), Some("key".to_string()))
+            .project_with_alias(iter::once(concat_ws), None)
             .context(logical_planner::ExternalSnafu)?;
 
         if stmt.limit.is_some() || stmt.offset.is_some() {
