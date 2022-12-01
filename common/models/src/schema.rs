@@ -17,7 +17,7 @@ use std::str::FromStr;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use arrow_schema::Schema;
+// use arrow_schema::Schema;
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, SchemaRef, TimeUnit,
 };
@@ -83,7 +83,7 @@ pub struct ExternalTableSchema {
     pub table_partition_cols: Vec<String>,
     pub has_header: bool,
     pub delimiter: u8,
-    pub schema: Schema,
+    pub schema: datafusion::arrow::datatypes::Schema,
 }
 
 impl ExternalTableSchema {
@@ -153,7 +153,7 @@ impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
 
-        Arc::new(Schema::new(fields))
+        Arc::new(datafusion::arrow::datatypes::Schema::new(fields))
     }
 
     pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
