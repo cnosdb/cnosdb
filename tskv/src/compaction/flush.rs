@@ -89,11 +89,12 @@ impl FlushTask {
 
         let mut flushing_mems = Vec::with_capacity(self.mem_caches.len());
         for mem in self.mem_caches.iter() {
-            flushing_mems.push(mem.write());
+            flushing_mems.push(mem.read());
         }
         let mut flushing_mems_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
             HashMap::new();
-        for mem in flushing_mems.iter() {
+        let flushing_mems_len = flushing_mems.len();
+        for mem in flushing_mems.into_iter() {
             let seq_no = mem.seq_no();
             high_seq = seq_no.max(high_seq);
             low_seq = seq_no.min(low_seq);
@@ -102,7 +103,7 @@ impl FlushTask {
             for (series_id, series_data) in mem.read_series_data() {
                 flushing_mems_data
                     .entry(series_id)
-                    .or_insert_with(|| Vec::with_capacity(flushing_mems.len()))
+                    .or_insert_with(|| Vec::with_capacity(flushing_mems_len))
                     .push(series_data);
             }
         }
@@ -130,8 +131,8 @@ impl FlushTask {
         }
         version_edits.push(edit);
 
-        for mem in flushing_mems.iter_mut() {
-            mem.flushed = true;
+        for mem in self.mem_caches.iter() {
+            mem.write().flushed = true;
         }
 
         Ok(())
@@ -371,18 +372,17 @@ pub async fn run_flush_memtable_job(
         if req.mems.is_empty() {
             return Ok(());
         }
-        for (tf, mem) in req.mems {
-            let mem_vec = tsf_caches.entry(tf).or_default();
-            mem_vec.push(mem.clone());
+        for (tf, mem) in req.mems.into_iter() {
+            tsf_caches.entry(tf).or_default().push(mem);
         }
     }
 
     let mut edits: Vec<VersionEdit> = vec![];
-    for (tsf_id, caches) in tsf_caches.iter() {
+    for (tsf_id, caches) in tsf_caches.into_iter() {
         if caches.is_empty() {
             continue;
         }
-        let tsf_warp = version_set.read().get_tsfamily_by_tf_id(*tsf_id);
+        let tsf_warp = version_set.read().get_tsfamily_by_tf_id(tsf_id);
         if let Some(tsf) = tsf_warp {
             // todo: build path by vnode data
             let tsf_rlock = tsf.read();
@@ -390,20 +390,14 @@ pub async fn run_flush_memtable_job(
             let version = tsf_rlock.version();
             let database = tsf_rlock.database();
             drop(tsf_rlock);
-            let path_tsm = storage_opt.tsm_dir(&database, *tsf_id);
-            let path_delta = storage_opt.delta_dir(&database, *tsf_id);
+            let path_tsm = storage_opt.tsm_dir(&database, tsf_id);
+            let path_delta = storage_opt.delta_dir(&database, tsf_id);
 
-            FlushTask::new(
-                caches.clone(),
-                *tsf_id,
-                global_context.clone(),
-                path_tsm,
-                path_delta,
-            )
-            .run(version, &mut edits)
-            .await?;
+            FlushTask::new(caches, tsf_id, global_context.clone(), path_tsm, path_delta)
+                .run(version, &mut edits)
+                .await?;
 
-            if let Err(e) = compact_task_sender.send(*tsf_id) {
+            if let Err(e) = compact_task_sender.send(tsf_id) {
                 warn!("failed to send compact task, {}", e);
             }
         }
