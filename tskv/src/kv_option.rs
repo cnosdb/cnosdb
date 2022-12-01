@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use config::Config;
 use serde::{Deserialize, Serialize};
@@ -121,6 +121,7 @@ pub struct WalOptions {
     pub path: PathBuf,
     pub max_file_size: u64,
     pub sync: bool,
+    pub sync_interval: Duration,
 }
 
 impl From<&Config> for WalOptions {
@@ -130,6 +131,7 @@ impl From<&Config> for WalOptions {
             path: PathBuf::from(config.wal.path.clone()),
             max_file_size: config.wal.max_file_size,
             sync: config.wal.sync,
+            sync_interval: config.wal.sync_interval,
         }
     }
 }

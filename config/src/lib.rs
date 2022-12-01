@@ -1,4 +1,6 @@
-use std::{fs::File, io::prelude::Read};
+mod duration;
+
+use std::{fs::File, io::prelude::Read, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use trace::info;
@@ -170,6 +172,8 @@ pub struct WalConfig {
     pub max_file_size: u64,
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
+    #[serde(with = "duration")]
+    pub sync_interval: Duration,
 }
 
 impl WalConfig {
@@ -422,6 +426,7 @@ strict_write = false
 enabled = true
 path = 'data/wal'
 sync = false
+sync_interval = "10s"
 
 [cache]
 max_buffer_size = 134217728 # 128 * 1024 * 1024
