@@ -6,7 +6,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
 
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use spi::query::DEFAULT_CATALOG;
