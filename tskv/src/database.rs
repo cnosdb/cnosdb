@@ -16,24 +16,26 @@ use models::{
 use parking_lot::RwLock as SyncRwLock;
 use protos::models::{Point, Points};
 use snafu::ResultExt;
-use tokio::sync::watch::Receiver;
-use tokio::sync::RwLock;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::{
+    runtime::Runtime,
+    sync::{mpsc::UnboundedSender, oneshot, RwLock},
+};
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::index::{self, IndexError, IndexResult};
-use crate::schema::schemas::DBschemas;
-use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
     compaction::{check, FlushReq},
     error::{self, IndexErrSnafu, Result, SchemaSnafu},
+    index::{self, IndexResult},
     kv_option::Options,
     memcache::{MemCache, RowData, RowGroup},
-    summary::{CompactMeta, SummaryTask, VersionEdit, WriteSummaryRequest},
+    schema::schemas::DBschemas,
+    summary::{SummaryTask, VersionEdit},
     tseries_family::{LevelInfo, TseriesFamily, Version},
     version_set::VersionSet,
-    ColumnFileId, Error, TimeRange, TseriesFamilyId,
+    ColumnFileId,
+    Error::{self, InvalidPoint},
+    TimeRange, TseriesFamilyId,
 };
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
@@ -47,16 +49,23 @@ pub struct Database {
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<index::ts_index::TSIndex>>>,
     ts_families: HashMap<TseriesFamilyId, Arc<SyncRwLock<TseriesFamily>>>,
+    runtime: Arc<Runtime>,
 }
 
 impl Database {
-    pub async fn new(schema: DatabaseSchema, opt: Arc<Options>, meta: MetaRef) -> Result<Self> {
+    pub async fn new(
+        schema: DatabaseSchema,
+        opt: Arc<Options>,
+        runtime: Arc<Runtime>,
+        meta: MetaRef,
+    ) -> Result<Self> {
         let db = Self {
             opt,
             owner: Arc::new(schema.owner()),
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
+            runtime,
         };
 
         Ok(db)
@@ -66,6 +75,7 @@ impl Database {
         &mut self,
         ver: Arc<Version>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) {
         let opt = ver.storage_opt();
 
@@ -77,7 +87,9 @@ impl Database {
             self.opt.cache.clone(),
             self.opt.storage.clone(),
             flush_task_sender,
+            compact_task_sender,
         );
+        tf.schedule_compaction(self.runtime.clone());
         self.ts_families
             .insert(ver.tf_id(), Arc::new(SyncRwLock::new(tf)));
     }
@@ -95,6 +107,7 @@ impl Database {
     }
 
     // todo: Maybe TseriesFamily::new() should be refactored.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tsfamily(
         &mut self,
         tsf_id: u32,
@@ -102,6 +115,7 @@ impl Database {
         version_edit: Option<VersionEdit>,
         summary_task_sender: UnboundedSender<SummaryTask>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) -> Arc<SyncRwLock<TseriesFamily>> {
         let seq_no = version_edit.as_ref().map(|v| v.seq_no).unwrap_or(seq_no);
 
@@ -123,6 +137,7 @@ impl Database {
             self.opt.cache.clone(),
             self.opt.storage.clone(),
             flush_task_sender,
+            compact_task_sender,
         );
         let tf = Arc::new(SyncRwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
@@ -143,7 +158,9 @@ impl Database {
     }
 
     pub fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: UnboundedSender<SummaryTask>) {
-        self.ts_families.remove(&tf_id);
+        if let Some(tf) = self.ts_families.remove(&tf_id) {
+            tf.read().close();
+        }
 
         let edits = vec![VersionEdit::new_del_vnode(tf_id)];
         let (task_state_sender, task_state_receiver) = oneshot::channel();

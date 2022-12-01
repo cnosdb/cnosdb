@@ -7,9 +7,11 @@ use meta::MetaRef;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock as SyncRwLock;
 use snafu::ResultExt;
-use tokio::sync::watch::Receiver;
-use tokio::sync::RwLock;
-use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio::{
+    runtime::Runtime,
+    sync::{mpsc::UnboundedSender, oneshot, watch::Receiver, RwLock},
+};
+
 use trace::error;
 use utils::BloomFilter;
 
@@ -31,21 +33,25 @@ pub struct VersionSet {
     opt: Arc<Options>,
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
+    runtime: Arc<Runtime>,
 }
 
 impl VersionSet {
-    pub fn empty(opt: Arc<Options>) -> Self {
+    pub fn empty(opt: Arc<Options>, runtime: Arc<Runtime>) -> Self {
         Self {
             opt,
             dbs: HashMap::new(),
+            runtime,
         }
     }
 
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
+        runtime: Arc<Runtime>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
         for (id, ver) in ver_set {
@@ -60,17 +66,19 @@ impl VersionSet {
                 },
             };
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(schema, opt.clone(), meta.clone()).await?,
+                Database::new(schema, opt.clone(), runtime.clone(), meta.clone()).await?,
             )));
 
             let tf_id = ver.tf_id();
-            db.write()
-                .await
-                .open_tsfamily(ver, flush_task_sender.clone());
+            db.write().await.open_tsfamily(
+                ver,
+                flush_task_sender.clone(),
+                compact_task_sender.clone(),
+            );
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 
-        Ok(Self { dbs, opt })
+        Ok(Self { dbs, opt, runtime })
     }
 
     pub fn options(&self) -> Arc<Options> {
@@ -86,7 +94,7 @@ impl VersionSet {
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(schema, self.opt.clone(), meta.clone()).await?,
+                Database::new(schema, self.opt.clone(), self.runtime.clone(), meta.clone()).await?,
             )))
             .clone();
         Ok(db)

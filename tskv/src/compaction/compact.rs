@@ -525,12 +525,12 @@ pub async fn run_compaction_job(
                 if let Err(e) = write_ret {
                     match e {
                         tsm::WriteTsmError::IO { source } => {
-                            // TODO handle this
-                            error!("IO error when write tsm");
+                            // TODO handle this: stop compaction and report an error.
+                            error!("IO error when write tsm: {:?}", source);
                         }
                         tsm::WriteTsmError::Encode { source } => {
-                            // TODO handle this
-                            error!("Encoding error when write tsm");
+                            // TODO handle this: stop compaction and report an error.
+                            error!("Encoding error when write tsm: {:?}", source);
                         }
                         tsm::WriteTsmError::MaxFileSizeExceed { source } => {
                             tsm_writer
@@ -724,7 +724,7 @@ pub mod test {
         }
     }
 
-    fn create_options(base_dir: String) -> Arc<Options> {
+    pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
         let dir = "../config/config.toml";
         let mut config = config::get_config(dir);
         config.storage.path = base_dir;
