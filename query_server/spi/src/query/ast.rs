@@ -1,6 +1,6 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{DataType, Expr, Ident, ObjectName, Offset};
+use datafusion::sql::sqlparser::ast::{AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 
@@ -22,7 +22,8 @@ pub enum ExtStatement {
     DescribeDatabase(DescribeDatabase),
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
-    ShowSeries(ShowSeries),
+    ShowSeries(Box<ShowSeries>),
+    Explain(Explain),
     //todo:  insert/update/alter
 
     // system cmd
@@ -35,6 +36,14 @@ pub enum ExtStatement {
 pub struct AlterTable {
     pub table_name: ObjectName,
     pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Explain {
+    pub analyze: bool,
+    pub verbose: bool,
+    pub ext_statement: Box<ExtStatement>,
+    pub format: Option<AnalyzeFormat>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
