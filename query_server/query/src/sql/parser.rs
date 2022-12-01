@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
 
+use datafusion::sql::sqlparser::ast::Statement;
 use datafusion::sql::sqlparser::{
     ast::{DataType, Ident, ObjectName, Value},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -13,8 +14,8 @@ use models::codec::Encoding;
 use snafu::ResultExt;
 use spi::query::ast::{
     AlterDatabase, AlterTable, AlterTableAction, ColumnOption, CreateDatabase, CreateTable,
-    DatabaseOptions, DescribeDatabase, DescribeTable, DropObject, ExtStatement, ObjectType,
-    ShowSeries,
+    DatabaseOptions, DescribeDatabase, DescribeTable, DropObject, Explain, ExtStatement,
+    ObjectType, ShowSeries,
 };
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
@@ -177,24 +178,13 @@ impl<'a> ExtParser<'a> {
                     self.parse_create()
                 }
                 Keyword::EXPLAIN => {
-                    if self
-                        .parser
-                        .parse_keywords(&[Keyword::EXPLAIN, Keyword::SHOW])
-                    {
-                        // let statement = self.parse_show()?;
-                        //     Err(ParserError::ParserError("NotImplement".to_string()))
-                        // } else if self.parser.parse_keywords(&[
-                        //     Keyword::EXPLAIN,
-                        //     Keyword::ANALYZE,
-                        //     Keyword::SHOW,
-                        // ]) {
-                        // TODO: Implement EXPLAIN SHOW SERIES
-                        Err(ParserError::ParserError("NotImplement".to_string()))
-                    } else {
-                        Ok(ExtStatement::SqlStatement(Box::new(
-                            self.parser.parse_statement()?,
-                        )))
-                    }
+                    self.parser.next_token();
+                    self.parse_explain()
+                    // } else {
+                    //     Ok(ExtStatement::SqlStatement(Box::new(
+                    //         self.parser.parse_statement()?,
+                    //     )))
+                    // }
                 }
                 _ => Ok(ExtStatement::SqlStatement(Box::new(
                     self.parser.parse_statement()?,
@@ -255,13 +245,13 @@ impl<'a> ExtParser<'a> {
                 offset = Some(self.parser.parse_offset()?)
             }
         }
-        Ok(ExtStatement::ShowSeries(ShowSeries {
+        Ok(ExtStatement::ShowSeries(Box::new(ShowSeries {
             database_name,
             table,
             selection,
             limit,
             offset,
-        }))
+        })))
     }
 
     // fn rewrite_show_series(&mut self) -> Result<ExtStatement> {
@@ -269,6 +259,37 @@ impl<'a> ExtParser<'a> {
     //     Statement::Query()
     //     ExtStatement::SqlStatement
     // }
+    fn parse_explain(&mut self) -> Result<ExtStatement> {
+        let analyze = self.parser.parse_keyword(Keyword::ANALYZE);
+        let verbose = self.parser.parse_keyword(Keyword::VERBOSE);
+        let mut format = None;
+        if self.parser.parse_keyword(Keyword::FORMAT) {
+            format = Some(self.parser.parse_analyze_format()?);
+        }
+        if self.parser.parse_keyword(Keyword::EXPLAIN) {
+            return Err(ParserError::ParserError(
+                "EXPLAIN can only appear once".to_string(),
+            ));
+        }
+        match self.parse_statement()? {
+            ExtStatement::SqlStatement(statement) => {
+                Ok(ExtStatement::SqlStatement(Box::new(Statement::Explain {
+                    describe_alias: false,
+                    analyze,
+                    verbose,
+                    format,
+                    statement,
+                })))
+            }
+            ExtStatement::ShowSeries(statement) => Ok(ExtStatement::Explain(Explain {
+                analyze,
+                verbose,
+                format,
+                ext_statement: Box::new(ExtStatement::ShowSeries(statement)),
+            })),
+            _ => Err(ParserError::ParserError("Not Implemented".to_string())),
+        }
+    }
 
     fn parse_show_queries(&mut self) -> Result<ExtStatement> {
         Ok(ExtStatement::ShowQueries)
