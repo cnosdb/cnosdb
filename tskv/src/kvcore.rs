@@ -98,22 +98,24 @@ impl TsKv {
             mpsc::unbounded_channel::<GlobalSequenceTask>();
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
+            runtime.clone(),
             meta_manager.clone(),
             shared_options.clone(),
             flush_task_sender.clone(),
             global_seq_task_sender.clone(),
+            compact_task_sender.clone(),
         )
         .await;
         let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
         let global_seq_ctx = Arc::new(global_seq_ctx);
         let wal_cfg = shared_options.wal.clone();
         let core = Self {
-            options: shared_options,
+            options: shared_options.clone(),
             global_ctx: summary.global_context(),
             global_seq_ctx: global_seq_ctx.clone(),
             version_set,
             meta_manager,
-            runtime,
+            runtime: runtime.clone(),
             wal_sender,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
@@ -131,13 +133,14 @@ impl TsKv {
             summary_task_sender.clone(),
             compact_task_sender.clone(),
         );
-        core.run_compact_job(
+        let _ = compaction::job::run(
+            shared_options.storage.clone(),
+            runtime,
             compact_task_receiver,
             summary.global_context(),
             summary.version_set(),
             summary_task_sender.clone(),
-        )
-        .await;
+        );
         core.run_summary_job(summary, summary_task_receiver);
         context::run_global_context_job(
             core.runtime.clone(),
@@ -159,10 +162,12 @@ impl TsKv {
     }
 
     async fn recover_summary(
+        runtime: Arc<Runtime>,
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
         global_seq_task_sender: UnboundedSender<GlobalSequenceTask>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -174,15 +179,17 @@ impl TsKv {
         let summary = if file_manager::try_exists(&summary_file) {
             Summary::recover(
                 meta,
-                opt.clone(),
+                opt,
+                runtime,
                 flush_task_sender,
                 global_seq_task_sender,
+                compact_task_sender,
                 true,
             )
             .await
             .unwrap()
         } else {
-            Summary::new(opt.clone(), global_seq_task_sender)
+            Summary::new(opt, runtime, global_seq_task_sender)
                 .await
                 .unwrap()
         };
@@ -271,60 +278,6 @@ impl TsKv {
         };
         self.runtime.spawn(f);
         info!("Flush task handler started");
-    }
-
-    async fn run_compact_job(
-        &self,
-        mut receiver: UnboundedReceiver<TseriesFamilyId>,
-        ctx: Arc<GlobalContext>,
-        version_set: Arc<RwLock<VersionSet>>,
-        summary_task_sender: UnboundedSender<SummaryTask>,
-    ) {
-        self.runtime.spawn(async move {
-            while let Some(ts_family_id) = receiver.recv().await {
-                let ts_family = version_set
-                    .read()
-                    .await
-                    .get_tsfamily_by_tf_id(ts_family_id)
-                    .await;
-                if let Some(tsf) = ts_family {
-                    info!("Starting compaction on ts_family {}", ts_family_id);
-                    let start = Instant::now();
-                    let compact_req = tsf.read().pick_compaction();
-                    if let Some(req) = compact_req {
-                        let database = req.database.clone();
-                        let compact_ts_family = req.ts_family_id;
-                        let out_level = req.out_level;
-                        match compaction::run_compaction_job(req, ctx.clone()).await {
-                            Ok(Some((version_edit, file_metas))) => {
-                                incr_compaction_success();
-                                let (summary_tx, summary_rx) = oneshot::channel();
-                                let ret =
-                                    summary_task_sender.send(SummaryTask::new_column_file_task(
-                                        file_metas,
-                                        vec![version_edit],
-                                        summary_tx,
-                                    ));
-                                sample_tskv_compaction_duration(
-                                    database.as_str(),
-                                    compact_ts_family.to_string().as_str(),
-                                    out_level.to_string().as_str(),
-                                    start.elapsed().as_secs_f64(),
-                                )
-                                // TODO Handle summary result using summary_rx.
-                            }
-                            Ok(None) => {
-                                info!("There is nothing to compact.");
-                            }
-                            Err(e) => {
-                                incr_compaction_failed();
-                                error!("Compaction job failed: {:?}", e);
-                            }
-                        }
-                    }
-                }
-            }
-        });
     }
 
     fn run_summary_job(
@@ -502,6 +455,7 @@ impl Engine for TsKv {
                 None,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
             ),
         };
 
@@ -561,6 +515,7 @@ impl Engine for TsKv {
                 None,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
             ),
         };
 
@@ -831,6 +786,7 @@ impl Engine for TsKv {
                 Some(summary),
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
+                self.compact_task_sender.clone(),
             );
             Ok(())
         } else {
@@ -973,6 +929,10 @@ impl TsKv {
 
     pub(crate) fn flush_task_sender(&self) -> UnboundedSender<FlushReq> {
         self.flush_task_sender.clone()
+    }
+
+    pub(crate) fn compact_task_sender(&self) -> UnboundedSender<TseriesFamilyId> {
+        self.compact_task_sender.clone()
     }
 }
 

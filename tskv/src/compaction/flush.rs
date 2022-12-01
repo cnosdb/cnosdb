@@ -396,6 +396,7 @@ pub async fn run_flush_memtable_job(
             // todo: build path by vnode data
             let (storage_opt, version, database) = {
                 let tsf_rlock = tsf.read();
+                tsf_rlock.update_last_modfied();
                 (
                     tsf_rlock.storage_opt(),
                     tsf_rlock.version(),
@@ -410,8 +411,10 @@ pub async fn run_flush_memtable_job(
                 .run(version, &mut version_edits, &mut file_metas)
                 .await?;
 
+            tsf.read().update_last_modfied();
+
             if let Err(e) = compact_task_sender.send(tsf_id) {
-                warn!("failed to send compact task, {}", e);
+                warn!("failed to send compact task({}), {}", tsf_id, e);
             }
         }
     }

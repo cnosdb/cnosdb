@@ -48,7 +48,7 @@ const MINUTE: u64 = SECOND * 60;
 const HOUR: u64 = MINUTE * 60;
 
 /// Parse ([0-9]+[a-z]+) to Duration.
-fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Error>> {
+pub(crate) fn parse_duration(duration_str: &str) -> Result<Duration, Box<dyn Error>> {
     if duration_str == "0" {
         return Ok(Duration::from_nanos(0));
     }

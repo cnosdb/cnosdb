@@ -33,6 +33,7 @@ pub trait Picker: Send + Sync + Debug {
 #[derive(Debug)]
 pub struct LevelCompactionPicker {
     picking: AtomicBool,
+    storage: Arc<StorageOptions>,
 }
 
 impl Picker for LevelCompactionPicker {
@@ -75,6 +76,7 @@ impl Picker for LevelCompactionPicker {
                 .join(", ")
         );
 
+        let storage_opt = version.storage_opt();
         let level_infos = version.levels_info();
 
         // Pick a level to compact with level 0
@@ -85,11 +87,24 @@ impl Picker for LevelCompactionPicker {
             info!("Picker: picked level: {} to {}", start_lvl, out_lvl);
             level_start = &level_infos[start_lvl as usize];
             out_level = out_lvl;
+
+            // If start_lvl is L1, compare the number of L1 files
+            // with compact_trigger_file_num.
+            if storage_opt.compact_trigger_file_num != 0
+                && start_lvl == 1
+                && (level_infos[1].files.len() as u32) < storage_opt.compact_trigger_file_num
+            {
+                info!(
+                    "Picker: picked L1 files({}) does not reach trigger({}), return None",
+                    level_infos[1].files.len(),
+                    storage_opt.compact_trigger_file_num
+                );
+                return None;
+            }
         } else {
             info!("Picker: picked level: None");
             return None;
         }
-        let max_compact_size = version.storage_opt.level_file_size(out_level);
 
         // Pick selected level files.
         let mut picking_files: Vec<Arc<ColumnFile>> = Vec::new();
@@ -99,7 +114,7 @@ impl Picker for LevelCompactionPicker {
         } else {
             let mut files = level_start.files.clone();
             files.sort_by(Self::compare_column_file);
-            Self::pick_files(files, max_compact_size, &mut picking_files)
+            Self::pick_files(files, storage_opt.max_compact_size, &mut picking_files)
         };
 
         // Pick level 0 files.
@@ -113,7 +128,7 @@ impl Picker for LevelCompactionPicker {
                 continue;
             }
             picking_files_size += file.size();
-            if picking_files_size > max_compact_size {
+            if picking_files_size > storage_opt.max_compact_size {
                 break;
             }
             picking_files.push(file.clone());
@@ -154,9 +169,10 @@ impl Picker for LevelCompactionPicker {
 }
 
 impl LevelCompactionPicker {
-    pub fn new() -> LevelCompactionPicker {
+    pub fn new(storage_opt: Arc<StorageOptions>) -> LevelCompactionPicker {
         Self {
             picking: AtomicBool::new(false),
+            storage: storage_opt,
         }
     }
 
@@ -180,7 +196,7 @@ impl LevelCompactionPicker {
         }
     }
 
-    fn pick_level_1(
+    fn pick_level_legacy(
         &self,
         storage_opt: &StorageOptions,
         levels: &[LevelInfo],
@@ -208,6 +224,7 @@ impl LevelCompactionPicker {
         let mut level_scores: Vec<(LevelId, u64, usize, f64, f64)> =
             Vec::with_capacity(levels.len());
         for lvl in levels.iter() {
+            // Ignore level 0 (delta files)
             if lvl.level == 0 || lvl.cur_size == 0 || lvl.files.len() <= 1 {
                 continue;
             }
@@ -307,7 +324,8 @@ impl LevelCompatContext {
         let base_level = 0;
 
         if !level0_being_compact {
-            let score = level_infos[0].files.len() as f64 / storage_opt.compact_trigger as f64;
+            let score =
+                level_infos[0].files.len() as f64 / storage_opt.compact_trigger_file_num as f64;
             self.level_scores.push((
                 0,
                 f64::max(
@@ -395,12 +413,14 @@ impl LevelCompatContext {
     }
 }
 
+#[cfg(test)]
 mod test {
     use lru_cache::ShardedCache;
     use parking_lot::RwLock;
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
+    use crate::compaction::test::create_options;
     use crate::{
         file_utils::make_tsm_file_name,
         kv_option::{Options, StorageOptions},
@@ -409,16 +429,9 @@ mod test {
         TimeRange,
     };
 
-    fn create_options(base_dir: String) -> Arc<Options> {
-        let dir = "../config/config.toml";
-        let mut config = config::get_config(dir);
-        config.storage.path = base_dir;
-        let opt = Options::from(&config);
-        Arc::new(opt)
-    }
-
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;
+
     /// Returns a TseriesFamily by TseriesFamOpt and levels_sketch.
     ///
     /// All elements in levels_sketch is :
@@ -482,7 +495,8 @@ mod test {
             1000,
             Arc::new(ShardedCache::with_capacity(1)),
         ));
-        let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
+        let (flush_task_sender, _) = mpsc::unbounded_channel();
+        let (compactt_task_sender, _) = mpsc::unbounded_channel();
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
@@ -491,6 +505,7 @@ mod test {
             opt.cache.clone(),
             opt.storage.clone(),
             flush_task_sender,
+            compactt_task_sender,
         )
     }
 

@@ -19,7 +19,12 @@ use models::{
     schema::TableColumn, ColumnId, FieldId, InMemPoint, SchemaId, SeriesId, Timestamp, ValueType,
 };
 use parking_lot::{Mutex, RwLock};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{
+    runtime::Runtime,
+    sync::{mpsc::UnboundedSender, watch::Receiver},
+    time::Instant,
+};
+use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
@@ -619,7 +624,10 @@ pub struct TseriesFamily {
     seq_no: u64,
     immut_ts_min: AtomicI64,
     mut_ts_max: AtomicI64,
+    last_modified: Arc<RwLock<Option<Instant>>>,
     flush_task_sender: UnboundedSender<FlushReq>,
+    compact_task_sender: UnboundedSender<TseriesFamilyId>,
+    cancellation_token: CancellationToken,
 }
 
 impl TseriesFamily {
@@ -632,10 +640,12 @@ impl TseriesFamily {
         cache_opt: Arc<CacheOptions>,
         storage_opt: Arc<StorageOptions>,
         flush_task_sender: UnboundedSender<FlushReq>,
+        compact_task_sender: UnboundedSender<TseriesFamilyId>,
     ) -> Self {
         let mm = Arc::new(RwLock::new(cache));
         let seq = version.last_seq;
         let max_level_ts = version.max_level_ts;
+        let compact_picker = Arc::new(LevelCompactionPicker::new(storage_opt.clone()));
 
         Self {
             tf_id,
@@ -658,10 +668,13 @@ impl TseriesFamily {
             version,
             cache_opt,
             storage_opt,
-            compact_picker: Arc::new(LevelCompactionPicker::new()),
+            compact_picker,
             immut_ts_min: AtomicI64::new(max_level_ts),
             mut_ts_max: AtomicI64::new(i64::MIN),
+            last_modified: Arc::new(RwLock::new(None)),
             flush_task_sender,
+            compact_task_sender,
+            cancellation_token: CancellationToken::new(),
         }
     }
 
@@ -779,6 +792,11 @@ impl TseriesFamily {
             }
         }
     }
+
+    pub fn update_last_modfied(&self) {
+        *self.last_modified.write() = Some(Instant::now());
+    }
+
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
         self.mut_cache.read().delete_columns(field_ids);
         for memcache in self.immut_cache.iter() {
@@ -811,6 +829,42 @@ impl TseriesFamily {
 
     pub fn pick_compaction(&self) -> Option<CompactReq> {
         self.compact_picker.pick_compaction(self.version.clone())
+    }
+
+    pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {
+        let tsf_id = self.tf_id;
+        let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
+        let last_modified = self.last_modified.clone();
+        let compact_task_sender = self.compact_task_sender.clone();
+        let cancellation_token = self.cancellation_token.clone();
+        let jh = runtime.spawn(async move {
+            if compact_trigger_cold_duration == Duration::ZERO {
+            } else {
+                let mut code_check_interval = tokio::time::interval(Duration::from_secs(10));
+                code_check_interval.tick().await;
+                loop {
+                    tokio::select! {
+                        _ = code_check_interval.tick() => {
+                            let last_modified = last_modified.read();
+                            if let Some(t) = *last_modified {
+                                if t.elapsed() >= compact_trigger_cold_duration {
+                                    if let Err(e) = compact_task_sender.send(tsf_id) {
+                                        warn!("failed to send compact task({}), {}", tsf_id, e);
+                                    }
+                                }
+                            }
+                        }
+                        _ = cancellation_token.cancelled() => {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn close(&self) {
+        self.cancellation_token.cancel();
     }
 
     /// Snashots last version before `last_seq` of this vnode.
@@ -879,6 +933,12 @@ impl TseriesFamily {
     }
 }
 
+impl Drop for TseriesFamily {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel();
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::hash_map;
@@ -893,8 +953,10 @@ mod test {
         Timestamp, ValueType,
     };
     use parking_lot::{Mutex, RwLock};
-    use tokio::sync::mpsc;
-    use tokio::sync::mpsc::UnboundedReceiver;
+    use tokio::sync::{
+        mpsc::{self, UnboundedReceiver},
+        RwLock as AsyncRwLock,
+    };
     use trace::info;
 
     use crate::{
@@ -1156,6 +1218,7 @@ mod test {
         let opt = Arc::new(Options::from(&global_config));
 
         let (flush_task_sender, _) = mpsc::unbounded_channel();
+        let (compact_task_sender, _) = mpsc::unbounded_channel();
         let database = Arc::new("db".to_string());
         let tsf = TseriesFamily::new(
             0,
@@ -1173,6 +1236,7 @@ mod test {
             opt.cache.clone(),
             opt.storage.clone(),
             flush_task_sender,
+            compact_task_sender,
         );
 
         let row_group = RowGroup {
@@ -1247,15 +1311,26 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    pub async fn test_read_with_tomb() {
+    #[test]
+    pub fn test_read_with_tomb() {
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .build()
+                .unwrap(),
+        );
+
         let config = get_config("../config/config_31001.toml");
-        let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster).await;
-        meta_manager.admin_meta().add_data_node().await.unwrap();
-        let _ = meta_manager
-            .tenant_manager()
-            .create_tenant("cnosdb".to_string(), TenantOptions::default())
-            .await;
+        let meta_manager: MetaRef = runtime.block_on(async {
+            let meta_manager: MetaRef = RemoteMetaManager::new(config.cluster).await;
+            meta_manager.admin_meta().add_data_node().await.unwrap();
+            let _ = meta_manager
+                .tenant_manager()
+                .create_tenant("cnosdb".to_string(), TenantOptions::default())
+                .await;
+            meta_manager
+        });
         let dir = PathBuf::from("db/tsm/test/0".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1296,97 +1371,106 @@ mod test {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
+        let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
         let kernel = Arc::new(GlobalContext::new());
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
-        let version_set: Arc<tokio::sync::RwLock<VersionSet>> = Arc::new(tokio::sync::RwLock::new(
-            VersionSet::new(
-                meta_manager.clone(),
-                opt.clone(),
-                HashMap::new(),
-                flush_task_sender.clone(),
-            )
-            .await
-            .unwrap(),
-        ));
-        version_set
-            .write()
-            .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
+
+        let runtime_ref = runtime.clone();
+        runtime.block_on(async move {
+            let version_set = Arc::new(AsyncRwLock::new(
+                VersionSet::new(
+                    meta_manager.clone(),
+                    opt.clone(),
+                    runtime_ref.clone(),
+                    HashMap::new(),
+                    flush_task_sender.clone(),
+                    compact_task_sender.clone(),
+                )
+                .await
+                .unwrap(),
+            ));
+            version_set
+                .write()
+                .await
+                .create_db(
+                    DatabaseSchema::new(&tenant, &database),
+                    meta_manager.clone(),
+                )
+                .await
+                .unwrap();
+            let db = version_set
+                .write()
+                .await
+                .get_db(&tenant, &database)
+                .unwrap();
+
+            let ts_family_id = db
+                .write()
+                .await
+                .add_tsfamily(
+                    0,
+                    0,
+                    None,
+                    summary_task_sender.clone(),
+                    flush_task_sender.clone(),
+                    compact_task_sender.clone(),
+                )
+                .read()
+                .tf_id();
+
+            run_flush_memtable_job(
+                flush_seq,
+                kernel,
+                version_set.clone(),
+                summary_task_sender,
+                compact_task_sender,
             )
             .await
             .unwrap();
-        let db = version_set
-            .write()
-            .await
-            .get_db("cnosdb", &database)
-            .unwrap();
 
-        let ts_family_id = db
-            .write()
-            .await
-            .add_tsfamily(
-                0,
-                0,
-                None,
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-            )
-            .read()
-            .tf_id();
+            update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver)
+                .await;
 
-        run_flush_memtable_job(
-            flush_seq,
-            kernel,
-            version_set.clone(),
-            summary_task_sender,
-            compact_task_sender,
-        )
-        .await
-        .unwrap();
+            let version_set = version_set.write().await;
+            let tsf = version_set
+                .get_tsfamily_by_name(&tenant, &database)
+                .await
+                .unwrap();
+            let version = tsf.write().version();
+            version.levels_info[1]
+                .read_column_file(
+                    ts_family_id,
+                    0,
+                    &TimeRange {
+                        max_ts: 0,
+                        min_ts: 0,
+                    },
+                )
+                .await;
 
-        update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
+            let file = version.levels_info[1].files[0].clone();
 
-        let version_set = version_set.write().await;
-        let tsf = version_set
-            .get_tsfamily_by_name("cnosdb", &database)
-            .await
-            .unwrap();
-        let version = tsf.write().version();
-        version.levels_info[1]
-            .read_column_file(
-                ts_family_id,
-                0,
-                &TimeRange {
-                    max_ts: 0,
-                    min_ts: 0,
-                },
-            )
-            .await;
+            let dir = opt.storage.tsm_dir(&database, ts_family_id);
+            let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
+            tombstone
+                .add_range(&[0], &TimeRange::new(0, 0))
+                .await
+                .unwrap();
+            tombstone.flush().await.unwrap();
 
-        let file = version.levels_info[1].files[0].clone();
-
-        let dir = opt.storage.tsm_dir(&database, ts_family_id);
-        let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
-        tombstone
-            .add_range(&[0], &TimeRange::new(0, 0))
-            .await
-            .unwrap();
-        tombstone.flush().await.unwrap();
-
-        version.levels_info[1]
-            .read_column_file(
-                0,
-                0,
-                &TimeRange {
-                    max_ts: 0,
-                    min_ts: 0,
-                },
-            )
-            .await;
+            version.levels_info[1]
+                .read_column_file(
+                    0,
+                    0,
+                    &TimeRange {
+                        max_ts: 0,
+                        min_ts: 0,
+                    },
+                )
+                .await;
+        });
     }
 }

@@ -52,6 +52,7 @@ snafu = { workspace = true }
 snap = { workspace = true }
 static_assertions = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
 walkdir = { workspace = true }
 zstd = { workspace = true }
 radixdb = { version = "0.2.5", features = ["custom-store"] }

@@ -1,6 +1,7 @@
 pub mod check;
 mod compact;
 mod flush;
+pub mod job;
 mod picker;
 
 pub use compact::*;
