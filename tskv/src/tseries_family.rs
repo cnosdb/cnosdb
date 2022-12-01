@@ -682,9 +682,9 @@ impl TseriesFamily {
     fn wrap_flush_req(&mut self) {
         let len = self.immut_cache.len();
         let mut imut = vec![];
-        for i in self.immut_cache.iter() {
-            if !i.read().flushed {
-                imut.push(i.clone());
+        for mem in self.immut_cache.iter() {
+            if !mem.read().flushed {
+                imut.push(mem.clone());
             }
         }
         self.immut_cache = imut;
@@ -695,26 +695,25 @@ impl TseriesFamily {
 
         self.immut_ts_min
             .store(self.mut_ts_max.load(Ordering::Relaxed), Ordering::Relaxed);
-        let mut req_mem = vec![];
-        for i in self.immut_cache.iter() {
-            let read_i = i.read();
-            if read_i.flushing {
+        let mut req_mems: Vec<(u32, Arc<RwLock<MemCache>>)> = vec![];
+        for mem in self.immut_cache.iter() {
+            if mem.read().flushing {
                 continue;
             }
-            req_mem.push((self.tf_id, i.clone()));
+            req_mems.push((self.tf_id, mem.clone()));
         }
 
-        if req_mem.len() < self.cache_opt.max_immutable_number as usize {
+        if req_mems.len() < self.cache_opt.max_immutable_number as usize {
             return;
         }
 
-        for i in req_mem.iter() {
-            i.1.write().flushing = true;
+        for mem in req_mems.iter() {
+            mem.1.write().flushing = true;
         }
 
-        info!("flush_req send,now req queue len : {}", req_mem.len());
+        info!("flush_req send,now req queue len : {}", req_mems.len());
         self.flush_task_sender
-            .send(FlushReq { mems: req_mem })
+            .send(FlushReq { mems: req_mems })
             .expect("error send flush req to kvcore");
     }
 
