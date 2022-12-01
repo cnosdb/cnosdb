@@ -1105,7 +1105,7 @@ COUNT(totimestamp(Int64(2356460173941980803)) BETWEEN m0.t0 || Int64(-111984518)
 -- AFTER_SORT --
 200 OK
 COUNT(characterlength(lower(m4.t0)))
-1
+0
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(CAST(sha224(m2.t0, m2.f0) AS BOOLEAN) AS BIGINT)) FROM m2; --
 -- AFTER_SORT --
@@ -1116,7 +1116,7 @@ COUNT(characterlength(lower(m4.t0)))
 -- EXECUTE SQL: SELECT COUNT(CAST(CAST((((('0.8094767692308924')||(m3.t0)))||(to_timestamp(1277316360868259377))) AS TIMESTAMP) AS BIGINT)) FROM (select t0 from m3 order by t0); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Error parsing '0.80947676923089242010-06-23 18:06:00.868259377' as timestamp"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Error parsing '0.80947676923089240.0021472982217884962010-06-23 18:06:00.868259377' as timestamp"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT APPROX_DISTINCT(starts_with(CAST(nullif(m3.f0, m3.f0) AS STRING), ((split_part(m3.t1, m3.f0))||(CAST((TRUE) IS TRUE AS BIGINT))))), LAST_VALUE(CAST(to_timestamp(1986281025171801323) AS BIGINT)) OVER () FROM m3 GROUP BY CAST(to_timestamp(399147416573161272) AS BIGINT); --
@@ -1773,14 +1773,14 @@ t1,f1,t2
 -- AFTER_SORT --
 200 OK
 t1,f1,t2
-,0.3542197858214864,a7|*擘~3
 ,1.692022416413119e18,
-I,0.545203526083238,A
 
 -- EXECUTE SQL: SELECT m2.t1, m2.f1, m2.t2 FROM m2 WHERE ((lower(m2.t0)) NOT IN ('/bt_*&3', '', 'g[')) IS NULL; --
 -- AFTER_SORT --
 200 OK
-
+t1,f1,t2
+,0.3542197858214864,a7|*擘~3
+I,0.545203526083238,A
 
 -- EXECUTE SQL: SELECT ALL COUNT(CAST(to_timestamp(4110526935488757249) AS BIGINT)) FROM m4; --
 -- AFTER_SORT --
@@ -2006,9 +2006,10 @@ c]_tcQrM
 {\
 
 -- EXECUTE SQL: with m3 as (select t0, t1 from m3 order by t0, t1 limit 1) SELECT ALL m3.t0 FROM m3 WHERE CAST(CAST(((ltrim(m3.t0))||(translate(m3.t1, m3.t0, m3.t0))) AS DOUBLE) AS BOOLEAN) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE NOT (CAST(CAST(((ltrim(m3.t0))||(translate(m3.t1, m3.t0, m3.t0))) AS DOUBLE) AS BOOLEAN)) UNION ALL SELECT ALL m3.t0 FROM m3 WHERE (CAST(CAST(((ltrim(m3.t0))||(translate(m3.t1, m3.t0, m3.t0))) AS DOUBLE) AS BOOLEAN)) IS NULL; --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '[%^TQVy8' to value of Float64 type"}
--- ERROR:  --
+200 OK
+t0
+0.002147298221788496
+
 
 -- EXECUTE SQL: SELECT COUNT(((CAST(to_timestamp_seconds(m3.f0) AS BIGINT))*(((((CAST(m3.f0 AS BIGINT))/(nullif(-925290082, m3.f0))))*(+ (nullif(m3.f0, m3.f0))))))) FROM m3; --
 -- AFTER_SORT --
@@ -2192,9 +2193,13 @@ m?gbg&),,true
 
 -- EXECUTE SQL: SELECT m4.t1, m4.t0, m4.f0 FROM m4 WHERE CAST(m4.t0 AS BOOLEAN) UNION ALL SELECT m4.t1, m4.t0, m4.f0 FROM m4 WHERE NOT (CAST(m4.t0 AS BOOLEAN)) UNION ALL SELECT ALL m4.t1, m4.t0, m4.f0 FROM m4 WHERE (CAST(m4.t0 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string '' to value of Boolean type"}
--- ERROR:  --
+200 OK
+t1,t0,f0
+,,false
+-719146430,,true
+[,,true
+cU,,true
+m?gbg&),,true
 
 -- EXECUTE SQL: SELECT m2.t2, m2.f0, m2.t1, m2.t0, m2.f1 FROM m2 ORDER BY m2.t0 DESC, m2.f0 ASC; --
 -- AFTER_SORT --
@@ -2443,9 +2448,8 @@ t0,f0
 
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.f0 FROM m4 WHERE (((ltrim(m4.t1))LIKE(lower(m4.t0)))) BETWEEN (starts_with(CAST(((((m4.f0)OR(m4.f0)))AND(m4.f0)) AS STRING), ((CAST(to_timestamp(3422035704230732300) AS STRING))||(CAST(m4.t0 AS TIMESTAMP))))) AND ((CAST(NULL AS BIGINT)) NOT IN (289051392, -88103715)); --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Error parsing '' as timestamp"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT m3.f0 FROM m3 ORDER BY m3.f0 ASC, m3.f0 ASC; --
 -- AFTER_SORT --
@@ -2776,6 +2780,7 @@ false,
 200 OK
 t0
 ""
+""
 0.14928332458710802
 4683132071972081202
 n
@@ -3087,7 +3092,7 @@ true
 -- EXECUTE SQL: SELECT ALL MAX(- (CAST(m2.t1 AS DOUBLE))) FROM (select t1 from m2 order by t1); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string '' to value of Float64 type"}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: External error: Arrow error: Cast error: Cannot cast string 'I' to value of Float64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.f1, m1.f2 FROM m1; --
@@ -3201,9 +3206,7 @@ I,A,0.545203526083238,
 -- EXECUTE SQL: SELECT m2.t1, m2.t2, m2.f1, m2.f0 FROM m2 WHERE ((m2.t1)LIKE(btrim(lower(m2.t0), CAST(to_timestamp(2229757221744742322) AS STRING)))); --
 -- AFTER_SORT --
 200 OK
-t1,t2,f1,f0
-,,1.692022416413119e18,19144301
-,a7|*擘~3,0.3542197858214864,
+
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f0 FROM m0; --
 -- AFTER_SORT --
@@ -3470,7 +3473,7 @@ f0
 -- AFTER_SORT --
 200 OK
 MAX((m4.t0 || Int64(-2042819431)) || upper(m4.t0) LIKE CAST(CAST(totimestamp(Int64(9022001652569377583)) AS Utf8) AS Utf8) )
-0
+""
 
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t0 FROM m4; --
 -- AFTER_SORT --
@@ -3485,8 +3488,7 @@ true,
 -- EXECUTE SQL: SELECT ALL m4.f0, m4.t0 FROM m4 WHERE starts_with(ltrim(((m4.t0)||(to_timestamp(4806813345626914634)))), upper(m4.t1)); --
 -- AFTER_SORT --
 200 OK
-f0,t0
-false,
+
 
 -- EXECUTE SQL: SELECT ALL m3.t0, m3.f0 FROM m3; --
 -- AFTER_SORT --

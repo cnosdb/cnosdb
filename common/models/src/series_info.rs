@@ -1,7 +1,7 @@
 use crate::Error::InvalidFlatbufferMessage;
 use crate::{
     errors::{Error, Result},
-    tag, SeriesId, Tag,
+    tag, SeriesId, Tag, TagValue,
 };
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
@@ -35,14 +35,13 @@ impl SeriesKey {
         bincode::serialize(self).unwrap()
     }
 
-    pub fn tag_val(&self, key: &str) -> Vec<u8> {
+    pub fn tag_val(&self, key: &str) -> Option<TagValue> {
         for tag in &self.tags {
             if tag.key == key.as_bytes() {
-                return tag.value.clone();
+                return Some(tag.value.clone());
             }
         }
-
-        vec![]
+        None
     }
 
     pub fn hash(&self) -> u64 {

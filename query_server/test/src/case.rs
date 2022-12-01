@@ -2,7 +2,6 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use prettydiff::diff_lines;
 use tokio::fs;
 use walkdir::WalkDir;
 
@@ -61,17 +60,22 @@ impl Case {
 
     /// check out and expected result
     pub async fn check(&self, result: &str, out: &str) -> bool {
-        let diff = diff_lines(result, out)
-            .set_diff_only(true)
-            .set_show_lines(true);
-
-        let is_diff = diff
-            .diff()
-            .iter()
-            .any(|diff| !matches!(diff, prettydiff::basic::DiffOp::Equal(_)));
+        let mut is_diff = false;
+        for diff in diff::lines(result, out) {
+            match diff {
+                diff::Result::Left(l) => {
+                    is_diff = true;
+                    println!("-{}", l)
+                }
+                diff::Result::Right(r) => {
+                    is_diff = true;
+                    println!("+{}", r)
+                }
+                _ => {}
+            }
+        }
 
         if is_diff {
-            diff.prettytable();
             fs::write(self.out_file(), &out).await.unwrap();
         }
         !is_diff
