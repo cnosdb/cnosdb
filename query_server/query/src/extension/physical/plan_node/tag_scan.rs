@@ -289,7 +289,7 @@ impl TagRecordBatchStreamBuilder {
                 // TODO improve, to return Option
                 let tag_val = series_key.tag_val(tag_key);
 
-                vals_container.push(Some(tag_val));
+                vals_container.push(tag_val);
             })
     }
 
