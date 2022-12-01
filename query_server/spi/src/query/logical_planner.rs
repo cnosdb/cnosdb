@@ -148,14 +148,14 @@ pub enum TenantObjectType {
     Database,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropGlobalObject {
     pub name: String,
     pub if_exist: bool,
     pub obj_type: GlobalObjectType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalObjectType {
     User,
     Tenant,

@@ -9,7 +9,7 @@ use datafusion::arrow::{
 };
 use flatbuffers::{self, FlatBufferBuilder, Vector, WIPOffset};
 use models::schema::{
-    is_time_column, ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME,
+    is_time_column, ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD_NAME,
 };
 use models::{define_result, ValueType};
 use paste::paste;

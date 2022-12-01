@@ -14,7 +14,6 @@ use datafusion::{
 use meta::error::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
-use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,

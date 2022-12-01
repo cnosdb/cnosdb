@@ -3,7 +3,7 @@ use std::iter;
 use std::option::Option;
 use std::sync::Arc;
 
-use datafusion::common::{Column, DFField, ToDFSchema};
+use datafusion::common::{Column, DFField, DFSchema, ToDFSchema};
 use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
@@ -17,7 +17,7 @@ use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::SqlToRel;
 use datafusion::sql::sqlparser::ast::{
-    DataType as SQLDataType, Ident, ObjectName, Query, Statement,
+    DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, Query, Statement,
 };
 use datafusion::sql::TableReference;
 use meta::error::MetaError;
@@ -95,6 +95,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
             ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(stmt),
+            ExtStatement::Explain(stmt) => {
+                self.explain_to_plan(stmt.analyze, stmt.verbose, *stmt.ext_statement)
+            }
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
@@ -154,6 +157,60 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
     /// Generate a plan for EXPLAIN ... that will print out a plan
     ///
+    fn explain_to_plan(
+        &self,
+        analyze: bool,
+        verbose: bool,
+        stmt: ExtStatement,
+    ) -> Result<PlanWithPrivileges> {
+        match stmt {
+            ExtStatement::ShowSeries(statement) => {
+                match self.show_series_to_plan(statement)?.plan {
+                    Plan::Query(QueryPlan { df_plan }) => {
+                        let plan = Arc::new(df_plan);
+                        let schema = LogicalPlan::explain_schema();
+                        let schema = schema.to_dfschema_ref().context(ExternalSnafu)?;
+
+                        if analyze {
+                            let plan = Plan::Query(QueryPlan {
+                                df_plan: LogicalPlan::Analyze(Analyze {
+                                    verbose,
+                                    input: plan,
+                                    schema,
+                                }),
+                            });
+                            Ok(PlanWithPrivileges {
+                                plan,
+                                privileges: vec![],
+                            })
+                        } else {
+                            let stringified_plans =
+                                vec![plan.to_stringified(PlanType::InitialLogicalPlan)];
+                            let plan = Plan::Query(QueryPlan {
+                                df_plan: LogicalPlan::Explain(Explain {
+                                    verbose,
+                                    plan,
+                                    stringified_plans,
+                                    schema,
+                                }),
+                            });
+                            Ok(PlanWithPrivileges {
+                                plan,
+                                privileges: vec![],
+                            })
+                        }
+                    }
+                    _ => Err(LogicalPlannerError::NotImplemented {
+                        err: "not implemented explain".to_string(),
+                    }),
+                }
+            }
+            _ => Err(LogicalPlannerError::NotImplemented {
+                err: "not implemented explain".to_string(),
+            }),
+        }
+    }
+
     pub fn explain_statement_to_plan(
         &self,
         verbose: bool,
@@ -681,7 +738,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         })
     }
 
-    fn show_series_to_plan(&self, mut stmt: ASTShowSeries) -> Result<PlanWithPrivileges> {
+    fn show_series_to_plan(&self, mut stmt: Box<ASTShowSeries>) -> Result<PlanWithPrivileges> {
         let database_name = std::mem::take(&mut stmt.database_name);
         let table_name = {
             let mut res = ObjectName(vec![]);
@@ -716,12 +773,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         };
 
         // check
+        // show series can't include field column
         let mut columns = HashSet::new();
-        let mut _contain_time = false;
+        let mut contain_time = false;
         if let Some(selection) = &selection {
             expr_to_columns(selection, &mut columns).context(ExternalSnafu)?;
         }
-
         for column in columns.iter() {
             match table_schema.column(&column.name) {
                 Some(table_column) => {
@@ -733,7 +790,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                             ),
                         });
                     } else if table_column.column_type.is_time() {
-                        _contain_time = true;
+                        contain_time = true;
                     }
                 }
 
@@ -745,75 +802,36 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             }
         }
 
-        let plan_build = LogicalPlanBuilder::scan(&table_name, table_source.clone(), None)
+        let mut plan_build = LogicalPlanBuilder::scan(&table_name, table_source.clone(), None)
             .context(ExternalSnafu)?;
-        debug!("show series scan build {:#?}", plan_build);
-        let plan_build = if let Some(selection) = selection {
-            plan_build
+        if let Some(selection) = selection {
+            plan_build = plan_build
                 .filter(selection)
-                .context(logical_planner::ExternalSnafu)?
-        } else {
-            plan_build
-        };
-        debug!("show series selection build {:#?}", plan_build);
-        let plan_build = plan_build
-            .distinct()
-            .context(logical_planner::ExternalSnafu)?;
-
-        debug!("show series distinct build {:#?}", plan_build);
-
-        let skip = match stmt.offset {
-            Some(offset) => match sql_to_rel
-                .sql_to_rex(offset.value, &table_df_schema, &mut HashMap::new())
-                .context(logical_planner::ExternalSnafu)?
-            {
-                Expr::Literal(ScalarValue::Int64(Some(m))) => {
-                    if m < 0 {
-                        return Err(LogicalPlannerError::Semantic {
-                            err: format!("OFFSET must be >= 0, '{}' was provided.", m),
-                        });
-                    } else {
-                        m as usize
-                    }
-                }
-                _ => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "The OFFSET clause must be a constant of BIGINT type".to_string(),
-                    })
-                }
-            },
-            None => 0,
-        };
-
-        let fetch = match stmt.limit {
-            Some(exp) => match sql_to_rel
-                .sql_to_rex(exp, &table_df_schema, &mut HashMap::new())
-                .context(logical_planner::ExternalSnafu)?
-            {
-                Expr::Literal(ScalarValue::Int64(Some(n))) => {
-                    if n < 0 {
-                        return Err(LogicalPlannerError::Semantic {
-                            err: format!("LIMIT must be >= 0, '{}' was provided.", n),
-                        });
-                    } else {
-                        Some(n as usize)
-                    }
-                }
-                _ => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "The LIMIT clause must be a constant of BIGINT type".to_string(),
-                    })
-                }
-            },
-            None => None,
-        };
-
+                .context(logical_planner::ExternalSnafu)?;
+        }
         let tags = table_schema
             .columns()
             .iter()
             .filter(|c| c.column_type.is_tag())
             .collect::<Vec<&TableColumn>>();
+        let exp = tags.iter().map(|tag| {
+            Expr::Column(Column::new(
+                Some(table_schema.name.to_string()),
+                tag.name.to_string(),
+            ))
+        });
 
+        if contain_time {
+            plan_build = plan_build
+                .project(exp)
+                .context(logical_planner::ExternalSnafu)?;
+        };
+
+        plan_build = plan_build
+            .distinct()
+            .context(logical_planner::ExternalSnafu)?;
+
+        // concat tag_key=tag_value projection
         let tag_concat_expr_iter = tags.iter().map(|tag| {
             Expr::BinaryExpr(BinaryExpr {
                 left: Box::new(Expr::Literal(ScalarValue::Utf8(Some(format!(
@@ -835,21 +853,19 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 .chain(tag_concat_expr_iter),
             )
             .collect::<Vec<Expr>>();
-
         let concat_ws = Expr::ScalarFunction {
             fun: BuiltinScalarFunction::ConcatWithSeparator,
             args: concat_ws_args,
         };
-
-        let plan_build = plan_build
+        plan_build = plan_build
             .project_with_alias(iter::once(concat_ws), Some("key".to_string()))
             .context(logical_planner::ExternalSnafu)?;
 
-        debug!("show series projection build {:#?}", plan_build);
-        let plan_build = plan_build
-            .limit(skip, fetch)
-            .context(logical_planner::ExternalSnafu)?;
-        debug!("show series limit build {:#?}", plan_build);
+        if stmt.limit.is_some() || stmt.offset.is_some() {
+            plan_build =
+                self.limit_offset_to_plan(stmt.limit, stmt.offset, plan_build, &table_df_schema)?;
+        }
+
         let plan = Plan::Query(QueryPlan {
             df_plan: plan_build.build().context(logical_planner::ExternalSnafu)?,
         });
@@ -897,6 +913,66 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             plan,
             privileges: vec![privilege],
         })
+    }
+
+    fn limit_offset_to_plan(
+        &self,
+        limit: Option<ASTExpr>,
+        offset: Option<Offset>,
+        plan_builder: LogicalPlanBuilder,
+        schema: &DFSchema,
+    ) -> Result<LogicalPlanBuilder> {
+        let sql_to_rel = SqlToRel::new(&self.schema_provider);
+        let skip = match offset {
+            Some(offset) => match sql_to_rel
+                .sql_to_rex(offset.value, schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?
+            {
+                Expr::Literal(ScalarValue::Int64(Some(m))) => {
+                    if m < 0 {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!("OFFSET must be >= 0, '{}' was provided.", m),
+                        });
+                    } else {
+                        m as usize
+                    }
+                }
+                _ => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The OFFSET clause must be a constant of BIGINT type".to_string(),
+                    })
+                }
+            },
+            None => 0,
+        };
+
+        let fetch = match limit {
+            Some(exp) => match sql_to_rel
+                .sql_to_rex(exp, schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?
+            {
+                Expr::Literal(ScalarValue::Int64(Some(n))) => {
+                    if n < 0 {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!("LIMIT must be >= 0, '{}' was provided.", n),
+                        });
+                    } else {
+                        Some(n as usize)
+                    }
+                }
+                _ => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The LIMIT clause must be a constant of BIGINT type".to_string(),
+                    })
+                }
+            },
+            None => None,
+        };
+
+        let plan_builder = plan_builder
+            .limit(skip, fetch)
+            .context(logical_planner::ExternalSnafu)?;
+        Ok(plan_builder)
     }
 
     fn database_to_alter(

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{DataType, Expr, Ident, ObjectName, Offset};
+use datafusion::sql::sqlparser::ast::{AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset};
 use datafusion::sql::sqlparser::ast::{SqlOption, Value};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
@@ -8,7 +8,7 @@ use models::codec::Encoding;
 use super::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 
 /// Statement representations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtStatement {
     /// ANSI SQL AST node
     SqlStatement(Box<Statement>),
@@ -30,7 +30,8 @@ pub enum ExtStatement {
     DescribeDatabase(DescribeDatabase),
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
-    ShowSeries(ShowSeries),
+    ShowSeries(Box<ShowSeries>),
+    Explain(Explain),
     //todo:  insert/update/alter
 
     // system cmd
@@ -45,6 +46,14 @@ pub enum ExtStatement {
 pub struct AlterTable {
     pub table_name: ObjectName,
     pub alter_action: AlterTableAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Explain {
+    pub analyze: bool,
+    pub verbose: bool,
+    pub ext_statement: Box<ExtStatement>,
+    pub format: Option<AnalyzeFormat>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,14 +76,14 @@ pub struct AlterDatabase {
     pub options: DatabaseOptions,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterTenant {
     /// tenant name
     pub name: Ident,
     pub operation: AlterTenantOperation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AlterTenantOperation {
     // Ident: user_name, Ident: role_name
     AddUser(Ident, Ident),
@@ -84,21 +93,21 @@ pub enum AlterTenantOperation {
     Set(SqlOption),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropDatabaseObject {
     pub object_name: ObjectName,
     pub if_exist: bool,
     pub obj_type: DatabaseObjectType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropTenantObject {
     pub object_name: Ident,
     pub if_exist: bool,
     pub obj_type: TenantObjectType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropGlobalObject {
     pub object_name: Ident,
     pub if_exist: bool,
@@ -111,7 +120,7 @@ pub struct DescribeObject {
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateUser {
     pub if_not_exists: bool,
     /// User name
@@ -119,40 +128,40 @@ pub struct CreateUser {
     pub with_options: Vec<SqlOption>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterUser {
     /// User name
     pub name: Ident,
     pub operation: AlterUserOperation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AlterUserOperation {
     RenameTo(Ident),
     Set(SqlOption),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrantRevoke {
     pub is_grant: bool,
     pub privileges: Vec<Privilege>,
     pub role_name: Ident,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Privilege {
     pub action: Action,
     pub database: Ident,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Read,
     Write,
     All,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateRole {
     pub if_not_exists: bool,
     /// Role name
@@ -160,7 +169,7 @@ pub struct CreateRole {
     pub inherit: Option<Ident>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTenant {
     pub name: Ident,
     pub if_not_exists: bool,

@@ -22,7 +22,7 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use datafusion::error::Result;
 use futures::StreamExt;
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::TskvTableSchemaRef;
 use trace::debug;
 
 use crate::data_source::sink::{RecordBatchSink, RecordBatchSinkProvider};
