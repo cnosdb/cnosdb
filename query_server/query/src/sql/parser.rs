@@ -180,11 +180,6 @@ impl<'a> ExtParser<'a> {
                 Keyword::EXPLAIN => {
                     self.parser.next_token();
                     self.parse_explain()
-                    // } else {
-                    //     Ok(ExtStatement::SqlStatement(Box::new(
-                    //         self.parser.parse_statement()?,
-                    //     )))
-                    // }
                 }
                 _ => Ok(ExtStatement::SqlStatement(Box::new(
                     self.parser.parse_statement()?,
@@ -254,11 +249,6 @@ impl<'a> ExtParser<'a> {
         })))
     }
 
-    // fn rewrite_show_series(&mut self) -> Result<ExtStatement> {
-    //
-    //     Statement::Query()
-    //     ExtStatement::SqlStatement
-    // }
     fn parse_explain(&mut self) -> Result<ExtStatement> {
         let analyze = self.parser.parse_keyword(Keyword::ANALYZE);
         let verbose = self.parser.parse_keyword(Keyword::VERBOSE);
