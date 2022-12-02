@@ -134,15 +134,21 @@ impl<'a> VnodeMapping<'a> {
             point.hash_id,
             point.timestamp,
         )?;
-        self.sets.entry(info.id).or_insert(info.clone());
+        self.sets.entry(info.id).or_insert_with(|| info.clone());
         let entry = self
             .points
             .entry(info.id)
-            .or_insert(VnodePoints::new(point.db.clone(), info));
+            .or_insert_with(|| VnodePoints::new(point.db.clone(), info));
 
         entry.add_point(point);
 
-        return Ok(());
+        Ok(())
+    }
+}
+
+impl<'a> Default for VnodeMapping<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -235,7 +241,7 @@ impl PointWriter {
         }
 
         debug!("write data to remote {}({}) success!", node_id, vnode_id);
-        return Ok(());
+        Ok(())
     }
 
     async fn write_to_handoff(
@@ -253,9 +259,8 @@ impl PointWriter {
         };
 
         self.hh_sender.send(request).await?;
-        let result = receiver.await?;
 
-        return result;
+        receiver.await?
     }
 
     pub async fn write_to_remote_node(
@@ -277,14 +282,14 @@ impl PointWriter {
         if let CoordinatorTcpCmd::StatusResponseCmd(msg) = rsp_cmd {
             self.meta_manager.admin_meta().put_node_conn(node_id, conn);
             if msg.code == SUCCESS_RESPONSE_CODE {
-                return Ok(());
+                Ok(())
             } else {
-                return Err(CoordinatorError::WriteVnode {
+                Err(CoordinatorError::WriteVnode {
                     msg: format!("code: {}, msg: {}", msg.code, msg.data),
-                });
+                })
             }
         } else {
-            return Err(CoordinatorError::UnExpectResponse);
+            Err(CoordinatorError::UnExpectResponse)
         }
     }
 
@@ -295,9 +300,9 @@ impl PointWriter {
         };
 
         if let Err(err) = self.kv_inst.write(vnode_id, req).await {
-            return Err(err.into());
+            Err(err.into())
         } else {
-            return Ok(());
+            Ok(())
         }
     }
 }

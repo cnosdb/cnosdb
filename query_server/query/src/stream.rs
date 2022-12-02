@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 use coordinator::{reader::ReaderIterator, service::CoordinatorRef};
 use datafusion::{
     arrow::{datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch},

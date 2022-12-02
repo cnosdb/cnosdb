@@ -1,3 +1,4 @@
+#![allow(clippy::large_enum_variant)]
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::ipc::{reader::StreamReader, writer::StreamWriter};
 use models::predicate::domain::{PredicateRef, QueryArgs, QueryExpr};
@@ -43,25 +44,27 @@ pub enum CoordinatorTcpCmd {
 pub async fn send_command(conn: &mut TcpStream, cmd: &CoordinatorTcpCmd) -> CoordinatorResult<()> {
     match cmd {
         CoordinatorTcpCmd::StatusResponseCmd(val) => {
-            conn.write(&STATUS_RESPONSE_COMMAND.to_be_bytes()).await?;
-            return val.send_cmd(conn).await;
+            conn.write_all(&STATUS_RESPONSE_COMMAND.to_be_bytes())
+                .await?;
+            val.send_cmd(conn).await
         }
 
         CoordinatorTcpCmd::WriteVnodePointCmd(val) => {
-            conn.write(&WRITE_VNODE_POINT_COMMAND.to_be_bytes()).await?;
-            return val.send_cmd(conn).await;
+            conn.write_all(&WRITE_VNODE_POINT_COMMAND.to_be_bytes())
+                .await?;
+            val.send_cmd(conn).await
         }
 
         CoordinatorTcpCmd::QueryRecordBatchCmd(val) => {
-            conn.write(&QUERY_RECORD_BATCH_COMMAND.to_be_bytes())
+            conn.write_all(&QUERY_RECORD_BATCH_COMMAND.to_be_bytes())
                 .await?;
-            return val.send_cmd(conn).await;
+            val.send_cmd(conn).await
         }
 
         CoordinatorTcpCmd::RecordBatchResponseCmd(val) => {
-            conn.write(&RECORD_BATCH_RESPONSE_COMMAND.to_be_bytes())
+            conn.write_all(&RECORD_BATCH_RESPONSE_COMMAND.to_be_bytes())
                 .await?;
-            return val.send_cmd(conn).await;
+            val.send_cmd(conn).await
         }
     }
 }
@@ -74,26 +77,24 @@ pub async fn recv_command(conn: &mut TcpStream) -> CoordinatorResult<Coordinator
     match cmd_type {
         STATUS_RESPONSE_COMMAND => {
             let cmd = StatusResponse::recv_data(conn).await?;
-            return Ok(CoordinatorTcpCmd::StatusResponseCmd(cmd));
+            Ok(CoordinatorTcpCmd::StatusResponseCmd(cmd))
         }
 
         WRITE_VNODE_POINT_COMMAND => {
             let cmd = WriteVnodeRequest::recv_data(conn).await?;
-            return Ok(CoordinatorTcpCmd::WriteVnodePointCmd(cmd));
+            Ok(CoordinatorTcpCmd::WriteVnodePointCmd(cmd))
         }
 
         QUERY_RECORD_BATCH_COMMAND => {
             let cmd = QueryRecordBatchRequest::recv_data(conn).await?;
-            return Ok(CoordinatorTcpCmd::QueryRecordBatchCmd(cmd));
+            Ok(CoordinatorTcpCmd::QueryRecordBatchCmd(cmd))
         }
         RECORD_BATCH_RESPONSE_COMMAND => {
             let cmd = RecordBatchResponse::recv_data(conn).await?;
-            return Ok(CoordinatorTcpCmd::RecordBatchResponseCmd(cmd));
+            Ok(CoordinatorTcpCmd::RecordBatchResponseCmd(cmd))
         }
 
-        _ => {
-            return Err(UnKnownCoordCmd { cmd: cmd_type });
-        }
+        _ => Err(UnKnownCoordCmd { cmd: cmd_type }),
     }
 }
 
@@ -103,7 +104,7 @@ async fn read_data_len_val(conn: &mut TcpStream) -> CoordinatorResult<Vec<u8>> {
     let mut data_buf = vec![0; len as usize];
     conn.read_exact(&mut data_buf).await?;
 
-    return Ok(data_buf);
+    Ok(data_buf)
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -114,9 +115,10 @@ pub struct StatusResponse {
 
 impl StatusResponse {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        conn.write(&self.code.to_be_bytes()).await?;
+        conn.write_all(&self.code.to_be_bytes()).await?;
 
-        conn.write(&(self.data.len() as u32).to_be_bytes()).await?;
+        conn.write_all(&(self.data.len() as u32).to_be_bytes())
+            .await?;
         conn.write_all(self.data.as_bytes()).await?;
 
         Ok(())
@@ -140,8 +142,9 @@ pub struct WriteVnodeRequest {
 
 impl WriteVnodeRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        conn.write(&self.vnode_id.to_be_bytes()).await?;
-        conn.write(&(self.data.len() as u32).to_be_bytes()).await?;
+        conn.write_all(&self.vnode_id.to_be_bytes()).await?;
+        conn.write_all(&(self.data.len() as u32).to_be_bytes())
+            .await?;
         conn.write_all(&self.data).await?;
 
         Ok(())
@@ -164,11 +167,11 @@ pub struct QueryRecordBatchRequest {
 impl QueryRecordBatchRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
         let d = bincode::serialize(&self.args).map_err(|e| tskv::Error::Encode { source: (e) })?;
-        conn.write(&(d.len() as u32).to_be_bytes()).await?;
+        conn.write_all(&(d.len() as u32).to_be_bytes()).await?;
         conn.write_all(&d).await?;
 
         let data = QueryExpr::encode(&self.expr)?;
-        conn.write(&(data.len() as u32).to_be_bytes()).await?;
+        conn.write_all(&(data.len() as u32).to_be_bytes()).await?;
         conn.write_all(&data).await?;
 
         Ok(())
@@ -199,7 +202,7 @@ impl RecordBatchResponse {
         stream_writer.finish()?;
         let data = stream_writer.into_inner()?;
 
-        conn.write(&(data.len() as u32).to_be_bytes()).await?;
+        conn.write_all(&(data.len() as u32).to_be_bytes()).await?;
         conn.write_all(&data).await?;
 
         Ok(())

@@ -165,15 +165,19 @@ mod test {
         let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
 
         let cluster = "cluster_xxx".to_string();
-        let mut node = NodeInfo::default();
-        node.id = 111;
-        node.http_addr = "127.0.0.1:8888".to_string();
-        let req = command::WriteCommand::AddDataNode(cluster.clone(), node.clone());
+        let node = NodeInfo {
+            id: 111,
+            tcp_addr: "".to_string(),
+            http_addr: "127.0.0.1:8888".to_string(),
+            status: 0,
+        };
+
+        let req = command::WriteCommand::AddDataNode(cluster.clone(), node);
         let rsp = client.write::<command::StatusResponse>(&req);
         println!("{:?}", serde_json::to_string(&req).unwrap());
         println!("{:?}", rsp);
 
-        let req = command::ReadCommand::DataNodes(cluster.clone());
+        let req = command::ReadCommand::DataNodes(cluster);
         let rsp = client.read::<Vec<NodeInfo>>(&req);
         println!("{:?}", serde_json::to_string(&req).unwrap());
         println!("{:?}", rsp);

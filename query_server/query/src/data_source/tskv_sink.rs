@@ -23,7 +23,7 @@ use super::Result;
 use super::PointUtilSnafu;
 
 pub struct TskvRecordBatchSink {
-    engine: EngineRef,
+    _engine: EngineRef,
     coord: CoordinatorRef,
     partition: usize,
     schema: TskvTableSchema,
@@ -84,7 +84,7 @@ impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
         partition: usize,
     ) -> Box<dyn RecordBatchSink> {
         Box::new(TskvRecordBatchSink {
-            engine: self.engine.clone(),
+            _engine: self.engine.clone(),
             coord: self.coord.clone(),
             partition,
             schema: self.schema.clone(),

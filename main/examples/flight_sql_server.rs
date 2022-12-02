@@ -39,7 +39,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         let authorization = request
             .metadata()
             .get("authorization")
-            .ok_or(Status::invalid_argument("authorization field not present"))?
+            .ok_or_else(|| Status::invalid_argument("authorization field not present"))?
             .to_str()
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
         if !authorization.starts_with(basic) {
@@ -53,11 +53,11 @@ impl FlightSqlService for FlightSqlServiceImpl {
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
         let str = String::from_utf8(bytes)
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
-        let parts: Vec<_> = str.split(":").collect();
+        let parts: Vec<_> = str.split(':').collect();
         if parts.len() != 2 {
-            Err(Status::invalid_argument(format!(
-                "Invalid authorization header"
-            )))?;
+            Err(Status::invalid_argument(
+                "Invalid authorization header".to_string(),
+            ))?;
         }
         let user = parts[0];
         let pass = parts[1];

@@ -87,6 +87,6 @@ impl TenantManager for RemoteTenantManager {
             .write()
             .insert(client.tenant().name().to_string(), client.clone());
 
-        return Some(client);
+        Some(client)
     }
 }

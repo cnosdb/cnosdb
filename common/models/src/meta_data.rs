@@ -91,7 +91,7 @@ impl TenantMetaData {
         }
     }
 
-    pub fn table_schema(&self, db: &String, tab: &String) -> Option<TskvTableSchema> {
+    pub fn table_schema(&self, db: &str, tab: &str) -> Option<TskvTableSchema> {
         if let Some(info) = self.dbs.get(db) {
             if let Some(schema) = info.tables.get(tab) {
                 return Some(schema.clone());
@@ -101,7 +101,7 @@ impl TenantMetaData {
         None
     }
 
-    pub fn database_min_ts(&self, name: &String) -> Option<i64> {
+    pub fn database_min_ts(&self, name: &str) -> Option<i64> {
         if let Some(db) = self.dbs.get(name) {
             if db.ttl == 0 {
                 return Some(0);
@@ -114,7 +114,7 @@ impl TenantMetaData {
         None
     }
 
-    pub fn bucket_by_timestamp(&self, db_name: &String, ts: i64) -> Option<&BucketInfo> {
+    pub fn bucket_by_timestamp(&self, db_name: &str, ts: i64) -> Option<&BucketInfo> {
         if let Some(db) = self.dbs.get(db_name) {
             if let Some(bucket) = db
                 .buckets
@@ -128,7 +128,7 @@ impl TenantMetaData {
         None
     }
 
-    pub fn mapping_bucket(&self, db_name: &String, start: i64, end: i64) -> Vec<BucketInfo> {
+    pub fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> Vec<BucketInfo> {
         if let Some(db) = self.dbs.get(db_name) {
             let mut result = vec![];
             for item in db.buckets.iter() {

@@ -34,7 +34,7 @@ pub type CoordinatorRef = Arc<dyn Coordinator>;
 pub trait Coordinator: Send + Sync + Debug {
     fn meta_manager(&self) -> MetaRef;
     fn store_engine(&self) -> EngineRef;
-    fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef>;
+    fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
     async fn write_points(
         &self,
         tenant: String,
@@ -58,7 +58,7 @@ impl Coordinator for MockCoordinator {
         Arc::new(MockEngine::default())
     }
 
-    fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
+    fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         Some(Arc::new(MockMetaClient::default()))
     }
 
@@ -102,10 +102,7 @@ impl CoordService {
             hh_sender,
         ));
 
-        let hh_manager = Arc::new(HintedOffManager::new(
-            handoff_cfg.clone(),
-            point_writer.clone(),
-        ));
+        let hh_manager = Arc::new(HintedOffManager::new(handoff_cfg, point_writer.clone()));
         tokio::spawn(HintedOffManager::write_handoff_job(
             hh_manager.clone(),
             hh_receiver,
@@ -169,7 +166,7 @@ impl Coordinator for CoordService {
         self.kv_inst.clone()
     }
 
-    fn tenant_meta(&self, tenant: &String) -> Option<MetaClientRef> {
+    fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         self.meta.tenant_manager().tenant_meta(tenant)
     }
 
@@ -190,9 +187,8 @@ impl Coordinator for CoordService {
         self.coord_sender
             .send(CoordinatorIntCmd::WritePointsCmd(req))
             .await?;
-        let result = receiver.await?;
 
-        result
+        receiver.await?
     }
 
     async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator> {

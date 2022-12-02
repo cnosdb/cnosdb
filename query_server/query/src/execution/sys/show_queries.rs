@@ -116,7 +116,7 @@ impl ShowQueriesResultBuilder {
         } = self;
 
         let batch = RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(query_ids.finish()),
                 Arc::new(users.finish()),

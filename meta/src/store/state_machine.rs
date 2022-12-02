@@ -183,7 +183,7 @@ impl StateMachine {
             return val.index;
         }
 
-        return 0;
+        0
     }
 
     pub fn to_tenant_meta_data(&self, cluster: &String, tenant: &String) -> TenantMetaData {
@@ -215,7 +215,7 @@ impl StateMachine {
         match req {
             ReadCommand::DataNodes(cluster) => {
                 let response: Vec<NodeInfo> =
-                    children_data::<NodeInfo>(&KeyPath::data_nodes(&cluster), &self.data)
+                    children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data)
                         .into_values()
                         .collect();
 
@@ -239,23 +239,23 @@ impl StateMachine {
                 self.data.insert(key.clone(), value.clone());
                 info!("WRITE: {} :{}", key, value);
 
-                return CommandResp::default();
+                CommandResp::default()
             }
 
             WriteCommand::AddDataNode(cluster, node) => {
-                return self.process_add_date_node(cluster, node);
+                self.process_add_date_node(cluster, node)
             }
 
             WriteCommand::CreateDB(cluster, tenant, db) => {
-                return self.process_create_db(cluster, tenant, db);
+                self.process_create_db(cluster, tenant, db)
             }
 
             WriteCommand::CreateTable(cluster, tenant, schema) => {
-                return self.process_create_table(cluster, tenant, schema);
+                self.process_create_table(cluster, tenant, schema)
             }
 
             WriteCommand::UpdateTable(cluster, tenant, schema) => {
-                return self.process_update_table(cluster, tenant, schema);
+                self.process_update_table(cluster, tenant, schema)
             }
 
             WriteCommand::CreateBucket {
@@ -264,7 +264,7 @@ impl StateMachine {
                 db,
                 ts,
             } => {
-                return self.process_create_bucket(cluster, tenant, db, ts);
+                self.process_create_bucket(cluster, tenant, db, ts)
             }
         }
     }

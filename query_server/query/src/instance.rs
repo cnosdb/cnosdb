@@ -138,10 +138,10 @@ mod tests {
 
     use super::*;
     use datafusion::arrow::{
-        datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
+        record_batch::RecordBatch, util::pretty::pretty_format_batches,
     };
     use spi::{
-        catalog::DEFAULT_CATALOG, query::execution::Output, service::protocol::ContextBuilder,
+        catalog::DEFAULT_CATALOG, service::protocol::ContextBuilder,
     };
     use tskv::engine::MockEngine;
 

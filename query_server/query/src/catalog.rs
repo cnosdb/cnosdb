@@ -115,7 +115,7 @@ impl UserCatalog {
         let tenant = &DEFAULT_CATALOG.to_string();
         let meta_client = self
             .coord
-            .tenant_meta(&tenant)
+            .tenant_meta(tenant)
             .ok_or(MetadataError::InternalError {
                 error_msg: format!("can't found tenant {}", tenant),
             })?;
@@ -139,7 +139,7 @@ impl UserCatalog {
 pub struct Database {
     db_name: String,
     engine: EngineRef,
-    coord: CoordinatorRef,
+    _coord: CoordinatorRef,
     // table_name -> TableRef
     tables: RwLock<HashMap<String, TableSchema>>,
     database_schema: DatabaseSchema,
@@ -156,7 +156,7 @@ impl Database {
             db_name: db,
             tables: RwLock::new(HashMap::new()),
             engine,
-            coord,
+            _coord: coord,
             database_schema,
         }
     }

@@ -58,7 +58,7 @@ impl Service for TcpService {
     fn start(&mut self) -> Result<(), server::Error> {
         let (shutdown, rx) = oneshot::channel();
 
-        let addr = self.addr.clone();
+        let addr = self.addr;
         let dbms = self.dbms.clone();
         let coord = self.coord.clone();
 
@@ -151,11 +151,11 @@ async fn process_vnode_write_command(
         resp.code = -1;
         resp.data = err.to_string();
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
-        return Err(err.into());
+        Err(err.into())
     } else {
         info!("success write data to vnode: {}", cmd.vnode_id);
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
-        return Ok(());
+        Ok(())
     }
 }
 

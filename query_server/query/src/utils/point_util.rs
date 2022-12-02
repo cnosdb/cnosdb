@@ -149,7 +149,7 @@ pub fn record_batch_to_points_flat_buffer(
 }
 
 /// Construct row-based points flatbuffer from column-based data wip_offset
-fn construct_row_based_points<'a>(
+fn construct_row_based_points(
     fbb: &mut FlatBufferBuilder,
     columns_datum: Vec<Vec<Option<Datum>>>,
     column_schemas: &[&Field],

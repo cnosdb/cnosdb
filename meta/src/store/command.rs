@@ -69,8 +69,10 @@ impl TenaneMetaDataResp {
 
         rsp
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl ToString for TenaneMetaDataResp {
+    fn to_string(&self) -> String {
         serde_json::to_string(&self).unwrap()
     }
 }

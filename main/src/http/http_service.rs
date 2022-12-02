@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
 
 use coordinator::service::CoordinatorRef;
