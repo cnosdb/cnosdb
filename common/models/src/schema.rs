@@ -17,9 +17,8 @@ use std::str::FromStr;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-// use arrow_schema::Schema;
 use datafusion::arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, SchemaRef, TimeUnit,
+    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
@@ -83,7 +82,7 @@ pub struct ExternalTableSchema {
     pub table_partition_cols: Vec<String>,
     pub has_header: bool,
     pub delimiter: u8,
-    pub schema: datafusion::arrow::datatypes::Schema,
+    pub schema: Schema,
 }
 
 impl ExternalTableSchema {
@@ -152,8 +151,7 @@ impl Default for TskvTableSchema {
 impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
-
-        Arc::new(datafusion::arrow::datatypes::Schema::new(fields))
+        Arc::new(Schema::new(fields))
     }
 
     pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
