@@ -1,6 +1,8 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset};
+use datafusion::sql::sqlparser::ast::{
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr,
+};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 
@@ -161,6 +163,8 @@ pub struct ShowSeries {
     pub table: ObjectName,
     // where
     pub selection: Option<Expr>,
+    // order by
+    pub order_by: Option<OrderByExpr>,
     // limit
     pub limit: Option<Expr>,
     // offset
