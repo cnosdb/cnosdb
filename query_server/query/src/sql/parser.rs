@@ -228,6 +228,12 @@ impl<'a> ExtParser<'a> {
             None
         };
 
+        let order_by = if self.parser.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
+            Some(self.parser.parse_order_by_expr()?)
+        } else {
+            None
+        };
+
         let mut limit = None;
         let mut offset = None;
 
@@ -244,6 +250,7 @@ impl<'a> ExtParser<'a> {
             database_name,
             table,
             selection,
+            order_by,
             limit,
             offset,
         })))
