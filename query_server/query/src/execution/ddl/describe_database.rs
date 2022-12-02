@@ -5,7 +5,6 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
@@ -27,10 +26,7 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        describe_database(
-            self.stmt.database_name.as_str(),
-            query_state_machine.clone(),
-        )
+        describe_database(self.stmt.database_name.as_str(), query_state_machine)
     }
 }
 

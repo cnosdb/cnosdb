@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::scheduler::Scheduler;
+use models::auth::user::{User, UserInfo};
 use spi::{
     query::{dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory},
     server::dbms::DatabaseManagerSystem,
@@ -39,6 +40,12 @@ impl<D> DatabaseManagerSystem for Cnosdbms<D>
 where
     D: QueryDispatcher,
 {
+    fn authenticate(&self, user_info: &UserInfo) -> Result<User> {
+        self.access_control
+            .access_check(user_info)
+            .context(AuthSnafu)
+    }
+
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
         let query_id = self.query_dispatcher.create_query_id();
 

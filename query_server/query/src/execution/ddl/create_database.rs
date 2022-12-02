@@ -2,7 +2,7 @@ use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use models::schema::DatabaseSchema;
 use snafu::ResultExt;
-use spi::catalog::{MetaDataRef, MetadataError};
+use spi::catalog::MetadataError;
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateDatabase;
@@ -45,7 +45,7 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, false) => {
-                create_database(&self.stmt, query_state_machine.clone())?;
+                create_database(&self.stmt, query_state_machine)?;
                 Ok(Output::Nil(()))
             }
         }
@@ -58,7 +58,7 @@ fn create_database(
 ) -> Result<(), ExecutionError> {
     let CreateDatabase {
         ref name,
-        ref options,
+        options: _,
         ..
     } = stmt;
 

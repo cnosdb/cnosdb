@@ -5,8 +5,8 @@ use coordinator::service::CoordinatorRef;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use parking_lot::RwLock;
 
+use spi::catalog::MetadataError;
 use spi::catalog::Result;
-use spi::catalog::{MetadataError, DEFAULT_CATALOG};
 
 use tskv::engine::EngineRef;
 
@@ -67,7 +67,7 @@ impl UserCatalog {
     pub fn register_schema(
         &self,
         tenant: &str,
-        database: &str,
+        _database: &str,
         schema: Arc<Database>,
     ) -> Result<()> {
         let meta_client = self

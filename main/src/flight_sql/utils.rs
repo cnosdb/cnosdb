@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt::format};
+use std::{
+    collections::HashMap,
+    fmt::{self, format},
+};
 
 use arrow_flight::{
     sql::{ProstAnyExt, ProstMessageExt},
@@ -11,13 +14,95 @@ use datafusion::arrow::{
     ipc::{self, reader},
     record_batch::RecordBatch,
 };
-use http_protocol::header::{AUTHORIZATION, BASIC_PREFIX};
+use http_protocol::{
+    header::{AUTHORIZATION, BASIC_PREFIX},
+    status_code::OK,
+};
 use models::auth::user::UserInfo;
 use prost::Message;
 use prost_types::Any;
-use tonic::{Request, Status};
+use spi::service::protocol::QueryId;
+use tonic::{
+    metadata::{AsciiMetadataValue, MetadataMap},
+    Request, Status,
+};
 
 use crate::http::header::Header;
+
+/// Helper method for retrieving a value from the Authorization header.
+///
+/// headers     The headers to inspect.
+/// valuePrefix The prefix within the value portion of the header to extract away.
+///
+/// @return The header value.
+pub fn get_value_from_auth_header(headers: &MetadataMap, value_prefix: &str) -> Option<String> {
+    get_value_from_header(headers, AUTHORIZATION.as_str(), value_prefix)
+}
+
+pub fn get_value_from_header(
+    headers: &MetadataMap,
+    header: &str,
+    value_prefix: &str,
+) -> Option<String> {
+    if let Some(val) = headers.get(header) {
+        return val
+            .to_str()
+            .ok()
+            .and_then(|v| v.strip_prefix(value_prefix))
+            .map(|e| e.to_string());
+    }
+
+    None
+}
+
+/// Set basic authorization header
+pub fn insert_basic_auth<N>(
+    map: &mut MetadataMap,
+    username: N,
+    password: Option<&str>,
+) -> std::result::Result<(), String>
+where
+    N: fmt::Display,
+{
+    let auth = match password {
+        Some(password) => format!("{}:{}", username, password),
+        None => format!("{}:", username),
+    };
+
+    let token = format!("Basic {}", base64::encode(&auth));
+
+    let token = AsciiMetadataValue::try_from(token).map_err(|e| e.to_string())?;
+
+    map.insert(AUTHORIZATION.as_str(), token);
+
+    Ok(())
+}
+
+/// Set bearer authentication header
+pub fn insert_bearer_auth<T>(map: &mut MetadataMap, token: T) -> std::result::Result<(), String>
+where
+    T: fmt::Display,
+{
+    let token =
+        AsciiMetadataValue::try_from(format!("Bearer {}", token)).map_err(|e| e.to_string())?;
+
+    map.insert(AUTHORIZATION.as_str(), token);
+
+    Ok(())
+}
+
+pub fn parse_authorization_header(
+    request: &Request<FlightDescriptor>,
+) -> std::result::Result<&str, String> {
+    let authorization = request
+        .metadata()
+        .get(AUTHORIZATION.to_string())
+        .ok_or_else(|| "authorization field not present".to_string())?
+        .to_str()
+        .map_err(|_| "authorization not parsable".to_string())?;
+
+    Ok(authorization)
+}
 
 pub fn parse_user_info(
     request: &Request<FlightDescriptor>,

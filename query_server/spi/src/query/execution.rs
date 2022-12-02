@@ -79,6 +79,24 @@ impl Output {
             .reduce(|p, c| p + c)
             .unwrap_or(0)
     }
+
+    /// Returns the number of records affected by the query operation
+    ///
+    /// If it is a select statement, returns the number of rows in the result set
+    ///
+    /// -1 means unknown
+    ///
+    /// panic! when StreamData's number of records greater than i64::Max
+    pub fn affected_rows(&self) -> i64 {
+        match self {
+            Self::StreamData(_, result) => result
+                .iter()
+                .map(|e| e.num_rows())
+                .reduce(|p, c| p + c)
+                .unwrap_or(0) as i64,
+            Self::Nil(_) => 0,
+        }
+    }
 }
 
 pub trait QueryExecutionFactory {
