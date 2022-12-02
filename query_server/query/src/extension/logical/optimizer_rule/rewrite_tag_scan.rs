@@ -80,11 +80,6 @@ impl OptimizerRule for RewriteTagScan {
                                 .collect(),
                             HashMap::new(),
                         )?;
-                        // Expr::Column(Column {
-                        //     relation
-                        //
-                        //
-                        // })
 
                         let new_table_scan = LogicalPlan::TableScan(TableScan {
                             table_name: table_name.clone(),
@@ -97,15 +92,6 @@ impl OptimizerRule for RewriteTagScan {
                         return LogicalPlanBuilder::from(new_table_scan).build();
                     }
 
-                    //
-                    //
-                    //     TableScan {
-                    //         table_name: table_name.clone(),
-                    //         source: Arc::new(cluster_table.clone()),
-                    //         projection: Some(projection),
-                    //         projected_schema: projected_schema.clone(),
-                    //     }
-                    // } else
                     if contain_tag && !contain_field && !contain_time {
                         // If it does not contain non-tag columns, convert TableScan to TagScan
                         let tag_plan = LogicalPlan::Extension(Extension {
