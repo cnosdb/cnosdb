@@ -16,9 +16,7 @@ use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::SqlToRel;
-use datafusion::sql::sqlparser::ast::{
-    DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, Query, Statement,
-};
+use datafusion::sql::sqlparser::ast::{DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query, Statement};
 use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use models::auth::privilege::{
@@ -755,7 +753,6 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         };
 
         let table_name = normalize_sql_object_name(&table);
-        debug!("table name: {}", table_name);
         let table_source = self.get_table_source(&table_name)?;
         let table_schema = self.get_tskv_schema(&table_name)?;
         let table_df_schema = table_source
@@ -865,10 +862,47 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             args: concat_ws_args,
         }
         .alias("key");
-        debug!("concat_ws: {}", concat_ws);
         plan_build = plan_build
             .project_with_alias(iter::once(concat_ws), None)
             .context(logical_planner::ExternalSnafu)?;
+
+        if let Some(OrderByExpr {
+            expr,
+            asc,
+            nulls_first,
+        }) = stmt.order_by
+        {
+            if let ASTExpr::Identifier(ident) = expr {
+                let key_column = normalize_ident(&ident);
+                if key_column.ne("key") {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The order by clause expression must be \"key\"".to_string(),
+                    });
+                }
+
+                let column_expr = Expr::Column(Column {
+                    relation: None,
+                    name: key_column,
+                });
+
+                let asc = asc.unwrap_or(true);
+                let sort_expr = Expr::Sort {
+                    expr: Box::new(column_expr),
+                    asc,
+                    // when asc is true, by default nulls last to be consistent with postgres
+                    // postgres rule: https://www.postgresql.org/docs/current/queries-order.html
+                    nulls_first: nulls_first.unwrap_or(!asc),
+                };
+
+                plan_build = plan_build
+                    .sort(iter::once(sort_expr))
+                    .context(logical_planner::ExternalSnafu)?;
+            } else {
+                return Err(LogicalPlannerError::Semantic {
+                    err: "The order by clause expression must be \"key\"".to_string(),
+                });
+            }
+        }
 
         if stmt.limit.is_some() || stmt.offset.is_some() {
             plan_build =
