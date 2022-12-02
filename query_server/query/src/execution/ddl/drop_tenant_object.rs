@@ -56,7 +56,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 debug!("Drop database {} of tenant {}", name, tenant_id);
                 query_state_machine
                     .catalog
-                    .drop_database(name)
+                    .drop_database(query_state_machine.session.tenant(), name)
                     .context(MetadataSnafu)?;
                 Ok(())
             }

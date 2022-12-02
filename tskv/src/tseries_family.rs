@@ -817,7 +817,8 @@ mod test {
         version_set::VersionSet,
         TseriesFamilyId,
     };
-    use config::get_config;
+    use config::{get_config, ClusterConfig};
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::schema::DatabaseSchema;
     use models::{Timestamp, ValueType};
     use trace::info;
@@ -1133,6 +1134,8 @@ mod test {
 
     #[tokio::test]
     pub async fn test_read_with_tomb() {
+        let cluster_options = ClusterConfig::default();
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let dir = PathBuf::from("db/tsm/test/0".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1176,13 +1179,22 @@ mod test {
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let version_set: Arc<RwLock<VersionSet>> = Arc::new(RwLock::new(
-            VersionSet::new(opt.clone(), HashMap::new(), flush_task_sender.clone()).unwrap(),
+            VersionSet::new(
+                meta_manager.clone(),
+                opt.clone(),
+                HashMap::new(),
+                flush_task_sender.clone(),
+            )
+            .unwrap(),
         ));
         version_set
             .write()
-            .create_db(DatabaseSchema::new(&database))
+            .create_db(
+                DatabaseSchema::new("cnosdb", &database),
+                meta_manager.clone(),
+            )
             .unwrap();
-        let db = version_set.write().get_db(&database).unwrap();
+        let db = version_set.write().get_db("cnosdb", &database).unwrap();
 
         let ts_family_id = db
             .write()
@@ -1202,7 +1214,9 @@ mod test {
         update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver).await;
 
         let version_set = version_set.write();
-        let tsf = version_set.get_tsfamily_by_name(&database).unwrap();
+        let tsf = version_set
+            .get_tsfamily_by_name("cnosdb", &database)
+            .unwrap();
         let version = tsf.write().version();
         version.levels_info[1].read_column_file(
             ts_family_id,

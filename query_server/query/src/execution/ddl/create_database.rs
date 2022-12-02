@@ -45,25 +45,26 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, false) => {
-                create_database(&self.stmt, query_state_machine.catalog.clone())?;
+                create_database(&self.stmt, query_state_machine.clone())?;
                 Ok(Output::Nil(()))
             }
         }
     }
 }
 
-fn create_database(stmt: &CreateDatabase, catalog: MetaDataRef) -> Result<(), ExecutionError> {
+fn create_database(
+    stmt: &CreateDatabase,
+    machine: QueryStateMachineRef,
+) -> Result<(), ExecutionError> {
     let CreateDatabase {
         ref name,
         ref options,
         ..
     } = stmt;
 
-    let database_schema = DatabaseSchema {
-        name: name.clone(),
-        config: options.clone(),
-    };
-    catalog
+    let database_schema = DatabaseSchema::new(machine.session.tenant(), name);
+    machine
+        .catalog
         .create_database(name, database_schema)
         .context(execution::MetadataSnafu)?;
     Ok(())

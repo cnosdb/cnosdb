@@ -197,11 +197,12 @@ fn do_tag_scan(
 
     let timer = metrics.elapsed_compute().timer();
     let db = &table_schema.db;
+    let tenant = &table_schema.tenant;
     let series_keys = store_engine
-        .get_series_id_by_filter(db, &table_schema.name, &tags_filter)
+        .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)
         .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
         .iter()
-        .map(|sid| store_engine.get_series_key(db, *sid))
+        .map(|sid| store_engine.get_series_key(tenant, db, *sid))
         .collect::<std::result::Result<Vec<_>, IndexError>>()
         .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
 

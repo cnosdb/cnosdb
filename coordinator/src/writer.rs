@@ -203,7 +203,8 @@ impl PointWriter {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
-                let request = self.write_to_node(vnode.id, vnode.node_id, points.data.clone());
+                let request =
+                    self.write_to_node(vnode.id, &req.tenant, vnode.node_id, points.data.clone());
                 requests.push(request);
             }
         }
@@ -216,11 +217,12 @@ impl PointWriter {
     async fn write_to_node(
         &self,
         vnode_id: u32,
+        tenant: &str,
         node_id: u64,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id {
-            let result = self.write_to_locat_node(vnode_id, data).await;
+            let result = self.write_to_locat_node(vnode_id, tenant, data).await;
             debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
             return result;
@@ -293,13 +295,18 @@ impl PointWriter {
         }
     }
 
-    async fn write_to_locat_node(&self, vnode_id: u32, data: Vec<u8>) -> CoordinatorResult<()> {
+    async fn write_to_locat_node(
+        &self,
+        vnode_id: u32,
+        tenant: &str,
+        data: Vec<u8>,
+    ) -> CoordinatorResult<()> {
         let req = WritePointsRpcRequest {
             version: 1,
             points: data.clone(),
         };
 
-        if let Err(err) = self.kv_inst.write(vnode_id, req).await {
+        if let Err(err) = self.kv_inst.write(vnode_id, tenant, req).await {
             Err(err.into())
         } else {
             Ok(())

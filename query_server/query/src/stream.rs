@@ -67,8 +67,12 @@ impl TableScanStream {
             }
         }
 
-        let proj_table_schema =
-            TskvTableSchema::new(table_schema.db.clone(), table_schema.name, proj_fileds);
+        let proj_table_schema = TskvTableSchema::new(
+            table_schema.tenant.clone(),
+            table_schema.db.clone(),
+            table_schema.name,
+            proj_fileds,
+        );
 
         let option = QueryOption::new(
             batch_size,

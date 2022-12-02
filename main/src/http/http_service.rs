@@ -217,7 +217,9 @@ impl HttpService {
                     let points = parse_lines_to_points(&param.db, &mut line_protocol_lines)?;
 
                     let req = WritePointsRpcRequest { version: 1, points };
-                    let resp = kv_inst.write(0, req).await.context(TskvSnafu);
+                    // todo: we should get tenant from token
+                    let mock_teant = DEFAULT_CATALOG;
+                    let resp = kv_inst.write(0, mock_teant, req).await.context(TskvSnafu);
 
                     sample_point_write_latency(
                         &user_info.user,

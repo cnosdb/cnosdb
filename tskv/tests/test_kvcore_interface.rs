@@ -25,7 +25,14 @@ mod tests {
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
-        rt.block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) })
+        rt.block_on(async {
+            (
+                rt.clone(),
+                TsKv::open(global_config.cluster.clone(), opt, rt.clone())
+                    .await
+                    .unwrap(),
+            )
+        })
     }
 
     #[test]
@@ -50,7 +57,7 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.spawn(async move {
-            tskv.write(0, request).await.unwrap();
+            tskv.write(0, "cnosdb", request).await.unwrap();
         });
     }
 
@@ -67,19 +74,19 @@ mod tests {
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -101,7 +108,7 @@ mod tests {
             let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
             rt.block_on(async {
-                tskv.write(0, request).await.unwrap();
+                tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             });
         }
     }
@@ -118,19 +125,19 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(0, request).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -160,7 +167,7 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
-            tskv.write(0, request).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
         });
         println!("{:?}", tskv)
     }
@@ -170,9 +177,10 @@ mod tests {
     fn test_kvcore_create_table() {
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let (_rt, tskv) = get_tskv();
-        tskv.create_database(&DatabaseSchema::new("public"))
+        tskv.create_database(&DatabaseSchema::new("cnosdb", "public"))
             .unwrap();
-        tskv.create_database(&DatabaseSchema::new("test")).unwrap();
+        tskv.create_database(&DatabaseSchema::new("cnosdb", "test"))
+            .unwrap();
         let schema = Schema::new(vec![
             Field::new("cpu_hz", DataType::Decimal128(10, 6), false),
             Field::new("temp", DataType::Float64, false),
@@ -181,6 +189,7 @@ mod tests {
             Field::new("weight", DataType::Decimal128(12, 7), false),
         ]);
         let expected = TableSchema::ExternalTableSchema(ExternalTableSchema {
+            tenant: "cnosdb".to_string(),
             db: "public".to_string(),
             name: "cpu".to_string(),
             file_compression_type: "".to_string(),
@@ -193,9 +202,13 @@ mod tests {
             schema,
         });
         tskv.create_table(&expected).unwrap();
-        let table_schema = tskv.get_table_schema("public", "cpu").unwrap().unwrap();
+        let table_schema = tskv
+            .get_table_schema("cnosdb", "public", "cpu")
+            .unwrap()
+            .unwrap();
         assert_eq!(expected, table_schema);
         let expected = TableSchema::TsKvTableSchema(TskvTableSchema::new(
+            "cnosdb".to_string(),
             "test".to_string(),
             "test0".to_string(),
             vec![
@@ -217,7 +230,10 @@ mod tests {
             ],
         ));
         tskv.create_table(&expected).unwrap();
-        let table_schema = tskv.get_table_schema("test", "test0").unwrap().unwrap();
+        let table_schema = tskv
+            .get_table_schema("cnosdb", "test", "test0")
+            .unwrap()
+            .unwrap();
         assert_eq!(expected, table_schema);
     }
 }

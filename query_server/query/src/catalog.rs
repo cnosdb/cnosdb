@@ -15,40 +15,32 @@ pub type UserCatalogRef = Arc<UserCatalog>;
 pub struct UserCatalog {
     engine: EngineRef,
     coord: CoordinatorRef,
-    /// DBName -> DB
-    schemas: RwLock<HashMap<String, Arc<Database>>>,
 }
 
 impl UserCatalog {
     pub fn new(engine: EngineRef, coord: CoordinatorRef) -> Self {
-        Self {
-            schemas: RwLock::new(HashMap::new()),
-            engine,
-            coord,
-        }
+        Self { engine, coord }
     }
 
-    pub fn deregister_schema(&self, db_name: &str) -> Result<()> {
-        let mut schema = self.schemas.write();
-        match schema.get(db_name) {
-            None => {
-                return Err(MetadataError::DatabaseNotExists {
-                    database_name: db_name.to_string(),
-                })
-            }
-            Some(db) => {
-                let tables = db.table_names()?;
-                for table in tables {
-                    db.deregister_table(&table)?;
-                }
-            }
+    pub fn deregister_schema(&self, tenant: &str, db_name: &str) -> Result<()> {
+        let tables =
+            self.engine
+                .list_tables(tenant, db_name)
+                .map_err(|e| MetadataError::External {
+                    message: format!("{}", e),
+                })?;
+        for table in tables {
+            self.engine
+                .drop_table(tenant, db_name, &table)
+                .map_err(|e| MetadataError::External {
+                    message: format!("{}", e),
+                })?;
         }
         self.engine
-            .drop_database(db_name)
+            .drop_database(tenant, db_name)
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })?;
-        schema.remove(db_name);
         Ok(())
     }
 
@@ -61,40 +53,23 @@ impl UserCatalog {
     }
 
     // get db_schema
-    pub fn schema(&self, name: &str) -> Option<Arc<Database>> {
-        let schemas = self.schemas.read();
-        return if let Some(v) = schemas.get(name) {
-            Some(v.clone())
-        } else {
-            drop(schemas);
-            match self.engine.get_db_schema(name) {
-                None => return None,
-                Some(schema) => {
-                    let mut schemas = self.schemas.write();
-                    schemas.insert(
-                        name.to_string(),
-                        Arc::new(Database::new(
-                            name.to_string(),
-                            self.engine.clone(),
-                            self.coord.clone(),
-                            schema,
-                        )),
-                    );
-                    let v = schemas.get(name).unwrap();
-                    return Some(v.clone());
-                }
-            }
-        };
+    pub fn schema(&self, tenant: &str, database: &str) -> Option<Arc<Database>> {
+        self.engine.get_db_schema(tenant, database).map(|schema| {
+            Arc::new(Database::new(
+                database.to_string(),
+                self.engine.clone(),
+                self.coord.clone(),
+                schema,
+            ))
+        })
     }
 
     pub fn register_schema(
         &self,
-        name: &str,
+        tenant: &str,
+        database: &str,
         schema: Arc<Database>,
-    ) -> Result<Option<Arc<Database>>> {
-        let mut schemas = self.schemas.write();
-
-        let tenant = &DEFAULT_CATALOG.to_string();
+    ) -> Result<()> {
         let meta_client = self
             .coord
             .tenant_meta(tenant)
@@ -111,10 +86,10 @@ impl UserCatalog {
         self.engine
             .create_database(&schema.database_schema)
             .map_err(|_| MetadataError::DatabaseAlreadyExists {
-                database_name: schema.database_schema.name.clone(),
+                database_name: schema.database_schema.database_name().to_string(),
             })?;
 
-        Ok(schemas.insert(name.into(), schema))
+        Ok(())
     }
 }
 
@@ -145,7 +120,7 @@ impl Database {
 
     pub fn table_names(&self) -> Result<Vec<String>> {
         self.engine
-            .list_tables(&self.db_name)
+            .list_tables(self.database_schema.tenant_name(), &self.db_name)
             .map_err(|_| MetadataError::DatabaseNotExists {
                 database_name: self.db_name.clone(),
             })
@@ -161,7 +136,10 @@ impl Database {
         // }
 
         let mut tables = self.tables.write();
-        if let Ok(Some(schema)) = self.engine.get_table_schema(&self.db_name, name) {
+        if let Ok(Some(schema)) =
+            self.engine
+                .get_table_schema(self.database_schema.tenant_name(), &self.db_name, name)
+        {
             tables.insert(name.to_owned(), schema.clone());
             return Some(schema);
         }
@@ -189,7 +167,7 @@ impl Database {
         let res = tables.remove(name);
 
         self.engine
-            .drop_table(&self.db_name, name)
+            .drop_table(self.database_schema.tenant_name(), &self.db_name, name)
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })?;
@@ -200,7 +178,12 @@ impl Database {
     pub fn table_add_column(&self, table: &str, column: TableColumn) -> Result<()> {
         let _lock = self.tables.write();
         self.engine
-            .add_table_column(&self.db_name, table, column)
+            .add_table_column(
+                self.database_schema.tenant_name(),
+                &self.db_name,
+                table,
+                column,
+            )
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })
@@ -209,7 +192,12 @@ impl Database {
     pub fn table_drop_column(&self, table: &str, column: &str) -> Result<()> {
         let _lock = self.tables.write();
         self.engine
-            .drop_table_column(&self.db_name, table, column)
+            .drop_table_column(
+                self.database_schema.tenant_name(),
+                &self.db_name,
+                table,
+                column,
+            )
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })
@@ -223,7 +211,13 @@ impl Database {
     ) -> Result<()> {
         let _lock = self.tables.write();
         self.engine
-            .change_table_column(&self.db_name, table, column, new_column)
+            .change_table_column(
+                self.database_schema.tenant_name(),
+                &self.db_name,
+                table,
+                column,
+                new_column,
+            )
             .map_err(|e| MetadataError::External {
                 message: format!("{}", e),
             })

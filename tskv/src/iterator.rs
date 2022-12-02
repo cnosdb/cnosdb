@@ -588,10 +588,11 @@ pub struct RowIterator {
 
 impl RowIterator {
     pub fn new(engine: EngineRef, option: QueryOption, vnode_id: u32) -> Result<Self, Error> {
-        let version = engine.get_db_version(&option.table_schema.db, vnode_id)?;
+        let version = engine.get_db_version(&option.tenant, &option.table_schema.db, vnode_id)?;
 
         let series = engine
             .get_series_id_by_filter(
+                &option.tenant,
                 &option.table_schema.db,
                 &option.table_schema.name,
                 &option.tags_filter,
@@ -633,7 +634,7 @@ impl RowIterator {
 
         if let Some(key) = self
             .engine
-            .get_series_key(&self.option.table_schema.db, id)
+            .get_series_key(&self.option.tenant, &self.option.table_schema.db, id)
             .context(IndexErrSnafu)?
         {
             self.columns.clear();

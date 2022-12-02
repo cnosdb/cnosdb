@@ -147,7 +147,9 @@ async fn process_vnode_write_command(
         code: SUCCESS_RESPONSE_CODE,
         data: "".to_string(),
     };
-    if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
+    // todo: we should get tenant from token
+    let mock_tenant = DEFAULT_CATALOG;
+    if let Err(err) = kv_inst.write(cmd.vnode_id, mock_tenant, req).await {
         resp.code = -1;
         resp.data = err.to_string();
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;

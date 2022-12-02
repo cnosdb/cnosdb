@@ -113,7 +113,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn tenant(&self) -> &Tenant;
 
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
-    //fn drop_user(&self, name: &String) -> MetaResult<()>;
+    //fn drop_user(&self, name: &str) -> MetaResult<()>;
 
     // tenant member
     // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;

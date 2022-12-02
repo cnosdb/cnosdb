@@ -43,22 +43,23 @@ impl DDLDefinitionTask for CreateTableTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, Err(_)) => {
-                create_table(&self.stmt, query_state_machine.catalog.clone())?;
+                create_table(&self.stmt, query_state_machine.clone())?;
                 Ok(Output::Nil(()))
             }
         }
     }
 }
 
-fn create_table(stmt: &CreateTable, catalog: MetaDataRef) -> Result<(), ExecutionError> {
+fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<(), ExecutionError> {
     let CreateTable { name, .. } = stmt;
-    let table_schema = build_schema(stmt, catalog.clone());
-    catalog
+    let table_schema = build_schema(stmt, machine.catalog.clone(), machine.session.tenant());
+    machine
+        .catalog
         .create_table(name, TableSchema::TsKvTableSchema(table_schema))
         .context(execution::MetadataSnafu)
 }
 
-fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TskvTableSchema {
+fn build_schema(stmt: &CreateTable, catalog: MetaDataRef, tenant: &str) -> TskvTableSchema {
     let CreateTable { schema, name, .. } = stmt;
 
     let table: TableReference = name.as_str().into();
@@ -67,6 +68,7 @@ fn build_schema(stmt: &CreateTable, catalog: MetaDataRef) -> TskvTableSchema {
     let table_ref = table.resolve(catalog_name, schema_name);
 
     TskvTableSchema::new(
+        tenant.to_string(),
         table_ref.schema.to_string(),
         table.table().to_string(),
         schema.to_owned(),

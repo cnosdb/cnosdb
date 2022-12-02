@@ -405,6 +405,7 @@ mod test {
         ]);
 
         let schema = ExternalTableSchema {
+            tenant: "cnosdb".to_string(),
             db: "hello".to_string(),
             name: "world".to_string(),
             file_compression_type: "test".to_string(),

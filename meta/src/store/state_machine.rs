@@ -53,7 +53,7 @@ pub fn children_fullpath(path: &str, map: &BTreeMap<String, String>) -> Vec<Stri
     list
 }
 
-fn fetch_and_add_incr_id(cluster: &String, map: &mut BTreeMap<String, String>, count: u32) -> u32 {
+fn fetch_and_add_incr_id(cluster: &str, map: &mut BTreeMap<String, String>, count: u32) -> u32 {
     let id_key = KeyPath::incr_id(cluster);
 
     let mut id_str = "1".to_string();
@@ -68,7 +68,7 @@ fn fetch_and_add_incr_id(cluster: &String, map: &mut BTreeMap<String, String>, c
 }
 
 pub fn get_struct<'a, T: Deserialize<'a>>(
-    key: &String,
+    key: &str,
     map: &'a BTreeMap<String, String>,
 ) -> Option<T> {
     let val = map.get(key)?;
@@ -106,52 +106,47 @@ pub fn children_data<'a, T: Deserialize<'a>>(
 // **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
 pub struct KeyPath {}
 impl KeyPath {
-    pub fn incr_id(cluster: &String) -> String {
+    pub fn incr_id(cluster: &str) -> String {
         format!("/{}/auto_incr_id", cluster)
     }
 
-    pub fn data_nodes(cluster: &String) -> String {
+    pub fn data_nodes(cluster: &str) -> String {
         format!("/{}/data_nodes", cluster)
     }
 
-    pub fn data_node_id(cluster: &String, id: u64) -> String {
+    pub fn data_node_id(cluster: &str, id: u64) -> String {
         format!("/{}/data_nodes/{}", cluster, id)
     }
 
-    pub fn tenant_users(cluster: &String, tenant: &String) -> String {
+    pub fn tenant_users(cluster: &str, tenant: &str) -> String {
         format!("/{}/{}/users", cluster, tenant)
     }
 
-    pub fn tenant_user_name(cluster: &String, tenant: &String, name: &String) -> String {
+    pub fn tenant_user_name(cluster: &str, tenant: &str, name: &str) -> String {
         format!("/{}/{}/users/{}", cluster, tenant, name)
     }
 
-    pub fn tenant_dbs(cluster: &String, tenant: &String) -> String {
+    pub fn tenant_dbs(cluster: &str, tenant: &str) -> String {
         format!("/{}/{}/dbs", cluster, tenant)
     }
 
-    pub fn tenant_db_name(cluster: &String, tenant: &String, db: &String) -> String {
+    pub fn tenant_db_name(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}", cluster, tenant, db)
     }
 
-    pub fn tenant_db_buckets(cluster: &String, tenant: &String, db: &String) -> String {
+    pub fn tenant_db_buckets(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}/buckets", cluster, tenant, db)
     }
 
-    pub fn tenant_bucket_id(cluster: &String, tenant: &String, db: &String, id: u32) -> String {
+    pub fn tenant_bucket_id(cluster: &str, tenant: &str, db: &str, id: u32) -> String {
         format!("/{}/{}/dbs/{}/buckets/{}", cluster, tenant, db, id)
     }
 
-    pub fn tenant_schemas(cluster: &String, tenant: &String, db: &String) -> String {
+    pub fn tenant_schemas(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}/schemas", cluster, tenant, db)
     }
 
-    pub fn tenant_schema_name(
-        cluster: &String,
-        tenant: &String,
-        db: &String,
-        name: &String,
-    ) -> String {
+    pub fn tenant_schema_name(cluster: &str, tenant: &str, db: &str, name: &str) -> String {
         format!("/{}/{}/dbs/{}/schemas/{}", cluster, tenant, db, name)
     }
 }
@@ -187,7 +182,7 @@ impl StateMachine {
         0
     }
 
-    pub fn to_tenant_meta_data(&self, cluster: &String, tenant: &String) -> TenantMetaData {
+    pub fn to_tenant_meta_data(&self, cluster: &str, tenant: &str) -> TenantMetaData {
         let mut meta = TenantMetaData::new();
         meta.version = self.version();
         meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
@@ -276,7 +271,7 @@ impl StateMachine {
         }
     }
 
-    fn process_add_date_node(&mut self, cluster: &String, node: &NodeInfo) -> CommandResp {
+    fn process_add_date_node(&mut self, cluster: &str, node: &NodeInfo) -> CommandResp {
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         self.data.insert(key.clone(), value.clone());
@@ -287,11 +282,11 @@ impl StateMachine {
 
     fn process_create_db(
         &mut self,
-        cluster: &String,
-        tenant: &String,
+        cluster: &str,
+        tenant: &str,
         schema: &DatabaseSchema,
     ) -> CommandResp {
-        let key = KeyPath::tenant_db_name(cluster, tenant, &schema.name);
+        let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
         // if self.data.contains_key(&key) {
         //     return KvResp {
         //         err_code: -1,
@@ -314,8 +309,8 @@ impl StateMachine {
 
     fn process_create_table(
         &mut self,
-        cluster: &String,
-        tenant: &String,
+        cluster: &str,
+        tenant: &str,
         schema: &TskvTableSchema,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
@@ -341,8 +336,8 @@ impl StateMachine {
 
     fn process_update_table(
         &mut self,
-        cluster: &String,
-        tenant: &String,
+        cluster: &str,
+        tenant: &str,
         schema: &TskvTableSchema,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
@@ -374,9 +369,9 @@ impl StateMachine {
 
     fn process_create_bucket(
         &mut self,
-        cluster: &String,
-        tenant: &String,
-        db: &String,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
         ts: &i64,
     ) -> CommandResp {
         let db_path = KeyPath::tenant_db_name(cluster, tenant, db);

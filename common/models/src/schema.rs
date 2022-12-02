@@ -66,6 +66,7 @@ impl TableSchema {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ExternalTableSchema {
+    pub tenant: String,
     pub db: String,
     pub name: String,
     pub file_compression_type: String,
@@ -116,6 +117,7 @@ impl ExternalTableSchema {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TskvTableSchema {
+    pub tenant: String,
     pub db: String,
     pub name: String,
     pub schema_id: SchemaId,
@@ -129,6 +131,7 @@ pub struct TskvTableSchema {
 impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
+            tenant: "cnosdb".to_string(),
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
@@ -146,7 +149,7 @@ impl TskvTableSchema {
         Arc::new(Schema::new(fields))
     }
 
-    pub fn new(db: String, name: String, columns: Vec<TableColumn>) -> Self {
+    pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
         let columns_index = columns
             .iter()
             .enumerate()
@@ -154,6 +157,7 @@ impl TskvTableSchema {
             .collect();
 
         Self {
+            tenant,
             db,
             name,
             schema_id: 0,
@@ -456,8 +460,8 @@ impl ColumnType {
     }
 }
 
-impl std::fmt::Display for ColumnType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for ColumnType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         let s = self.as_str();
         write!(f, "{}", s)
     }
@@ -479,17 +483,46 @@ impl ColumnType {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct DatabaseSchema {
-    pub name: String,
+    tenant: String,
+    database: String,
     pub config: DatabaseOptions,
 }
 
 impl DatabaseSchema {
-    pub fn new(name: &str) -> Self {
+    pub fn new(tenant_name: &str, database_name: &str) -> Self {
         DatabaseSchema {
-            name: name.to_string(),
+            tenant: tenant_name.to_string(),
+            database: database_name.to_string(),
             config: DatabaseOptions::default(),
         }
     }
+
+    pub fn database_name(&self) -> &str {
+        &self.database
+    }
+
+    pub fn tenant_name(&self) -> &str {
+        &self.tenant
+    }
+
+    pub fn owner(&self) -> String {
+        format!("{}.{}", self.tenant, self.database)
+    }
+}
+
+pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
+    format!("{}.{}", tenant_name, database_name)
+}
+
+pub fn split_owner(owner: &str) -> (&str, &str) {
+    owner
+        .find(".")
+        .map(|index| {
+            (index < owner.len())
+                .then(|| (&owner[..index], &owner[(index + 1)..]))
+                .unwrap_or((owner, ""))
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]

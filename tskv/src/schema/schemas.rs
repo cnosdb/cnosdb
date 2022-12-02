@@ -1,4 +1,5 @@
 use crate::schema::error::{Result, SchemaError};
+use meta::meta_client::MetaRef;
 use models::codec::Encoding;
 use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{ColumnId, SeriesId};
@@ -13,16 +14,17 @@ const TIME_STAMP_NAME: &str = "time";
 pub struct DBschemas {
     db_schema: RwLock<DatabaseSchema>,
     table_schema: RwLock<HashMap<String, TskvTableSchema>>,
-    // metadata client
+    meta: MetaRef,
 }
 
 impl DBschemas {
-    pub fn new(db_schema: DatabaseSchema) -> Result<Self> {
+    pub fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
         let table_schema: HashMap<String, TskvTableSchema> = HashMap::new();
         // todo: get all table schemas from meta
         Ok(Self {
             db_schema: RwLock::new(db_schema),
             table_schema: RwLock::new(table_schema),
+            meta,
         })
     }
 
