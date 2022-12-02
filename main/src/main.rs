@@ -203,12 +203,13 @@ fn main() -> Result<(), std::io::Error> {
                     tcp_host,
                 ));
 
+                let tls_config = global_config.security.tls_config;
                 let http_service = Box::new(HttpService::new(
                     dbms.clone(),
                     kv_inst.clone(),
                     coord_service,
                     http_host,
-                    global_config.security.tls_config.clone(),
+                    tls_config.clone(),
                     global_config.query.query_sql_limit,
                     global_config.query.write_sql_limit,
                 ));
@@ -216,11 +217,13 @@ fn main() -> Result<(), std::io::Error> {
                     dbms.clone(),
                     kv_inst.clone(),
                     grpc_host,
-                    global_config.security.tls_config.clone(),
+                    tls_config.clone(),
                 ));
-
-                let flight_sql_service =
-                    Box::new(FlightSqlServiceAdapter::new(dbms.clone(), flight_rpc_host));
+                let flight_sql_service = Box::new(FlightSqlServiceAdapter::new(
+                    dbms.clone(),
+                    flight_rpc_host,
+                    tls_config.clone(),
+                ));
 
                 let report_service = Box::new(ReportService::new());
 

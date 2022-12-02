@@ -21,11 +21,22 @@ pub trait OidGenerator {
 }
 
 #[derive(Default)]
-pub struct MemoryOidGenerator {}
+pub struct MemoryOidGenerator {
+    delegate: UuidGenerator,
+}
 
 #[async_trait::async_trait]
 impl OidGenerator for MemoryOidGenerator {
     async fn next_oid(&self) -> std::result::Result<Oid, String> {
-        Ok(Uuid::new_v4().as_u128())
+        Ok(self.delegate.next_id())
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct UuidGenerator {}
+
+impl UuidGenerator {
+    pub fn next_id(&self) -> u128 {
+        Uuid::new_v4().as_u128()
     }
 }
