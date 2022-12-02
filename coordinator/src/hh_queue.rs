@@ -330,7 +330,7 @@ impl HintedOffWriter {
     pub fn write_header(file: &DmaFile, offset: u32) -> CoordinatorResult<()> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
         header_buf[..4].copy_from_slice(SEGMENT_FILE_MAGIC.as_slice());
-        header_buf[4..].copy_from_slice(&(offset as u32).to_be_bytes());
+        header_buf[4..].copy_from_slice(&offset.to_be_bytes());
 
         file.write_at(0, &header_buf)
             .and_then(|_| file.sync_all(FileSync::Hard))?;

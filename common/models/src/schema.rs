@@ -516,7 +516,7 @@ pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
 
 pub fn split_owner(owner: &str) -> (&str, &str) {
     owner
-        .find(".")
+        .find('.')
         .map(|index| {
             (index < owner.len())
                 .then(|| (&owner[..index], &owner[(index + 1)..]))

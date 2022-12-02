@@ -84,7 +84,7 @@ impl VersionSet {
     ) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .dbs
-            .entry(schema.owner().to_string())
+            .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(Database::new(
                 schema,
                 self.opt.clone(),

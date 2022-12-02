@@ -57,7 +57,7 @@ impl Database {
             index: index_manger(opt.storage.index_base_dir())
                 .write()
                 .get_db_index(&schema.owner()),
-            owner: schema.owner().to_string(),
+            owner: schema.owner(),
             schemas: Arc::new(DBschemas::new(schema, meta.clone()).context(SchemaSnafu)?),
             ts_families: HashMap::new(),
             opt,

@@ -483,7 +483,7 @@ impl Engine for TsKv {
         if self
             .version_set
             .read()
-            .db_exists(&schema.tenant_name(), &schema.database_name())
+            .db_exists(schema.tenant_name(), schema.database_name())
         {
             return Err(Error::DatabaseAlreadyExists {
                 database: schema.database_name().to_string(),
@@ -547,14 +547,14 @@ impl Engine for TsKv {
             }
             index_manger(db_wlock.get_index().path())
                 .write()
-                .remove_db_index(&database);
+                .remove_db_index(database);
         }
 
-        let idx_dir = self.options.storage.index_dir(&database);
+        let idx_dir = self.options.storage.index_dir(database);
         if let Err(e) = std::fs::remove_dir_all(&idx_dir) {
             error!("Failed to remove dir '{}', e: {}", idx_dir.display(), e);
         }
-        let db_dir = self.options.storage.database_dir(&database);
+        let db_dir = self.options.storage.database_dir(database);
         if let Err(e) = std::fs::remove_dir_all(&db_dir) {
             error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
         }

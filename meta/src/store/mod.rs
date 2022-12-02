@@ -126,7 +126,7 @@ impl Restore for Arc<Store> {
             .next()
             .map(|res| res.unwrap())
             .map(|(_, val)| {
-                serde_json::from_slice::<Entry<ExampleTypeConfig>>(&*val)
+                serde_json::from_slice::<Entry<ExampleTypeConfig>>(&val)
                     .unwrap()
                     .log_id
             });
@@ -156,7 +156,7 @@ impl RaftLogReader<ExampleTypeConfig> for Arc<Store> {
             .next()
             .map(|res| res.unwrap())
             .map(|(_, val)| {
-                serde_json::from_slice::<Entry<ExampleTypeConfig>>(&*val)
+                serde_json::from_slice::<Entry<ExampleTypeConfig>>(&val)
                     .unwrap()
                     .log_id
             });
@@ -186,7 +186,7 @@ impl RaftLogReader<ExampleTypeConfig> for Arc<Store> {
         let response = log
             .range(transform_range_bound(range))
             .map(|res| res.unwrap())
-            .map(|(_, val)| serde_json::from_slice::<Entry<ExampleTypeConfig>>(&*val).unwrap())
+            .map(|(_, val)| serde_json::from_slice::<Entry<ExampleTypeConfig>>(&val).unwrap())
             .collect();
 
         Ok(response)
@@ -292,7 +292,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
         let value = self.vote.get(b"vote").unwrap();
         match value {
             None => Ok(None),
-            Some(val) => Ok(Some(serde_json::from_slice::<Vote<NodeId>>(&*val).unwrap())),
+            Some(val) => Ok(Some(serde_json::from_slice::<Vote<NodeId>>(&val).unwrap())),
         }
     }
 

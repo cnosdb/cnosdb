@@ -35,6 +35,6 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        <Self as Parser>::parse_from(&Vec::<&'static str>::new())
+        <Self as Parser>::parse_from(Vec::<&'static str>::new())
     }
 }

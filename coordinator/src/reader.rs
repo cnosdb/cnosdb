@@ -197,7 +197,7 @@ impl QueryExecutor {
                     let random = now_timestamp() as usize % repl.vnodes.len();
                     let vnode = repl.vnodes[random].clone();
 
-                    let list = vnode_mapping.entry(vnode.node_id).or_insert(vec![]);
+                    let list = vnode_mapping.entry(vnode.node_id).or_default();
                     list.push(vnode);
                 }
             }

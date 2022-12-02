@@ -804,7 +804,7 @@ mod test {
         check_wal_files(mgr.current_dir);
         let opt = kv_option::Options::from(&global_config);
         let tskv = rt
-            .block_on(TsKv::open(global_config.cluster.clone(), opt, rt.clone()))
+            .block_on(TsKv::open(global_config.cluster, opt, rt.clone()))
             .unwrap();
         let ver = tskv.get_db_version("cnosdb", "db0", 10).unwrap().unwrap();
         assert_eq!(ver.ts_family_id, 10);
