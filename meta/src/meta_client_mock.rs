@@ -12,7 +12,7 @@ use models::{
     },
     meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet},
     oid::Oid,
-    schema::{Tenant, TenantOptions, TskvTableSchema},
+    schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema},
 };
 use tokio::net::TcpStream;
 
@@ -62,12 +62,12 @@ impl MetaClient for MockMetaClient {
         &self.tenant
     }
 
-    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
+    fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
 
-    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
-        Ok(Some(DatabaseInfo::default()))
+    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
+        Ok(Some(DatabaseSchema::default()))
     }
 
     fn list_databases(&self) -> MetaResult<Vec<String>> {

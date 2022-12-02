@@ -1,4 +1,5 @@
 use crate::NodeId;
+use models::schema::DatabaseSchema;
 use models::schema::TskvTableSchema;
 
 use openraft::EffectiveMembership;
@@ -100,7 +101,7 @@ pub fn children_data<'a, T: Deserialize<'a>>(
 // **    /cluster_name/auto_incr_id -> id
 // **    /cluster_name/data_nodes/node_id -> [NodeInfo] 集群、数据节点等信息
 // **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
-// **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseInfo] db相关信息、保留策略等
+// **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseSchema] db相关信息、保留策略等
 // **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
 // **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
 pub struct KeyPath {}
@@ -192,18 +193,28 @@ impl StateMachine {
         meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
         meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data);
 
-        meta.dbs = children_data::<DatabaseInfo>(&KeyPath::tenant_dbs(cluster, tenant), &self.data);
-        for (key, val) in meta.dbs.iter_mut() {
+        //
+        let db_schemas =
+            children_data::<DatabaseSchema>(&KeyPath::tenant_dbs(cluster, tenant), &self.data);
+
+        for (key, schema) in db_schemas.iter() {
             let buckets = children_data::<BucketInfo>(
                 &KeyPath::tenant_db_buckets(cluster, tenant, key),
                 &self.data,
             );
-            val.buckets = buckets.into_values().collect();
 
-            val.tables = children_data::<TskvTableSchema>(
+            let tables = children_data::<TskvTableSchema>(
                 &KeyPath::tenant_schemas(cluster, tenant, key),
                 &self.data,
             );
+
+            let info = DatabaseInfo {
+                tables,
+                schema: schema.clone(),
+                buckets: buckets.into_values().collect(),
+            };
+
+            meta.dbs.insert(key.clone(), info);
         }
 
         meta
@@ -242,12 +253,10 @@ impl StateMachine {
                 CommandResp::default()
             }
 
-            WriteCommand::AddDataNode(cluster, node) => {
-                self.process_add_date_node(cluster, node)
-            }
+            WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
 
-            WriteCommand::CreateDB(cluster, tenant, db) => {
-                self.process_create_db(cluster, tenant, db)
+            WriteCommand::CreateDB(cluster, tenant, schema) => {
+                self.process_create_db(cluster, tenant, schema)
             }
 
             WriteCommand::CreateTable(cluster, tenant, schema) => {
@@ -263,9 +272,7 @@ impl StateMachine {
                 tenant,
                 db,
                 ts,
-            } => {
-                self.process_create_bucket(cluster, tenant, db, ts)
-            }
+            } => self.process_create_bucket(cluster, tenant, db, ts),
         }
     }
 
@@ -282,9 +289,9 @@ impl StateMachine {
         &mut self,
         cluster: &String,
         tenant: &String,
-        db: &DatabaseInfo,
+        schema: &DatabaseSchema,
     ) -> CommandResp {
-        let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
+        let key = KeyPath::tenant_db_name(cluster, tenant, &schema.name);
         // if self.data.contains_key(&key) {
         //     return KvResp {
         //         err_code: -1,
@@ -293,7 +300,7 @@ impl StateMachine {
         //     };
         // }
 
-        let value = serde_json::to_string(db).unwrap();
+        let value = serde_json::to_string(schema).unwrap();
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
@@ -385,7 +392,7 @@ impl StateMachine {
             }
         }
 
-        let db_info = match get_struct::<DatabaseInfo>(&db_path, &self.data) {
+        let db_schema = match get_struct::<DatabaseSchema>(&db_path, &self.data) {
             Some(info) => info,
             None => {
                 return TenaneMetaDataResp::new(
@@ -403,8 +410,8 @@ impl StateMachine {
 
         let now = utils::now_timestamp();
         if node_list.is_empty()
-            || db_info.shard == 0
-            || db_info.replications > node_list.len() as u32
+            || db_schema.config.shard_num_or_default() == 0
+            || db_schema.config.replica_or_default() > node_list.len() as u64
         {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
@@ -413,7 +420,7 @@ impl StateMachine {
             .to_string();
         }
 
-        if *ts < now - db_info.ttl {
+        if *ts < now - db_schema.config.ttl_or_default().time_stamp() {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} create expired bucket not permit!", db),
@@ -427,11 +434,14 @@ impl StateMachine {
             end_time: 0,
             shard_group: vec![],
         };
-        (bucket.start_time, bucket.end_time) = get_time_range(*ts, db_info.vnode_duration);
+        (bucket.start_time, bucket.end_time) = get_time_range(
+            *ts,
+            db_schema.config.vnode_duration_or_default().time_stamp(),
+        );
         let (group, used) = allocation_replication_set(
             node_list,
-            db_info.shard,
-            db_info.replications,
+            db_schema.config.shard_num_or_default() as u32,
+            db_schema.config.replica_or_default() as u32,
             bucket.id + 1,
         );
         bucket.shard_group = group;

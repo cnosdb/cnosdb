@@ -17,7 +17,7 @@ use tokio::net::TcpStream;
 
 use trace::info;
 
-use models::schema::{Tenant, TenantOptions, TskvTableSchema};
+use models::schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema};
 
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{UserManager, UserManagerMock};
@@ -147,8 +147,8 @@ pub trait MetaClient: Send + Sync + Debug {
     ) -> MetaResult<bool>;
     fn drop_custom_role(&mut self, role_name: &str) -> MetaResult<bool>;
 
-    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()>;
-    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseInfo>>;
+    fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()>;
+    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
     fn drop_db(&self, name: &str) -> MetaResult<()>;
 
@@ -448,11 +448,11 @@ impl MetaClient for RemoteMetaClient {
 
     // tenant role end
 
-    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
+    fn create_db(&self, schema: &DatabaseSchema) -> MetaResult<()> {
         let req = command::WriteCommand::CreateDB(
             self.cluster.clone(),
             self.tenant.name().to_string(),
-            info.clone(),
+            schema.clone(),
         );
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
@@ -471,14 +471,14 @@ impl MetaClient for RemoteMetaClient {
         Ok(())
     }
 
-    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
+    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.clone()));
+            return Ok(Some(db.schema.clone()));
         }
 
         self.sync_all_tenant_metadata()?;
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.clone()));
+            return Ok(Some(db.schema.clone()));
         }
 
         Ok(None)

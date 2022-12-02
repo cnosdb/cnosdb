@@ -477,7 +477,7 @@ impl ColumnType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct DatabaseSchema {
     pub name: String,
     pub config: DatabaseOptions,

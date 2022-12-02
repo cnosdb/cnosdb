@@ -2,10 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use coordinator::service::CoordinatorRef;
 
-use models::{
-    meta_data::DatabaseInfo,
-    schema::{DatabaseSchema, TableColumn, TableSchema},
-};
+use models::schema::{DatabaseSchema, TableColumn, TableSchema};
 use parking_lot::RwLock;
 
 use spi::catalog::Result;
@@ -97,21 +94,6 @@ impl UserCatalog {
     ) -> Result<Option<Arc<Database>>> {
         let mut schemas = self.schemas.write();
 
-        let info = DatabaseInfo {
-            name: name.to_string(),
-            shard: schema.database_schema.config.shard_num_or_default() as u32,
-            ttl: schema.database_schema.config.ttl_or_default().time_stamp(),
-            vnode_duration: schema
-                .database_schema
-                .config
-                .vnode_duration_or_default()
-                .time_stamp(),
-            replications: schema.database_schema.config.replica_or_default() as u32,
-            buckets: vec![],
-
-            tables: HashMap::new(),
-        };
-
         let tenant = &DEFAULT_CATALOG.to_string();
         let meta_client = self
             .coord
@@ -121,7 +103,7 @@ impl UserCatalog {
             })?;
 
         meta_client
-            .create_db(&info)
+            .create_db(&schema.database_schema)
             .map_err(|err| MetadataError::InternalError {
                 error_msg: err.to_string(),
             })?;

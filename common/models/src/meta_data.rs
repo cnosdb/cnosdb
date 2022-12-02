@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::schema::TskvTableSchema;
+use crate::schema::{DatabaseSchema, TskvTableSchema};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Resource {
@@ -63,11 +63,12 @@ pub struct VnodeInfo {
 // [PRECISION {'ms' | 'us' | 'ns'}]]
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct DatabaseInfo {
-    pub name: String,
-    pub shard: u32,
-    pub ttl: i64,
-    pub vnode_duration: i64,
-    pub replications: u32,
+    // pub name: String,
+    // pub shard: u32,
+    // pub ttl: i64,
+    // pub vnode_duration: i64,
+    // pub replications: u32,
+    pub schema: DatabaseSchema,
 
     pub buckets: Vec<BucketInfo>,
     pub tables: HashMap<String, TskvTableSchema>,
@@ -103,12 +104,10 @@ impl TenantMetaData {
 
     pub fn database_min_ts(&self, name: &str) -> Option<i64> {
         if let Some(db) = self.dbs.get(name) {
-            if db.ttl == 0 {
-                return Some(0);
-            }
-
+            let ttl = db.schema.config.ttl_or_default().time_stamp();
             let now = crate::utils::now_timestamp();
-            return Some(now - db.ttl);
+
+            return Some(now - ttl);
         }
 
         None
