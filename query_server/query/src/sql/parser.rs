@@ -3,7 +3,6 @@ use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
 
-use datafusion::sql::sqlparser::ast::Statement;
 use datafusion::sql::sqlparser::{
     ast::{DataType, Ident, ObjectName, Value},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -269,15 +268,12 @@ impl<'a> ExtParser<'a> {
             ));
         }
         match self.parse_statement()? {
-            ExtStatement::SqlStatement(statement) => {
-                Ok(ExtStatement::SqlStatement(Box::new(Statement::Explain {
-                    describe_alias: false,
-                    analyze,
-                    verbose,
-                    format,
-                    statement,
-                })))
-            }
+            ExtStatement::SqlStatement(statement) => Ok(ExtStatement::Explain(Explain {
+                analyze,
+                verbose,
+                format,
+                ext_statement: Box::new(ExtStatement::SqlStatement(statement)),
+            })),
             ExtStatement::ShowSeries(statement) => Ok(ExtStatement::Explain(Explain {
                 analyze,
                 verbose,

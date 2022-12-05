@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
 
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
-use models::schema::TableSchemaRef;
+use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use trace::debug;
@@ -19,7 +19,7 @@ use super::TskvSnafu;
 pub struct TskvRecordBatchSink {
     engine: EngineRef,
     partition: usize,
-    schema: TableSchemaRef,
+    schema: TskvTableSchemaRef,
 
     metrics: TskvSinkMetrics,
 }
@@ -50,11 +50,11 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
 pub struct TskvRecordBatchSinkProvider {
     engine: EngineRef,
-    schema: TableSchemaRef,
+    schema: TskvTableSchemaRef,
 }
 
 impl TskvRecordBatchSinkProvider {
-    pub fn new(engine: EngineRef, schema: TableSchemaRef) -> Self {
+    pub fn new(engine: EngineRef, schema: TskvTableSchemaRef) -> Self {
         Self { engine, schema }
     }
 }

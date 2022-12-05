@@ -22,14 +22,14 @@ use std::{any::Any, fmt::Debug, sync::Arc};
 
 use datafusion::error::Result;
 use futures::StreamExt;
-use models::schema::TableSchemaRef;
+use models::schema::TskvTableSchemaRef;
 use trace::debug;
 
 use crate::data_source::sink::{RecordBatchSink, RecordBatchSinkProvider};
 
 pub struct TableWriterExec {
     input: Arc<dyn ExecutionPlan>,
-    table: TableSchemaRef,
+    table: TskvTableSchemaRef,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
 
@@ -41,7 +41,7 @@ pub struct TableWriterExec {
 impl TableWriterExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
-        table: TableSchemaRef,
+        table: TskvTableSchemaRef,
         record_batch_sink_provider: Arc<dyn RecordBatchSinkProvider>,
     ) -> Self {
         let schema = Arc::new(Schema::new(vec![Field::new(

@@ -11,7 +11,7 @@ use datafusion::{
 };
 use futures::Stream;
 use models::codec::Encoding;
-use models::schema::TableSchemaRef;
+use models::schema::TskvTableSchemaRef;
 use models::{
     predicate::domain::PredicateRef,
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
@@ -35,7 +35,7 @@ pub struct TableScanStream {
 
 impl TableScanStream {
     pub fn new(
-        table_schema: TableSchemaRef,
+        table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         batch_size: usize,
