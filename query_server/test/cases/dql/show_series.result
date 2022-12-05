@@ -54,12 +54,12 @@ key
 
 -- EXECUTE SQL: SHOW SERIES FROM test ORDER BY f0; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: The order by clause expression must be \"key\""}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'f0'. Valid fields are 'key'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SHOW SERIES FROM test ORDER BY time; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: The order by clause expression must be \"key\""}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'time'. Valid fields are 'key'."}
 -- ERROR:  --
 
 -- EXECUTE SQL: SHOW SERIES FROM test ORDER BY key; --

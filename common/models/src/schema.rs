@@ -31,7 +31,7 @@ use datafusion::error::{DataFusionError, Result as DataFusionResult};
 use crate::codec::Encoding;
 use crate::{ColumnId, SchemaId, ValueType};
 
-pub type TableSchemaRef = Arc<TskvTableSchema>;
+pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
 pub const TIME_FIELD_NAME: &str = "time";
 

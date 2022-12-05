@@ -24,7 +24,7 @@ use futures::Stream;
 use models::{
     arrow_array::{build_arrow_array_builders, WriteArrow},
     predicate::domain::{ColumnDomains, PredicateRef},
-    schema::{ColumnType, TableSchemaRef},
+    schema::{ColumnType, TskvTableSchemaRef},
     SeriesKey, TagValue,
 };
 
@@ -35,7 +35,7 @@ use tskv::{engine::EngineRef, index::IndexError};
 pub struct TagScanExec {
     // connection
     // db: CustomDataSource,
-    table_schema: TableSchemaRef,
+    table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     predicate: PredicateRef,
     engine: EngineRef,
@@ -46,7 +46,7 @@ pub struct TagScanExec {
 
 impl TagScanExec {
     pub(crate) fn new(
-        table_schema: TableSchemaRef,
+        table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         predicate: PredicateRef,
         engine: EngineRef,
@@ -183,7 +183,7 @@ impl<'a> Display for PredicateDisplay<'a> {
 }
 
 fn do_tag_scan(
-    table_schema: TableSchemaRef,
+    table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     tags_filter: ColumnDomains<String>,
     store_engine: EngineRef,

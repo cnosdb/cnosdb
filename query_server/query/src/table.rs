@@ -11,7 +11,7 @@ use datafusion::{
     physical_plan::{project_schema, ExecutionPlan},
 };
 use models::predicate::domain::{Predicate, PredicateRef};
-use models::schema::{TableSchemaRef, TskvTableSchema};
+use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::catalog::MetadataError;
 use tskv::engine::EngineRef;
 
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Clone)]
 pub struct ClusterTable {
     engine: EngineRef,
-    schema: TableSchemaRef,
+    schema: TskvTableSchemaRef,
 }
 
 impl ClusterTable {
@@ -88,7 +88,7 @@ impl ClusterTable {
         )))
     }
 
-    pub fn table_schema(&self) -> TableSchemaRef {
+    pub fn table_schema(&self) -> TskvTableSchemaRef {
         self.schema.clone()
     }
 
