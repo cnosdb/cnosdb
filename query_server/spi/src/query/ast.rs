@@ -164,7 +164,7 @@ pub struct ShowSeries {
     // where
     pub selection: Option<Expr>,
     // order by
-    pub order_by: Option<OrderByExpr>,
+    pub order_by: Vec<OrderByExpr>,
     // limit
     pub limit: Option<Expr>,
     // offset
