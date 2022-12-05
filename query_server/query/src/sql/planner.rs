@@ -9,10 +9,9 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
-    BinaryExpr, BuiltinScalarFunction, Case, Explain, Extension, LogicalPlan, LogicalPlanBuilder,
-    Operator, PlanType, Projection, TableSource, ToStringifiedPlan,
+    cast, lit, BinaryExpr, BuiltinScalarFunction, Case, Explain, Expr, Extension, LogicalPlan,
+    LogicalPlanBuilder, Operator, PlanType, Projection, TableSource, ToStringifiedPlan,
 };
-use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::SqlToRel;
@@ -815,38 +814,38 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
     fn show_series_order_by(
         &self,
-        expr: Option<OrderByExpr>,
+        exprs: Vec<OrderByExpr>,
         plan: LogicalPlan,
     ) -> Result<LogicalPlanBuilder> {
+        if exprs.is_empty() {
+            return Ok(LogicalPlanBuilder::from(plan));
+        }
         let schema = plan.schema();
-
         let sql_to_rel = SqlToRel::new(&self.schema_provider);
 
-        let expr = match expr {
-            Some(expr) => expr,
-            None => return Ok(LogicalPlanBuilder::from(plan)),
-        };
-        let OrderByExpr {
+        let mut sort_exprs = Vec::new();
+        for OrderByExpr {
             expr,
             asc,
             nulls_first,
-        } = expr;
-
-        let expr = sql_to_rel
-            .sql_to_rex(expr, schema, &mut HashMap::new())
-            .context(logical_planner::ExternalSnafu)?;
-
-        let asc = asc.unwrap_or(true);
-        let sort_expr = Expr::Sort {
-            expr: Box::new(expr),
-            asc,
-            // when asc is true, by default nulls last to be consistent with postgres
-            // postgres rule: https://www.postgresql.org/docs/current/queries-order.html
-            nulls_first: nulls_first.unwrap_or(!asc),
-        };
+        } in exprs
+        {
+            let expr = sql_to_rel
+                .sql_to_rex(expr, schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?;
+            let asc = asc.unwrap_or(true);
+            let sort_expr = Expr::Sort {
+                expr: Box::new(expr),
+                asc,
+                // when asc is true, by default nulls last to be consistent with postgres
+                // postgres rule: https://www.postgresql.org/docs/current/queries-order.html
+                nulls_first: nulls_first.unwrap_or(!asc),
+            };
+            sort_exprs.push(sort_expr);
+        }
 
         LogicalPlanBuilder::from(plan)
-            .sort(iter::once(sort_expr))
+            .sort(sort_exprs)
             .context(logical_planner::ExternalSnafu)
     }
 
