@@ -1,9 +1,9 @@
 use std::fmt;
 
-use datafusion::sql::sqlparser::ast::{SqlOption, Value};
 use datafusion::sql::sqlparser::ast::{
     AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr,
 };
+use datafusion::sql::sqlparser::ast::{SqlOption, Value};
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 

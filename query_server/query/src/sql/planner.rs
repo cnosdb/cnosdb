@@ -16,7 +16,10 @@ use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::SqlToRel;
-use datafusion::sql::sqlparser::ast::{DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query, Statement};
+use datafusion::sql::sqlparser::ast::{
+    DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query,
+    Statement,
+};
 use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use models::auth::privilege::{
@@ -25,7 +28,9 @@ use models::auth::privilege::{
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::object_reference::ObjectReference;
 use models::oid::{Identifier, Oid};
-use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD_NAME};
+use models::schema::{
+    ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME,
+};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
@@ -93,9 +98,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
             ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(stmt),
-            ExtStatement::Explain(stmt) => {
-                self.explain_to_plan(stmt.analyze, stmt.verbose, *stmt.ext_statement)
-            }
+            ExtStatement::Explain(stmt) => self.explain_statement_to_plan(
+                stmt.analyze,
+                stmt.verbose,
+                *stmt.ext_statement,
+                session,
+            ),
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
@@ -126,13 +134,6 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                     privileges: vec![],
                 })
             }
-            Statement::Explain {
-                verbose,
-                statement,
-                analyze,
-                describe_alias: _,
-                format: _,
-            } => self.explain_statement_to_plan(verbose, analyze, *statement),
             Statement::Insert {
                 table_name: ref sql_object_name,
                 columns: ref sql_column_names,
@@ -154,68 +155,14 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
     }
 
     /// Generate a plan for EXPLAIN ... that will print out a plan
-    ///
-    fn explain_to_plan(
-        &self,
-        analyze: bool,
-        verbose: bool,
-        stmt: ExtStatement,
-    ) -> Result<PlanWithPrivileges> {
-        match stmt {
-            ExtStatement::ShowSeries(statement) => {
-                match self.show_series_to_plan(statement)?.plan {
-                    Plan::Query(QueryPlan { df_plan }) => {
-                        let plan = Arc::new(df_plan);
-                        let schema = LogicalPlan::explain_schema();
-                        let schema = schema.to_dfschema_ref().context(ExternalSnafu)?;
-
-                        if analyze {
-                            let plan = Plan::Query(QueryPlan {
-                                df_plan: LogicalPlan::Analyze(Analyze {
-                                    verbose,
-                                    input: plan,
-                                    schema,
-                                }),
-                            });
-                            Ok(PlanWithPrivileges {
-                                plan,
-                                privileges: vec![],
-                            })
-                        } else {
-                            let stringified_plans =
-                                vec![plan.to_stringified(PlanType::InitialLogicalPlan)];
-                            let plan = Plan::Query(QueryPlan {
-                                df_plan: LogicalPlan::Explain(Explain {
-                                    verbose,
-                                    plan,
-                                    stringified_plans,
-                                    schema,
-                                }),
-                            });
-                            Ok(PlanWithPrivileges {
-                                plan,
-                                privileges: vec![],
-                            })
-                        }
-                    }
-                    _ => Err(LogicalPlannerError::NotImplemented {
-                        err: "not implemented explain".to_string(),
-                    }),
-                }
-            }
-            _ => Err(LogicalPlannerError::NotImplemented {
-                err: "not implemented explain".to_string(),
-            }),
-        }
-    }
-
     pub fn explain_statement_to_plan(
         &self,
         verbose: bool,
         analyze: bool,
-        statement: Statement,
+        statement: ExtStatement,
+        session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let plan = self.df_sql_to_plan(statement)?;
+        let plan = self.statement_to_plan(statement, session)?;
 
         let input_df_plan = match plan.plan {
             Plan::Query(query) => Arc::new(query.df_plan),
@@ -743,6 +690,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             std::mem::swap(&mut stmt.table, &mut res);
             res
         };
+        // merge db a.b table b.c to a.b.c
         let table = match merge_object_name(database_name, Some(table_name)) {
             Some(table) => table,
             None => {
@@ -761,6 +709,12 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             .context(logical_planner::ExternalSnafu)?;
         let sql_to_rel = SqlToRel::new(&self.schema_provider);
 
+        // build from
+        let mut plan_builder =
+            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)
+                .context(ExternalSnafu)?;
+
+        // build where
         let selection = match stmt.selection {
             Some(expr) => Some(
                 sql_to_rel
@@ -770,147 +724,48 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             None => None,
         };
 
-        // check
-        // show series can't include field column
+        // get all columns in expr
         let mut columns = HashSet::new();
-        let mut contain_time = false;
         if let Some(selection) = &selection {
             expr_to_columns(selection, &mut columns).context(ExternalSnafu)?;
         }
-        for column in columns.iter() {
-            match table_schema.column(&column.name) {
-                Some(table_column) => {
-                    if table_column.column_type.is_field() {
-                        return Err(LogicalPlannerError::Semantic {
-                            err: format!(
-                                "SHOW SERIES does not support where clause contains field {}",
-                                column
-                            ),
-                        });
-                    } else if table_column.column_type.is_time() {
-                        contain_time = true;
-                    }
-                }
 
-                None => {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: format!("column {} does not exits", column),
-                    })
-                }
-            }
-        }
+        // check column
+        check_show_series_expr(&columns, &table_schema)?;
 
-        let mut plan_build =
-            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)
-                .context(ExternalSnafu)?;
         if let Some(selection) = selection {
-            plan_build = plan_build
+            plan_builder = plan_builder
                 .filter(selection)
                 .context(logical_planner::ExternalSnafu)?;
         }
-        let tags = table_schema
-            .columns()
+
+        // get where has time column
+        let where_contain_time = columns
             .iter()
-            .filter(|c| c.column_type.is_tag())
-            .collect::<Vec<&TableColumn>>();
-        let exp = tags.iter().map(|tag| {
-            Expr::Column(Column::new(
-                Some(table_schema.name.to_string()),
-                tag.name.to_string(),
-            ))
-        });
+            .flat_map(|c: &Column| table_schema.column(&c.name))
+            .any(|c: &TableColumn| c.column_type.is_time());
 
-        if contain_time {
-            plan_build = plan_build
-                .project(exp)
-                .context(logical_planner::ExternalSnafu)?;
-        };
+        // build projection
+        let plan = show_series_projection(
+            &table_schema.name,
+            &table_schema,
+            where_contain_time,
+            plan_builder,
+        )?;
 
-        plan_build = plan_build
-            .distinct()
-            .context(logical_planner::ExternalSnafu)?;
+        // build order by
+        let mut plan_builder = self.show_series_order_by(stmt.order_by, plan)?;
 
-        // concat tag_key=tag_value projection
-        let tag_concat_expr_iter = tags.iter().map(|tag| {
-            let column_expr = Box::new(Expr::Column(Column::new(
-                Some(&table_schema.name),
-                &tag.name,
-            )));
-            let is_null_expr = Box::new(column_expr.clone().is_null());
-            let when_then_expr = vec![(is_null_expr, Box::new(Expr::Literal(ScalarValue::Null)))];
-            let else_expr = Some(Box::new(Expr::BinaryExpr(BinaryExpr {
-                left: Box::new(Expr::Literal(ScalarValue::Utf8(Some(format!(
-                    "{}=",
-                    &tag.name
-                ))))),
-                op: Operator::StringConcat,
-                right: column_expr,
-            })));
-            Expr::Case(Case::new(None, when_then_expr, else_expr))
-        });
-
-        let concat_ws_args = iter::once(Expr::Literal(ScalarValue::Utf8(Some(",".to_string()))))
-            .chain(
-                iter::once(Expr::Literal(ScalarValue::Utf8(Some(
-                    table_schema.name.clone(),
-                ))))
-                .chain(tag_concat_expr_iter),
-            )
-            .collect::<Vec<Expr>>();
-        let concat_ws = Expr::ScalarFunction {
-            fun: BuiltinScalarFunction::ConcatWithSeparator,
-            args: concat_ws_args,
-        }
-        .alias("key");
-        plan_build = plan_build
-            .project_with_alias(iter::once(concat_ws), None)
-            .context(logical_planner::ExternalSnafu)?;
-
-        if let Some(OrderByExpr {
-            expr,
-            asc,
-            nulls_first,
-        }) = stmt.order_by
-        {
-            if let ASTExpr::Identifier(ident) = expr {
-                let key_column = normalize_ident(&ident);
-                if key_column.ne("key") {
-                    return Err(LogicalPlannerError::Semantic {
-                        err: "The order by clause expression must be \"key\"".to_string(),
-                    });
-                }
-
-                let column_expr = Expr::Column(Column {
-                    relation: None,
-                    name: key_column,
-                });
-
-                let asc = asc.unwrap_or(true);
-                let sort_expr = Expr::Sort {
-                    expr: Box::new(column_expr),
-                    asc,
-                    // when asc is true, by default nulls last to be consistent with postgres
-                    // postgres rule: https://www.postgresql.org/docs/current/queries-order.html
-                    nulls_first: nulls_first.unwrap_or(!asc),
-                };
-
-                plan_build = plan_build
-                    .sort(iter::once(sort_expr))
-                    .context(logical_planner::ExternalSnafu)?;
-            } else {
-                return Err(LogicalPlannerError::Semantic {
-                    err: "The order by clause expression must be \"key\"".to_string(),
-                });
-            }
-        }
-
+        // build limit
         if stmt.limit.is_some() || stmt.offset.is_some() {
-            plan_build =
-                self.limit_offset_to_plan(stmt.limit, stmt.offset, plan_build, &table_df_schema)?;
+            plan_builder =
+                self.limit_offset_to_plan(stmt.limit, stmt.offset, plan_builder, &table_df_schema)?;
         }
 
         let plan = Plan::Query(QueryPlan {
-            df_plan: plan_build.build().context(logical_planner::ExternalSnafu)?,
+            df_plan: plan_builder
+                .build()
+                .context(logical_planner::ExternalSnafu)?,
         });
         Ok(PlanWithPrivileges {
             plan,
@@ -956,6 +811,43 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             plan,
             privileges: vec![privilege],
         })
+    }
+
+    fn show_series_order_by(
+        &self,
+        expr: Option<OrderByExpr>,
+        plan: LogicalPlan,
+    ) -> Result<LogicalPlanBuilder> {
+        let schema = plan.schema();
+
+        let sql_to_rel = SqlToRel::new(&self.schema_provider);
+
+        let expr = match expr {
+            Some(expr) => expr,
+            None => return Ok(LogicalPlanBuilder::from(plan)),
+        };
+        let OrderByExpr {
+            expr,
+            asc,
+            nulls_first,
+        } = expr;
+
+        let expr = sql_to_rel
+            .sql_to_rex(expr, schema, &mut HashMap::new())
+            .context(logical_planner::ExternalSnafu)?;
+
+        let asc = asc.unwrap_or(true);
+        let sort_expr = Expr::Sort {
+            expr: Box::new(expr),
+            asc,
+            // when asc is true, by default nulls last to be consistent with postgres
+            // postgres rule: https://www.postgresql.org/docs/current/queries-order.html
+            nulls_first: nulls_first.unwrap_or(!asc),
+        };
+
+        LogicalPlanBuilder::from(plan)
+            .sort(iter::once(sort_expr))
+            .context(logical_planner::ExternalSnafu)
     }
 
     fn limit_offset_to_plan(
@@ -1526,6 +1418,104 @@ fn semantic_check(
     }
 
     Ok(())
+}
+
+// check
+// show series can't include field column
+fn check_show_series_expr(columns: &HashSet<Column>, table_schema: &TskvTableSchema) -> Result<()> {
+    for column in columns.iter() {
+        match table_schema.column(&column.name) {
+            Some(table_column) => {
+                if table_column.column_type.is_field() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!(
+                            "SHOW SERIES does not support where clause contains field {}",
+                            column
+                        ),
+                    });
+                }
+            }
+
+            None => {
+                return Err(LogicalPlannerError::Semantic {
+                    err: format!("column {} does not exits", column),
+                })
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn show_series_projection(
+    table_name: &str,
+    table_schema: &TskvTableSchema,
+    where_contain_time: bool,
+    mut plan_builder: LogicalPlanBuilder,
+) -> Result<LogicalPlan> {
+    let tags = table_schema
+        .columns()
+        .iter()
+        .filter(|c| c.column_type.is_tag())
+        .collect::<Vec<&TableColumn>>();
+
+    let exp = tags.iter().map(|tag| {
+        Expr::Column(Column::new(
+            Some(table_schema.name.to_string()),
+            tag.name.to_string(),
+        ))
+    });
+
+    // If the time column is included,
+    //   all field columns will be scanned at rewrite_tag_scan,
+    //   so this projection needs to be added
+    if where_contain_time {
+        plan_builder = plan_builder
+            .project(exp)
+            .context(logical_planner::ExternalSnafu)?;
+    };
+
+    plan_builder = plan_builder
+        .distinct()
+        .context(logical_planner::ExternalSnafu)?;
+
+    // concat tag_key=tag_value projection
+    let tag_concat_expr_iter = tags.iter().map(|tag| {
+        let column_expr = Box::new(Expr::Column(Column::new(
+            Some(&table_schema.name),
+            &tag.name,
+        )));
+        let is_null_expr = Box::new(column_expr.clone().is_null());
+        let when_then_expr = vec![(is_null_expr, Box::new(Expr::Literal(ScalarValue::Null)))];
+        let else_expr = Some(Box::new(Expr::BinaryExpr(BinaryExpr {
+            left: Box::new(Expr::Literal(ScalarValue::Utf8(Some(format!(
+                "{}=",
+                &tag.name
+            ))))),
+            op: Operator::StringConcat,
+            right: column_expr,
+        })));
+        Expr::Case(Case::new(None, when_then_expr, else_expr))
+    });
+
+    let concat_ws_args = iter::once(Expr::Literal(ScalarValue::Utf8(Some(",".to_string()))))
+        .chain(
+            iter::once(Expr::Literal(ScalarValue::Utf8(Some(
+                table_name.to_string(),
+            ))))
+            .chain(tag_concat_expr_iter),
+        )
+        .collect::<Vec<Expr>>();
+    let concat_ws = Expr::ScalarFunction {
+        fun: BuiltinScalarFunction::ConcatWithSeparator,
+        args: concat_ws_args,
+    }
+    .alias("key");
+    plan_builder
+        .project(iter::once(concat_ws))
+        .context(logical_planner::ExternalSnafu)?
+        .build()
+        .context(logical_planner::ExternalSnafu)
 }
 
 fn table_write_plan_node(
