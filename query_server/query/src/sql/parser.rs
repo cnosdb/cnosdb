@@ -257,11 +257,11 @@ impl<'a> ExtParser<'a> {
         } else {
             None
         };
-
         let order_by = if self.parser.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
-            Some(self.parser.parse_order_by_expr()?)
+            self.parser
+                .parse_comma_separated(Parser::parse_order_by_expr)?
         } else {
-            None
+            vec![]
         };
 
         let mut limit = None;
