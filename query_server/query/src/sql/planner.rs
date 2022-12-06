@@ -515,7 +515,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         let plan = projection_function(&table_schema, plan_builder, where_contain_time)?;
 
         // build order by
-        let mut plan_builder = self.show_series_order_by(body.order_by, plan)?;
+        let mut plan_builder = self.order_by(body.order_by, plan)?;
 
         // build limit
         if body.limit.is_some() || body.offset.is_some() {
@@ -553,7 +553,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })))
     }
 
-    fn show_series_order_by(
+    fn order_by(
         &self,
         exprs: Vec<ast::OrderByExpr>,
         plan: LogicalPlan,
@@ -899,25 +899,18 @@ fn show_series_projection(
             &tag.name,
         )));
         let is_null_expr = Box::new(column_expr.clone().is_null());
-        let when_then_expr = vec![(is_null_expr, Box::new(Expr::Literal(ScalarValue::Null)))];
+        let when_then_expr = vec![(is_null_expr, Box::new(lit(ScalarValue::Null)))];
         let else_expr = Some(Box::new(Expr::BinaryExpr(BinaryExpr {
-            left: Box::new(Expr::Literal(ScalarValue::Utf8(Some(format!(
-                "{}=",
-                &tag.name
-            ))))),
+            left: Box::new(lit(format!("{}=", &tag.name))),
             op: Operator::StringConcat,
             right: column_expr,
         })));
         Expr::Case(Case::new(None, when_then_expr, else_expr))
     });
 
-    let concat_ws_args = iter::once(Expr::Literal(ScalarValue::Utf8(Some(",".to_string()))))
-        .chain(
-            iter::once(Expr::Literal(ScalarValue::Utf8(Some(
-                table_schema.name.to_string(),
-            ))))
-            .chain(tag_concat_expr_iter),
-        )
+    let concat_ws_args = iter::once(lit(","))
+        .chain(iter::once(lit(&table_schema.name)))
+        .chain(tag_concat_expr_iter)
         .collect::<Vec<Expr>>();
     let concat_ws = Expr::ScalarFunction {
         fun: BuiltinScalarFunction::ConcatWithSeparator,
@@ -1002,15 +995,12 @@ fn show_tag_value_projections(
 
     let mut projections = Vec::new();
     for tag in tags {
-        let key_column = Expr::Literal(ScalarValue::Utf8(Some(tag.name.to_owned()))).alias("key");
+        let key_column = lit(&tag.name).alias("key");
         let value_column = table_column_to_expr(table_schema, tag).alias("value");
         let projection = plan_builder
-            .project(vec![key_column, value_column])
+            .project(vec![key_column, value_column.clone()])
             .context(logical_planner::ExternalSnafu)?;
-        let filter_expr = Expr::IsNotNull(Box::new(Expr::Column(Column::new(
-            None::<String>,
-            "value".to_string(),
-        ))));
+        let filter_expr = value_column.is_not_null();
         let projection = projection
             .filter(filter_expr)
             .context(logical_planner::ExternalSnafu)?
