@@ -1,7 +1,7 @@
 use std::fmt;
 
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Value,
 };
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
@@ -25,6 +25,7 @@ pub enum ExtStatement {
     ShowDatabases(),
     ShowTables(Option<ObjectName>),
     ShowSeries(Box<ShowSeries>),
+    ShowTagValues(Box<ShowTagValues>),
     Explain(Explain),
     //todo:  insert/update/alter
 
@@ -155,8 +156,8 @@ pub struct ShowTables {
     pub database_name: ObjectName,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShowSeries {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ShowTagBody {
     // on db
     pub database_name: Option<ObjectName>,
     // from
@@ -169,6 +170,27 @@ pub struct ShowSeries {
     pub limit: Option<Expr>,
     // offset
     pub offset: Option<Offset>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ShowSeries {
+    pub body: ShowTagBody,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum With {
+    Equal(Ident),
+    UnEqual(Ident),
+    In(Vec<Ident>),
+    NotIn(Vec<Ident>),
+    Match(Value),
+    UnMatch(Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ShowTagValues {
+    pub body: ShowTagBody,
+    pub with: With,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
