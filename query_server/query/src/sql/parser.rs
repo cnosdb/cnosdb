@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
+use datafusion::sql::sqlparser::ast::Expr;
 use datafusion::sql::sqlparser::ast::Ident;
+use datafusion::sql::sqlparser::ast::{Offset, OrderByExpr};
 use datafusion::sql::sqlparser::{
     ast::{DataType, ObjectName},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -16,7 +18,7 @@ use spi::query::ast::{
     AlterTenantOperation, AlterUser, AlterUserOperation, ColumnOption, CreateDatabase, CreateRole,
     CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
     DropDatabaseObject, DropGlobalObject, DropTenantObject, Explain, ExtStatement, GrantRevoke,
-    Privilege, ShowSeries,
+    Privilege, ShowSeries, ShowTagBody, ShowTagValues, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -237,36 +239,41 @@ impl<'a> ExtParser<'a> {
             self.parse_show_databases()
         } else if self.parse_cnos_keyword(CnosKeyWord::SERIES) {
             self.parse_show_series()
+        } else if self.parse_cnos_keyword(CnosKeyWord::TAG) {
+            if self.parser.parse_keyword(Keyword::VALUES) {
+                self.parse_show_tag_values()
+            } else {
+                self.expected("VALUES", self.parser.peek_token())
+            }
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else {
-            self.expected("tables/databases", self.parser.peek_token())
+            self.expected(
+                "TABLES or DATABASES or SERIES or TAG or QUERIES",
+                self.parser.peek_token(),
+            )
         }
     }
 
-    fn parse_show_series(&mut self) -> Result<ExtStatement> {
-        let database_name = if self.parser.parse_keyword(Keyword::ON) {
-            Some(self.parser.parse_object_name()?)
+    fn parse_on_database(&mut self) -> Result<Option<ObjectName>> {
+        if self.parser.parse_keyword(Keyword::ON) {
+            Ok(Some(self.parser.parse_object_name()?))
         } else {
-            None
-        };
-        self.parser.expect_keyword(Keyword::FROM)?;
-        let table = self.parser.parse_object_name()?;
-        let selection = if self.parser.parse_keyword(Keyword::WHERE) {
-            Some(self.parser.parse_expr()?)
-        } else {
-            None
-        };
-        let order_by = if self.parser.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
-            self.parser
-                .parse_comma_separated(Parser::parse_order_by_expr)?
-        } else {
-            vec![]
-        };
+            Ok(None)
+        }
+    }
 
+    fn parse_where(&mut self) -> Result<Option<Expr>> {
+        if self.parser.parse_keyword(Keyword::WHERE) {
+            Ok(Some(self.parser.parse_expr()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_limit_offset(&mut self) -> Result<(Option<Expr>, Option<Offset>)> {
         let mut limit = None;
         let mut offset = None;
-
         for _x in 0..2 {
             if limit.is_none() && self.parser.parse_keyword(Keyword::LIMIT) {
                 limit = self.parser.parse_limit()?
@@ -276,13 +283,89 @@ impl<'a> ExtParser<'a> {
                 offset = Some(self.parser.parse_offset()?)
             }
         }
+        Ok((limit, offset))
+    }
+
+    fn parse_order_by(&mut self) -> Result<Vec<OrderByExpr>> {
+        Ok(
+            if self.parser.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
+                self.parser
+                    .parse_comma_separated(Parser::parse_order_by_expr)?
+            } else {
+                vec![]
+            },
+        )
+    }
+
+    fn parse_with(&mut self) -> Result<With> {
+        self.parser
+            .expect_keywords(&[Keyword::WITH, Keyword::KEY])?;
+
+        match self.parser.next_token() {
+            Token::Eq => Ok(With::Equal(self.parser.parse_identifier()?)),
+            Token::Neq => Ok(With::UnEqual(self.parser.parse_identifier()?)),
+            Token::Word(word) => match &word.keyword {
+                Keyword::IN => {
+                    self.parser.expect_token(&Token::LParen)?;
+                    let idents = self
+                        .parser
+                        .parse_comma_separated(Parser::parse_identifier)?;
+                    self.parser.expect_token(&Token::RParen)?;
+                    Ok(With::In(idents))
+                }
+                Keyword::NOT => {
+                    self.parser.expect_keyword(Keyword::IN)?;
+                    self.parser.expect_token(&Token::LParen)?;
+                    let idents = self
+                        .parser
+                        .parse_comma_separated(Parser::parse_identifier)?;
+                    self.parser.expect_token(&Token::RParen)?;
+                    Ok(With::NotIn(idents))
+                }
+                _ => self.expected("=, !=, <>, IN, NOT IN", Token::Word(word)),
+            },
+            token => self.expected("=, !=, <>, IN, NOT IN", token),
+        }
+    }
+
+    fn parse_show_series(&mut self) -> Result<ExtStatement> {
+        let database_name = self.parse_on_database()?;
+        self.parser.expect_keyword(Keyword::FROM)?;
+        let table = self.parser.parse_object_name()?;
+        let selection = self.parse_where()?;
+        let order_by = self.parse_order_by()?;
+        let (limit, offset) = self.parse_limit_offset()?;
+
         Ok(ExtStatement::ShowSeries(Box::new(ShowSeries {
-            database_name,
-            table,
-            selection,
-            order_by,
-            limit,
-            offset,
+            body: ShowTagBody {
+                database_name,
+                table,
+                selection,
+                order_by,
+                limit,
+                offset,
+            },
+        })))
+    }
+
+    fn parse_show_tag_values(&mut self) -> Result<ExtStatement> {
+        let database_name = self.parse_on_database()?;
+        self.parser.expect_keyword(Keyword::FROM)?;
+        let table = self.parser.parse_object_name()?;
+        let with = self.parse_with()?;
+        let selection = self.parse_where()?;
+        let order_by = self.parse_order_by()?;
+        let (limit, offset) = self.parse_limit_offset()?;
+        Ok(ExtStatement::ShowTagValues(Box::new(ShowTagValues {
+            body: ShowTagBody {
+                database_name,
+                table,
+                selection,
+                order_by,
+                limit,
+                offset,
+            },
+            with,
         })))
     }
 
@@ -311,6 +394,13 @@ impl<'a> ExtParser<'a> {
                 format,
                 ext_statement: Box::new(ExtStatement::ShowSeries(statement)),
             })),
+            ExtStatement::ShowTagValues(statement) => Ok(ExtStatement::Explain(Explain {
+                analyze,
+                verbose,
+                format,
+                ext_statement: Box::new(ExtStatement::ShowTagValues(statement)),
+            })),
+
             _ => Err(ParserError::ParserError("Not Implemented".to_string())),
         }
     }
@@ -324,12 +414,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_show_tables(&mut self) -> Result<ExtStatement> {
-        if self.parser.parse_keyword(Keyword::ON) {
-            let database_name = self.parser.parse_object_name()?;
-            Ok(ExtStatement::ShowTables(Some(database_name)))
-        } else {
-            Ok(ExtStatement::ShowTables(None))
-        }
+        Ok(ExtStatement::ShowTables(self.parse_on_database()?))
     }
 
     /// Parse a SQL DESCRIBE DATABASE statement
