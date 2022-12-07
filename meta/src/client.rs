@@ -8,31 +8,27 @@ use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RemoteError;
 
+use crate::error::{MetaError, MetaResult};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::meta_client::MetaError;
-use crate::meta_client::MetaResult;
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
-use crate::ExampleTypeConfig;
 use crate::NodeId;
+use crate::{ClusterNode, ClusterNodeId};
 
-pub type WriteError = RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>;
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Empty {}
+pub type WriteError =
+    RPCError<ClusterNodeId, ClusterNode, ClientWriteError<ClusterNodeId, ClusterNode>>;
 
 #[derive(Debug)]
 pub struct MetaHttpClient {
-    //inner: reqwest::Client,
     pub leader: Arc<Mutex<(NodeId, String)>>,
 }
 
 impl MetaHttpClient {
     pub fn new(leader_id: NodeId, leader_addr: String) -> Self {
         Self {
-            //inner: reqwest::Client::new(),
             leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }
@@ -76,20 +72,20 @@ impl MetaHttpClient {
         &self,
         uri: &str,
         req: Option<&Req>,
-    ) -> Result<Resp, RPCError<ExampleTypeConfig, Err>>
+    ) -> Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>>
     where
         Req: Serialize + 'static,
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error
             + Serialize
             + DeserializeOwned
-            + TryInto<ForwardToLeader<NodeId>>
+            + TryInto<ForwardToLeader<ClusterNodeId, ClusterNode>>
             + Clone,
     {
         let mut n_retry = 3;
 
         loop {
-            let res: Result<Resp, RPCError<ExampleTypeConfig, Err>> =
+            let res: Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>> =
                 self.do_send_rpc_to_leader(uri, req);
 
             let rpc_err = match res {
@@ -98,8 +94,9 @@ impl MetaHttpClient {
             };
 
             if let RPCError::RemoteError(remote_err) = &rpc_err {
-                let forward_err_res =
-                    <Err as TryInto<ForwardToLeader<NodeId>>>::try_into(remote_err.source.clone());
+                let forward_err_res = <Err as TryInto<
+                    ForwardToLeader<ClusterNodeId, ClusterNode>,
+                >>::try_into(remote_err.source.clone());
 
                 if let Ok(ForwardToLeader {
                     leader_id: Some(leader_id),
@@ -109,7 +106,7 @@ impl MetaHttpClient {
                 {
                     {
                         let mut t = self.leader.lock().unwrap();
-                        *t = (leader_id, leader_node.addr);
+                        *t = (leader_id, leader_node.api_addr);
                     }
 
                     n_retry -= 1;
@@ -127,7 +124,7 @@ impl MetaHttpClient {
         &self,
         uri: &str,
         req: Option<&Req>,
-    ) -> Result<Resp, RPCError<ExampleTypeConfig, Err>>
+    ) -> Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>>
     where
         Req: Serialize + 'static,
         Resp: Serialize + DeserializeOwned,

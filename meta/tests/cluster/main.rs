@@ -1,3 +1,5 @@
+mod test_cluster;
+
 use meta::store::Store;
 use meta::NodeId;
 use openraft::testing::Suite;

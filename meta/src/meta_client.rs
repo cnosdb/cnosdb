@@ -17,56 +17,11 @@ use tokio::net::TcpStream;
 
 use trace::info;
 
-use models::schema::{Tenant, TenantOptions, TskvTableSchema};
-
+use crate::error::{MetaError, MetaResult};
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{UserManager, UserManagerMock};
 use crate::{client, store};
-
-#[derive(Snafu, Debug)]
-pub enum MetaError {
-    #[snafu(display("The tenant {} already exists", tenant))]
-    TenantAlreadyExists { tenant: String },
-
-    #[snafu(display("The tenant {} not found", tenant))]
-    TenantNotFound { tenant: String },
-
-    #[snafu(display("Not Found Field"))]
-    NotFoundField,
-
-    #[snafu(display("index storage error: {}", msg))]
-    IndexStroage { msg: String },
-
-    #[snafu(display("Not Found DB: {}", db))]
-    NotFoundDb { db: String },
-
-    #[snafu(display("Not Found Data Node: {}", id))]
-    NotFoundNode { id: u64 },
-
-    #[snafu(display("Request meta cluster error: {}", msg))]
-    MetaClientErr { msg: String },
-
-    #[snafu(display("Error: {}", msg))]
-    CommonError { msg: String },
-}
-
-impl From<io::Error> for MetaError {
-    fn from(err: io::Error) -> Self {
-        MetaError::CommonError {
-            msg: err.to_string(),
-        }
-    }
-}
-
-impl From<client::WriteError> for MetaError {
-    fn from(err: client::WriteError) -> Self {
-        MetaError::MetaClientErr {
-            msg: err.to_string(),
-        }
-    }
-}
-
-pub type MetaResult<T> = Result<T, MetaError>;
+use models::schema::{Tenant, TenantOptions, TskvTableSchema};
 
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;

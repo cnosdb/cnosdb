@@ -16,10 +16,11 @@ use models::{
 };
 use tokio::net::TcpStream;
 
+use crate::error::{MetaError, MetaResult};
 use crate::{
     meta_client::{
-        AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaError, MetaManager, MetaResult,
-        TenantManager, TenantManagerRef, UserManagerRef,
+        AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, TenantManager,
+        TenantManagerRef, UserManagerRef,
     },
     user_manager::UserManagerMock,
 };

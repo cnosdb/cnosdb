@@ -1,14 +1,17 @@
 #![allow(clippy::module_inception)]
 
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
-use std::sync::Mutex;
 
-use crate::store::state_machine::CommandResp;
-use crate::ExampleTypeConfig;
-use crate::NodeId;
+use crate::error::{
+    l_r_err, l_w_err, s_r_err, s_w_err, sm_r_err, v_r_err, v_w_err, StorageIOResult, StorageResult,
+};
+use crate::store::state_machine::{CommandResp, StateMachineContent};
+use crate::{ClusterNode, NodeId};
+use crate::{ClusterNodeId, TypeConfig};
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
@@ -23,235 +26,183 @@ use openraft::RaftLogReader;
 use openraft::RaftSnapshotBuilder;
 use openraft::RaftStorage;
 use openraft::SnapshotMeta;
-use openraft::StateMachineChanges;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
-use sled::{Db, IVec};
 use tokio::sync::RwLock;
 use tracing;
 
 pub mod command;
 pub mod config;
+mod key_path;
+mod sled_store;
 pub mod state_machine;
 pub mod store;
 
-use crate::store::config::Config;
-
 use self::state_machine::StateMachine;
 
-#[derive(Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct SnapshotInfo {
-    pub meta: SnapshotMeta<NodeId>,
+    pub meta: SnapshotMeta<ClusterNodeId, ClusterNode>,
+    /// The data of the state machine at the time of this snapshot.
     pub data: Vec<u8>,
 }
 
 #[derive(Debug)]
 pub struct Store {
-    last_purged_log_id: RwLock<Option<LogId<NodeId>>>,
-
-    /// The Raft log.
-    pub log: sled::Tree,
-
+    db: Arc<sled::Db>,
     /// The Raft state machine.
     pub state_machine: RwLock<StateMachine>,
-
-    /// The current granted vote.
-    vote: sled::Tree,
-
-    snapshot_idx: Arc<Mutex<u64>>,
-
-    current_snapshot: RwLock<Option<SnapshotInfo>>,
-
-    config: Config,
-
-    pub node_id: NodeId,
 }
 
-fn get_sled_db(config: Config, node_id: NodeId) -> Db {
-    let db_path = format!(
-        "{}/{}-{}.binlog",
-        config.journal_path, config.instance_prefix, node_id
-    );
-    let db = sled::open(db_path.clone()).unwrap();
-    tracing::debug!("get_sled_db: created log at: {:?}", db_path);
-    db
+fn store(db: &sled::Db) -> sled::Tree {
+    db.open_tree("store").expect("store open failed")
 }
-
+fn logs(db: &sled::Db) -> sled::Tree {
+    db.open_tree("logs").expect("logs open failed")
+}
+fn data(db: &sled::Db) -> sled::Tree {
+    db.open_tree("data").expect("data open failed")
+}
+fn state_machine(db: &sled::Db) -> sled::Tree {
+    db.open_tree("state_machine")
+        .expect("state_machine open failed")
+}
 impl Store {
-    pub fn open_create(node_id: NodeId) -> Store {
-        tracing::info!("open_create, node_id: {}", node_id);
+    fn get_last_purged_(&self) -> StorageIOResult<Option<LogId<u64>>> {
+        let store_tree = store(&self.db);
+        let val = store_tree
+            .get(b"last_purged_log_id")
+            .map_err(|e| {
+                StorageIOError::new(ErrorSubject::Store, ErrorVerb::Read, AnyError::new(&e))
+            })?
+            .and_then(|v| serde_json::from_slice(&v).ok());
 
-        let config = Config::default();
-
-        let db = get_sled_db(config.clone(), node_id);
-
-        let log = db
-            .open_tree(format!("journal_entities_{}", node_id))
-            .unwrap();
-
-        let vote = db.open_tree(format!("votes_{}", node_id)).unwrap();
-
-        let current_snapshot = RwLock::new(None);
-
-        Store {
-            last_purged_log_id: Default::default(),
-            config,
-            node_id,
-            log,
-            state_machine: Default::default(),
-            vote,
-            snapshot_idx: Arc::new(Mutex::new(0)),
-            current_snapshot,
-        }
-    }
-}
-
-//Store trait for restore things from snapshot and log
-#[async_trait]
-pub trait Restore {
-    async fn restore(&mut self);
-}
-
-#[async_trait]
-impl Restore for Arc<Store> {
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn restore(&mut self) {
-        tracing::debug!("restore");
-        let log = &self.log;
-
-        let first = log
-            .iter()
-            .rev()
-            .next()
-            .map(|res| res.unwrap())
-            .map(|(_, val)| {
-                serde_json::from_slice::<Entry<ExampleTypeConfig>>(&*val)
-                    .unwrap()
-                    .log_id
-            });
-
-        if let Some(x) = first {
-            tracing::debug!("restore: first log id = {:?}", x);
-            let mut ld = self.last_purged_log_id.write().await;
-            *ld = Some(x);
-        }
-
-        let snapshot = self.get_current_snapshot().await.unwrap();
-
-        if let Some(ss) = snapshot {
-            self.install_snapshot(&ss.meta, ss.snapshot).await.unwrap();
-        }
-    }
-}
-
-#[async_trait]
-impl RaftLogReader<ExampleTypeConfig> for Arc<Store> {
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn get_log_state(&mut self) -> Result<LogState<ExampleTypeConfig>, StorageError<NodeId>> {
-        let log = &self.log;
-        let last = log
-            .iter()
-            .rev()
-            .next()
-            .map(|res| res.unwrap())
-            .map(|(_, val)| {
-                serde_json::from_slice::<Entry<ExampleTypeConfig>>(&*val)
-                    .unwrap()
-                    .log_id
-            });
-
-        let last_purged = *self.last_purged_log_id.read().await;
-
-        let last = match last {
-            None => last_purged,
-            Some(x) => Some(x),
-        };
-        tracing::debug!(
-            "get_log_state: last_purged = {:?}, last = {:?}",
-            last_purged,
-            last
-        );
-        Ok(LogState {
-            last_purged_log_id: last_purged,
-            last_log_id: last,
-        })
+        Ok(val)
     }
 
-    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
-        &mut self,
-        range: RB,
-    ) -> Result<Vec<Entry<ExampleTypeConfig>>, StorageError<NodeId>> {
-        let log = &self.log;
-        let response = log
-            .range(transform_range_bound(range))
-            .map(|res| res.unwrap())
-            .map(|(_, val)| serde_json::from_slice::<Entry<ExampleTypeConfig>>(&*val).unwrap())
-            .collect();
+    async fn set_last_purged_(&self, log_id: LogId<u64>) -> StorageIOResult<()> {
+        let store_tree = store(&self.db);
+        let val = serde_json::to_vec(&log_id).unwrap();
+        store_tree
+            .insert(b"last_purged_log_id", val.as_slice())
+            .map_err(s_w_err)?;
 
-        Ok(response)
+        store_tree.flush_async().await.map_err(s_w_err).map(|_| ())
     }
-}
 
-fn transform_range_bound<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
-    range: RB,
-) -> (Bound<IVec>, Bound<IVec>) {
-    (
-        serialize_bound(&range.start_bound()),
-        serialize_bound(&range.end_bound()),
-    )
-}
+    fn get_snapshot_index_(&self) -> StorageIOResult<u64> {
+        let store_tree = store(&self.db);
+        let val = store_tree
+            .get(b"snapshot_index")
+            .map_err(s_r_err)?
+            .and_then(|v| serde_json::from_slice(&v).ok())
+            .unwrap_or(0);
 
-fn serialize_bound(v: &Bound<&u64>) -> Bound<IVec> {
-    match v {
-        Bound::Included(v) => Bound::Included(IVec::from(&v.to_be_bytes())),
-        Bound::Excluded(v) => Bound::Excluded(IVec::from(&v.to_be_bytes())),
-        Bound::Unbounded => Bound::Unbounded,
+        Ok(val)
+    }
+
+    async fn set_snapshot_index_(&self, snapshot_index: u64) -> StorageIOResult<()> {
+        let store_tree = store(&self.db);
+        let val = serde_json::to_vec(&snapshot_index).unwrap();
+        store_tree
+            .insert(b"snapshot_index", val.as_slice())
+            .map_err(s_w_err)?;
+
+        store_tree.flush_async().await.map_err(s_w_err).map(|_| ())
+    }
+
+    async fn set_vote_(&self, vote: &Vote<ClusterNodeId>) -> StorageIOResult<()> {
+        let store_tree = store(&self.db);
+        let val = serde_json::to_vec(vote).unwrap();
+        store_tree
+            .insert(b"vote", val)
+            .map_err(v_w_err)
+            .map(|_| ())?;
+
+        store_tree.flush_async().await.map_err(v_w_err).map(|_| ())
+    }
+
+    fn get_vote_(&self) -> StorageIOResult<Option<Vote<ClusterNodeId>>> {
+        let store_tree = store(&self.db);
+        let val = store_tree
+            .get(b"vote")
+            .map_err(v_r_err)?
+            .and_then(|v| serde_json::from_slice(&v).ok());
+
+        Ok(val)
+    }
+
+    fn get_current_snapshot_(&self) -> StorageIOResult<Option<SnapshotInfo>> {
+        let store_tree = store(&self.db);
+        let val = store_tree
+            .get(b"snapshot")
+            .map_err(s_r_err)?
+            .and_then(|v| serde_json::from_slice(&v).ok());
+
+        Ok(val)
+    }
+
+    async fn set_current_snapshot_(&self, snap: SnapshotInfo) -> StorageResult<()> {
+        let store_tree = store(&self.db);
+        let val = serde_json::to_vec(&snap).unwrap();
+        let meta = snap.meta.clone();
+        store_tree
+            .insert(b"snapshot", val.as_slice())
+            .map_err(|e| StorageError::IO {
+                source: StorageIOError::new(
+                    ErrorSubject::Snapshot(snap.meta.signature()),
+                    ErrorVerb::Write,
+                    AnyError::new(&e),
+                ),
+            })?;
+
+        store_tree
+            .flush_async()
+            .await
+            .map_err(|e| {
+                StorageIOError::new(
+                    ErrorSubject::Snapshot(meta.signature()),
+                    ErrorVerb::Write,
+                    AnyError::new(&e),
+                )
+                .into()
+            })
+            .map(|_| ())
     }
 }
 
 #[async_trait]
-impl RaftSnapshotBuilder<ExampleTypeConfig, Cursor<Vec<u8>>> for Arc<Store> {
+impl RaftSnapshotBuilder<TypeConfig, Cursor<Vec<u8>>> for Arc<Store> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(
         &mut self,
-    ) -> Result<Snapshot<ExampleTypeConfig, Cursor<Vec<u8>>>, StorageError<NodeId>> {
-        let (data, last_applied_log);
+    ) -> Result<Snapshot<ClusterNodeId, ClusterNode, Cursor<Vec<u8>>>, StorageError<ClusterNodeId>>
+    {
+        let data;
+        let last_applied_log;
+        let last_membership;
 
         {
-            // Serialize the data of the state machine.
-            let state_machine = self.state_machine.read().await;
-            data = serde_json::to_vec(&*state_machine).map_err(|e| {
-                StorageIOError::new(
-                    ErrorSubject::StateMachine,
-                    ErrorVerb::Read,
-                    AnyError::new(&e),
-                )
-            })?;
+            let state_machine = StateMachineContent::from(&*self.state_machine.read().await);
+            data = serde_json::to_vec(&state_machine).map_err(sm_r_err)?;
 
             last_applied_log = state_machine.last_applied_log;
+            last_membership = state_machine.last_membership;
         }
 
-        let last_applied_log = match last_applied_log {
-            None => {
-                panic!("can not compact empty state machine");
-            }
-            Some(x) => x,
-        };
+        let snapshot_idx: u64 = self.get_snapshot_index_()? + 1;
+        self.set_snapshot_index_(snapshot_idx).await;
 
-        let snapshot_idx = {
-            let mut l = self.snapshot_idx.lock().unwrap();
-            *l += 1;
-            *l
+        let snapshot_id = if let Some(last) = last_applied_log {
+            format!("{}-{}-{}", last.leader_id, last.index, snapshot_idx)
+        } else {
+            format!("--{}", snapshot_idx)
         };
-
-        let snapshot_id = format!(
-            "{}-{}-{}",
-            last_applied_log.leader_id, last_applied_log.index, snapshot_idx
-        );
 
         let meta = SnapshotMeta {
             last_log_id: last_applied_log,
+            last_membership,
             snapshot_id,
         };
 
@@ -260,12 +211,7 @@ impl RaftSnapshotBuilder<ExampleTypeConfig, Cursor<Vec<u8>>> for Arc<Store> {
             data: data.clone(),
         };
 
-        {
-            let mut current_snapshot = self.current_snapshot.write().await;
-            *current_snapshot = Some(snapshot);
-        }
-
-        self.write_snapshot().await.unwrap();
+        self.set_current_snapshot_(snapshot).await?;
 
         Ok(Snapshot {
             meta,
@@ -274,26 +220,102 @@ impl RaftSnapshotBuilder<ExampleTypeConfig, Cursor<Vec<u8>>> for Arc<Store> {
     }
 }
 
+/// converts an id to a byte vector for storing in the database.
+/// Note that we're using big endian encoding to ensure correct sorting of keys
+/// with notes form: https://github.com/spacejam/sled#a-note-on-lexicographic-ordering-and-endianness
+fn id_to_bin(id: u64) -> [u8; 8] {
+    let mut buf: [u8; 8] = [0; 8];
+    BigEndian::write_u64(&mut buf, id);
+    buf
+}
+
+fn bin_to_id(buf: &[u8]) -> u64 {
+    (&buf[0..8]).read_u64::<BigEndian>().unwrap()
+}
+
 #[async_trait]
-impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
+impl RaftLogReader<TypeConfig> for Arc<Store> {
+    async fn get_log_state(&mut self) -> StorageResult<LogState<TypeConfig>> {
+        let last_purged_log_id = self.get_last_purged_()?;
+
+        let logs_tree = logs(&self.db);
+        let last_res = logs_tree.last();
+        if last_res.is_err() {
+            return Ok(LogState {
+                last_purged_log_id,
+                last_log_id: last_purged_log_id,
+            });
+        }
+
+        let last = last_res.unwrap().and_then(|(_, ent)| {
+            Some(
+                serde_json::from_slice::<Entry<TypeConfig>>(&ent)
+                    .ok()?
+                    .log_id,
+            )
+        });
+
+        let last_log_id = match last {
+            None => last_purged_log_id,
+            Some(x) => Some(x),
+        };
+        Ok(LogState {
+            last_purged_log_id,
+            last_log_id,
+        })
+    }
+
+    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
+        &mut self,
+        range: RB,
+    ) -> StorageResult<Vec<Entry<TypeConfig>>> {
+        let start_bound = range.start_bound();
+        let start = match start_bound {
+            Bound::Included(x) => id_to_bin(*x),
+            Bound::Excluded(x) => id_to_bin(*x + 1),
+            Bound::Unbounded => id_to_bin(0),
+        };
+        let logs_tree = logs(&self.db);
+        let logs = logs_tree
+            .range::<&[u8], _>(start.as_slice()..)
+            .map(|el_res| {
+                let el = el_res.expect("Faile read log entry");
+                let id = el.0;
+                let val = el.1;
+                let entry: StorageResult<Entry<TypeConfig>> = serde_json::from_slice(&val)
+                    .map_err(|e| StorageError::IO { source: l_r_err(e) });
+                let id = bin_to_id(&id);
+
+                assert_eq!(Ok(id), entry.as_ref().map(|e| e.log_id.index));
+                (id, entry)
+            })
+            .take_while(|(id, _)| range.contains(id))
+            .map(|x| x.1)
+            .collect();
+        logs
+    }
+}
+
+#[async_trait]
+impl RaftStorage<TypeConfig> for Arc<Store> {
     type SnapshotData = Cursor<Vec<u8>>;
     type LogReader = Self;
     type SnapshotBuilder = Self;
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn save_vote(&mut self, vote: &Vote<NodeId>) -> Result<(), StorageError<NodeId>> {
-        self.vote
-            .insert(b"vote", IVec::from(serde_json::to_vec(vote).unwrap()))
-            .unwrap();
-        Ok(())
+    async fn save_vote(
+        &mut self,
+        vote: &Vote<ClusterNodeId>,
+    ) -> Result<(), StorageError<ClusterNodeId>> {
+        self.set_vote_(vote)
+            .await
+            .map_err(|e| StorageError::IO { source: e })
     }
 
-    async fn read_vote(&mut self) -> Result<Option<Vote<NodeId>>, StorageError<NodeId>> {
-        let value = self.vote.get(b"vote").unwrap();
-        match value {
-            None => Ok(None),
-            Some(val) => Ok(Some(serde_json::from_slice::<Vote<NodeId>>(&*val).unwrap())),
-        }
+    async fn read_vote(
+        &mut self,
+    ) -> Result<Option<Vote<ClusterNodeId>>, StorageError<ClusterNodeId>> {
+        self.get_vote_().map_err(|e| StorageError::IO { source: e })
     }
 
     async fn get_log_reader(&mut self) -> Self::LogReader {
@@ -301,79 +323,85 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     }
 
     #[tracing::instrument(level = "trace", skip(self, entries))]
-    async fn append_to_log(
-        &mut self,
-        entries: &[&Entry<ExampleTypeConfig>],
-    ) -> Result<(), StorageError<NodeId>> {
-        let log = &self.log;
+    async fn append_to_log(&mut self, entries: &[&Entry<TypeConfig>]) -> StorageResult<()> {
+        let logs_tree = logs(&self.db);
+        let mut batch = sled::Batch::default();
         for entry in entries {
-            log.insert(
-                entry.log_id.index.to_be_bytes(),
-                IVec::from(serde_json::to_vec(entry).unwrap()),
-            )
-            .unwrap();
+            let id = id_to_bin(entry.log_id.index);
+            assert_eq!(bin_to_id(&id), entry.log_id.index);
+            let value =
+                serde_json::to_vec(entry).map_err(|e| StorageError::IO { source: l_w_err(e) })?;
+            batch.insert(id.as_slice(), value);
         }
+        logs_tree
+            .apply_batch(batch)
+            .map_err(|e| StorageError::IO { source: l_w_err(e) })?;
+
+        logs_tree
+            .flush_async()
+            .await
+            .map_err(|e| StorageError::IO { source: l_w_err(e) })?;
         Ok(())
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
     async fn delete_conflict_logs_since(
         &mut self,
-        log_id: LogId<NodeId>,
-    ) -> Result<(), StorageError<NodeId>> {
+        log_id: LogId<ClusterNodeId>,
+    ) -> StorageResult<()> {
         tracing::debug!("delete_log: [{:?}, +oo)", log_id);
 
-        let log = &self.log;
-        let keys = log
-            .range(transform_range_bound(log_id.index..))
-            .map(|res| res.unwrap())
-            .map(|(k, _v)| k); //TODO Why originally used collect instead of the iter.
-        for key in keys {
-            log.remove(&key).unwrap();
+        let from = id_to_bin(log_id.index);
+        let to = id_to_bin(0xff_ff_ff_ff_ff_ff_ff_ff);
+        let logs_tree = logs(&self.db);
+        let entries = logs_tree.range::<&[u8], _>(from.as_slice()..to.as_slice());
+        let mut batch_del = sled::Batch::default();
+        for entry_res in entries {
+            let entry = entry_res.expect("Read db entry failed");
+            batch_del.remove(entry.0);
         }
-
+        logs_tree.apply_batch(batch_del).map_err(l_w_err)?;
+        logs_tree.flush_async().await.map_err(l_w_err)?;
         Ok(())
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    async fn purge_logs_upto(&mut self, log_id: LogId<NodeId>) -> Result<(), StorageError<NodeId>> {
-        tracing::debug!("delete_log: [{:?}, +oo)", log_id);
+    async fn purge_logs_upto(&mut self, log_id: LogId<ClusterNodeId>) -> StorageResult<()> {
+        tracing::debug!("delete_log: [0, {:?}]", log_id);
 
-        {
-            let mut ld = self.last_purged_log_id.write().await;
-            assert!(*ld <= Some(log_id));
-            *ld = Some(log_id);
+        self.set_last_purged_(log_id).await?;
+        let from = id_to_bin(0);
+        let to = id_to_bin(log_id.index);
+        let logs_tree = logs(&self.db);
+        let entries = logs_tree.range::<&[u8], _>(from.as_slice()..=to.as_slice());
+        let mut batch_del = sled::Batch::default();
+        for entry_res in entries {
+            let entry = entry_res.expect("Read db entry failed");
+            batch_del.remove(entry.0);
         }
+        logs_tree.apply_batch(batch_del).map_err(l_w_err)?;
 
-        {
-            let log = &self.log;
-
-            let keys = log
-                .range(transform_range_bound(..=log_id.index))
-                .map(|res| res.unwrap())
-                .map(|(k, _)| k);
-            for key in keys {
-                log.remove(&key).unwrap();
-            }
-        }
-
+        logs_tree.flush_async().await.map_err(l_w_err)?;
         Ok(())
     }
 
     async fn last_applied_state(
         &mut self,
-    ) -> Result<(Option<LogId<NodeId>>, EffectiveMembership<NodeId>), StorageError<NodeId>> {
+    ) -> StorageResult<(
+        Option<LogId<ClusterNodeId>>,
+        EffectiveMembership<ClusterNodeId, ClusterNode>,
+    )> {
         let state_machine = self.state_machine.read().await;
         Ok((
-            state_machine.last_applied_log,
-            state_machine.last_membership.clone(),
+            state_machine.get_last_applied_log()?,
+            state_machine.get_last_membership()?,
         ))
     }
 
     #[tracing::instrument(level = "trace", skip(self, entries))]
     async fn apply_to_state_machine(
         &mut self,
-        entries: &[&Entry<ExampleTypeConfig>],
+        entries: &[&Entry<TypeConfig>],
     ) -> Result<Vec<CommandResp>, StorageError<NodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
@@ -381,13 +409,16 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
 
         for entry in entries {
             tracing::debug!(%entry.log_id, "replicate to sm");
-
-            sm.last_applied_log = Some(entry.log_id);
+            sm.set_last_applied_log(entry.log_id).await?;
 
             match entry.payload {
                 EntryPayload::Blank => res.push(CommandResp::default()),
                 EntryPayload::Membership(ref mem) => {
-                    sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
+                    sm.set_last_membership(EffectiveMembership::new(
+                        Some(entry.log_id),
+                        mem.clone(),
+                    ))
+                    .await?;
                     res.push(CommandResp::default())
                 }
 
@@ -404,16 +435,16 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn begin_receiving_snapshot(
         &mut self,
-    ) -> Result<Box<Self::SnapshotData>, StorageError<NodeId>> {
+    ) -> Result<Box<Self::SnapshotData>, StorageError<ClusterNodeId>> {
         Ok(Box::new(Cursor::new(Vec::new())))
     }
 
     #[tracing::instrument(level = "trace", skip(self, snapshot))]
     async fn install_snapshot(
         &mut self,
-        meta: &SnapshotMeta<NodeId>,
+        meta: &SnapshotMeta<ClusterNodeId, ClusterNode>,
         snapshot: Box<Self::SnapshotData>,
-    ) -> Result<StateMachineChanges<ExampleTypeConfig>, StorageError<NodeId>> {
+    ) -> Result<(), StorageError<ClusterNodeId>> {
         tracing::info!(
             { snapshot_size = snapshot.get_ref().len() },
             "decoding snapshot for installation"
@@ -424,81 +455,37 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
             data: snapshot.into_inner(),
         };
 
-        // Update the state machine.
+        let content: StateMachineContent =
+            serde_json::from_slice(&new_snapshot.data).map_err(|e| {
+                StorageIOError::new(
+                    ErrorSubject::Snapshot(new_snapshot.meta.signature()),
+                    ErrorVerb::Read,
+                    AnyError::new(&e),
+                )
+            })?;
+
         {
-            let updated_state_machine: StateMachine = serde_json::from_slice(&new_snapshot.data)
-                .map_err(|e| {
-                    StorageIOError::new(
-                        ErrorSubject::Snapshot(new_snapshot.meta.clone()),
-                        ErrorVerb::Read,
-                        AnyError::new(&e),
-                    )
-                })?;
             let mut state_machine = self.state_machine.write().await;
-            *state_machine = updated_state_machine;
+            *state_machine = StateMachine::from_serializable(content, self.db.clone()).await?;
         }
 
-        // Update current snapshot.
-        let mut current_snapshot = self.current_snapshot.write().await;
-        *current_snapshot = Some(new_snapshot);
-        Ok(StateMachineChanges {
-            last_applied: meta.last_log_id,
-            is_snapshot: true,
-        })
+        self.set_current_snapshot_(new_snapshot).await?;
+        Ok(())
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<ExampleTypeConfig, Self::SnapshotData>>, StorageError<NodeId>> {
-        tracing::debug!("get_current_snapshot: start");
-
-        match &*self.current_snapshot.read().await {
+    ) -> StorageResult<Option<Snapshot<ClusterNodeId, ClusterNode, Self::SnapshotData>>> {
+        match Store::get_current_snapshot_(self)? {
             Some(snapshot) => {
                 let data = snapshot.data.clone();
                 Ok(Some(Snapshot {
-                    meta: snapshot.meta.clone(),
+                    meta: snapshot.meta,
                     snapshot: Box::new(Cursor::new(data)),
                 }))
             }
-            None => {
-                let data = self.read_snapshot_file().await;
-                let data = match data {
-                    Ok(c) => c,
-                    Err(_e) => return Ok(None),
-                };
-
-                let content: StateMachine = serde_json::from_slice(&data).unwrap();
-
-                let last_applied_log = content.last_applied_log.unwrap();
-                tracing::debug!(
-                    "get_current_snapshot: last_applied_log = {:?}",
-                    last_applied_log
-                );
-
-                let snapshot_idx = {
-                    let mut l = self.snapshot_idx.lock().unwrap();
-                    *l += 1;
-                    *l
-                };
-
-                let snapshot_id = format!(
-                    "{}-{}-{}",
-                    last_applied_log.leader_id, last_applied_log.index, snapshot_idx
-                );
-
-                let meta = SnapshotMeta {
-                    last_log_id: last_applied_log,
-                    snapshot_id,
-                };
-
-                tracing::debug!("get_current_snapshot: meta {:?}", meta);
-
-                Ok(Some(Snapshot {
-                    meta,
-                    snapshot: Box::new(Cursor::new(data)),
-                }))
-            }
+            None => Ok(None),
         }
     }
 }

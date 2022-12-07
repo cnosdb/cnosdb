@@ -1,3 +1,5 @@
+use crate::{ClusterNode, MetaApp, TypeConfig};
+use crate::{ClusterNodeId, NodeId};
 use actix_web::get;
 use actix_web::post;
 use actix_web::web;
@@ -7,15 +9,10 @@ use openraft::error::Infallible;
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::VoteRequest;
-use openraft::Node;
 use openraft::RaftMetrics;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use web::Json;
-
-use crate::ExampleTypeConfig;
-use crate::MetaApp;
-use crate::NodeId;
 
 #[post("/raft-vote")]
 pub async fn vote(
@@ -29,7 +26,7 @@ pub async fn vote(
 #[post("/raft-append")]
 pub async fn append(
     app: Data<MetaApp>,
-    req: Json<AppendEntriesRequest<ExampleTypeConfig>>,
+    req: Json<AppendEntriesRequest<TypeConfig>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.append_entries(req.0).await;
     Ok(Json(res))
@@ -38,7 +35,7 @@ pub async fn append(
 #[post("/raft-snapshot")]
 pub async fn snapshot(
     app: Data<MetaApp>,
-    req: Json<InstallSnapshotRequest<ExampleTypeConfig>>,
+    req: Json<InstallSnapshotRequest<TypeConfig>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.install_snapshot(req.0).await;
     Ok(Json(res))
@@ -50,11 +47,11 @@ pub async fn add_learner(
     req: Json<(NodeId, String)>,
 ) -> actix_web::Result<impl Responder> {
     let node_id = req.0 .0;
-    let node = Node {
-        addr: req.0 .1.clone(),
-        ..Default::default()
+    let node = ClusterNode {
+        api_addr: req.0 .1.clone(),
+        rpc_addr: req.0 .1.clone(),
     };
-    let res = app.raft.add_learner(node_id, Some(node), true).await;
+    let res = app.raft.add_learner(node_id, node, true).await;
     Ok(Json(res))
 }
 
@@ -72,9 +69,9 @@ pub async fn init(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let mut nodes = BTreeMap::new();
     nodes.insert(
         app.id,
-        Node {
-            addr: app.addr.clone(),
-            data: Default::default(),
+        ClusterNode {
+            rpc_addr: app.addr.clone(),
+            api_addr: app.addr.clone(),
         },
     );
     let res = app.raft.initialize(nodes).await;
@@ -85,6 +82,6 @@ pub async fn init(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
 pub async fn metrics(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let metrics = app.raft.metrics().borrow().clone();
 
-    let res: Result<RaftMetrics<ExampleTypeConfig>, Infallible> = Ok(metrics);
+    let res: Result<RaftMetrics<ClusterNodeId, ClusterNode>, Infallible> = Ok(metrics);
     Ok(Json(res))
 }

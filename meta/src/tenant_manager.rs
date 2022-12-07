@@ -1,13 +1,14 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 use std::{collections::HashMap, sync::Arc};
 
+use crate::error::{MetaError, MetaResult};
 use models::{
     oid::{Identifier, Oid},
     schema::{Tenant, TenantOptions},
 };
 use parking_lot::RwLock;
 
-use crate::meta_client::{MetaClientRef, MetaError, MetaResult, RemoteMetaClient, TenantManager};
+use crate::meta_client::{MetaClientRef, RemoteMetaClient, TenantManager};
 
 #[derive(Debug, Default)]
 pub struct RemoteTenantManager {
