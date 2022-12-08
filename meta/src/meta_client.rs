@@ -553,11 +553,6 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(db.schema.clone()));
         }
 
-        // self.sync_all_tenant_metadata()?;
-        if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.schema.clone()));
-        }
-
         Ok(None)
     }
 
@@ -593,13 +588,7 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
-        if let Some(val) = self.data.read().table_schema(db, table) {
-            return Ok(Some(val));
-        }
-
-        // self.sync_all_tenant_metadata()?;
-        let val = self.data.read().table_schema(db, table);
-        Ok(val)
+        return Ok(self.data.read().table_schema(db, table));
     }
 
     fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
@@ -607,11 +596,6 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(val));
         }
 
-        self.sync_all_tenant_metadata()?;
-        let val = self.data.read().table_schema(db, table);
-        if let Some(TableSchema::TsKvTableSchema(schema)) = val {
-            return Ok(Some(schema));
-        }
         Ok(None)
     }
 
@@ -626,11 +610,6 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(val));
         }
 
-        self.sync_all_tenant_metadata()?;
-        let val = self.data.read().table_schema(db, table);
-        if let Some(TableSchema::ExternalTableSchema(schema)) = val {
-            return Ok(Some(schema));
-        }
         Ok(None)
     }
 
@@ -718,10 +697,8 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
-        // TODO improve performence,watch the meta
-        // self.sync_all_tenant_metadata()?;
-
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
+
         Ok(buckets)
     }
 
