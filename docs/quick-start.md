@@ -115,7 +115,7 @@ We support the following platforms, please report to us if you find it works on 
     If your system is not listed here, you can install FlatBuffers as follows
 
     ```shell
-    git clone -b v2.0.6 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers
+    git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers
     ```
 
     ```shell
@@ -123,6 +123,7 @@ We support the following platforms, please report to us if you find it works on 
     cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
     cmake -G "Visual Studio 10" -DCMAKE_BUILD_TYPE=Release
     cmake -G "Xcode" -DCMAKE_BUILD_TYPE=Release
+
     sudo make install
     ```
 

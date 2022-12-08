@@ -42,7 +42,8 @@ impl DBschemas {
     }
 
     pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> Result<()> {
-        let table_name = unsafe { String::from_utf8_unchecked(info.tab().unwrap().to_vec()) };
+        let table_name =
+            unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
         let schema = self
             .client
             .get_tskv_table_schema(&self.database_name, &table_name)
@@ -51,7 +52,7 @@ impl DBschemas {
                 database: self.database_name.clone(),
             })?;
         for field in info.fields().unwrap() {
-            let field_name = String::from_utf8(field.name().unwrap().to_vec()).unwrap();
+            let field_name = String::from_utf8(field.name().unwrap().bytes().to_vec()).unwrap();
             if let Some(v) = schema.column(&field_name) {
                 if field.type_().0 != v.column_type.field_type() as i32 {
                     error!(
@@ -66,7 +67,7 @@ impl DBschemas {
             }
         }
         for tag in info.tags().unwrap() {
-            let tag_name: String = String::from_utf8(tag.key().unwrap().to_vec()).unwrap();
+            let tag_name: String = String::from_utf8(tag.key().unwrap().bytes().to_vec()).unwrap();
             if let Some(v) = schema.column(&tag_name) {
                 if ColumnType::Tag != v.column_type {
                     error!("type mismatch, point: tag, schema: {}", &v.column_type);
@@ -81,8 +82,9 @@ impl DBschemas {
 
     pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> Result<()> {
         //load schema first from cache,or else from storage and than cache it!
-        let table_name = unsafe { String::from_utf8_unchecked(info.tab().unwrap().to_vec()) };
-        let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().to_vec()) };
+        let table_name =
+            unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
+        let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().bytes().to_vec()) };
         let schema = self
             .client
             .get_tskv_table_schema(&db_name, &table_name)
@@ -136,13 +138,15 @@ impl DBschemas {
 
         //check tags
         for tag in info.tags().unwrap() {
-            let tag_key = unsafe { String::from_utf8_unchecked(tag.key().unwrap().to_vec()) };
+            let tag_key =
+                unsafe { String::from_utf8_unchecked(tag.key().unwrap().bytes().to_vec()) };
             check_fn(&mut TableColumn::new_with_default(tag_key, ColumnType::Tag))?
         }
 
         //check fields
         for field in info.fields().unwrap() {
-            let field_name = unsafe { String::from_utf8_unchecked(field.name().unwrap().to_vec()) };
+            let field_name =
+                unsafe { String::from_utf8_unchecked(field.name().unwrap().bytes().to_vec()) };
             check_fn(&mut TableColumn::new_with_default(
                 field_name,
                 ColumnType::from_i32(field.type_().0),

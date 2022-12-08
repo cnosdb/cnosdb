@@ -49,7 +49,7 @@ diff = "0.1.13"
 dirs = "4.0.0"
 env_logger = "0.9"
 evmap = "10.0"
-flatbuffers = "2.1"
+flatbuffers = "22.9"
 flate2 = "1.0.24"
 futures = { version = "0.3" }
 integer-encoding = "3.0.3"
