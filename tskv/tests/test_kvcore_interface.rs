@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    
+
     use serial_test::serial;
     use std::sync::Arc;
     use std::time::Duration;
@@ -9,9 +9,7 @@ mod tests {
 
     use config::get_config;
     use models::codec::Encoding;
-    use models::schema::{
-        ColumnType, DatabaseSchema, TableColumn, TskvTableSchema,
-    };
+    use models::schema::{ColumnType, DatabaseSchema, TableColumn, TskvTableSchema};
     use models::ValueType;
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
