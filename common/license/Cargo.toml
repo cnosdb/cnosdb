@@ -1,0 +1,17 @@
+[package]
+name = "license"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+snafu = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true}
+
+rsa = "0.7.2"
+base64 = "0.12.3"
+rust-crypto = "0.2.36"
