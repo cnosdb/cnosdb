@@ -665,7 +665,7 @@ impl Engine for TsKv {
     ) -> Result<Option<TskvTableSchema>> {
         if let Some(db) = self.version_set.read().get_db(tenant, database) {
             let val = db.read().get_table_schema(tab)?;
-            return Ok(val)
+            return Ok(val);
         }
         Ok(None)
     }

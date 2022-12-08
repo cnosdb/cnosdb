@@ -97,7 +97,12 @@ pub trait Engine: Send + Sync + Debug {
         time_range: &TimeRange,
     ) -> Result<()>;
 
-    fn get_table_schema(&self, tenant: &str, db: &str, tab: &str) -> Result<Option<TskvTableSchema>>;
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>>;
 
     fn get_series_id_by_filter(
         &self,
@@ -215,7 +220,12 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_table_schema(&self, tenant: &str, db: &str, tab: &str) -> Result<Option<TskvTableSchema>> {
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
         Ok(Some(TskvTableSchema::new(
             tenant.to_string(),
