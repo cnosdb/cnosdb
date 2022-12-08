@@ -7,10 +7,20 @@ use models::{
 };
 use parking_lot::RwLock;
 
-use crate::meta_client::{MetaClientRef, MetaError, MetaResult, RemoteMetaClient, TenantManager};
+use crate::{
+    client::MetaHttpClient,
+    meta_client::{
+        MetaClient, MetaClientRef, MetaError, MetaResult, RemoteMetaClient, TenantManager,
+    },
+    store::command::{
+        self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
+    },
+};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RemoteTenantManager {
+    client: MetaHttpClient,
+
     cluster_name: String,
     cluster_meta: String,
 
@@ -20,6 +30,7 @@ pub struct RemoteTenantManager {
 impl RemoteTenantManager {
     pub fn new(cluster_name: String, cluster_meta: String) -> Self {
         Self {
+            client: MetaHttpClient::new(1, cluster_meta.clone()),
             cluster_name,
             cluster_meta,
             tenants: Default::default(),
@@ -29,45 +40,100 @@ impl RemoteTenantManager {
 
 impl TenantManager for RemoteTenantManager {
     fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef> {
-        // TODO 元数据库中创建tenant，获取Tenant，此处暂时直接构造一个
-        let tenant = Tenant::new(0_u128, name, options);
-        let client: MetaClientRef = Arc::new(RemoteMetaClient::new(
+        let req = command::WriteCommand::CreateTenant(self.cluster_name.clone(), name, options);
+
+        match self.client.write::<command::CommonResp<Tenant>>(&req)? {
+            command::CommonResp::Ok(tenant) => {
+                let client: MetaClientRef = Arc::new(RemoteMetaClient::new(
+                    self.cluster_name.clone(),
+                    tenant,
+                    self.cluster_meta.clone(),
+                ));
+
+                self.tenants
+                    .write()
+                    .insert(client.tenant().name().to_string(), client.clone());
+
+                Ok(client)
+            }
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_TENANT_EXIST {
+                    Err(MetaError::TenantAlreadyExists { tenant: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
+    }
+
+    fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
+        if let Some(client) = self.tenants.read().get(name) {
+            return Ok(Some(client.tenant().clone()));
+        }
+
+        let req = command::ReadCommand::Tenant(self.cluster_name.clone(), name.to_string());
+
+        match self
+            .client
+            .read::<command::CommonResp<Option<Tenant>>>(&req)?
+        {
+            command::CommonResp::Ok(data) => Ok(data),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                Err(MetaError::CommonError { msg: status.msg })
+            }
+        }
+    }
+
+    fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
+        let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
-            tenant,
-            self.cluster_meta.clone(),
-        ));
+            name.to_string(),
+            options,
+        );
 
-        self.tenants
-            .write()
-            .insert(client.tenant().name().to_string(), client.clone());
+        match self.client.write::<command::CommonResp<Tenant>>(&req)? {
+            command::CommonResp::Ok(data) => {
+                let client = Arc::new(RemoteMetaClient::new(
+                    self.cluster_name.clone(),
+                    data,
+                    self.cluster_meta.clone(),
+                ));
+                self.tenants
+                    .write()
+                    .insert(client.tenant().name().to_string(), client);
 
-        Ok(client)
+                Ok(())
+            }
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_TENANT_NOT_FOUND {
+                    Err(MetaError::TenantNotFound { tenant: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
-    fn tenant(&self, name: &str) -> MetaResult<Tenant> {
-        self.tenants
-            .read()
-            .get(name)
-            .map(|e| e.tenant().clone())
-            .ok_or_else(|| MetaError::TenantNotFound {
-                tenant: name.to_string(),
-            })
-    }
+    fn drop_tenant(&self, name: &str) -> MetaResult<bool> {
+        if self.tenants.write().remove(name).is_some() {
+            let req =
+                command::WriteCommand::DropTenant(self.cluster_name.clone(), name.to_string());
 
-    fn alter_tenant(&self, tenant_id: Oid, options: TenantOptions) -> MetaResult<()> {
-        // TODO
-        Ok(())
-    }
+            return match self.client.write::<command::CommonResp<bool>>(&req)? {
+                command::CommonResp::Ok(e) => Ok(e),
+                command::CommonResp::Err(status) => {
+                    // TODO improve response
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            };
+        }
 
-    fn drop_tenant(&self, name: &str) -> MetaResult<()> {
-        // TODO 元数据库中删除
-        self.tenants
-            .write()
-            .remove(name)
-            .ok_or_else(|| MetaError::TenantNotFound {
-                tenant: name.to_string(),
-            })?;
-        Ok(())
+        Err(MetaError::TenantNotFound {
+            tenant: name.to_string(),
+        })
     }
 
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
@@ -75,18 +141,12 @@ impl TenantManager for RemoteTenantManager {
             return Some(client.clone());
         }
 
-        // TODO 临时从meta获取
-        let tenant = Tenant::new(0_u128, "cnosdb".to_string(), TenantOptions::default());
-        let client: MetaClientRef = Arc::new(RemoteMetaClient::new(
-            self.cluster_name.clone(),
-            tenant,
-            self.cluster_meta.clone(),
-        ));
-
-        self.tenants
-            .write()
-            .insert(client.tenant().name().to_string(), client.clone());
-
-        Some(client)
+        self.tenant(tenant).ok().unwrap_or_default().map(|tenant| {
+            Arc::new(RemoteMetaClient::new(
+                self.cluster_name.clone(),
+                tenant,
+                self.cluster_meta.clone(),
+            )) as MetaClientRef
+        })
     }
 }

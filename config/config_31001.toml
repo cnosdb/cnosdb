@@ -2,6 +2,7 @@
 max_server_connections = 10240 
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
+auth_enabled = false
 
 [storage]
 # Directory for summary: $path/summary/

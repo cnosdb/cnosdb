@@ -199,13 +199,11 @@ fn do_tag_scan(
     let _timer = metrics.elapsed_compute().timer();
     let _db = &table_schema.db;
     let tenant = &table_schema.tenant;
-    let _client = coord
-        .tenant_meta(tenant)
-        .ok_or(ArrowError::ExternalError(Box::new(
-            MetaError::TenantNotFound {
-                tenant: tenant.to_string(),
-            },
-        )))?;
+    let _client = coord.tenant_meta(tenant).ok_or_else(|| {
+        ArrowError::ExternalError(Box::new(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        }))
+    })?;
     todo!("meta need get_series_id_by_filter")
     // let series_keys = coord
     //     .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)

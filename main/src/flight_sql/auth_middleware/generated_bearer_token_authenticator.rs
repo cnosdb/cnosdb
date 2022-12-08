@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use http_protocol::header::BEARER_PREFIX;
 use models::{
-    auth::user::UserInfo,
+    auth::user::{User, UserInfo},
     oid::{MemoryOidGenerator, UuidGenerator},
 };
 use moka::sync::Cache;
-use query::auth::auth_control::AccessControl;
+use query::auth::auth_control::AccessControlImpl;
 use spi::server::dbms::DBMSRef;
 use tonic::{metadata::MetadataMap, Status};
 use trace::debug;
@@ -21,7 +21,7 @@ pub struct GeneratedBearerTokenAuthenticator<T>
 where
     T: Clone,
 {
-    bearer_to_identifier: Cache<String, UserInfo>,
+    bearer_to_identifier: Cache<String, User>,
 
     initial_authenticator: T,
     id_generator: UuidGenerator,
@@ -59,7 +59,7 @@ where
         // Check if headers contain a bearer token and if so, validate the token.
         if let Some(bearer_token) = utils::get_value_from_auth_header(req_headers, BEARER_PREFIX) {
             // get user_info from cache by token
-            let user_info = self
+            let user = self
                 .bearer_to_identifier
                 .get(&bearer_token)
                 .ok_or_else(|| Status::unauthenticated("token has expired or not exist"))?;
@@ -67,7 +67,7 @@ where
             debug!("authenticate success, bearer_token exists");
 
             return Ok(GeneratedBearerTokenAuthResult {
-                user_info,
+                user,
                 bearer_token: Some(bearer_token),
             });
         }
@@ -88,31 +88,31 @@ where
         &self,
         auth_result: impl AuthResult,
     ) -> Result<GeneratedBearerTokenAuthResult, Status> {
-        let user_info = auth_result.identity();
+        let user = auth_result.identity();
         // After the user authentication is successful,
         // Generate a new bearer token and return an AuthResult that can write it.
         let bearer_token = self.id_generator.next_id().to_string();
         // And cache the mapping between bearer and user information on the server side
         self.bearer_to_identifier
-            .insert(bearer_token.clone(), user_info.clone());
+            .insert(bearer_token.clone(), user.clone());
 
         debug!("authenticate success, generated new bearer_token");
 
         Ok(GeneratedBearerTokenAuthResult {
-            user_info,
+            user,
             bearer_token: Some(bearer_token),
         })
     }
 }
 
 pub struct GeneratedBearerTokenAuthResult {
-    user_info: UserInfo,
+    user: User,
     bearer_token: Option<String>,
 }
 
 impl AuthResult for GeneratedBearerTokenAuthResult {
-    fn identity(&self) -> UserInfo {
-        self.user_info.clone()
+    fn identity(&self) -> User {
+        self.user.clone()
     }
 
     fn append_to_outgoing_headers(&self, resp_headers: &mut MetadataMap) -> Result<(), Status> {
@@ -129,7 +129,10 @@ mod test {
     use std::sync::Arc;
 
     use http_protocol::header::{AUTHORIZATION, BEARER_PREFIX};
-    use models::auth::user::UserInfo;
+    use models::auth::{
+        role::UserRole,
+        user::{User, UserDesc, UserInfo, UserOptionsBuilder},
+    };
     use spi::server::dbms::DatabaseManagerSystemMock;
     use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 
@@ -151,12 +154,15 @@ mod test {
             &self,
             req_headers: &MetadataMap,
         ) -> Result<Self::AuthResult, tonic::Status> {
-            let user_info = UserInfo {
-                user: "test".to_string(),
-                password: "password".to_string(),
-                private_key: None,
+            let options = unsafe {
+                UserOptionsBuilder::default()
+                    .password("123456")
+                    .build()
+                    .unwrap_unchecked()
             };
-            Ok(CommonAuthResult { user_info })
+            let mock_desc = UserDesc::new(0_u128, "name".to_string(), options, false);
+            let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges());
+            Ok(CommonAuthResult { user: mock_user })
         }
     }
 

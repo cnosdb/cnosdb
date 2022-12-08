@@ -1,7 +1,7 @@
 pub mod basic_call_header_authenticator;
 pub mod generated_bearer_token_authenticator;
 
-use models::auth::user::UserInfo;
+use models::auth::user::{User, UserInfo};
 use tonic::{metadata::MetadataMap, service::Interceptor, Status};
 
 /// Interface for Server side authentication handlers.
@@ -14,23 +14,23 @@ pub trait CallHeaderAuthenticator {
 }
 
 pub trait AuthResult {
-    fn identity(&self) -> UserInfo;
+    fn identity(&self) -> User;
     fn append_to_outgoing_headers(&self, resp_headers: &mut MetadataMap) -> Result<(), Status>;
 }
 
 pub struct CommonAuthResult {
-    user_info: UserInfo,
+    user: User,
 }
 
 impl CommonAuthResult {
-    pub fn new(user_info: UserInfo) -> Self {
-        Self { user_info }
+    pub fn new(user: User) -> Self {
+        Self { user }
     }
 }
 
 impl AuthResult for CommonAuthResult {
-    fn identity(&self) -> UserInfo {
-        self.user_info.clone()
+    fn identity(&self) -> User {
+        self.user.clone()
     }
 
     fn append_to_outgoing_headers(&self, resp_headers: &mut MetadataMap) -> Result<(), Status> {

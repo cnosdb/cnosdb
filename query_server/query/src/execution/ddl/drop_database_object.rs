@@ -31,7 +31,6 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let DropDatabaseObject {
-            tenant_id: _,
             ref object_name,
             ref if_exist,
             ref obj_type,

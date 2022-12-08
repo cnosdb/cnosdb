@@ -48,19 +48,14 @@ pub struct IsiphoSessionCtxFactory {
 }
 
 impl IsiphoSessionCtxFactory {
-    pub fn create_isipho_session_ctx(
-        &self,
-        context: Context,
-        tenant_id: Oid,
-        user: User,
-    ) -> IsiphoSessionCtx {
+    pub fn create_isipho_session_ctx(&self, context: Context, tenant_id: Oid) -> IsiphoSessionCtx {
         let isipho_ctx = context.session_config().to_owned();
         // TODO Use global configuration as the default configuration for session
         let df_session_state = context::default_session_builder(isipho_ctx.inner);
         let df_session_ctx = SessionContext::with_state(df_session_state);
 
         IsiphoSessionCtx {
-            user,
+            user: context.user_info().to_owned(),
             tenant_id,
             tenant: context.tenant().to_owned(),
             default_database: context.database().to_owned(),

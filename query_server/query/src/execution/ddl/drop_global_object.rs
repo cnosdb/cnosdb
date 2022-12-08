@@ -1,11 +1,10 @@
 use async_trait::async_trait;
+use meta::meta_client::MetaError;
 use spi::query::{
-    execution::{Output, QueryStateMachineRef},
+    execution::{ExecutionError, MetadataSnafu, Output, QueryStateMachineRef},
     logical_planner::{DropGlobalObject, GlobalObjectType},
 };
 
-use spi::query::execution;
-use spi::query::execution::ExecutionError;
 use trace::debug;
 
 use super::DDLDefinitionTask;
@@ -17,7 +16,6 @@ pub struct DropGlobalObjectTask {
 }
 
 impl DropGlobalObjectTask {
-    #[inline(always)]
     pub fn new(stmt: DropGlobalObject) -> Self {
         Self { stmt }
     }
@@ -27,7 +25,7 @@ impl DropGlobalObjectTask {
 impl DDLDefinitionTask for DropGlobalObjectTask {
     async fn execute(
         &self,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let DropGlobalObject {
             ref name,
@@ -35,32 +33,50 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
             ref obj_type,
         } = self.stmt;
 
-        let res = match obj_type {
+        let meta = query_state_machine.meta.clone();
+
+        match obj_type {
             GlobalObjectType::User => {
-                // TODO 删除用户
+                // 删除用户
                 // fn drop_user(
                 //     &mut self,
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop user {}", name);
-                Ok(())
+                let success = meta.user_manager().drop_user(name).context(MetadataSnafu)?;
+
+                if let (false, false) = (if_exist, success) {
+                    return Err(ExecutionError::Metadata {
+                        source: MetaError::UserNotFound {
+                            user: name.to_string(),
+                        },
+                    });
+                }
+
+                Ok(Output::Nil(()))
             }
             GlobalObjectType::Tenant => {
-                // TODO 删除租户
+                // 删除租户
                 // fn drop_tenant(
                 //     &self,
                 //     name: &str
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
-                Ok(())
+                let success = meta
+                    .tenant_manager()
+                    .drop_tenant(name)
+                    .context(MetadataSnafu)?;
+
+                if let (false, false) = (if_exist, success) {
+                    return Err(ExecutionError::Metadata {
+                        source: MetaError::TenantNotFound {
+                            tenant: name.to_string(),
+                        },
+                    });
+                }
+
+                Ok(Output::Nil(()))
             }
-        };
-
-        if *if_exist {
-            return Ok(Output::Nil(()));
         }
-
-        res.map(|_| Output::Nil(()))
-            .context(execution::MetadataSnafu)
     }
 }

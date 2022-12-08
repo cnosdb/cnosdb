@@ -3,28 +3,37 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::scheduler::Scheduler;
-use models::auth::user::{User, UserInfo};
+use derive_builder::Builder;
+use models::{
+    auth::user::{User, UserInfo, UserOptionsBuilder, ROOT},
+    schema::TenantOptionsBuilder,
+};
 use spi::{
-    query::{dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory},
-    server::dbms::DatabaseManagerSystem,
+    query::{
+        auth::AccessControlRef, dispatcher::QueryDispatcher, session::IsiphoSessionCtxFactory,
+        DEFAULT_CATALOG,
+    },
     server::BuildSnafu,
     server::Result,
+    server::{dbms::DatabaseManagerSystem, MetaDataSnafu},
     server::{AuthSnafu, QuerySnafu},
     service::protocol::{Query, QueryHandle, QueryId},
 };
 
+use trace::{debug, info};
 use tskv::kv_option::Options;
 
+use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
-use crate::{auth::auth_control::AccessControl, dispatcher::manager::SimpleQueryDispatcher};
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
 
+#[derive(Builder)]
 pub struct Cnosdbms<D> {
     // TODO access control
-    access_control: AccessControl,
+    access_control: AccessControlRef,
     // query dispatcher & query execution
     query_dispatcher: D,
 }
@@ -34,19 +43,15 @@ impl<D> DatabaseManagerSystem for Cnosdbms<D>
 where
     D: QueryDispatcher,
 {
-    fn authenticate(&self, user_info: &UserInfo) -> Result<User> {
+    fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
         self.access_control
-            .access_check(user_info)
+            .access_check(user_info, tenant_name)
             .context(AuthSnafu)
     }
 
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
         let query_id = self.query_dispatcher.create_query_id();
 
-        let user = self
-            .access_control
-            .access_check(query.context().user_info())
-            .context(AuthSnafu)?;
         let tenant_id = self
             .access_control
             .tenant_id(query.context().tenant())
@@ -54,7 +59,7 @@ where
 
         let result = self
             .query_dispatcher
-            .execute_query(tenant_id, user, query_id, query)
+            .execute_query(tenant_id, query_id, query)
             .await
             .context(QuerySnafu)?;
 
@@ -89,7 +94,7 @@ pub fn make_cnosdbms(
     _engine: EngineRef,
     coord: CoordinatorRef,
     options: Options,
-) -> Result<Cnosdbms<SimpleQueryDispatcher>> {
+) -> Result<impl DatabaseManagerSystem> {
     // todo: add query config
     // for now only support local mode
     // TODO session config need load global system config
@@ -101,8 +106,9 @@ pub fn make_cnosdbms(
 
     let queries_limit = options.query.max_server_connections;
 
+    init_metadata(coord.clone())?;
+
     let meta_manager = coord.meta_manager();
-    let access_control = AccessControl::new(meta_manager);
 
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_coord(coord)
@@ -114,10 +120,62 @@ pub fn make_cnosdbms(
         .build()
         .context(BuildSnafu)?;
 
-    Ok(Cnosdbms {
-        access_control,
-        query_dispatcher,
-    })
+    let mut builder = CnosdbmsBuilder::default();
+
+    let access_control_no_check = AccessControlNoCheck::new(meta_manager);
+    if options.query.auth_enabled {
+        debug!("build access control");
+        builder.access_control(Arc::new(AccessControlImpl::new(access_control_no_check)))
+    } else {
+        debug!("build access control without check");
+        builder.access_control(Arc::new(access_control_no_check))
+    };
+
+    let db_server = builder
+        .query_dispatcher(query_dispatcher)
+        .build()
+        .expect("build db server");
+
+    Ok(db_server)
+}
+
+fn init_metadata(coord: CoordinatorRef) -> Result<()> {
+    // init admin
+    let user_manager = coord.meta_manager().user_manager();
+    debug!("Check if system user {} exist", ROOT);
+    if user_manager.user(ROOT).context(MetaDataSnafu)?.is_none() {
+        info!("Initialize the system user {}", ROOT);
+
+        let options = UserOptionsBuilder::default()
+            .must_change_password(true)
+            .comment("system admin")
+            .build()
+            .expect("failed to init admin user.");
+        let _ = user_manager
+            .create_user(ROOT.to_string(), options, true)
+            .context(MetaDataSnafu)?;
+    }
+
+    // init system tenant
+    let tenant_manager = coord.meta_manager().tenant_manager();
+    debug!("Check if system tenant {} exist", DEFAULT_CATALOG);
+    if tenant_manager
+        .tenant(DEFAULT_CATALOG)
+        .context(MetaDataSnafu)?
+        .is_none()
+    {
+        info!("Initialize the system tenant {}", DEFAULT_CATALOG);
+
+        let options = TenantOptionsBuilder::default()
+            .comment("system tenant")
+            .build()
+            .expect("failed to init admin user.");
+        let _ = tenant_manager
+            .create_tenant(DEFAULT_CATALOG.to_string(), options)
+            .context(MetaDataSnafu)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -151,15 +209,17 @@ mod tests {
         };
     }
 
-    async fn exec_sql<D>(db: &Cnosdbms<D>, sql: &str) -> Vec<RecordBatch>
-    where
-        D: QueryDispatcher,
-    {
+    async fn exec_sql(db: &impl DatabaseManagerSystem, sql: &str) -> Vec<RecordBatch> {
         let user = UserInfo {
             user: DEFAULT_CATALOG.to_string(),
             password: "todo".to_string(),
             private_key: None,
         };
+
+        let user = db
+            .authenticate(&user, Some(DEFAULT_CATALOG))
+            .expect("authenticate");
+
         let query = Query::new(ContextBuilder::new(user).build(), sql.to_string());
 
         let result = db.execute(&query).await.unwrap();

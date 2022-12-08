@@ -1,10 +1,9 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::meta_client::MetaError;
-use models::auth::user::UserDesc;
 use snafu::ResultExt;
 
-use spi::query::execution;
+use spi::query::execution::{self, MetadataSnafu};
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateUser;
 use trace::debug;
@@ -23,7 +22,7 @@ impl CreateUserTask {
 impl DDLDefinitionTask for CreateUserTask {
     async fn execute(
         &self,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateUser {
             ref name,
@@ -31,25 +30,23 @@ impl DDLDefinitionTask for CreateUserTask {
             ref options,
         } = self.stmt;
 
-        // TODO 元数据接口查询用户是否存在
+        // 元数据接口查询用户是否存在
         // fn user(
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-
-        let user: Option<UserDesc> = None;
+        let meta = query_state_machine.meta.user_manager();
+        let user = meta.user(name).context(MetadataSnafu)?;
 
         match (if_not_exists, user) {
             // do not create if exists
             (true, Some(_)) => Ok(Output::Nil(())),
             // Report an error if it exists
-            (false, Some(_)) => Err(MetaError::UserAlreadyExists {
-                user_name: name.clone(),
-            })
-            .context(execution::MetadataSnafu),
+            (false, Some(_)) => Err(MetaError::UserAlreadyExists { user: name.clone() })
+                .context(execution::MetadataSnafu),
             // does not exist, create
             (_, None) => {
-                // TODO 创建用户
+                // 创建用户
                 // name: String
                 // options: UserOptions
                 // fn create_user(
@@ -59,6 +56,8 @@ impl DDLDefinitionTask for CreateUserTask {
                 // ) -> Result<&UserDesc>;
 
                 debug!("Create user {} with options [{}]", name, options);
+                meta.create_user(name.clone(), options.clone(), false)
+                    .context(MetadataSnafu)?;
 
                 Ok(Output::Nil(()))
             }

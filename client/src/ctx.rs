@@ -16,6 +16,7 @@ pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
 pub struct SessionConfig {
     pub user_info: UserInfo,
     pub connection_info: ConnectionInfo,
+    pub tenant: String,
     pub database: String,
     pub target_partitions: Option<usize>,
     pub fmt: PrintFormat,
@@ -30,6 +31,7 @@ impl SessionConfig {
         Self {
             user_info: Default::default(),
             connection_info: Default::default(),
+            tenant: DEFAULT_USER.to_string(),
             database: DEFAULT_DATABASE.to_string(),
             target_partitions: None,
             config_options,
@@ -48,6 +50,11 @@ impl SessionConfig {
 
     pub fn with_password(mut self, password: Option<String>) -> Self {
         self.user_info.password = password;
+        self
+    }
+
+    pub fn with_tenant(mut self, tenant: String) -> Self {
+        self.tenant = tenant;
         self
     }
 
@@ -141,9 +148,11 @@ impl SessionContext {
     pub async fn sql(&self, sql: String) -> Result<ResultSet, String> {
         let user_info = &self.session_config.user_info;
 
+        let tenant = self.session_config.tenant.clone();
         let db = self.session_config.database.clone();
         let target_partitions = self.session_config.target_partitions;
         let param = SqlParam {
+            tenant: Some(tenant),
             db: Some(db),
             chunked: None,
             target_partitions,
@@ -169,9 +178,10 @@ impl SessionContext {
                 Ok(ResultSet::Bytes((body.to_vec(), 0)))
             }
             _ => {
+                let status = resp.status().to_string();
                 let body = resp.text().await.map_err(|e| format!("{}", e))?;
 
-                Err(body)
+                Err(format!("{}, details: {}", status, body))
             }
         }
     }
@@ -182,6 +192,7 @@ impl SessionContext {
         let user_info = &self.session_config.user_info;
 
         let param = WriteParam {
+            tenant: None,
             db: self.session_config.database.clone(),
         };
 

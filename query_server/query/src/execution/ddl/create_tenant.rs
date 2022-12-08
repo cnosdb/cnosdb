@@ -1,10 +1,9 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::meta_client::MetaError;
-use models::schema::Tenant;
 use snafu::ResultExt;
 
-use spi::query::execution;
+use spi::query::execution::{self, MetadataSnafu};
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTenant;
 use trace::debug;
@@ -23,7 +22,7 @@ impl CreateTenantTask {
 impl DDLDefinitionTask for CreateTenantTask {
     async fn execute(
         &self,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateTenant {
             ref name,
@@ -31,9 +30,9 @@ impl DDLDefinitionTask for CreateTenantTask {
             ref options,
         } = self.stmt;
 
-        // TODO 元数据接口查询tenant是否存在
-
-        let tenant: Option<Tenant> = None;
+        // 元数据接口查询tenant是否存在
+        let tenant_manager = query_state_machine.meta.tenant_manager();
+        let tenant = tenant_manager.tenant_meta(name);
 
         match (if_not_exists, tenant) {
             // do not create if exists
@@ -45,10 +44,13 @@ impl DDLDefinitionTask for CreateTenantTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, None) => {
-                // TODO 创建tenant
+                // 创建tenant
                 // name: String
                 // options: TenantOptions
                 debug!("Create tenant {} with options [{}]", name, options);
+                tenant_manager
+                    .create_tenant(name.to_string(), options.clone())
+                    .context(MetadataSnafu)?;
 
                 Ok(Output::Nil(()))
             }

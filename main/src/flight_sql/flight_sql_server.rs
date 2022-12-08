@@ -9,7 +9,7 @@ use datafusion::arrow::datatypes::Schema;
 use datafusion::arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
 use futures::Stream;
 use http_protocol::header::{AUTHORIZATION, BASIC_PREFIX, BEARER_PREFIX, DB, TENANT};
-use models::auth::user::UserInfo;
+use models::auth::user::{User, UserInfo};
 use models::oid::{MemoryOidGenerator, Oid, OidGenerator, UuidGenerator};
 use moka::sync::Cache;
 use prost::Message;
@@ -112,10 +112,10 @@ where
         metadata: &MetadataMap,
     ) -> Result<(Vec<u8>, QueryHandle), Status> {
         let auth_result = self.authenticator.authenticate(metadata)?;
-        let user_info = auth_result.identity();
+        let user = auth_result.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
-        let ctx = self.construct_context(user_info, metadata)?;
+        let ctx = self.construct_context(user, metadata)?;
 
         // execute sql
         let query_result = self.execute(sql, ctx).await?;
@@ -155,7 +155,7 @@ where
 
     fn construct_context(
         &self,
-        user_info: UserInfo,
+        user_info: User,
         metadata: &MetadataMap,
     ) -> Result<Context, Status> {
         // parse tenant & default database
@@ -873,8 +873,7 @@ mod test {
             BasicCallHeaderAuthenticator::new(instance.clone()),
         );
 
-        let svc =
-            FlightServiceServer::new(FlightSqlServiceImpl::new(instance.clone(), authenticator));
+        let svc = FlightServiceServer::new(FlightSqlServiceImpl::new(instance, authenticator));
 
         println!("Listening on {:?}", addr);
 

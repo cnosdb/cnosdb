@@ -1,6 +1,8 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use meta::meta_client::MetaError;
+use snafu::ResultExt;
+use spi::query::execution::{ExecutionError, MetadataSnafu, Output, QueryStateMachineRef};
 use spi::query::logical_planner::{
     AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
 };
@@ -20,20 +22,27 @@ impl AlterTenantTask {
 impl DDLDefinitionTask for AlterTenantTask {
     async fn execute(
         &self,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let AlterTenant {
-            ref tenant_id,
+            ref tenant_name,
             ref alter_tenant_action,
         } = self.stmt;
 
+        let tenant_manager = query_state_machine.meta.tenant_manager();
+
+        let meta =
+            tenant_manager
+                .tenant_meta(tenant_name)
+                .ok_or_else(|| ExecutionError::Metadata {
+                    source: MetaError::TenantNotFound {
+                        tenant: tenant_name.to_string(),
+                    },
+                })?;
+
         match alter_tenant_action {
-            AlterTenantAction::AddUser(AlterTenantAddUser {
-                user_id,
-                role,
-                tenant_id,
-            }) => {
-                // TODO 向租户中添加指定角色的成员
+            AlterTenantAction::AddUser(AlterTenantAddUser { user_id, role }) => {
+                // 向租户中添加指定角色的成员
                 // user_id: Oid,
                 // role: TenantRoleIdentifier,
                 // tenant_id: Oid,
@@ -45,15 +54,13 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // ) -> Result<()>
                 debug!(
                     "Add user {} to tenant {} with role {:?}",
-                    user_id, tenant_id, role
+                    user_id, tenant_name, role
                 );
+                meta.add_member_with_role(*user_id, role.clone())
+                    .context(MetadataSnafu)?;
             }
-            AlterTenantAction::SetUser(AlterTenantSetUser {
-                user_id,
-                role,
-                tenant_id,
-            }) => {
-                // TODO 重设租户中指定成员的角色
+            AlterTenantAction::SetUser(AlterTenantSetUser { user_id, role }) => {
+                // 重设租户中指定成员的角色
                 // user_id: Oid,
                 // role: TenantRoleIdentifier,
                 // tenant_id: Oid,
@@ -65,11 +72,13 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // ) -> Result<()>;
                 debug!(
                     "Reasign role {:?} of user {} in tenant {}",
-                    role, user_id, tenant_id
+                    role, user_id, tenant_name
                 );
+                meta.reasign_member_role(*user_id, role.clone())
+                    .context(MetadataSnafu)?;
             }
             AlterTenantAction::RemoveUser(user_id) => {
-                // TODO 从租户中移除指定成员
+                // 从租户中移除指定成员
                 // user_id: Oid,
                 // tenant_id: Oid
                 // fn remove_member_from_tenant(
@@ -77,7 +86,8 @@ impl DDLDefinitionTask for AlterTenantTask {
                 //     user_id: Oid,
                 //     tenant_id: Oid
                 // ) -> Result<()>;
-                debug!("Remove user {} from tenant {}", user_id, tenant_id);
+                debug!("Remove user {} from tenant {}", user_id, tenant_name);
+                meta.remove_member(*user_id).context(MetadataSnafu)?;
             }
             AlterTenantAction::Set(options) => {
                 // TODO 修改租户的信息
@@ -88,7 +98,10 @@ impl DDLDefinitionTask for AlterTenantTask {
                 //     tenant_id: Oid,
                 //     options: TenantOptions
                 // ) -> Result<()>;
-                debug!("Alter tenant {} with options [{}]", tenant_id, options);
+                debug!("Alter tenant {} with options [{}]", tenant_name, options);
+                tenant_manager
+                    .alter_tenant(tenant_name, options.clone())
+                    .context(MetadataSnafu)?;
             }
         }
 

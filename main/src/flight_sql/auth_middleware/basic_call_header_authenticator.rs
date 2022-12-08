@@ -1,3 +1,4 @@
+use http_protocol::header;
 use spi::server::dbms::DBMSRef;
 use tonic::{metadata::MetadataMap, Status};
 use trace::debug;
@@ -30,14 +31,16 @@ impl CallHeaderAuthenticator for BasicCallHeaderAuthenticator {
             .try_get_basic_auth()
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        let _ = self
+        let tenant = utils::get_value_from_header(req_headers, header::TENANT, "");
+
+        let user = self
             .instance
-            .authenticate(&user_info)
+            .authenticate(&user_info, tenant.as_deref())
             .map_err(|e| Status::unauthenticated(e.to_string()))?;
 
         debug!("authenticate success, user: {}", user_info.user);
 
-        Ok(CommonAuthResult { user_info })
+        Ok(CommonAuthResult { user })
     }
 }
 

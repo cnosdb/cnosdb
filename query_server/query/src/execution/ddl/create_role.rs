@@ -1,11 +1,9 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::meta_client::MetaError;
-use models::auth::role::CustomTenantRole;
-use models::oid::Oid;
 use snafu::ResultExt;
 
-use spi::query::execution;
+use spi::query::execution::{self, MetadataSnafu};
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateRole;
 use trace::debug;
@@ -24,35 +22,43 @@ impl CreateRoleTask {
 impl DDLDefinitionTask for CreateRoleTask {
     async fn execute(
         &self,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateRole {
-            ref tenant_id,
+            ref tenant_name,
             ref name,
             ref if_not_exists,
             ref inherit_tenant_role,
         } = self.stmt;
 
-        // TODO 元数据接口查询tenant_id下自定义角色是否存在
+        // 元数据接口查询tenant_id下自定义角色是否存在
         // fn custom_role_of_tenant(
         //     &self,
         //     role_name: &str,
         //     tenant_id: &Oid,
         // ) -> Result<Option<CustomTenantRole<Oid>>>;
+        let tenant_manager = query_state_machine.meta.tenant_manager();
 
-        let role: Option<CustomTenantRole<Oid>> = None;
+        let meta =
+            tenant_manager
+                .tenant_meta(tenant_name)
+                .ok_or_else(|| ExecutionError::Metadata {
+                    source: MetaError::TenantNotFound {
+                        tenant: tenant_name.to_string(),
+                    },
+                })?;
+
+        let role = meta.custom_role(name).context(MetadataSnafu)?;
 
         match (if_not_exists, role) {
             // do not create if exists
             (true, Some(_)) => Ok(Output::Nil(())),
             // Report an error if it exists
-            (false, Some(_)) => Err(MetaError::RoleAlreadyExists {
-                role_name: name.clone(),
-            })
-            .context(execution::MetadataSnafu),
+            (false, Some(_)) => Err(MetaError::RoleAlreadyExists { role: name.clone() })
+                .context(execution::MetadataSnafu),
             // does not exist, create
             (_, None) => {
-                // TODO 创建自定义角色
+                // 创建自定义角色
                 // tenant_id: Oid
                 // name: String
                 // inherit_tenant_role: SystemTenantRole
@@ -65,8 +71,15 @@ impl DDLDefinitionTask for CreateRoleTask {
                 // ) -> Result<()>;
                 debug!(
                     "Create role {} of tenant {} inherit {:?}",
-                    name, tenant_id, inherit_tenant_role
+                    name, tenant_name, inherit_tenant_role
                 );
+
+                meta.create_custom_role(
+                    name.to_string(),
+                    inherit_tenant_role.clone(),
+                    Default::default(),
+                )
+                .context(MetadataSnafu)?;
 
                 Ok(Output::Nil(()))
             }
