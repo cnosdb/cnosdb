@@ -14,10 +14,10 @@ use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::CreateExternalTable;
-use datafusion::sql::TableReference;
-use models::schema::{ExternalTableSchema, TableSchema};
+
+use models::schema::{ExternalTableSchema};
 use snafu::ResultExt;
-use spi::catalog::MetadataError;
+
 use spi::query::execution::ExecutionError;
 use spi::query::execution::{self, ExternalSnafu};
 use spi::query::execution::{Output, QueryStateMachineRef};
@@ -39,31 +39,33 @@ impl CreateExternalTableTask {
 impl DDLDefinitionTask for CreateExternalTableTask {
     async fn execute(
         &self,
-        query_state_machine: QueryStateMachineRef,
+        _query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateExternalTable {
-            ref name,
-            ref if_not_exists,
+            
+            
             ..
         } = self.stmt;
 
-        let table_ref: TableReference = name.as_str().into();
-        let table = query_state_machine.catalog.table(table_ref);
+        todo!("meta need external table")
 
-        match (if_not_exists, table) {
-            // do not create if exists
-            (true, Ok(_)) => Ok(Output::Nil(())),
-            // Report an error if it exists
-            (false, Ok(_)) => Err(MetadataError::TableAlreadyExists {
-                table_name: name.clone(),
-            })
-            .context(execution::MetadataSnafu),
-            // does not exist, create
-            (_, Err(_)) => {
-                create_exernal_table(&self.stmt, query_state_machine).await?;
-                Ok(Output::Nil(()))
-            }
-        }
+        // let table_ref: TableReference = name.as_str().into();
+        // let table = query_state_machine.catalog.table(table_ref);
+        //
+        // match (if_not_exists, table) {
+        //     // do not create if exists
+        //     (true, Ok(_)) => Ok(Output::Nil(())),
+        //     // Report an error if it exists
+        //     (false, Ok(_)) => Err(MetadataError::TableAlreadyExists {
+        //         table_name: name.clone(),
+        //     })
+        //     .context(execution::MetadataSnafu),
+        //     // does not exist, create
+        //     (_, Err(_)) => {
+        //         create_exernal_table(&self.stmt, query_state_machine).await?;
+        //         Ok(Output::Nil(()))
+        //     }
+        // }
     }
 }
 
@@ -71,11 +73,11 @@ async fn create_exernal_table(
     stmt: &CreateExternalTable,
     query_state_machine: QueryStateMachineRef,
 ) -> Result<(), ExecutionError> {
-    let CreateExternalTable { ref name, .. } = stmt;
+    let CreateExternalTable {  .. } = stmt;
 
     let state = query_state_machine.session.inner().state();
 
-    let schema = build_table_schema(
+    let _schema = build_table_schema(
         stmt,
         query_state_machine.session.tenant().to_string(),
         query_state_machine.session.default_database().to_string(),
@@ -83,12 +85,13 @@ async fn create_exernal_table(
     )
     .await?;
 
-    query_state_machine
-        .catalog
-        .create_table(name, TableSchema::ExternalTableSchema(schema))
-        .context(execution::MetadataSnafu)?;
-
-    Ok(())
+    todo!("external table for meta")
+    // query_state_machine
+    //     .catalog
+    //     .create_table(name, TableSchema::ExternalTableSchema(schema))
+    //     .context(execution::MetadataSnafu)?;
+    //
+    // Ok(())
 }
 
 async fn build_table_schema(

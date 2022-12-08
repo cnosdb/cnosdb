@@ -8,21 +8,19 @@ use spi::{
     server::dbms::DatabaseManagerSystem,
     server::BuildSnafu,
     server::Result,
-    server::{AuthSnafu, LoadFunctionSnafu, MetaDataSnafu, QuerySnafu},
+    server::{AuthSnafu, QuerySnafu},
     service::protocol::{Query, QueryHandle, QueryId},
 };
 
 use tskv::kv_option::Options;
 
-use crate::metadata::LocalCatalogMeta;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
 use crate::{
     auth::auth_control::AccessControl, dispatcher::manager::SimpleQueryDispatcher,
-    function::simple_func_manager::SimpleFunctionMetadataManager,
 };
 use crate::{
-    dispatcher::manager::SimpleQueryDispatcherBuilder, extension::expr::load_all_functions,
+    dispatcher::manager::SimpleQueryDispatcherBuilder,
 };
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
@@ -85,20 +83,12 @@ where
 }
 
 pub fn make_cnosdbms(
-    engine: EngineRef,
+    _engine: EngineRef,
     coord: CoordinatorRef,
     options: Options,
 ) -> Result<Cnosdbms<SimpleQueryDispatcher>> {
     // todo: add query config
     // for now only support local mode
-    let mut function_manager = SimpleFunctionMetadataManager::default();
-    load_all_functions(&mut function_manager).context(LoadFunctionSnafu)?;
-
-    let meta = Arc::new(
-        LocalCatalogMeta::new_with_default(engine, coord.clone(), Arc::new(function_manager))
-            .context(MetaDataSnafu)?,
-    );
-
     // TODO session config need load global system config
     let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
     let parser = Arc::new(DefaultParser::default());
@@ -108,8 +98,11 @@ pub fn make_cnosdbms(
 
     let queries_limit = options.query.max_server_connections;
 
+    let meta_manager = coord.meta_manager();
+    let access_control = AccessControl::new(meta_manager);
+
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
-        .with_metadata(meta)
+        .with_coord(coord)
         .with_session_factory(session_factory)
         .with_parser(parser)
         .with_optimizer(optimizer)
@@ -117,9 +110,6 @@ pub fn make_cnosdbms(
         .with_queries_limit(queries_limit)
         .build()
         .context(BuildSnafu)?;
-
-    let meta_manager = coord.meta_manager();
-    let access_control = AccessControl::new(meta_manager);
 
     Ok(Cnosdbms {
         access_control,
@@ -138,7 +128,7 @@ mod tests {
 
     use super::*;
     use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
-    use spi::{catalog::DEFAULT_CATALOG, service::protocol::ContextBuilder};
+    use spi::{query::DEFAULT_CATALOG, service::protocol::ContextBuilder};
     use tskv::engine::MockEngine;
 
     #[macro_export]

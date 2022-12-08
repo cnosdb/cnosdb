@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use models::auth::user::UserInfo;
 
-use crate::catalog::{DEFAULT_CATALOG, DEFAULT_DATABASE};
+use crate::query::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use crate::query::execution::Output;
 use crate::query::session::IsiphoSessionConfig;
 

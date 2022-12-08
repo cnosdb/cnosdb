@@ -7,7 +7,7 @@ use futures::{executor, Future};
 use meta::meta_client::MetaRef;
 use models::predicate::domain::Predicate;
 use snafu::ResultExt;
-use spi::catalog::DEFAULT_CATALOG;
+use spi::query::DEFAULT_CATALOG;
 use spi::server::dbms::DBMSRef;
 use std::net::{self, SocketAddr};
 use tokio::io::BufReader;

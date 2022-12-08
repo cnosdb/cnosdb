@@ -1,10 +1,12 @@
 use crate::execution::ddl::query::execution::MetadataSnafu;
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
+use meta::meta_client::MetaError;
 use snafu::ResultExt;
 
+
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
-use spi::query::logical_planner::{AlterTable, AlterTableAction};
+use spi::query::logical_planner::{AlterTable};
 
 pub struct AlterTableTask {
     _stmt: AlterTable,
@@ -21,22 +23,33 @@ impl DDLDefinitionTask for AlterTableTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        let table_name = &self._stmt.table_name;
-        let catalog = query_state_machine.catalog.clone();
-        match &self._stmt.alter_action {
-            AlterTableAction::AddColumn { table_column } => catalog
-                .alter_table_add_column(table_name, table_column.clone())
-                .context(MetadataSnafu)?,
-            AlterTableAction::DropColumn { column_name } => catalog
-                .alter_table_drop_column(table_name, column_name)
-                .context(MetadataSnafu)?,
-            AlterTableAction::AlterColumn {
-                column_name,
-                new_column,
-            } => catalog
-                .alter_table_alter_column(table_name, column_name, new_column.clone())
-                .context(MetadataSnafu)?,
-        }
-        return Ok(Output::Nil(()));
+        let tenant = query_state_machine.session.tenant();
+        let _table_name = &self._stmt.table_name;
+        let _client = query_state_machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })
+            .context(MetadataSnafu)?;
+
+        todo!("alter method for meta")
+
+        // match &self._stmt.alter_action {
+        //     AlterTableAction::AddColumn { table_column } => catalog
+        //         .alter_table_add_column(table_name, table_column.clone())
+        //         .context(MetadataSnafu)?,
+        //     AlterTableAction::DropColumn { column_name } => catalog
+        //         .alter_table_drop_column(table_name, column_name)
+        //         .context(MetadataSnafu)?,
+        //     AlterTableAction::AlterColumn {
+        //         column_name,
+        //         new_column,
+        //     } => catalog
+        //         .alter_table_alter_column(table_name, column_name, new_column.clone())
+        //         .context(MetadataSnafu)?,
+        // }
+        // return Ok(Output::Nil(()));
     }
 }
