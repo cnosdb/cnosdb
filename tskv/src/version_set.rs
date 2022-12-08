@@ -6,6 +6,7 @@ use std::{
 use meta::meta_client::{MetaClientRef, MetaRef};
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock;
+use snafu::ResultExt;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
@@ -14,6 +15,7 @@ use trace::error;
 use crate::compaction::FlushReq;
 use crate::{
     database::Database,
+    error::MetaSnafu,
     error::Result,
     index::db_index,
     kv_option::StorageOptions,
@@ -53,11 +55,10 @@ impl VersionSet {
 
             let schema = match meta.tenant_manager().tenant_meta(tenant) {
                 None => DatabaseSchema::new(tenant, database),
-                Some(client) => {
-                    // client.get_db_schema()
-                    // todo: remove databaseinfo or databaseschema
-                    DatabaseSchema::new(tenant, database)
-                }
+                Some(client) => match client.get_db_schema(database).context(MetaSnafu)? {
+                    None => DatabaseSchema::new(tenant, database),
+                    Some(schema) => schema,
+                },
             };
             let db: &mut Arc<RwLock<Database>> =
                 dbs.entry(owner)

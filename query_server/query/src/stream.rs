@@ -11,9 +11,8 @@ use models::{
     schema::{ColumnType, TableColumn, TskvTableSchema, TIME_FIELD},
 };
 
-use spi::catalog::DEFAULT_CATALOG;
+use spi::query::DEFAULT_CATALOG;
 use tskv::{
-    engine::EngineRef,
     iterator::{QueryOption, TableScanMetrics},
 };
 
@@ -23,7 +22,6 @@ use tskv::Error;
 pub struct TableScanStream {
     proj_schema: SchemaRef,
     batch_size: usize,
-    store_engine: EngineRef,
     coord: CoordinatorRef,
 
     iterator: ReaderIterator,
@@ -38,7 +36,6 @@ impl TableScanStream {
         coord: CoordinatorRef,
         filter: PredicateRef,
         batch_size: usize,
-        store_engine: EngineRef,
         metrics: TableScanMetrics,
     ) -> Result<Self, Error> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
@@ -95,7 +92,6 @@ impl TableScanStream {
         Ok(Self {
             proj_schema,
             batch_size,
-            store_engine,
             coord,
             iterator,
             metrics,

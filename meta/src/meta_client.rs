@@ -31,6 +31,12 @@ pub enum MetaError {
     #[snafu(display("The tenant {} not found", tenant))]
     TenantNotFound { tenant: String },
 
+    #[snafu(display("User {} already exists.", user_name))]
+    UserAlreadyExists { user_name: String },
+
+    #[snafu(display("Role {} already exists.", role_name))]
+    RoleAlreadyExists { role_name: String },
+
     #[snafu(display("Not Found Field"))]
     NotFoundField,
 
@@ -48,6 +54,18 @@ pub enum MetaError {
 
     #[snafu(display("Error: {}", msg))]
     CommonError { msg: String },
+
+    #[snafu(display("Database not found: {:?}", database))]
+    DatabaseNotFound { database: String },
+
+    #[snafu(display("Database {:?} already exists", database))]
+    DatabaseAlreadyExists { database: String },
+
+    #[snafu(display("Table not found: {:?}", table))]
+    TableNotFound { table: String },
+
+    #[snafu(display("Table {} already exists.", table_name))]
+    TableAlreadyExists { table_name: String },
 }
 
 impl From<io::Error> for MetaError {

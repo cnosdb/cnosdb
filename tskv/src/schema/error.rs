@@ -1,11 +1,13 @@
+use meta::meta_client::MetaError;
 use snafu::Snafu;
 
 pub type Result<T> = std::result::Result<T, SchemaError>;
 
 #[derive(Snafu, Debug)]
+#[snafu(visibility(pub))]
 pub enum SchemaError {
-    #[snafu(display("Error with apply to meta: {}", message))]
-    MetaError { message: String },
+    #[snafu(display("Error with apply to meta: {}", source))]
+    Meta { source: MetaError },
 
     #[snafu(display("table '{}' not found", table))]
     TableNotFound { table: String },
@@ -18,4 +20,10 @@ pub enum SchemaError {
 
     #[snafu(display("Column {} already exists", name))]
     ColumnAlreadyExists { name: String },
+
+    #[snafu(display("database '{}' not found", database))]
+    DatabaseNotFound { database: String },
+
+    #[snafu(display("tenant '{}' not found from meta", tenant))]
+    TenantNotFound { tenant: String },
 }

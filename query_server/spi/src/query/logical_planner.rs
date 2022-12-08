@@ -1,4 +1,4 @@
-use crate::{catalog::MetadataError, service::protocol::QueryId};
+use crate::{service::protocol::QueryId};
 
 use super::{
     ast::{parse_bool_value, parse_string_value, ExtStatement},
@@ -23,6 +23,7 @@ use models::{
 };
 use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
+use meta::meta_client::MetaError;
 
 define_result!(LogicalPlannerError);
 
@@ -43,7 +44,7 @@ pub enum LogicalPlannerError {
     InsufficientPrivileges { privilege: String },
 
     #[snafu(display("Metadata err: {}", source))]
-    Metadata { source: MetadataError },
+    Metadata { source: MetaError },
 
     #[snafu(display("This feature is not implemented: {}", err))]
     NotImplemented { err: String },

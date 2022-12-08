@@ -1,9 +1,10 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
+use meta::meta_client::MetaError;
 use models::auth::role::CustomTenantRole;
 use models::oid::Oid;
 use snafu::ResultExt;
-use spi::catalog::MetadataError;
+
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateRole;
@@ -45,7 +46,7 @@ impl DDLDefinitionTask for CreateRoleTask {
             // do not create if exists
             (true, Some(_)) => Ok(Output::Nil(())),
             // Report an error if it exists
-            (false, Some(_)) => Err(MetadataError::RoleAlreadyExists {
+            (false, Some(_)) => Err(MetaError::RoleAlreadyExists {
                 role_name: name.clone(),
             })
             .context(execution::MetadataSnafu),

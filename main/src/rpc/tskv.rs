@@ -9,7 +9,7 @@ use protos::{
     },
     models::{PingBody, PingBodyBuilder},
 };
-use spi::catalog::DEFAULT_CATALOG;
+use spi::query::DEFAULT_CATALOG;
 use tokio::sync::mpsc::{self};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};

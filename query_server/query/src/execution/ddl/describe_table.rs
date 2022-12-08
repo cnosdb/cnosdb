@@ -4,9 +4,10 @@ use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::TableReference;
+use meta::meta_client::MetaError;
 use models::schema::TableSchema;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
+
 use spi::query::execution::ExternalSnafu;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
@@ -29,16 +30,35 @@ impl DDLDefinitionTask for DescribeTableTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        describe_table(
-            self.stmt.table_name.as_str(),
-            query_state_machine.catalog.clone(),
-        )
+        describe_table(self.stmt.table_name.as_str(), query_state_machine)
     }
 }
 
-fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    let table_name = TableReference::from(table_name);
-    let table_schema = catalog.table(table_name).context(MetadataSnafu)?;
+fn describe_table(
+    table_name: &str,
+    machine: QueryStateMachineRef,
+) -> Result<Output, ExecutionError> {
+    let tenant = machine.session.tenant();
+    let table_name =
+        TableReference::from(table_name).resolve(tenant, machine.session.default_database());
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })
+        .context(MetadataSnafu)?;
+    let table_schema = client
+        .get_table_schema(table_name.catalog, table_name.schema)
+        .context(MetadataSnafu)?
+        .ok_or(MetaError::TableNotFound {
+            table: table_name.table.to_string(),
+        })
+        .context(MetadataSnafu)?;
+
+    // todo: meta need external table
+    let table_schema = TableSchema::TsKvTableSchema(table_schema);
 
     match table_schema {
         TableSchema::TsKvTableSchema(tskv_schema) => {

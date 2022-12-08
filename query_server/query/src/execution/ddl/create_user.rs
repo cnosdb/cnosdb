@@ -1,8 +1,9 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
+use meta::meta_client::MetaError;
 use models::auth::user::UserDesc;
 use snafu::ResultExt;
-use spi::catalog::MetadataError;
+
 use spi::query::execution;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateUser;
@@ -42,7 +43,7 @@ impl DDLDefinitionTask for CreateUserTask {
             // do not create if exists
             (true, Some(_)) => Ok(Output::Nil(())),
             // Report an error if it exists
-            (false, Some(_)) => Err(MetadataError::UserAlreadyExists {
+            (false, Some(_)) => Err(MetaError::UserAlreadyExists {
                 user_name: name.clone(),
             })
             .context(execution::MetadataSnafu),

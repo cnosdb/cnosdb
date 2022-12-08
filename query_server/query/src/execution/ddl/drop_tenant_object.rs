@@ -10,6 +10,7 @@ use trace::debug;
 
 use super::DDLDefinitionTask;
 
+use meta::meta_client::MetaError;
 use snafu::ResultExt;
 
 pub struct DropTenantObjectTask {
@@ -54,10 +55,16 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // tenant_id
                 // database_name
                 debug!("Drop database {} of tenant {}", name, tenant_id);
-                query_state_machine
-                    .catalog
-                    .drop_database(query_state_machine.session.tenant(), name)
+                let tenant = query_state_machine.session.tenant();
+                let client = query_state_machine
+                    .meta
+                    .tenant_manager()
+                    .tenant_meta(tenant)
+                    .ok_or(MetaError::TenantNotFound {
+                        tenant: tenant.to_string(),
+                    })
                     .context(MetadataSnafu)?;
+                client.drop_db(name).context(MetadataSnafu)?;
                 Ok(())
             }
         };

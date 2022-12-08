@@ -9,9 +9,10 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
-use crate::catalog::{MetaData, MetaDataRef};
+
 use crate::service::protocol::QueryId;
-use crate::{catalog::MetadataError, service::protocol::Query};
+use crate::{service::protocol::Query};
+use meta::meta_client::{MetaError, MetaRef};
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};
@@ -26,7 +27,7 @@ pub enum ExecutionError {
     Arrow { source: ArrowError },
 
     #[snafu(display("Metadata operator err: {}", source))]
-    Metadata { source: MetadataError },
+    Metadata { source: MetaError },
 
     #[snafu(display("Query not found: {:?}", query_id))]
     QueryNotFound { query_id: QueryId },
@@ -95,7 +96,7 @@ pub struct QueryStateMachine {
     pub session: IsiphoSessionCtx,
     pub query_id: QueryId,
     pub query: Query,
-    pub catalog: MetaDataRef,
+    pub meta: MetaRef,
 
     state: AtomicPtr<QueryState>,
     start: Instant,
@@ -106,13 +107,13 @@ impl QueryStateMachine {
         query_id: QueryId,
         query: Query,
         session: IsiphoSessionCtx,
-        catalog: Arc<dyn MetaData>,
+        meta: MetaRef,
     ) -> Self {
         Self {
             query_id,
             session,
             query,
-            catalog,
+            meta,
             state: AtomicPtr::new(Box::into_raw(Box::new(QueryState::ACCEPTING))),
             start: Instant::now(),
         }

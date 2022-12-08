@@ -28,6 +28,7 @@ use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
+use meta::meta_client::MetaError;
 use spi::query::ast::{
     self, AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
@@ -48,7 +49,6 @@ use spi::query::logical_planner::{
 use spi::query::session::IsiphoSessionCtx;
 
 use models::schema::{DatabaseOptions, Duration, Precision};
-use spi::catalog::MetadataError;
 use spi::query::logical_planner::Result;
 use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use trace::{debug, warn};
@@ -566,8 +566,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
         let table_schema = table_provider
             .as_any()
             .downcast_ref::<ClusterTable>()
-            .ok_or_else(|| MetadataError::TableIsNotTsKv {
-                table_name: table_name.to_string(),
+            .ok_or_else(|| MetaError::TableNotFound {
+                table: table_name.to_string(),
             })
             .context(MetadataSnafu)?
             .table_schema();
@@ -825,8 +825,8 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn get_table_provider(&self, table_name: &str) -> Result<Arc<dyn TableProvider>> {
         let table_source = self.get_table_source(table_name)?;
         source_as_provider(&table_source)
-            .map_err(|_| MetadataError::InvalidSchema {
-                error_msg: format!(
+            .map_err(|_| MetaError::CommonError {
+                msg: format!(
                     "can't convert table source {} to table provider ",
                     table_name
                 ),

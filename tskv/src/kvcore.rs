@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use crate::error::MetaSnafu;
 use crate::tsm::codec::get_str_codec;
 use config::ClusterConfig;
 use datafusion::prelude::Column;
@@ -11,7 +12,7 @@ use libc::printf;
 use meta::meta_client::{MetaRef, RemoteMetaManager};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use parking_lot::{Mutex, RwLock};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use tokio::sync::watch;
 use tokio::sync::watch::{Receiver, Sender};
 use tokio::{
