@@ -57,9 +57,6 @@ fn describe_table(
         })
         .context(MetadataSnafu)?;
 
-    // todo: meta need external table
-    let table_schema = TableSchema::TsKvTableSchema(table_schema);
-
     match table_schema {
         TableSchema::TsKvTableSchema(tskv_schema) => {
             let mut name = StringBuilder::new();

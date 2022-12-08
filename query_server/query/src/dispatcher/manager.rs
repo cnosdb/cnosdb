@@ -23,14 +23,14 @@ use spi::{
 };
 
 use spi::query::QueryError::{self, BuildQueryDispatcher};
-use spi::query::{LogicalPlannerSnafu, Result, BuildFunctionMetaSnafu};
+use spi::query::{BuildFunctionMetaSnafu, LogicalPlannerSnafu, Result};
 
+use crate::extension::expr::load_all_functions;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::MetadataProvider;
 use crate::{
     execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
 };
-use crate::extension::expr::load_all_functions;
-use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 
 use super::query_tracker::QueryTracker;
 
@@ -79,7 +79,12 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let mut func_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut func_manager).context(BuildFunctionMetaSnafu)?;
-        let scheme_provider = MetadataProvider::new(self.coord.clone(), func_manager,session.tenant().to_string(), session.default_database().to_string());
+        let scheme_provider = MetadataProvider::new(
+            self.coord.clone(),
+            func_manager,
+            session.tenant().to_string(),
+            session.default_database().to_string(),
+        );
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
 

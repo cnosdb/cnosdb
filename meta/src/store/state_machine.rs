@@ -1,6 +1,5 @@
 use crate::NodeId;
-use models::schema::DatabaseSchema;
-use models::schema::TskvTableSchema;
+use models::schema::{DatabaseSchema, TableSchema};
 
 use openraft::EffectiveMembership;
 use openraft::LogId;
@@ -223,7 +222,7 @@ impl StateMachine {
                 &self.data,
             );
 
-            let tables = children_data::<TskvTableSchema>(
+            let tables = children_data::<TableSchema>(
                 &KeyPath::tenant_schemas(cluster, tenant, key),
                 &self.data,
             );
@@ -348,10 +347,10 @@ impl StateMachine {
         &mut self,
         cluster: &str,
         tenant: &str,
-        schema: &TskvTableSchema,
+        schema: &TableSchema,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
-        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
+        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
         // if self.data.contains_key(&key) {
         //     return KvResp {
         //         err_code: -1,
@@ -383,21 +382,33 @@ impl StateMachine {
         &mut self,
         cluster: &str,
         tenant: &str,
-        schema: &TskvTableSchema,
+        schema: &TableSchema,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
-        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
-        if let Some(val) = get_struct::<TskvTableSchema>(&key, &self.data) {
-            if val.schema_id + 1 != schema.schema_id {
-                return TenaneMetaDataResp::new_from_data(
-                    META_REQUEST_FAILED,
-                    format!(
-                        "update table schema conflict {}->{}",
-                        val.schema_id, schema.schema_id
-                    ),
-                    self.to_tenant_meta_data(cluster, tenant),
-                )
-                .to_string();
+        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
+        if let Some(val) = get_struct::<TableSchema>(&key, &self.data) {
+            match (val, schema) {
+                (TableSchema::TsKvTableSchema(val), TableSchema::TsKvTableSchema(schema)) => {
+                    if val.schema_id + 1 != schema.schema_id {
+                        return TenaneMetaDataResp::new_from_data(
+                            META_REQUEST_FAILED,
+                            format!(
+                                "update table schema conflict {}->{}",
+                                val.schema_id, schema.schema_id
+                            ),
+                            self.to_tenant_meta_data(cluster, tenant),
+                        )
+                        .to_string();
+                    }
+                }
+                _ => {
+                    return TenaneMetaDataResp::new_from_data(
+                        META_REQUEST_FAILED,
+                        "not support update external table".to_string(),
+                        self.to_tenant_meta_data(cluster, tenant),
+                    )
+                    .to_string()
+                }
             }
         }
 

@@ -12,9 +12,7 @@ use models::{
 };
 
 use spi::query::DEFAULT_CATALOG;
-use tskv::{
-    iterator::{QueryOption, TableScanMetrics},
-};
+use tskv::iterator::{QueryOption, TableScanMetrics};
 
 use tskv::Error;
 

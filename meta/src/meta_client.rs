@@ -18,7 +18,9 @@ use tokio::net::TcpStream;
 
 use trace::info;
 
-use models::schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema};
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+};
 
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{UserManager, UserManagerMock};
@@ -171,9 +173,15 @@ pub trait MetaClient: Send + Sync + Debug {
     fn list_databases(&self) -> MetaResult<Vec<String>>;
     fn drop_db(&self, name: &str) -> MetaResult<()>;
 
-    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
-    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
-    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
+    fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>>;
+    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn get_external_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<ExternalTableSchema>>;
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
     fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
@@ -566,7 +574,7 @@ impl MetaClient for RemoteMetaClient {
         todo!()
     }
 
-    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+    fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
         let req = command::WriteCommand::CreateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
@@ -584,7 +592,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(())
     }
 
-    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
         if let Some(val) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
@@ -594,7 +602,39 @@ impl MetaClient for RemoteMetaClient {
         Ok(val)
     }
 
-    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
+        if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
+            return Ok(Some(val));
+        }
+
+        self.sync_all_tenant_metadata()?;
+        let val = self.data.read().table_schema(db, table);
+        if let Some(TableSchema::TsKvTableSchema(schema)) = val {
+            return Ok(Some(schema));
+        }
+        Ok(None)
+    }
+
+    fn get_external_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<ExternalTableSchema>> {
+        if let Some(TableSchema::ExternalTableSchema(val)) =
+            self.data.read().table_schema(db, table)
+        {
+            return Ok(Some(val));
+        }
+
+        self.sync_all_tenant_metadata()?;
+        let val = self.data.read().table_schema(db, table);
+        if let Some(TableSchema::ExternalTableSchema(schema)) = val {
+            return Ok(Some(schema));
+        }
+        Ok(None)
+    }
+
+    fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
         let req = command::WriteCommand::UpdateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),

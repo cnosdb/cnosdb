@@ -60,32 +60,30 @@ impl ContextProvider for MetadataProvider {
             .meta_manager()
             .tenant_manager()
             .tenant_meta(name.catalog)
-            .ok_or_else(|| {
-                DataFusionError::External(Box::new(MetaError::TenantNotFound {
+            .ok_or(DataFusionError::External(Box::new(
+                MetaError::TenantNotFound {
                     tenant: name.catalog.to_string(),
-                }))
-            })?;
+                },
+            )))?;
+
         match client
             .get_table_schema(name.schema, name.table)
             .map_err(|e| DataFusionError::External(Box::new(e)))?
         {
-            Some(table) => {
-                // todo: meta need external table
-                let table = TableSchema::TsKvTableSchema(table);
-                match table {
-                    TableSchema::TsKvTableSchema(schema) => Ok(provider_as_source(Arc::new(
-                        ClusterTable::new(self.coord.clone(), schema),
-                    ))),
-                    TableSchema::ExternalTableSchema(schema) => {
-                        let table_path = ListingTableUrl::parse(&schema.location)?;
-                        let options = schema.table_options()?;
-                        let config = ListingTableConfig::new(table_path)
-                            .with_listing_options(options)
-                            .with_schema(Arc::new(schema.schema));
-                        Ok(provider_as_source(Arc::new(ListingTable::try_new(config)?)))
-                    }
+            Some(table) => match table {
+                TableSchema::TsKvTableSchema(schema) => Ok(provider_as_source(Arc::new(
+                    ClusterTable::new(self.coord.clone(), schema),
+                ))),
+                TableSchema::ExternalTableSchema(schema) => {
+                    let table_path = ListingTableUrl::parse(&schema.location)?;
+                    let options = schema.table_options()?;
+                    let config = ListingTableConfig::new(table_path)
+                        .with_listing_options(options)
+                        .with_schema(Arc::new(schema.schema));
+                    Ok(provider_as_source(Arc::new(ListingTable::try_new(config)?)))
                 }
-            }
+            },
+
             None => Err(DataFusionError::Plan(format!(
                 "failed to resolve tenant:{}  db: {}, table: {}",
                 name.catalog, name.schema, name.table

@@ -16,7 +16,6 @@ pub mod parser;
 pub mod physical_planner;
 pub mod session;
 
-
 #[allow(dead_code)]
 pub const DEFAULT_DATABASE: &str = "public";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
@@ -34,7 +33,7 @@ pub enum QueryError {
     BuildQueryDispatcher { err: String },
 
     #[snafu(display("Failed to build Function Meta, err: {}", source))]
-    BuildFunctionMeta { source: function::Error},
+    BuildFunctionMeta { source: function::Error },
 
     #[snafu(display("Failed to do logical plan. err: {}", source))]
     LogicalPlanner { source: LogicalPlannerError },

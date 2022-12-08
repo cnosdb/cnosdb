@@ -1,8 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use models::meta_data::*;
-use models::schema::DatabaseSchema;
-use models::schema::TskvTableSchema;
+use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -18,8 +17,8 @@ pub enum WriteCommand {
         ts: i64,
     },
 
-    CreateTable(String, String, TskvTableSchema),
-    UpdateTable(String, String, TskvTableSchema),
+    CreateTable(String, String, TableSchema),
+    UpdateTable(String, String, TableSchema),
 
     Set {
         key: String,
@@ -153,19 +152,19 @@ impl TenantMetaDataDelta {
         db_info.schema = schema.clone();
     }
 
-    pub fn create_or_update_table(&mut self, ver: u64, schema: &TskvTableSchema) {
+    pub fn create_or_update_table(&mut self, ver: u64, schema: &TableSchema) {
         self.update_version(ver);
 
         let db_info = self
             .update
             .dbs
-            .entry(schema.db.clone())
+            .entry(schema.db())
             .or_insert_with(DatabaseInfo::default);
 
-        db_info.tables.insert(schema.name.clone(), schema.clone());
+        db_info.tables.insert(schema.name(), schema.clone());
 
-        if let Some(info) = self.delete.dbs.get_mut(&schema.db) {
-            info.tables.remove(&schema.name);
+        if let Some(info) = self.delete.dbs.get_mut(&schema.db()) {
+            info.tables.remove(&schema.name());
         }
     }
 
@@ -182,9 +181,10 @@ impl TenantMetaDataDelta {
             .entry(db.to_string())
             .or_insert_with(DatabaseInfo::default);
 
-        db_info
-            .tables
-            .insert(table.to_string(), TskvTableSchema::default());
+        db_info.tables.insert(
+            table.to_string(),
+            TableSchema::TsKvTableSchema(TskvTableSchema::default()),
+        );
     }
 
     pub fn create_or_update_bucket(&mut self, ver: u64, db: &str, bucket: &BucketInfo) {

@@ -29,10 +29,7 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        describe_database(
-            self.stmt.database_name.as_str(),
-            query_state_machine,
-        )
+        describe_database(self.stmt.database_name.as_str(), query_state_machine)
     }
 }
 

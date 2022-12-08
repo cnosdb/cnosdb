@@ -19,7 +19,7 @@ use models::predicate::domain::PredicateRef;
 use models::schema::TskvTableSchema;
 
 use crate::stream::TableScanStream;
-use tskv::{iterator::TableScanMetrics};
+use tskv::iterator::TableScanMetrics;
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {

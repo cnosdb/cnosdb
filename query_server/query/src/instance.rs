@@ -14,14 +14,10 @@ use spi::{
 
 use tskv::kv_option::Options;
 
+use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
-use crate::{
-    auth::auth_control::AccessControl, dispatcher::manager::SimpleQueryDispatcher,
-};
-use crate::{
-    dispatcher::manager::SimpleQueryDispatcherBuilder,
-};
+use crate::{auth::auth_control::AccessControl, dispatcher::manager::SimpleQueryDispatcher};
 use snafu::ResultExt;
 use tskv::engine::EngineRef;
 
