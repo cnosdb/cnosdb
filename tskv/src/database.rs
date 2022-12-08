@@ -211,7 +211,7 @@ impl Database {
         point: Point,
         sid: u64,
     ) -> Result<()> {
-        let table_name = String::from_utf8(point.tab().unwrap().to_vec()).unwrap();
+        let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
         let table_schema = self
             .index
             .get_table_schema(&table_name)

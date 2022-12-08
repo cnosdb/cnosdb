@@ -130,9 +130,9 @@ impl RowData {
                 }
                 for (i, f) in fields_inner.into_iter().enumerate() {
                     let vtype = f.type_().into();
-                    let val = MiniVec::from(f.value().unwrap());
+                    let val = MiniVec::from(f.value().unwrap().bytes());
                     match schema.column(
-                        String::from_utf8(f.name().unwrap().to_vec())
+                        String::from_utf8(f.name().unwrap().bytes().to_vec())
                             .unwrap()
                             .as_str(),
                     ) {
@@ -177,7 +177,7 @@ impl From<fb_models::Point<'_>> for RowData {
                 let mut fields = Vec::with_capacity(fields_inner.len());
                 for f in fields_inner.into_iter() {
                     let vtype = f.type_().into();
-                    let val = MiniVec::from(f.value().unwrap());
+                    let val = MiniVec::from(f.value().unwrap().bytes());
                     fields.push(Some(FieldVal::new(val, vtype)));
                 }
                 fields

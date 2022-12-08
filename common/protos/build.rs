@@ -98,7 +98,17 @@ mod flatbuffers_generated;
             flatbuffers_generated_mod_rs_file.write_all(b";\n")?;
             flatbuffers_generated_mod_rs_file.flush()?;
 
-            let output = Command::new("flatc")
+            let flatc_path = match env::var("FLATC_PATH") {
+                Ok(p) => {
+                    println!(
+                        "Found specified flatc path in environment FLATC_PATH( {} )",
+                        &p
+                    );
+                    p
+                }
+                Err(_) => "flatc".to_string(),
+            };
+            let output = Command::new(&flatc_path)
                 .arg("-o")
                 .arg(&output_dir_final)
                 .arg("--rust")
@@ -109,10 +119,10 @@ mod flatbuffers_generated;
                 .arg("")
                 .arg(p)
                 .output()
-                .unwrap_or_else(|_| {
+                .unwrap_or_else(|e| {
                     panic!(
-                        "Failed to generate file by flatbuffers {}.",
-                        output_file_name
+                        "Failed to generate file '{}' by flatc(path: '{}'): {:?}.",
+                        output_file_name, flatc_path, e
                     )
                 });
 
