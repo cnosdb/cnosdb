@@ -115,7 +115,7 @@
    如果您的系统不在此列，需要自行编译
 
    ```shell
-   $ git clone -b v2.0.6 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers
+   $ git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers
 
    # 根据操作系统选择以下命令之一
    $ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release

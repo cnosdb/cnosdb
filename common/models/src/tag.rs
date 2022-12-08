@@ -32,12 +32,14 @@ impl Tag {
             .ok_or(Error::InvalidFlatbufferMessage {
                 err: "Tag key cannot be empty".to_string(),
             })?
+            .bytes()
             .to_vec();
         let value = tag
             .value()
             .ok_or(Error::InvalidFlatbufferMessage {
                 err: "Tag value cannot be empty".to_string(),
             })?
+            .bytes()
             .to_vec();
         Ok(Self { key, value })
     }

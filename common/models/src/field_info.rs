@@ -121,6 +121,7 @@ impl FieldInfo {
                 .ok_or(Error::InvalidFlatbufferMessage {
                     err: "".to_string(),
                 })?
+                .bytes()
                 .to_vec(),
             value_type: field.type_().into(),
             code_type: 0,
