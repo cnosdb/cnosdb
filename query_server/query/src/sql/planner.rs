@@ -831,11 +831,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         })
     }
 
-    fn order_by(
-        &self,
-        exprs: Vec<OrderByExpr>,
-        plan: LogicalPlan,
-    ) -> Result<LogicalPlanBuilder> {
+    fn order_by(&self, exprs: Vec<OrderByExpr>, plan: LogicalPlan) -> Result<LogicalPlanBuilder> {
         if exprs.is_empty() {
             return Ok(LogicalPlanBuilder::from(plan));
         }

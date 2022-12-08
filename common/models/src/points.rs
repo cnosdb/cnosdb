@@ -17,12 +17,12 @@ impl FieldValue {
             value_type: field.type_().into(),
 
             name: match field.name() {
-                Some(v) => v.to_vec(),
+                Some(v) => v.bytes().to_vec(),
                 None => Vec::new(),
             },
 
             value: match field.value() {
-                Some(v) => v.to_vec(),
+                Some(v) => v.bytes().to_vec(),
                 None => Vec::new(),
             },
         })
@@ -79,8 +79,8 @@ impl From<fb_models::Point<'_>> for InMemPoint {
                 let mut fields = Vec::with_capacity(fields_inner.len());
                 for f in fields_inner.into_iter() {
                     let val_type = f.type_().into();
-                    let val = f.value().unwrap().to_vec();
-                    let name = f.name().unwrap().to_vec();
+                    let val = f.value().unwrap().bytes().to_vec();
+                    let name = f.name().unwrap().bytes().to_vec();
                     fields.push(FieldValue {
                         field_id: 0,
                         value_type: val_type,
