@@ -259,6 +259,7 @@ struct TagRecordBatchStreamBuilder {
 }
 
 impl TagRecordBatchStreamBuilder {
+    #[allow(dead_code)]
     pub fn try_new(schema: SchemaRef, size_hint: usize) -> ArrowResult<Self> {
         let builders = build_arrow_array_builders(schema.clone(), size_hint)?;
         let tag_values_containers: Vec<Vec<Option<TagValue>>> =
@@ -274,6 +275,7 @@ impl TagRecordBatchStreamBuilder {
         })
     }
 
+    #[allow(dead_code)]
     pub fn append(&mut self, series_key: SeriesKey) {
         self.tag_key_array
             .iter()
@@ -286,6 +288,7 @@ impl TagRecordBatchStreamBuilder {
             })
     }
 
+    #[allow(dead_code)]
     pub fn build(mut self) -> ArrowResult<TagRecordBatchStream> {
         trace::trace!("tag_values_containers: {:?}", &self.tag_values_containers);
 

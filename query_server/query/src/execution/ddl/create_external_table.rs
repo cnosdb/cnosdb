@@ -69,6 +69,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
     }
 }
 
+#[allow(dead_code)]
 async fn create_exernal_table(
     stmt: &CreateExternalTable,
     query_state_machine: QueryStateMachineRef,
@@ -94,6 +95,7 @@ async fn create_exernal_table(
     // Ok(())
 }
 
+#[allow(dead_code)]
 async fn build_table_schema(
     stmt: &CreateExternalTable,
     tenant: String,
@@ -124,6 +126,7 @@ async fn build_table_schema(
     Ok(schema)
 }
 
+#[allow(dead_code)]
 async fn construct_listing_table_schema(
     stmt: &CreateExternalTable,
     state: &SessionState,
@@ -152,6 +155,7 @@ async fn construct_listing_table_schema(
     })
 }
 
+#[allow(dead_code)]
 fn build_external_table_config(
     stmt: &CreateExternalTable,
     target_partitions: usize,
