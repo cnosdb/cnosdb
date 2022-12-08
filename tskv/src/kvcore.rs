@@ -395,10 +395,7 @@ impl Engine for TsKv {
         let db_warp = self.version_set.read().get_db(tenant_name, &db_name);
         let db = match db_warp {
             Some(database) => database,
-            None => self.version_set.write().create_db(
-                DatabaseSchema::new(tenant_name, &db_name),
-                self.meta_manager.clone(),
-            )?,
+            None => self.create_database(&DatabaseSchema::new(tenant_name, &db_name))?,
         };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -480,7 +477,7 @@ impl Engine for TsKv {
         });
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
         if self
             .version_set
             .read()
@@ -490,10 +487,11 @@ impl Engine for TsKv {
                 database: schema.database_name().to_string(),
             });
         }
-        self.version_set
+        let db = self
+            .version_set
             .write()
             .create_db(schema.clone(), self.meta_manager.clone())?;
-        Ok(())
+        Ok(db)
     }
 
     fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
@@ -563,12 +561,7 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) -> Result<()> {
-        // todo: remove this
-        let schema = match schema {
-            TableSchema::TsKvTableSchema(schema) => schema,
-            TableSchema::ExternalTableSchema(_) => return Err(Error::Cancel),
-        };
+    fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
         if let Some(db) = self.version_set.write().get_db(&schema.tenant, &schema.db) {
             db.read()
                 .get_schemas()
@@ -669,14 +662,10 @@ impl Engine for TsKv {
         tenant: &str,
         database: &str,
         tab: &str,
-    ) -> Result<Option<TableSchema>> {
+    ) -> Result<Option<TskvTableSchema>> {
         if let Some(db) = self.version_set.read().get_db(tenant, database) {
             let val = db.read().get_table_schema(tab)?;
-            // todo: remove this
-            return match val {
-                None => Ok(None),
-                Some(schema) => Ok(Some(TableSchema::TsKvTableSchema(schema))),
-            };
+            return Ok(val)
         }
         Ok(None)
     }

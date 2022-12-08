@@ -2,7 +2,7 @@ use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use datafusion::sql::TableReference;
 use meta::meta_client::MetaError;
-use models::schema::{TskvTableSchema};
+use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
 
 use spi::query::execution;
@@ -45,7 +45,7 @@ impl DDLDefinitionTask for CreateTableTask {
         let table_ref = TableReference::from(name.as_str())
             .resolve(tenant, query_state_machine.session.default_database());
         let table = client
-            .get_table_schema(table_ref.schema, table_ref.table)
+            .get_tskv_table_schema(table_ref.schema, table_ref.table)
             .context(MetadataSnafu)?;
 
         match (if_not_exists, table) {
@@ -66,7 +66,7 @@ impl DDLDefinitionTask for CreateTableTask {
 }
 
 fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<(), ExecutionError> {
-    let CreateTable {  .. } = stmt;
+    let CreateTable { .. } = stmt;
     let table_schema = build_schema(stmt, &machine.session);
     let tenant = machine.session.tenant();
     let client = machine
@@ -77,9 +77,8 @@ fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<(),
             tenant: tenant.to_string(),
         })
         .context(MetadataSnafu)?;
-    // todo: meta need external table
     client
-        .create_table(&table_schema)
+        .create_table(&TableSchema::TsKvTableSchema(table_schema))
         .context(execution::MetadataSnafu)
 }
 

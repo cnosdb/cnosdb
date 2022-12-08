@@ -9,9 +9,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
-
+use crate::service::protocol::Query;
 use crate::service::protocol::QueryId;
-use crate::{service::protocol::Query};
 use meta::meta_client::{MetaError, MetaRef};
 
 use super::dispatcher::{QueryInfo, QueryStatus};

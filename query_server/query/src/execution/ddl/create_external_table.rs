@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::TableReference;
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
@@ -15,8 +16,10 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::CreateExternalTable;
 
-use models::schema::{ExternalTableSchema};
+use meta::meta_client::MetaError;
+use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
+use spi::query::execution::MetadataSnafu;
 
 use spi::query::execution::ExecutionError;
 use spi::query::execution::{self, ExternalSnafu};
@@ -39,33 +42,46 @@ impl CreateExternalTableTask {
 impl DDLDefinitionTask for CreateExternalTableTask {
     async fn execute(
         &self,
-        _query_state_machine: QueryStateMachineRef,
+        query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let CreateExternalTable {
-            
-            
+            ref name,
+            ref if_not_exists,
             ..
         } = self.stmt;
 
-        todo!("meta need external table")
+        let table_ref: TableReference = name.as_str().into();
+        let table_name = table_ref.resolve(
+            query_state_machine.session.tenant(),
+            query_state_machine.session.default_database(),
+        );
+        let client = query_state_machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(table_name.catalog)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: table_name.catalog.to_string(),
+            })
+            .context(MetadataSnafu)?;
 
-        // let table_ref: TableReference = name.as_str().into();
-        // let table = query_state_machine.catalog.table(table_ref);
-        //
-        // match (if_not_exists, table) {
-        //     // do not create if exists
-        //     (true, Ok(_)) => Ok(Output::Nil(())),
-        //     // Report an error if it exists
-        //     (false, Ok(_)) => Err(MetadataError::TableAlreadyExists {
-        //         table_name: name.clone(),
-        //     })
-        //     .context(execution::MetadataSnafu),
-        //     // does not exist, create
-        //     (_, Err(_)) => {
-        //         create_exernal_table(&self.stmt, query_state_machine).await?;
-        //         Ok(Output::Nil(()))
-        //     }
-        // }
+        let table = client
+            .get_external_table_schema(table_name.schema, table_name.table)
+            .context(MetadataSnafu)?;
+
+        match (if_not_exists, table) {
+            // do not create if exists
+            (true, Some(_)) => Ok(Output::Nil(())),
+            // Report an error if it exists
+            (false, Some(_)) => Err(MetaError::TableAlreadyExists {
+                table_name: name.clone(),
+            })
+            .context(execution::MetadataSnafu),
+            // does not exist, create
+            (_, None) => {
+                create_exernal_table(&self.stmt, query_state_machine).await?;
+                Ok(Output::Nil(()))
+            }
+        }
     }
 }
 
@@ -74,11 +90,9 @@ async fn create_exernal_table(
     stmt: &CreateExternalTable,
     query_state_machine: QueryStateMachineRef,
 ) -> Result<(), ExecutionError> {
-    let CreateExternalTable {  .. } = stmt;
-
     let state = query_state_machine.session.inner().state();
 
-    let _schema = build_table_schema(
+    let schema = build_table_schema(
         stmt,
         query_state_machine.session.tenant().to_string(),
         query_state_machine.session.default_database().to_string(),
@@ -86,16 +100,21 @@ async fn create_exernal_table(
     )
     .await?;
 
-    todo!("external table for meta")
-    // query_state_machine
-    //     .catalog
-    //     .create_table(name, TableSchema::ExternalTableSchema(schema))
-    //     .context(execution::MetadataSnafu)?;
-    //
-    // Ok(())
+    let tenant = query_state_machine.session.tenant();
+    let client = query_state_machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })
+        .context(MetadataSnafu)?;
+
+    client
+        .create_table(&TableSchema::ExternalTableSchema(schema))
+        .context(MetadataSnafu)
 }
 
-#[allow(dead_code)]
 async fn build_table_schema(
     stmt: &CreateExternalTable,
     tenant: String,
@@ -126,7 +145,6 @@ async fn build_table_schema(
     Ok(schema)
 }
 
-#[allow(dead_code)]
 async fn construct_listing_table_schema(
     stmt: &CreateExternalTable,
     state: &SessionState,
@@ -155,7 +173,6 @@ async fn construct_listing_table_schema(
     })
 }
 
-#[allow(dead_code)]
 fn build_external_table_config(
     stmt: &CreateExternalTable,
     target_partitions: usize,

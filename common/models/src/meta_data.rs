@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::schema::{DatabaseSchema, TskvTableSchema};
+use crate::schema::{DatabaseSchema, TableSchema};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Resource {
@@ -71,7 +71,7 @@ pub struct DatabaseInfo {
     pub schema: DatabaseSchema,
 
     pub buckets: Vec<BucketInfo>,
-    pub tables: HashMap<String, TskvTableSchema>,
+    pub tables: HashMap<String, TableSchema>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -92,7 +92,7 @@ impl TenantMetaData {
         }
     }
 
-    pub fn table_schema(&self, db: &str, tab: &str) -> Option<TskvTableSchema> {
+    pub fn table_schema(&self, db: &str, tab: &str) -> Option<TableSchema> {
         if let Some(info) = self.dbs.get(db) {
             if let Some(schema) = info.tables.get(tab) {
                 return Some(schema.clone());

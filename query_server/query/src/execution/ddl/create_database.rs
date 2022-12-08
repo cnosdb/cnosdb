@@ -75,11 +75,7 @@ fn create_database(
             tenant: tenant.to_string(),
         })
         .context(MetadataSnafu)?;
-    let CreateDatabase {
-        ref name,
-        
-        ..
-    } = stmt;
+    let CreateDatabase { ref name, .. } = stmt;
 
     let database_schema = DatabaseSchema::new(machine.session.tenant(), name);
     client

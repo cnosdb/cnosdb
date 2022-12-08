@@ -15,7 +15,6 @@ use meta::meta_client::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::TskvTableSchema;
 
-
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
     extension::physical::plan_node::{table_writer::TableWriterExec, tag_scan::TagScanExec},
@@ -45,10 +44,7 @@ impl ClusterTable {
     }
 
     pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        ClusterTable {
-            coord,
-            schema,
-        }
+        ClusterTable { coord, schema }
     }
 
     pub async fn write(
@@ -160,9 +156,8 @@ pub fn valid_project(
 
     if contains_time_column && field_count == 0 {
         return Err(MetaError::CommonError {
-            msg:
-                "If the projection contains the time column, it must contain the field column"
-                    .to_string(),
+            msg: "If the projection contains the time column, it must contain the field column"
+                .to_string(),
         });
     }
 

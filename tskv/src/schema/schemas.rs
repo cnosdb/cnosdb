@@ -47,7 +47,7 @@ impl DBschemas {
                     .context(MetaSnafu)?;
                 for table in tables {
                     if let Some(table_schema) = client
-                        .get_table_schema(schema.database_name(), &table)
+                        .get_tskv_table_schema(schema.database_name(), &table)
                         .context(MetaSnafu)?
                     {
                         table_schemas.insert(table, table_schema);
@@ -173,27 +173,32 @@ impl DBschemas {
                 ColumnType::from_i32(field.type_().0),
             ))?
         }
+
+        let client = self
+            .meta
+            .tenant_manager()
+            .tenant_meta(&schema.tenant)
+            .ok_or(SchemaError::DatabaseNotFound {
+                database: self.db_schema.read().database_name().to_string(),
+            })?;
         //schema changed store it
         if new_schema {
             schema.schema_id = 0;
-            let client = self
-                .meta
-                .tenant_manager()
-                .tenant_meta(&schema.tenant)
-                .ok_or(SchemaError::DatabaseNotFound {
-                    database: self.db_schema.read().database_name().to_string(),
-                })?;
-            client.create_table(schema).context(MetaSnafu)?;
+            client
+                .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .context(MetaSnafu)?;
         } else if schema_change {
             schema.schema_id += 1;
-            //todo : need change schema for meta
+            client
+                .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
+                .context(MetaSnafu)?;
         }
         Ok(())
     }
 
     pub fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchema>> {
-        if let Some(fields) = self.table_schema.read().get(tab) {
-            return Ok(Some(fields.clone()));
+        if let Some(schema) = self.table_schema.read().get(tab) {
+            return Ok(Some(schema.clone()));
         }
         let db_schema = self.db_schema.read();
         let client = self
@@ -203,14 +208,12 @@ impl DBschemas {
             .ok_or(SchemaError::DatabaseNotFound {
                 database: db_schema.database_name().to_string(),
             })?;
-        let shcema = client
-            .get_table_schema(db_schema.database_name(), tab)
-            .context(MetaSnafu)?
-            .ok_or(SchemaError::TableNotFound {
-                table: tab.to_string(),
-            });
+        let schema = client
+            .get_tskv_table_schema(db_schema.database_name(), tab)
+            .context(MetaSnafu)?;
+
         //todo get schema from meta
-        Ok(None)
+        Ok(schema)
     }
 
     pub fn list_tables(&self) -> Vec<String> {
@@ -247,7 +250,9 @@ impl DBschemas {
             .ok_or(SchemaError::DatabaseNotFound {
                 database: db_schema.database_name().to_string(),
             })?;
-        client.create_table(schema).context(MetaSnafu)?;
+        client
+            .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
+            .context(MetaSnafu)?;
         self.table_schema
             .write()
             .insert(schema.name.clone(), schema.clone());

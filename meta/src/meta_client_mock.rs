@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use models::schema::{ExternalTableSchema, TableSchema};
 use models::{
     auth::{
         privilege::DatabasePrivilege,
@@ -78,16 +79,28 @@ impl MetaClient for MockMetaClient {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+    fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
         Ok(())
     }
 
-    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+    fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
         Ok(())
     }
 
-    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
+        Ok(None)
+    }
+
+    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
         Ok(Some(TskvTableSchema::default()))
+    }
+
+    fn get_external_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<ExternalTableSchema>> {
+        Ok(None)
     }
 
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>> {

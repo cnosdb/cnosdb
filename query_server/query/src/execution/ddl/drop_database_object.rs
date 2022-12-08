@@ -5,7 +5,6 @@ use spi::query::{
     logical_planner::{DatabaseObjectType, DropDatabaseObject},
 };
 
-
 use spi::query::execution::ExecutionError;
 use trace::debug;
 
@@ -55,8 +54,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     query_state_machine.session.tenant(),
                     query_state_machine.session.default_database(),
                 );
-                client
-                    .drop_table(table.schema, table.table)
+                client.drop_table(table.schema, table.table)
             }
         };
 
@@ -64,7 +62,6 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             return Ok(Output::Nil(()));
         }
 
-        res.map(|_| Output::Nil(()))
-            .context(MetadataSnafu)
+        res.map(|_| Output::Nil(())).context(MetadataSnafu)
     }
 }

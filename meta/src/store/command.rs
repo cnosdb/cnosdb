@@ -1,6 +1,5 @@
 use models::meta_data::*;
-use models::schema::DatabaseSchema;
-use models::schema::TskvTableSchema;
+use models::schema::{DatabaseSchema, TableSchema};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -16,8 +15,8 @@ pub enum WriteCommand {
         ts: i64,
     },
 
-    CreateTable(String, String, TskvTableSchema),
-    UpdateTable(String, String, TskvTableSchema),
+    CreateTable(String, String, TableSchema),
+    UpdateTable(String, String, TableSchema),
 
     Set {
         key: String,

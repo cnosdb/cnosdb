@@ -12,7 +12,6 @@ use snafu::ResultExt;
 use spi::query::DEFAULT_CATALOG;
 use trace::debug;
 
-
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
 use super::sink::{RecordBatchSink, RecordBatchSinkProvider};
@@ -67,10 +66,7 @@ pub struct TskvRecordBatchSinkProvider {
 
 impl TskvRecordBatchSinkProvider {
     pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        Self {
-            coord,
-            schema,
-        }
+        Self { coord, schema }
     }
 }
 
