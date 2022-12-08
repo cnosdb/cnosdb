@@ -248,7 +248,7 @@ mod test {
         thread::sleep(time::Duration::from_secs(3));
 
         let req = command::WriteCommand::CreateDB(
-            cluster.clone(),
+            cluster,
             tenant.clone(),
             DatabaseSchema::new(&tenant, "test_db2"),
         );

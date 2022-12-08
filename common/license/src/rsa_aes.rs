@@ -48,7 +48,7 @@ impl RsaAes {
                     .take_read_buffer()
                     .take_remaining()
                     .iter()
-                    .map(|&i| i),
+                    .copied(),
             );
 
             match result {
@@ -75,7 +75,7 @@ impl RsaAes {
                     .take_read_buffer()
                     .take_remaining()
                     .iter()
-                    .map(|&i| i),
+                    .copied(),
             );
             match result {
                 BufferUnderflow => break,
@@ -94,7 +94,7 @@ impl RsaAes {
 
         let private_str = private_key.to_pkcs1_pem(LineEnding::CRLF)?.to_string();
 
-        let public_str = public_key.to_pkcs1_pem(LineEnding::CRLF)?.to_string();
+        let public_str = public_key.to_pkcs1_pem(LineEnding::CRLF)?;
 
         fs::write(PUBLIC_RSA_FILENAME, public_str)?;
         fs::write(PRIVATE_RSA_FILENAME, private_str)?;
@@ -126,10 +126,7 @@ impl RsaAes {
             .unwrap()
             .to_string();
 
-        let public_str = public_key
-            .to_pkcs1_pem(LineEnding::CRLF)
-            .unwrap()
-            .to_string();
+        let public_str = public_key.to_pkcs1_pem(LineEnding::CRLF).unwrap();
 
         println!("PRIVATR:   {}", &private_str);
         println!("PUBLIC:   {}", &public_str);

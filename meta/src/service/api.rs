@@ -1,3 +1,5 @@
+#![allow(clippy::field_reassign_with_default)]
+
 use actix_web::get;
 use actix_web::post;
 use actix_web::web;
@@ -93,7 +95,7 @@ pub async fn watch_tenant(
         watch.insert(client_id.clone(), watch_data);
     }
 
-    if let None = receiver.recv().await {
+    if receiver.recv().await.is_none() {
         let response: Result<CommandResp, Infallible> = Ok("watch channel closed!".to_string());
         return Ok(Json(response));
     }

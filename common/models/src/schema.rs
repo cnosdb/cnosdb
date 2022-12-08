@@ -510,7 +510,7 @@ impl DatabaseSchema {
     }
 
     pub fn is_empty(&self) -> bool {
-        if self.tenant == "" && self.database == "" {
+        if self.tenant.is_empty() && self.database.is_empty() {
             return true;
         }
 

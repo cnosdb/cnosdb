@@ -1,3 +1,5 @@
+#![allow(clippy::field_reassign_with_default)]
+
 use models::meta_data::*;
 use models::schema::DatabaseSchema;
 use models::schema::TskvTableSchema;
@@ -124,7 +126,7 @@ impl TenantMetaDataDelta {
             .update
             .dbs
             .entry(schema.database_name().to_string())
-            .or_insert(DatabaseInfo::default());
+            .or_insert_with(DatabaseInfo::default);
         db_info.schema = schema.clone();
 
         self.delete.dbs.remove(&schema.database_name().to_string());
@@ -147,7 +149,7 @@ impl TenantMetaDataDelta {
             .update
             .dbs
             .entry(schema.database_name().to_string())
-            .or_insert(DatabaseInfo::default());
+            .or_insert_with(DatabaseInfo::default);
         db_info.schema = schema.clone();
     }
 
@@ -158,7 +160,7 @@ impl TenantMetaDataDelta {
             .update
             .dbs
             .entry(schema.db.clone())
-            .or_insert(DatabaseInfo::default());
+            .or_insert_with(DatabaseInfo::default);
 
         db_info.tables.insert(schema.name.clone(), schema.clone());
 
@@ -178,7 +180,7 @@ impl TenantMetaDataDelta {
             .delete
             .dbs
             .entry(db.to_string())
-            .or_insert(DatabaseInfo::default());
+            .or_insert_with(DatabaseInfo::default);
 
         db_info
             .tables
@@ -192,7 +194,7 @@ impl TenantMetaDataDelta {
             .update
             .dbs
             .entry(db.to_string())
-            .or_insert(DatabaseInfo::default());
+            .or_insert_with(DatabaseInfo::default);
         match db_info.buckets.binary_search_by(|v| v.id.cmp(&bucket.id)) {
             Ok(index) => db_info.buckets[index] = bucket.clone(),
             Err(index) => db_info.buckets.insert(index, bucket.clone()),
@@ -218,12 +220,12 @@ impl TenantMetaDataDelta {
             .delete
             .dbs
             .entry(db.to_string())
-            .or_insert(DatabaseInfo::default());
+            .or_insert_with(DatabaseInfo::default);
         let mut bucket = BucketInfo::default();
         bucket.id = id;
         match db_info.buckets.binary_search_by(|v| v.id.cmp(&id)) {
-            Ok(index) => db_info.buckets[index] = bucket.clone(),
-            Err(index) => db_info.buckets.insert(index, bucket.clone()),
+            Ok(index) => db_info.buckets[index] = bucket,
+            Err(index) => db_info.buckets.insert(index, bucket),
         }
     }
 }

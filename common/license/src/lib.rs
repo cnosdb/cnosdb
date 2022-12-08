@@ -19,7 +19,7 @@ pub enum LicenseError {
 impl From<io::Error> for LicenseError {
     fn from(err: io::Error) -> Self {
         LicenseError::CommonError {
-            msg: format!("io error: {}", err.to_string()),
+            msg: format!("io error: {}", err),
         }
     }
 }
@@ -35,7 +35,7 @@ impl From<pkcs1::Error> for LicenseError {
 impl From<rsa::errors::Error> for LicenseError {
     fn from(err: rsa::errors::Error) -> Self {
         LicenseError::CommonError {
-            msg: format!("rsa error: {}", err.to_string()),
+            msg: format!("rsa error: {}", err),
         }
     }
 }
@@ -76,7 +76,7 @@ impl LicenseConfig {
         let naive_datetime =
             chrono::NaiveDateTime::parse_from_str(&config.expire_time, "%Y-%m-%d %H:%M:%S")
                 .map_err(|err| LicenseError::CommonError {
-                    msg: format!("parse expire time failed"),
+                    msg: "parse expire time failed".to_string(),
                 })?;
 
         config.filename = file.clone();
@@ -86,8 +86,8 @@ impl LicenseConfig {
     }
 
     pub fn signature(&mut self) -> LicenseResult<()> {
-        let md5 = rsa_aes::RsaAes::hash_md5(&self.to_string());
-        let mut rsa_signed = rsa_aes::RsaAes::rsa_sign(&md5.as_bytes().to_vec())?;
+        let md5 = rsa_aes::RsaAes::hash_md5(&self.text_string());
+        let mut rsa_signed = rsa_aes::RsaAes::rsa_sign(md5.as_bytes())?;
 
         let public_key = fs::read_to_string(rsa_aes::PUBLIC_RSA_FILENAME)?;
         let mut public_key = public_key.as_bytes().to_vec();
@@ -122,15 +122,15 @@ impl LicenseConfig {
         let ken_len_buf: [u8; 4] = enc_data[0..4].try_into().unwrap();
         let public_key_len = u32::from_be_bytes(ken_len_buf) as usize;
 
-        let md5 = rsa_aes::RsaAes::hash_md5(&self.to_string());
+        let md5 = rsa_aes::RsaAes::hash_md5(&self.text_string());
         let signed = &enc_data[public_key_len + 4..];
-        let pub_key = String::from_utf8((&enc_data[4..public_key_len + 4]).to_vec()).unwrap();
-        rsa_aes::RsaAes::rsa_verify(&md5.as_bytes().to_vec(), signed, &pub_key)?;
+        let pub_key = String::from_utf8((enc_data[4..public_key_len + 4]).to_vec()).unwrap();
+        rsa_aes::RsaAes::rsa_verify(md5.as_bytes(), signed, &pub_key)?;
 
         Ok(())
     }
 
-    fn to_string(&self) -> String {
+    fn text_string(&self) -> String {
         format!(
             "{}.{}.{}.{}.{}",
             self.key, self.cores, self.machines, self.product, self.expire_time

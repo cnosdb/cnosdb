@@ -93,7 +93,7 @@ impl TenantMetaData {
             let info = self
                 .dbs
                 .entry(key.clone())
-                .or_insert(DatabaseInfo::default());
+                .or_insert_with(DatabaseInfo::default);
 
             if !val.schema.is_empty() {
                 info.schema = val.schema.clone();
@@ -126,14 +126,10 @@ impl TenantMetaData {
             let info = self
                 .dbs
                 .entry(key.clone())
-                .or_insert(DatabaseInfo::default());
+                .or_insert_with(DatabaseInfo::default);
             for item in val.buckets.iter() {
-                match info.buckets.binary_search_by(|v| v.id.cmp(&item.id)) {
-                    Ok(index) => {
-                        info.buckets.remove(index);
-                    }
-
-                    Err(_) => {}
+                if let Ok(index) = info.buckets.binary_search_by(|v| v.id.cmp(&item.id)) {
+                    info.buckets.remove(index);
                 }
             }
 
