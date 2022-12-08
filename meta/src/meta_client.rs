@@ -196,6 +196,7 @@ impl RemoteMetaManager {
         let tenant_manager = Arc::new(RemoteTenantManager::new(
             config.name.clone(),
             config.meta.clone(),
+            config.node_id,
         ));
 
         let node_info = NodeInfo {
@@ -330,16 +331,58 @@ pub struct RemoteMetaClient {
 
     data: RwLock<TenantMetaData>,
     client: MetaHttpClient,
+    client_id: String,
 }
 
 impl RemoteMetaClient {
-    pub fn new(cluster: String, tenant: Tenant, meta_url: String) -> Self {
-        Self {
+    pub fn new(cluster: String, tenant: Tenant, meta_url: String, node_id: u64) -> Arc<Self> {
+        let client_id = format!("{}.{}.{}", &cluster, &tenant.name(), node_id);
+
+        let client = Arc::new(Self {
             cluster,
             tenant,
+            client_id,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
             client: MetaHttpClient::new(1, meta_url),
+        });
+
+        tokio::spawn(RemoteMetaClient::watch_data(client.clone()));
+
+        client
+    }
+
+    async fn watch_data(client: Arc<RemoteMetaClient>) {
+        let mut cmd = (
+            client.client_id.clone(),
+            client.cluster.clone(),
+            client.tenant.name().to_string(),
+            0,
+        );
+
+        loop {
+            cmd.3 = client.data.read().version;
+            match client
+                .client
+                .watch_tenant::<command::TenantMetaDataDelta>(&cmd)
+            {
+                Ok(delta) => {
+                    let mut data = client.data.write();
+                    if delta.full_load {
+                        if delta.update.version > data.version {
+                            *data = delta.update;
+                        }
+                    } else if data.version >= delta.ver_range.0 && data.version < delta.ver_range.1
+                    {
+                        data.merge_into(&delta.update);
+                        data.delete_from(&delta.delete);
+                    }
+                }
+
+                Err(err) => {
+                    info!("watch data result: {:?} {}", &cmd, err)
+                }
+            }
         }
     }
 

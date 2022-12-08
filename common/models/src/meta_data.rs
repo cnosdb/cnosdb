@@ -63,13 +63,7 @@ pub struct VnodeInfo {
 // [PRECISION {'ms' | 'us' | 'ns'}]]
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct DatabaseInfo {
-    // pub name: String,
-    // pub shard: u32,
-    // pub ttl: i64,
-    // pub vnode_duration: i64,
-    // pub replications: u32,
     pub schema: DatabaseSchema,
-
     pub buckets: Vec<BucketInfo>,
     pub tables: HashMap<String, TskvTableSchema>,
 }
@@ -79,7 +73,6 @@ pub struct TenantMetaData {
     pub version: u64,
     pub users: HashMap<String, UserInfo>,
     pub dbs: HashMap<String, DatabaseInfo>,
-    pub data_nodes: HashMap<String, NodeInfo>,
 }
 
 impl TenantMetaData {
@@ -88,7 +81,65 @@ impl TenantMetaData {
             version: 0,
             users: HashMap::new(),
             dbs: HashMap::new(),
-            data_nodes: HashMap::new(),
+        }
+    }
+
+    pub fn merge_into(&mut self, update: &TenantMetaData) {
+        for (key, val) in update.users.iter() {
+            self.users.insert(key.clone(), val.clone());
+        }
+
+        for (key, val) in update.dbs.iter() {
+            let info = self
+                .dbs
+                .entry(key.clone())
+                .or_insert(DatabaseInfo::default());
+
+            if !val.schema.is_empty() {
+                info.schema = val.schema.clone();
+            }
+
+            for item in val.buckets.iter() {
+                match info.buckets.binary_search_by(|v| v.id.cmp(&item.id)) {
+                    Ok(index) => info.buckets[index] = item.clone(),
+                    Err(index) => info.buckets.insert(index, item.clone()),
+                }
+            }
+
+            for (name, item) in val.tables.iter() {
+                info.tables.insert(name.clone(), item.clone());
+            }
+        }
+    }
+
+    pub fn delete_from(&mut self, delete: &TenantMetaData) {
+        for (key, _) in delete.users.iter() {
+            self.users.remove(key);
+        }
+
+        for (key, val) in delete.dbs.iter() {
+            if val.schema.is_empty() && val.buckets.is_empty() && val.tables.is_empty() {
+                self.dbs.remove(key);
+                continue;
+            }
+
+            let info = self
+                .dbs
+                .entry(key.clone())
+                .or_insert(DatabaseInfo::default());
+            for item in val.buckets.iter() {
+                match info.buckets.binary_search_by(|v| v.id.cmp(&item.id)) {
+                    Ok(index) => {
+                        info.buckets.remove(index);
+                    }
+
+                    Err(_) => {}
+                }
+            }
+
+            for (name, _) in val.tables.iter() {
+                info.tables.remove(name);
+            }
         }
     }
 

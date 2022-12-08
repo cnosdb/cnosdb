@@ -78,6 +78,7 @@ pub async fn start_raft_node(node_id: NodeId, http_addr: String) -> std::io::Res
             .service(api::write)
             .service(api::read)
             .service(api::debug)
+            .service(api::watch_tenant)
     })
     .keep_alive(Duration::from_secs(5));
 

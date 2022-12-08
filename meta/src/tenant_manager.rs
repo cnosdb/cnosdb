@@ -13,15 +13,17 @@ use crate::meta_client::{MetaClientRef, MetaError, MetaResult, RemoteMetaClient,
 pub struct RemoteTenantManager {
     cluster_name: String,
     cluster_meta: String,
+    node_id: u64,
 
     tenants: RwLock<HashMap<String, MetaClientRef>>,
 }
 
 impl RemoteTenantManager {
-    pub fn new(cluster_name: String, cluster_meta: String) -> Self {
+    pub fn new(cluster_name: String, cluster_meta: String, id: u64) -> Self {
         Self {
             cluster_name,
             cluster_meta,
+            node_id: id,
             tenants: Default::default(),
         }
     }
@@ -31,11 +33,12 @@ impl TenantManager for RemoteTenantManager {
     fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef> {
         // TODO 元数据库中创建tenant，获取Tenant，此处暂时直接构造一个
         let tenant = Tenant::new(0_u128, name, options);
-        let client: MetaClientRef = Arc::new(RemoteMetaClient::new(
+        let client: MetaClientRef = RemoteMetaClient::new(
             self.cluster_name.clone(),
             tenant,
             self.cluster_meta.clone(),
-        ));
+            self.node_id,
+        );
 
         self.tenants
             .write()
@@ -77,11 +80,12 @@ impl TenantManager for RemoteTenantManager {
 
         // TODO 临时从meta获取
         let tenant = Tenant::new(0_u128, "cnosdb".to_string(), TenantOptions::default());
-        let client: MetaClientRef = Arc::new(RemoteMetaClient::new(
+        let client: MetaClientRef = RemoteMetaClient::new(
             self.cluster_name.clone(),
             tenant,
             self.cluster_meta.clone(),
-        ));
+            self.node_id,
+        );
 
         self.tenants
             .write()

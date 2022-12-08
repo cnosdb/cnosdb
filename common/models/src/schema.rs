@@ -508,6 +508,14 @@ impl DatabaseSchema {
     pub fn owner(&self) -> String {
         format!("{}.{}", self.tenant, self.database)
     }
+
+    pub fn is_empty(&self) -> bool {
+        if self.tenant == "" && self.database == "" {
+            return true;
+        }
+
+        false
+    }
 }
 
 pub fn make_owner(tenant_name: &str, database_name: &str) -> String {

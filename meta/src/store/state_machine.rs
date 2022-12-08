@@ -8,6 +8,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::from_str;
 
+use tokio::sync::mpsc::Sender;
+
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use trace::info;
@@ -103,7 +105,7 @@ pub fn children_data<'a, T: Deserialize<'a>>(
 // **    /cluster_name/tenant_name/users/name -> [UserInfo] 租户下用户信息、访问权限等
 // **    /cluster_name/tenant_name/dbs/db_name -> [DatabaseSchema] db相关信息、保留策略等
 // **    /cluster_name/tenant_name/dbs/db_name/buckets/id -> [BucketInfo] bucket相关信息
-// **    /cluster_name/tenant_name/dbs/db_name/schemas/name -> [TskvTableSchema] schema相关信息
+// **    /cluster_name/tenant_name/dbs/db_name/tables/name -> [TskvTableSchema] schema相关信息
 pub struct KeyPath {}
 impl KeyPath {
     pub fn incr_id(cluster: &str) -> String {
@@ -130,6 +132,10 @@ impl KeyPath {
         format!("/{}/{}/dbs", cluster, tenant)
     }
 
+    pub fn tenant_version(cluster: &str, tenant: &str) -> String {
+        format!("/{}/{}/version", cluster, tenant)
+    }
+
     pub fn tenant_db_name(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}", cluster, tenant, db)
     }
@@ -148,6 +154,26 @@ impl KeyPath {
 
     pub fn tenant_schema_name(cluster: &str, tenant: &str, db: &str, name: &str) -> String {
         format!("/{}/{}/dbs/{}/schemas/{}", cluster, tenant, db, name)
+    }
+}
+
+#[derive(Debug)]
+pub struct WatchTenantMetaData {
+    pub sender: Sender<bool>,
+
+    pub cluster: String,
+    pub tenant: String,
+
+    pub delta: TenantMetaDataDelta,
+}
+
+impl WatchTenantMetaData {
+    pub fn interesting(&self, cluster: &str, tenant: &str) -> bool {
+        if self.cluster == cluster && self.tenant == tenant {
+            return true;
+        }
+
+        false
     }
 }
 
@@ -186,7 +212,6 @@ impl StateMachine {
         let mut meta = TenantMetaData::new();
         meta.version = self.version();
         meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), &self.data);
-        meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), &self.data);
 
         //
         let db_schemas =
@@ -237,7 +262,11 @@ impl StateMachine {
         }
     }
 
-    pub fn process_write_command(&mut self, req: &WriteCommand) -> CommandResp {
+    pub fn process_write_command(
+        &mut self,
+        req: &WriteCommand,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
         info!("meta process write command {:?}", req);
 
         match req {
@@ -251,15 +280,15 @@ impl StateMachine {
             WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
 
             WriteCommand::CreateDB(cluster, tenant, schema) => {
-                self.process_create_db(cluster, tenant, schema)
+                self.process_create_db(cluster, tenant, schema, watch)
             }
 
             WriteCommand::CreateTable(cluster, tenant, schema) => {
-                self.process_create_table(cluster, tenant, schema)
+                self.process_create_table(cluster, tenant, schema, watch)
             }
 
             WriteCommand::UpdateTable(cluster, tenant, schema) => {
-                self.process_update_table(cluster, tenant, schema)
+                self.process_update_table(cluster, tenant, schema, watch)
             }
 
             WriteCommand::CreateBucket {
@@ -267,7 +296,7 @@ impl StateMachine {
                 tenant,
                 db,
                 ts,
-            } => self.process_create_bucket(cluster, tenant, db, ts),
+            } => self.process_create_bucket(cluster, tenant, db, ts, watch),
         }
     }
 
@@ -285,6 +314,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
         // if self.data.contains_key(&key) {
@@ -299,6 +329,13 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.create_db(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
             "".to_string(),
@@ -312,6 +349,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &TskvTableSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
         // if self.data.contains_key(&key) {
@@ -326,6 +364,13 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.create_or_update_table(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
             "".to_string(),
@@ -339,6 +384,7 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &TskvTableSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
         if let Some(val) = get_struct::<TskvTableSchema>(&key, &self.data) {
@@ -359,6 +405,13 @@ impl StateMachine {
         self.data.insert(key.clone(), value.clone());
         info!("WRITE: {} :{}", key, value);
 
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.create_or_update_table(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
             "".to_string(),
@@ -373,6 +426,7 @@ impl StateMachine {
         tenant: &str,
         db: &str,
         ts: &i64,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
         let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), &self.data);
@@ -447,6 +501,14 @@ impl StateMachine {
 
         self.data.insert(key.clone(), val.clone());
         info!("WRITE: {} :{}", key, val);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta
+                    .create_or_update_bucket(self.version(), db, &bucket);
+                let _ = item.sender.try_send(true);
+            }
+        }
 
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,

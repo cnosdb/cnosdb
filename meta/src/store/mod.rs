@@ -1,5 +1,6 @@
 #![allow(clippy::module_inception)]
 
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
@@ -38,7 +39,7 @@ pub mod store;
 
 use crate::store::config::Config;
 
-use self::state_machine::StateMachine;
+use self::state_machine::{StateMachine, WatchTenantMetaData};
 
 #[derive(Debug)]
 pub struct SnapshotInfo {
@@ -64,6 +65,8 @@ pub struct Store {
     current_snapshot: RwLock<Option<SnapshotInfo>>,
 
     config: Config,
+
+    pub watch: RwLock<HashMap<String, WatchTenantMetaData>>,
 
     pub node_id: NodeId,
 }
@@ -103,6 +106,7 @@ impl Store {
             vote,
             snapshot_idx: Arc::new(Mutex::new(0)),
             current_snapshot,
+            watch: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -377,6 +381,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
     ) -> Result<Vec<CommandResp>, StorageError<NodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
+        let mut watch = self.watch.write().await;
         let mut sm = self.state_machine.write().await;
 
         for entry in entries {
@@ -388,10 +393,12 @@ impl RaftStorage<ExampleTypeConfig> for Arc<Store> {
                 EntryPayload::Blank => res.push(CommandResp::default()),
                 EntryPayload::Membership(ref mem) => {
                     sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
-                    res.push(CommandResp::default())
+                    res.push(CommandResp::default());
                 }
 
-                EntryPayload::Normal(ref req) => res.push(sm.process_write_command(req)),
+                EntryPayload::Normal(ref req) => {
+                    res.push(sm.process_write_command(req, &mut watch));
+                }
             };
         }
         Ok(res)
