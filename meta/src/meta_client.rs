@@ -7,6 +7,7 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantR
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use parking_lot::RwLock;
+use rand::distributions::{Alphanumeric, DistString};
 use snafu::Snafu;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -354,7 +355,10 @@ pub struct RemoteMetaClient {
 
 impl RemoteMetaClient {
     pub fn new(cluster: String, tenant: Tenant, meta_url: String, node_id: u64) -> Arc<Self> {
-        let client_id = format!("{}.{}.{}", &cluster, &tenant.name(), node_id);
+        let mut rng = rand::thread_rng();
+        let random = Alphanumeric.sample_string(&mut rng, 16);
+
+        let client_id = format!("{}.{}.{}.{}", &cluster, &tenant.name(), node_id, random);
 
         let client = Arc::new(Self {
             cluster,
@@ -365,12 +369,15 @@ impl RemoteMetaClient {
             client: MetaHttpClient::new(1, meta_url),
         });
 
-        tokio::spawn(RemoteMetaClient::watch_data(client.clone()));
+        let _ = client.sync_all_tenant_metadata();
+
+        let client_local = client.clone();
+        let hand = std::thread::spawn(|| RemoteMetaClient::watch_data(client_local));
 
         client
     }
 
-    async fn watch_data(client: Arc<RemoteMetaClient>) {
+    pub fn watch_data(client: Arc<RemoteMetaClient>) {
         let mut cmd = (
             client.client_id.clone(),
             client.cluster.clone(),
@@ -394,6 +401,7 @@ impl RemoteMetaClient {
                     {
                         data.merge_into(&delta.update);
                         data.delete_from(&delta.delete);
+                        data.version = delta.ver_range.1;
                     }
                 }
 
@@ -537,7 +545,7 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(db.schema.clone()));
         }
 
-        self.sync_all_tenant_metadata()?;
+        // self.sync_all_tenant_metadata()?;
         if let Some(db) = self.data.read().dbs.get(name) {
             return Ok(Some(db.schema.clone()));
         }
@@ -581,7 +589,7 @@ impl MetaClient for RemoteMetaClient {
             return Ok(Some(val));
         }
 
-        self.sync_all_tenant_metadata()?;
+        // self.sync_all_tenant_metadata()?;
         let val = self.data.read().table_schema(db, table);
         Ok(val)
     }
@@ -671,7 +679,7 @@ impl MetaClient for RemoteMetaClient {
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
         // TODO improve performence,watch the meta
-        self.sync_all_tenant_metadata()?;
+        // self.sync_all_tenant_metadata()?;
 
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
         Ok(buckets)

@@ -693,7 +693,6 @@ impl RowIterator {
     }
 
     fn collect_row_data(&mut self, builder: &mut [ArrayBuilderPtr]) -> Result<Option<()>, Error> {
-        debug!("======collect_row_data=========");
         let timer = self.metrics.elapsed_field_scan().timer();
 
         let mut min_time = i64::MAX;
@@ -887,7 +886,6 @@ impl Iterator for RowIterator {
         timer.done();
 
         for _ in 0..self.batch_size {
-            debug!("========next_row");
             match self.next_row(&mut builder) {
                 Ok(Some(_)) => {}
                 Ok(None) => break,

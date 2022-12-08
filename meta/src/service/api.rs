@@ -20,8 +20,6 @@ use crate::MetaApp;
 pub async fn read(app: Data<MetaApp>, req: Json<ReadCommand>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
 
-    println!("====={:#?}, {}", app.id, &app.addr);
-
     let res = sm.process_read_command(&req.0);
 
     let response: Result<CommandResp, Infallible> = Ok(res);
