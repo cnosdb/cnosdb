@@ -27,7 +27,11 @@ use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
+use meta::meta_client::MetaError;
+use models::schema::DatabaseSchema;
 use snafu::ResultExt;
+use spi::query::DEFAULT_DATABASE;
+use spi::server::ServerError;
 use tskv::engine::EngineRef;
 
 #[derive(Builder)]
@@ -95,8 +99,6 @@ pub fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,
 ) -> Result<impl DatabaseManagerSystem> {
-    // todo: add query config
-    // for now only support local mode
     // TODO session config need load global system config
     let session_factory = Arc::new(IsiphoSessionCtxFactory::default());
     let parser = Arc::new(DefaultParser::default());
@@ -151,9 +153,13 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
             .comment("system admin")
             .build()
             .expect("failed to init admin user.");
-        let _ = user_manager
-            .create_user(ROOT.to_string(), options, true)
-            .context(MetaDataSnafu)?;
+        let res = user_manager.create_user(ROOT.to_string(), options, true);
+        if let Err(err) = res {
+            match err {
+                MetaError::UserAlreadyExists { .. } => {}
+                _ => return Err(ServerError::MetaData { source: err }),
+            }
+        }
     }
 
     // init system tenant
@@ -170,9 +176,29 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
             .comment("system tenant")
             .build()
             .expect("failed to init admin user.");
-        let _ = tenant_manager
-            .create_tenant(DEFAULT_CATALOG.to_string(), options)
+        let res = tenant_manager.create_tenant(DEFAULT_CATALOG.to_string(), options);
+        if let Err(err) = res {
+            match err {
+                MetaError::TenantAlreadyExists { .. } => {}
+                _ => return Err(ServerError::MetaData { source: err }),
+            }
+        }
+
+        debug!("Initialize the system database {}", DEFAULT_DATABASE);
+
+        let client = tenant_manager
+            .tenant_meta(DEFAULT_CATALOG)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: DEFAULT_CATALOG.to_string(),
+            })
             .context(MetaDataSnafu)?;
+        let res = client.create_db(&DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE));
+        if let Err(err) = res {
+            match err {
+                MetaError::DatabaseAlreadyExists { .. } => {}
+                _ => return Err(ServerError::MetaData { source: err }),
+            }
+        }
     }
 
     Ok(())
