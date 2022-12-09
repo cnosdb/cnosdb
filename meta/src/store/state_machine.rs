@@ -1,14 +1,31 @@
-use crate::{ClusterNode, ClusterNodeId};
-use models::schema::TskvTableSchema;
+use models::auth::privilege::DatabasePrivilege;
+use models::auth::role::CustomTenantRole;
+use models::auth::role::SystemTenantRole;
+use models::auth::role::TenantRoleIdentifier;
+use models::auth::user::UserDesc;
+use models::auth::user::UserOptions;
+use models::oid::Identifier;
+use models::oid::Oid;
+use models::oid::UuidGenerator;
 use models::schema::DatabaseSchema;
+use models::schema::TableSchema;
+use models::schema::Tenant;
+use models::schema::TenantOptions;
+
+use crate::{ClusterNode, ClusterNodeId};
 use openraft::EffectiveMembership;
 use openraft::LogId;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::{from_slice, from_str};
-use sled::Db;
+use trace::debug;
+
+use tokio::sync::mpsc::Sender;
+
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
+use sled::Db;
 use trace::info;
 
 use crate::error::{l_r_err, s_w_err, sm_r_err, sm_w_err, StorageIOResult};
@@ -53,7 +70,13 @@ pub fn children_fullpath(path: &str, map: Arc<sled::Db>) -> Vec<String> {
     list
 }
 
-
+pub fn get_struct<T>(key: &str, map: Arc<Db>) -> Option<T>
+    where for<'a> T: Deserialize<'a>
+{
+    let val = map.get(key).ok()??;
+    let info: T = from_slice(&val).ok()?;
+    Some(info)
+}
 
 fn fetch_and_add_incr_id(cluster: &str, map: Arc<sled::Db>, count: u32) -> u32 {
     let id_key = KeyPath::incr_id(cluster);
@@ -70,7 +93,7 @@ fn fetch_and_add_incr_id(cluster: &str, map: Arc<sled::Db>, count: u32) -> u32 {
 }
 
 pub fn children_data<T>(path: &str, map: Arc<Db>) -> HashMap<String, T>
-where for<'a> T: Deserialize<'a>
+    where for<'a> T: Deserialize<'a>
     {
     let mut path = path.to_owned();
     if !path.ends_with('/') {
@@ -89,13 +112,30 @@ where for<'a> T: Deserialize<'a>
                     }
                 }
             }
-
         }
     }
 
     result
 }
+#[derive(Debug)]
+pub struct WatchTenantMetaData {
+    pub sender: Sender<bool>,
 
+    pub cluster: String,
+    pub tenant: String,
+
+    pub delta: TenantMetaDataDelta,
+}
+
+impl WatchTenantMetaData {
+    pub fn interesting(&self, cluster: &str, tenant: &str) -> bool {
+        if self.cluster == cluster && self.tenant == tenant {
+            return true;
+        }
+
+        false
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct StateMachineContent {
     pub last_applied_log: Option<LogId<ClusterNodeId>>,
@@ -140,7 +180,10 @@ impl StateMachine {
             .open_tree("state_machine")
             .expect("state_machine open failed")
     }
-
+    //todo: temp it will be removed
+    pub fn version(&self) -> u64{
+        self.get_last_applied_log().ok().unwrap().unwrap().index
+    }
     pub(crate) fn get_last_membership(
         &self,
     ) -> StorageIOResult<EffectiveMembership<ClusterNodeId, ClusterNode>> {
@@ -282,20 +325,20 @@ impl StateMachine {
 
     pub fn to_tenant_meta_data(&self, cluster: &str, tenant: &str) -> StorageIOResult<TenantMetaData> {
         let mut meta = TenantMetaData::new();
-        //todo:
-        meta.version = 1;
+        //meta.version = self.version();
         meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), self.db.clone());
-        meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone());
-
+        // meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone());
+        //
         let db_schemas =
             children_data::<DatabaseSchema>(&KeyPath::tenant_dbs(cluster, tenant), self.db.clone());
+
         for (key, schema) in db_schemas.iter() {
             let buckets = children_data::<BucketInfo>(
                 &KeyPath::tenant_db_buckets(cluster, tenant, key),
                 self.db.clone(),
             );
 
-            let tables = children_data::<TskvTableSchema>(
+            let tables = children_data::<TableSchema>(
                 &KeyPath::tenant_schemas(cluster, tenant, key),
                 self.db.clone(),
             );
@@ -308,6 +351,7 @@ impl StateMachine {
 
             meta.dbs.insert(key.clone(), info);
         }
+
         Ok(meta)
     }
 
@@ -317,7 +361,7 @@ impl StateMachine {
         match req {
             ReadCommand::DataNodes(cluster) => {
                 let response: Vec<NodeInfo> =
-                    children_data::<NodeInfo>(&KeyPath::data_nodes(&cluster), self.db.clone())
+                    children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone())
                         .into_values()
                         .collect();
 
@@ -330,15 +374,98 @@ impl StateMachine {
                 self.to_tenant_meta_data(cluster, tenant).unwrap(),
             )
             .to_string(),
+
+            ReadCommand::CustomRole(cluster, role_name, tenant_name) => {
+                let path = KeyPath::role(cluster, tenant_name, role_name);
+
+                let role = get_struct::<CustomTenantRole<Oid>>(&path, self.db.clone());
+
+                CommonResp::Ok(role).to_string()
+            }
+            ReadCommand::CustomRoles(cluster, tenant_name) => {
+                let path = KeyPath::roles(cluster, tenant_name);
+
+                let roles: Vec<CustomTenantRole<Oid>> =
+                    children_data::<CustomTenantRole<Oid>>(&path, self.db.clone())
+                        .into_values()
+                        .collect();
+
+                CommonResp::Ok(roles).to_string()
+            }
+
+            ReadCommand::MemberRole(cluster, tenant_name, user_id) => {
+                let path = KeyPath::member(cluster, tenant_name, user_id);
+
+                if let Some(member) = get_struct::<TenantRoleIdentifier>(&path, self.db.clone()) {
+                    return CommonResp::Ok(member).to_string();
+                }
+
+                let status = StatusResponse::new(
+                    META_REQUEST_USER_NOT_FOUND,
+                    format!("{} of tenant {}", user_id, tenant_name),
+                );
+                CommonResp::<TenantRoleIdentifier>::Err(status).to_string()
+            }
+            ReadCommand::Members(cluster, tenant_name) => {
+                let path = KeyPath::members(cluster, tenant_name);
+
+                let members: Vec<TenantRoleIdentifier> =
+                    children_data::<TenantRoleIdentifier>(&path, self.db.clone())
+                        .into_values()
+                        .collect();
+
+                CommonResp::Ok(members).to_string()
+            }
+
+            ReadCommand::User(cluster, user_name) => {
+                debug!("received ReadCommand::User: {}, {}", cluster, user_name);
+
+                let path = KeyPath::user(cluster, user_name);
+
+                let user = get_struct::<UserDesc>(&path, self.db.clone());
+
+                CommonResp::Ok(user).to_string()
+            }
+            ReadCommand::Users(cluster) => {
+                let path = KeyPath::users(cluster);
+
+                let users: Vec<UserDesc> = children_data::<UserDesc>(&path, self.db.clone())
+                    .into_values()
+                    .collect();
+
+                CommonResp::Ok(users).to_string()
+            }
+            ReadCommand::Tenant(cluster, tenant_name) => {
+                debug!("received ReadCommand::Tenant: {}, {}", cluster, tenant_name);
+
+                let path = KeyPath::tenant(cluster, tenant_name);
+
+                let data = get_struct::<Tenant>(&path, self.db.clone());
+
+                CommonResp::Ok(data).to_string()
+            }
+            ReadCommand::Tenants(cluster) => {
+                let path = KeyPath::tenants(cluster);
+
+                let data: Vec<Tenant> = children_data::<Tenant>(&path, self.db.clone())
+                    .into_values()
+                    .collect();
+
+                CommonResp::Ok(data).to_string()
+            }
         }
     }
 
-    pub fn process_write_command(&mut self, req: &WriteCommand) -> CommandResp {
+    pub fn process_write_command(
+        &mut self,
+        req: &WriteCommand,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
         info!("meta process write command {:?}", req);
 
         match req {
             WriteCommand::Set { key, value } => {
-                self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
+                let _ = self.db.insert(key.as_bytes() ,value.as_bytes());
                 info!("WRITE: {} :{}", key, value);
 
                 CommandResp::default()
@@ -347,15 +474,15 @@ impl StateMachine {
             WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
 
             WriteCommand::CreateDB(cluster, tenant, schema) => {
-                self.process_create_db(cluster, tenant, schema)
+                self.process_create_db(cluster, tenant, schema, watch)
             }
 
             WriteCommand::CreateTable(cluster, tenant, schema) => {
-                self.process_create_table(cluster, tenant, schema)
+                self.process_create_table(cluster, tenant, schema, watch)
             }
 
             WriteCommand::UpdateTable(cluster, tenant, schema) => {
-                self.process_update_table(cluster, tenant, schema)
+                self.process_update_table(cluster, tenant, schema, watch)
             }
 
             WriteCommand::CreateBucket {
@@ -363,14 +490,59 @@ impl StateMachine {
                 tenant,
                 db,
                 ts,
-            } => self.process_create_bucket(cluster, tenant, db, ts),
+            } => self.process_create_bucket(cluster, tenant, db, ts, watch),
+
+            WriteCommand::CreateUser(cluster, name, options, is_admin) => {
+                self.process_create_user(cluster, name, options, *is_admin)
+            }
+            WriteCommand::AlterUser(cluster, name, options) => {
+                self.process_alter_user(cluster, name, options)
+            }
+            WriteCommand::RenameUser(cluster, old_name, new_name) => {
+                self.process_rename_user(cluster, old_name, new_name)
+            }
+            WriteCommand::DropUser(cluster, name) => self.process_drop_user(cluster, name),
+
+            WriteCommand::CreateTenant(cluster, name, options) => {
+                self.process_create_tenant(cluster, name, options)
+            }
+            WriteCommand::AlterTenant(cluster, name, options) => {
+                self.process_alter_tenant(cluster, name, options)
+            }
+            WriteCommand::RenameTenant(cluster, old_name, new_name) => {
+                self.process_rename_tenant(cluster, old_name, new_name)
+            }
+            WriteCommand::DropTenant(cluster, name) => self.process_drop_tenant(cluster, name),
+
+            WriteCommand::AddMemberToTenant(cluster, user_id, role, tenant_name) => {
+                self.process_add_member_to_tenant(cluster, user_id, role, tenant_name)
+            }
+            WriteCommand::RemoveMemberFromTenant(cluster, user_id, tenant_name) => {
+                self.process_remove_member_to_tenant(cluster, user_id, tenant_name)
+            }
+            WriteCommand::ReasignMemberRole(cluster, user_id, role, tenant_name) => {
+                self.process_reasign_member_role(cluster, user_id, role, tenant_name)
+            }
+
+            WriteCommand::CreateRole(cluster, role_name, sys_role, privileges, tenant_name) => {
+                self.process_create_role(cluster, role_name, sys_role, privileges, tenant_name)
+            }
+            WriteCommand::DropRole(cluster, role_name, tenant_name) => {
+                self.process_drop_role(cluster, role_name, tenant_name)
+            }
+            WriteCommand::GrantPrivileges(cluster, privileges, role_name, tenant_name) => {
+                self.process_grant_privileges(cluster, privileges, role_name, tenant_name)
+            }
+            WriteCommand::RevokePrivileges(cluster, privileges, role_name, tenant_name) => {
+                self.process_revoke_privileges(cluster, privileges, role_name, tenant_name)
+            }
         }
     }
 
     fn process_add_date_node(&mut self, cluster: &str, node: &NodeInfo) -> CommandResp {
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
-        self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
+        let _ = self.db.insert(key.as_bytes(), value.as_bytes());
         info!("WRITE: {} :{}", key, value);
 
         serde_json::to_string(&StatusResponse::default()).unwrap()
@@ -381,19 +553,28 @@ impl StateMachine {
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
-        // if self.data.contains_key(&key) {
-        //     return KvResp {
-        //         err_code: -1,
-        //         err_msg: "database already exist".to_string(),
-        //         meta_data: self.to_tenant_meta_data(cluster, tenant),
-        //     };
-        // }
+        if self.db.contains_key(&key).unwrap() {
+            return TenaneMetaDataResp::new_from_data(
+                META_REQUEST_DB_EXIST,
+                "database already exist".to_string(),
+                self.to_tenant_meta_data(cluster, tenant).unwrap(),
+            )
+            .to_string();
+        }
 
         let value = serde_json::to_string(schema).unwrap();
-        self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
+        let _ = self.db.insert(key.as_bytes(), value.as_bytes());
         info!("WRITE: {} :{}", key, value);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.create_db(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
 
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
@@ -407,20 +588,29 @@ impl StateMachine {
         &mut self,
         cluster: &str,
         tenant: &str,
-        schema: &TskvTableSchema,
+        schema: &TableSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
-        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
-        // if self.data.contains_key(&key) {
-        //     return KvResp {
-        //         err_code: -1,
-        //         err_msg: "table already exist".to_string(),
-        //         meta_data: self.to_tenant_meta_data(cluster, tenant),
-        //     };
-        // }
+        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
+        if self.db.contains_key(&key).unwrap() {
+            return TenaneMetaDataResp::new_from_data(
+                META_REQUEST_TABLE_EXIST,
+                "table already exist".to_string(),
+                self.to_tenant_meta_data(cluster, tenant).unwrap(),
+            )
+            .to_string();
+        }
 
         let value = serde_json::to_string(schema).unwrap();
-        self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
+        let _ = self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
         info!("WRITE: {} :{}", key, value);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.create_or_update_table(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
 
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
@@ -434,26 +624,46 @@ impl StateMachine {
         &mut self,
         cluster: &str,
         tenant: &str,
-        schema: &TskvTableSchema,
+        schema: &TableSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
-        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
-        if let Some(val) = self.db.get(&key).unwrap().and_then(|v|{from_slice::<TskvTableSchema>(&v).ok()}) {
-            if val.schema_id + 1 != schema.schema_id {
-                return TenaneMetaDataResp::new_from_data(
-                    META_REQUEST_FAILED,
-                    format!(
-                        "update table schema conflict {}->{}",
-                        val.schema_id, schema.schema_id
-                    ),
-                    self.to_tenant_meta_data(cluster, tenant).unwrap(),
-                )
-                .to_string();
+        let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
+        if let Some(val) = get_struct::<TableSchema>(&key, self.db.clone()) {
+            match (val, schema) {
+                (TableSchema::TsKvTableSchema(val), TableSchema::TsKvTableSchema(schema)) => {
+                    if val.schema_id + 1 != schema.schema_id {
+                        return TenaneMetaDataResp::new_from_data(
+                            META_REQUEST_FAILED,
+                            format!(
+                                "update table schema conflict {}->{}",
+                                val.schema_id, schema.schema_id
+                            ),
+                            self.to_tenant_meta_data(cluster, tenant).unwrap(),
+                        )
+                        .to_string();
+                    }
+                }
+                _ => {
+                    return TenaneMetaDataResp::new_from_data(
+                        META_REQUEST_FAILED,
+                        "not support update external table".to_string(),
+                        self.to_tenant_meta_data(cluster, tenant).unwrap(),
+                    )
+                    .to_string()
+                }
             }
         }
 
         let value = serde_json::to_string(schema).unwrap();
-        self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
+        let _= self.db.insert(key.as_bytes(), value.as_bytes());
         info!("WRITE: {} :{}", key, value);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.create_or_update_table(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
 
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
@@ -469,6 +679,7 @@ impl StateMachine {
         tenant: &str,
         db: &str,
         ts: &i64,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
         let buckets = children_data::<BucketInfo>(&(db_path.clone() + "/buckets"), self.db.clone());
@@ -540,8 +751,16 @@ impl StateMachine {
         let key = KeyPath::tenant_bucket_id(cluster, tenant, db, bucket.id);
         let val = serde_json::to_string(&bucket).unwrap();
 
-        self.db.insert(key.as_bytes(), val.as_bytes()).unwrap();
+        let _ = self.db.insert(key.as_bytes(), val.as_bytes()).unwrap();
         info!("WRITE: {} :{}", key, val);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta
+                    .create_or_update_bucket(self.version(), db, &bucket);
+                let _ = item.sender.try_send(true);
+            }
+        }
 
         TenaneMetaDataResp::new_from_data(
             META_REQUEST_SUCCESS,
@@ -549,6 +768,347 @@ impl StateMachine {
             self.to_tenant_meta_data(cluster, tenant).unwrap(),
         )
         .to_string()
+    }
+
+    fn process_create_user(
+        &mut self,
+        cluster: &str,
+        user_name: &str,
+        user_options: &UserOptions,
+        is_admin: bool,
+    ) -> CommandResp {
+        let key = KeyPath::user(cluster, user_name);
+
+        if self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(META_REQUEST_USER_EXIST, user_name.to_string());
+            return CommonResp::<Oid>::Err(status).to_string();
+        }
+
+        let oid = UuidGenerator::default().next_id();
+        let user_desc = UserDesc::new(oid, user_name.to_string(), user_options.clone(), is_admin);
+
+        match serde_json::to_string(&user_desc) {
+            Ok(value) => {
+                let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+                CommonResp::Ok(oid).to_string()
+            }
+            Err(err) => {
+                let status = StatusResponse::new(META_REQUEST_FAILED, err.to_string());
+                CommonResp::<Oid>::Err(status).to_string()
+            }
+        }
+    }
+
+    fn process_alter_user(
+        &mut self,
+        cluster: &str,
+        user_name: &str,
+        user_options: &UserOptions,
+    ) -> CommandResp {
+        let key = KeyPath::user(cluster, user_name);
+
+        let resp = if let Some(e) = self.db.remove(&key).unwrap() {
+            match serde_json::from_slice::<UserDesc>(&e) {
+                Ok(old_user_desc) => {
+                    let old_options = old_user_desc.options().to_owned();
+                    let new_options = old_options.merge(user_options.clone());
+
+                    let new_user_desc = UserDesc::new(
+                        *old_user_desc.id(),
+                        user_name.to_string(),
+                        new_options,
+                        old_user_desc.is_admin(),
+                    );
+                    let value = serde_json::to_string(&new_user_desc).unwrap();
+                    let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+
+                    CommonResp::Ok(())
+                }
+                Err(err) => {
+                    CommonResp::Err(StatusResponse::new(META_REQUEST_FAILED, err.to_string()))
+                }
+            }
+        } else {
+            CommonResp::Err(StatusResponse::new(
+                META_REQUEST_USER_NOT_FOUND,
+                user_name.to_string(),
+            ))
+        };
+
+        resp.to_string()
+    }
+
+    fn process_rename_user(&self, _cluster: &str, _old_name: &str, _new_name: &str) -> CommandResp {
+        let status = StatusResponse::new(META_REQUEST_FAILED, "Not implement".to_string());
+        CommonResp::<()>::Err(status).to_string()
+    }
+
+    fn process_drop_user(&mut self, cluster: &str, user_name: &str) -> CommandResp {
+        let key = KeyPath::user(cluster, user_name);
+
+        let success = self.db.remove(&key).is_ok();
+
+        CommonResp::Ok(success).to_string()
+    }
+
+    fn process_create_tenant(
+        &mut self,
+        cluster: &str,
+        name: &str,
+        options: &TenantOptions,
+    ) -> CommandResp {
+        let key = KeyPath::tenant(cluster, name);
+
+        if self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(META_REQUEST_TENANT_EXIST, name.to_string());
+            return CommonResp::<Tenant>::Err(status).to_string();
+        }
+
+        let oid = UuidGenerator::default().next_id();
+        let tenant = Tenant::new(oid, name.to_string(), options.clone());
+
+        match serde_json::to_string(&tenant) {
+            Ok(value) => {
+                let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+                CommonResp::Ok(tenant).to_string()
+            }
+            Err(err) => {
+                let status = StatusResponse::new(META_REQUEST_FAILED, err.to_string());
+                CommonResp::<Tenant>::Err(status).to_string()
+            }
+        }
+    }
+
+    fn process_alter_tenant(
+        &mut self,
+        cluster: &str,
+        name: &str,
+        options: &TenantOptions,
+    ) -> CommandResp {
+        let key = KeyPath::tenant(cluster, name);
+
+        let resp = if let Some(e) = self.db.remove(&key).unwrap() {
+            match serde_json::from_slice::<Tenant>(&e) {
+                Ok(tenant) => {
+                    let old_options = tenant.options().to_owned();
+                    let new_options = old_options.merge(options.clone());
+
+                    let new_tenant = Tenant::new(*tenant.id(), name.to_string(), new_options);
+                    let value = serde_json::to_string(&new_tenant).unwrap();
+                    let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+
+                    CommonResp::Ok(())
+                }
+                Err(err) => {
+                    CommonResp::Err(StatusResponse::new(META_REQUEST_FAILED, err.to_string()))
+                }
+            }
+        } else {
+            CommonResp::Err(StatusResponse::new(
+                META_REQUEST_TENANT_NOT_FOUND,
+                name.to_string(),
+            ))
+        };
+
+        resp.to_string()
+    }
+
+    fn process_rename_tenant(
+        &self,
+        _cluster: &str,
+        _old_name: &str,
+        _new_name: &str,
+    ) -> CommandResp {
+        let status = StatusResponse::new(META_REQUEST_FAILED, "Not implement".to_string());
+        CommonResp::<()>::Err(status).to_string()
+    }
+
+    fn process_drop_tenant(&mut self, cluster: &str, name: &str) -> CommandResp {
+        let key = KeyPath::tenant(cluster, name);
+
+        let success = self.db.remove(&key).is_ok();
+
+        CommonResp::Ok(success).to_string()
+    }
+
+    fn process_add_member_to_tenant(
+        &mut self,
+        cluster: &str,
+        user_id: &Oid,
+        role: &TenantRoleIdentifier,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::member(cluster, tenant_name, user_id);
+
+        if self.db.contains_key(&key).is_ok() {
+            let status = StatusResponse::new(META_REQUEST_USER_EXIST, user_id.to_string());
+            return CommonResp::<()>::Err(status).to_string();
+        }
+
+        match serde_json::to_string(role) {
+            Ok(value) => {
+                let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+                CommonResp::Ok(()).to_string()
+            }
+            Err(err) => {
+                let status = StatusResponse::new(META_REQUEST_FAILED, err.to_string());
+                CommonResp::<()>::Err(status).to_string()
+            }
+        }
+    }
+
+    fn process_remove_member_to_tenant(
+        &mut self,
+        cluster: &str,
+        user_id: &Oid,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::member(cluster, tenant_name, user_id);
+
+        if self.db.remove(&key).unwrap().is_none() {
+            let status = StatusResponse::new(META_REQUEST_USER_NOT_FOUND, user_id.to_string());
+            return CommonResp::<()>::Err(status).to_string();
+        }
+
+        CommonResp::Ok(()).to_string()
+    }
+
+    fn process_reasign_member_role(
+        &mut self,
+        cluster: &str,
+        user_id: &Oid,
+        role: &TenantRoleIdentifier,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::member(cluster, tenant_name, user_id);
+
+        if self.db.remove(&key).unwrap().is_none() {
+            let status = StatusResponse::new(META_REQUEST_USER_NOT_FOUND, user_id.to_string());
+            return CommonResp::<()>::Err(status).to_string();
+        }
+
+        match serde_json::to_string(role) {
+            Ok(value) => {
+                let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+                CommonResp::Ok(()).to_string()
+            }
+            Err(err) => {
+                let status = StatusResponse::new(META_REQUEST_FAILED, err.to_string());
+                CommonResp::<()>::Err(status).to_string()
+            }
+        }
+    }
+
+    fn process_create_role(
+        &mut self,
+        cluster: &str,
+        role_name: &str,
+        sys_role: &SystemTenantRole,
+        privileges: &HashMap<String, DatabasePrivilege>,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::role(cluster, tenant_name, role_name);
+
+        if self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(
+                META_REQUEST_ROLE_EXIST,
+                format!("{} of tenant {}", role_name, tenant_name),
+            );
+            return CommonResp::<()>::Err(status).to_string();
+        }
+
+        let oid = UuidGenerator::default().next_id();
+        let role = CustomTenantRole::new(
+            oid,
+            role_name.to_string(),
+            sys_role.clone(),
+            privileges.clone(),
+        );
+
+        match serde_json::to_string(&role) {
+            Ok(value) => {
+                let _ = self.db.insert(key.as_bytes(), value.as_bytes());
+                CommonResp::Ok(()).to_string()
+            }
+            Err(err) => {
+                let status = StatusResponse::new(META_REQUEST_FAILED, err.to_string());
+                CommonResp::<()>::Err(status).to_string()
+            }
+        }
+    }
+
+    fn process_drop_role(
+        &mut self,
+        cluster: &str,
+        role_name: &str,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::role(cluster, tenant_name, role_name);
+
+        let success = self.db.remove(&key).unwrap().is_some();
+
+        CommonResp::Ok(success).to_string()
+    }
+
+    fn process_grant_privileges(
+        &mut self,
+        cluster: &str,
+        privileges: &[(DatabasePrivilege, String)],
+        role_name: &str,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::role(cluster, tenant_name, role_name);
+
+        if !self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(
+                META_REQUEST_ROLE_NOT_FOUND,
+                format!("{} of tenant {}", role_name, tenant_name),
+            );
+            return CommonResp::<()>::Err(status).to_string();
+        }
+
+        let val = self.db.get(&key).unwrap().and_then(|e|{
+            let mut old_role = unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
+            for (privilege, database_name) in privileges {
+                let _ = old_role.grant_privilege(database_name.clone(), privilege.clone());
+            }
+            let ret = unsafe { serde_json::to_string(&old_role).unwrap_unchecked() };
+            Some(ret)
+        });
+        let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());
+
+        CommonResp::Ok(()).to_string()
+    }
+
+    fn process_revoke_privileges(
+        &mut self,
+        cluster: &str,
+        privileges: &[(DatabasePrivilege, String)],
+        role_name: &str,
+        tenant_name: &str,
+    ) -> CommandResp {
+        let key = KeyPath::role(cluster, tenant_name, role_name);
+
+        if !self.db.contains_key(&key).unwrap() {
+            let status = StatusResponse::new(
+                META_REQUEST_ROLE_NOT_FOUND,
+                format!("{} of tenant {}", role_name, tenant_name),
+            );
+            return CommonResp::<()>::Err(status).to_string();
+        }
+
+        let val = self.db.get(&key).unwrap().and_then(|e|{
+            let mut old_role = unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
+            for (privilege, database_name) in privileges {
+                let _ = old_role.revoke_privilege(database_name, privilege);
+            }
+            let ret = unsafe { serde_json::to_string(&old_role).unwrap_unchecked() };
+            Some(ret)
+        });
+
+        let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());
+
+        CommonResp::Ok(()).to_string()
     }
 }
 

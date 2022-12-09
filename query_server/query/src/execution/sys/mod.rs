@@ -4,6 +4,7 @@ mod show_queries;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use models::oid::Identifier;
 use snafu::ResultExt;
 use spi::query::{self, Result};
 use spi::query::{
@@ -67,7 +68,7 @@ impl QueryExecution for SystemExecution {
         QueryInfo::new(
             qsm.query_id,
             qsm.query.content().to_string(),
-            qsm.query.context().user_info().user.to_string(),
+            qsm.query.context().user_info().desc().name().to_string(),
         )
     }
     // 运行时信息

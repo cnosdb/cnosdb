@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+
     use serial_test::serial;
     use std::sync::Arc;
     use std::time::Duration;
@@ -9,9 +9,7 @@ mod tests {
 
     use config::get_config;
     use models::codec::Encoding;
-    use models::schema::{
-        ColumnType, DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, TskvTableSchema,
-    };
+    use models::schema::{ColumnType, DatabaseSchema, TableColumn, TskvTableSchema};
     use models::ValueType;
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
@@ -181,33 +179,7 @@ mod tests {
             .unwrap();
         tskv.create_database(&DatabaseSchema::new("cnosdb", "test"))
             .unwrap();
-        let schema = Schema::new(vec![
-            Field::new("cpu_hz", DataType::Decimal128(10, 6), false),
-            Field::new("temp", DataType::Float64, false),
-            Field::new("version_num", DataType::Int64, false),
-            Field::new("is_old", DataType::Boolean, false),
-            Field::new("weight", DataType::Decimal128(12, 7), false),
-        ]);
-        let expected = TableSchema::ExternalTableSchema(ExternalTableSchema {
-            tenant: "cnosdb".to_string(),
-            db: "public".to_string(),
-            name: "cpu".to_string(),
-            file_compression_type: "".to_string(),
-            file_type: "CSV".to_string(),
-            location: "tests/data/csv/decimal_data.csv".to_string(),
-            target_partitions: 100,
-            table_partition_cols: vec![],
-            has_header: true,
-            delimiter: 44,
-            schema,
-        });
-        tskv.create_table(&expected).unwrap();
-        let table_schema = tskv
-            .get_table_schema("cnosdb", "public", "cpu")
-            .unwrap()
-            .unwrap();
-        assert_eq!(expected, table_schema);
-        let expected = TableSchema::TsKvTableSchema(TskvTableSchema::new(
+        let expected = TskvTableSchema::new(
             "cnosdb".to_string(),
             "test".to_string(),
             "test0".to_string(),
@@ -228,7 +200,7 @@ mod tests {
                     Encoding::Default,
                 ),
             ],
-        ));
+        );
         tskv.create_table(&expected).unwrap();
         let table_schema = tskv
             .get_table_schema("cnosdb", "test", "test0")

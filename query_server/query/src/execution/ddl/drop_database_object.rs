@@ -1,16 +1,16 @@
 use async_trait::async_trait;
+use datafusion::sql::TableReference;
 use spi::query::{
-    execution::{Output, QueryStateMachineRef},
+    execution::{MetadataSnafu, Output, QueryStateMachineRef},
     logical_planner::{DatabaseObjectType, DropDatabaseObject},
 };
 
-use spi::query::execution;
 use spi::query::execution::ExecutionError;
 use trace::debug;
 
 use super::DDLDefinitionTask;
-
 use snafu::ResultExt;
+use meta::error::MetaError;
 
 pub struct DropDatabaseObjectTask {
     stmt: DropDatabaseObject,
@@ -30,7 +30,6 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let DropDatabaseObject {
-            tenant_id: _,
             ref object_name,
             ref if_exist,
             ref obj_type,
@@ -40,7 +39,20 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
                 debug!("Drop table {}", object_name);
-                query_state_machine.catalog.drop_table(object_name)
+                let tenant = query_state_machine.session.tenant();
+                let client = query_state_machine
+                    .meta
+                    .tenant_manager()
+                    .tenant_meta(tenant)
+                    .ok_or(MetaError::TenantNotFound {
+                        tenant: tenant.to_string(),
+                    })
+                    .context(MetadataSnafu)?;
+                let table = TableReference::from(object_name.as_str()).resolve(
+                    query_state_machine.session.tenant(),
+                    query_state_machine.session.default_database(),
+                );
+                client.drop_table(table.schema, table.table)
             }
         };
 
@@ -48,7 +60,6 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
             return Ok(Output::Nil(()));
         }
 
-        res.map(|_| Output::Nil(()))
-            .context(execution::MetadataSnafu)
+        res.map(|_| Output::Nil(())).context(MetadataSnafu)
     }
 }

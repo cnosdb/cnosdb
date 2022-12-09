@@ -11,10 +11,9 @@ use datafusion::{
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan},
 };
+use meta::error::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::TskvTableSchema;
-use spi::catalog::MetadataError;
-use tskv::engine::EngineRef;
 
 use crate::{
     data_source::tskv_sink::TskvRecordBatchSinkProvider,
@@ -24,7 +23,6 @@ use crate::{
 
 #[derive(Clone)]
 pub struct ClusterTable {
-    engine: EngineRef,
     coord: CoordinatorRef,
     schema: TskvTableSchema,
 }
@@ -41,17 +39,12 @@ impl ClusterTable {
             self.schema.clone(),
             proj_schema,
             predicate,
-            self.engine.clone(),
             self.coord.clone(),
         )))
     }
 
-    pub fn new(engine: EngineRef, coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        ClusterTable {
-            engine,
-            coord,
-            schema,
-        }
+    pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
+        ClusterTable { coord, schema }
     }
 
     pub async fn write(
@@ -60,7 +53,6 @@ impl ClusterTable {
         input: Arc<dyn ExecutionPlan>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
-            self.engine.clone(),
             self.coord.clone(),
             self.schema.clone(),
         ));
@@ -89,7 +81,7 @@ impl ClusterTable {
             Arc::new(self.schema.clone()),
             Arc::new(projected_schema.as_ref().into()),
             filter,
-            self.engine.clone(),
+            self.coord.clone(),
         )))
     }
 
@@ -145,7 +137,7 @@ impl TableProvider for ClusterTable {
 pub fn valid_project(
     schema: &TskvTableSchema,
     projection: &Option<Vec<usize>>,
-) -> std::result::Result<(), MetadataError> {
+) -> std::result::Result<(), MetaError> {
     let mut field_count = 0;
     let mut contains_time_column = false;
 
@@ -163,10 +155,9 @@ pub fn valid_project(
     }
 
     if contains_time_column && field_count == 0 {
-        return Err(MetadataError::InvalidSchema {
-            error_msg:
-                "If the projection contains the time column, it must contain the field column"
-                    .to_string(),
+        return Err(MetaError::CommonError {
+            msg: "If the projection contains the time column, it must contain the field column"
+                .to_string(),
         });
     }
 

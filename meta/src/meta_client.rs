@@ -3,10 +3,14 @@
 use client::MetaHttpClient;
 use config::ClusterConfig;
 use models::auth::privilege::DatabasePrivilege;
-use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier};
+use models::auth::role::{
+    CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole,
+};
+use models::auth::user::User;
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use parking_lot::RwLock;
+use rand::distributions::{Alphanumeric, DistString};
 use snafu::Snafu;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -15,13 +19,21 @@ use std::{fmt::Debug, io};
 use store::command;
 use tokio::net::TcpStream;
 
-use trace::info;
+use trace::{debug, info, warn};
 
+use models::schema::{
+    DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+};
 use crate::error::{MetaError, MetaResult};
+
+use crate::store::command::{
+    META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
+    META_REQUEST_ROLE_EXIST, META_REQUEST_ROLE_NOT_FOUND, META_REQUEST_SUCCESS,
+    META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
+};
 use crate::tenant_manager::RemoteTenantManager;
-use crate::user_manager::{UserManager, UserManagerMock};
+use crate::user_manager::{RemoteUserManager, UserManager, UserManagerMock};
 use crate::{client, store};
-use models::schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema};
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;
 pub type MetaClientRef = Arc<dyn MetaClient>;
@@ -33,14 +45,15 @@ pub trait MetaManager: Send + Sync + Debug {
     fn admin_meta(&self) -> AdminMetaRef;
     fn user_manager(&self) -> UserManagerRef;
     fn tenant_manager(&self) -> TenantManagerRef;
+    fn user_with_privileges(&self, user_name: &str, tenant_name: Option<&str>) -> MetaResult<User>;
 }
 
 pub trait TenantManager: Send + Sync + Debug {
     // tenant
     fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef>;
-    fn tenant(&self, name: &str) -> MetaResult<Tenant>;
-    fn alter_tenant(&self, tenant_id: Oid, options: TenantOptions) -> MetaResult<()>;
-    fn drop_tenant(&self, name: &str) -> MetaResult<()>;
+    fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>>;
+    fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()>;
+    fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
     // tenant object meta manager
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
 }
@@ -65,6 +78,7 @@ pub trait AdminMeta: Send + Sync + Debug {
 
 pub trait MetaClient: Send + Sync + Debug {
     fn tenant(&self) -> &Tenant;
+    fn tenant_mut(&mut self) -> &mut Tenant;
 
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
     //fn drop_user(&self, name: &str) -> MetaResult<()>;
@@ -72,15 +86,15 @@ pub trait MetaClient: Send + Sync + Debug {
     // tenant member
     // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;
     // fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> MetaResult<bool>;
-    fn add_member_with_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRole<Oid>>;
-    fn members(&self) -> MetaResult<Option<HashSet<&Oid>>>;
-    fn reasign_member_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
-    fn remove_member(&mut self, user_id: Oid) -> MetaResult<()>;
+    fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
+    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier>;
+    fn members(&self) -> MetaResult<HashSet<Oid>>;
+    fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
+    fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
 
     // tenant role
     fn create_custom_role(
-        &mut self,
+        &self,
         role_name: String,
         system_role: SystemTenantRole,
         additiona_privileges: HashMap<String, DatabasePrivilege>,
@@ -88,27 +102,31 @@ pub trait MetaClient: Send + Sync + Debug {
     fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>>;
     fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>>;
     fn grant_privilege_to_custom_role(
-        &mut self,
-        database_name: String,
-        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        &self,
+        database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
     ) -> MetaResult<()>;
     fn revoke_privilege_from_custom_role(
-        &mut self,
-        database_name: &str,
-        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        &self,
+        database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
-    ) -> MetaResult<bool>;
-    fn drop_custom_role(&mut self, role_name: &str) -> MetaResult<bool>;
+    ) -> MetaResult<()>;
+    fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool>;
 
     fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()>;
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
-    fn drop_db(&self, name: &str) -> MetaResult<()>;
+    fn drop_db(&self, name: &str) -> MetaResult<bool>;
 
-    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
-    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
-    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn create_table(&self, schema: &TableSchema) -> MetaResult<()>;
+    fn update_table(&self, schema: &TableSchema) -> MetaResult<()>;
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>>;
+    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn get_external_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<ExternalTableSchema>>;
     fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
     fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
@@ -145,11 +163,14 @@ impl RemoteMetaManager {
             config.name.clone(),
             config.meta.clone(),
         ));
-        // TODO
-        let user_manager = Arc::new(UserManagerMock::default());
+        let user_manager = Arc::new(RemoteUserManager::new(
+            config.name.clone(),
+            config.meta.clone(),
+        ));
         let tenant_manager = Arc::new(RemoteTenantManager::new(
             config.name.clone(),
             config.meta.clone(),
+            config.node_id,
         ));
 
         let node_info = NodeInfo {
@@ -187,6 +208,46 @@ impl MetaManager for RemoteMetaManager {
     fn tenant_manager(&self) -> TenantManagerRef {
         self.tenant_manager.clone()
     }
+
+    fn user_with_privileges(&self, user_name: &str, tenant_name: Option<&str>) -> MetaResult<User> {
+        let user_desc =
+            self.user_manager
+                .user(user_name)?
+                .ok_or_else(|| MetaError::UserNotFound {
+                    user: user_name.to_string(),
+                })?;
+
+        // admin user
+        if user_desc.is_admin() {
+            return Ok(User::new(user_desc, UserRole::Dba.to_privileges()));
+        }
+
+        // common user & with tenant
+        if let Some(tenant_name) = tenant_name {
+            let client = self
+                .tenant_manager
+                .tenant_meta(tenant_name)
+                .ok_or_else(|| MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                })?;
+
+            let tenant_id = client.tenant().id();
+            let role = client.member_role(user_desc.id())?;
+
+            let privileges = match role {
+                TenantRoleIdentifier::System(sys_role) => sys_role.to_privileges(tenant_id),
+                TenantRoleIdentifier::Custom(ref role_name) => client
+                    .custom_role(role_name)?
+                    .map(|e| e.to_privileges(tenant_id))
+                    .unwrap_or_default(),
+            };
+
+            return Ok(User::new(user_desc, privileges));
+        }
+
+        // common user & without tenant
+        Ok(User::new(user_desc, Default::default()))
+    }
 }
 
 #[derive(Debug)]
@@ -206,7 +267,7 @@ impl RemoteAdminMeta {
             meta_url: meta_url.clone(),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
-            client: MetaHttpClient::new(1, meta_url.clone()),
+            client: MetaHttpClient::new(1, meta_url),
         }
     }
 }
@@ -284,16 +345,65 @@ pub struct RemoteMetaClient {
 
     data: RwLock<TenantMetaData>,
     client: MetaHttpClient,
+    client_id: String,
 }
 
 impl RemoteMetaClient {
-    pub fn new(cluster: String, tenant: Tenant, meta_url: String) -> Self {
-        Self {
+    pub fn new(cluster: String, tenant: Tenant, meta_url: String, node_id: u64) -> Arc<Self> {
+        let mut rng = rand::thread_rng();
+        let random = Alphanumeric.sample_string(&mut rng, 16);
+
+        let client_id = format!("{}.{}.{}.{}", &cluster, &tenant.name(), node_id, random);
+
+        let client = Arc::new(Self {
             cluster,
             tenant,
+            client_id,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
             client: MetaHttpClient::new(1, meta_url),
+        });
+
+        let _ = client.sync_all_tenant_metadata();
+
+        let client_local = client.clone();
+        let hand = std::thread::spawn(|| RemoteMetaClient::watch_data(client_local));
+
+        client
+    }
+
+    pub fn watch_data(client: Arc<RemoteMetaClient>) {
+        let mut cmd = (
+            client.client_id.clone(),
+            client.cluster.clone(),
+            client.tenant.name().to_string(),
+            0,
+        );
+
+        loop {
+            cmd.3 = client.data.read().version;
+            match client
+                .client
+                .watch_tenant::<command::TenantMetaDataDelta>(&cmd)
+            {
+                Ok(delta) => {
+                    let mut data = client.data.write();
+                    if delta.full_load {
+                        if delta.update.version > data.version {
+                            *data = delta.update;
+                        }
+                    } else if data.version >= delta.ver_range.0 && data.version < delta.ver_range.1
+                    {
+                        data.merge_into(&delta.update);
+                        data.delete_from(&delta.delete);
+                        data.version = delta.ver_range.1;
+                    }
+                }
+
+                Err(err) => {
+                    info!("watch data result: {:?} {}", &cmd, err)
+                }
+            }
         }
     }
 
@@ -324,31 +434,116 @@ impl MetaClient for RemoteMetaClient {
         &self.tenant
     }
 
+    fn tenant_mut(&mut self) -> &mut Tenant {
+        &mut self.tenant
+    }
+
     // tenant member start
 
-    fn add_member_with_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
-        // TODO
-        Ok(())
+    fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+        let req = command::WriteCommand::AddMemberToTenant(
+            self.cluster.clone(),
+            user_id,
+            role,
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_USER_EXIST {
+                    Err(MetaError::UserAlreadyExists { user: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRole<Oid>> {
-        // TODO
-        Ok(TenantRole::System(SystemTenantRole::Owner))
+    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier> {
+        let req = command::ReadCommand::MemberRole(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            *user_id,
+        );
+
+        match self
+            .client
+            .read::<command::CommonResp<TenantRoleIdentifier>>(&req)?
+        {
+            command::CommonResp::Ok(e) => Ok(e),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_USER_NOT_FOUND {
+                    Err(MetaError::UserNotFound { user: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
-    fn members(&self) -> MetaResult<Option<HashSet<&Oid>>> {
-        // TODO
-        Ok(Some(HashSet::default()))
+    fn members(&self) -> MetaResult<HashSet<Oid>> {
+        let req =
+            command::ReadCommand::Members(self.cluster.clone(), self.tenant.name().to_string());
+
+        match self
+            .client
+            .read::<command::CommonResp<HashSet<Oid>>>(&req)?
+        {
+            command::CommonResp::Ok(e) => Ok(e),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                warn!(
+                    "members of tenant {}, error: {}",
+                    self.tenant().name(),
+                    status.msg
+                );
+                Err(MetaError::CommonError { msg: status.msg })
+            }
+        }
     }
 
-    fn reasign_member_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
-        // TODO
-        Ok(())
+    fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+        let req = command::WriteCommand::ReasignMemberRole(
+            self.cluster.clone(),
+            user_id,
+            role,
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_USER_NOT_FOUND {
+                    Err(MetaError::UserNotFound { user: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
-    fn remove_member(&mut self, user_id: Oid) -> MetaResult<()> {
-        // TODO
-        Ok(())
+    fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
+        let req = command::WriteCommand::RemoveMemberFromTenant(
+            self.cluster.clone(),
+            user_id,
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_USER_NOT_FOUND {
+                    Err(MetaError::UserNotFound { user: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
     // tenant member end
@@ -356,48 +551,136 @@ impl MetaClient for RemoteMetaClient {
     // tenant role start
 
     fn create_custom_role(
-        &mut self,
+        &self,
         role_name: String,
         system_role: SystemTenantRole,
         additiona_privileges: HashMap<String, DatabasePrivilege>,
     ) -> MetaResult<()> {
-        // TODO
-        Ok(())
+        let req = command::WriteCommand::CreateRole(
+            self.cluster.clone(),
+            role_name,
+            system_role,
+            additiona_privileges,
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_ROLE_EXIST {
+                    Err(MetaError::RoleAlreadyExists { role: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
     fn custom_role(&self, role_name: &str) -> MetaResult<Option<CustomTenantRole<Oid>>> {
-        // TODO
-        Ok(None)
+        let req = command::ReadCommand::CustomRole(
+            self.cluster.clone(),
+            role_name.to_string(),
+            self.tenant.name().to_string(),
+        );
+
+        match self
+            .client
+            .read::<command::CommonResp<Option<CustomTenantRole<Oid>>>>(&req)?
+        {
+            command::CommonResp::Ok(e) => Ok(e),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                Err(MetaError::CommonError { msg: status.msg })
+            }
+        }
     }
 
     fn custom_roles(&self) -> MetaResult<Vec<CustomTenantRole<Oid>>> {
-        // TODO
-        Ok(vec![])
+        let req =
+            command::ReadCommand::CustomRoles(self.cluster.clone(), self.tenant.name().to_string());
+
+        match self
+            .client
+            .read::<command::CommonResp<Vec<CustomTenantRole<Oid>>>>(&req)?
+        {
+            command::CommonResp::Ok(e) => Ok(e),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                warn!("custom roles not found, {}", status.msg);
+                Err(MetaError::CommonError { msg: status.msg })
+            }
+        }
     }
 
     fn grant_privilege_to_custom_role(
-        &mut self,
-        database_name: String,
-        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        &self,
+        database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
     ) -> MetaResult<()> {
-        // TODO
-        Ok(())
+        let req = command::WriteCommand::GrantPrivileges(
+            self.cluster.clone(),
+            database_privileges,
+            role_name.to_string(),
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_ROLE_NOT_FOUND {
+                    Err(MetaError::RoleNotFound { role: status.msg })
+                } else if status.code == META_REQUEST_PRIVILEGE_EXIST {
+                    Err(MetaError::PrivilegeAlreadyExists { name: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
     fn revoke_privilege_from_custom_role(
-        &mut self,
-        database_name: &str,
-        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        &self,
+        database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
-    ) -> MetaResult<bool> {
-        // TODO
-        Ok(true)
+    ) -> MetaResult<()> {
+        let req = command::WriteCommand::RevokePrivileges(
+            self.cluster.clone(),
+            database_privileges,
+            role_name.to_string(),
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<()>>(&req)? {
+            command::CommonResp::Ok(_) => Ok(()),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_ROLE_NOT_FOUND {
+                    Err(MetaError::RoleNotFound { role: status.msg })
+                } else if status.code == META_REQUEST_PRIVILEGE_NOT_FOUND {
+                    Err(MetaError::PrivilegeNotFound { name: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
-    fn drop_custom_role(&mut self, role_name: &str) -> MetaResult<bool> {
-        // TODO
-        Ok(true)
+    fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
+        let req = command::WriteCommand::DropRole(
+            self.cluster.clone(),
+            role_name.to_string(),
+            self.tenant.name().to_string(),
+        );
+
+        match self.client.write::<command::CommonResp<bool>>(&req)? {
+            command::CommonResp::Ok(e) => Ok(e),
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                Err(MetaError::CommonError { msg: status.msg })
+            }
+        }
     }
 
     // tenant role end
@@ -415,22 +698,20 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.data;
         }
 
-        // TODO db already exist
-        // if rsp.err_code != command::META_REQUEST_SUCCESS {
-        //     return Err(MetaError::CommonError {
-        //         msg: format!("add data node err: {} {}", rsp.err_code, rsp.err_msg),
-        //     });
-        // }
-
-        Ok(())
+        if rsp.status.code == command::META_REQUEST_SUCCESS {
+            return Ok(());
+        } else if rsp.status.code == command::META_REQUEST_DB_EXIST {
+            return Err(MetaError::DatabaseAlreadyExists {
+                database: schema.database_name().to_string(),
+            });
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.status.string(),
+            });
+        }
     }
 
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
-        if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.schema.clone()));
-        }
-
-        self.sync_all_tenant_metadata()?;
         if let Some(db) = self.data.read().dbs.get(name) {
             return Ok(Some(db.schema.clone()));
         }
@@ -447,16 +728,18 @@ impl MetaClient for RemoteMetaClient {
         Ok(list)
     }
 
-    fn drop_db(&self, name: &str) -> MetaResult<()> {
+    fn drop_db(&self, name: &str) -> MetaResult<bool> {
         todo!()
     }
 
-    fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+    fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
         let req = command::WriteCommand::CreateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
             schema.clone(),
         );
+
+        debug!("create_table: {:?}", req);
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         let mut data = self.data.write();
@@ -464,22 +747,46 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.data;
         }
 
-        // TODO table already exist
-
-        Ok(())
+        if rsp.status.code == command::META_REQUEST_SUCCESS {
+            return Ok(());
+        } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
+            return Err(MetaError::TableAlreadyExists {
+                table_name: schema.name().to_string(),
+            });
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.status.string(),
+            });
+        }
     }
 
-    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
-        if let Some(val) = self.data.read().table_schema(db, table) {
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {
+        return Ok(self.data.read().table_schema(db, table));
+    }
+
+    fn get_tskv_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
+        if let Some(TableSchema::TsKvTableSchema(val)) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
 
-        self.sync_all_tenant_metadata()?;
-        let val = self.data.read().table_schema(db, table);
-        Ok(val)
+        Ok(None)
     }
 
-    fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()> {
+    fn get_external_table_schema(
+        &self,
+        db: &str,
+        table: &str,
+    ) -> MetaResult<Option<ExternalTableSchema>> {
+        if let Some(TableSchema::ExternalTableSchema(val)) =
+            self.data.read().table_schema(db, table)
+        {
+            return Ok(Some(val));
+        }
+
+        Ok(None)
+    }
+
+    fn update_table(&self, schema: &TableSchema) -> MetaResult<()> {
         let req = command::WriteCommand::UpdateTable(
             self.cluster.clone(),
             self.tenant.name().to_string(),
@@ -563,10 +870,8 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
-        // TODO improve performence,watch the meta
-        self.sync_all_tenant_metadata()?;
-
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
+
         Ok(buckets)
     }
 

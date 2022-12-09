@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use models::oid::Identifier;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
@@ -101,7 +102,7 @@ impl QueryExecution for DDLExecution {
         QueryInfo::new(
             qsm.query_id,
             qsm.query.content().to_string(),
-            qsm.query.context().user_info().user.to_string(),
+            qsm.query.context().user_info().desc().name().to_string(),
         )
     }
 

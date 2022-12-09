@@ -8,10 +8,11 @@ use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
+use meta::error::MetaError;
 
-use crate::catalog::{MetaData, MetaDataRef};
+use crate::service::protocol::Query;
 use crate::service::protocol::QueryId;
-use crate::{catalog::MetadataError, service::protocol::Query};
+use meta::meta_client::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};
@@ -26,7 +27,7 @@ pub enum ExecutionError {
     Arrow { source: ArrowError },
 
     #[snafu(display("Metadata operator err: {}", source))]
-    Metadata { source: MetadataError },
+    Metadata { source: MetaError },
 
     #[snafu(display("Query not found: {:?}", query_id))]
     QueryNotFound { query_id: QueryId },
@@ -79,6 +80,24 @@ impl Output {
             .reduce(|p, c| p + c)
             .unwrap_or(0)
     }
+
+    /// Returns the number of records affected by the query operation
+    ///
+    /// If it is a select statement, returns the number of rows in the result set
+    ///
+    /// -1 means unknown
+    ///
+    /// panic! when StreamData's number of records greater than i64::Max
+    pub fn affected_rows(&self) -> i64 {
+        match self {
+            Self::StreamData(_, result) => result
+                .iter()
+                .map(|e| e.num_rows())
+                .reduce(|p, c| p + c)
+                .unwrap_or(0) as i64,
+            Self::Nil(_) => 0,
+        }
+    }
 }
 
 pub trait QueryExecutionFactory {
@@ -95,7 +114,7 @@ pub struct QueryStateMachine {
     pub session: IsiphoSessionCtx,
     pub query_id: QueryId,
     pub query: Query,
-    pub catalog: MetaDataRef,
+    pub meta: MetaRef,
 
     state: AtomicPtr<QueryState>,
     start: Instant,
@@ -106,13 +125,13 @@ impl QueryStateMachine {
         query_id: QueryId,
         query: Query,
         session: IsiphoSessionCtx,
-        catalog: Arc<dyn MetaData>,
+        meta: MetaRef,
     ) -> Self {
         Self {
             query_id,
             session,
             query,
-            catalog,
+            meta,
             state: AtomicPtr::new(Box::into_raw(Box::new(QueryState::ACCEPTING))),
             start: Instant::now(),
         }

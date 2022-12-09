@@ -7,6 +7,7 @@ use snafu::Snafu;
 use self::{execution::ExecutionError, logical_planner::LogicalPlannerError};
 
 pub mod ast;
+pub mod auth;
 pub mod dispatcher;
 pub mod execution;
 pub mod function;
@@ -15,6 +16,10 @@ pub mod optimizer;
 pub mod parser;
 pub mod physical_planner;
 pub mod session;
+
+#[allow(dead_code)]
+pub const DEFAULT_DATABASE: &str = "public";
+pub const DEFAULT_CATALOG: &str = "cnosdb";
 
 pub const AFFECTED_ROWS: (&str, DataType) = ("rows", DataType::UInt64);
 
@@ -27,6 +32,9 @@ pub const UNEXPECTED_EXTERNAL_PLAN: &str = "Unexpected plan, maybe it's a df pro
 pub enum QueryError {
     #[snafu(display("Failed to build QueryDispatcher. err: {}", err))]
     BuildQueryDispatcher { err: String },
+
+    #[snafu(display("Failed to build Function Meta, err: {}", source))]
+    BuildFunctionMeta { source: function::Error },
 
     #[snafu(display("Failed to do logical plan. err: {}", source))]
     LogicalPlanner { source: LogicalPlannerError },

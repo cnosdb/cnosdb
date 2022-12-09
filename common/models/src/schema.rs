@@ -508,6 +508,14 @@ impl DatabaseSchema {
     pub fn owner(&self) -> String {
         format!("{}.{}", self.tenant, self.database)
     }
+
+    pub fn is_empty(&self) -> bool {
+        if self.tenant.is_empty() && self.database.is_empty() {
+            return true;
+        }
+
+        false
+    }
 }
 
 pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
@@ -711,7 +719,7 @@ impl Duration {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tenant {
     id: Oid,
     name: String,
@@ -738,10 +746,18 @@ impl Tenant {
     }
 }
 
-#[derive(Debug, Default, Clone, Builder)]
+#[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
 #[builder(setter(into, strip_option), default)]
 pub struct TenantOptions {
     pub comment: Option<String>,
+}
+
+impl TenantOptions {
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            comment: self.comment.or(other.comment),
+        }
+    }
 }
 
 impl Display for TenantOptions {

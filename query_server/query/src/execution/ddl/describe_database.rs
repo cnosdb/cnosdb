@@ -5,11 +5,13 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
+
 use spi::query::execution;
+use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
 use std::sync::Arc;
+use meta::error::MetaError;
 
 pub struct DescribeDatabaseTask {
     stmt: DescribeDatabase,
@@ -27,10 +29,7 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        describe_database(
-            self.stmt.database_name.as_str(),
-            query_state_machine.clone(),
-        )
+        describe_database(self.stmt.database_name.as_str(), query_state_machine)
     }
 }
 
@@ -38,10 +37,22 @@ fn describe_database(
     database_name: &str,
     machine: QueryStateMachineRef,
 ) -> Result<Output, ExecutionError> {
-    let db_cfg = machine
-        .catalog
-        .database(machine.session.tenant(), database_name)
-        .context(execution::MetadataSnafu)?;
+    let tenant = machine.session.tenant();
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })
+        .context(MetadataSnafu)?;
+    let db_cfg = client
+        .get_db_schema(database_name)
+        .context(execution::MetadataSnafu)?
+        .ok_or(MetaError::DatabaseNotFound {
+            database: database_name.to_string(),
+        })
+        .context(MetadataSnafu)?;
     let schema = Arc::new(Schema::new(vec![
         Field::new("TTL", DataType::Utf8, false),
         Field::new("SHARD", DataType::Utf8, false),

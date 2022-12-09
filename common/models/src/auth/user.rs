@@ -1,6 +1,7 @@
 use std::{collections::HashSet, fmt::Display};
 
 use derive_builder::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::oid::{Identifier, Oid};
 
@@ -8,6 +9,8 @@ use super::{
     privilege::{Privilege, PrivilegeChecker},
     rsa_utils, AuthError, Result,
 };
+
+pub const ROOT: &str = "root";
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -29,21 +32,31 @@ impl User {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDesc {
     id: Oid,
     // ident
     name: String,
     options: UserOptions,
+    is_admin: bool,
 }
 
 impl UserDesc {
-    pub fn new(id: Oid, name: String, options: UserOptions) -> Self {
-        Self { id, name, options }
+    pub fn new(id: Oid, name: String, options: UserOptions, is_admin: bool) -> Self {
+        Self {
+            id,
+            name,
+            options,
+            is_admin,
+        }
     }
 
     pub fn options(&self) -> &UserOptions {
         &self.options
+    }
+
+    pub fn is_admin(&self) -> bool {
+        self.is_admin
     }
 
     pub fn rename(mut self, new_name: String) -> Self {
@@ -70,7 +83,7 @@ impl Identifier<Oid> for UserDesc {
     }
 }
 
-#[derive(Debug, Default, Clone, Builder)]
+#[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
 #[builder(setter(into, strip_option), default)]
 pub struct UserOptions {
     password: Option<String>,
@@ -91,6 +104,15 @@ impl UserOptions {
     }
     pub fn comment(&self) -> Option<&str> {
         self.comment.as_deref()
+    }
+
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            password: self.password.or(other.password),
+            must_change_password: self.must_change_password.or(other.must_change_password),
+            rsa_public_key: self.rsa_public_key.or(other.rsa_public_key),
+            comment: self.comment.or(other.comment),
+        }
     }
 }
 

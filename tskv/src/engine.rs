@@ -1,3 +1,4 @@
+use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
 use crate::tseries_family::SuperVersion;
@@ -9,6 +10,7 @@ use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use parking_lot::RwLock;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -37,7 +39,7 @@ pub trait Engine: Send + Sync + Debug {
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>>;
 
     fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
@@ -45,7 +47,7 @@ pub trait Engine: Send + Sync + Debug {
 
     fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
-    fn create_table(&self, schema: &TableSchema) -> Result<()>;
+    fn create_table(&self, schema: &TskvTableSchema) -> Result<()>;
 
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
@@ -95,7 +97,12 @@ pub trait Engine: Send + Sync + Debug {
         time_range: &TimeRange,
     ) -> Result<()>;
 
-    fn get_table_schema(&self, tenant: &str, db: &str, tab: &str) -> Result<Option<TableSchema>>;
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>>;
 
     fn get_series_id_by_filter(
         &self,
@@ -167,12 +174,12 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) -> Result<()> {
+    fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
         todo!()
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
-        Ok(())
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+        todo!()
     }
 
     fn list_databases(&self) -> Result<Vec<String>> {
@@ -213,14 +220,19 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_table_schema(&self, tenant: &str, db: &str, tab: &str) -> Result<Option<TableSchema>> {
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
-        Ok(Some(TableSchema::TsKvTableSchema(TskvTableSchema::new(
+        Ok(Some(TskvTableSchema::new(
             tenant.to_string(),
             db.to_string(),
             tab.to_string(),
             Default::default(),
-        ))))
+        )))
     }
 
     fn get_series_id_by_filter(

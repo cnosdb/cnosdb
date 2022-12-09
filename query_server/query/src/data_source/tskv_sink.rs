@@ -9,9 +9,8 @@ use models::consistency_level::ConsistencyLevel;
 use models::schema::TskvTableSchema;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
-use spi::catalog::DEFAULT_CATALOG;
+use spi::query::DEFAULT_CATALOG;
 use trace::debug;
-use tskv::engine::EngineRef;
 
 use crate::utils::point_util::record_batch_to_points_flat_buffer;
 
@@ -23,7 +22,6 @@ use super::Result;
 use super::PointUtilSnafu;
 
 pub struct TskvRecordBatchSink {
-    _engine: EngineRef,
     coord: CoordinatorRef,
     partition: usize,
     schema: TskvTableSchema,
@@ -62,18 +60,13 @@ impl RecordBatchSink for TskvRecordBatchSink {
 }
 
 pub struct TskvRecordBatchSinkProvider {
-    engine: EngineRef,
     coord: CoordinatorRef,
     schema: TskvTableSchema,
 }
 
 impl TskvRecordBatchSinkProvider {
-    pub fn new(engine: EngineRef, coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
-        Self {
-            engine,
-            coord,
-            schema,
-        }
+    pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
+        Self { coord, schema }
     }
 }
 
@@ -84,7 +77,6 @@ impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
         partition: usize,
     ) -> Box<dyn RecordBatchSink> {
         Box::new(TskvRecordBatchSink {
-            _engine: self.engine.clone(),
             coord: self.coord.clone(),
             partition,
             schema: self.schema.clone(),

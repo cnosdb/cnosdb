@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
-
 use models::SeriesId;
 use snafu::Snafu;
+use meta::error::MetaError;
 
 use crate::schema::error::SchemaError;
 use crate::{
@@ -31,6 +31,9 @@ pub enum Error {
 
     #[snafu(display("Unable to sync file: {}", source))]
     SyncFile { source: std::io::Error },
+
+    #[snafu(display("Error with apply to meta: {}", source))]
+    Meta { source: MetaError },
 
     #[snafu(display("File {} has wrong name format: {}", file_name, message))]
     InvalidFileName { file_name: String, message: String },

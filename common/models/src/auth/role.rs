@@ -5,6 +5,7 @@ use std::{
 };
 
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 
 use crate::oid::{Id, Identifier};
 
@@ -45,7 +46,7 @@ impl<T: Id> UserRole<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TenantRoleIdentifier {
     System(SystemTenantRole),
     Custom(String),
@@ -81,7 +82,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SystemTenantRole {
     Owner,
     Member,
@@ -128,7 +129,7 @@ impl SystemTenantRole {
 
 pub type CustomTenantRoleRef<T> = Arc<RwLock<CustomTenantRole<T>>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTenantRole<T> {
     id: T,
     name: String,

@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
-use models::auth::user::User;
+use coordinator::service::CoordinatorRef;
+use datafusion::scheduler::Scheduler;
 use models::oid::Oid;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
+
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::Output;
 use spi::{
@@ -22,17 +22,20 @@ use spi::{
 };
 
 use spi::query::QueryError::{self, BuildQueryDispatcher};
-use spi::query::{LogicalPlannerSnafu, Result};
+use spi::query::{BuildFunctionMetaSnafu, LogicalPlannerSnafu, Result};
 
-use crate::metadata::MetadataProvider;
+use crate::extension::expr::load_all_functions;
+use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+use crate::metadata::{ContextProviderExtension, MetadataProvider};
 use crate::{
     execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
 };
 
 use super::query_tracker::QueryTracker;
 
+#[derive(Clone)]
 pub struct SimpleQueryDispatcher {
-    metadata: MetaDataRef,
+    coord: CoordinatorRef,
     session_factory: Arc<IsiphoSessionCtxFactory>,
     // TODO resource manager
     // query tracker
@@ -64,21 +67,21 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     async fn execute_query(
         &self,
         tenant_id: Oid,
-        user: User,
         query_id: QueryId,
         query: &Query,
     ) -> Result<Output> {
-        let session = self.session_factory.create_isipho_session_ctx(
-            query.context().clone(),
-            tenant_id,
-            user,
-        );
+        let session = self
+            .session_factory
+            .create_isipho_session_ctx(query.context().clone(), tenant_id);
 
-        let metadata = self
-            .metadata
-            .with_catalog(session.tenant())
-            .with_database(session.default_database());
-        let scheme_provider = MetadataProvider::new(metadata.clone());
+        let mut func_manager = SimpleFunctionMetadataManager::default();
+        load_all_functions(&mut func_manager).context(BuildFunctionMetaSnafu)?;
+        let scheme_provider = MetadataProvider::new(
+            self.coord.clone(),
+            func_manager,
+            session.tenant().to_string(),
+            session.default_database().to_string(),
+        );
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);
 
@@ -98,7 +101,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             query_id,
             query.clone(),
             session.clone(),
-            metadata.clone(),
+            self.coord.meta_manager().clone(),
         ));
 
         let result = self
@@ -130,7 +133,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 }
 
 impl SimpleQueryDispatcher {
-    async fn execute_statement<S: ContextProvider>(
+    async fn execute_statement<S: ContextProviderExtension>(
         &self,
         stmt: ExtStatement,
         logical_planner: &DefaultLogicalPlanner<S>,
@@ -155,9 +158,9 @@ impl SimpleQueryDispatcher {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SimpleQueryDispatcherBuilder {
-    metadata: Option<MetaDataRef>,
+    coord: Option<CoordinatorRef>,
     session_factory: Option<Arc<IsiphoSessionCtxFactory>>,
     parser: Option<Arc<dyn Parser + Send + Sync>>,
     // cnosdb optimizer
@@ -169,8 +172,8 @@ pub struct SimpleQueryDispatcherBuilder {
 }
 
 impl SimpleQueryDispatcherBuilder {
-    pub fn with_metadata(mut self, meta: MetaDataRef) -> Self {
-        self.metadata = Some(meta);
+    pub fn with_coord(mut self, coord: CoordinatorRef) -> Self {
+        self.coord = Some(coord);
         self
     }
 
@@ -200,8 +203,8 @@ impl SimpleQueryDispatcherBuilder {
     }
 
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
-        let metadata = self.metadata.ok_or_else(|| BuildQueryDispatcher {
-            err: "lost of metadata".to_string(),
+        let coord = self.coord.ok_or_else(|| BuildQueryDispatcher {
+            err: "lost of coord".to_string(),
         })?;
         let session_factory = self.session_factory.ok_or_else(|| BuildQueryDispatcher {
             err: "lost of session_factory".to_string(),
@@ -228,7 +231,7 @@ impl SimpleQueryDispatcherBuilder {
         ));
 
         Ok(SimpleQueryDispatcher {
-            metadata,
+            coord,
             session_factory,
             parser,
             query_execution_factory,

@@ -1,5 +1,7 @@
 use std::{fmt::Display, hash::Hash};
 
+use serde::{Deserialize, Serialize};
+
 use crate::oid::Id;
 
 pub trait PrivilegeChecker {
@@ -149,7 +151,7 @@ impl PrivilegeChecker for TenantObjectPrivilege {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DatabasePrivilege {
     Read,
     Write,

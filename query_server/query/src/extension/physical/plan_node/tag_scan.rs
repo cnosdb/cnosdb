@@ -6,6 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
+use coordinator::service::CoordinatorRef;
 use datafusion::{
     arrow::{
         array::ArrayBuilder, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
@@ -21,6 +22,7 @@ use datafusion::{
     },
 };
 use futures::Stream;
+use meta::error::MetaError;
 use models::{
     arrow_array::{build_arrow_array_builders, WriteArrow},
     predicate::domain::{ColumnDomains, PredicateRef},
@@ -29,7 +31,6 @@ use models::{
 };
 
 use trace::debug;
-use tskv::{engine::EngineRef, index::IndexError};
 
 #[derive(Debug, Clone)]
 pub struct TagScanExec {
@@ -38,7 +39,7 @@ pub struct TagScanExec {
     table_schema: TableSchemaRef,
     proj_schema: SchemaRef,
     predicate: PredicateRef,
-    engine: EngineRef,
+    coord: CoordinatorRef,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -49,7 +50,7 @@ impl TagScanExec {
         table_schema: TableSchemaRef,
         proj_schema: SchemaRef,
         predicate: PredicateRef,
-        engine: EngineRef,
+        coord: CoordinatorRef,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
 
@@ -57,7 +58,7 @@ impl TagScanExec {
             table_schema,
             proj_schema,
             predicate,
-            engine,
+            coord,
             metrics,
         }
     }
@@ -95,7 +96,7 @@ impl ExecutionPlan for TagScanExec {
         Ok(Arc::new(TagScanExec {
             table_schema: self.table_schema.clone(),
             proj_schema: self.proj_schema.clone(),
-            engine: self.engine.clone(),
+            coord: self.coord.clone(),
             metrics: self.metrics.clone(),
             predicate: self.predicate.clone(),
         }))
@@ -130,7 +131,7 @@ impl ExecutionPlan for TagScanExec {
             self.table_schema.clone(),
             self.schema(),
             tags_filter,
-            self.engine.clone(),
+            self.coord.clone(),
             metrics,
             batch_size,
         )
@@ -186,7 +187,7 @@ fn do_tag_scan(
     table_schema: TableSchemaRef,
     proj_schema: SchemaRef,
     tags_filter: ColumnDomains<String>,
-    store_engine: EngineRef,
+    coord: CoordinatorRef,
     metrics: BaselineMetrics,
     _batch_size: usize,
 ) -> Result<SendableRecordBatchStream> {
@@ -195,31 +196,39 @@ fn do_tag_scan(
         proj_schema, tags_filter
     );
 
-    let timer = metrics.elapsed_compute().timer();
-    let db = &table_schema.db;
+    let _timer = metrics.elapsed_compute().timer();
+    let _db = &table_schema.db;
     let tenant = &table_schema.tenant;
-    let series_keys = store_engine
-        .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)
-        .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
-        .iter()
-        .map(|sid| store_engine.get_series_key(tenant, db, *sid))
-        .collect::<std::result::Result<Vec<_>, IndexError>>()
-        .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
 
-    debug!("Scan series key count: {}", series_keys.len());
+    let _client = coord.tenant_meta(tenant).ok_or_else(|| {
+        ArrowError::ExternalError(Box::new(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        }))
+    })?;
 
-    let mut builder = TagRecordBatchStreamBuilder::try_new(proj_schema, series_keys.len())?;
-
-    series_keys
-        .into_iter()
-        .flatten()
-        .for_each(|k| builder.append(k));
-
-    let reader = builder.build()?;
-
-    timer.done();
-
-    Ok(Box::pin(reader))
+    todo!("meta need get_series_id_by_filter")
+    // let series_keys = coord
+    //     .get_series_id_by_filter(tenant, db, &table_schema.name, &tags_filter)
+    //     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
+    //     .iter()
+    //     .map(|sid| store_engine.get_series_key(tenant, db, *sid))
+    //     .collect::<std::result::Result<Vec<_>, IndexError>>()
+    //     .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
+    //
+    // debug!("Scan series key count: {}", series_keys.len());
+    //
+    // let mut builder = TagRecordBatchStreamBuilder::try_new(proj_schema, series_keys.len())?;
+    //
+    // series_keys
+    //     .into_iter()
+    //     .flatten()
+    //     .for_each(|k| builder.append(k));
+    //
+    // let reader = builder.build()?;
+    //
+    // timer.done();
+    //
+    // Ok(Box::pin(reader))
 }
 
 struct TagRecordBatchStream {
@@ -255,6 +264,7 @@ struct TagRecordBatchStreamBuilder {
 }
 
 impl TagRecordBatchStreamBuilder {
+    #[allow(dead_code)]
     pub fn try_new(schema: SchemaRef, size_hint: usize) -> ArrowResult<Self> {
         let builders = build_arrow_array_builders(schema.clone(), size_hint)?;
         let tag_values_containers: Vec<Vec<Option<TagValue>>> =
@@ -270,6 +280,7 @@ impl TagRecordBatchStreamBuilder {
         })
     }
 
+    #[allow(dead_code)]
     pub fn append(&mut self, series_key: SeriesKey) {
         self.tag_key_array
             .iter()
@@ -282,6 +293,7 @@ impl TagRecordBatchStreamBuilder {
             })
     }
 
+    #[allow(dead_code)]
     pub fn build(mut self) -> ArrowResult<TagRecordBatchStream> {
         trace::trace!("tag_values_containers: {:?}", &self.tag_values_containers);
 

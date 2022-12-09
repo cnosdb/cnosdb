@@ -36,7 +36,7 @@ pub fn get_sled_db(config: &Opt) -> Db {
 
 pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     let mut config = Config::default().validate().unwrap();
-    config.heartbeat_interval = 1000;
+    // config.heartbeat_interval = 1000;
     config.install_snapshot_timeout = 100000;
     let config = Arc::new(config);
     let es = get_sled_db(&opt);
@@ -69,6 +69,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::write)
             .service(api::read)
             .service(api::debug)
+            .service(api::watch_tenant)
     })
     .keep_alive(Duration::from_secs(5));
 

@@ -1,10 +1,10 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use models::auth::user::UserInfo;
+use models::auth::user::User;
 
-use crate::catalog::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use crate::query::execution::Output;
 use crate::query::session::IsiphoSessionConfig;
+use crate::query::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryId(u64);
@@ -55,7 +55,7 @@ pub struct Context {
     // user info
     // security certification info
     // ...
-    user_info: UserInfo,
+    user_info: User,
     tenant: String,
     database: String,
     session_config: IsiphoSessionConfig,
@@ -70,7 +70,7 @@ impl Context {
         &self.database
     }
 
-    pub fn user_info(&self) -> &UserInfo {
+    pub fn user_info(&self) -> &User {
         &self.user_info
     }
 
@@ -80,14 +80,14 @@ impl Context {
 }
 
 pub struct ContextBuilder {
-    user_info: UserInfo,
+    user_info: User,
     tenant: String,
     database: String,
     session_config: IsiphoSessionConfig,
 }
 
 impl ContextBuilder {
-    pub fn new(user_info: UserInfo) -> Self {
+    pub fn new(user_info: User) -> Self {
         Self {
             user_info,
             tenant: DEFAULT_CATALOG.to_string(),

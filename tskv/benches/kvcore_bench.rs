@@ -20,12 +20,15 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    TsKv::open(opt, runtime).await.unwrap()
+    TsKv::open(global_config.cluster, opt, runtime)
+        .await
+        .unwrap()
 }
 
 fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRpcRequest) {
     let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().write(0, request)).unwrap();
+    rt.block_on(tskv.lock().write(0, "cnosdb", request))
+        .unwrap();
 }
 
 // fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
@@ -56,7 +59,7 @@ fn big_write(c: &mut Criterion) {
                 let points = fbb.finished_data().to_vec();
 
                 let request = WritePointsRpcRequest { version: 1, points };
-                rt.block_on(tskv.write(0, request)).unwrap();
+                rt.block_on(tskv.write(0, "cnosdb", request)).unwrap();
             }
         })
     });

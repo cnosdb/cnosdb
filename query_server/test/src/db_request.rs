@@ -28,7 +28,7 @@ impl Default for Instruction {
             db_name: "public".to_string(),
             sort: false,
             pretty: true,
-            user_name: "cnosdb".to_string(),
+            user_name: "root".to_string(),
             time_out: None,
         }
     }

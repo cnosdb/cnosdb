@@ -19,6 +19,7 @@ spi = { path = "../query_server/spi" }
 mem_allocator = { path = "../common/mem_allocator" }
 metrics = { path = "../common/metrics" }
 http_protocol = { path = "../common/http_protocol" }
+license = { path = "../common/license" }
 
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -49,6 +50,7 @@ warp = { workspace = true, features = ["tls"] }
 os_info = {workspace = true}
 reqwest = { workspace = true, features = ["native-tls", "json"] }
 moka = {workspace = true}
+dashmap = {workspace = true}
 
 [dev-dependencies]
 reqwest = "0.11"

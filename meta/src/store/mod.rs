@@ -1,16 +1,18 @@
 #![allow(clippy::module_inception)]
 
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use crate::error::{
     l_r_err, l_w_err, s_r_err, s_w_err, sm_r_err, v_r_err, v_w_err, StorageIOResult, StorageResult,
 };
 use crate::store::state_machine::{CommandResp, StateMachineContent};
 use crate::{ClusterNodeId, TypeConfig, ClusterNode};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
@@ -29,7 +31,6 @@ use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
 use tokio::sync::RwLock;
-use tracing;
 use tracing::info;
 
 pub mod command;
@@ -39,7 +40,7 @@ mod sled_store;
 pub mod state_machine;
 pub mod store;
 
-use self::state_machine::StateMachine;
+use self::state_machine::{StateMachine, WatchTenantMetaData};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct SnapshotInfo {
@@ -53,6 +54,7 @@ pub struct Store {
     db: Arc<sled::Db>,
     /// The Raft state machine.
     pub state_machine: RwLock<StateMachine>,
+    pub watch: RwLock<HashMap<String, WatchTenantMetaData>>,
 }
 
 fn store(db: &sled::Db) -> sled::Tree {
@@ -74,7 +76,8 @@ impl Store {
         let sm = StateMachine::new(db.clone());
         Self{
             db,
-            state_machine: RwLock::new(sm)
+            state_machine: RwLock::new(sm),
+            watch: RwLock::new(HashMap::new()),
         }
     }
     fn get_last_purged_(&self) -> StorageIOResult<Option<LogId<u64>>> {
@@ -417,11 +420,10 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
         let mut res = Vec::with_capacity(entries.len());
 
         let mut sm = self.state_machine.write().await;
+        let mut watch = self.watch.write().await;
 
         for entry in entries {
-            info!("apply_to_state_machine replicate to sm {:?}", entry.log_id);
             sm.set_last_applied_log(entry.log_id).await?;
-            info!("apply_to_state_machine replicate to sm {:?}", entry.log_id);
             match entry.payload {
                 EntryPayload::Blank => res.push(CommandResp::default()),
                 EntryPayload::Membership(ref mem) => {
@@ -433,7 +435,7 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
                     res.push(CommandResp::default())
                 }
 
-                EntryPayload::Normal(ref req) => res.push(sm.process_write_command(req)),
+                EntryPayload::Normal(ref req) => res.push(sm.process_write_command(req, &mut watch)),
             };
         }
         Ok(res)

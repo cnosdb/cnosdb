@@ -11,6 +11,24 @@ pub type MetaResult<T> = Result<T, MetaError>;
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum MetaError {
+    #[snafu(display("The privilege {} already exists", name))]
+    PrivilegeAlreadyExists { name: String },
+
+    #[snafu(display("The privilege {} not found", name))]
+    PrivilegeNotFound { name: String },
+
+    #[snafu(display("The role {} already exists", role))]
+    RoleAlreadyExists { role: String },
+
+    #[snafu(display("The role {} not found", role))]
+    RoleNotFound { role: String },
+
+    #[snafu(display("The user {} already exists", user))]
+    UserAlreadyExists { user: String },
+
+    #[snafu(display("The user {} not found", user))]
+    UserNotFound { user: String },
+
     #[snafu(display("The tenant {} already exists", tenant))]
     TenantAlreadyExists { tenant: String },
 
@@ -34,6 +52,18 @@ pub enum MetaError {
 
     #[snafu(display("Error: {}", msg))]
     CommonError { msg: String },
+
+    #[snafu(display("Database not found: {:?}", database))]
+    DatabaseNotFound { database: String },
+
+    #[snafu(display("Database {:?} already exists", database))]
+    DatabaseAlreadyExists { database: String },
+
+    #[snafu(display("Table not found: {:?}", table))]
+    TableNotFound { table: String },
+
+    #[snafu(display("Table {} already exists.", table_name))]
+    TableAlreadyExists { table_name: String },
 
     #[snafu(display("module raft error reason: {}", source))]
     Raft {

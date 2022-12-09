@@ -1,4 +1,4 @@
-use crate::{catalog::MetadataError, service::protocol::QueryId};
+use crate::service::protocol::QueryId;
 
 use super::{
     ast::{parse_bool_value, parse_string_value, ExtStatement},
@@ -23,6 +23,7 @@ use models::{
 };
 use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
+use meta::error::MetaError;
 
 define_result!(LogicalPlannerError);
 
@@ -43,7 +44,7 @@ pub enum LogicalPlannerError {
     InsufficientPrivileges { privilege: String },
 
     #[snafu(display("Metadata err: {}", source))]
-    Metadata { source: MetadataError },
+    Metadata { source: MetaError },
 
     #[snafu(display("This feature is not implemented: {}", err))]
     NotImplemented { err: String },
@@ -119,7 +120,6 @@ pub enum SYSPlan {
 
 #[derive(Debug, Clone)]
 pub struct DropDatabaseObject {
-    pub tenant_id: Oid,
     /// object name
     /// e.g. database_name.table_name
     pub object_name: String,
@@ -136,7 +136,7 @@ pub enum DatabaseObjectType {
 
 #[derive(Debug, Clone)]
 pub struct DropTenantObject {
-    pub tenant_id: Oid,
+    pub tenant_name: String,
     pub name: String,
     pub if_exist: bool,
     pub obj_type: TenantObjectType,
@@ -275,7 +275,7 @@ pub fn sql_options_to_user_options(
 
 #[derive(Debug, Clone)]
 pub struct CreateRole {
-    pub tenant_id: Oid,
+    pub tenant_name: String,
     pub name: String,
     pub if_not_exists: bool,
     pub inherit_tenant_role: SystemTenantRole,
@@ -299,14 +299,15 @@ pub struct ShowTables {
 #[derive(Debug, Clone)]
 pub struct GrantRevoke {
     pub is_grant: bool,
-    pub database_privileges: Vec<(DatabasePrivilege, Oid)>,
-    pub tenant_id: Oid,
+    // privilege, db name
+    pub database_privileges: Vec<(DatabasePrivilege, String)>,
+    pub tenant_name: String,
     pub role_name: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct AlterUser {
-    pub user_id: Oid,
+    pub user_name: String,
     pub alter_user_action: AlterUserAction,
 }
 
@@ -318,7 +319,7 @@ pub enum AlterUserAction {
 
 #[derive(Debug, Clone)]
 pub struct AlterTenant {
-    pub tenant_id: Oid,
+    pub tenant_name: String,
     pub alter_tenant_action: AlterTenantAction,
 }
 
@@ -334,14 +335,12 @@ pub enum AlterTenantAction {
 pub struct AlterTenantAddUser {
     pub user_id: Oid,
     pub role: TenantRoleIdentifier,
-    pub tenant_id: Oid,
 }
 
 #[derive(Debug, Clone)]
 pub struct AlterTenantSetUser {
     pub user_id: Oid,
     pub role: TenantRoleIdentifier,
-    pub tenant_id: Oid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

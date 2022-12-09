@@ -6,7 +6,7 @@ use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use spi::catalog::DEFAULT_CATALOG;
+use spi::query::DEFAULT_CATALOG;
 
 use super::header::Header;
 use super::Error as HttpError;
@@ -153,7 +153,7 @@ impl HttpService {
                     debug!(req_log);
 
                     // Parse req、header and param to construct query request
-                    let query_req = construct_query(req, &header, param);
+                    let query_req = construct_query(req, &header, param, dbms.clone());
 
                     let result = match query_req {
                         Ok(ref q) => {
@@ -217,9 +217,10 @@ impl HttpService {
                     let points = parse_lines_to_points(&param.db, &mut line_protocol_lines)?;
 
                     let req = WritePointsRpcRequest { version: 1, points };
-                    // todo: we should get tenant from token
-                    let mock_teant = DEFAULT_CATALOG;
-                    let resp = kv_inst.write(0, mock_teant, req).await.context(TskvSnafu);
+                    // we should get tenant from token
+                    let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
+
+                    let resp = kv_inst.write(0, tenant, req).await.context(TskvSnafu);
 
                     sample_point_write_latency(
                         &user_info.user,
@@ -380,10 +381,21 @@ fn parse_lines_to_points<'a>(db: &'a str, lines: &'a mut [Line]) -> Result<Vec<u
     Ok(fbb.finished_data().to_vec())
 }
 
-fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query, HttpError> {
+fn construct_query(
+    req: Bytes,
+    header: &Header,
+    param: SqlParam,
+    dbms: DBMSRef,
+) -> Result<Query, HttpError> {
     let user_info = header.try_get_basic_auth()?;
 
-    let context = ContextBuilder::new(user_info)
+    let tenant = param.tenant;
+    let user = dbms
+        .authenticate(&user_info, tenant.as_deref())
+        .context(QuerySnafu)?;
+
+    let context = ContextBuilder::new(user)
+        .with_tenant(tenant)
         .with_database(param.db)
         .with_target_partitions(param.target_partitions)
         .build();
