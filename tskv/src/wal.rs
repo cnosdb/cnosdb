@@ -487,9 +487,8 @@ impl WalReader {
             return Err(Error::WalTruncated);
         }
 
-        if data_len as usize > self.body_buf.len() - tenant_len as usize {
-            self.body_buf
-                .resize(data_len as usize + tenant_len as usize, 0);
+        if self.body_buf.len() < (tenant_len + data_len) as usize {
+            self.body_buf.resize((data_len + tenant_len) as usize, 0);
         }
         let mut buf = self.body_buf[0..data_len as usize].to_vec();
         let read_bytes = match self.cursor.read(&mut buf) {
@@ -500,7 +499,7 @@ impl WalReader {
             }
         };
         let mut tenant =
-            self.body_buf[(data_len as usize)..(data_len as usize + tenant_len as usize)].to_vec();
+            self.body_buf[(data_len as usize)..((data_len + tenant_len) as usize)].to_vec();
         let read_tenant_bytes = match self.cursor.read(&mut tenant) {
             Ok(v) => v,
             Err(e) => {

@@ -774,7 +774,7 @@ impl MetaClient for RemoteMetaClient {
         }
 
         if rsp.status.code == command::META_REQUEST_SUCCESS {
-            return Ok(());
+            Ok(())
         } else if rsp.status.code == command::META_REQUEST_DB_EXIST {
             return Err(MetaError::DatabaseAlreadyExists {
                 database: schema.database_name().to_string(),
@@ -823,10 +823,10 @@ impl MetaClient for RemoteMetaClient {
         }
 
         if rsp.status.code == command::META_REQUEST_SUCCESS {
-            return Ok(());
+            Ok(())
         } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
             return Err(MetaError::TableAlreadyExists {
-                table_name: schema.name().to_string(),
+                table_name: schema.name(),
             });
         } else {
             return Err(MetaError::CommonError {
