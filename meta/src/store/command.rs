@@ -124,6 +124,10 @@ impl StatusResponse {
     pub fn new(code: i32, msg: String) -> Self {
         Self { code, msg }
     }
+
+    pub fn string(&self) -> String {
+        format!("Code: {}, Msg: {}", self.code, self.msg)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

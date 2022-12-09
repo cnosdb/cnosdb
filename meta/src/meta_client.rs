@@ -19,7 +19,7 @@ use std::{fmt::Debug, io};
 use store::command;
 use tokio::net::TcpStream;
 
-use trace::{info, warn, debug};
+use trace::{debug, info, warn};
 
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
@@ -773,14 +773,17 @@ impl MetaClient for RemoteMetaClient {
             *data = rsp.data;
         }
 
-        // TODO db already exist
-        // if rsp.err_code != command::META_REQUEST_SUCCESS {
-        //     return Err(MetaError::CommonError {
-        //         msg: format!("add data node err: {} {}", rsp.err_code, rsp.err_msg),
-        //     });
-        // }
-
-        Ok(())
+        if rsp.status.code == command::META_REQUEST_SUCCESS {
+            return Ok(());
+        } else if rsp.status.code == command::META_REQUEST_DB_EXIST {
+            return Err(MetaError::DatabaseAlreadyExists {
+                database: schema.database_name().to_string(),
+            });
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.status.string(),
+            });
+        }
     }
 
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
@@ -812,16 +815,24 @@ impl MetaClient for RemoteMetaClient {
         );
 
         debug!("create_table: {:?}", req);
-        
+
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         let mut data = self.data.write();
         if rsp.data.version > data.version {
             *data = rsp.data;
         }
 
-        // TODO table already exist
-
-        Ok(())
+        if rsp.status.code == command::META_REQUEST_SUCCESS {
+            return Ok(());
+        } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
+            return Err(MetaError::TableAlreadyExists {
+                table_name: schema.name().to_string(),
+            });
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.status.string(),
+            });
+        }
     }
 
     fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TableSchema>> {

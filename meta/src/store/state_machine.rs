@@ -485,13 +485,14 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
-        // if self.data.contains_key(&key) {
-        //     return KvResp {
-        //         err_code: -1,
-        //         err_msg: "database already exist".to_string(),
-        //         meta_data: self.to_tenant_meta_data(cluster, tenant),
-        //     };
-        // }
+        if self.data.contains_key(&key) {
+            return TenaneMetaDataResp::new_from_data(
+                META_REQUEST_DB_EXIST,
+                "database already exist".to_string(),
+                self.to_tenant_meta_data(cluster, tenant),
+            )
+            .to_string();
+        }
 
         let value = serde_json::to_string(schema).unwrap();
         self.data.insert(key.clone(), value.clone());
@@ -520,13 +521,14 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
-        // if self.data.contains_key(&key) {
-        //     return KvResp {
-        //         err_code: -1,
-        //         err_msg: "table already exist".to_string(),
-        //         meta_data: self.to_tenant_meta_data(cluster, tenant),
-        //     };
-        // }
+        if self.data.contains_key(&key) {
+            return TenaneMetaDataResp::new_from_data(
+                META_REQUEST_TABLE_EXIST,
+                "table already exist".to_string(),
+                self.to_tenant_meta_data(cluster, tenant),
+            )
+            .to_string();
+        }
 
         let value = serde_json::to_string(schema).unwrap();
         self.data.insert(key.clone(), value.clone());
