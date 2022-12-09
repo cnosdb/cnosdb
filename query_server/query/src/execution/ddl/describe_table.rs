@@ -50,7 +50,7 @@ fn describe_table(
         })
         .context(MetadataSnafu)?;
     let table_schema = client
-        .get_table_schema(table_name.catalog, table_name.schema)
+        .get_table_schema(table_name.schema, table_name.table)
         .context(MetadataSnafu)?
         .ok_or(MetaError::TableNotFound {
             table: table_name.table.to_string(),

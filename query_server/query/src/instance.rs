@@ -27,7 +27,7 @@ use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
-use models::schema::DatabaseSchema;
+use models::schema::{DatabaseSchema, Duration};
 use snafu::ResultExt;
 use meta::error::MetaError;
 use spi::query::DEFAULT_DATABASE;

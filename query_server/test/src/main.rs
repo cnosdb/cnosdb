@@ -24,7 +24,7 @@ pub struct Args {
         short,
         long,
         value_parser,
-        default_value = "http://127.0.0.1:31007/api/v1/"
+        default_value = "http://127.0.0.1:32001/api/v1/"
     )]
     pub client_url: Url,
 

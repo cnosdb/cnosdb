@@ -100,7 +100,7 @@ impl LicenseConfig {
         let key: [u8; 32] = AES_KEY.as_bytes().try_into().unwrap();
 
         let enc_data = rsa_aes::RsaAes::aes256_encrypt(&data, &key, &iv)?;
-        self.signature = base64::encode(&enc_data);
+        self.signature = base64::encode(enc_data);
 
         let data = serde_json::to_string_pretty(self).expect("encode to json failed");
 

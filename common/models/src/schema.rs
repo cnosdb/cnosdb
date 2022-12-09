@@ -710,6 +710,13 @@ impl Duration {
         })
     }
 
+    pub fn new_inf() -> Self {
+        Self {
+            time_num: 100000,
+            unit: DurationUnit::Day,
+        }
+    }
+
     pub fn time_stamp(&self) -> i64 {
         match self.unit {
             DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,

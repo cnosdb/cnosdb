@@ -267,7 +267,7 @@ impl RemoteAdminMeta {
             meta_url: meta_url.clone(),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
-            client: MetaHttpClient::new(1, meta_url),
+            client: MetaHttpClient::new(meta_url),
         }
     }
 }
@@ -361,7 +361,7 @@ impl RemoteMetaClient {
             client_id,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(1, meta_url),
+            client: MetaHttpClient::new(meta_url),
         });
 
         let _ = client.sync_all_tenant_metadata();
@@ -699,7 +699,7 @@ impl MetaClient for RemoteMetaClient {
         }
 
         if rsp.status.code == command::META_REQUEST_SUCCESS {
-            return Ok(());
+            Ok(())
         } else if rsp.status.code == command::META_REQUEST_DB_EXIST {
             return Err(MetaError::DatabaseAlreadyExists {
                 database: schema.database_name().to_string(),
@@ -748,10 +748,10 @@ impl MetaClient for RemoteMetaClient {
         }
 
         if rsp.status.code == command::META_REQUEST_SUCCESS {
-            return Ok(());
+            Ok(())
         } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
             return Err(MetaError::TableAlreadyExists {
-                table_name: schema.name().to_string(),
+                table_name: schema.name(),
             });
         } else {
             return Err(MetaError::CommonError {
