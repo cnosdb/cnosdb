@@ -9,7 +9,8 @@ use datafusion::{
 };
 
 use coordinator::service::CoordinatorRef;
-use models::schema::TableSchema;
+use models::auth::user::UserDesc;
+use models::schema::{TableSchema, Tenant};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::meta_client::MetaError;
@@ -26,6 +27,11 @@ use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 /// remote meta
 pub struct RemoteCatalogMeta {}
 
+pub trait ContextProviderExtension: ContextProvider {
+    fn get_user(&self, name: &str) -> Result<UserDesc, MetaError>;
+    fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError>;
+}
+
 pub struct MetadataProvider {
     tenant: String,
     database: String,
@@ -34,7 +40,6 @@ pub struct MetadataProvider {
 }
 
 impl MetadataProvider {
-    #[inline(always)]
     pub fn new(
         coord: CoordinatorRef,
         func_manager: SimpleFunctionMetadataManager,
@@ -49,6 +54,29 @@ impl MetadataProvider {
         }
     }
 }
+
+impl ContextProviderExtension for MetadataProvider {
+    fn get_user(&self, name: &str) -> Result<UserDesc, MetaError> {
+        self.coord
+            .meta_manager()
+            .user_manager()
+            .user(name)?
+            .ok_or_else(|| MetaError::UserNotFound {
+                user: name.to_string(),
+            })
+    }
+
+    fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError> {
+        self.coord
+            .meta_manager()
+            .tenant_manager()
+            .tenant(name)?
+            .ok_or_else(|| MetaError::TenantNotFound {
+                tenant: name.to_string(),
+            })
+    }
+}
+
 impl ContextProvider for MetadataProvider {
     fn get_table_provider(
         &self,
@@ -60,11 +88,11 @@ impl ContextProvider for MetadataProvider {
             .meta_manager()
             .tenant_manager()
             .tenant_meta(name.catalog)
-            .ok_or(DataFusionError::External(Box::new(
-                MetaError::TenantNotFound {
+            .ok_or_else(|| {
+                DataFusionError::External(Box::new(MetaError::TenantNotFound {
                     tenant: name.catalog.to_string(),
-                },
-            )))?;
+                }))
+            })?;
 
         match client
             .get_table_schema(name.schema, name.table)

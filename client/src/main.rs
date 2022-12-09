@@ -35,7 +35,7 @@ struct Args {
         short,
         long,
         help = "The user name used to connect to the CnosDB",
-        default_value = "cnosdb"
+        default_value = "root"
     )]
     user: String,
 
@@ -52,6 +52,13 @@ struct Args {
 
     #[clap(
         short,
+        long,
+        help = "Default tenant to connect to the CnosDB",
+        default_value = "cnosdb"
+    )]
+    tenant: String,
+
+    #[clap(
         long,
         help = "Number of partitions for query execution. Increasing partitions can increase concurrency.",
         validator(is_valid_target_partitions)
@@ -120,6 +127,7 @@ pub async fn main() -> Result<()> {
         .with_port(args.port)
         .with_user(args.user)
         .with_password(args.password)
+        .with_tenant(args.tenant)
         .with_database(args.database)
         .with_target_partitions(args.target_partitions)
         .with_result_format(args.format);

@@ -13,3 +13,8 @@ pub const STAR_STAR: &str = "*/*";
 
 /// basic auth
 pub const BASIC_PREFIX: &str = "Basic ";
+pub const BEARER_PREFIX: &str = "Bearer ";
+
+// parameters
+pub const TENANT: &str = "tenant";
+pub const DB: &str = "db";

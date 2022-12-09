@@ -9,6 +9,10 @@ use datafusion::{
     },
     from_slice::FromSlice,
 };
+use models::auth::{
+    role::UserRole,
+    user::{User, UserDesc, UserInfo, UserOptionsBuilder},
+};
 
 use crate::{
     query::execution::Output,
@@ -21,6 +25,7 @@ pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;
 
 #[async_trait]
 pub trait DatabaseManagerSystem {
+    fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User>;
     async fn execute(&self, query: &Query) -> Result<QueryHandle>;
     fn metrics(&self) -> String;
     fn cancel(&self, query_id: &QueryId);
@@ -30,6 +35,18 @@ pub struct DatabaseManagerSystemMock {}
 
 #[async_trait]
 impl DatabaseManagerSystem for DatabaseManagerSystemMock {
+    fn authenticate(&self, user_info: &UserInfo, _tenant_name: Option<&str>) -> Result<User> {
+        let options = unsafe {
+            UserOptionsBuilder::default()
+                .password(user_info.password.to_string())
+                .build()
+                .unwrap_unchecked()
+        };
+        let mock_desc = UserDesc::new(0_u128, user_info.user.to_string(), options, true);
+        let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges());
+        Ok(mock_user)
+    }
+
     async fn execute(&self, query: &Query) -> Result<QueryHandle> {
         println!("DatabaseManagerSystemMock::execute({:?})", query.content());
 

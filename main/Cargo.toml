@@ -50,6 +50,7 @@ warp = { workspace = true, features = ["tls"] }
 os_info = {workspace = true}
 reqwest = { workspace = true, features = ["native-tls", "json"] }
 moka = {workspace = true}
+dashmap = {workspace = true}
 
 [dev-dependencies]
 reqwest = "0.11"

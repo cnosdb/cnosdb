@@ -32,7 +32,7 @@ ureq = { version = "2.5.0", features = ["json", "charset"] }
 
 snafu = { workspace = true }
 parking_lot = { workspace = true }
-
+dashmap = { workspace = true }
 
 [dev-dependencies]
 anyhow = "1.0.32"

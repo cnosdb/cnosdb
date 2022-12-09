@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use datafusion::{scheduler::Scheduler, sql::planner::ContextProvider};
-use models::auth::user::User;
+use datafusion::scheduler::Scheduler;
 use models::oid::Oid;
 use snafu::ResultExt;
 
@@ -27,13 +26,14 @@ use spi::query::{BuildFunctionMetaSnafu, LogicalPlannerSnafu, Result};
 
 use crate::extension::expr::load_all_functions;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
-use crate::metadata::MetadataProvider;
+use crate::metadata::{ContextProviderExtension, MetadataProvider};
 use crate::{
     execution::factory::SqlQueryExecutionFactory, sql::logical::planner::DefaultLogicalPlanner,
 };
 
 use super::query_tracker::QueryTracker;
 
+#[derive(Clone)]
 pub struct SimpleQueryDispatcher {
     coord: CoordinatorRef,
     session_factory: Arc<IsiphoSessionCtxFactory>,
@@ -67,15 +67,12 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     async fn execute_query(
         &self,
         tenant_id: Oid,
-        user: User,
         query_id: QueryId,
         query: &Query,
     ) -> Result<Output> {
-        let session = self.session_factory.create_isipho_session_ctx(
-            query.context().clone(),
-            tenant_id,
-            user,
-        );
+        let session = self
+            .session_factory
+            .create_isipho_session_ctx(query.context().clone(), tenant_id);
 
         let mut func_manager = SimpleFunctionMetadataManager::default();
         load_all_functions(&mut func_manager).context(BuildFunctionMetaSnafu)?;
@@ -136,7 +133,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 }
 
 impl SimpleQueryDispatcher {
-    async fn execute_statement<S: ContextProvider>(
+    async fn execute_statement<S: ContextProviderExtension>(
         &self,
         stmt: ExtStatement,
         logical_planner: &DefaultLogicalPlanner<S>,
@@ -161,7 +158,7 @@ impl SimpleQueryDispatcher {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SimpleQueryDispatcherBuilder {
     coord: Option<CoordinatorRef>,
     session_factory: Option<Arc<IsiphoSessionCtxFactory>>,

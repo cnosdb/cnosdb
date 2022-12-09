@@ -4,7 +4,6 @@ use spi::query::{
     logical_planner::{DropTenantObject, TenantObjectType},
 };
 
-use spi::query::execution;
 use spi::query::execution::{ExecutionError, MetadataSnafu};
 use trace::debug;
 
@@ -31,15 +30,25 @@ impl DDLDefinitionTask for DropTenantObjectTask {
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
         let DropTenantObject {
-            ref tenant_id,
+            ref tenant_name,
             ref name,
             ref if_exist,
             ref obj_type,
         } = self.stmt;
 
-        let res = match obj_type {
+        let meta = query_state_machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant_name)
+            .ok_or_else(|| ExecutionError::Metadata {
+                source: MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                },
+            })?;
+
+        match obj_type {
             TenantObjectType::Role => {
-                // TODO 删除租户下的自定义角色
+                // 删除租户下的自定义角色
                 // tenant_id
                 // role_name
                 // fn drop_custom_role_of_tenant(
@@ -47,33 +56,36 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 //     role_name: &str,
                 //     tenant_id: &Oid
                 // ) -> Result<bool>;
-                debug!("Drop role {} of tenant {}", name, tenant_id);
-                Ok(())
+                debug!("Drop role {} of tenant {}", name, tenant_name);
+                let success = meta.drop_custom_role(name).context(MetadataSnafu)?;
+
+                if let (false, false) = (if_exist, success) {
+                    return Err(ExecutionError::Metadata {
+                        source: MetaError::RoleNotFound {
+                            role: name.to_string(),
+                        },
+                    });
+                }
+
+                Ok(Output::Nil(()))
             }
             TenantObjectType::Database => {
-                // TODO 删除租户下的database
+                // 删除租户下的database
                 // tenant_id
                 // database_name
-                debug!("Drop database {} of tenant {}", name, tenant_id);
-                let tenant = query_state_machine.session.tenant();
-                let client = query_state_machine
-                    .meta
-                    .tenant_manager()
-                    .tenant_meta(tenant)
-                    .ok_or(MetaError::TenantNotFound {
-                        tenant: tenant.to_string(),
-                    })
-                    .context(MetadataSnafu)?;
-                client.drop_db(name).context(MetadataSnafu)?;
-                Ok(())
+                debug!("Drop database {} of tenant {}", name, tenant_name);
+                let success = meta.drop_db(name).context(MetadataSnafu)?;
+
+                if let (false, false) = (if_exist, success) {
+                    return Err(ExecutionError::Metadata {
+                        source: MetaError::DatabaseNotFound {
+                            database: name.to_string(),
+                        },
+                    });
+                }
+
+                Ok(Output::Nil(()))
             }
-        };
-
-        if *if_exist {
-            return Ok(Output::Nil(()));
         }
-
-        res.map(|_| Output::Nil(()))
-            .context(execution::MetadataSnafu)
     }
 }

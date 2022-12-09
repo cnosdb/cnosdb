@@ -7,6 +7,7 @@ use snafu::Snafu;
 use self::{execution::ExecutionError, logical_planner::LogicalPlannerError};
 
 pub mod ast;
+pub mod auth;
 pub mod dispatcher;
 pub mod execution;
 pub mod function;

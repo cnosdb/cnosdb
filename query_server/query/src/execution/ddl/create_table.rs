@@ -58,7 +58,7 @@ impl DDLDefinitionTask for CreateTableTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, None) => {
-                create_table(&self.stmt, query_state_machine.clone())?;
+                create_table(&self.stmt, query_state_machine)?;
                 Ok(Output::Nil(()))
             }
         }

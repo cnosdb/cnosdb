@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use datafusion::scheduler::Scheduler;
 use futures::stream::AbortHandle;
 use futures::TryStreamExt;
+use models::oid::Identifier;
 use parking_lot::Mutex;
 use snafu::ResultExt;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
@@ -119,7 +120,7 @@ impl QueryExecution for SqlQueryExecution {
         QueryInfo::new(
             qsm.query_id,
             qsm.query.content().to_string(),
-            qsm.query.context().user_info().user.to_string(),
+            qsm.query.context().user_info().desc().name().to_string(),
         )
     }
 

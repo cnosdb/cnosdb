@@ -13,7 +13,7 @@ use datafusion::logical_expr::{
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
-use datafusion::sql::planner::{ContextProvider, SqlToRel};
+use datafusion::sql::planner::SqlToRel;
 use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Ident, ObjectName, Query, Statement,
 };
@@ -24,7 +24,7 @@ use models::auth::privilege::{
 };
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::object_reference::ObjectReference;
-use models::oid::Oid;
+use models::oid::{Identifier, Oid};
 use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -54,6 +54,7 @@ use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use trace::{debug, warn};
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
+use crate::metadata::ContextProviderExtension;
 use crate::table::ClusterTable;
 use spi::query::logical_planner::MetadataSnafu;
 
@@ -63,7 +64,7 @@ pub struct SqlPlaner<S> {
     schema_provider: S,
 }
 
-impl<S: ContextProvider> SqlPlaner<S> {
+impl<S: ContextProviderExtension> SqlPlaner<S> {
     /// Create a new query planner
     pub fn new(schema_provider: S) -> Self {
         SqlPlaner { schema_provider }
@@ -79,7 +80,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
             ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt),
-            ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt),
+            ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt, session),
             ExtStatement::CreateTenant(stmt) => self.create_tenant_to_plan(stmt),
             ExtStatement::CreateUser(stmt) => self.create_user_to_plan(stmt),
             ExtStatement::CreateRole(stmt) => self.create_role_to_plan(stmt, session),
@@ -88,9 +89,9 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
             ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt),
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt, session),
-            ExtStatement::ShowDatabases() => self.database_to_show(),
+            ExtStatement::ShowDatabases() => self.database_to_show(session),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
-            ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt),
+            ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
@@ -326,7 +327,6 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 let database_name = resolved_object_ref.parent;
                 (
                     DDLPlan::DropDatabaseObject(DropDatabaseObject {
-                        tenant_id,
                         if_exist,
                         object_name: normalize_sql_object_name(object_name),
                         obj_type: DatabaseObjectType::Table,
@@ -359,6 +359,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
             ref obj_type,
         } = stmt;
         // get the current tenant id from the session
+        let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
 
         let (plan, privilege) = match obj_type {
@@ -366,7 +367,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 let database_name = normalize_ident(object_name);
                 (
                     DDLPlan::DropTenantObject(DropTenantObject {
-                        tenant_id,
+                        tenant_name: tenant_name.to_string(),
                         name: database_name.clone(),
                         if_exist,
                         obj_type: TenantObjectType::Database,
@@ -384,7 +385,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 let role_name = normalize_ident(object_name);
                 (
                     DDLPlan::DropTenantObject(DropTenantObject {
-                        tenant_id,
+                        tenant_name: tenant_name.to_string(),
                         name: role_name,
                         if_exist,
                         obj_type: TenantObjectType::Role,
@@ -531,18 +532,17 @@ impl<S: ContextProvider> SqlPlaner<S> {
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // get the current tenant id from the session
-        let tenant_id = *session.tenant_id();
         let database_name = normalize_sql_object_name(&statement.database_name);
 
-        let privilege = Privilege::TenantObject(
-            TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(database_name.clone())),
-            Some(tenant_id),
-        );
-
         let plan = Plan::DDL(DDLPlan::DescribeDatabase(DescribeDatabase {
-            database_name,
+            database_name: database_name.to_string(),
         }));
         // privileges
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(database_name)),
+            Some(tenant_id),
+        );
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![privilege],
@@ -661,12 +661,17 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })
     }
 
-    fn database_to_show(&self) -> Result<PlanWithPrivileges> {
+    fn database_to_show(&self, session: &IsiphoSessionCtx) -> Result<PlanWithPrivileges> {
         let plan = Plan::DDL(DDLPlan::ShowDatabases());
-        // TODO privileges
+        // privileges
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, None),
+            Some(tenant_id),
+        );
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![privilege],
         })
     }
 
@@ -681,7 +686,11 @@ impl<S: ContextProvider> SqlPlaner<S> {
         })
     }
 
-    fn database_to_plan(&self, stmt: ASTCreateDatabase) -> Result<PlanWithPrivileges> {
+    fn database_to_plan(
+        &self,
+        stmt: ASTCreateDatabase,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
         let ASTCreateDatabase {
             name,
             if_not_exists,
@@ -693,24 +702,39 @@ impl<S: ContextProvider> SqlPlaner<S> {
             if_not_exists,
             options,
         }));
-        // TODO privileges
+        // privileges
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Write, None),
+            Some(tenant_id),
+        );
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![privilege],
         })
     }
 
-    fn database_to_alter(&self, stmt: ASTAlterDatabase) -> Result<PlanWithPrivileges> {
+    fn database_to_alter(
+        &self,
+        stmt: ASTAlterDatabase,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
         let ASTAlterDatabase { name, options } = stmt;
         let options = self.make_database_option(options)?;
+        let database_name = normalize_sql_object_name(&name);
         let plan = Plan::DDL(DDLPlan::AlterDatabase(AlterDatabase {
-            database_name: normalize_sql_object_name(&name),
+            database_name: database_name.to_string(),
             database_options: options,
         }));
-        // TODO privileges
+        // privileges
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+            Some(tenant_id),
+        );
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![privilege],
         })
     }
 
@@ -890,6 +914,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         } = stmt;
 
         let role_name = normalize_ident(&name);
+        let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
 
         let inherit_tenant_role = inherit
@@ -902,7 +927,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         let privilege = Privilege::TenantObject(TenantObjectPrivilege::RoleFull, Some(tenant_id));
 
         let plan = Plan::DDL(DDLPlan::CreateRole(CreateRole {
-            tenant_id,
+            tenant_name: tenant_name.to_string(),
             name: role_name,
             if_not_exists,
             inherit_tenant_role,
@@ -927,13 +952,17 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 let privilege =
                     Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id));
 
-                let _user_name = normalize_ident(user);
-                // TODO 查询用户信息，不存在直接报错咯
+                let user_name = normalize_ident(user);
+                // 查询用户信息，不存在直接报错咯
                 // fn user(
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_id = 0_u128;
+                let user_desc = self
+                    .schema_provider
+                    .get_user(&user_name)
+                    .context(MetadataSnafu)?;
+                let user_id = *user_desc.id();
 
                 let role_name = normalize_ident(role);
                 let role = SystemTenantRole::try_from(role_name.as_str())
@@ -942,11 +971,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     .unwrap_or_else(|| TenantRoleIdentifier::Custom(role_name));
 
                 (
-                    AlterTenantAction::AddUser(AlterTenantAddUser {
-                        user_id,
-                        role,
-                        tenant_id,
-                    }),
+                    AlterTenantAction::AddUser(AlterTenantAddUser { user_id, role }),
                     privilege,
                 )
             }
@@ -957,13 +982,17 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 let privilege =
                     Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id));
 
-                let _user_name = normalize_ident(user);
-                // TODO 查询用户信息，不存在直接报错咯
+                let user_name = normalize_ident(user);
+                // 查询用户信息，不存在直接报错咯
                 // fn user(
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_id = 0_u128;
+                let user_desc = self
+                    .schema_provider
+                    .get_user(&user_name)
+                    .context(MetadataSnafu)?;
+                let user_id = *user_desc.id();
 
                 let role_name = normalize_ident(role);
                 let role = SystemTenantRole::try_from(role_name.as_str())
@@ -972,11 +1001,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
                     .unwrap_or_else(|| TenantRoleIdentifier::Custom(role_name));
 
                 (
-                    AlterTenantAction::SetUser(AlterTenantSetUser {
-                        user_id,
-                        role,
-                        tenant_id,
-                    }),
+                    AlterTenantAction::SetUser(AlterTenantSetUser { user_id, role }),
                     privilege,
                 )
             }
@@ -986,13 +1011,17 @@ impl<S: ContextProvider> SqlPlaner<S> {
                 let privilege =
                     Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id));
 
-                let _user_name = normalize_ident(user);
-                // TODO 查询用户信息，不存在直接报错咯
+                let user_name = normalize_ident(user);
+                // 查询用户信息，不存在直接报错咯
                 // fn user(
                 //     &self,
                 //     name: &str
                 // ) -> Result<Option<UserDesc>>;
-                let user_id = 0_u128;
+                let user_desc = self
+                    .schema_provider
+                    .get_user(&user_name)
+                    .context(MetadataSnafu)?;
+                let user_id = *user_desc.id();
 
                 (AlterTenantAction::RemoveUser(user_id), privilege)
             }
@@ -1016,19 +1045,22 @@ impl<S: ContextProvider> SqlPlaner<S> {
             operation,
         } = stmt;
 
-        let _tenant_name = normalize_ident(name);
-        // TODO 查询租户信息，不存在直接报错咯
+        let tenant_name = normalize_ident(name);
+        // 查询租户信息，不存在直接报错咯
         // fn tenant(
         //     &self,
         //     name: &str
         // ) -> Result<Tenant>;
-        let tenant_id = 0_u128;
+        let tenant = self
+            .schema_provider
+            .get_tenant(&tenant_name)
+            .context(MetadataSnafu)?;
 
         let (alter_tenant_action, privilege) =
-            self.construct_alter_tenant_action_with_privilege(operation, tenant_id)?;
+            self.construct_alter_tenant_action_with_privilege(operation, *tenant.id())?;
 
         let plan = Plan::DDL(DDLPlan::AlterTenant(AlterTenant {
-            tenant_id,
+            tenant_name,
             alter_tenant_action,
         }));
 
@@ -1041,13 +1073,17 @@ impl<S: ContextProvider> SqlPlaner<S> {
     fn alter_user_to_plan(&self, stmt: ast::AlterUser) -> Result<PlanWithPrivileges> {
         let ast::AlterUser { name, operation } = stmt;
 
-        let _user_name = normalize_ident(&name);
-        // TODO 查询用户信息，不存在直接报错咯
+        let user_name = normalize_ident(&name);
+        // 查询用户信息，不存在直接报错咯
         // fn user(
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-        let user_id = 0_u128;
+        let user_desc = self
+            .schema_provider
+            .get_user(&user_name)
+            .context(MetadataSnafu)?;
+        let user_id = *user_desc.id();
 
         let alter_user_action = match operation {
             AlterUserOperation::RenameTo(ref new_name) => {
@@ -1064,7 +1100,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         let privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(user_id)))];
 
         let plan = Plan::DDL(DDLPlan::AlterUser(AlterUser {
-            user_id,
+            user_name,
             alter_user_action,
         }));
 
@@ -1087,6 +1123,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         } = stmt;
 
         let role_name = normalize_ident(&role_name);
+        let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
 
         if SystemTenantRole::try_from(role_name.as_str()).is_ok() {
@@ -1107,14 +1144,12 @@ impl<S: ContextProvider> SqlPlaner<S> {
                         ast::Action::Write => DatabasePrivilege::Write,
                         ast::Action::All => DatabasePrivilege::Full,
                     };
-                    let _database_name = normalize_ident(database);
-                    // TODO 查询租户下的database信息，不存在直接报错咯
-                    let database_id = 0_u128;
+                    let database_name = normalize_ident(database);
 
-                    (database_privilege, database_id)
+                    (database_privilege, database_name)
                 },
             )
-            .collect::<Vec<(DatabasePrivilege, Oid)>>();
+            .collect::<Vec<(DatabasePrivilege, String)>>();
 
         let privileges = vec![Privilege::TenantObject(
             TenantObjectPrivilege::RoleFull,
@@ -1124,7 +1159,7 @@ impl<S: ContextProvider> SqlPlaner<S> {
         let plan = Plan::DDL(DDLPlan::GrantRevoke(GrantRevoke {
             is_grant,
             database_privileges,
-            tenant_id,
+            tenant_name: tenant_name.to_string(),
             role_name,
         }));
 
@@ -1216,14 +1251,14 @@ fn table_write_plan_node(
         .build()
 }
 
-impl<S: ContextProvider> LogicalPlanner for SqlPlaner<S> {
+impl<S: ContextProviderExtension> LogicalPlanner for SqlPlaner<S> {
     fn create_logical_plan(
         &self,
         statement: ExtStatement,
         session: &IsiphoSessionCtx,
     ) -> Result<Plan> {
         let PlanWithPrivileges { plan, privileges } = self.statement_to_plan(statement, session)?;
-        // TODO check privileges
+        // check privileges
         let privileges_str = privileges
             .iter()
             .map(|e| format!("{:?}", e))
@@ -1251,7 +1286,8 @@ mod tests {
     use datafusion::logical_expr::{Aggregate, AggregateUDF, ScalarUDF, TableSource};
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
-    use models::auth::user::{User, UserDesc, UserInfo, UserOptions};
+    use models::auth::user::{User, UserDesc, UserOptions};
+    use models::schema::Tenant;
     use spi::query::session::IsiphoSessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
     use std::any::Any;
@@ -1264,6 +1300,16 @@ mod tests {
 
     #[derive(Debug)]
     struct MockContext {}
+
+    impl ContextProviderExtension for MockContext {
+        fn get_user(&self, _name: &str) -> std::result::Result<UserDesc, MetaError> {
+            todo!()
+        }
+
+        fn get_tenant(&self, _name: &str) -> std::result::Result<Tenant, MetaError> {
+            todo!()
+        }
+    }
 
     impl ContextProvider for MockContext {
         fn get_table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>> {
@@ -1315,15 +1361,15 @@ mod tests {
     }
 
     fn session() -> IsiphoSessionCtx {
-        let context = ContextBuilder::new(UserInfo {
-            user: "test".to_string(),
-            password: "test".to_string(),
-            private_key: None,
-        })
-        .build();
-        let user_desc = UserDesc::new(0_u128, "test_name".to_string(), UserOptions::default());
+        let user_desc = UserDesc::new(
+            0_u128,
+            "test_name".to_string(),
+            UserOptions::default(),
+            false,
+        );
         let user = User::new(user_desc, HashSet::default());
-        IsiphoSessionCtxFactory::default().create_isipho_session_ctx(context, 0_u128, user)
+        let context = ContextBuilder::new(user).build();
+        IsiphoSessionCtxFactory::default().create_isipho_session_ctx(context, 0_u128)
     }
 
     #[test]

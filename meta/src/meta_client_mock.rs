@@ -63,6 +63,10 @@ impl MetaClient for MockMetaClient {
         &self.tenant
     }
 
+    fn tenant_mut(&mut self) -> &mut Tenant {
+        &mut self.tenant
+    }
+
     fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
@@ -75,8 +79,8 @@ impl MetaClient for MockMetaClient {
         Ok(vec![])
     }
 
-    fn drop_db(&self, name: &str) -> MetaResult<()> {
-        Ok(())
+    fn drop_db(&self, name: &str) -> MetaResult<bool> {
+        Ok(false)
     }
 
     fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
@@ -136,28 +140,28 @@ impl MetaClient for MockMetaClient {
         "".to_string()
     }
 
-    fn add_member_with_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+    fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
         todo!()
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRole<Oid>> {
+    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier> {
         todo!()
     }
 
-    fn members(&self) -> MetaResult<Option<HashSet<&Oid>>> {
+    fn members(&self) -> MetaResult<HashSet<Oid>> {
         todo!()
     }
 
-    fn reasign_member_role(&mut self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
+    fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()> {
         todo!()
     }
 
-    fn remove_member(&mut self, user_id: Oid) -> MetaResult<()> {
+    fn remove_member(&self, user_id: Oid) -> MetaResult<()> {
         todo!()
     }
 
     fn create_custom_role(
-        &mut self,
+        &self,
         role_name: String,
         system_role: SystemTenantRole,
         additiona_privileges: HashMap<String, DatabasePrivilege>,
@@ -174,24 +178,22 @@ impl MetaClient for MockMetaClient {
     }
 
     fn grant_privilege_to_custom_role(
-        &mut self,
-        database_name: String,
-        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        &self,
+        database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
     ) -> MetaResult<()> {
         todo!()
     }
 
     fn revoke_privilege_from_custom_role(
-        &mut self,
-        database_name: &str,
-        database_privileges: Vec<(DatabasePrivilege, Oid)>,
+        &self,
+        database_privileges: Vec<(DatabasePrivilege, String)>,
         role_name: &str,
-    ) -> MetaResult<bool> {
+    ) -> MetaResult<()> {
         todo!()
     }
 
-    fn drop_custom_role(&mut self, role_name: &str) -> MetaResult<bool> {
+    fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
         todo!()
     }
 }
@@ -215,6 +217,14 @@ impl MetaManager for MockMetaManager {
     fn tenant_manager(&self) -> TenantManagerRef {
         Arc::new(TenantManagerMock::default())
     }
+
+    fn user_with_privileges(
+        &self,
+        user_name: &str,
+        tenant_name: Option<&str>,
+    ) -> MetaResult<models::auth::user::User> {
+        todo!()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -225,15 +235,15 @@ impl TenantManager for TenantManagerMock {
         todo!()
     }
 
-    fn tenant(&self, name: &str) -> MetaResult<Tenant> {
+    fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>> {
         todo!()
     }
 
-    fn alter_tenant(&self, tenant_id: Oid, options: TenantOptions) -> MetaResult<()> {
+    fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
         todo!()
     }
 
-    fn drop_tenant(&self, name: &str) -> MetaResult<()> {
+    fn drop_tenant(&self, name: &str) -> MetaResult<bool> {
         todo!()
     }
 

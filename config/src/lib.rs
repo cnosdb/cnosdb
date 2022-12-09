@@ -31,6 +31,7 @@ pub struct QueryConfig {
     pub max_server_connections: u32,
     pub query_sql_limit: u64,
     pub write_sql_limit: u64,
+    pub auth_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +131,9 @@ impl QueryConfig {
         }
         if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
             self.write_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(val) = std::env::var("AUTH_ENABLED") {
+            self.auth_enabled = val.parse::<bool>().unwrap();
         }
     }
 }

@@ -55,7 +55,7 @@ impl DDLDefinitionTask for CreateDatabaseTask {
             .context(execution::MetadataSnafu),
             // does not exist, create
             (_, false) => {
-                create_database(&self.stmt, query_state_machine.clone())?;
+                create_database(&self.stmt, query_state_machine)?;
                 Ok(Output::Nil(()))
             }
         }
