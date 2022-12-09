@@ -33,6 +33,7 @@ use metrics::{
     incr_query_read_failed, incr_query_read_success, sample_point_write_latency,
     sample_query_read_latency,
 };
+use models::consistency_level::ConsistencyLevel;
 use models::error_code::ErrorCode;
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
@@ -220,7 +221,10 @@ impl HttpService {
                     // we should get tenant from token
                     let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
 
-                    let resp = kv_inst.write(0, tenant, req).await.context(TskvSnafu);
+                    let resp = coord
+                        .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
+                        .await
+                        .context(CoordinatorSnafu);
 
                     sample_point_write_latency(
                         &user_info.user,

@@ -155,7 +155,7 @@ impl RsaAes {
         assert_ne!(&data[..], &enc_data[..]);
 
         let base64_str = base64::encode(&enc_data);
-        let enc_data = base64::decode(&base64_str).unwrap();
+        let enc_data = base64::decode(base64_str).unwrap();
 
         let public_key = RsaPublicKey::from_pkcs1_pem(&public_str).unwrap();
 

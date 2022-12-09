@@ -138,7 +138,7 @@ async fn exec_and_print(
     print_options: &PrintOptions,
     sql: String,
 ) -> Result<(), String> {
-    let strs: Vec<&str> = sql.split(";").collect();
+    let strs: Vec<&str> = sql.split(';').collect();
     for tmp in strs.iter() {
         if tmp.trim().is_empty() {
             continue;
