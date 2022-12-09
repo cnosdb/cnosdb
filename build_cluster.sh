@@ -25,6 +25,8 @@ sleep 1
 rm -rf /tmp/cnosdb/1001
 rm -rf /tmp/cnosdb/2001
 
+mkdir -p /tmp/cnosdb/logs
+
 echo "*** build main ......"
 cargo build
 
