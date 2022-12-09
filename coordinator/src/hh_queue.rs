@@ -107,7 +107,7 @@ impl HintedOffManager {
             }
         }
 
-        return manager;
+        manager
     }
 
     pub async fn write_handoff_job(
@@ -140,7 +140,7 @@ impl HintedOffManager {
             queue.clone(),
         ));
 
-        return Ok(queue);
+        Ok(queue)
     }
 
     async fn hinted_off_service(
@@ -155,9 +155,10 @@ impl HintedOffManager {
             match block_data {
                 Ok(block) => {
                     loop {
-                        if let Ok(_) = writer
+                        if writer
                             .write_to_remote_node(block.vnode_id, node_id, block.data.clone())
                             .await
+                            .is_ok()
                         {
                             break;
                         } else {
@@ -250,7 +251,7 @@ impl HintedOffQueue {
 
             let new_file_id = self.reader_file.id + 1;
             let new_file_name = file_utils::make_hinted_off_file(&self.option.path, new_file_id);
-            if !file_manager::try_exists(&PathBuf::from(new_file_name.clone())) {
+            if !file_manager::try_exists(&new_file_name) {
                 return Ok(());
             }
 
@@ -281,7 +282,7 @@ impl HintedOffQueue {
         self.roll_hinted_off_read_file()?;
 
         if let Some(val) = self.reader_file.next_hinted_off_block() {
-            return Ok(val);
+            Ok(val)
         } else {
             Err(CoordinatorError::IOErrors {
                 msg: "no data to read".to_string(),
@@ -329,7 +330,7 @@ impl HintedOffWriter {
     pub fn write_header(file: &DmaFile, offset: u32) -> CoordinatorResult<()> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
         header_buf[..4].copy_from_slice(SEGMENT_FILE_MAGIC.as_slice());
-        header_buf[4..].copy_from_slice(&(offset as u32).to_be_bytes());
+        header_buf[4..].copy_from_slice(&offset.to_be_bytes());
 
         file.write_at(0, &header_buf)
             .and_then(|_| file.sync_all(FileSync::Hard))?;
@@ -365,11 +366,9 @@ impl HintedOffWriter {
                 pos += size as u64;
                 self.file.write_at(pos, &block.data)
             })
-            .and_then(|size| {
+            .map(|size| {
                 // sync
                 pos += size as u64;
-
-                Ok(())
             })?;
 
         debug!(
@@ -520,7 +519,7 @@ mod test {
         loop {
             match queue.write().read() {
                 Ok(block) => {
-                    count = count + 1;
+                    count += 1;
                 }
 
                 Err(err) => {

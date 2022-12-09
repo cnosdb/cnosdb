@@ -1,5 +1,4 @@
-use crate::{ClusterNode, MetaApp, TypeConfig};
-use crate::{ClusterNodeId, NodeId};
+use crate::{ClusterNode, MetaApp, TypeConfig, ClusterNodeId};
 use actix_web::get;
 use actix_web::post;
 use actix_web::web;
@@ -17,9 +16,10 @@ use web::Json;
 #[post("/raft-vote")]
 pub async fn vote(
     app: Data<MetaApp>,
-    req: Json<VoteRequest<NodeId>>,
+    req: Json<VoteRequest<ClusterNodeId>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.vote(req.0).await;
+    // info!("raft-vote-----debug {:?}", &res);
     Ok(Json(res))
 }
 
@@ -32,7 +32,7 @@ pub async fn append(
     Ok(Json(res))
 }
 
-#[post("/raft-snapshot")]
+#[post("/raft_snapshot")]
 pub async fn snapshot(
     app: Data<MetaApp>,
     req: Json<InstallSnapshotRequest<TypeConfig>>,
@@ -44,7 +44,7 @@ pub async fn snapshot(
 #[post("/add-learner")]
 pub async fn add_learner(
     app: Data<MetaApp>,
-    req: Json<(NodeId, String)>,
+    req: Json<(ClusterNodeId, String)>,
 ) -> actix_web::Result<impl Responder> {
     let node_id = req.0 .0;
     let node = ClusterNode {
@@ -58,7 +58,7 @@ pub async fn add_learner(
 #[post("/change-membership")]
 pub async fn change_membership(
     app: Data<MetaApp>,
-    req: Json<BTreeSet<NodeId>>,
+    req: Json<BTreeSet<ClusterNodeId>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.change_membership(req.0, true, false).await;
     Ok(Json(res))
@@ -70,8 +70,8 @@ pub async fn init(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     nodes.insert(
         app.id,
         ClusterNode {
-            rpc_addr: app.addr.clone(),
-            api_addr: app.addr.clone(),
+            rpc_addr: app.http_addr.clone(),
+            api_addr: app.http_addr.clone(),
         },
     );
     let res = app.raft.initialize(nodes).await;

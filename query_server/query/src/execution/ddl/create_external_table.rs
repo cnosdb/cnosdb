@@ -77,6 +77,7 @@ async fn create_exernal_table(
 
     let schema = build_table_schema(
         stmt,
+        query_state_machine.session.tenant().to_string(),
         query_state_machine.session.default_database().to_string(),
         &state,
     )
@@ -92,6 +93,7 @@ async fn create_exernal_table(
 
 async fn build_table_schema(
     stmt: &CreateExternalTable,
+    tenant: String,
     db: String,
     state: &SessionState,
 ) -> Result<ExternalTableSchema, ExecutionError> {
@@ -104,6 +106,7 @@ async fn build_table_schema(
         .clone();
 
     let schema = ExternalTableSchema {
+        tenant,
         db,
         name: stmt.name.clone(),
         location: stmt.location.clone(),

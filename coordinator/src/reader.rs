@@ -81,9 +81,9 @@ impl QueryExecutor {
 
     async fn node_executor(&self, node_id: u64, vnodes: Vec<VnodeInfo>) -> CoordinatorResult<()> {
         if node_id == self.meta_manager.node_id() {
-            return self.local_node_executor(vnodes).await;
+            self.local_node_executor(vnodes).await
         } else {
-            return self.remote_node_executor(node_id, vnodes).await;
+            self.remote_node_executor(node_id, vnodes).await
         }
     }
 
@@ -155,8 +155,8 @@ impl QueryExecutor {
     }
 
     async fn local_vnode_executor(&self, vnode: VnodeInfo) -> CoordinatorResult<()> {
-        let mut iterator = RowIterator::new(self.kv_inst.clone(), self.option.clone(), vnode.id)?;
-        while let Some(data) = iterator.next() {
+        let iterator = RowIterator::new(self.kv_inst.clone(), self.option.clone(), vnode.id)?;
+        for data in iterator {
             match data {
                 Ok(val) => {
                     self.sender.send(Ok(val)).await?;
@@ -190,14 +190,14 @@ impl QueryExecutor {
                 meta.mapping_bucket(&self.option.table_schema.db, item.min_ts, item.max_ts)?;
             for bucket in buckets.iter() {
                 for repl in bucket.shard_group.iter() {
-                    if repl.vnodes.len() == 0 {
+                    if repl.vnodes.is_empty() {
                         continue;
                     }
 
                     let random = now_timestamp() as usize % repl.vnodes.len();
                     let vnode = repl.vnodes[random].clone();
 
-                    let list = vnode_mapping.entry(vnode.node_id).or_insert(vec![]);
+                    let list = vnode_mapping.entry(vnode.node_id).or_default();
                     list.push(vnode);
                 }
             }

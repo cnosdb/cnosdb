@@ -29,7 +29,9 @@ parking_lot = { workspace = true }
 tonic = { workspace = true }
 #openraft = { git = "https://github.com/datafuselabs/openraft", rev = "2262c79f5195307402e7a0994771b4152c0d10b2" }
 #openraft = "0.7.3"
-openraft = { git = "https://github.com/datafuselabs/openraft", rev = "229bb5060cb20ca940cc461d9774e9d4650f7340", features = ["serde"] }
+#openraft = { git = "https://github.com/datafuselabs/openraft", rev = "229bb5060cb20ca940cc461d9774e9d4650f7340", features = ["serde"] }
+openraft = { git = "https://github.com/datafuselabs/openraft", rev = "914fcb4dad32a2f187b808298048e9e8b912977f", features = ["serde"] }
+
 byteorder = "1.4.3"
 sled = "0.34.7"
 actix-web = "4.0.0"

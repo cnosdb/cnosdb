@@ -78,7 +78,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
         let ori_authorization = request
             .metadata()
             .get(AUTHORIZATION.to_string())
-            .ok_or(Status::invalid_argument("authorization field not present"))?;
+            .ok_or_else(|| Status::invalid_argument("authorization field not present"))?;
         let authorization = ori_authorization
             .to_str()
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
@@ -116,8 +116,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
             query, request
         );
 
-        let user_info =
-            utils::parse_user_info(&request).map_err(|e| Status::invalid_argument(e))?;
+        let user_info = utils::parse_user_info(&request).map_err(Status::invalid_argument)?;
         // TODO parse tenant & default database
         let tenant = None;
         let database = None;
@@ -346,7 +345,7 @@ impl FlightSqlService for FlightSqlServiceImpl {
             .enumerate()
             .flat_map(|(counter, batch)| {
                 let (dictionary_flight_data, mut batch_flight_data) =
-                    flight_utils::flight_data_from_arrow_batch(&batch, &options);
+                    flight_utils::flight_data_from_arrow_batch(batch, &options);
 
                 // Only the record batch's FlightData gets app_metadata
                 let metadata = counter.to_string().into_bytes();

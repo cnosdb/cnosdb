@@ -455,7 +455,12 @@ pub mod flush_tests {
             })
             .collect();
 
-        TskvTableSchema::new("public".to_string(), "".to_string(), fields)
+        TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "".to_string(),
+            fields,
+        )
     }
 
     #[test]

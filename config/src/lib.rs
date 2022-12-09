@@ -241,15 +241,19 @@ impl HintedOffConfig {
 #[test]
 fn test() {
     let config_str = r#"
-[cluster]
-node_id = 100
-name = 'cluster_name'
-meta = '127.0.0.1:22000,127.0.0.1,22001'
+
+#reporting_disabled = false
+
 [query]
-max_server_connections = 10240 
+max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
+
 [storage]
+# Directory for summary: $path/summary/
+# Directory for index: $path/index/$database/
+# Directory for tsm: $path/data/$database/tsm/
+# Directory for delta: $path/data/$database/delta/
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4
@@ -258,23 +262,39 @@ compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
 dio_max_resident = 1024
 dio_max_non_resident = 1024
-dio_page_len_scale = 1
-strict_write = true
+dio_page_len_scale = 10
+strict_write = false
 
 [wal]
 enabled = true
 path = 'data/wal'
-sync = true
+sync = false
 
 [cache]
-max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
+max_buffer_size = 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
 
 [log]
-level = 'info'
+level = 'debug'
 path = 'data/log'
 
 [security]
+# [security.tls_config]
+# certificate = "./config/tls/server.crt"
+# private_key = "./config/tls/server.key"
+
+[cluster]
+node_id = 100
+name = 'cluster_xxx'
+meta = '127.0.0.1,22001'
+
+http_server = '127.0.0.1:31007'
+grpc_server = '127.0.0.1:31008'
+tcp_server = '127.0.0.1:31009'
+
+[hintedoff]
+enable = true
+path = '/tmp/cnosdb/hh'
 
 "#;
 

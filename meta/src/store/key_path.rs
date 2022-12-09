@@ -7,51 +7,51 @@
 pub struct KeyPath {}
 
 impl KeyPath {
-    pub fn incr_id(cluster: &String) -> String {
+    pub fn incr_id(cluster: &str) -> String {
         format!("/{}/auto_incr_id", cluster)
     }
 
-    pub fn data_nodes(cluster: &String) -> String {
+    pub fn data_nodes(cluster: &str) -> String {
         format!("/{}/data_nodes", cluster)
     }
 
-    pub fn data_node_id(cluster: &String, id: u64) -> String {
+    pub fn data_node_id(cluster: &str, id: u64) -> String {
         format!("/{}/data_nodes/{}", cluster, id)
     }
 
-    pub fn tenant_users(cluster: &String, tenant: &String) -> String {
+    pub fn tenant_users(cluster: &str, tenant: &str) -> String {
         format!("/{}/{}/users", cluster, tenant)
     }
 
-    pub fn tenant_user_name(cluster: &String, tenant: &String, name: &String) -> String {
+    pub fn tenant_user_name(cluster: &str, tenant: &str, name: &str) -> String {
         format!("/{}/{}/users/{}", cluster, tenant, name)
     }
 
-    pub fn tenant_dbs(cluster: &String, tenant: &String) -> String {
+    pub fn tenant_dbs(cluster: &str, tenant: &str) -> String {
         format!("/{}/{}/dbs", cluster, tenant)
     }
 
-    pub fn tenant_db_name(cluster: &String, tenant: &String, db: &String) -> String {
+    pub fn tenant_db_name(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}", cluster, tenant, db)
     }
 
-    pub fn tenant_db_buckets(cluster: &String, tenant: &String, db: &String) -> String {
+    pub fn tenant_db_buckets(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}/buckets", cluster, tenant, db)
     }
 
-    pub fn tenant_bucket_id(cluster: &String, tenant: &String, db: &String, id: u32) -> String {
+    pub fn tenant_bucket_id(cluster: &str, tenant: &str, db: &str, id: u32) -> String {
         format!("/{}/{}/dbs/{}/buckets/{}", cluster, tenant, db, id)
     }
 
-    pub fn tenant_schemas(cluster: &String, tenant: &String, db: &String) -> String {
+    pub fn tenant_schemas(cluster: &str, tenant: &str, db: &str) -> String {
         format!("/{}/{}/dbs/{}/schemas", cluster, tenant, db)
     }
 
     pub fn tenant_schema_name(
-        cluster: &String,
-        tenant: &String,
-        db: &String,
-        name: &String,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        name: &str,
     ) -> String {
         format!("/{}/{}/dbs/{}/schemas/{}", cluster, tenant, db, name)
     }

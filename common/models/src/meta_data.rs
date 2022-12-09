@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::schema::TskvTableSchema;
+use crate::schema::{DatabaseSchema, TskvTableSchema};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Resource {
@@ -63,11 +63,12 @@ pub struct VnodeInfo {
 // [PRECISION {'ms' | 'us' | 'ns'}]]
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct DatabaseInfo {
-    pub name: String,
-    pub shard: u32,
-    pub ttl: i64,
-    pub vnode_duration: i64,
-    pub replications: u32,
+    // pub name: String,
+    // pub shard: u32,
+    // pub ttl: i64,
+    // pub vnode_duration: i64,
+    // pub replications: u32,
+    pub schema: DatabaseSchema,
 
     pub buckets: Vec<BucketInfo>,
     pub tables: HashMap<String, TskvTableSchema>,
@@ -91,7 +92,7 @@ impl TenantMetaData {
         }
     }
 
-    pub fn table_schema(&self, db: &String, tab: &String) -> Option<TskvTableSchema> {
+    pub fn table_schema(&self, db: &str, tab: &str) -> Option<TskvTableSchema> {
         if let Some(info) = self.dbs.get(db) {
             if let Some(schema) = info.tables.get(tab) {
                 return Some(schema.clone());
@@ -101,20 +102,18 @@ impl TenantMetaData {
         None
     }
 
-    pub fn database_min_ts(&self, name: &String) -> Option<i64> {
+    pub fn database_min_ts(&self, name: &str) -> Option<i64> {
         if let Some(db) = self.dbs.get(name) {
-            if db.ttl == 0 {
-                return Some(0);
-            }
-
+            let ttl = db.schema.config.ttl_or_default().time_stamp();
             let now = crate::utils::now_timestamp();
-            return Some(now - db.ttl);
+
+            return Some(now - ttl);
         }
 
         None
     }
 
-    pub fn bucket_by_timestamp(&self, db_name: &String, ts: i64) -> Option<&BucketInfo> {
+    pub fn bucket_by_timestamp(&self, db_name: &str, ts: i64) -> Option<&BucketInfo> {
         if let Some(db) = self.dbs.get(db_name) {
             if let Some(bucket) = db
                 .buckets
@@ -128,7 +127,7 @@ impl TenantMetaData {
         None
     }
 
-    pub fn mapping_bucket(&self, db_name: &String, start: i64, end: i64) -> Vec<BucketInfo> {
+    pub fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> Vec<BucketInfo> {
         if let Some(db) = self.dbs.get(db_name) {
             let mut result = vec![];
             for item in db.buckets.iter() {

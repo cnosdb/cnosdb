@@ -10,8 +10,7 @@ use crate::error::{
     l_r_err, l_w_err, s_r_err, s_w_err, sm_r_err, v_r_err, v_w_err, StorageIOResult, StorageResult,
 };
 use crate::store::state_machine::{CommandResp, StateMachineContent};
-use crate::{ClusterNode, NodeId};
-use crate::{ClusterNodeId, TypeConfig};
+use crate::{ClusterNodeId, TypeConfig, ClusterNode};
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
@@ -31,6 +30,7 @@ use openraft::StorageIOError;
 use openraft::Vote;
 use tokio::sync::RwLock;
 use tracing;
+use tracing::info;
 
 pub mod command;
 pub mod config;
@@ -64,11 +64,19 @@ fn logs(db: &sled::Db) -> sled::Tree {
 fn data(db: &sled::Db) -> sled::Tree {
     db.open_tree("data").expect("data open failed")
 }
-fn state_machine(db: &sled::Db) -> sled::Tree {
-    db.open_tree("state_machine")
-        .expect("state_machine open failed")
-}
+// fn state_machine(db: &sled::Db) -> sled::Tree {
+//     db.open_tree("state_machine")
+//         .expect("state_machine open failed")
+// }
 impl Store {
+    pub fn new(db: sled::Db) ->Self{
+        let db = Arc::new(db);
+        let sm = StateMachine::new(db.clone());
+        Self{
+            db,
+            state_machine: RwLock::new(sm)
+        }
+    }
     fn get_last_purged_(&self) -> StorageIOResult<Option<LogId<u64>>> {
         let store_tree = store(&self.db);
         let val = store_tree
@@ -192,7 +200,7 @@ impl RaftSnapshotBuilder<TypeConfig, Cursor<Vec<u8>>> for Arc<Store> {
         }
 
         let snapshot_idx: u64 = self.get_snapshot_index_()? + 1;
-        self.set_snapshot_index_(snapshot_idx).await;
+        let _ = self.set_snapshot_index_(snapshot_idx).await;
 
         let snapshot_id = if let Some(last) = last_applied_log {
             format!("{}-{}-{}", last.leader_id, last.index, snapshot_idx)
@@ -391,26 +399,29 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
         Option<LogId<ClusterNodeId>>,
         EffectiveMembership<ClusterNodeId, ClusterNode>,
     )> {
+
         let state_machine = self.state_machine.read().await;
+        info!("state_matchine info: {:?}",state_machine.get_last_applied_log().unwrap());
         Ok((
             state_machine.get_last_applied_log()?,
             state_machine.get_last_membership()?,
         ))
+
     }
 
     #[tracing::instrument(level = "trace", skip(self, entries))]
     async fn apply_to_state_machine(
         &mut self,
         entries: &[&Entry<TypeConfig>],
-    ) -> Result<Vec<CommandResp>, StorageError<NodeId>> {
+    ) -> Result<Vec<CommandResp>, StorageError<ClusterNodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
         let mut sm = self.state_machine.write().await;
 
         for entry in entries {
-            tracing::debug!(%entry.log_id, "replicate to sm");
+            info!("apply_to_state_machine replicate to sm {:?}", entry.log_id);
             sm.set_last_applied_log(entry.log_id).await?;
-
+            info!("apply_to_state_machine replicate to sm {:?}", entry.log_id);
             match entry.payload {
                 EntryPayload::Blank => res.push(CommandResp::default()),
                 EntryPayload::Membership(ref mem) => {

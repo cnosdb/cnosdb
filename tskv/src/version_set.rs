@@ -3,7 +3,8 @@ use std::{
     sync::{atomic::AtomicU32, atomic::Ordering, Arc, Mutex},
 };
 
-use models::schema::DatabaseSchema;
+use meta::meta_client::{MetaClientRef, MetaRef};
+use models::schema::{make_owner, split_owner, DatabaseSchema};
 use parking_lot::RwLock;
 use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
@@ -30,7 +31,15 @@ pub struct VersionSet {
 }
 
 impl VersionSet {
+    pub fn empty(opt: Arc<Options>) -> Self {
+        Self {
+            opt,
+            dbs: HashMap::new(),
+        }
+    }
+
     pub fn new(
+        meta: MetaRef,
         opt: Arc<Options>,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         flush_task_sender: UnboundedSender<FlushReq>,
@@ -38,14 +47,24 @@ impl VersionSet {
         let mut dbs = HashMap::new();
 
         for (id, ver) in ver_set {
-            let name = ver.database().to_string();
+            let owner = ver.database().to_string();
+            let (tenant, database) = split_owner(&owner);
             let seq = ver.last_seq;
 
+            let schema = match meta.tenant_manager().tenant_meta(tenant) {
+                None => DatabaseSchema::new(tenant, database),
+                Some(client) => {
+                    // client.get_db_schema()
+                    // todo: remove databaseinfo or databaseschema
+                    DatabaseSchema::new(tenant, database)
+                }
+            };
             let db: &mut Arc<RwLock<Database>> =
-                dbs.entry(name.clone())
+                dbs.entry(owner)
                     .or_insert(Arc::new(RwLock::new(Database::new(
-                        DatabaseSchema::new(&name),
+                        schema,
                         opt.clone(),
+                        meta.clone(),
                     )?)));
 
             db.write().open_tsfamily(ver, flush_task_sender.clone());
@@ -58,36 +77,45 @@ impl VersionSet {
         self.opt.clone()
     }
 
-    pub fn create_db(&mut self, schema: DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    pub fn create_db(
+        &mut self,
+        schema: DatabaseSchema,
+        meta: MetaRef,
+    ) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .dbs
-            .entry(schema.name.clone())
+            .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(Database::new(
                 schema,
                 self.opt.clone(),
+                meta.clone(),
             )?)))
             .clone();
         Ok(db)
     }
 
-    pub fn delete_db(&mut self, name: &String) -> Option<Arc<RwLock<Database>>> {
-        self.dbs.remove(name)
+    pub fn delete_db(&mut self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
+        let owner = make_owner(tenant, database);
+        self.dbs.remove(&owner)
     }
 
-    pub fn db_exists(&self, name: &str) -> bool {
-        self.dbs.get(name).is_some()
+    pub fn db_exists(&self, tenant: &str, database: &str) -> bool {
+        let owner = make_owner(tenant, database);
+        self.dbs.get(&owner).is_some()
     }
 
-    pub fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
-        self.dbs.get(name).map(|db| db.read().get_schema())
+    pub fn get_db_schema(&self, tenant: &str, database: &str) -> Option<DatabaseSchema> {
+        let owner = make_owner(tenant, database);
+        self.dbs.get(&owner).map(|db| db.read().get_schema())
     }
 
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
         &self.dbs
     }
 
-    pub fn get_db(&self, name: &str) -> Option<Arc<RwLock<Database>>> {
-        if let Some(v) = self.dbs.get(name) {
+    pub fn get_db(&self, tenant_name: &str, db_name: &str) -> Option<Arc<RwLock<Database>>> {
+        let owner_name = make_owner(tenant_name, db_name);
+        if let Some(v) = self.dbs.get(&owner_name) {
             return Some(v.clone());
         }
 
@@ -115,10 +143,12 @@ impl VersionSet {
 
     pub fn get_tsfamily_by_name_id(
         &self,
-        name: &str,
+        tenant: &str,
+        database: &str,
         tf_id: u32,
     ) -> Option<Arc<RwLock<TseriesFamily>>> {
-        if let Some(db) = self.dbs.get(name) {
+        let owner = make_owner(tenant, database);
+        if let Some(db) = self.dbs.get(&owner) {
             return db.read().get_tsfamily(tf_id);
         }
 
@@ -126,8 +156,13 @@ impl VersionSet {
     }
 
     // will delete in cluster version
-    pub fn get_tsfamily_by_name(&self, name: &str) -> Option<Arc<RwLock<TseriesFamily>>> {
-        if let Some(db) = self.dbs.get(name) {
+    pub fn get_tsfamily_by_name(
+        &self,
+        tenant: &str,
+        database: &str,
+    ) -> Option<Arc<RwLock<TseriesFamily>>> {
+        let owner = make_owner(tenant, database);
+        if let Some(db) = self.dbs.get(&owner) {
             return db.read().get_tsfamily_random();
         }
 

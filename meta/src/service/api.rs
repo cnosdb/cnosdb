@@ -25,6 +25,7 @@ pub async fn write(
     app: Data<MetaApp>,
     req: Json<WriteCommand>,
 ) -> actix_web::Result<impl Responder> {
+    println!("--- hello this is write ---");
     let res = match app.raft.client_write(req.0).await {
         Ok(val) => val.data,
         Err(err) => {
@@ -39,8 +40,8 @@ pub async fn write(
 
 #[get("/debug")]
 pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
+    println!("--- hello this is debug ---");
     let sm = app.store.state_machine.read().await;
-
     let mut response = "******---------------------------******\n".to_string();
     for res in sm.db.iter() {
         let (k, v) = res.unwrap();

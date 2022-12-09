@@ -25,7 +25,7 @@ pub fn parse_user_info(
     let authorization = request
         .metadata()
         .get(AUTHORIZATION.to_string())
-        .ok_or("authorization field not present".to_string())?
+        .ok_or_else(|| "authorization field not present".to_string())?
         .to_str()
         .map_err(|_| "authorization not parsable".to_string())?;
 
@@ -41,7 +41,7 @@ pub fn endpoint(
     let any_tkt = Any::pack(&ticket).map_err(|e| format!("maybe a bug, error: {}", e))?;
 
     let location = location_uris
-        .into_iter()
+        .iter()
         .map(|e| Location { uri: (*e).into() })
         .collect::<Vec<_>>();
 

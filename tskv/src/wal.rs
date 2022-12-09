@@ -39,12 +39,13 @@ const SEGMENT_HEADER_SIZE: usize = 32;
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
-const BLOCK_HEADER_SIZE: usize = 21;
+const BLOCK_HEADER_SIZE: usize = 25;
 
 pub enum WalTask {
     Write {
         id: TseriesFamilyId,
         points: Arc<Vec<u8>>,
+        tenant: Arc<Vec<u8>>,
         // (seq_no, written_size)
         cb: oneshot::Sender<Result<(u64, usize)>>,
     },
@@ -76,11 +77,13 @@ pub struct WalEntryBlock {
     pub seq: u64,
     pub crc: u32,
     pub len: u32,
+    pub tenant_len: u32,
     pub buf: Vec<u8>,
+    pub tenant: Vec<u8>,
 }
 
 impl WalEntryBlock {
-    pub fn new(typ: WalEntryType, buf: &[u8]) -> Self {
+    pub fn new(typ: WalEntryType, buf: &[u8], tenant: &[u8]) -> Self {
         Self {
             typ,
             seq: 0,
@@ -88,6 +91,8 @@ impl WalEntryBlock {
             crc: crc32fast::hash(buf),
             len: buf.len() as u32,
             buf: buf.into(),
+            tenant_len: tenant.len() as u32,
+            tenant: tenant.into(),
         }
     }
 
@@ -97,14 +102,18 @@ impl WalEntryBlock {
         let seq = byte_utils::decode_be_u64(&bytes[5..13]);
         let crc = byte_utils::decode_be_u32(&bytes[13..17]);
         let len = byte_utils::decode_be_u32(&bytes[17..21]);
-        let buf = bytes[17..].to_vec();
+        let tenant_len = byte_utils::decode_be_u32(&bytes[21..25]);
+        let buf = bytes[25..(len as usize + 25)].to_vec();
+        let tenant = bytes[(len as usize + 25)..(len as usize + tenant_len as usize + 25)].to_vec();
         Self {
             typ,
             id,
             seq,
             crc,
             len,
+            tenant_len,
             buf,
+            tenant,
         }
     }
 
@@ -190,6 +199,7 @@ impl WalWriter {
         typ: WalEntryType,
         data: &[u8],
         id: TseriesFamilyId,
+        tenant: &[u8],
     ) -> Result<(u64, usize)> {
         let typ = typ as u8;
         let mut pos = self.size;
@@ -199,6 +209,7 @@ impl WalWriter {
             // write type
             .write_at(pos, &[typ])
             .and_then(|size| {
+                // write tsf id
                 pos += size as u64;
                 self.file.write_at(pos, &id.to_be_bytes())
             })
@@ -220,9 +231,20 @@ impl WalWriter {
                 self.file.write_at(pos, &len.to_be_bytes())
             })
             .and_then(|size| {
+                // write tenant len
+                pos += size as u64;
+                let len = tenant.len() as u32;
+                self.file.write_at(pos, &len.to_be_bytes())
+            })
+            .and_then(|size| {
                 // write data
                 pos += size as u64;
                 self.file.write_at(pos, data)
+            })
+            .and_then(|size| {
+                // write tenant
+                pos += size as u64;
+                self.file.write_at(pos, tenant)
             })
             .and_then(|size| {
                 // sync
@@ -325,9 +347,10 @@ impl WalManager {
         typ: WalEntryType,
         data: &[u8],
         id: TseriesFamilyId,
+        tenant: &[u8],
     ) -> Result<(u64, usize)> {
         self.roll_wal_file().await?;
-        self.current_file.write(typ, data, id).await
+        self.current_file.write(typ, data, id, tenant).await
     }
 
     pub async fn recover(
@@ -371,7 +394,12 @@ impl WalManager {
                                     version: 1,
                                     points: dst[0].to_vec(),
                                 };
-                                engine.write_from_wal(e.id, req, e.seq).await.unwrap();
+                                let tenant =
+                                    unsafe { String::from_utf8_unchecked(e.tenant.to_vec()) };
+                                engine
+                                    .write_from_wal(e.id, &tenant, req, e.seq)
+                                    .await
+                                    .unwrap();
                             }
                             WalEntryType::Delete => {
                                 // TODO delete a memcache entry
@@ -450,6 +478,7 @@ impl WalReader {
                 return Ok(None);
             }
         };
+        let tenant_len = byte_utils::decode_be_u32(self.block_header_buf[21..25].into());
         let data_len = byte_utils::decode_be_u32(key);
         if data_len == 0 {
             return Ok(None);
@@ -458,25 +487,36 @@ impl WalReader {
             return Err(Error::WalTruncated);
         }
 
-        if data_len as usize > self.body_buf.len() {
-            self.body_buf.resize(data_len as usize, 0);
+        if data_len as usize > self.body_buf.len() - tenant_len as usize {
+            self.body_buf
+                .resize(data_len as usize + tenant_len as usize, 0);
         }
-        let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let read_bytes = match self.cursor.read(buf) {
+        let mut buf = self.body_buf[0..data_len as usize].to_vec();
+        let read_bytes = match self.cursor.read(&mut buf) {
             Ok(v) => v,
             Err(e) => {
                 error!("failed read body buf : {:?}", e);
                 return Ok(None);
             }
         };
-
+        let mut tenant =
+            self.body_buf[(data_len as usize)..(data_len as usize + tenant_len as usize)].to_vec();
+        let read_tenant_bytes = match self.cursor.read(&mut tenant) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("failed read body tenant buf : {:?}", e);
+                return Ok(None);
+            }
+        };
         Ok(Some(WalEntryBlock {
             typ: typ.into(),
             id,
             seq,
             crc,
             len: read_bytes as u32,
-            buf: buf.to_vec(),
+            tenant_len: read_tenant_bytes as u32,
+            buf,
+            tenant,
         }))
     }
 }
@@ -510,7 +550,7 @@ mod test {
 
     impl From<&fb_models::Points<'_>> for WalEntryBlock {
         fn from(entry: &fb_models::Points) -> Self {
-            Self::new(WalEntryType::Write, entry._tab.buf)
+            Self::new(WalEntryType::Write, entry._tab.buf, "cnosdb".as_bytes())
         }
     }
 
@@ -555,14 +595,22 @@ mod test {
         let fbb = _fbb.borrow_mut();
         let ptr = random_write_wal_entry(fbb);
         fbb.finish(ptr, None);
-        WalEntryBlock::new(WalEntryType::Write, fbb.finished_data())
+        WalEntryBlock::new(
+            WalEntryType::Write,
+            fbb.finished_data(),
+            "cnosdb".as_bytes(),
+        )
     }
 
     fn wal_entry_block(_fbb: &mut flatbuffers::FlatBufferBuilder) -> WalEntryBlock {
         let fbb = _fbb.borrow_mut();
         let ptr = write_wal_entry(fbb);
         fbb.finish(ptr, None);
-        WalEntryBlock::new(WalEntryType::Write, fbb.finished_data())
+        WalEntryBlock::new(
+            WalEntryType::Write,
+            fbb.finished_data(),
+            "cnosdb".as_bytes(),
+        )
     }
 
     fn check_wal_files(wal_dir: PathBuf) {
@@ -641,7 +689,7 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, &enc_points, 0)
+                mgr.write(WalEntryType::Write, &enc_points, 0, "cnosdb".as_bytes())
                     .await
                     .unwrap();
             };
@@ -668,14 +716,18 @@ mod test {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
             let points = models_helper::create_dev_ops_points(&mut fbb, 10, &database, &table);
             fbb.finish(points, None);
-            let blk = WalEntryBlock::new(WalEntryType::Write, fbb.finished_data());
+            let blk = WalEntryBlock::new(
+                WalEntryType::Write,
+                fbb.finished_data(),
+                "cnosdb".as_bytes(),
+            );
             let mut enc_points = Vec::new();
             let coder = get_str_codec(Encoding::Zstd);
             coder
                 .encode(&[&blk.buf], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, &enc_points, 0)
+            mgr.write(WalEntryType::Write, &enc_points, 0, "cnosdb".as_bytes())
                 .await
                 .unwrap();
         }
@@ -712,7 +764,7 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                mgr.write(WalEntryType::Write, &enc_points, 0)
+                mgr.write(WalEntryType::Write, &enc_points, 0, "cnosdb".as_bytes())
                     .await
                     .unwrap();
             };
@@ -744,15 +796,17 @@ mod test {
                     .encode(&[&entry.buf], &mut enc_points)
                     .map_err(|_| Error::Send)
                     .unwrap();
-                rt.block_on(mgr.write(WalEntryType::Write, &enc_points, 10))
+                rt.block_on(mgr.write(WalEntryType::Write, &enc_points, 10, "cnosdb".as_bytes()))
                     .unwrap();
             };
         }
 
         check_wal_files(mgr.current_dir);
         let opt = kv_option::Options::from(&global_config);
-        let tskv = rt.block_on(TsKv::open(opt, rt.clone())).unwrap();
-        let ver = tskv.get_db_version("db0", 10).unwrap().unwrap();
+        let tskv = rt
+            .block_on(TsKv::open(global_config.cluster, opt, rt.clone()))
+            .unwrap();
+        let ver = tskv.get_db_version("cnosdb", "db0", 10).unwrap().unwrap();
         assert_eq!(ver.ts_family_id, 10);
         let expected = r#"[RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }]"#;
         let ans = format!(

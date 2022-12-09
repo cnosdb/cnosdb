@@ -29,14 +29,18 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
     ) -> Result<Output, ExecutionError> {
         describe_database(
             self.stmt.database_name.as_str(),
-            query_state_machine.catalog.clone(),
+            query_state_machine.clone(),
         )
     }
 }
 
-fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    let db_cfg = catalog
-        .database(database_name)
+fn describe_database(
+    database_name: &str,
+    machine: QueryStateMachineRef,
+) -> Result<Output, ExecutionError> {
+    let db_cfg = machine
+        .catalog
+        .database(machine.session.tenant(), database_name)
         .context(execution::MetadataSnafu)?;
     let schema = Arc::new(Schema::new(vec![
         Field::new("TTL", DataType::Utf8, false),

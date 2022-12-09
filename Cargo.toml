@@ -23,7 +23,7 @@ default-members = ["main"]
 
 [workspace.dependencies]
 actix-rt = "2.7.0"
-arrow-schema = {version = "26.0.0", features = ["serde"]}
+arrow-schema = { version = "26.0.0", features = ["serde"] }
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"
@@ -73,7 +73,7 @@ prost-build = "0.11.0"
 q_compress = "0.11.1"
 rand = "0.8"
 regex = "1.5"
-reqwest = { version = "0.11.11" }
+reqwest = { version = "0.11.11", features = ["json"] }
 rustyline = "9.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -96,12 +96,12 @@ tracing-error = "0.1.2"
 warp = { version = "0.3" }
 walkdir = "2.3.2"
 zstd = "0.11.2"
-os_info = {version = "3"}
+os_info = { version = "3" }
 uuid = { version = "1.1", features = ["v4"] }
 derive_builder = "0.11"
 openssl = "0.10.28"
 moka = "0.9.6"
-prost-types ={ version = "0.11.2"}
+prost-types = { version = "0.11.2" }
 
 [profile.dev]
 lto = false

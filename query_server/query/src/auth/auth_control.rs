@@ -50,7 +50,7 @@ impl AccessControl {
             .meta_manager
             .tenant_manager()
             .tenant_meta(tenant_name)
-            .ok_or_else(|| AuthError::TenantNotFound)?;
+            .ok_or(AuthError::TenantNotFound)?;
 
         Ok(*tenant_client.tenant().id())
     }

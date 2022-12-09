@@ -12,6 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
+use meta::meta_client::MetaRef;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
@@ -42,7 +43,8 @@ pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 
 #[derive(Debug)]
 pub struct Database {
-    name: String,
+    //tenant_name.database_name => owner
+    owner: String,
     index: Arc<db_index::DBIndex>,
     schemas: Arc<DBschemas>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
@@ -50,13 +52,13 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Result<Self> {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>, meta: MetaRef) -> Result<Self> {
         let db = Self {
             index: index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(&schema.name),
-            name: schema.name.clone(),
-            schemas: Arc::new(DBschemas::new(schema).context(SchemaSnafu)?),
+                .get_db_index(&schema.owner()),
+            owner: schema.owner(),
+            schemas: Arc::new(DBschemas::new(schema, meta.clone()).context(SchemaSnafu)?),
             ts_families: HashMap::new(),
             opt,
         };
@@ -110,16 +112,16 @@ impl Database {
     ) -> Arc<RwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
-            self.name.clone(),
+            self.owner.clone(),
             self.opt.storage.clone(),
             seq_no,
-            LevelInfo::init_levels(self.name.clone(), self.opt.storage.clone()),
+            LevelInfo::init_levels(self.owner.clone(), self.opt.storage.clone()),
             i64::MIN,
         ));
 
         let tf = TseriesFamily::new(
             tsf_id,
-            self.name.clone(),
+            self.owner.clone(),
             MemCache::new(tsf_id, self.opt.cache.max_buffer_size, seq_no),
             ver,
             self.opt.cache.clone(),
@@ -130,7 +132,7 @@ impl Database {
         self.ts_families.insert(tsf_id, tf.clone());
 
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(tsf_id, self.name.clone());
+        edit.add_tsfamily(tsf_id, self.owner.clone());
 
         let edits = vec![edit];
         let (task_state_sender, task_state_receiver) = oneshot::channel();
@@ -276,7 +278,7 @@ impl Database {
         for (id, ts) in &self.ts_families {
             //tsfamily edit
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(*id, self.name.clone());
+            edit.add_tsfamily(*id, self.owner.clone());
             edits.push(edit);
 
             // file edit
@@ -390,6 +392,7 @@ impl Database {
 }
 
 pub(crate) fn delete_table_async(
+    tenant: String,
     database: String,
     table: String,
     version_set: Arc<RwLock<VersionSet>>,
@@ -397,7 +400,7 @@ pub(crate) fn delete_table_async(
     info!("Drop table: '{}.{}'", &database, &table);
     let version_set_rlock = version_set.read();
     let options = version_set_rlock.options();
-    let db_instance = version_set_rlock.get_db(&database);
+    let db_instance = version_set_rlock.get_db(&tenant, &database);
     drop(version_set_rlock);
 
     if let Some(db) = db_instance {

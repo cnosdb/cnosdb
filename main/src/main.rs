@@ -181,7 +181,11 @@ fn main() -> Result<(), std::io::Error> {
             SubCommand::Run {} => {
                 let tskv_options = tskv::Options::from(&global_config);
                 let query_options = tskv::Options::from(&global_config);
-                let kv_inst = Arc::new(TsKv::open(tskv_options, runtime).await.unwrap());
+                let kv_inst = Arc::new(
+                    TsKv::open(global_config.cluster.clone(), tskv_options, runtime)
+                        .await
+                        .unwrap(),
+                );
                 let coord_service = CoordService::new(
                     kv_inst.clone(),
                     global_config.cluster.clone(),

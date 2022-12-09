@@ -1,4 +1,5 @@
 use models::meta_data::*;
+use models::schema::DatabaseSchema;
 use models::schema::TskvTableSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -7,7 +8,7 @@ use serde::Serialize;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WriteCommand {
     AddDataNode(String, NodeInfo),
-    CreateDB(String, String, DatabaseInfo),
+    CreateDB(String, String, DatabaseSchema),
     CreateBucket {
         cluster: String,
         tenant: String,
@@ -69,8 +70,10 @@ impl TenaneMetaDataResp {
 
         rsp
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl ToString for TenaneMetaDataResp {
+    fn to_string(&self) -> String {
         serde_json::to_string(&self).unwrap()
     }
 }

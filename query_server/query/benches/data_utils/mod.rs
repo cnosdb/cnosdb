@@ -125,7 +125,7 @@ fn create_record_batch(
             |_| format!("hi{:?}", vs.choose(rng)),
         )
         .collect();
-    let keys: Vec<&str> = keys.iter().map(|e| &**e).collect();
+    let keys: Vec<&str> = keys.iter().map(|e| &**e).#[cfg(not(feature = "io_uring"))]();
 
     let values = create_data(batch_size, 0.5);
 

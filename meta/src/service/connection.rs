@@ -1,4 +1,4 @@
-use crate::{ClusterNode, ClusterNodeId, NodeId, TypeConfig};
+use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 use async_trait::async_trait;
 use openraft::error::AppendEntriesError;
 use openraft::error::InstallSnapshotError;
@@ -20,7 +20,6 @@ use serde::Serialize;
 pub struct Connections {
     // pub inner: Arc<HashMap<String,Channel>>,
 }
-
 // impl Connections {
 //     pub async fn add_conn(&mut self, url: &String) -> MetaResult<Channel>{
 //         let channel = Channel::from_static(url.parse().unwrap())
@@ -37,6 +36,7 @@ pub struct Connections {
 //         }
 //     }
 // }
+
 
 impl Connections {
     pub async fn send_req<Req, Resp, Err>(
@@ -90,11 +90,10 @@ impl RaftNetworkFactory<TypeConfig> for Connections {
 
 pub struct ConnManager {
     owner: Connections,
-    target: NodeId,
+    target: ClusterNodeId,
     target_node: ClusterNode,
 }
 
-type RPCResult<T> = Result<T, RPCError<ClusterNodeId, ClusterNode, VoteError<ClusterNodeId>>>;
 #[async_trait]
 impl RaftNetwork<TypeConfig> for ConnManager {
     async fn send_append_entries(
@@ -104,6 +103,7 @@ impl RaftNetwork<TypeConfig> for ConnManager {
         AppendEntriesResponse<ClusterNodeId>,
         RPCError<ClusterNodeId, ClusterNode, AppendEntriesError<ClusterNodeId>>,
     > {
+        // tracing::info!("send_append_entries: req {:?}", req);
         self.owner
             .send_req(self.target, self.target_node.clone(), "raft-append", req)
             .await
@@ -116,11 +116,12 @@ impl RaftNetwork<TypeConfig> for ConnManager {
         InstallSnapshotResponse<ClusterNodeId>,
         RPCError<ClusterNodeId, ClusterNode, InstallSnapshotError<ClusterNodeId>>,
     > {
+        // tracing::info!("send_install_snapshot: req {:?}", req);
         self.owner
             .send_req(
                 self.target,
                 self.target_node.clone(),
-                "install_snapshot",
+                "raft_snapshot",
                 req,
             )
             .await
@@ -133,8 +134,10 @@ impl RaftNetwork<TypeConfig> for ConnManager {
         VoteResponse<ClusterNodeId>,
         RPCError<ClusterNodeId, ClusterNode, VoteError<ClusterNodeId>>,
     > {
-        self.owner
-            .send_req(self.target, self.target_node.clone(), "send_vote", req)
-            .await
+        let res = self.owner
+            .send_req(self.target, self.target_node.clone(), "raft-vote", req)
+            .await;
+        res
+
     }
 }

@@ -12,7 +12,7 @@ use models::{
     },
     meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet},
     oid::Oid,
-    schema::{Tenant, TenantOptions, TskvTableSchema},
+    schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema},
 };
 use tokio::net::TcpStream;
 
@@ -63,19 +63,19 @@ impl MetaClient for MockMetaClient {
         &self.tenant
     }
 
-    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
+    fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
 
-    fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
-        Ok(Some(DatabaseInfo::default()))
+    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
+        Ok(Some(DatabaseSchema::default()))
     }
 
     fn list_databases(&self) -> MetaResult<Vec<String>> {
         Ok(vec![])
     }
 
-    fn drop_db(&self, name: &String) -> MetaResult<()> {
+    fn drop_db(&self, name: &str) -> MetaResult<()> {
         Ok(())
     }
 
@@ -87,41 +87,36 @@ impl MetaClient for MockMetaClient {
         Ok(())
     }
 
-    fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
         Ok(Some(TskvTableSchema::default()))
     }
 
-    fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
+    fn list_tables(&self, db: &str) -> MetaResult<Vec<String>> {
         Ok(vec![])
     }
 
-    fn drop_table(&self, db: &String, table: &String) -> MetaResult<()> {
+    fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
         Ok(())
     }
 
-    fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo> {
+    fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
         Ok(BucketInfo::default())
     }
 
-    fn database_min_ts(&self, db: &String) -> Option<i64> {
+    fn database_min_ts(&self, db: &str) -> Option<i64> {
         Some(0)
     }
 
     fn locate_replcation_set_for_write(
         &self,
-        db: &String,
+        db: &str,
         hash_id: u64,
         ts: i64,
     ) -> MetaResult<ReplcationSet> {
         Ok(ReplcationSet::default())
     }
 
-    fn mapping_bucket(
-        &self,
-        db_name: &String,
-        start: i64,
-        end: i64,
-    ) -> MetaResult<Vec<BucketInfo>> {
+    fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
         Ok(vec![])
     }
 

@@ -67,8 +67,8 @@ pub enum CoordinatorError {
     CommonError { msg: String },
 }
 
-impl From<meta::meta_client::MetaError> for CoordinatorError {
-    fn from(err: meta::meta_client::MetaError) -> Self {
+impl From<meta::error::MetaError> for CoordinatorError {
+    fn from(err: meta::error::MetaError) -> Self {
         CoordinatorError::MetaRequest {
             msg: err.to_string(),
         }

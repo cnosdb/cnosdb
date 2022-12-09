@@ -58,7 +58,7 @@ impl Service for TcpService {
     fn start(&mut self) -> Result<(), server::Error> {
         let (shutdown, rx) = oneshot::channel();
 
-        let addr = self.addr.clone();
+        let addr = self.addr;
         let dbms = self.dbms.clone();
         let coord = self.coord.clone();
 
@@ -147,15 +147,17 @@ async fn process_vnode_write_command(
         code: SUCCESS_RESPONSE_CODE,
         data: "".to_string(),
     };
-    if let Err(err) = kv_inst.write(cmd.vnode_id, req).await {
+    // todo: we should get tenant from token
+    let mock_tenant = DEFAULT_CATALOG;
+    if let Err(err) = kv_inst.write(cmd.vnode_id, mock_tenant, req).await {
         resp.code = -1;
         resp.data = err.to_string();
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
-        return Err(err.into());
+        Err(err.into())
     } else {
         info!("success write data to vnode: {}", cmd.vnode_id);
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
-        return Ok(());
+        Ok(())
     }
 }
 

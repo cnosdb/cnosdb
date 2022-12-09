@@ -1,19 +1,17 @@
 use crate::{ClusterNode, ClusterNodeId};
 use models::schema::TskvTableSchema;
-
+use models::schema::DatabaseSchema;
 use openraft::EffectiveMembership;
 use openraft::LogId;
 use serde::{Deserialize, Serialize};
-
-use serde_json::from_str;
-
+use serde_json::{from_slice, from_str};
 use sled::Db;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use trace::info;
 
-use crate::error::{ct_err, l_r_err, s_w_err, sm_r_err, sm_w_err, MetaResult, StorageIOResult};
+use crate::error::{l_r_err, s_w_err, sm_r_err, sm_w_err, StorageIOResult};
 use crate::store::data;
 use crate::store::key_path::KeyPath;
 use models::{meta_data::*, utils};
@@ -29,7 +27,7 @@ pub fn children_fullpath(path: &str, map: Arc<sled::Db>) -> Vec<String> {
     }
 
     let mut list = vec![];
-    for res in map.range(path.clone().as_bytes()..) {
+    for res in map.scan_prefix(path.as_bytes()) {
         match res {
             Err(_) => break,
             Ok(val) => {
@@ -55,7 +53,9 @@ pub fn children_fullpath(path: &str, map: Arc<sled::Db>) -> Vec<String> {
     list
 }
 
-fn fetch_and_add_incr_id(cluster: &String, map: Arc<sled::Db>, count: u32) -> u32 {
+
+
+fn fetch_and_add_incr_id(cluster: &str, map: Arc<sled::Db>, count: u32) -> u32 {
     let id_key = KeyPath::incr_id(cluster);
 
     let mut id_str = "1".to_string();
@@ -69,29 +69,22 @@ fn fetch_and_add_incr_id(cluster: &String, map: Arc<sled::Db>, count: u32) -> u3
     id_num
 }
 
-pub fn get_struct<'a, T: Deserialize<'a>>(key: &String, map: Arc<sled::Db>) -> Option<T> {
-    let val = map.get(key).unwrap()?;
-    // let str = unsafe{String::from_utf8_unchecked((*val).to_owned())};
-    let info: T = serde_json::from_slice(&*val).ok()?;
-    Some(info)
-}
-
-pub fn children_data<'a, T: Deserialize<'a>>(path: &str, map: Arc<Db>) -> HashMap<String, T> {
+pub fn children_data<T>(path: &str, map: Arc<Db>) -> HashMap<String, T>
+where for<'a> T: Deserialize<'a>
+    {
     let mut path = path.to_owned();
     if !path.ends_with('/') {
         path.push('/');
     }
-
     let mut result = HashMap::new();
     for it in children_fullpath(&path, map.clone()).iter() {
-        let tmp = map.get(it);
         match map.get(it) {
-            Err(e) => continue,
+            Err(_) => continue,
             Ok(t) => {
                 if let Some(val) = t {
-                    if let Some(info)= serde_json::from_slice(&*val).ok(){
+                    if let Some(info)= from_slice(&val).ok(){
                         if let Some(key) = it.strip_prefix(path.as_str()) {
-                            result.insert(key.to_string(), val);
+                            result.insert(key.to_string(), info);
                         }
                     }
                 }
@@ -99,6 +92,7 @@ pub fn children_data<'a, T: Deserialize<'a>>(path: &str, map: Arc<Db>) -> HashMa
 
         }
     }
+
     result
 }
 
@@ -138,7 +132,6 @@ impl StateMachine {
     pub(crate) fn new(db: Arc<sled::Db>) -> StateMachine {
         Self { db }
     }
-
     fn data(&self) -> sled::Tree {
         self.db.open_tree("data").expect("data open failed")
     }
@@ -177,17 +170,18 @@ impl StateMachine {
             .map_err(sm_w_err)
             .map(|_| ())
     }
-    fn set_last_membership_tx(
-        &self,
-        tx_state_machine: &sled::transaction::TransactionalTree,
-        membership: EffectiveMembership<ClusterNodeId, ClusterNode>,
-    ) -> MetaResult<()> {
-        let value = serde_json::to_vec(&membership).map_err(sm_r_err)?;
-        tx_state_machine
-            .insert(b"last_membership", value)
-            .map_err(ct_err)?;
-        Ok(())
-    }
+    //todo:
+    // fn set_last_membership_tx(
+    //     &self,
+    //     tx_state_machine: &sled::transaction::TransactionalTree,
+    //     membership: EffectiveMembership<ClusterNodeId, ClusterNode>,
+    // ) -> MetaResult<()> {
+    //     let value = serde_json::to_vec(&membership).map_err(sm_r_err)?;
+    //     tx_state_machine
+    //         .insert(b"last_membership", value)
+    //         .map_err(ct_err)?;
+    //     Ok(())
+    // }
     pub(crate) fn get_last_applied_log(&self) -> StorageIOResult<Option<LogId<ClusterNodeId>>> {
         let state_machine = self.state_machine();
         state_machine
@@ -215,17 +209,18 @@ impl StateMachine {
             .map_err(l_r_err)
             .map(|_| ())
     }
-    fn set_last_applied_log_tx(
-        &self,
-        tx_state_machine: &sled::transaction::TransactionalTree,
-        log_id: LogId<ClusterNodeId>,
-    ) -> MetaResult<()> {
-        let value = serde_json::to_vec(&log_id).map_err(ct_err)?;
-        tx_state_machine
-            .insert(b"last_applied_log", value)
-            .map_err(ct_err)?;
-        Ok(())
-    }
+    //todo:
+    // fn set_last_applied_log_tx(
+    //     &self,
+    //     tx_state_machine: &sled::transaction::TransactionalTree,
+    //     log_id: LogId<ClusterNodeId>,
+    // ) -> MetaResult<()> {
+    //     let value = serde_json::to_vec(&log_id).map_err(ct_err)?;
+    //     tx_state_machine
+    //         .insert(b"last_applied_log", value)
+    //         .map_err(ct_err)?;
+    //     Ok(())
+    // }
     pub(crate) async fn from_serializable(
         sm: StateMachineContent,
         db: Arc<sled::Db>,
@@ -247,17 +242,18 @@ impl StateMachine {
         Ok(r)
     }
 
-    fn insert_tx(
-        &self,
-        tx_data_tree: &sled::transaction::TransactionalTree,
-        key: String,
-        value: String,
-    ) -> MetaResult<()> {
-        tx_data_tree
-            .insert(key.as_bytes(), value.as_bytes())
-            .map_err(ct_err)?;
-        Ok(())
-    }
+    //todo:
+    // fn insert_tx(
+    //     &self,
+    //     tx_data_tree: &sled::transaction::TransactionalTree,
+    //     key: String,
+    //     value: String,
+    // ) -> MetaResult<()> {
+    //     tx_data_tree
+    //         .insert(key.as_bytes(), value.as_bytes())
+    //         .map_err(ct_err)?;
+    //     Ok(())
+    // }
     pub fn get(&self, key: &str) -> StorageIOResult<Option<String>> {
         let key = key.as_bytes();
         let data_tree = self.data();
@@ -284,36 +280,34 @@ impl StateMachine {
         Ok(data)
     }
 
-    pub fn to_tenant_meta_data(
-        &self,
-        cluster: &String,
-        tenant: &String,
-    ) -> StorageIOResult<TenantMetaData> {
+    pub fn to_tenant_meta_data(&self, cluster: &str, tenant: &str) -> StorageIOResult<TenantMetaData> {
         let mut meta = TenantMetaData::new();
-
-        if let Some(val) = self.get_last_applied_log()? {
-            meta.version = val.index
-        }
-
-        meta.users =
-            children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), self.db.clone());
+        //todo:
+        meta.version = 1;
+        meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), self.db.clone());
         meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone());
 
-        meta.dbs =
-            children_data::<DatabaseInfo>(&KeyPath::tenant_dbs(cluster, tenant), self.db.clone());
-        for (key, val) in meta.dbs.iter_mut() {
+        let db_schemas =
+            children_data::<DatabaseSchema>(&KeyPath::tenant_dbs(cluster, tenant), self.db.clone());
+        for (key, schema) in db_schemas.iter() {
             let buckets = children_data::<BucketInfo>(
                 &KeyPath::tenant_db_buckets(cluster, tenant, key),
                 self.db.clone(),
             );
-            val.buckets = buckets.into_values().collect();
 
-            val.tables = children_data::<TskvTableSchema>(
+            let tables = children_data::<TskvTableSchema>(
                 &KeyPath::tenant_schemas(cluster, tenant, key),
                 self.db.clone(),
             );
-        }
 
+            let info = DatabaseInfo {
+                tables,
+                schema: schema.clone(),
+                buckets: buckets.into_values().collect(),
+            };
+
+            meta.dbs.insert(key.clone(), info);
+        }
         Ok(meta)
     }
 
@@ -347,23 +341,21 @@ impl StateMachine {
                 self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
                 info!("WRITE: {} :{}", key, value);
 
-                return CommandResp::default();
+                CommandResp::default()
             }
 
-            WriteCommand::AddDataNode(cluster, node) => {
-                return self.process_add_date_node(cluster, node);
-            }
+            WriteCommand::AddDataNode(cluster, node) => self.process_add_date_node(cluster, node),
 
-            WriteCommand::CreateDB(cluster, tenant, db) => {
-                return self.process_create_db(cluster, tenant, db);
+            WriteCommand::CreateDB(cluster, tenant, schema) => {
+                self.process_create_db(cluster, tenant, schema)
             }
 
             WriteCommand::CreateTable(cluster, tenant, schema) => {
-                return self.process_create_table(cluster, tenant, schema);
+                self.process_create_table(cluster, tenant, schema)
             }
 
             WriteCommand::UpdateTable(cluster, tenant, schema) => {
-                return self.process_update_table(cluster, tenant, schema);
+                self.process_update_table(cluster, tenant, schema)
             }
 
             WriteCommand::CreateBucket {
@@ -371,13 +363,11 @@ impl StateMachine {
                 tenant,
                 db,
                 ts,
-            } => {
-                return self.process_create_bucket(cluster, tenant, db, ts);
-            }
+            } => self.process_create_bucket(cluster, tenant, db, ts),
         }
     }
 
-    fn process_add_date_node(&mut self, cluster: &String, node: &NodeInfo) -> CommandResp {
+    fn process_add_date_node(&mut self, cluster: &str, node: &NodeInfo) -> CommandResp {
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
@@ -388,11 +378,11 @@ impl StateMachine {
 
     fn process_create_db(
         &mut self,
-        cluster: &String,
-        tenant: &String,
-        db: &DatabaseInfo,
+        cluster: &str,
+        tenant: &str,
+        schema: &DatabaseSchema,
     ) -> CommandResp {
-        let key = KeyPath::tenant_db_name(cluster, tenant, &db.name);
+        let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
         // if self.data.contains_key(&key) {
         //     return KvResp {
         //         err_code: -1,
@@ -401,7 +391,7 @@ impl StateMachine {
         //     };
         // }
 
-        let value = serde_json::to_string(db).unwrap();
+        let value = serde_json::to_string(schema).unwrap();
         self.db.insert(key.as_bytes(), value.as_bytes()).unwrap();
         info!("WRITE: {} :{}", key, value);
 
@@ -415,8 +405,8 @@ impl StateMachine {
 
     fn process_create_table(
         &mut self,
-        cluster: &String,
-        tenant: &String,
+        cluster: &str,
+        tenant: &str,
         schema: &TskvTableSchema,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
@@ -442,12 +432,12 @@ impl StateMachine {
 
     fn process_update_table(
         &mut self,
-        cluster: &String,
-        tenant: &String,
+        cluster: &str,
+        tenant: &str,
         schema: &TskvTableSchema,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db, &schema.name);
-        if let Some(val) = get_struct::<TskvTableSchema>(&key, self.db.clone()) {
+        if let Some(val) = self.db.get(&key).unwrap().and_then(|v|{from_slice::<TskvTableSchema>(&v).ok()}) {
             if val.schema_id + 1 != schema.schema_id {
                 return TenaneMetaDataResp::new_from_data(
                     META_REQUEST_FAILED,
@@ -475,9 +465,9 @@ impl StateMachine {
 
     fn process_create_bucket(
         &mut self,
-        cluster: &String,
-        tenant: &String,
-        db: &String,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
         ts: &i64,
     ) -> CommandResp {
         let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
@@ -492,15 +482,15 @@ impl StateMachine {
                 .to_string();
             }
         }
-
-        let db_info = match get_struct::<DatabaseInfo>(&db_path, self.db.clone()) {
+        let res = self.db.get(&db_path).unwrap().and_then(|v|{from_slice::<DatabaseSchema>(&v).ok()});
+        let db_schema = match res{
             Some(info) => info,
             None => {
                 return TenaneMetaDataResp::new(
                     META_REQUEST_FAILED,
                     format!("database {} is not exist", db),
                 )
-                .to_string();
+                    .to_string();
             }
         };
 
@@ -511,17 +501,16 @@ impl StateMachine {
 
         let now = utils::now_timestamp();
         if node_list.is_empty()
-            || db_info.shard == 0
-            || db_info.replications > node_list.len() as u32
+            || db_schema.config.shard_num_or_default() == 0
+            || db_schema.config.replica_or_default() > node_list.len() as u64
         {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} attribute invalid!", db),
-            )
-            .to_string();
+            ).to_string();
         }
 
-        if *ts < now - db_info.ttl {
+        if *ts < now - db_schema.config.ttl_or_default().time_stamp() {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} create expired bucket not permit!", db),
@@ -535,11 +524,14 @@ impl StateMachine {
             end_time: 0,
             shard_group: vec![],
         };
-        (bucket.start_time, bucket.end_time) = get_time_range(*ts, db_info.vnode_duration);
+        (bucket.start_time, bucket.end_time) = get_time_range(
+            *ts,
+            db_schema.config.vnode_duration_or_default().time_stamp(),
+        );
         let (group, used) = allocation_replication_set(
             node_list,
-            db_info.shard,
-            db_info.replications,
+            db_schema.config.shard_num_or_default() as u32,
+            db_schema.config.replica_or_default() as u32,
             bucket.id + 1,
         );
         bucket.shard_group = group;
@@ -564,6 +556,7 @@ impl StateMachine {
 mod test {
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
+    use std::println;
 
     #[tokio::test]
     async fn test_btree_map() {

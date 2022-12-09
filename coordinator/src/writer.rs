@@ -134,15 +134,21 @@ impl<'a> VnodeMapping<'a> {
             point.hash_id,
             point.timestamp,
         )?;
-        self.sets.entry(info.id).or_insert(info.clone());
+        self.sets.entry(info.id).or_insert_with(|| info.clone());
         let entry = self
             .points
             .entry(info.id)
-            .or_insert(VnodePoints::new(point.db.clone(), info));
+            .or_insert_with(|| VnodePoints::new(point.db.clone(), info));
 
         entry.add_point(point);
 
-        return Ok(());
+        Ok(())
+    }
+}
+
+impl<'a> Default for VnodeMapping<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -197,7 +203,8 @@ impl PointWriter {
             points.finish();
 
             for vnode in points.repl_set.vnodes.iter() {
-                let request = self.write_to_node(vnode.id, vnode.node_id, points.data.clone());
+                let request =
+                    self.write_to_node(vnode.id, &req.tenant, vnode.node_id, points.data.clone());
                 requests.push(request);
             }
         }
@@ -210,11 +217,12 @@ impl PointWriter {
     async fn write_to_node(
         &self,
         vnode_id: u32,
+        tenant: &str,
         node_id: u64,
         data: Vec<u8>,
     ) -> CoordinatorResult<()> {
         if node_id == self.node_id {
-            let result = self.write_to_locat_node(vnode_id, data).await;
+            let result = self.write_to_locat_node(vnode_id, tenant, data).await;
             debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
             return result;
@@ -235,7 +243,7 @@ impl PointWriter {
         }
 
         debug!("write data to remote {}({}) success!", node_id, vnode_id);
-        return Ok(());
+        Ok(())
     }
 
     async fn write_to_handoff(
@@ -253,9 +261,8 @@ impl PointWriter {
         };
 
         self.hh_sender.send(request).await?;
-        let result = receiver.await?;
 
-        return result;
+        receiver.await?
     }
 
     pub async fn write_to_remote_node(
@@ -277,27 +284,32 @@ impl PointWriter {
         if let CoordinatorTcpCmd::StatusResponseCmd(msg) = rsp_cmd {
             self.meta_manager.admin_meta().put_node_conn(node_id, conn);
             if msg.code == SUCCESS_RESPONSE_CODE {
-                return Ok(());
+                Ok(())
             } else {
-                return Err(CoordinatorError::WriteVnode {
+                Err(CoordinatorError::WriteVnode {
                     msg: format!("code: {}, msg: {}", msg.code, msg.data),
-                });
+                })
             }
         } else {
-            return Err(CoordinatorError::UnExpectResponse);
+            Err(CoordinatorError::UnExpectResponse)
         }
     }
 
-    async fn write_to_locat_node(&self, vnode_id: u32, data: Vec<u8>) -> CoordinatorResult<()> {
+    async fn write_to_locat_node(
+        &self,
+        vnode_id: u32,
+        tenant: &str,
+        data: Vec<u8>,
+    ) -> CoordinatorResult<()> {
         let req = WritePointsRpcRequest {
             version: 1,
             points: data.clone(),
         };
 
-        if let Err(err) = self.kv_inst.write(vnode_id, req).await {
-            return Err(err.into());
+        if let Err(err) = self.kv_inst.write(vnode_id, tenant, req).await {
+            Err(err.into())
         } else {
-            return Ok(());
+            Ok(())
         }
     }
 }

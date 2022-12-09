@@ -137,12 +137,8 @@ mod tests {
     use trace::debug;
 
     use super::*;
-    use datafusion::arrow::{
-        datatypes::Schema, record_batch::RecordBatch, util::pretty::pretty_format_batches,
-    };
-    use spi::{
-        catalog::DEFAULT_CATALOG, query::execution::Output, service::protocol::ContextBuilder,
-    };
+    use datafusion::arrow::{record_batch::RecordBatch, util::pretty::pretty_format_batches};
+    use spi::{catalog::DEFAULT_CATALOG, service::protocol::ContextBuilder};
     use tskv::engine::MockEngine;
 
     #[macro_export]

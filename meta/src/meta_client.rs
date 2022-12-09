@@ -21,8 +21,7 @@ use crate::error::{MetaError, MetaResult};
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{UserManager, UserManagerMock};
 use crate::{client, store};
-use models::schema::{Tenant, TenantOptions, TskvTableSchema};
-
+use models::schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema};
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;
 pub type MetaClientRef = Arc<dyn MetaClient>;
@@ -68,7 +67,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn tenant(&self) -> &Tenant;
 
     //fn create_user(&self, user: &UserInfo) -> MetaResult<()>;
-    //fn drop_user(&self, name: &String) -> MetaResult<()>;
+    //fn drop_user(&self, name: &str) -> MetaResult<()>;
 
     // tenant member
     // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;
@@ -102,28 +101,27 @@ pub trait MetaClient: Send + Sync + Debug {
     ) -> MetaResult<bool>;
     fn drop_custom_role(&mut self, role_name: &str) -> MetaResult<bool>;
 
-    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()>;
-    fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>>;
+    fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()>;
+    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
-    fn drop_db(&self, name: &String) -> MetaResult<()>;
+    fn drop_db(&self, name: &str) -> MetaResult<()>;
 
     fn create_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
     fn update_table(&self, schema: &TskvTableSchema) -> MetaResult<()>;
-    fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>>;
-    fn list_tables(&self, db: &String) -> MetaResult<Vec<String>>;
-    fn drop_table(&self, db: &String, table: &String) -> MetaResult<()>;
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>>;
+    fn list_tables(&self, db: &str) -> MetaResult<Vec<String>>;
+    fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
-    fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo>;
-    //fn drop_bucket(&self, db: &String, id: u64) -> MetaResult<()>;
+    fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo>;
+    //fn drop_bucket(&self, db: &str, id: u64) -> MetaResult<()>;
 
-    fn database_min_ts(&self, db: &String) -> Option<i64>;
+    fn database_min_ts(&self, db: &str) -> Option<i64>;
 
-    fn mapping_bucket(&self, db_name: &String, start: i64, end: i64)
-        -> MetaResult<Vec<BucketInfo>>;
+    fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
     fn locate_replcation_set_for_write(
         &self,
-        db: &String,
+        db: &str,
         hash_id: u64,
         ts: i64,
     ) -> MetaResult<ReplcationSet>;
@@ -245,13 +243,15 @@ impl AdminMeta for RemoteAdminMeta {
             return Ok(val.clone());
         }
 
-        return Err(MetaError::NotFoundNode { id });
+        Err(MetaError::NotFoundNode { id })
     }
 
     async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream> {
         {
             let mut write = self.conn_map.write();
-            let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
+            let entry = write
+                .entry(node_id)
+                .or_insert_with(|| VecDeque::with_capacity(32));
             if let Some(val) = entry.pop_front() {
                 return Ok(val);
             }
@@ -265,7 +265,9 @@ impl AdminMeta for RemoteAdminMeta {
 
     fn put_node_conn(&self, node_id: u64, conn: TcpStream) {
         let mut write = self.conn_map.write();
-        let entry = write.entry(node_id).or_insert(VecDeque::with_capacity(32));
+        let entry = write
+            .entry(node_id)
+            .or_insert_with(|| VecDeque::with_capacity(32));
 
         // close too more idle connection
         if entry.len() < 32 {
@@ -291,7 +293,7 @@ impl RemoteMetaClient {
             tenant,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(1, meta_url.clone()),
+            client: MetaHttpClient::new(1, meta_url),
         }
     }
 
@@ -400,11 +402,11 @@ impl MetaClient for RemoteMetaClient {
 
     // tenant role end
 
-    fn create_db(&self, info: &DatabaseInfo) -> MetaResult<()> {
+    fn create_db(&self, schema: &DatabaseSchema) -> MetaResult<()> {
         let req = command::WriteCommand::CreateDB(
             self.cluster.clone(),
             self.tenant.name().to_string(),
-            info.clone(),
+            schema.clone(),
         );
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
@@ -423,14 +425,14 @@ impl MetaClient for RemoteMetaClient {
         Ok(())
     }
 
-    fn get_db_schema(&self, name: &String) -> MetaResult<Option<DatabaseInfo>> {
+    fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.clone()));
+            return Ok(Some(db.schema.clone()));
         }
 
         self.sync_all_tenant_metadata()?;
         if let Some(db) = self.data.read().dbs.get(name) {
-            return Ok(Some(db.clone()));
+            return Ok(Some(db.schema.clone()));
         }
 
         Ok(None)
@@ -445,7 +447,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(list)
     }
 
-    fn drop_db(&self, name: &String) -> MetaResult<()> {
+    fn drop_db(&self, name: &str) -> MetaResult<()> {
         todo!()
     }
 
@@ -467,7 +469,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(())
     }
 
-    fn get_table_schema(&self, db: &String, table: &String) -> MetaResult<Option<TskvTableSchema>> {
+    fn get_table_schema(&self, db: &str, table: &str) -> MetaResult<Option<TskvTableSchema>> {
         if let Some(val) = self.data.read().table_schema(db, table) {
             return Ok(Some(val));
         }
@@ -495,7 +497,7 @@ impl MetaClient for RemoteMetaClient {
         Ok(())
     }
 
-    fn list_tables(&self, db: &String) -> MetaResult<Vec<String>> {
+    fn list_tables(&self, db: &str) -> MetaResult<Vec<String>> {
         let mut list = vec![];
         if let Some(info) = self.data.read().dbs.get(db) {
             for (k, _) in info.tables.iter() {
@@ -506,15 +508,15 @@ impl MetaClient for RemoteMetaClient {
         Ok(list)
     }
 
-    fn drop_table(&self, db: &String, table: &String) -> MetaResult<()> {
+    fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
         todo!()
     }
 
-    fn create_bucket(&self, db: &String, ts: i64) -> MetaResult<BucketInfo> {
+    fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
         let req = command::WriteCommand::CreateBucket {
             cluster: self.cluster.clone(),
             tenant: self.tenant.name().to_string(),
-            db: db.clone(),
+            db: db.to_string(),
             ts,
         };
 
@@ -536,18 +538,18 @@ impl MetaClient for RemoteMetaClient {
             return Ok(bucket.clone());
         }
 
-        return Err(MetaError::CommonError {
-            msg: format!("create bucket unknown error"),
-        });
+        Err(MetaError::CommonError {
+            msg: "create bucket unknown error".to_string(),
+        })
     }
 
-    fn database_min_ts(&self, name: &String) -> Option<i64> {
+    fn database_min_ts(&self, name: &str) -> Option<i64> {
         self.data.read().database_min_ts(name)
     }
 
     fn locate_replcation_set_for_write(
         &self,
-        db: &String,
+        db: &str,
         hash_id: u64,
         ts: i64,
     ) -> MetaResult<ReplcationSet> {
@@ -557,20 +559,15 @@ impl MetaClient for RemoteMetaClient {
 
         let bucket = self.create_bucket(db, ts)?;
 
-        return Ok(bucket.vnode_for(hash_id));
+        Ok(bucket.vnode_for(hash_id))
     }
 
-    fn mapping_bucket(
-        &self,
-        db_name: &String,
-        start: i64,
-        end: i64,
-    ) -> MetaResult<Vec<BucketInfo>> {
+    fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>> {
         // TODO improve performence,watch the meta
         self.sync_all_tenant_metadata()?;
 
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
-        return Ok(buckets);
+        Ok(buckets)
     }
 
     fn print_data(&self) -> String {

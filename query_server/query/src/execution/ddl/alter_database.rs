@@ -24,7 +24,10 @@ impl DDLDefinitionTask for AlterDatabaseTask {
     ) -> Result<Output, ExecutionError> {
         let mut schema = query_state_machine
             .catalog
-            .database(&self.stmt.database_name)
+            .database(
+                query_state_machine.session.tenant(),
+                &self.stmt.database_name,
+            )
             .context(execution::MetadataSnafu)?;
         build_database_schema(&self.stmt.database_options, &mut schema.config);
         query_state_machine

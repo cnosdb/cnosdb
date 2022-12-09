@@ -58,7 +58,7 @@ impl LocalCatalogMeta {
         };
         if let Err(e) = meta.create_database(
             &meta.database_name,
-            DatabaseSchema::new(&meta.database_name),
+            DatabaseSchema::new(&meta.catalog_name, &meta.database_name),
         ) {
             match e {
                 MetadataError::DatabaseAlreadyExists { .. } => {}
@@ -105,7 +105,7 @@ impl MetaData for LocalCatalogMeta {
         // note: local mod dont support multiple catalog use DEFAULT_CATALOG
         // let catalog_name = name.catalog;
         self.catalog
-            .schema(name.schema)
+            .schema(name.catalog, name.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: name.schema.to_string(),
             })?
@@ -115,11 +115,11 @@ impl MetaData for LocalCatalogMeta {
             })
     }
 
-    fn database(&self, name: &str) -> Result<DatabaseSchema> {
+    fn database(&self, tenant: &str, database: &str) -> Result<DatabaseSchema> {
         self.engine
-            .get_db_schema(name)
+            .get_db_schema(tenant, database)
             .ok_or(MetadataError::DatabaseNotExists {
-                database_name: name.to_string(),
+                database_name: database.to_string(),
             })
     }
 
@@ -131,7 +131,7 @@ impl MetaData for LocalCatalogMeta {
         let table: TableReference = name.into();
         let name = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
         self.catalog
-            .schema(name.schema)
+            .schema(name.catalog, name.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: name.schema.to_string(),
             })?
@@ -139,8 +139,8 @@ impl MetaData for LocalCatalogMeta {
             .map(|_| ())
     }
 
-    fn drop_database(&self, name: &str) -> Result<()> {
-        self.catalog.deregister_schema(name).map(|_| ())
+    fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
+        self.catalog.deregister_schema(tenant, database)
     }
 
     fn create_table(&self, name: &str, table_schema: TableSchema) -> Result<()> {
@@ -148,7 +148,7 @@ impl MetaData for LocalCatalogMeta {
         let table_ref = table.resolve(self.catalog_name.as_str(), self.database_name.as_str());
 
         self.catalog
-            .schema(table_ref.schema)
+            .schema(table_ref.catalog, table_ref.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: table_ref.schema.to_string(),
             })?
@@ -158,6 +158,7 @@ impl MetaData for LocalCatalogMeta {
     }
 
     fn create_database(&self, name: &str, database: DatabaseSchema) -> Result<()> {
+        let tenant = database.tenant_name().to_string();
         let user_schema = Database::new(
             name.to_string(),
             self.engine.clone(),
@@ -165,7 +166,7 @@ impl MetaData for LocalCatalogMeta {
             database,
         );
         self.catalog
-            .register_schema(name, Arc::new(user_schema))
+            .register_schema(&tenant, name, Arc::new(user_schema))
             .map(|_| ())
     }
 
@@ -180,7 +181,7 @@ impl MetaData for LocalCatalogMeta {
         };
 
         self.catalog
-            .schema(database_name)
+            .schema(&self.catalog_name, database_name)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: database_name.to_string(),
             })?
@@ -199,7 +200,7 @@ impl MetaData for LocalCatalogMeta {
         let table_ref = TableReference::from(table_name)
             .resolve(self.catalog_name.as_str(), self.database_name.as_str());
         self.catalog
-            .schema(table_ref.schema)
+            .schema(table_ref.catalog, table_ref.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: table_ref.schema.to_string(),
             })?
@@ -215,7 +216,7 @@ impl MetaData for LocalCatalogMeta {
         let table_ref = TableReference::from(table_name)
             .resolve(self.catalog_name.as_str(), self.database_name.as_str());
         self.catalog
-            .schema(table_ref.schema)
+            .schema(table_ref.catalog, table_ref.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: table_ref.schema.to_string(),
             })?
@@ -227,7 +228,7 @@ impl MetaData for LocalCatalogMeta {
             .resolve(self.catalog_name.as_str(), self.database_name.as_str());
 
         self.catalog
-            .schema(table_ref.schema)
+            .schema(table_ref.catalog, table_ref.schema)
             .ok_or_else(|| MetadataError::DatabaseNotExists {
                 database_name: table_ref.schema.to_string(),
             })?

@@ -13,6 +13,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use config::get_config;
+use meta::meta_client::MetaRef;
 use models::Timestamp;
 use trace::{debug, error, info};
 
@@ -227,11 +228,7 @@ impl Summary {
 
         Ok(Self {
             file_no: 0,
-            version_set: Arc::new(RwLock::new(VersionSet::new(
-                opt.clone(),
-                HashMap::new(),
-                flush_task_sender,
-            )?)),
+            version_set: Arc::new(RwLock::new(VersionSet::empty(opt.clone()))),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
@@ -239,6 +236,7 @@ impl Summary {
     }
 
     pub async fn recover(
+        meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
@@ -246,7 +244,7 @@ impl Summary {
         let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(Reader::new(file_utils::make_summary_file(&summary_path, 0)).unwrap());
-        let vs = Self::recover_version(rd, &ctx, opt.clone(), flush_task_sender).await?;
+        let vs = Self::recover_version(meta, rd, &ctx, opt.clone(), flush_task_sender).await?;
 
         Ok(Self {
             file_no: 0,
@@ -259,6 +257,7 @@ impl Summary {
 
     // recover from summary file
     pub async fn recover_version(
+        meta: MetaRef,
         mut reader: Box<Reader>,
         ctx: &GlobalContext,
         opt: Arc<Options>,
@@ -345,7 +344,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender)?;
+        let vs = VersionSet::new(meta, opt.clone(), versions, flush_task_sender)?;
         Ok(vs)
     }
 
@@ -590,7 +589,8 @@ mod test {
     use tokio::sync::mpsc::UnboundedSender;
     use trace::debug;
 
-    use config::get_config;
+    use config::{get_config, ClusterConfig};
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::schema::DatabaseSchema;
 
     use crate::file_system::file_manager;
@@ -631,6 +631,8 @@ mod test {
     }
 
     async fn test_summary_recover(opt: Arc<Options>) {
+        let cluster_options = ClusterConfig::default();
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -644,12 +646,14 @@ mod test {
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
+        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
     }
 
     async fn test_tsf_num_recover(opt: Arc<Options>) {
+        let cluster_options = ClusterConfig::default();
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -664,18 +668,20 @@ mod test {
         let mut edit = VersionEdit::new();
         edit.add_tsfamily(100, "hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let mut summary = Summary::recover(opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let mut summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
 
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
     }
 
@@ -698,6 +704,8 @@ mod test {
 
     // tips : we can use a small max_summary_size
     async fn test_recover_summary_with_roll_0(opt: Arc<Options>) {
+        let cluster_options = ClusterConfig::default();
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
@@ -716,7 +724,10 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database))
+            .create_db(
+                DatabaseSchema::new("cnosdb", &database),
+                meta_manager.clone(),
+            )
             .unwrap();
         for i in 0..40 {
             db.write()
@@ -736,14 +747,17 @@ mod test {
         }
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
 
         assert_eq!(summary.version_set.read().tsf_num(), 20);
     }
 
     async fn test_recover_summary_with_roll_1(opt: Arc<Options>) {
+        let cluster_options = ClusterConfig::default();
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
@@ -761,7 +775,10 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database))
+            .create_db(
+                DatabaseSchema::new("cnosdb", &database),
+                meta_manager.clone(),
+            )
             .unwrap();
         db.write().add_tsfamily(
             10,
@@ -811,9 +828,10 @@ mod test {
 
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
 
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
