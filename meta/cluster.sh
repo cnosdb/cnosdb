@@ -48,15 +48,15 @@ sleep 1
 
 echo "Start 3 uninitialized metasrv_test servers..."
 
-nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > /dev/null &
+nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > /tmp/cnosdb/logs/meta_node.1.log &
 echo "Server 1 started"
 sleep 1
 
-nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > /dev/null &
+nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
 echo "Server 2 started"
 sleep 1
 
-nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > /dev/null &
+nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
 
 echo "Server 3 started"
 sleep 1

@@ -26,14 +26,25 @@ pub struct Empty {}
 #[derive(Debug)]
 pub struct MetaHttpClient {
     //inner: reqwest::Client,
-    pub leader: Arc<Mutex<(NodeId, String)>>,
+    addrs: Vec<String>,
+
+    leader: Arc<Mutex<String>>,
 }
 
 impl MetaHttpClient {
-    pub fn new(leader_id: NodeId, leader_addr: String) -> Self {
+    pub fn new(addr: String) -> Self {
+        let mut addrs = vec![];
+        let list: Vec<&str> = addr.split(";").collect();
+        for item in list.iter() {
+            addrs.push(item.to_string());
+        }
+        addrs.sort();
+        let leader_addr = addrs[0].clone();
+
         Self {
             //inner: reqwest::Client::new(),
-            leader: Arc::new(Mutex::new((leader_id, leader_addr))),
+            addrs,
+            leader: Arc::new(Mutex::new(leader_addr)),
         }
     }
 
@@ -85,6 +96,17 @@ impl MetaHttpClient {
 
     //////////////////////////////////////////////////
 
+    fn switch_leader(&self) {
+        let mut t = self.leader.lock().unwrap();
+
+        if let Ok(index) = self.addrs.binary_search(&t) {
+            let index = (index + 1) % self.addrs.len();
+            *t = self.addrs[index].clone();
+        } else {
+            *t = self.addrs[0].clone();
+        }
+    }
+
     fn send_rpc_to_leader<Req, Resp, Err>(
         &self,
         uri: &str,
@@ -115,21 +137,25 @@ impl MetaHttpClient {
                     <Err as TryInto<ForwardToLeader<NodeId>>>::try_into(remote_err.source.clone());
 
                 if let Ok(ForwardToLeader {
-                    leader_id: Some(leader_id),
+                    leader_id: Some(_),
                     leader_node: Some(leader_node),
                     ..
                 }) = forward_err_res
                 {
                     {
                         let mut t = self.leader.lock().unwrap();
-                        *t = (leader_id, leader_node.addr);
+                        *t = leader_node.addr;
                     }
 
                     n_retry -= 1;
                     if n_retry > 0 {
                         continue;
                     }
+                } else {
+                    self.switch_leader();
                 }
+            } else {
+                self.switch_leader();
             }
 
             return Err(rpc_err);
@@ -146,12 +172,7 @@ impl MetaHttpClient {
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error + Serialize + DeserializeOwned,
     {
-        let (leader_id, url) = {
-            let t = self.leader.lock().unwrap();
-            let target_addr = &t.1;
-            (t.0, format!("http://{}/{}", target_addr, uri))
-        };
-
+        let url = format!("http://{}/{}", self.leader.lock().unwrap(), uri);
         let resp = if let Some(r) = req {
             ureq::post(&url).send_json(r)
         } else {
@@ -163,7 +184,7 @@ impl MetaHttpClient {
             .into_json()
             .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
-        res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
+        res.map_err(|e| RPCError::RemoteError(RemoteError::new(0, e)))
     }
 }
 
@@ -177,7 +198,7 @@ mod test {
     pub async fn watch_tenant(cluster: &str, tenant: &str) {
         println!("=== begin ================...");
 
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
         let mut version = 0;
         let mut cmd = (
             "client_id".to_string(),
@@ -214,7 +235,7 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
 
         let node = NodeInfo {
             id: 111,

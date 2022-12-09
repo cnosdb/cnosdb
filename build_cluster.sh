@@ -32,12 +32,12 @@ echo "*** build client ......"
 cargo build --package client --bin client
 
 echo "*** start CnosDB server 31001......"
-nohup ./target/debug/main run  --config ./config/config_31001.toml > /dev/null &
+nohup ./target/debug/main run  --config ./config/config_31001.toml > /tmp/cnosdb/logs/data_node.1001.log &
 
 sleep 1
 
 echo "*** start CnosDB server 32001......"
-nohup ./target/debug/main run  --config ./config/config_32001.toml > /dev/null &
+nohup ./target/debug/main run  --config ./config/config_32001.toml > /tmp/cnosdb/logs/data_node.2001.log &
 
 echo "\n*** CnosDB Data Server Cluster is running ......"
 
