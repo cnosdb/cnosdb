@@ -115,6 +115,7 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
+    use models::auth::user::{UserDesc, UserOptions};
     use spi::{
         query::{
             dispatcher::{QueryInfo, QueryStatus},
@@ -138,7 +139,15 @@ mod tests {
             Ok(())
         }
         fn info(&self) -> QueryInfo {
-            QueryInfo::new(1_u64.into(), "test".to_string(), "UNKNOWN".to_string())
+            let options = UserOptions::default();
+            let desc = UserDesc::new(0_u128, "user".to_string(), options, true);
+            QueryInfo::new(
+                1_u64.into(),
+                "test".to_string(),
+                0_u128,
+                "tenant".to_string(),
+                desc,
+            )
         }
         fn status(&self) -> QueryStatus {
             QueryStatus::new(

@@ -5,11 +5,11 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 
+use meta::error::MetaError;
 use spi::query::execution::ExternalSnafu;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use std::sync::Arc;
-use meta::error::MetaError;
 
 pub struct ShowTablesTask {
     database_name: Option<String>,

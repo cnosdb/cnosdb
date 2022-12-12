@@ -1,8 +1,8 @@
 use crate::query::{function, QueryError};
+use meta::error::MetaError;
 use models::auth::AuthError;
 use models::define_result;
 use snafu::Snafu;
-use meta::error::MetaError;
 
 pub mod dbms;
 

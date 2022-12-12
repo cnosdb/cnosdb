@@ -62,6 +62,13 @@ impl TableSchema {
             TableSchema::ExternalTableSchema(schema) => schema.db.clone(),
         }
     }
+
+    pub fn engine_name(&self) -> &str {
+        match self {
+            TableSchema::TsKvTableSchema(_) => "TSKV",
+            TableSchema::ExternalTableSchema(_) => "EXTERNAL",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -515,6 +522,10 @@ impl DatabaseSchema {
         }
 
         false
+    }
+
+    pub fn options(&self) -> &DatabaseOptions {
+        &self.config
     }
 }
 

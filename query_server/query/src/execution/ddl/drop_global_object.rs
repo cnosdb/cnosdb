@@ -8,8 +8,8 @@ use trace::debug;
 
 use super::DDLDefinitionTask;
 
-use snafu::ResultExt;
 use meta::error::MetaError;
+use snafu::ResultExt;
 
 pub struct DropGlobalObjectTask {
     stmt: DropGlobalObject,

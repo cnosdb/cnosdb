@@ -15,9 +15,9 @@ use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::CreateExternalTable;
+use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
-use meta::error::MetaError;
 use spi::query::execution::MetadataSnafu;
 
 use spi::query::execution::ExecutionError;

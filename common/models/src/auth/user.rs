@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::oid::{Identifier, Oid};
 
 use super::{
-    privilege::{Privilege, PrivilegeChecker},
+    privilege::{DatabasePrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege},
     rsa_utils, AuthError, Result,
 };
 
@@ -29,6 +29,27 @@ impl User {
 
     pub fn check_privilege(&self, privilege: &Privilege<Oid>) -> bool {
         self.privileges.iter().any(|e| e.check_privilege(privilege))
+    }
+
+    pub fn can_access_system(&self, tenant_id: Oid) -> bool {
+        let privilege = Privilege::TenantObject(TenantObjectPrivilege::System, Some(tenant_id));
+        self.check_privilege(&privilege)
+    }
+
+    pub fn can_access_role(&self, tenant_id: Oid) -> bool {
+        let privilege = Privilege::TenantObject(TenantObjectPrivilege::RoleFull, Some(tenant_id));
+        self.check_privilege(&privilege)
+    }
+
+    pub fn can_read_database(&self, tenant_id: Oid, database_name: &str) -> bool {
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(
+                DatabasePrivilege::Read,
+                Some(database_name.to_string()),
+            ),
+            Some(tenant_id),
+        );
+        self.check_privilege(&privilege)
     }
 }
 

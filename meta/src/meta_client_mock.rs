@@ -5,7 +5,10 @@ use std::{
     sync::Arc,
 };
 
-use models::schema::{ExternalTableSchema, TableSchema};
+use models::{
+    auth::user::UserDesc,
+    schema::{ExternalTableSchema, TableSchema},
+};
 use models::{
     auth::{
         privilege::DatabasePrivilege,
@@ -156,7 +159,7 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    fn members(&self) -> MetaResult<HashSet<Oid>> {
+    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
         todo!()
     }
 
