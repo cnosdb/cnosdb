@@ -115,11 +115,15 @@ async fn process_client(
         let recv_cmd = recv_command(&mut client).await?;
 
         match recv_cmd {
-            CoordinatorTcpCmd::StatusResponseCmd(cmd) => {}
-            CoordinatorTcpCmd::RecordBatchResponseCmd(_) => {}
             CoordinatorTcpCmd::WriteVnodePointCmd(cmd) => {
                 process_vnode_write_command(&mut client, cmd, coord.store_engine()).await?;
             }
+
+            CoordinatorTcpCmd::AdminStatementCmd(cmd) => {
+                info!("process admin statement: {:?}", &cmd);
+                process_admin_statement_command(&mut client, cmd, coord.store_engine()).await?;
+            }
+
             CoordinatorTcpCmd::QueryRecordBatchCmd(cmd) => {
                 process_query_record_batch_command(
                     &mut client,
@@ -129,6 +133,8 @@ async fn process_client(
                 )
                 .await?;
             }
+
+            _ => {}
         }
     }
 }
@@ -159,6 +165,24 @@ async fn process_vnode_write_command(
         send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
         Ok(())
     }
+}
+
+async fn process_admin_statement_command(
+    client: &mut TcpStream,
+    cmd: AdminStatementRequest,
+    engine: EngineRef,
+) -> CoordinatorResult<()> {
+    match cmd.stat {
+        AdminStatementType::DropDB(db) => {
+            engine.drop_database(&cmd.tenant, &db)?;
+        }
+
+        AdminStatementType::DropTable(db, table) => {
+            engine.drop_table(&cmd.tenant, &db, &table)?;
+        }
+    }
+
+    Ok(())
 }
 
 async fn process_query_record_batch_command(
