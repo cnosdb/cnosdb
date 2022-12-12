@@ -1,17 +1,16 @@
 #![allow(clippy::module_inception)]
 
-
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use crate::error::{
     l_r_err, l_w_err, s_r_err, s_w_err, sm_r_err, v_r_err, v_w_err, StorageIOResult, StorageResult,
 };
 use crate::store::state_machine::{CommandResp, StateMachineContent};
-use crate::{ClusterNodeId, TypeConfig, ClusterNode};
+use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use openraft::async_trait::async_trait;
 use openraft::storage::LogState;
@@ -71,10 +70,10 @@ fn data(db: &sled::Db) -> sled::Tree {
 //         .expect("state_machine open failed")
 // }
 impl Store {
-    pub fn new(db: sled::Db) ->Self{
+    pub fn new(db: sled::Db) -> Self {
         let db = Arc::new(db);
         let sm = StateMachine::new(db.clone());
-        Self{
+        Self {
             db,
             state_machine: RwLock::new(sm),
             watch: RwLock::new(HashMap::new()),
@@ -402,14 +401,15 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
         Option<LogId<ClusterNodeId>>,
         EffectiveMembership<ClusterNodeId, ClusterNode>,
     )> {
-
         let state_machine = self.state_machine.read().await;
-        info!("state_matchine info: {:?}",state_machine.get_last_applied_log().unwrap());
+        info!(
+            "state_matchine info: {:?}",
+            state_machine.get_last_applied_log().unwrap()
+        );
         Ok((
             state_machine.get_last_applied_log()?,
             state_machine.get_last_membership()?,
         ))
-
     }
 
     #[tracing::instrument(level = "trace", skip(self, entries))]
@@ -435,7 +435,9 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
                     res.push(CommandResp::default())
                 }
 
-                EntryPayload::Normal(ref req) => res.push(sm.process_write_command(req, &mut watch)),
+                EntryPayload::Normal(ref req) => {
+                    res.push(sm.process_write_command(req, &mut watch))
+                }
             };
         }
         Ok(res)

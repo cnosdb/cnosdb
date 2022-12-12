@@ -2,17 +2,17 @@
 
 use actix_web::middleware::Logger;
 use actix_web::web::Data;
-use actix_web::{App, HttpServer, middleware};
+use actix_web::{middleware, App, HttpServer};
 use clap::Parser;
 use meta::service::connection::Connections;
 use meta::service::{api, raft_api};
+use meta::store::config::Opt;
 use meta::store::Store;
-use meta::{MetaApp, RaftStore, store};
+use meta::{store, MetaApp, RaftStore};
 use openraft::{Config, Raft};
 use sled::Db;
 use std::sync::Arc;
 use std::time::Duration;
-use meta::store::config::Opt;
 use trace::init_global_tracing;
 
 #[actix_web::main]

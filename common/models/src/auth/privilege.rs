@@ -107,6 +107,9 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TenantObjectPrivilege {
+    // All operation permissions related to system
+    // e.g. kill querys of tenant
+    System,
     // All operation permissions related to members
     MemberFull,
     // All operation permissions related to roles
@@ -119,6 +122,9 @@ pub enum TenantObjectPrivilege {
 impl Display for TenantObjectPrivilege {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::System => {
+                write!(f, "system admin")
+            }
             Self::MemberFull => {
                 write!(f, "maintainer for all members")
             }
@@ -140,6 +146,7 @@ impl Display for TenantObjectPrivilege {
 impl PrivilegeChecker for TenantObjectPrivilege {
     fn check_privilege(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::System, Self::System) => true,
             (Self::MemberFull, Self::MemberFull) => true,
             (Self::RoleFull, Self::RoleFull) => true,
             (Self::Database(s, None), Self::Database(o, _)) => s.check_privilege(o),
@@ -156,6 +163,16 @@ pub enum DatabasePrivilege {
     Read,
     Write,
     Full,
+}
+
+impl DatabasePrivilege {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Read => "Read",
+            Self::Write => "Write",
+            Self::Full => "All",
+        }
+    }
 }
 
 impl PrivilegeChecker for DatabasePrivilege {

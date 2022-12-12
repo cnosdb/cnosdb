@@ -6,12 +6,12 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::ResultExt;
 
+use meta::error::MetaError;
 use spi::query::execution;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
 use std::sync::Arc;
-use meta::error::MetaError;
 
 pub struct DescribeDatabaseTask {
     stmt: DescribeDatabase,

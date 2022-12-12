@@ -79,8 +79,8 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         let scheme_provider = MetadataProvider::new(
             self.coord.clone(),
             func_manager,
-            session.tenant().to_string(),
-            session.default_database().to_string(),
+            self.query_tracker.clone(),
+            session.clone(),
         );
 
         let logical_planner = DefaultLogicalPlanner::new(scheme_provider);

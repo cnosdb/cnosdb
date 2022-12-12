@@ -18,13 +18,13 @@ use models::{
 };
 use trace::debug;
 
+use crate::error::{MetaError, MetaResult};
 use crate::{
     client::MetaHttpClient,
     store::command::{
         self, META_REQUEST_FAILED, META_REQUEST_USER_EXIST, META_REQUEST_USER_NOT_FOUND,
     },
 };
-use crate::error::{MetaError, MetaResult};
 
 pub trait UserManager: Send + Sync + Debug {
     // user

@@ -3,7 +3,8 @@ use std::time::Duration;
 use crate::query::execution::Output;
 use crate::service::protocol::{Query, QueryId};
 use async_trait::async_trait;
-use models::oid::Oid;
+use models::auth::user::UserDesc;
+use models::oid::{Identifier, Oid};
 
 use super::execution::QueryState;
 use super::Result;
@@ -31,14 +32,25 @@ pub trait QueryDispatcher: Send + Sync {
 pub struct QueryInfo {
     query_id: QueryId,
     query: String,
-    user: String,
+
+    tenant_id: Oid,
+    tenant_name: String,
+    user: UserDesc,
 }
 
 impl QueryInfo {
-    pub fn new(query_id: QueryId, query: String, user: String) -> Self {
+    pub fn new(
+        query_id: QueryId,
+        query: String,
+        tenant_id: Oid,
+        tenant_name: String,
+        user: UserDesc,
+    ) -> Self {
         Self {
             query_id,
             query,
+            tenant_id,
+            tenant_name,
             user,
         }
     }
@@ -51,8 +63,20 @@ impl QueryInfo {
         &self.query
     }
 
-    pub fn user(&self) -> &str {
-        &self.user
+    pub fn tenant_id(&self) -> Oid {
+        self.tenant_id
+    }
+
+    pub fn tenant_name(&self) -> &str {
+        &self.tenant_name
+    }
+
+    pub fn user_id(&self) -> Oid {
+        *self.user.id()
+    }
+
+    pub fn user_name(&self) -> &str {
+        self.user.name()
     }
 }
 

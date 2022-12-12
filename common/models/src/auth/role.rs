@@ -28,6 +28,7 @@ impl<T: Id> UserRole<T> {
             Self::Dba => vec![
                 Privilege::Global(GlobalPrivilege::Tenant(None)),
                 Privilege::Global(GlobalPrivilege::User(None)),
+                Privilege::TenantObject(TenantObjectPrivilege::System, None),
                 Privilege::TenantObject(TenantObjectPrivilege::MemberFull, None),
                 Privilege::TenantObject(TenantObjectPrivilege::RoleFull, None),
                 Privilege::TenantObject(
@@ -50,6 +51,15 @@ impl<T: Id> UserRole<T> {
 pub enum TenantRoleIdentifier {
     System(SystemTenantRole),
     Custom(String),
+}
+
+impl TenantRoleIdentifier {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::System(role) => role.name(),
+            Self::Custom(name) => name,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +118,7 @@ impl SystemTenantRole {
         match self {
             Self::Owner => vec![
                 Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id.clone()))),
+                Privilege::TenantObject(TenantObjectPrivilege::System, Some(tenant_id.clone())),
                 Privilege::TenantObject(TenantObjectPrivilege::MemberFull, Some(tenant_id.clone())),
                 Privilege::TenantObject(TenantObjectPrivilege::RoleFull, Some(tenant_id.clone())),
                 Privilege::TenantObject(
@@ -123,6 +134,13 @@ impl SystemTenantRole {
             )]
             .into_iter()
             .collect(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Owner => "owner",
+            Self::Member => "member",
         }
     }
 }
@@ -154,6 +172,14 @@ impl<T> CustomTenantRole<T> {
             system_role,
             additiona_privileges,
         }
+    }
+
+    pub fn inherit_role(&self) -> &SystemTenantRole {
+        &self.system_role
+    }
+
+    pub fn additiona_privileges(&self) -> &HashMap<String, DatabasePrivilege> {
+        &self.additiona_privileges
     }
 }
 

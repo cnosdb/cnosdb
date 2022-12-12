@@ -9,8 +9,8 @@ use spi::query::execution::{ExecutionError, MetadataSnafu};
 use trace::debug;
 
 use super::DDLDefinitionTask;
-use snafu::ResultExt;
 use meta::error::MetaError;
+use snafu::ResultExt;
 
 pub struct DropTenantObjectTask {
     stmt: DropTenantObject,

@@ -89,4 +89,3 @@ impl KeyPath {
         format!("/{}/tenants/{}/members", cluster, tenant_name)
     }
 }
-

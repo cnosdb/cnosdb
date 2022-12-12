@@ -7,16 +7,14 @@ use models::{
 };
 use parking_lot::RwLock;
 
+use crate::error::{MetaError, MetaResult};
 use crate::{
     client::MetaHttpClient,
-    meta_client::{
-        MetaClient, MetaClientRef, RemoteMetaClient, TenantManager,
-    },
+    meta_client::{MetaClient, MetaClientRef, RemoteMetaClient, TenantManager},
     store::command::{
         self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
     },
 };
-use crate::error::{MetaError, MetaResult};
 
 #[derive(Debug)]
 pub struct RemoteTenantManager {

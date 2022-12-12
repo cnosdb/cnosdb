@@ -41,7 +41,7 @@ impl SystemTask for ShowQueriesTask {
             let status = e.status();
             result_builder.add_column(
                 info.query_id(),
-                info.user(),
+                info.user_name(),
                 info.query(),
                 status.query_state(),
                 status.duration(),
@@ -97,7 +97,7 @@ impl ShowQueriesResultBuilder {
         self.query_ids.append_value(query_id.to_string());
         self.users.append_value(user.as_ref());
         self.queries.append_value(query.as_ref());
-        self.states.append_value(state.to_string());
+        self.states.append_value(state.as_ref());
         self.durations.append_value(duration.as_millis() as u64);
     }
 
