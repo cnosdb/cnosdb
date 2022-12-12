@@ -34,7 +34,7 @@ pub struct MetaHttpClient {
 impl MetaHttpClient {
     pub fn new(addr: String) -> Self {
         let mut addrs = vec![];
-        let list: Vec<&str> = addr.split(";").collect();
+        let list: Vec<&str> = addr.split(';').collect();
         for item in list.iter() {
             addrs.push(item.to_string());
         }

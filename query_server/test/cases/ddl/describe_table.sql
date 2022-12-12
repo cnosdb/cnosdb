@@ -2,7 +2,7 @@
 --#DATABASE=createtable
 DROP DATABASE IF EXISTS createtable;
 
-CREATE DATABASE createtable;
+CREATE DATABASE createtable WITH TTL '100000d';
 
 DROP TABLE IF EXISTS test0;
 

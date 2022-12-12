@@ -1,7 +1,7 @@
 --#DATABASE=bottom_func
 --#SORT=true
 drop database if exists bottom_func;
-create database bottom_func;
+create database bottom_func WITH TTL '1000000d';
 
 drop table if exists m2;
 CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) ); -- 1ms;

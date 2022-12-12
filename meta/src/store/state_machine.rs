@@ -520,6 +520,15 @@ impl StateMachine {
         schema: &TableSchema,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
+        let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
+        if !self.data.contains_key(&key) {
+            return TenaneMetaDataResp::new_from_data(
+                META_REQUEST_DB_EXIST,
+                "database not found".to_string(),
+                self.to_tenant_meta_data(cluster, tenant),
+            )
+            .to_string();
+        }
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
         if self.data.contains_key(&key) {
             return TenaneMetaDataResp::new_from_data(
