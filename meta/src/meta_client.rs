@@ -136,7 +136,7 @@ pub trait TenantManager: Send + Sync + Debug {
 #[async_trait::async_trait]
 pub trait AdminMeta: Send + Sync + Debug {
     // *数据节点上下线管理 */
-    // fn data_nodes(&self) -> Vec<NodeInfo>;
+    fn data_nodes(&self) -> Vec<NodeInfo>;
     fn add_data_node(&self, node: &NodeInfo) -> MetaResult<()>;
     // fn del_data_node(&self, id: u64) -> MetaResult<()>;
 
@@ -359,6 +359,26 @@ impl AdminMeta for RemoteAdminMeta {
         }
 
         Ok(())
+    }
+
+    fn data_nodes(&self) -> Vec<NodeInfo> {
+        //todo
+
+        let req = command::ReadCommand::DataNodes(self.cluster.clone());
+        let resp = self.client.read::<Vec<NodeInfo>>(&req).unwrap();
+        {
+            let mut nodes = self.data_nodes.write();
+            for item in resp.iter() {
+                nodes.insert(item.id, item.clone());
+            }
+        }
+
+        let mut nodes = vec![];
+        for (_, val) in self.data_nodes.read().iter() {
+            nodes.push(val.clone())
+        }
+
+        nodes
     }
 
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
@@ -781,7 +801,7 @@ impl MetaClient for RemoteMetaClient {
             });
         } else {
             return Err(MetaError::CommonError {
-                msg: rsp.status.string(),
+                msg: rsp.status.to_string(),
             });
         }
     }
@@ -804,7 +824,27 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn drop_db(&self, name: &str) -> MetaResult<bool> {
-        todo!()
+        let mut exist = false;
+        if self.data.read().dbs.contains_key(name) {
+            exist = true;
+        }
+
+        let req = command::WriteCommand::DropDB(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            name.to_string(),
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        info!("drop db: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(exist)
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            });
+        }
     }
 
     fn create_table(&self, schema: &TableSchema) -> MetaResult<()> {
@@ -830,7 +870,7 @@ impl MetaClient for RemoteMetaClient {
             });
         } else {
             return Err(MetaError::CommonError {
-                msg: rsp.status.string(),
+                msg: rsp.status.to_string(),
             });
         }
     }
@@ -891,7 +931,22 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn drop_table(&self, db: &str, table: &str) -> MetaResult<()> {
-        todo!()
+        let req = command::WriteCommand::DropTable(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db.to_string(),
+            table.to_string(),
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            });
+        }
     }
 
     fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {

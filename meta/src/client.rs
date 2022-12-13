@@ -196,8 +196,6 @@ mod test {
     use models::{meta_data::NodeInfo, schema::DatabaseSchema};
 
     pub async fn watch_tenant(cluster: &str, tenant: &str) {
-        println!("=== begin ================...");
-
         let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
         let mut version = 0;
         let mut cmd = (

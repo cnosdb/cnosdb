@@ -18,8 +18,14 @@ use serde::Serialize;
 /******************* write command *************************/
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WriteCommand {
+    // cluster, node info
     AddDataNode(String, NodeInfo),
+
+    // cluster, tenant, db schema
     CreateDB(String, String, DatabaseSchema),
+    // cluster, tenant, db name
+    DropDB(String, String, String),
+
     CreateBucket {
         cluster: String,
         tenant: String,
@@ -27,8 +33,11 @@ pub enum WriteCommand {
         ts: i64,
     },
 
+    // cluster, tenant, table schema
     CreateTable(String, String, TableSchema),
     UpdateTable(String, String, TableSchema),
+    // cluster, tenant, db name, table name
+    DropTable(String, String, String, String),
 
     // cluster, user_name, user_options, is_admin
     CreateUser(String, String, UserOptions, bool),
@@ -124,9 +133,11 @@ impl StatusResponse {
     pub fn new(code: i32, msg: String) -> Self {
         Self { code, msg }
     }
+}
 
-    pub fn string(&self) -> String {
-        format!("Code: {}, Msg: {}", self.code, self.msg)
+impl ToString for StatusResponse {
+    fn to_string(&self) -> String {
+        serde_json::to_string(&self).unwrap()
     }
 }
 

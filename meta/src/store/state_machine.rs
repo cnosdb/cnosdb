@@ -406,6 +406,14 @@ impl StateMachine {
                 self.process_create_db(cluster, tenant, schema, watch)
             }
 
+            WriteCommand::DropDB(cluster, tenant, db_name) => {
+                self.process_drop_db(cluster, tenant, db_name, watch)
+            }
+
+            WriteCommand::DropTable(cluster, tenant, db_name, table_name) => {
+                self.process_drop_table(cluster, tenant, db_name, table_name, watch)
+            }
+
             WriteCommand::CreateTable(cluster, tenant, schema) => {
                 self.process_create_table(cluster, tenant, schema, watch)
             }
@@ -475,6 +483,47 @@ impl StateMachine {
         info!("WRITE: {} :{}", key, value);
 
         serde_json::to_string(&StatusResponse::default()).unwrap()
+    }
+
+    fn process_drop_db(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        db_name: &str,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_db_name(cluster, tenant, db_name);
+        self.data.remove(&key);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.delete_db(self.version(), db_name);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
+    }
+
+    fn process_drop_table(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        db_name: &str,
+        table_name: &str,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
+        self.data.remove(&key);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.delete_table(self.version(), db_name, table_name);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
     }
 
     fn process_create_db(

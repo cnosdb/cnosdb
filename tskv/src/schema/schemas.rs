@@ -253,6 +253,7 @@ impl DBschemas {
         client
             .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
             .context(MetaSnafu)?;
+
         self.table_schema
             .write()
             .insert(schema.name.clone(), schema.clone());

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 models = { path = "../../common/models" }
 meta = { path = "../../meta" }
+coordinator = { path = "../../coordinator" }
 async-trait = { workspace = true }
 datafusion = { workspace = true }
 snafu = { workspace = true, features = ["backtraces"] }

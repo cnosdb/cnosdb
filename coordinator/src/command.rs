@@ -35,6 +35,7 @@ pub const FAILED_RESPONSE_CODE: i32 = -1;
 pub const FINISH_RESPONSE_CODE: i32 = 0;
 pub const SUCCESS_RESPONSE_CODE: i32 = 1;
 
+#[derive(Debug, Clone)]
 pub enum CoordinatorTcpCmd {
     WriteVnodePointCmd(WriteVnodeRequest),
     AdminStatementCmd(AdminStatementRequest),
@@ -180,7 +181,7 @@ pub enum AdminStatementType {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AdminStatementRequest {
     pub tenant: String,
-    pub stat: AdminStatementType,
+    pub stmt: AdminStatementType,
 }
 
 impl AdminStatementRequest {
@@ -270,6 +271,7 @@ impl RecordBatchResponse {
 pub enum CoordinatorIntCmd {
     WritePointsCmd(WritePointsRequest),
     SelectStatementCmd(SelectStatementRequest),
+    AdminStatementCmd(AdminStatementRequest, OneShotSender<CoordinatorResult<()>>),
 }
 
 #[derive(Debug)]

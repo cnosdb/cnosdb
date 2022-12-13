@@ -28,7 +28,7 @@ use tokio::{
 use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
-use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
+use models::schema::{make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
     ValueType,
@@ -549,11 +549,18 @@ impl Engine for TsKv {
                 .remove_db_index(database);
         }
 
-        let idx_dir = self.options.storage.index_dir(database);
+        let idx_dir = self
+            .options
+            .storage
+            .index_dir(&make_owner(tenant, database));
         if let Err(e) = std::fs::remove_dir_all(&idx_dir) {
             error!("Failed to remove dir '{}', e: {}", idx_dir.display(), e);
         }
-        let db_dir = self.options.storage.database_dir(database);
+
+        let db_dir = self
+            .options
+            .storage
+            .database_dir(&make_owner(tenant, database));
         if let Err(e) = std::fs::remove_dir_all(&db_dir) {
             error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
         }

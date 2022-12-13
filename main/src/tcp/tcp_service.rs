@@ -120,7 +120,6 @@ async fn process_client(
             }
 
             CoordinatorTcpCmd::AdminStatementCmd(cmd) => {
-                info!("process admin statement: {:?}", &cmd);
                 process_admin_statement_command(&mut client, cmd, coord.store_engine()).await?;
             }
 
@@ -172,15 +171,21 @@ async fn process_admin_statement_command(
     cmd: AdminStatementRequest,
     engine: EngineRef,
 ) -> CoordinatorResult<()> {
-    match cmd.stat {
+    match cmd.stmt {
         AdminStatementType::DropDB(db) => {
-            engine.drop_database(&cmd.tenant, &db)?;
+            let _ = engine.drop_database(&cmd.tenant, &db);
         }
 
         AdminStatementType::DropTable(db, table) => {
-            engine.drop_table(&cmd.tenant, &db, &table)?;
+            let _ = engine.drop_table(&cmd.tenant, &db, &table);
         }
     }
+
+    let resp = StatusResponse {
+        code: SUCCESS_RESPONSE_CODE,
+        data: "".to_string(),
+    };
+    send_command(client, &CoordinatorTcpCmd::StatusResponseCmd(resp)).await?;
 
     Ok(())
 }

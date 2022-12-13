@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
@@ -30,6 +31,11 @@ pub enum ExecutionError {
 
     #[snafu(display("Query not found: {:?}", query_id))]
     QueryNotFound { query_id: QueryId },
+
+    #[snafu(display("Coordinator operator err: {}", source))]
+    CoordinatorErr {
+        source: coordinator::errors::CoordinatorError,
+    },
 }
 
 #[async_trait]
@@ -114,6 +120,7 @@ pub struct QueryStateMachine {
     pub query_id: QueryId,
     pub query: Query,
     pub meta: MetaRef,
+    pub coord: CoordinatorRef,
 
     state: AtomicPtr<QueryState>,
     start: Instant,
@@ -124,13 +131,16 @@ impl QueryStateMachine {
         query_id: QueryId,
         query: Query,
         session: IsiphoSessionCtx,
-        meta: MetaRef,
+        coord: CoordinatorRef,
     ) -> Self {
+        let meta = coord.meta_manager();
+
         Self {
             query_id,
             session,
             query,
             meta,
+            coord,
             state: AtomicPtr::new(Box::into_raw(Box::new(QueryState::ACCEPTING))),
             start: Instant::now(),
         }

@@ -10,6 +10,7 @@ use models::*;
 
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
 use trace::info;
@@ -22,7 +23,7 @@ use meta::meta_client_mock::{MockMetaClient, MockMetaManager};
 use datafusion::arrow::datatypes::SchemaRef;
 use tskv::iterator::QueryOption;
 
-use crate::command::{CoordinatorIntCmd, SelectStatementRequest, WritePointsRequest};
+use crate::command::*;
 use crate::errors::*;
 use crate::hh_queue::HintedOffManager;
 use crate::reader::{QueryExecutor, ReaderIterator};
@@ -40,6 +41,11 @@ pub trait Coordinator: Send + Sync + Debug {
         tenant: String,
         level: ConsistencyLevel,
         request: WritePointsRpcRequest,
+    ) -> CoordinatorResult<()>;
+
+    async fn exec_admin_stat_on_all_node(
+        &self,
+        req: AdminStatementRequest,
     ) -> CoordinatorResult<()>;
 
     async fn read_record(&self, option: QueryOption) -> CoordinatorResult<ReaderIterator>;
@@ -67,6 +73,13 @@ impl Coordinator for MockCoordinator {
         tenant: String,
         level: ConsistencyLevel,
         req: WritePointsRpcRequest,
+    ) -> CoordinatorResult<()> {
+        Ok(())
+    }
+
+    async fn exec_admin_stat_on_all_node(
+        &self,
+        req: AdminStatementRequest,
     ) -> CoordinatorResult<()> {
         Ok(())
     }
@@ -127,8 +140,17 @@ impl CoordService {
                 CoordinatorIntCmd::WritePointsCmd(req) => {
                     tokio::spawn(CoordService::write_point_request(coord.clone(), req));
                 }
+
                 CoordinatorIntCmd::SelectStatementCmd(req) => {
                     tokio::spawn(CoordService::select_statement_request(coord.clone(), req));
+                }
+
+                CoordinatorIntCmd::AdminStatementCmd(req, sender) => {
+                    tokio::spawn(CoordService::admin_statement_request(
+                        coord.clone(),
+                        req,
+                        sender,
+                    ));
                 }
             }
         }
@@ -137,6 +159,27 @@ impl CoordService {
     async fn write_point_request(coord: Arc<CoordService>, req: WritePointsRequest) {
         let result = coord.writer.write_points(&req).await;
         req.sender.send(result).expect("successful");
+    }
+
+    async fn admin_statement_request(
+        coord: Arc<CoordService>,
+        req: AdminStatementRequest,
+        sender: oneshot::Sender<CoordinatorResult<()>>,
+    ) {
+        let meta = coord.meta.admin_meta();
+        let nodes = meta.data_nodes();
+
+        let mut requests = vec![];
+        for node in nodes.iter() {
+            let cmd = CoordinatorTcpCmd::AdminStatementCmd(req.clone());
+            let request = coord.exec_on_node(node.id, cmd.clone());
+            requests.push(request);
+        }
+
+        match futures::future::try_join_all(requests).await {
+            Ok(_) => sender.send(Ok(())).expect("success"),
+            Err(err) => sender.send(Err(err)).expect("success"),
+        };
     }
 
     async fn select_statement_request(coord: Arc<CoordService>, req: SelectStatementRequest) {
@@ -152,6 +195,25 @@ impl CoordService {
             let _ = req.sender.send(Err(err)).await;
         } else {
             info!("select statement execute success");
+        }
+    }
+
+    async fn exec_on_node(&self, node_id: u64, cmd: CoordinatorTcpCmd) -> CoordinatorResult<()> {
+        let mut conn = self.meta.admin_meta().get_node_conn(node_id).await?;
+
+        send_command(&mut conn, &cmd).await?;
+        let rsp_cmd = recv_command(&mut conn).await?;
+        if let CoordinatorTcpCmd::StatusResponseCmd(msg) = rsp_cmd {
+            self.meta.admin_meta().put_node_conn(node_id, conn);
+            if msg.code == crate::command::SUCCESS_RESPONSE_CODE {
+                Ok(())
+            } else {
+                Err(CoordinatorError::WriteVnode {
+                    msg: format!("code: {}, msg: {}", msg.code, msg.data),
+                })
+            }
+        } else {
+            Err(CoordinatorError::UnExpectResponse)
         }
     }
 }
@@ -186,6 +248,19 @@ impl Coordinator for CoordService {
 
         self.coord_sender
             .send(CoordinatorIntCmd::WritePointsCmd(req))
+            .await?;
+
+        receiver.await?
+    }
+
+    async fn exec_admin_stat_on_all_node(
+        &self,
+        req: AdminStatementRequest,
+    ) -> CoordinatorResult<()> {
+        let (sender, receiver) = oneshot::channel();
+
+        self.coord_sender
+            .send(CoordinatorIntCmd::AdminStatementCmd(req, sender))
             .await?;
 
         receiver.await?
