@@ -1,7 +1,7 @@
 --#DATABASE=only_tag_col
 --#SORT=true
 drop database if exists only_tag_col;
-create database only_tag_col;
+create database only_tag_col WITH TTL '1000000d';
 
 drop table if exists m2;
 CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) );

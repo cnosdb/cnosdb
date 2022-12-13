@@ -1,6 +1,6 @@
 --#DATABASE=alter_table
 DROP DATABASE IF EXISTS alter_table;
-CREATE DATABASE alter_table;
+CREATE DATABASE alter_table WITH TTL '100000d';
 CREATE TABLE test (
     f0 BIGINT CODEC(NULL),
     TAGS(t0)

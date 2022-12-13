@@ -1,6 +1,7 @@
 --#DATABASE=sqlancer2
 --#SORT=true
 DROP DATABASE IF EXISTS sqlancer2;
+CREATE DATABASE sqlancer2 WITH TTL '1000000d';
 --#LP_BEGIN
 m0,t0=t0 f0=false,f1=0.0 0
 m1,t0=t0 f0="f0",f1=false 0

@@ -520,7 +520,7 @@ impl Engine for TsKv {
 
     fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>> {
         if let Some(db) = self.version_set.read().get_db(tenant_name, database) {
-            Ok(db.read().get_schemas().list_tables())
+            db.read().get_schemas().list_tables().context(SchemaSnafu)
         } else {
             error!("Database {}, not found", database);
             Err(Error::DatabaseNotFound {
@@ -529,7 +529,7 @@ impl Engine for TsKv {
         }
     }
 
-    fn get_db_schema(&self, tenant: &str, database: &str) -> Option<DatabaseSchema> {
+    fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>> {
         self.version_set.read().get_db_schema(tenant, database)
     }
 

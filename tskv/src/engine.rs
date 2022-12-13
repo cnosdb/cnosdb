@@ -43,7 +43,7 @@ pub trait Engine: Send + Sync + Debug {
 
     fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
-    fn get_db_schema(&self, tenant: &str, database: &str) -> Option<DatabaseSchema>;
+    fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>>;
 
     fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
@@ -190,8 +190,8 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_db_schema(&self, tenant: &str, name: &str) -> Option<DatabaseSchema> {
-        Some(DatabaseSchema::new(tenant, name))
+    fn get_db_schema(&self, tenant: &str, name: &str) -> Result<Option<DatabaseSchema>> {
+        Ok(Some(DatabaseSchema::new(tenant, name)))
     }
 
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
