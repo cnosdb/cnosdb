@@ -174,13 +174,13 @@ impl DBschemas {
         Ok(schema)
     }
 
-    pub fn list_tables(&self) -> Result<Vec<String>> {
-        let tables = self
-            .client
-            .list_tables(&self.database_name)
-            .context(MetaSnafu)?;
-        Ok(tables)
-    }
+    // pub fn list_tables(&self) -> Result<Vec<String>> {
+    //     let tables = self
+    //         .client
+    //         .list_tables(&self.database_name)
+    //         .context(MetaSnafu)?;
+    //     Ok(tables)
+    // }
 
     pub fn del_table_schema(&self, tab: &str) -> Result<()> {
         self.client
@@ -189,13 +189,13 @@ impl DBschemas {
         Ok(())
     }
 
-    pub fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
-        self.client
-            .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
-            .context(MetaSnafu)?;
+    // pub fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
+    //     self.client
+    //         .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
+    //         .context(MetaSnafu)?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     pub fn db_schema(&self) -> Result<DatabaseSchema> {
         let db_schema = self

@@ -23,6 +23,10 @@ pub enum WriteCommand {
 
     // cluster, tenant, db schema
     CreateDB(String, String, DatabaseSchema),
+
+    // cluster, tenant, db schema
+    AlterDB(String, String, DatabaseSchema),
+
     // cluster, tenant, db name
     DropDB(String, String, String),
 

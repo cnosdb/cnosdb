@@ -406,6 +406,10 @@ impl StateMachine {
                 self.process_create_db(cluster, tenant, schema, watch)
             }
 
+            WriteCommand::AlterDB(cluster, tenant, schema) => {
+                self.process_alter_db(cluster, tenant, schema, watch)
+            }
+
             WriteCommand::DropDB(cluster, tenant, db_name) => {
                 self.process_drop_db(cluster, tenant, db_name, watch)
             }
@@ -560,6 +564,33 @@ impl StateMachine {
             self.to_tenant_meta_data(cluster, tenant),
         )
         .to_string()
+    }
+
+    fn process_alter_db(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        schema: &DatabaseSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
+        if !self.data.contains_key(&key) {
+            return StatusResponse::new(META_REQUEST_SUCCESS, "db not found in meta".to_string())
+                .to_string();
+        }
+
+        let value = serde_json::to_string(schema).unwrap();
+        self.data.insert(key.clone(), value.clone());
+        info!("WRITE: {} :{}", key, value);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.update_db_schema(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
     }
 
     fn process_create_table(

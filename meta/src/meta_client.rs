@@ -189,6 +189,7 @@ pub trait MetaClient: Send + Sync + Debug {
     fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool>;
 
     fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()>;
+    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()>;
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>>;
     fn list_databases(&self) -> MetaResult<Vec<String>>;
     fn drop_db(&self, name: &str) -> MetaResult<bool>;
@@ -362,8 +363,6 @@ impl AdminMeta for RemoteAdminMeta {
     }
 
     fn data_nodes(&self) -> Vec<NodeInfo> {
-        //todo
-
         let req = command::ReadCommand::DataNodes(self.cluster.clone());
         let resp = self.client.read::<Vec<NodeInfo>>(&req).unwrap();
         {
@@ -802,6 +801,25 @@ impl MetaClient for RemoteMetaClient {
         } else {
             return Err(MetaError::CommonError {
                 msg: rsp.status.to_string(),
+            });
+        }
+    }
+
+    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
+        let req = command::WriteCommand::AlterDB(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            info.clone(),
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        info!("alter db: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.to_string(),
             });
         }
     }

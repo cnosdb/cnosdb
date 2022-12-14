@@ -375,6 +375,23 @@ impl TsKv {
             })?;
         Ok(db)
     }
+
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+        if self
+            .version_set
+            .read()
+            .db_exists(schema.tenant_name(), schema.database_name())
+        {
+            return Err(Error::DatabaseAlreadyExists {
+                database: schema.database_name().to_string(),
+            });
+        }
+        let db = self
+            .version_set
+            .write()
+            .create_db(schema.clone(), self.meta_manager.clone())?;
+        Ok(db)
+    }
 }
 
 #[async_trait::async_trait]
@@ -477,61 +494,61 @@ impl Engine for TsKv {
         });
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
-        if self
-            .version_set
-            .read()
-            .db_exists(schema.tenant_name(), schema.database_name())
-        {
-            return Err(Error::DatabaseAlreadyExists {
-                database: schema.database_name().to_string(),
-            });
-        }
-        let db = self
-            .version_set
-            .write()
-            .create_db(schema.clone(), self.meta_manager.clone())?;
-        Ok(db)
-    }
+    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    //     if self
+    //         .version_set
+    //         .read()
+    //         .db_exists(schema.tenant_name(), schema.database_name())
+    //     {
+    //         return Err(Error::DatabaseAlreadyExists {
+    //             database: schema.database_name().to_string(),
+    //         });
+    //     }
+    //     let db = self
+    //         .version_set
+    //         .write()
+    //         .create_db(schema.clone(), self.meta_manager.clone())?;
+    //     Ok(db)
+    // }
 
-    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
-        let db = self
-            .version_set
-            .write()
-            .get_db(schema.tenant_name(), schema.database_name())
-            .ok_or(DatabaseNotFound {
-                database: schema.database_name().to_string(),
-            })?;
-        db.write().alter_db_schema(schema.clone())?;
-        Ok(())
-    }
+    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
+    //     let db = self
+    //         .version_set
+    //         .write()
+    //         .get_db(schema.tenant_name(), schema.database_name())
+    //         .ok_or(DatabaseNotFound {
+    //             database: schema.database_name().to_string(),
+    //         })?;
+    //     db.write().alter_db_schema(schema.clone())?;
+    //     Ok(())
+    // }
 
-    fn list_databases(&self) -> Result<Vec<String>> {
-        let version_set = self.version_set.read();
-        let dbs = version_set.get_all_db();
+    // fn list_databases(&self) -> Result<Vec<String>> {
+    //     let version_set = self.version_set.read();
+    //     let dbs = version_set.get_all_db();
 
-        let mut db = Vec::new();
-        for (name, _) in dbs.iter() {
-            db.push(name.clone())
-        }
+    //     let mut db = Vec::new();
+    //     for (name, _) in dbs.iter() {
+    //         db.push(name.clone())
+    //     }
 
-        Ok(db)
-    }
+    //     Ok(db)
+    // }
 
-    fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>> {
-        if let Some(db) = self.version_set.read().get_db(tenant_name, database) {
-            db.read().get_schemas().list_tables().context(SchemaSnafu)
-        } else {
-            error!("Database {}, not found", database);
-            Err(Error::DatabaseNotFound {
-                database: database.to_string(),
-            })
-        }
-    }
+    // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>> {
+    //     if let Some(db) = self.version_set.read().get_db(tenant_name, database) {
+    //         db.read().get_schemas().list_tables().context(SchemaSnafu)
+    //     } else {
+    //         error!("Database {}, not found", database);
+    //         Err(Error::DatabaseNotFound {
+    //             database: database.to_string(),
+    //         })
+    //     }
+    // }
 
-    fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>> {
-        self.version_set.read().get_db_schema(tenant, database)
-    }
+    // fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>> {
+    //     self.version_set.read().get_db_schema(tenant, database)
+    // }
 
     fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
         if let Some(db) = self.version_set.write().delete_db(tenant, database) {
@@ -568,23 +585,23 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
-        if let Some(db) = self.version_set.write().get_db(&schema.tenant, &schema.db) {
-            db.read()
-                .get_schemas()
-                .create_table(schema)
-                .map_err(|e| {
-                    error!("failed create database '{}'", e);
-                    e
-                })
-                .context(SchemaSnafu)
-        } else {
-            error!("Database {}, not found", schema.db);
-            Err(Error::DatabaseNotFound {
-                database: schema.db.clone(),
-            })
-        }
-    }
+    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
+    //     if let Some(db) = self.version_set.write().get_db(&schema.tenant, &schema.db) {
+    //         db.read()
+    //             .get_schemas()
+    //             .create_table(schema)
+    //             .map_err(|e| {
+    //                 error!("failed create database '{}'", e);
+    //                 e
+    //             })
+    //             .context(SchemaSnafu)
+    //     } else {
+    //         error!("Database {}, not found", schema.db);
+    //         Err(Error::DatabaseNotFound {
+    //             database: schema.db.clone(),
+    //         })
+    //     }
+    // }
 
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.

@@ -74,6 +74,9 @@ impl MetaClient for MockMetaClient {
     fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
+    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
+        Ok(())
+    }
 
     fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         Ok(Some(DatabaseSchema::default()))
