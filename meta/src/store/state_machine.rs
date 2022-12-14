@@ -403,15 +403,9 @@ impl StateMachine {
             ReadCommand::MemberRole(cluster, tenant_name, user_id) => {
                 let path = KeyPath::member(cluster, tenant_name, user_id);
 
-                if let Some(member) = get_struct::<TenantRoleIdentifier>(&path, self.db.clone()) {
-                    return CommonResp::Ok(member).to_string();
-                }
+                let member = get_struct::<TenantRoleIdentifier>(&path, self.db.clone());
 
-                let status = StatusResponse::new(
-                    META_REQUEST_USER_NOT_FOUND,
-                    format!("{} of tenant {}", user_id, tenant_name),
-                );
-                CommonResp::<TenantRoleIdentifier>::Err(status).to_string()
+                CommonResp::Ok(member).to_string()
             }
             ReadCommand::Members(cluster, tenant_name) => {
                 let path = KeyPath::members(cluster, tenant_name);

@@ -1,0 +1,76 @@
+-- EXECUTE SQL: drop tenant if exists test_ers_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ers_u1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ers_u2; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ers_u3; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_ers_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ers_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ers_u2; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ers_u3; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ers_tenant1 add user test_ers_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ers_tenant1 add user test_ers_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: drop role if exists test_ers_role1; --
+200 OK
+
+
+-- EXECUTE SQL: create role if not exists test_ers_role1 inherit member; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ers_tenant1 add user test_ers_u3 as test_ers_role1; --
+200 OK
+
+
+-- EXECUTE SQL: select * from information_schema.ENABLED_ROLES; --
+-- AFTER_SORT --
+200 OK
+role_name
+
+
+-- EXECUTE SQL: select * from information_schema.ENABLED_ROLES; --
+-- AFTER_SORT --
+200 OK
+role_name
+owner
+
+-- EXECUTE SQL: select * from information_schema.ENABLED_ROLES; --
+-- AFTER_SORT --
+200 OK
+role_name
+member
+
+-- EXECUTE SQL: select * from information_schema.ENABLED_ROLES; --
+-- AFTER_SORT --
+200 OK
+role_name
+test_ers_role1
+

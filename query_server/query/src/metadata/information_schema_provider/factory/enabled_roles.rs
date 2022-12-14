@@ -29,9 +29,9 @@ impl InformationSchemaTableFactory for EnabledRolesFactory {
     ) -> std::result::Result<Arc<MemTable>, MetaError> {
         let mut builder = InformationSchemaEnabledRolesBuilder::default();
 
-        let role = metadata.member_role(user.desc().id())?;
-
-        builder.append_row(role.name());
+        if let Some(role) = metadata.member_role(user.desc().id())? {
+            builder.append_row(role.name());
+        }
 
         let mem_table = MemTable::try_from(builder)
             .map_err(|e| MetaError::CommonError { msg: e.to_string() })?;

@@ -134,9 +134,7 @@ impl TenantManager for RemoteTenantManager {
             };
         }
 
-        Err(MetaError::TenantNotFound {
-            tenant: name.to_string(),
-        })
+        Ok(false)
     }
 
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {

@@ -87,7 +87,7 @@ pub trait MetaClient: Send + Sync + Debug {
     // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;
     // fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> MetaResult<bool>;
     fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier>;
+    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>>;
     fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>>;
     fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
     fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
@@ -233,7 +233,13 @@ impl MetaManager for RemoteMetaManager {
                 })?;
 
             let tenant_id = client.tenant().id();
-            let role = client.member_role(user_desc.id())?;
+            let role =
+                client
+                    .member_role(user_desc.id())?
+                    .ok_or_else(|| MetaError::MemberNotFound {
+                        member_name: user_desc.name().to_string(),
+                        tenant_name: tenant_name.to_string(),
+                    })?;
 
             let privileges = match role {
                 TenantRoleIdentifier::System(sys_role) => sys_role.to_privileges(tenant_id),
@@ -480,7 +486,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier> {
+    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
         let req = command::ReadCommand::MemberRole(
             self.cluster.clone(),
             self.tenant.name().to_string(),
@@ -489,7 +495,7 @@ impl MetaClient for RemoteMetaClient {
 
         match self
             .client
-            .read::<command::CommonResp<TenantRoleIdentifier>>(&req)?
+            .read::<command::CommonResp<Option<TenantRoleIdentifier>>>(&req)?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
