@@ -550,6 +550,16 @@ impl Engine for TsKv {
     //     self.version_set.read().get_db_schema(tenant, database)
     // }
 
+    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().get_db(tenant, &database) {
+            let mut db_wlock = db.write();
+
+            db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
+        }
+
+        Ok(())
+    }
+
     fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
         if let Some(db) = self.version_set.write().delete_db(tenant, database) {
             let mut db_wlock = db.write();

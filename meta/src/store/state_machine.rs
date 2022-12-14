@@ -426,12 +426,13 @@ impl StateMachine {
                 self.process_update_table(cluster, tenant, schema, watch)
             }
 
-            WriteCommand::CreateBucket {
-                cluster,
-                tenant,
-                db,
-                ts,
-            } => self.process_create_bucket(cluster, tenant, db, ts, watch),
+            WriteCommand::CreateBucket(cluster, tenant, db, ts) => {
+                self.process_create_bucket(cluster, tenant, db, ts, watch)
+            }
+
+            WriteCommand::DeleteBucket(cluster, tenant, db, id) => {
+                self.process_delete_bucket(cluster, tenant, db, *id, watch)
+            }
 
             WriteCommand::CreateUser(cluster, name, options, is_admin) => {
                 self.process_create_user(cluster, name, options, *is_admin)
@@ -787,6 +788,27 @@ impl StateMachine {
             self.to_tenant_meta_data(cluster, tenant),
         )
         .to_string()
+    }
+
+    fn process_delete_bucket(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        db: &str,
+        id: u32,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_bucket_id(cluster, tenant, db, id);
+        self.data.remove(&key);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.delete_bucket(self.version(), db, id);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
     }
 
     fn process_create_user(

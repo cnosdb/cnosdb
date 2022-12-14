@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use config::{ClusterConfig, HintedOffConfig};
 use models::consistency_level::ConsistencyLevel;
-use models::meta_data::DatabaseInfo;
+use models::meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableSchema, TskvTableSchema};
 use models::*;
@@ -13,6 +13,7 @@ use snafu::ResultExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::oneshot;
+
 use trace::info;
 use tskv::engine::{EngineRef, MockEngine};
 use tskv::TimeRange;
@@ -129,6 +130,8 @@ impl CoordService {
             writer: point_writer,
             handoff: hh_manager,
         });
+
+        tokio::spawn(CoordService::db_ttl_service(coord.clone()));
         tokio::spawn(CoordService::coord_service(coord.clone(), coord_receiver));
 
         coord
@@ -154,6 +157,44 @@ impl CoordService {
                 }
             }
         }
+    }
+
+    async fn db_ttl_service(coord: Arc<CoordService>) {
+        loop {
+            let dur = tokio::time::Duration::from_secs(5);
+            tokio::time::sleep(dur).await;
+
+            let expired = coord.meta.expired_bucket();
+            for info in expired.iter() {
+                let result = coord.delete_expired_bucket(info).await;
+
+                info!("delete expired bucket :{:?}, {:?}", info, result);
+            }
+        }
+    }
+
+    async fn delete_expired_bucket(&self, info: &ExpiredBucketInfo) -> CoordinatorResult<()> {
+        for repl_set in info.bucket.shard_group.iter() {
+            for vnode in repl_set.vnodes.iter() {
+                let req = AdminStatementRequest {
+                    tenant: info.tenant.clone(),
+                    stmt: AdminStatementType::DeleteVnode(info.database.clone(), vnode.id),
+                };
+
+                let cmd = CoordinatorTcpCmd::AdminStatementCmd(req);
+                self.exec_on_node(vnode.node_id, cmd).await?;
+            }
+        }
+
+        let meta = self
+            .tenant_meta(&info.tenant)
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: info.tenant.clone(),
+            })?;
+
+        meta.delete_bucket(&info.database, info.bucket.id)?;
+
+        Ok(())
     }
 
     async fn write_point_request(coord: Arc<CoordService>, req: WritePointsRequest) {

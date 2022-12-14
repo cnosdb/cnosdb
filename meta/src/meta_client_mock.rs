@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use models::schema::{ExternalTableSchema, TableSchema};
 use models::{
     auth::{
         privilege::DatabasePrivilege,
@@ -14,6 +13,10 @@ use models::{
     meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet},
     oid::Oid,
     schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema},
+};
+use models::{
+    meta_data::ExpiredBucketInfo,
+    schema::{ExternalTableSchema, TableSchema},
 };
 use tokio::net::TcpStream;
 
@@ -126,6 +129,10 @@ impl MetaClient for MockMetaClient {
         Ok(BucketInfo::default())
     }
 
+    fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()> {
+        Ok(())
+    }
+
     fn database_min_ts(&self, db: &str) -> Option<i64> {
         Some(0)
     }
@@ -203,6 +210,10 @@ impl MetaClient for MockMetaClient {
     fn drop_custom_role(&self, role_name: &str) -> MetaResult<bool> {
         todo!()
     }
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        vec![]
+    }
 }
 
 #[derive(Default, Debug)]
@@ -211,6 +222,10 @@ pub struct MockMetaManager {}
 impl MetaManager for MockMetaManager {
     fn node_id(&self) -> u64 {
         0
+    }
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        vec![]
     }
 
     fn admin_meta(&self) -> AdminMetaRef {
@@ -256,5 +271,9 @@ impl TenantManager for TenantManagerMock {
 
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         todo!()
+    }
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        vec![]
     }
 }

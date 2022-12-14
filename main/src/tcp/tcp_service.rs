@@ -179,6 +179,10 @@ async fn process_admin_statement_command(
         AdminStatementType::DropTable(db, table) => {
             let _ = engine.drop_table(&cmd.tenant, &db, &table);
         }
+
+        AdminStatementType::DeleteVnode(db, id) => {
+            let _ = engine.remove_tsfamily(&cmd.tenant, &db, id);
+        }
     }
 
     let resp = StatusResponse {

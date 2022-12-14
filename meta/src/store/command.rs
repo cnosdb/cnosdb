@@ -30,12 +30,11 @@ pub enum WriteCommand {
     // cluster, tenant, db name
     DropDB(String, String, String),
 
-    CreateBucket {
-        cluster: String,
-        tenant: String,
-        db: String,
-        ts: i64,
-    },
+    // cluster, tenant, db name, timestamp
+    CreateBucket(String, String, String, i64),
+
+    // cluster, tenant, db name, id
+    DeleteBucket(String, String, String, u32),
 
     // cluster, tenant, table schema
     CreateTable(String, String, TableSchema),

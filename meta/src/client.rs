@@ -256,12 +256,12 @@ mod test {
         println!("=== create db: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
-        let req = command::WriteCommand::CreateBucket {
-            cluster: cluster.clone(),
-            tenant: tenant.clone(),
-            db: "test_db".to_string(),
-            ts: 1667456711000000000,
-        };
+        let req = command::WriteCommand::CreateBucket(
+            cluster.clone(),
+            tenant.clone(),
+            "test_db".to_string(),
+            1667456711000000000,
+        );
         let rsp = client.write::<command::TenaneMetaDataResp>(&req);
         println!("=== create bucket: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));

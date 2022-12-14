@@ -55,6 +55,8 @@ pub trait Engine: Send + Sync + Debug {
 
     // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>>;
 
+    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+
     fn add_table_column(
         &self,
         tenant: &str,
@@ -167,6 +169,10 @@ impl Engine for MockEngine {
             version: write_batch.version,
             points: vec![],
         })
+    }
+
+    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        Ok(())
     }
 
     fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {

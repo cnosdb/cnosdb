@@ -13,6 +13,13 @@ pub struct Resource {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct ExpiredBucketInfo {
+    pub tenant: String,
+    pub database: String,
+    pub bucket: BucketInfo,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct UserInfo {
     pub name: String,
     pub pwd: String,

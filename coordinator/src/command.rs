@@ -176,6 +176,7 @@ impl WriteVnodeRequest {
 pub enum AdminStatementType {
     DropDB(String),            // db name
     DropTable(String, String), // db name, tablename
+    DeleteVnode(String, u32),  // db name, vnode id
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -2,6 +2,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use models::{
+    meta_data::ExpiredBucketInfo,
     oid::{Identifier, Oid},
     schema::{Tenant, TenantOptions},
 };
@@ -153,5 +154,14 @@ impl TenantManager for RemoteTenantManager {
                 self.node_id,
             ) as MetaClientRef
         })
+    }
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        let mut list = vec![];
+        for (key, val) in self.tenants.write().iter() {
+            list.append(&mut val.expired_bucket());
+        }
+
+        list
     }
 }

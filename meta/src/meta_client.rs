@@ -120,6 +120,7 @@ pub trait MetaManager: Send + Sync + Debug {
     fn admin_meta(&self) -> AdminMetaRef;
     fn user_manager(&self) -> UserManagerRef;
     fn tenant_manager(&self) -> TenantManagerRef;
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
     fn user_with_privileges(&self, user_name: &str, tenant_name: Option<&str>) -> MetaResult<User>;
 }
 
@@ -131,6 +132,8 @@ pub trait TenantManager: Send + Sync + Debug {
     fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
     // tenant object meta manager
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
 }
 
 #[async_trait::async_trait]
@@ -207,9 +210,10 @@ pub trait MetaClient: Send + Sync + Debug {
     fn drop_table(&self, db: &str, table: &str) -> MetaResult<()>;
 
     fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo>;
-    //fn drop_bucket(&self, db: &str, id: u64) -> MetaResult<()>;
+    fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()>;
 
     fn database_min_ts(&self, db: &str) -> Option<i64>;
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo>;
 
     fn mapping_bucket(&self, db_name: &str, start: i64, end: i64) -> MetaResult<Vec<BucketInfo>>;
 
@@ -283,6 +287,10 @@ impl MetaManager for RemoteMetaManager {
 
     fn tenant_manager(&self) -> TenantManagerRef {
         self.tenant_manager.clone()
+    }
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        self.tenant_manager.expired_bucket()
     }
 
     fn user_with_privileges(&self, user_name: &str, tenant_name: Option<&str>) -> MetaResult<User> {
@@ -968,12 +976,12 @@ impl MetaClient for RemoteMetaClient {
     }
 
     fn create_bucket(&self, db: &str, ts: i64) -> MetaResult<BucketInfo> {
-        let req = command::WriteCommand::CreateBucket {
-            cluster: self.cluster.clone(),
-            tenant: self.tenant.name().to_string(),
-            db: db.to_string(),
+        let req = command::WriteCommand::CreateBucket(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db.to_string(),
             ts,
-        };
+        );
 
         let rsp = self.client.write::<command::TenaneMetaDataResp>(&req)?;
         {
@@ -996,6 +1004,26 @@ impl MetaClient for RemoteMetaClient {
         Err(MetaError::CommonError {
             msg: "create bucket unknown error".to_string(),
         })
+    }
+
+    fn delete_bucket(&self, db: &str, id: u32) -> MetaResult<()> {
+        let req = command::WriteCommand::DeleteBucket(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db.to_string(),
+            id,
+        );
+
+        let rsp = self.client.write::<command::StatusResponse>(&req)?;
+        info!("delete bucket: {:?}; {:?}", req, rsp);
+
+        if rsp.code == command::META_REQUEST_SUCCESS {
+            Ok(())
+        } else {
+            return Err(MetaError::CommonError {
+                msg: rsp.to_string(),
+            });
+        }
     }
 
     fn database_min_ts(&self, name: &str) -> Option<i64> {
@@ -1021,6 +1049,28 @@ impl MetaClient for RemoteMetaClient {
         let buckets = self.data.read().mapping_bucket(db_name, start, end);
 
         Ok(buckets)
+    }
+
+    fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
+        let mut list = vec![];
+        for (key, val) in self.data.read().dbs.iter() {
+            let ttl = val.schema.config.ttl_or_default().time_stamp();
+            let now = models::utils::now_timestamp();
+
+            for bucket in val.buckets.iter() {
+                if bucket.end_time < now - ttl {
+                    let info = ExpiredBucketInfo {
+                        tenant: self.tenant.name().to_string(),
+                        database: key.clone(),
+                        bucket: bucket.clone(),
+                    };
+
+                    list.push(info)
+                }
+            }
+        }
+
+        list
     }
 
     fn print_data(&self) -> String {
