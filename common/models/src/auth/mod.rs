@@ -58,6 +58,9 @@ pub enum AuthError {
     #[snafu(display("The user {} not found", user))]
     UserNotFound { user: String },
 
+    #[snafu(display("{}", err))]
+    Metadata { err: String },
+
     #[snafu(display(
         "Internal error: {}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",

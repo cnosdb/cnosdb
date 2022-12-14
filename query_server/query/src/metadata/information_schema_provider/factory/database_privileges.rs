@@ -52,24 +52,25 @@ impl InformationSchemaTableFactory for DatabasePrivilegesFactory {
             }
         } else {
             // For non-Owner members, only records corresponding to own role are accessed
-            let role = metadata.member_role(user_id)?;
-            match role {
-                TenantRoleIdentifier::System(_) => {
-                    // not show system roles
-                }
-                TenantRoleIdentifier::Custom(ref role_name) => {
-                    if let Some(role) = metadata.custom_role(role_name)? {
-                        for (database_name, privilege) in role.additiona_privileges() {
-                            builder.append_row(
-                                tenant_name,
-                                database_name,
-                                privilege.as_str(),
-                                role.name(),
-                            )
-                        }
-                    } else {
-                        error!("The metadata is inconsistent, member {} of the tenant {} have the role {}, but this role does not exist",
+            if let Some(role) = metadata.member_role(user_id)? {
+                match role {
+                    TenantRoleIdentifier::System(_) => {
+                        // not show system roles
+                    }
+                    TenantRoleIdentifier::Custom(ref role_name) => {
+                        if let Some(role) = metadata.custom_role(role_name)? {
+                            for (database_name, privilege) in role.additiona_privileges() {
+                                builder.append_row(
+                                    tenant_name,
+                                    database_name,
+                                    privilege.as_str(),
+                                    role.name(),
+                                )
+                            }
+                        } else {
+                            error!("The metadata is inconsistent, member {} of the tenant {} have the role {}, but this role does not exist",
                         user_name, tenant_name, role_name);
+                        }
                     }
                 }
             }

@@ -291,7 +291,7 @@ impl<'a> ExtParser<'a> {
         } else if self.parser.parse_keyword(Keyword::USER) {
             self.parse_alter_user()
         } else {
-            self.expected("TABLE or DATABASE", self.parser.peek_token())
+            self.expected("TABLE/DATABASE/TENANT/USER", self.parser.peek_token())
         }
     }
 

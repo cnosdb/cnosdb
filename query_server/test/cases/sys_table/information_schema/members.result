@@ -1,0 +1,53 @@
+-- EXECUTE SQL: drop tenant if exists test_ms_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ms_u1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ms_u2; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_ms_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ms_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ms_u2; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ms_tenant1 add user test_ms_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ms_tenant1 add user test_ms_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: select * from information_schema.MEMBERS; --
+-- AFTER_SORT --
+200 OK
+user_name,role_name
+test_ms_u1,owner
+test_ms_u2,member
+
+-- EXECUTE SQL: select * from information_schema.MEMBERS; --
+-- AFTER_SORT --
+200 OK
+user_name,role_name
+test_ms_u1,owner
+test_ms_u2,member
+
+-- EXECUTE SQL: select * from information_schema.MEMBERS; --
+-- AFTER_SORT --
+200 OK
+user_name,role_name
+test_ms_u1,owner
+test_ms_u2,member
+

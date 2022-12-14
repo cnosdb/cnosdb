@@ -60,8 +60,8 @@ impl AccessControl for AccessControlNoCheck {
             .user_with_privileges(user_name, tenant_name)
             .map_err(|err| {
                 warn!("query user's privilege, error: {}", err);
-                AuthError::UserNotFound {
-                    user: user_name.to_string(),
+                AuthError::Metadata {
+                    err: format!("{}", err),
                 }
             })
     }
