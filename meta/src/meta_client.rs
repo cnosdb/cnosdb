@@ -268,7 +268,7 @@ impl RemoteAdminMeta {
             meta_url: meta_url.clone(),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
-            client: MetaHttpClient::new(meta_url),
+            client: MetaHttpClient::new(1, meta_url),
         }
     }
 }
@@ -380,7 +380,7 @@ impl RemoteMetaClient {
             client_id,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(meta_url),
+            client: MetaHttpClient::new(1, meta_url),
         });
 
         let _ = client.sync_all_tenant_metadata();

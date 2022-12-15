@@ -568,7 +568,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, db_name);
-        self.data.remove(&key);
+        let _ = self.db.remove(&key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -589,7 +589,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
-        self.data.remove(&key);
+        let _ = self.db.remove(&key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -645,13 +645,13 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
-        if !self.data.contains_key(&key) {
+        if !self.db.contains_key(&key).unwrap() {
             return StatusResponse::new(META_REQUEST_SUCCESS, "db not found in meta".to_string())
                 .to_string();
         }
 
         let value = serde_json::to_string(schema).unwrap();
-        self.data.insert(key.clone(), value.clone());
+        let _ = self.db.insert(key.as_bytes(), value.as_bytes());
         info!("WRITE: {} :{}", key, value);
 
         for (_, item) in watch.iter_mut() {
@@ -672,11 +672,11 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
-        if !self.data.contains_key(&key) {
+        if !self.db.contains_key(&key).unwrap() {
             return TenaneMetaDataResp::new_from_data(
                 META_REQUEST_DB_EXIST,
                 "database not found".to_string(),
-                self.to_tenant_meta_data(cluster, tenant),
+                self.to_tenant_meta_data(cluster, tenant).unwrap(),
             )
             .to_string();
         }

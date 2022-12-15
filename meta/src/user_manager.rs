@@ -46,7 +46,7 @@ pub struct RemoteUserManager {
 impl RemoteUserManager {
     pub fn new(cluster: String, cluster_meta: String) -> Self {
         Self {
-            client: MetaHttpClient::new(cluster_meta),
+            client: MetaHttpClient::new(1, cluster_meta),
             cluster,
         }
     }
