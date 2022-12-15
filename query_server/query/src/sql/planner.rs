@@ -54,7 +54,7 @@ use spi::query::UNEXPECTED_EXTERNAL_PLAN;
 use trace::{debug, warn};
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
-use crate::metadata::ContextProviderExtension;
+use crate::metadata::{ContextProviderExtension, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::table::ClusterTable;
 use spi::query::logical_planner::MetadataSnafu;
 
@@ -696,9 +696,21 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             if_not_exists,
             options,
         } = stmt;
+
+        let name = normalize_sql_object_name(&name);
+
+        // check if system database
+        if name.eq_ignore_ascii_case(CLUSTER_SCHEMA)
+            || name.eq_ignore_ascii_case(INFORMATION_SCHEMA)
+        {
+            return Err(LogicalPlannerError::Metadata {
+                source: MetaError::DatabaseAlreadyExists { database: name },
+            });
+        }
+
         let options = self.make_database_option(options)?;
         let plan = Plan::DDL(DDLPlan::CreateDatabase(CreateDatabase {
-            name: normalize_sql_object_name(&name),
+            name,
             if_not_exists,
             options,
         }));

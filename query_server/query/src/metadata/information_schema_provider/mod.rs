@@ -15,7 +15,7 @@ use self::factory::{
     queries::QueriesFactory, roles::RolesFactory, tables::TablesFactory,
 };
 
-const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
+use super::INFORMATION_SCHEMA;
 
 pub struct InformationSchemaProvider {
     query_tracker: Arc<QueryTracker>,
@@ -72,7 +72,7 @@ impl InformationSchemaProvider {
     }
 }
 
-pub type BoxSystemTableFactory = Box<dyn InformationSchemaTableFactory + Send + Sync>;
+type BoxSystemTableFactory = Box<dyn InformationSchemaTableFactory + Send + Sync>;
 
 pub trait InformationSchemaTableFactory {
     fn table_name(&self) -> &str;

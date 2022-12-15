@@ -20,7 +20,7 @@ lazy_static! {
         Field::new("table_name", DataType::Utf8, false),
         Field::new("table_type", DataType::Utf8, false),
         Field::new("table_engine", DataType::Utf8, false),
-        Field::new("table_option", DataType::Utf8, false),
+        Field::new("table_options", DataType::Utf8, false),
     ]));
 }
 

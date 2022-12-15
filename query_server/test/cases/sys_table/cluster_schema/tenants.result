@@ -1,0 +1,74 @@
+-- EXECUTE SQL: drop tenant if exists test_ts_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ts_u1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_ts_u2; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_ts_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ts_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_ts_u2; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user test_ts_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant cnosdb add user test_ts_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ts_tenant1 add user test_ts_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_ts_tenant1 add user test_ts_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+200 OK
+tenant_name,tenant_options
+test_ts_tenant1,"{""comment"":null}"
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+200 OK
+
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
+-- ERROR:  --
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
+-- ERROR:  --
+
+-- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Error during planning: failed to resolve tenant:test_ts_tenant1  db: cluster_schema, table: tenants"}
+-- ERROR:  --
+

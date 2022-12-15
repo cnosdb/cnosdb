@@ -52,6 +52,7 @@ pub trait TenantManager: Send + Sync + Debug {
     // tenant
     fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef>;
     fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>>;
+    fn tenants(&self) -> MetaResult<Vec<Tenant>>;
     fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()>;
     fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
     // tenant object meta manager
@@ -749,9 +750,9 @@ impl MetaClient for RemoteMetaClient {
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.to_string(),
-            });
+            })
         }
     }
 
