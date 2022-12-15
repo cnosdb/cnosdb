@@ -24,20 +24,24 @@ use crate::errors::{
 /* **************************************************************************************** */
 /* ************************* tcp service command ****************************************** */
 /* **************************************************************************************** */
-pub const STATUS_RESPONSE_COMMAND: u32 = 1;
-pub const WRITE_VNODE_POINT_COMMAND: u32 = 2;
-pub const EXECUTE_STATEMENT_COMMAND: u32 = 3;
-pub const QUERY_RECORD_BATCH_COMMAND: u32 = 4;
-pub const RECORD_BATCH_RESPONSE_COMMAND: u32 = 5;
+pub const WRITE_VNODE_POINT_COMMAND: u32 = 1;
+pub const ADMIN_STATEMENT_COMMAND: u32 = 2;
+pub const QUERY_RECORD_BATCH_COMMAND: u32 = 3;
+
+pub const STATUS_RESPONSE_COMMAND: u32 = 100;
+pub const RECORD_BATCH_RESPONSE_COMMAND: u32 = 101;
 
 pub const FAILED_RESPONSE_CODE: i32 = -1;
 pub const FINISH_RESPONSE_CODE: i32 = 0;
 pub const SUCCESS_RESPONSE_CODE: i32 = 1;
 
+#[derive(Debug, Clone)]
 pub enum CoordinatorTcpCmd {
-    StatusResponseCmd(StatusResponse),
     WriteVnodePointCmd(WriteVnodeRequest),
+    AdminStatementCmd(AdminStatementRequest),
     QueryRecordBatchCmd(QueryRecordBatchRequest),
+
+    StatusResponseCmd(StatusResponse),
     RecordBatchResponseCmd(RecordBatchResponse),
 }
 
@@ -63,6 +67,11 @@ pub async fn send_command(conn: &mut TcpStream, cmd: &CoordinatorTcpCmd) -> Coor
 
         CoordinatorTcpCmd::RecordBatchResponseCmd(val) => {
             conn.write_all(&RECORD_BATCH_RESPONSE_COMMAND.to_be_bytes())
+                .await?;
+            val.send_cmd(conn).await
+        }
+        CoordinatorTcpCmd::AdminStatementCmd(val) => {
+            conn.write_all(&ADMIN_STATEMENT_COMMAND.to_be_bytes())
                 .await?;
             val.send_cmd(conn).await
         }
@@ -92,6 +101,11 @@ pub async fn recv_command(conn: &mut TcpStream) -> CoordinatorResult<Coordinator
         RECORD_BATCH_RESPONSE_COMMAND => {
             let cmd = RecordBatchResponse::recv_data(conn).await?;
             Ok(CoordinatorTcpCmd::RecordBatchResponseCmd(cmd))
+        }
+
+        ADMIN_STATEMENT_COMMAND => {
+            let cmd = AdminStatementRequest::recv_data(conn).await?;
+            Ok(CoordinatorTcpCmd::AdminStatementCmd(cmd))
         }
 
         _ => Err(UnKnownCoordCmd { cmd: cmd_type }),
@@ -155,6 +169,36 @@ impl WriteVnodeRequest {
         let data = read_data_len_val(conn).await?;
 
         Ok(WriteVnodeRequest { vnode_id, data })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum AdminStatementType {
+    DropDB(String),            // db name
+    DropTable(String, String), // db name, tablename
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AdminStatementRequest {
+    pub tenant: String,
+    pub stmt: AdminStatementType,
+}
+
+impl AdminStatementRequest {
+    pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
+        let d = bincode::serialize(&self).map_err(|e| tskv::Error::Encode { source: (e) })?;
+        conn.write_all(&(d.len() as u32).to_be_bytes()).await?;
+        conn.write_all(&d).await?;
+
+        Ok(())
+    }
+
+    pub async fn recv_data(conn: &mut TcpStream) -> CoordinatorResult<AdminStatementRequest> {
+        let data_buf = read_data_len_val(conn).await?;
+        let req = bincode::deserialize::<AdminStatementRequest>(&data_buf)
+            .map_err(|e| tskv::Error::Decode { source: (e) })?;
+
+        Ok(req)
     }
 }
 
@@ -227,6 +271,7 @@ impl RecordBatchResponse {
 pub enum CoordinatorIntCmd {
     WritePointsCmd(WritePointsRequest),
     SelectStatementCmd(SelectStatementRequest),
+    AdminStatementCmd(AdminStatementRequest, OneShotSender<CoordinatorResult<()>>),
 }
 
 #[derive(Debug)]

@@ -101,7 +101,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             query_id,
             query.clone(),
             session.clone(),
-            self.coord.meta_manager().clone(),
+            self.coord.clone(),
         ));
 
         let result = self

@@ -9,7 +9,7 @@ CREATE TABLE test0(
     column5 DOUBLE CODEC(GORILLA),
     TAGS(column6, column7));
 
-CREATE DATABASE createdatabase;
+CREATE DATABASE createdatabase WITH TTL '100000d';
 
 CREATE TABLE createddddatabase.test0(
     column1 BIGINT CODEC(DELTA),

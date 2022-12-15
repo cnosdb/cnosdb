@@ -105,9 +105,13 @@ impl VersionSet {
         self.dbs.get(&owner).is_some()
     }
 
-    pub fn get_db_schema(&self, tenant: &str, database: &str) -> Option<DatabaseSchema> {
+    pub fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>> {
         let owner = make_owner(tenant, database);
-        self.dbs.get(&owner).map(|db| db.read().get_schema())
+        let db = self.dbs.get(&owner);
+        match db {
+            None => Ok(None),
+            Some(db) => Ok(Some(db.read().get_schema()?)),
+        }
     }
 
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {

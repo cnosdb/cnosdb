@@ -45,8 +45,8 @@ impl DDLDefinitionTask for AlterDatabaseTask {
         //     .alter_database(schema)
         //     .context(execution::MetadataSnafu)?;
 
-        todo!("alter method for meta")
-        // return Ok(Output::Nil(()));
+        client.alter_db_schema(&schema).context(MetadataSnafu)?;
+        return Ok(Output::Nil(()));
     }
 }
 

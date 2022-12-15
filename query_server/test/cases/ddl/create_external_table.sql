@@ -1,7 +1,7 @@
 --#DATABASE=create_external_table
 --#SORT = true
 DROP DATABASE IF EXISTS create_external_table;
-CREATE DATABASE create_external_table;
+CREATE DATABASE create_external_table WITH TTL '100000d';
 
 CREATE EXTERNAL TABLE
     cpu (

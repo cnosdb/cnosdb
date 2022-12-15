@@ -34,6 +34,10 @@ impl AdminMeta for MockAdminMeta {
         Ok(())
     }
 
+    fn data_nodes(&self) -> Vec<NodeInfo> {
+        vec![]
+    }
+
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo> {
         Ok(NodeInfo::default())
     }
@@ -69,6 +73,9 @@ impl MetaClient for MockMetaClient {
     }
 
     fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()> {
+        Ok(())
+    }
+    fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
 

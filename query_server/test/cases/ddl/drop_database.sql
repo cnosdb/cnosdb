@@ -1,5 +1,5 @@
 --#DATABASE=dropdatabase
-CREATE DATABASE dropdatabase;
+CREATE DATABASE dropdatabase WITH TTL '100000d';
 
 CREATE TABLE test0(
     column1 BIGINT CODEC(DELTA),
@@ -21,7 +21,7 @@ CREATE TABLE test0(
     column5 DOUBLE CODEC(GORILLA),
     TAGS(column6, column7));
 
-CREATE DATABASE dropdatabase;
+CREATE DATABASE dropdatabase WITH TTL '100000d';
 
 CREATE TABLE test0(
     column1 BIGINT CODEC(DELTA),

@@ -477,6 +477,18 @@ impl StateMachine {
                 self.process_create_db(cluster, tenant, schema, watch)
             }
 
+            WriteCommand::AlterDB(cluster, tenant, schema) => {
+                self.process_alter_db(cluster, tenant, schema, watch)
+            }
+
+            WriteCommand::DropDB(cluster, tenant, db_name) => {
+                self.process_drop_db(cluster, tenant, db_name, watch)
+            }
+
+            WriteCommand::DropTable(cluster, tenant, db_name, table_name) => {
+                self.process_drop_table(cluster, tenant, db_name, table_name, watch)
+            }
+
             WriteCommand::CreateTable(cluster, tenant, schema) => {
                 self.process_create_table(cluster, tenant, schema, watch)
             }
@@ -548,6 +560,47 @@ impl StateMachine {
         serde_json::to_string(&StatusResponse::default()).unwrap()
     }
 
+    fn process_drop_db(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        db_name: &str,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_db_name(cluster, tenant, db_name);
+        self.data.remove(&key);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.delete_db(self.version(), db_name);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
+    }
+
+    fn process_drop_table(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        db_name: &str,
+        table_name: &str,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
+        self.data.remove(&key);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.delete_table(self.version(), db_name, table_name);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
+    }
+
     fn process_create_db(
         &mut self,
         cluster: &str,
@@ -584,6 +637,33 @@ impl StateMachine {
         .to_string()
     }
 
+    fn process_alter_db(
+        &mut self,
+        cluster: &str,
+        tenant: &str,
+        schema: &DatabaseSchema,
+        watch: &mut HashMap<String, WatchTenantMetaData>,
+    ) -> CommandResp {
+        let key = KeyPath::tenant_db_name(cluster, tenant, schema.database_name());
+        if !self.data.contains_key(&key) {
+            return StatusResponse::new(META_REQUEST_SUCCESS, "db not found in meta".to_string())
+                .to_string();
+        }
+
+        let value = serde_json::to_string(schema).unwrap();
+        self.data.insert(key.clone(), value.clone());
+        info!("WRITE: {} :{}", key, value);
+
+        for (_, item) in watch.iter_mut() {
+            if item.interesting(cluster, tenant) {
+                item.delta.update_db_schema(self.version(), schema);
+                let _ = item.sender.try_send(true);
+            }
+        }
+
+        StatusResponse::new(META_REQUEST_SUCCESS, "".to_string()).to_string()
+    }
+
     fn process_create_table(
         &mut self,
         cluster: &str,
@@ -591,6 +671,15 @@ impl StateMachine {
         schema: &TableSchema,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
+        let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
+        if !self.data.contains_key(&key) {
+            return TenaneMetaDataResp::new_from_data(
+                META_REQUEST_DB_EXIST,
+                "database not found".to_string(),
+                self.to_tenant_meta_data(cluster, tenant),
+            )
+            .to_string();
+        }
         let key = KeyPath::tenant_schema_name(cluster, tenant, &schema.db(), &schema.name());
         if self.db.contains_key(&key).unwrap() {
             return TenaneMetaDataResp::new_from_data(

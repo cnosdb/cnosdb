@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use coordinator::command;
 use datafusion::sql::TableReference;
 use spi::query::{
-    execution::{MetadataSnafu, Output, QueryStateMachineRef},
+    execution::{CoordinatorErrSnafu, MetadataSnafu, Output, QueryStateMachineRef},
     logical_planner::{DatabaseObjectType, DropDatabaseObject},
 };
 
@@ -52,6 +53,21 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     query_state_machine.session.tenant(),
                     query_state_machine.session.default_database(),
                 );
+
+                let req = command::AdminStatementRequest {
+                    tenant: tenant.to_string(),
+                    stmt: command::AdminStatementType::DropTable(
+                        table.schema.to_string(),
+                        table.table.to_string(),
+                    ),
+                };
+
+                query_state_machine
+                    .coord
+                    .exec_admin_stat_on_all_node(req)
+                    .await
+                    .context(CoordinatorErrSnafu)?;
+
                 client.drop_table(table.schema, table.table)
             }
         };

@@ -170,42 +170,42 @@ mod tests {
         println!("{:?}", tskv)
     }
 
-    #[test]
-    #[serial]
-    fn test_kvcore_create_table() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (_rt, tskv) = get_tskv();
-        tskv.create_database(&DatabaseSchema::new("cnosdb", "public"))
-            .unwrap();
-        tskv.create_database(&DatabaseSchema::new("cnosdb", "test"))
-            .unwrap();
-        let expected = TskvTableSchema::new(
-            "cnosdb".to_string(),
-            "test".to_string(),
-            "test0".to_string(),
-            vec![
-                TableColumn::new(0, "time".to_string(), ColumnType::Time, Encoding::Default),
-                TableColumn::new(1, "ta".to_string(), ColumnType::Tag, Encoding::Default),
-                TableColumn::new(2, "tb".to_string(), ColumnType::Tag, Encoding::Default),
-                TableColumn::new(
-                    3,
-                    "fa".to_string(),
-                    ColumnType::Field(ValueType::Integer),
-                    Encoding::Default,
-                ),
-                TableColumn::new(
-                    4,
-                    "fb".to_string(),
-                    ColumnType::Field(ValueType::Float),
-                    Encoding::Default,
-                ),
-            ],
-        );
-        tskv.create_table(&expected).unwrap();
-        let table_schema = tskv
-            .get_table_schema("cnosdb", "test", "test0")
-            .unwrap()
-            .unwrap();
-        assert_eq!(expected, table_schema);
-    }
+    // #[test]
+    // #[serial]
+    // fn test_kvcore_create_table() {
+    //     init_default_global_tracing("tskv_log", "tskv.log", "debug");
+    //     let (_rt, tskv) = get_tskv();
+    //     tskv.create_database(&DatabaseSchema::new("cnosdb", "public"))
+    //         .unwrap();
+    //     tskv.create_database(&DatabaseSchema::new("cnosdb", "test"))
+    //         .unwrap();
+    //     let expected = TskvTableSchema::new(
+    //         "cnosdb".to_string(),
+    //         "test".to_string(),
+    //         "test0".to_string(),
+    //         vec![
+    //             TableColumn::new(0, "time".to_string(), ColumnType::Time, Encoding::Default),
+    //             TableColumn::new(1, "ta".to_string(), ColumnType::Tag, Encoding::Default),
+    //             TableColumn::new(2, "tb".to_string(), ColumnType::Tag, Encoding::Default),
+    //             TableColumn::new(
+    //                 3,
+    //                 "fa".to_string(),
+    //                 ColumnType::Field(ValueType::Integer),
+    //                 Encoding::Default,
+    //             ),
+    //             TableColumn::new(
+    //                 4,
+    //                 "fb".to_string(),
+    //                 ColumnType::Field(ValueType::Float),
+    //                 Encoding::Default,
+    //             ),
+    //         ],
+    //     );
+    //     tskv.create_table(&expected).unwrap();
+    //     let table_schema = tskv
+    //         .get_table_schema("cnosdb", "test", "test0")
+    //         .unwrap()
+    //         .unwrap();
+    //     assert_eq!(expected, table_schema);
+    // }
 }

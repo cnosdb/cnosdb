@@ -58,7 +58,7 @@ impl Database {
                 .write()
                 .get_db_index(&schema.owner()),
             owner: schema.owner(),
-            schemas: Arc::new(DBschemas::new(schema, meta.clone()).context(SchemaSnafu)?),
+            schemas: Arc::new(DBschemas::new(schema, meta).context(SchemaSnafu)?),
             ts_families: HashMap::new(),
             opt,
         };
@@ -386,8 +386,8 @@ impl Database {
         None
     }
 
-    pub fn get_schema(&self) -> DatabaseSchema {
-        self.schemas.db_schema()
+    pub fn get_schema(&self) -> Result<DatabaseSchema> {
+        self.schemas.db_schema().context(SchemaSnafu)
     }
 }
 

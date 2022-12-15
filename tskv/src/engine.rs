@@ -39,21 +39,21 @@ pub trait Engine: Send + Sync + Debug {
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>>;
+    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>>;
 
-    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
+    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
-    fn get_db_schema(&self, tenant: &str, database: &str) -> Option<DatabaseSchema>;
+    // fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>>;
 
     fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
-    fn create_table(&self, schema: &TskvTableSchema) -> Result<()>;
+    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()>;
 
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
-    fn list_databases(&self) -> Result<Vec<String>>;
+    // fn list_databases(&self) -> Result<Vec<String>>;
 
-    fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>>;
+    // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>>;
 
     fn add_table_column(
         &self,
@@ -174,25 +174,25 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
-        todo!()
-    }
+    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
+    //     todo!()
+    // }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
-        todo!()
-    }
+    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    //     todo!()
+    // }
 
-    fn list_databases(&self) -> Result<Vec<String>> {
-        todo!()
-    }
+    // fn list_databases(&self) -> Result<Vec<String>> {
+    //     todo!()
+    // }
 
-    fn list_tables(&self, tenant: &str, database: &str) -> Result<Vec<String>> {
-        todo!()
-    }
+    // fn list_tables(&self, tenant: &str, database: &str) -> Result<Vec<String>> {
+    //     todo!()
+    // }
 
-    fn get_db_schema(&self, tenant: &str, name: &str) -> Option<DatabaseSchema> {
-        Some(DatabaseSchema::new(tenant, name))
-    }
+    // fn get_db_schema(&self, tenant: &str, name: &str) -> Result<Option<DatabaseSchema>> {
+    //     Ok(Some(DatabaseSchema::new(tenant, name)))
+    // }
 
     fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         println!("drop_table db:{:?}, table:{:?}", database, table);
@@ -268,9 +268,9 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
-        todo!()
-    }
+    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
+    //     todo!()
+    // }
 
     fn add_table_column(
         &self,

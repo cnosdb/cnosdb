@@ -1,6 +1,7 @@
 use async_trait::async_trait;
+use coordinator::command;
 use spi::query::{
-    execution::{Output, QueryStateMachineRef},
+    execution::{CoordinatorErrSnafu, Output, QueryStateMachineRef},
     logical_planner::{DropTenantObject, TenantObjectType},
 };
 
@@ -68,10 +69,23 @@ impl DDLDefinitionTask for DropTenantObjectTask {
 
                 Ok(Output::Nil(()))
             }
+
             TenantObjectType::Database => {
                 // 删除租户下的database
                 // tenant_id
                 // database_name
+
+                let req = command::AdminStatementRequest {
+                    tenant: tenant_name.to_string(),
+                    stmt: command::AdminStatementType::DropDB(name.clone()),
+                };
+
+                query_state_machine
+                    .coord
+                    .exec_admin_stat_on_all_node(req)
+                    .await
+                    .context(CoordinatorErrSnafu)?;
+
                 debug!("Drop database {} of tenant {}", name, tenant_name);
                 let success = meta.drop_db(name).context(MetadataSnafu)?;
 
