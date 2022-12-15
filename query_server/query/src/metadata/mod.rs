@@ -12,6 +12,7 @@ use models::auth::user::UserDesc;
 use models::schema::{TableSchema, Tenant};
 
 use spi::query::session::IsiphoSessionCtx;
+use spi::query::DEFAULT_CATALOG;
 
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::table::ClusterTable;
@@ -24,7 +25,11 @@ use std::sync::Arc;
 
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 
+use self::cluster_schema_provider::ClusterSchemaProvider;
 use self::information_schema_provider::InformationSchemaProvider;
+
+pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
+pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
@@ -39,6 +44,7 @@ pub struct MetadataProvider {
     coord: CoordinatorRef,
     func_manager: FuncMetaManagerRef,
     information_schema_provider: InformationSchemaProvider,
+    cluster_schema_provider: ClusterSchemaProvider,
 }
 
 impl MetadataProvider {
@@ -53,6 +59,7 @@ impl MetadataProvider {
             session,
             func_manager: Arc::new(func_manager),
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
+            cluster_schema_provider: ClusterSchemaProvider::new(),
         }
     }
 }
@@ -88,6 +95,7 @@ impl ContextProvider for MetadataProvider {
 
         let table_name = name.table;
         let database_name = name.schema;
+        let tenant_name = name.catalog;
 
         let client = self
             .coord
@@ -105,6 +113,18 @@ impl ContextProvider for MetadataProvider {
             let mem_table = self
                 .information_schema_provider
                 .table(self.session.user(), table_name, client)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
+            return Ok(provider_as_source(mem_table));
+        }
+
+        // process CNOSDB(sys tenant) -> CLUSTER_SCHEMA
+        if tenant_name.eq_ignore_ascii_case(DEFAULT_CATALOG)
+            && database_name.eq_ignore_ascii_case(self.cluster_schema_provider.name())
+        {
+            let mem_table = self
+                .cluster_schema_provider
+                .table(self.session.user(), table_name, self.coord.meta_manager())
                 .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
             return Ok(provider_as_source(mem_table));

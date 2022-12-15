@@ -261,4 +261,8 @@ impl TenantManager for TenantManagerMock {
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         todo!()
     }
+
+    fn tenants(&self) -> MetaResult<Vec<Tenant>> {
+        todo!()
+    }
 }

@@ -8,9 +8,6 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use config::get_config;
-    use models::codec::Encoding;
-    use models::schema::{ColumnType, DatabaseSchema, TableColumn, TskvTableSchema};
-    use models::ValueType;
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;

@@ -35,6 +35,7 @@ sled = { workspace = true }
 snafu = { workspace = true }
 derive_builder = { workspace = true }
 lazy_static = { workspace = true }
+serde_json = { workspace = true }
 
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]

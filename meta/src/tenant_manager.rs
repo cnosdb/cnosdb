@@ -88,6 +88,18 @@ impl TenantManager for RemoteTenantManager {
         }
     }
 
+    fn tenants(&self) -> MetaResult<Vec<Tenant>> {
+        let tenants = self
+            .tenants
+            .read()
+            .values()
+            .map(|e| e.tenant())
+            .cloned()
+            .collect();
+
+        Ok(tenants)
+    }
+
     fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
         let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
