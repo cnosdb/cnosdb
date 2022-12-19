@@ -4,7 +4,6 @@ use datafusion::arrow::array::StringBuilder;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::TableReference;
-use meta::meta_client::MetaError;
 use models::schema::TableSchema;
 use snafu::ResultExt;
 
@@ -13,6 +12,7 @@ use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeTable;
 use std::sync::Arc;
+use meta::error::MetaError;
 
 pub struct DescribeTableTask {
     stmt: DescribeTable,

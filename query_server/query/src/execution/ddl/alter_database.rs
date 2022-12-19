@@ -1,8 +1,8 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
-use meta::meta_client::MetaError;
 use models::schema::DatabaseOptions;
 use snafu::ResultExt;
+use meta::error::MetaError;
 use spi::query::execution;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};

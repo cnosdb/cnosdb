@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use meta::meta_client::MetaError;
 use spi::query::{
     execution::{ExecutionError, MetadataSnafu, Output, QueryStateMachineRef},
     logical_planner::{DropGlobalObject, GlobalObjectType},
@@ -10,6 +9,7 @@ use trace::debug;
 use super::DDLDefinitionTask;
 
 use snafu::ResultExt;
+use meta::error::MetaError;
 
 pub struct DropGlobalObjectTask {
     stmt: DropGlobalObject,

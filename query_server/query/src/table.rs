@@ -11,7 +11,7 @@ use datafusion::{
     logical_expr::{Expr, TableProviderFilterPushDown},
     physical_plan::{project_schema, ExecutionPlan},
 };
-use meta::meta_client::MetaError;
+use meta::error::MetaError;
 use models::predicate::domain::{Predicate, PredicateRef};
 use models::schema::TskvTableSchema;
 

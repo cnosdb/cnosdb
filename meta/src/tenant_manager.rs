@@ -11,12 +11,13 @@ use parking_lot::RwLock;
 use crate::{
     client::MetaHttpClient,
     meta_client::{
-        MetaClient, MetaClientRef, MetaError, MetaResult, RemoteMetaClient, TenantManager,
+        MetaClient, MetaClientRef, RemoteMetaClient, TenantManager,
     },
     store::command::{
         self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
     },
 };
+use crate::error::{MetaError, MetaResult};
 
 #[derive(Debug)]
 pub struct RemoteTenantManager {
@@ -32,7 +33,7 @@ pub struct RemoteTenantManager {
 impl RemoteTenantManager {
     pub fn new(cluster_name: String, cluster_meta: String, id: u64) -> Self {
         Self {
-            client: MetaHttpClient::new(cluster_meta.clone()),
+            client: MetaHttpClient::new(1, cluster_meta.clone()),
             cluster_name,
             cluster_meta,
             node_id: id,

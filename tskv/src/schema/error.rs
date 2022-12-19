@@ -1,5 +1,5 @@
-use meta::meta_client::MetaError;
 use snafu::Snafu;
+use meta::error::MetaError;
 
 pub type Result<T> = std::result::Result<T, SchemaError>;
 

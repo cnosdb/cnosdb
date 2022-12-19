@@ -24,6 +24,7 @@ use trace::{debug, info, warn};
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
+use crate::error::{MetaError, MetaResult};
 
 use crate::store::command::{
     META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
@@ -33,82 +34,6 @@ use crate::store::command::{
 use crate::tenant_manager::RemoteTenantManager;
 use crate::user_manager::{RemoteUserManager, UserManager, UserManagerMock};
 use crate::{client, store};
-
-#[derive(Snafu, Debug)]
-pub enum MetaError {
-    #[snafu(display("The privilege {} already exists", name))]
-    PrivilegeAlreadyExists { name: String },
-
-    #[snafu(display("The privilege {} not found", name))]
-    PrivilegeNotFound { name: String },
-
-    #[snafu(display("The role {} already exists", role))]
-    RoleAlreadyExists { role: String },
-
-    #[snafu(display("The role {} not found", role))]
-    RoleNotFound { role: String },
-
-    #[snafu(display("The user {} already exists", user))]
-    UserAlreadyExists { user: String },
-
-    #[snafu(display("The user {} not found", user))]
-    UserNotFound { user: String },
-
-    #[snafu(display("The tenant {} already exists", tenant))]
-    TenantAlreadyExists { tenant: String },
-
-    #[snafu(display("The tenant {} not found", tenant))]
-    TenantNotFound { tenant: String },
-
-    #[snafu(display("Not Found Field"))]
-    NotFoundField,
-
-    #[snafu(display("index storage error: {}", msg))]
-    IndexStroage { msg: String },
-
-    #[snafu(display("Not Found DB: {}", db))]
-    NotFoundDb { db: String },
-
-    #[snafu(display("Not Found Data Node: {}", id))]
-    NotFoundNode { id: u64 },
-
-    #[snafu(display("Request meta cluster error: {}", msg))]
-    MetaClientErr { msg: String },
-
-    #[snafu(display("Error: {}", msg))]
-    CommonError { msg: String },
-
-    #[snafu(display("Database not found: {:?}", database))]
-    DatabaseNotFound { database: String },
-
-    #[snafu(display("Database {:?} already exists", database))]
-    DatabaseAlreadyExists { database: String },
-
-    #[snafu(display("Table not found: {:?}", table))]
-    TableNotFound { table: String },
-
-    #[snafu(display("Table {} already exists.", table_name))]
-    TableAlreadyExists { table_name: String },
-}
-
-impl From<io::Error> for MetaError {
-    fn from(err: io::Error) -> Self {
-        MetaError::CommonError {
-            msg: err.to_string(),
-        }
-    }
-}
-
-impl From<client::WriteError> for MetaError {
-    fn from(err: client::WriteError) -> Self {
-        MetaError::MetaClientErr {
-            msg: err.to_string(),
-        }
-    }
-}
-
-pub type MetaResult<T> = Result<T, MetaError>;
-
 pub type UserManagerRef = Arc<dyn UserManager>;
 pub type TenantManagerRef = Arc<dyn TenantManager>;
 pub type MetaClientRef = Arc<dyn MetaClient>;
@@ -351,7 +276,7 @@ impl RemoteAdminMeta {
             meta_url: meta_url.clone(),
             conn_map: RwLock::new(HashMap::new()),
             data_nodes: RwLock::new(HashMap::new()),
-            client: MetaHttpClient::new(meta_url),
+            client: MetaHttpClient::new(1, meta_url),
         }
     }
 }
@@ -463,7 +388,7 @@ impl RemoteMetaClient {
             client_id,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(meta_url),
+            client: MetaHttpClient::new(1, meta_url),
         });
 
         let _ = client.sync_all_tenant_metadata();

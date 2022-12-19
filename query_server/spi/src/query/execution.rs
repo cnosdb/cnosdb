@@ -9,10 +9,11 @@ use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::Snafu;
+use meta::error::MetaError;
 
 use crate::service::protocol::Query;
 use crate::service::protocol::QueryId;
-use meta::meta_client::{MetaError, MetaRef};
+use meta::meta_client::MetaRef;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::{logical_planner::Plan, session::IsiphoSessionCtx, Result};

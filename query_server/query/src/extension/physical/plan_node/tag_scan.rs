@@ -22,7 +22,7 @@ use datafusion::{
     },
 };
 use futures::Stream;
-use meta::meta_client::MetaError;
+use meta::error::MetaError;
 use models::{
     arrow_array::{build_arrow_array_builders, WriteArrow},
     predicate::domain::{ColumnDomains, PredicateRef},

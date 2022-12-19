@@ -4,7 +4,6 @@ use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
-use meta::meta_client::MetaError;
 use snafu::ResultExt;
 
 use spi::query::execution;
@@ -12,6 +11,7 @@ use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
 use std::sync::Arc;
+use meta::error::MetaError;
 
 pub struct DescribeDatabaseTask {
     stmt: DescribeDatabase,

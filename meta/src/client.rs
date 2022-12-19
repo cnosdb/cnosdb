@@ -8,43 +8,27 @@ use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RemoteError;
 
+use crate::error::{MetaError, MetaResult};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::meta_client::MetaError;
-use crate::meta_client::MetaResult;
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
-use crate::ExampleTypeConfig;
-use crate::NodeId;
+use crate::{ClusterNode, ClusterNodeId};
 
-pub type WriteError = RPCError<ExampleTypeConfig, ClientWriteError<NodeId>>;
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Empty {}
+pub type WriteError =
+    RPCError<ClusterNodeId, ClusterNode, ClientWriteError<ClusterNodeId, ClusterNode>>;
 
 #[derive(Debug)]
 pub struct MetaHttpClient {
-    //inner: reqwest::Client,
-    addrs: Vec<String>,
-
-    leader: Arc<Mutex<String>>,
+    pub leader: Arc<Mutex<(ClusterNodeId, String)>>,
 }
 
 impl MetaHttpClient {
-    pub fn new(addr: String) -> Self {
-        let mut addrs = vec![];
-        let list: Vec<&str> = addr.split(';').collect();
-        for item in list.iter() {
-            addrs.push(item.to_string());
-        }
-        addrs.sort();
-        let leader_addr = addrs[0].clone();
-
+    pub fn new(leader_id: ClusterNodeId, leader_addr: String) -> Self {
         Self {
-            //inner: reqwest::Client::new(),
-            addrs,
-            leader: Arc::new(Mutex::new(leader_addr)),
+            leader: Arc::new(Mutex::new((leader_id, leader_addr))),
         }
     }
 
@@ -96,35 +80,24 @@ impl MetaHttpClient {
 
     //////////////////////////////////////////////////
 
-    fn switch_leader(&self) {
-        let mut t = self.leader.lock().unwrap();
-
-        if let Ok(index) = self.addrs.binary_search(&t) {
-            let index = (index + 1) % self.addrs.len();
-            *t = self.addrs[index].clone();
-        } else {
-            *t = self.addrs[0].clone();
-        }
-    }
-
     fn send_rpc_to_leader<Req, Resp, Err>(
         &self,
         uri: &str,
         req: Option<&Req>,
-    ) -> Result<Resp, RPCError<ExampleTypeConfig, Err>>
+    ) -> Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>>
     where
         Req: Serialize + 'static,
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error
             + Serialize
             + DeserializeOwned
-            + TryInto<ForwardToLeader<NodeId>>
+            + TryInto<ForwardToLeader<ClusterNodeId, ClusterNode>>
             + Clone,
     {
         let mut n_retry = 3;
 
         loop {
-            let res: Result<Resp, RPCError<ExampleTypeConfig, Err>> =
+            let res: Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>> =
                 self.do_send_rpc_to_leader(uri, req);
 
             let rpc_err = match res {
@@ -133,29 +106,26 @@ impl MetaHttpClient {
             };
 
             if let RPCError::RemoteError(remote_err) = &rpc_err {
-                let forward_err_res =
-                    <Err as TryInto<ForwardToLeader<NodeId>>>::try_into(remote_err.source.clone());
+                let forward_err_res = <Err as TryInto<
+                    ForwardToLeader<ClusterNodeId, ClusterNode>,
+                >>::try_into(remote_err.source.clone());
 
                 if let Ok(ForwardToLeader {
-                    leader_id: Some(_),
+                    leader_id: Some(leader_id),
                     leader_node: Some(leader_node),
                     ..
                 }) = forward_err_res
                 {
                     {
                         let mut t = self.leader.lock().unwrap();
-                        *t = leader_node.addr;
+                        *t = (leader_id, leader_node.api_addr);
                     }
 
                     n_retry -= 1;
                     if n_retry > 0 {
                         continue;
                     }
-                } else {
-                    self.switch_leader();
                 }
-            } else {
-                self.switch_leader();
             }
 
             return Err(rpc_err);
@@ -166,13 +136,18 @@ impl MetaHttpClient {
         &self,
         uri: &str,
         req: Option<&Req>,
-    ) -> Result<Resp, RPCError<ExampleTypeConfig, Err>>
+    ) -> Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>>
     where
         Req: Serialize + 'static,
         Resp: Serialize + DeserializeOwned,
         Err: std::error::Error + Serialize + DeserializeOwned,
     {
-        let url = format!("http://{}/{}", self.leader.lock().unwrap(), uri);
+        let (leader_id, url) = {
+            let t = self.leader.lock().unwrap();
+            let target_addr = &t.1;
+            (t.0, format!("http://{}/{}", target_addr, uri))
+        };
+
         let resp = if let Some(r) = req {
             ureq::post(&url).send_json(r)
         } else {
@@ -184,7 +159,7 @@ impl MetaHttpClient {
             .into_json()
             .map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
 
-        res.map_err(|e| RPCError::RemoteError(RemoteError::new(0, e)))
+        res.map_err(|e| RPCError::RemoteError(RemoteError::new(leader_id, e)))
     }
 }
 
@@ -196,7 +171,9 @@ mod test {
     use models::{meta_data::NodeInfo, schema::DatabaseSchema};
 
     pub async fn watch_tenant(cluster: &str, tenant: &str) {
-        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
+        println!("=== begin ================...");
+
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
         let mut version = 0;
         let mut cmd = (
             "client_id".to_string(),
@@ -233,7 +210,7 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new("127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
 
         let node = NodeInfo {
             id: 111,

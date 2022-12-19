@@ -3,13 +3,13 @@ use async_trait::async_trait;
 use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::meta_client::MetaError;
 use snafu::ResultExt;
 
 use spi::query::execution::ExternalSnafu;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use std::sync::Arc;
+use meta::error::MetaError;
 
 pub struct ShowTablesTask {
     database_name: Option<String>,

@@ -27,9 +27,9 @@ use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
-use meta::meta_client::MetaError;
-use models::schema::{DatabaseSchema, Duration};
+use models::schema::DatabaseSchema;
 use snafu::ResultExt;
+use meta::error::MetaError;
 use spi::query::DEFAULT_DATABASE;
 use spi::server::ServerError;
 use tskv::engine::EngineRef;
@@ -192,9 +192,7 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
                 tenant: DEFAULT_CATALOG.to_string(),
             })
             .context(MetaDataSnafu)?;
-        let mut db = DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE);
-        db.config.with_ttl(Duration::new_inf());
-        let res = client.create_db(&db);
+        let res = client.create_db(&DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE));
         if let Err(err) = res {
             match err {
                 MetaError::DatabaseAlreadyExists { .. } => {}

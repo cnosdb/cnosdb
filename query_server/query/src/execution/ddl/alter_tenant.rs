@@ -1,7 +1,7 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
-use meta::meta_client::MetaError;
 use snafu::ResultExt;
+use meta::error::MetaError;
 use spi::query::execution::{ExecutionError, MetadataSnafu, Output, QueryStateMachineRef};
 use spi::query::logical_planner::{
     AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,

@@ -12,7 +12,6 @@ use datafusion::{
     prelude::{col, Expr},
     sql::sqlparser::ast::{Ident, ObjectName, SqlOption},
 };
-use meta::meta_client::MetaError;
 use models::{
     auth::{
         privilege::{DatabasePrivilege, Privilege},
@@ -24,6 +23,7 @@ use models::{
 };
 use models::{define_result, schema::TableColumn};
 use snafu::Snafu;
+use meta::error::MetaError;
 
 define_result!(LogicalPlannerError);
 

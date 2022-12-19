@@ -10,9 +10,8 @@ use spi::query::execution::ExecutionError;
 use trace::debug;
 
 use super::DDLDefinitionTask;
-
-use meta::meta_client::MetaError;
 use snafu::ResultExt;
+use meta::error::MetaError;
 
 pub struct DropDatabaseObjectTask {
     stmt: DropDatabaseObject,

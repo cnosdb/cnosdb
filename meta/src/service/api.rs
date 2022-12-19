@@ -1,13 +1,9 @@
-#![allow(clippy::field_reassign_with_default)]
-
 use actix_web::get;
 use actix_web::post;
 use actix_web::web;
 use actix_web::web::Data;
 use actix_web::Responder;
 use openraft::error::Infallible;
-use openraft::raft::ClientWriteRequest;
-use openraft::EntryPayload;
 use tokio::sync::mpsc;
 use web::Json;
 
@@ -31,11 +27,10 @@ pub async fn write(
     app: Data<MetaApp>,
     req: Json<WriteCommand>,
 ) -> actix_web::Result<impl Responder> {
-    let request = ClientWriteRequest::new(EntryPayload::Normal(req.0));
-    let res = match app.raft.client_write(request).await {
+    let res = match app.raft.client_write(req.0).await {
         Ok(val) => val.data,
         Err(err) => {
-            TenaneMetaDataResp::new(META_REQUEST_FAILED, format!("raft write error: {}", err))
+            TenaneMetaDataResp::new(META_REQUEST_FAILED, format!("raft write error: {:?}", err))
                 .to_string()
         }
     };
@@ -78,7 +73,7 @@ pub async fn watch_tenant(
 
             let mut data = TenantMetaDataDelta::default();
             data.full_load = true;
-            data.update = sm.to_tenant_meta_data(&cluster, &tenant);
+            data.update = sm.to_tenant_meta_data(&cluster, &tenant).unwrap();
 
             let res = serde_json::to_string(&data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(res);
@@ -117,12 +112,14 @@ pub async fn watch_tenant(
 #[get("/debug")]
 pub async fn debug(app: Data<MetaApp>) -> actix_web::Result<impl Responder> {
     let sm = app.store.state_machine.read().await;
-
-    let mut response = format!("******----------version: {}-------******\n", sm.version());
-    for (k, v) in sm.data.iter() {
+    let mut response = "******---------------------------******\n".to_string();
+    for res in sm.db.iter() {
+        let (k, v) = res.unwrap();
+        let k = String::from_utf8((*k).to_owned()).unwrap();
+        let v = String::from_utf8((*v).to_owned()).unwrap();
         response = response + &format!("* {}: {}\n", k, v);
     }
-    response += "******--------------------------------------******\n";
+    response += "******----------------------------------------------******\n";
 
     Ok(response)
 }

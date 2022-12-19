@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
-
-use meta::meta_client::MetaError;
 use models::SeriesId;
 use snafu::Snafu;
+use meta::error::MetaError;
 
 use crate::schema::error::SchemaError;
 use crate::{

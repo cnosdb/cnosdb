@@ -13,7 +13,6 @@ use models::auth::user::UserDesc;
 use models::schema::{TableSchema, Tenant};
 
 use datafusion::arrow::record_batch::RecordBatch;
-use meta::meta_client::MetaError;
 
 use crate::table::ClusterTable;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
@@ -21,6 +20,7 @@ use datafusion::datasource::provider_as_source;
 
 use spi::query::function::FuncMetaManagerRef;
 use std::sync::Arc;
+use meta::error::MetaError;
 
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 

@@ -1,9 +1,9 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use datafusion::sql::TableReference;
-use meta::meta_client::MetaError;
 use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
+use meta::error::MetaError;
 
 use spi::query::execution;
 use spi::query::execution::MetadataSnafu;

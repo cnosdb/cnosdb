@@ -18,7 +18,6 @@ use datafusion::sql::sqlparser::ast::{
     DataType as SQLDataType, Ident, ObjectName, Query, Statement,
 };
 use datafusion::sql::TableReference;
-use meta::meta_client::MetaError;
 use models::auth::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege,
 };
@@ -29,6 +28,7 @@ use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
+use meta::error::MetaError;
 use spi::query::ast::{
     self, AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
@@ -1296,6 +1296,7 @@ mod tests {
 
     use super::*;
     use datafusion::error::Result;
+    use meta::error::MetaError;
     use models::codec::Encoding;
 
     #[derive(Debug)]

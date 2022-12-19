@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
+use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 use async_trait::async_trait;
 use openraft::error::AppendEntriesError;
 use openraft::error::InstallSnapshotError;
@@ -14,51 +12,47 @@ use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::InstallSnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
-use openraft::Node;
 use openraft::RaftNetwork;
 use openraft::RaftNetworkFactory;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::ExampleTypeConfig;
-use crate::NodeId;
-
 pub struct Connections {
-    pub clients: Arc<HashMap<String, reqwest::Client>>,
+    // pub inner: Arc<HashMap<String,Channel>>,
 }
+// impl Connections {
+//     pub async fn add_conn(&mut self, url: &String) -> MetaResult<Channel>{
+//         let channel = Channel::from_static(url.parse().unwrap())
+//              .connect()
+//              .await
+//              .context(MetaError::RaftConnectSnafu)?;
+//         self.inner.insert(url.clone(), channel.clone());
+//         Ok(channel)
+//     }
+//     pub async fn get_conn(&mut self, url: String) -> MetaResult<Channel> {
+//         match self.inner.get(&url){
+//             None => self.add_conn(&url).await,
+//             Some(c) => Ok(c.clone()),
+//         }
+//     }
+// }
 
-impl Default for Connections {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl Connections {
-    pub fn new() -> Self {
-        Self {
-            clients: Arc::new(HashMap::new()),
-        }
-    }
-
-    pub async fn send_rpc<Req, Resp, Err>(
+    pub async fn send_req<Req, Resp, Err>(
         &mut self,
-        target: NodeId,
-        target_node: Option<&Node>,
+        target: ClusterNodeId,
+        node: ClusterNode,
         uri: &str,
         req: Req,
-    ) -> Result<Resp, RPCError<ExampleTypeConfig, Err>>
+    ) -> Result<Resp, RPCError<ClusterNodeId, ClusterNode, Err>>
     where
         Req: Serialize,
         Err: std::error::Error + DeserializeOwned,
         Resp: DeserializeOwned,
     {
-        let addr = target_node.map(|x| &x.addr).unwrap();
-        let url = format!("http://{}/{}", addr, uri);
-        let clients = Arc::get_mut(&mut self.clients).unwrap();
-        let client = clients
-            .entry(url.clone())
-            .or_insert_with(reqwest::Client::new);
-
+        let url = format!("http://{}/{}", node.rpc_addr, uri);
+        let client = reqwest::Client::new();
         let resp = client
             .post(url)
             .json(&req)
@@ -75,58 +69,75 @@ impl Connections {
     }
 }
 
-// NOTE: This could be implemented also on `Arc<ExampleNetwork>`, but since it's empty, implemented directly.
 #[async_trait]
-impl RaftNetworkFactory<ExampleTypeConfig> for Connections {
-    type Network = ExampleNetworkConnection;
+impl RaftNetworkFactory<TypeConfig> for Connections {
+    type Network = ConnManager;
+    type ConnectionError = NetworkError;
 
-    async fn connect(&mut self, target: NodeId, node: Option<&Node>) -> Self::Network {
-        ExampleNetworkConnection {
-            owner: Connections::new(),
+    async fn new_client(
+        &mut self,
+        target: ClusterNodeId,
+        node: &ClusterNode,
+    ) -> Result<Self::Network, Self::ConnectionError> {
+        Ok(ConnManager {
+            //todo: use grpc
+            owner: Connections {},
             target,
-            target_node: node.cloned(),
-        }
+            target_node: node.clone(),
+        })
     }
 }
 
-pub struct ExampleNetworkConnection {
+pub struct ConnManager {
     owner: Connections,
-    target: NodeId,
-    target_node: Option<Node>,
+    target: ClusterNodeId,
+    target_node: ClusterNode,
 }
 
 #[async_trait]
-impl RaftNetwork<ExampleTypeConfig> for ExampleNetworkConnection {
+impl RaftNetwork<TypeConfig> for ConnManager {
     async fn send_append_entries(
         &mut self,
-        req: AppendEntriesRequest<ExampleTypeConfig>,
+        req: AppendEntriesRequest<TypeConfig>,
     ) -> Result<
-        AppendEntriesResponse<NodeId>,
-        RPCError<ExampleTypeConfig, AppendEntriesError<NodeId>>,
+        AppendEntriesResponse<ClusterNodeId>,
+        RPCError<ClusterNodeId, ClusterNode, AppendEntriesError<ClusterNodeId>>,
     > {
+        // tracing::info!("send_append_entries: req {:?}", req);
         self.owner
-            .send_rpc(self.target, self.target_node.as_ref(), "raft-append", req)
+            .send_req(self.target, self.target_node.clone(), "raft-append", req)
             .await
     }
 
     async fn send_install_snapshot(
         &mut self,
-        req: InstallSnapshotRequest<ExampleTypeConfig>,
+        req: InstallSnapshotRequest<TypeConfig>,
     ) -> Result<
-        InstallSnapshotResponse<NodeId>,
-        RPCError<ExampleTypeConfig, InstallSnapshotError<NodeId>>,
+        InstallSnapshotResponse<ClusterNodeId>,
+        RPCError<ClusterNodeId, ClusterNode, InstallSnapshotError<ClusterNodeId>>,
     > {
+        // tracing::info!("send_install_snapshot: req {:?}", req);
         self.owner
-            .send_rpc(self.target, self.target_node.as_ref(), "raft-snapshot", req)
+            .send_req(
+                self.target,
+                self.target_node.clone(),
+                "raft_snapshot",
+                req,
+            )
             .await
     }
 
     async fn send_vote(
         &mut self,
-        req: VoteRequest<NodeId>,
-    ) -> Result<VoteResponse<NodeId>, RPCError<ExampleTypeConfig, VoteError<NodeId>>> {
-        self.owner
-            .send_rpc(self.target, self.target_node.as_ref(), "raft-vote", req)
-            .await
+        req: VoteRequest<ClusterNodeId>,
+    ) -> Result<
+        VoteResponse<ClusterNodeId>,
+        RPCError<ClusterNodeId, ClusterNode, VoteError<ClusterNodeId>>,
+    > {
+        let res = self.owner
+            .send_req(self.target, self.target_node.clone(), "raft-vote", req)
+            .await;
+        res
+
     }
 }
