@@ -630,16 +630,11 @@ where
         self.result_cache.insert(result_ident.clone(), output);
 
         // construct response start
-        let dataset_schema = if !schema.fields().is_empty() {
-            let IpcMessage(data) = IpcMessage::try_from(SchemaAsIpc::new(
-                schema.as_ref(),
-                &IpcWriteOptions::default(),
-            ))
-            .map_err(|e| Status::internal(format!("{}", e)))?;
-            data
-        } else {
-            vec![]
-        };
+        let IpcMessage(dataset_schema) = IpcMessage::try_from(SchemaAsIpc::new(
+            schema.as_ref(),
+            &IpcWriteOptions::default(),
+        ))
+        .map_err(|e| Status::internal(format!("{}", e)))?;
         let result = ActionCreatePreparedStatementResult {
             prepared_statement_handle: result_ident,
             dataset_schema,
