@@ -4,7 +4,7 @@ mod factory;
 use std::{collections::HashMap, sync::Arc};
 
 use datafusion::datasource::MemTable;
-use meta::meta_client::{MetaClientRef, MetaError};
+use meta::{error::MetaError, meta_client::MetaClientRef};
 use models::auth::user::User;
 
 use crate::dispatcher::query_tracker::QueryTracker;

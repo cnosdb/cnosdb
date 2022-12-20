@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
-use meta::meta_client::{MetaClientRef, MetaError};
+use meta::{error::MetaError, meta_client::MetaClientRef};
 use models::{
     auth::{role::SystemTenantRole, user::User},
     oid::Identifier,
