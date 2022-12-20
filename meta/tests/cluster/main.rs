@@ -1,4 +1,4 @@
-mod test_cluster;
+// mod test_cluster;
 
 use meta::store::Store;
 use meta::ClusterNodeId;
@@ -7,10 +7,7 @@ use openraft::{Config, LogId, StorageError};
 use std::sync::Arc;
 
 pub async fn new_async() -> Arc<Store> {
-    let db_path = format!(
-        "{}/{}-{}.binlog",
-        "./meta/journal", "test", "1"
-    );
+    let db_path = format!("{}/{}-{}.binlog", "./meta/journal", "test", "1");
     let db = sled::open(db_path.clone()).unwrap();
     let config = Config::default().validate().unwrap();
     let config = Arc::new(config);
