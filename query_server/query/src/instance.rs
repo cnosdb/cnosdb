@@ -192,9 +192,13 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
         if let Some(root) = user_manager.user(ROOT).context(MetaDataSnafu)? {
             if let Some(client) = tenant_manager.tenant_meta(DEFAULT_CATALOG) {
                 let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
-                client
-                    .add_member_with_role(*root.id(), role)
-                    .context(MetaDataSnafu)?;
+                if let Err(err) = client.add_member_with_role(*root.id(), role) {
+                    match err {
+                        MetaError::UserAlreadyExists { .. }
+                        | MetaError::MemberAlreadyExists { .. } => {}
+                        _ => return Err(ServerError::MetaData { source: err }),
+                    }
+                }
             }
         }
 
