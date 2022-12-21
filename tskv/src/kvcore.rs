@@ -786,6 +786,6 @@ mod test {
         )
         .await
         .unwrap();
-        tskv.compact("cnosdb", "public");
+        tskv.compact("cnosdb", "public").await;
     }
 }

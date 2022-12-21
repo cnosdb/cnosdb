@@ -488,7 +488,7 @@ mod test {
             },
             1,
         );
-        let queue = HintedOffQueue::new(option).unwrap();
+        let queue = HintedOffQueue::new(option).await.unwrap();
         let queue = Arc::new(RwLock::new(queue));
 
         tokio::spawn(read_hinted_off_file(queue.clone()));
@@ -496,7 +496,7 @@ mod test {
         for i in 1..100 {
             let data = format!("aaa-datadfdsag{}ffdffdfedata-aaa", i);
             let block = HintedOffBlock::new(1000 + i, 123, data.as_bytes().to_vec());
-            queue.write().write(&block).unwrap();
+            queue.write().write(&block).await.unwrap();
 
             //time::sleep(Duration::from_secs(3)).await;
         }
@@ -509,7 +509,7 @@ mod test {
         time::sleep(Duration::from_secs(1)).await;
         let mut count = 0;
         loop {
-            match queue.write().read() {
+            match queue.write().read().await {
                 Ok(block) => {
                     count += 1;
                 }

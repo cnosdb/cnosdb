@@ -234,12 +234,14 @@ impl HintedOffConfig {
 fn test() {
     let config_str = r#"
 
+
 #reporting_disabled = false
 
 [query]
 max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
+auth_enabled = false
 
 [storage]
 # Directory for summary: $path/summary/
@@ -252,11 +254,7 @@ max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
 compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
-dio_max_resident = 1024
-dio_max_non_resident = 1024
-dio_page_len_scale = 10
 strict_write = false
-strict_write = true
 
 [wal]
 enabled = true
@@ -268,7 +266,7 @@ max_buffer_size = 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
 
 [log]
-level = 'debug'
+level = 'info'
 path = 'data/log'
 
 [security]
@@ -281,6 +279,7 @@ node_id = 100
 name = 'cluster_xxx'
 meta = '127.0.0.1,22001'
 
+flight_rpc_server = '127.0.0.1:31006'
 http_server = '127.0.0.1:31007'
 grpc_server = '127.0.0.1:31008'
 tcp_server = '127.0.0.1:31009'

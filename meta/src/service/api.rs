@@ -5,7 +5,6 @@ use actix_web::web::Data;
 use actix_web::Responder;
 use openraft::error::Infallible;
 use tokio::sync::mpsc;
-use trace::info;
 use web::Json;
 
 use crate::store::command::*;

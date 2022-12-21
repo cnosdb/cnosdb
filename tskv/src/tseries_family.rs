@@ -799,7 +799,6 @@ mod test {
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
 
-    use config::get_config;
     use models::schema::DatabaseSchema;
     use models::{Timestamp, ValueType};
     use trace::info;
@@ -822,9 +821,6 @@ mod test {
     };
     use config::{get_config, ClusterConfig};
     use meta::meta_client::{MetaRef, RemoteMetaManager};
-    use models::schema::DatabaseSchema;
-    use models::{Timestamp, ValueType};
-    use trace::info;
 
     use super::{ColumnFile, LevelInfo};
 
