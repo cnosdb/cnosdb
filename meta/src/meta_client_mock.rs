@@ -9,14 +9,13 @@ use models::{
     auth::{
         privilege::DatabasePrivilege,
         role::{CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier},
+        user::UserDesc,
     },
-    meta_data::{BucketInfo, DatabaseInfo, NodeInfo, ReplcationSet},
+    meta_data::{BucketInfo, DatabaseInfo, ExpiredBucketInfo, NodeInfo, ReplcationSet},
     oid::Oid,
-    schema::{DatabaseSchema, Tenant, TenantOptions, TskvTableSchema},
-};
-use models::{
-    meta_data::ExpiredBucketInfo,
-    schema::{ExternalTableSchema, TableSchema},
+    schema::{
+        DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
+    },
 };
 use tokio::net::TcpStream;
 
@@ -159,11 +158,11 @@ impl MetaClient for MockMetaClient {
         todo!()
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier> {
+    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
         todo!()
     }
 
-    fn members(&self) -> MetaResult<HashSet<Oid>> {
+    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
         todo!()
     }
 
@@ -276,5 +275,9 @@ impl TenantManager for TenantManagerMock {
 
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
+    }
+
+    fn tenants(&self) -> MetaResult<Vec<Tenant>> {
+        todo!()
     }
 }

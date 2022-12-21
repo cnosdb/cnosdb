@@ -2,9 +2,9 @@ use crate::execution::ddl::query::execution::MetadataSnafu;
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use datafusion::common::TableReference;
+use meta::error::MetaError;
 use models::schema::TableSchema;
 use snafu::ResultExt;
-use meta::error::MetaError;
 
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};

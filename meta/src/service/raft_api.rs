@@ -1,4 +1,4 @@
-use crate::{ClusterNode, MetaApp, TypeConfig, ClusterNodeId};
+use crate::{ClusterNode, ClusterNodeId, MetaApp, TypeConfig};
 use actix_web::get;
 use actix_web::post;
 use actix_web::web;

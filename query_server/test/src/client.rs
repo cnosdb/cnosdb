@@ -142,6 +142,9 @@ impl Client {
             http_query.push_str(instruction.db_name());
         }
 
+        http_query.push_str("&tenant=");
+        http_query.push_str(instruction.tenant_name());
+
         if instruction.pretty() {
             http_query.push_str("&pretty=true");
         }
@@ -173,6 +176,9 @@ impl Client {
         } else {
             http_query.push_str(instruction.db_name());
         }
+
+        http_query.push_str("&tenant=");
+        http_query.push_str(instruction.tenant_name());
 
         if instruction.pretty() {
             http_query.push_str("&pretty=true");

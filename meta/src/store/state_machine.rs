@@ -22,10 +22,10 @@ use trace::debug;
 
 use tokio::sync::mpsc::Sender;
 
+use sled::Db;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use sled::Db;
 use trace::info;
 
 use crate::error::{l_r_err, s_w_err, sm_r_err, sm_w_err, StorageIOResult};
@@ -71,7 +71,8 @@ pub fn children_fullpath(path: &str, map: Arc<sled::Db>) -> Vec<String> {
 }
 
 pub fn get_struct<T>(key: &str, map: Arc<Db>) -> Option<T>
-    where for<'a> T: Deserialize<'a>
+where
+    for<'a> T: Deserialize<'a>,
 {
     let val = map.get(key).ok()??;
     let info: T = from_slice(&val).ok()?;
@@ -93,8 +94,9 @@ fn fetch_and_add_incr_id(cluster: &str, map: Arc<sled::Db>, count: u32) -> u32 {
 }
 
 pub fn children_data<T>(path: &str, map: Arc<Db>) -> HashMap<String, T>
-    where for<'a> T: Deserialize<'a>
-    {
+where
+    for<'a> T: Deserialize<'a>,
+{
     let mut path = path.to_owned();
     if !path.ends_with('/') {
         path.push('/');
@@ -105,7 +107,7 @@ pub fn children_data<T>(path: &str, map: Arc<Db>) -> HashMap<String, T>
             Err(_) => continue,
             Ok(t) => {
                 if let Some(val) = t {
-                    if let Some(info)= from_slice(&val).ok(){
+                    if let Some(info) = from_slice(&val).ok() {
                         if let Some(key) = it.strip_prefix(path.as_str()) {
                             result.insert(key.to_string(), info);
                         }
@@ -181,7 +183,7 @@ impl StateMachine {
             .expect("state_machine open failed")
     }
     //todo: temp it will be removed
-    pub fn version(&self) -> u64{
+    pub fn version(&self) -> u64 {
         self.get_last_applied_log().ok().unwrap().unwrap().index
     }
     pub(crate) fn get_last_membership(
@@ -323,10 +325,15 @@ impl StateMachine {
         Ok(data)
     }
 
-    pub fn to_tenant_meta_data(&self, cluster: &str, tenant: &str) -> StorageIOResult<TenantMetaData> {
+    pub fn to_tenant_meta_data(
+        &self,
+        cluster: &str,
+        tenant: &str,
+    ) -> StorageIOResult<TenantMetaData> {
         let mut meta = TenantMetaData::new();
         //meta.version = self.version();
-        meta.users = children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), self.db.clone());
+        meta.users =
+            children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), self.db.clone());
         // meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone());
         //
         let db_schemas =
@@ -396,23 +403,29 @@ impl StateMachine {
             ReadCommand::MemberRole(cluster, tenant_name, user_id) => {
                 let path = KeyPath::member(cluster, tenant_name, user_id);
 
-                if let Some(member) = get_struct::<TenantRoleIdentifier>(&path, self.db.clone()) {
-                    return CommonResp::Ok(member).to_string();
-                }
+                let member = get_struct::<TenantRoleIdentifier>(&path, self.db.clone());
 
-                let status = StatusResponse::new(
-                    META_REQUEST_USER_NOT_FOUND,
-                    format!("{} of tenant {}", user_id, tenant_name),
-                );
-                CommonResp::<TenantRoleIdentifier>::Err(status).to_string()
+                CommonResp::Ok(member).to_string()
             }
             ReadCommand::Members(cluster, tenant_name) => {
                 let path = KeyPath::members(cluster, tenant_name);
 
-                let members: Vec<TenantRoleIdentifier> =
-                    children_data::<TenantRoleIdentifier>(&path, self.db.clone())
-                        .into_values()
+                let members = children_data::<TenantRoleIdentifier>(&path, self.db.clone());
+                let users: HashMap<String, UserDesc> =
+                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone())
+                        .into_iter()
+                        .map(|(_, desc)| (format!("{}", desc.id()), desc))
                         .collect();
+
+                trace::trace!("members of path {}: {:?}", path, members);
+                trace::trace!("all users: {:?}", users);
+
+                let members: HashMap<String, TenantRoleIdentifier> = members
+                    .into_iter()
+                    .filter_map(|(id, role)| users.get(&id).map(|e| (e.name().to_string(), role)))
+                    .collect();
+
+                debug!("returned members of path {}: {:?}", path, members);
 
                 CommonResp::Ok(members).to_string()
             }
@@ -465,7 +478,7 @@ impl StateMachine {
 
         match req {
             WriteCommand::Set { key, value } => {
-                let _ = self.db.insert(key.as_bytes() ,value.as_bytes());
+                let _ = self.db.insert(key.as_bytes(), value.as_bytes());
                 info!("WRITE: {} :{}", key, value);
 
                 CommandResp::default()
@@ -745,7 +758,7 @@ impl StateMachine {
         }
 
         let value = serde_json::to_string(schema).unwrap();
-        let _= self.db.insert(key.as_bytes(), value.as_bytes());
+        let _ = self.db.insert(key.as_bytes(), value.as_bytes());
         info!("WRITE: {} :{}", key, value);
 
         for (_, item) in watch.iter_mut() {
@@ -783,15 +796,19 @@ impl StateMachine {
                 .to_string();
             }
         }
-        let res = self.db.get(&db_path).unwrap().and_then(|v|{from_slice::<DatabaseSchema>(&v).ok()});
-        let db_schema = match res{
+        let res = self
+            .db
+            .get(&db_path)
+            .unwrap()
+            .and_then(|v| from_slice::<DatabaseSchema>(&v).ok());
+        let db_schema = match res {
             Some(info) => info,
             None => {
                 return TenaneMetaDataResp::new(
                     META_REQUEST_FAILED,
                     format!("database {} is not exist", db),
                 )
-                    .to_string();
+                .to_string();
             }
         };
 
@@ -808,7 +825,8 @@ impl StateMachine {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} attribute invalid!", db),
-            ).to_string();
+            )
+            .to_string();
         }
 
         if *ts < now - db_schema.config.ttl_or_default().time_stamp() {
@@ -869,7 +887,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_bucket_id(cluster, tenant, db, id);
-        self.data.remove(&key);
+        let _ = self.db.remove(&key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -1178,8 +1196,9 @@ impl StateMachine {
             return CommonResp::<()>::Err(status).to_string();
         }
 
-        let val = self.db.get(&key).unwrap().and_then(|e|{
-            let mut old_role = unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
+        let val = self.db.get(&key).unwrap().and_then(|e| {
+            let mut old_role =
+                unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
             for (privilege, database_name) in privileges {
                 let _ = old_role.grant_privilege(database_name.clone(), privilege.clone());
             }
@@ -1208,8 +1227,9 @@ impl StateMachine {
             return CommonResp::<()>::Err(status).to_string();
         }
 
-        let val = self.db.get(&key).unwrap().and_then(|e|{
-            let mut old_role = unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
+        let val = self.db.get(&key).unwrap().and_then(|e| {
+            let mut old_role =
+                unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
             for (privilege, database_name) in privileges {
                 let _ = old_role.revoke_privilege(database_name, privilege);
             }

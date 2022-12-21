@@ -1,0 +1,62 @@
+-- EXECUTE SQL: drop tenant if exists test_tbls_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_tbls_u1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_tbls_u2; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_tbls_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_tbls_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_tbls_u2; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_tbls_tenant1 add user test_tbls_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_tbls_tenant1 add user test_tbls_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: drop database if exists test_tbls_db1; --
+200 OK
+
+
+-- EXECUTE SQL: create database if not exists test_tbls_db1; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test_tbls_db1.test_info_schema_tbl( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
+200 OK
+
+
+-- EXECUTE SQL: select * from information_schema.tables; --
+-- AFTER_SORT --
+200 OK
+table_tenant,table_database,table_name,table_type,table_engine,table_options
+test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,BASE TABLE,TSKV,TODO
+
+-- EXECUTE SQL: select * from information_schema.tables; --
+-- AFTER_SORT --
+200 OK
+table_tenant,table_database,table_name,table_type,table_engine,table_options
+test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,BASE TABLE,TSKV,TODO
+
+-- EXECUTE SQL: select * from information_schema.tables; --
+-- AFTER_SORT --
+200 OK
+table_tenant,table_database,table_name,table_type,table_engine,table_options
+test_tbls_tenant1,test_tbls_db1,test_info_schema_tbl,BASE TABLE,TSKV,TODO
+

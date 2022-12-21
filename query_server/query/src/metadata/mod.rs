@@ -1,28 +1,35 @@
+mod cluster_schema_provider;
+mod information_schema_provider;
+
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::physical_plan::common::SizedRecordBatchStream;
-use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MemTrackingMetrics};
-use datafusion::physical_plan::SendableRecordBatchStream;
 use datafusion::{
     error::DataFusionError,
     logical_expr::{AggregateUDF, ScalarUDF, TableSource},
     sql::{planner::ContextProvider, TableReference},
 };
-
-use coordinator::service::CoordinatorRef;
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, Tenant};
 
-use datafusion::arrow::record_batch::RecordBatch;
+use spi::query::session::IsiphoSessionCtx;
+use spi::query::DEFAULT_CATALOG;
 
+use crate::dispatcher::query_tracker::QueryTracker;
 use crate::table::ClusterTable;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
 use datafusion::datasource::provider_as_source;
 
+use meta::error::MetaError;
 use spi::query::function::FuncMetaManagerRef;
 use std::sync::Arc;
-use meta::error::MetaError;
 
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
+
+use self::cluster_schema_provider::ClusterSchemaProvider;
+use self::information_schema_provider::InformationSchemaProvider;
+
+pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
+pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
 
 /// remote meta
 pub struct RemoteCatalogMeta {}
@@ -33,24 +40,26 @@ pub trait ContextProviderExtension: ContextProvider {
 }
 
 pub struct MetadataProvider {
-    tenant: String,
-    database: String,
+    session: IsiphoSessionCtx,
     coord: CoordinatorRef,
     func_manager: FuncMetaManagerRef,
+    information_schema_provider: InformationSchemaProvider,
+    cluster_schema_provider: ClusterSchemaProvider,
 }
 
 impl MetadataProvider {
     pub fn new(
         coord: CoordinatorRef,
         func_manager: SimpleFunctionMetadataManager,
-        tenant: String,
-        database: String,
+        query_tracker: Arc<QueryTracker>,
+        session: IsiphoSessionCtx,
     ) -> Self {
         Self {
             coord,
-            tenant,
-            database,
+            session,
             func_manager: Arc::new(func_manager),
+            information_schema_provider: InformationSchemaProvider::new(query_tracker),
+            cluster_schema_provider: ClusterSchemaProvider::new(),
         }
     }
 }
@@ -82,7 +91,12 @@ impl ContextProvider for MetadataProvider {
         &self,
         name: TableReference,
     ) -> datafusion::common::Result<Arc<dyn TableSource>> {
-        let name = name.resolve(&self.tenant, &self.database);
+        let name = name.resolve(self.session.tenant(), self.session.default_database());
+
+        let table_name = name.table;
+        let database_name = name.schema;
+        let tenant_name = name.catalog;
+
         let client = self
             .coord
             .meta_manager()
@@ -93,6 +107,28 @@ impl ContextProvider for MetadataProvider {
                     tenant: name.catalog.to_string(),
                 }))
             })?;
+
+        // process INFORMATION_SCHEMA
+        if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
+            let mem_table = self
+                .information_schema_provider
+                .table(self.session.user(), table_name, client)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
+            return Ok(provider_as_source(mem_table));
+        }
+
+        // process CNOSDB(sys tenant) -> CLUSTER_SCHEMA
+        if tenant_name.eq_ignore_ascii_case(DEFAULT_CATALOG)
+            && database_name.eq_ignore_ascii_case(self.cluster_schema_provider.name())
+        {
+            let mem_table = self
+                .cluster_schema_provider
+                .table(self.session.user(), table_name, self.coord.meta_manager())
+                .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
+            return Ok(provider_as_source(mem_table));
+        }
 
         match client
             .get_table_schema(name.schema, name.table)
@@ -131,11 +167,4 @@ impl ContextProvider for MetadataProvider {
         // TODO
         None
     }
-}
-
-pub fn stream_from_batches(batches: Vec<Arc<RecordBatch>>) -> SendableRecordBatchStream {
-    let dummy_metrics = ExecutionPlanMetricsSet::new();
-    let mem_metrics = MemTrackingMetrics::new(&dummy_metrics, 0);
-    let stream = SizedRecordBatchStream::new(batches[0].schema(), batches, mem_metrics);
-    Box::pin(stream)
 }

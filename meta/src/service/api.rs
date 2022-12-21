@@ -27,15 +27,7 @@ pub async fn write(
     app: Data<MetaApp>,
     req: Json<WriteCommand>,
 ) -> actix_web::Result<impl Responder> {
-    let res = match app.raft.client_write(req.0).await {
-        Ok(val) => val.data,
-        Err(err) => {
-            TenaneMetaDataResp::new(META_REQUEST_FAILED, format!("raft write error: {:?}", err))
-                .to_string()
-        }
-    };
-
-    let response: Result<CommandResp, Infallible> = Ok(res);
+    let response = app.raft.client_write(req.0).await;
     Ok(Json(response))
 }
 

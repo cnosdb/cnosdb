@@ -11,6 +11,18 @@ pub type MetaResult<T> = Result<T, MetaError>;
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum MetaError {
+    #[snafu(display("The member {} of tenant {} already exists", member_name, tenant_name))]
+    MemberAlreadyExists {
+        member_name: String,
+        tenant_name: String,
+    },
+
+    #[snafu(display("The member {} of tenant {} not found", member_name, tenant_name))]
+    MemberNotFound {
+        member_name: String,
+        tenant_name: String,
+    },
+
     #[snafu(display("The privilege {} already exists", name))]
     PrivilegeAlreadyExists { name: String },
 

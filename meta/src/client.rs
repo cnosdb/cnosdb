@@ -7,6 +7,7 @@ use openraft::error::ForwardToLeader;
 use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RemoteError;
+use openraft::raft::ClientWriteResponse;
 
 use crate::error::{MetaError, MetaResult};
 use serde::de::DeserializeOwned;
@@ -15,7 +16,7 @@ use serde::Serialize;
 
 use crate::store::command::*;
 use crate::store::state_machine::CommandResp;
-use crate::{ClusterNode, ClusterNodeId};
+use crate::{ClusterNode, ClusterNodeId, TypeConfig};
 
 pub type WriteError =
     RPCError<ClusterNodeId, ClusterNode, ClientWriteError<ClusterNodeId, ClusterNode>>;
@@ -36,7 +37,7 @@ impl MetaHttpClient {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp = self.do_request("read", Some(req))?;
+        let rsp:CommandResp = self.send_rpc_to_leader("read", Some(req))?;
 
         let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
@@ -49,9 +50,9 @@ impl MetaHttpClient {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp = self.do_request("write", Some(req))?;
+        let rsp: ClientWriteResponse<TypeConfig> = self.send_rpc_to_leader("write", Some(req))?;
 
-        let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
+        let rsp = serde_json::from_str::<T>(&rsp.data).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
         })?;
 
@@ -62,20 +63,13 @@ impl MetaHttpClient {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp = self.do_request("watch_tenant", Some(req))?;
+        let rsp: CommandResp= self.send_rpc_to_leader("watch_tenant", Some(req))?;
 
         let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
         })?;
 
         Ok(rsp)
-    }
-
-    fn do_request<Req>(&self, uri: &str, req: Option<&Req>) -> Result<CommandResp, WriteError>
-    where
-        Req: Serialize + 'static,
-    {
-        self.send_rpc_to_leader(uri, req)
     }
 
     //////////////////////////////////////////////////
@@ -210,7 +204,7 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new(1, "127.0.0.1:21001".to_string());
+        let client = MetaHttpClient::new(3, "127.0.0.1:21003".to_string());
 
         let node = NodeInfo {
             id: 111,
@@ -252,6 +246,6 @@ mod test {
         println!("=== create db2: {:?}", rsp);
         thread::sleep(time::Duration::from_secs(3));
 
-        thread::sleep(time::Duration::from_secs(300));
+        // thread::sleep(time::Duration::from_secs(300));
     }
 }

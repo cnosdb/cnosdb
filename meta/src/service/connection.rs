@@ -37,7 +37,6 @@ pub struct Connections {
 //     }
 // }
 
-
 impl Connections {
     pub async fn send_req<Req, Resp, Err>(
         &mut self,
@@ -118,12 +117,7 @@ impl RaftNetwork<TypeConfig> for ConnManager {
     > {
         // tracing::info!("send_install_snapshot: req {:?}", req);
         self.owner
-            .send_req(
-                self.target,
-                self.target_node.clone(),
-                "raft_snapshot",
-                req,
-            )
+            .send_req(self.target, self.target_node.clone(), "raft_snapshot", req)
             .await
     }
 
@@ -134,10 +128,10 @@ impl RaftNetwork<TypeConfig> for ConnManager {
         VoteResponse<ClusterNodeId>,
         RPCError<ClusterNodeId, ClusterNode, VoteError<ClusterNodeId>>,
     > {
-        let res = self.owner
+        let res = self
+            .owner
             .send_req(self.target, self.target_node.clone(), "raft-vote", req)
             .await;
         res
-
     }
 }

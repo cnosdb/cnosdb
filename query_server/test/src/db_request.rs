@@ -10,6 +10,8 @@ use nom::IResult;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
+    /// set the requested tenant
+    tenant_name: String,
     /// set the requested database
     db_name: String,
     /// set sort or not
@@ -25,6 +27,7 @@ pub struct Instruction {
 impl Default for Instruction {
     fn default() -> Self {
         Self {
+            tenant_name: "cnosdb".to_string(),
             db_name: "public".to_string(),
             sort: false,
             pretty: true,
@@ -72,6 +75,10 @@ fn instruction_parse_to<'a, T: FromStr>(
 }
 
 impl Instruction {
+    pub fn tenant_name(&self) -> &str {
+        &self.tenant_name
+    }
+
     pub fn db_name(&self) -> &str {
         &self.db_name
     }
@@ -94,6 +101,10 @@ impl Instruction {
 
     /// parse line to modify instruction
     pub fn parse_and_change(&mut self, line: &str) {
+        if let Ok((_, tenant_name)) = instruction_parse_identity("TENANT")(line) {
+            self.tenant_name = tenant_name.to_string();
+        }
+
         if let Ok((_, dbname)) = instruction_parse_identity("DATABASE")(line) {
             self.db_name = dbname.to_string();
         }

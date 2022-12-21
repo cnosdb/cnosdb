@@ -8,16 +8,14 @@ use models::{
 };
 use parking_lot::RwLock;
 
+use crate::error::{MetaError, MetaResult};
 use crate::{
     client::MetaHttpClient,
-    meta_client::{
-        MetaClient, MetaClientRef, RemoteMetaClient, TenantManager,
-    },
+    meta_client::{MetaClient, MetaClientRef, RemoteMetaClient, TenantManager},
     store::command::{
         self, META_REQUEST_FAILED, META_REQUEST_TENANT_EXIST, META_REQUEST_TENANT_NOT_FOUND,
     },
 };
-use crate::error::{MetaError, MetaResult};
 
 #[derive(Debug)]
 pub struct RemoteTenantManager {
@@ -91,6 +89,18 @@ impl TenantManager for RemoteTenantManager {
         }
     }
 
+    fn tenants(&self) -> MetaResult<Vec<Tenant>> {
+        let tenants = self
+            .tenants
+            .read()
+            .values()
+            .map(|e| e.tenant())
+            .cloned()
+            .collect();
+
+        Ok(tenants)
+    }
+
     fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
         let req = command::WriteCommand::AlterTenant(
             self.cluster_name.clone(),
@@ -137,9 +147,7 @@ impl TenantManager for RemoteTenantManager {
             };
         }
 
-        Err(MetaError::TenantNotFound {
-            tenant: name.to_string(),
-        })
+        Ok(false)
     }
 
     fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {

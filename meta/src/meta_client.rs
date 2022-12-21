@@ -6,7 +6,7 @@ use models::auth::privilege::DatabasePrivilege;
 use models::auth::role::{
     CustomTenantRole, SystemTenantRole, TenantRole, TenantRoleIdentifier, UserRole,
 };
-use models::auth::user::User;
+use models::auth::user::{User, UserDesc};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
 use parking_lot::RwLock;
@@ -21,10 +21,10 @@ use tokio::net::TcpStream;
 
 use trace::{debug, info, warn};
 
+use crate::error::{MetaError, MetaResult};
 use models::schema::{
     DatabaseSchema, ExternalTableSchema, TableSchema, Tenant, TenantOptions, TskvTableSchema,
 };
-use crate::error::{MetaError, MetaResult};
 
 use crate::store::command::{
     META_REQUEST_FAILED, META_REQUEST_PRIVILEGE_EXIST, META_REQUEST_PRIVILEGE_NOT_FOUND,
@@ -53,6 +53,7 @@ pub trait TenantManager: Send + Sync + Debug {
     // tenant
     fn create_tenant(&self, name: String, options: TenantOptions) -> MetaResult<MetaClientRef>;
     fn tenant(&self, name: &str) -> MetaResult<Option<Tenant>>;
+    fn tenants(&self) -> MetaResult<Vec<Tenant>>;
     fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()>;
     fn drop_tenant(&self, name: &str) -> MetaResult<bool>;
     // tenant object meta manager
@@ -90,8 +91,8 @@ pub trait MetaClient: Send + Sync + Debug {
     // fn tenants_of_user(&mut self, user_id: &Oid) -> MetaResult<Option<&HashSet<Oid>>>;
     // fn remove_member_from_all_tenants(&mut self, user_id: &Oid) -> MetaResult<bool>;
     fn add_member_with_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier>;
-    fn members(&self) -> MetaResult<HashSet<Oid>>;
+    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>>;
+    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>>;
     fn reasign_member_role(&self, user_id: Oid, role: TenantRoleIdentifier) -> MetaResult<()>;
     fn remove_member(&self, user_id: Oid) -> MetaResult<()>;
 
@@ -241,7 +242,13 @@ impl MetaManager for RemoteMetaManager {
                 })?;
 
             let tenant_id = client.tenant().id();
-            let role = client.member_role(user_desc.id())?;
+            let role =
+                client
+                    .member_role(user_desc.id())?
+                    .ok_or_else(|| MetaError::MemberNotFound {
+                        member_name: user_desc.name().to_string(),
+                        tenant_name: tenant_name.to_string(),
+                    })?;
 
             let privileges = match role {
                 TenantRoleIdentifier::System(sys_role) => sys_role.to_privileges(tenant_id),
@@ -488,7 +495,7 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn member_role(&self, user_id: &Oid) -> MetaResult<TenantRoleIdentifier> {
+    fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
         let req = command::ReadCommand::MemberRole(
             self.cluster.clone(),
             self.tenant.name().to_string(),
@@ -497,7 +504,7 @@ impl MetaClient for RemoteMetaClient {
 
         match self
             .client
-            .read::<command::CommonResp<TenantRoleIdentifier>>(&req)?
+            .read::<command::CommonResp<Option<TenantRoleIdentifier>>>(&req)?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
@@ -511,13 +518,13 @@ impl MetaClient for RemoteMetaClient {
         }
     }
 
-    fn members(&self) -> MetaResult<HashSet<Oid>> {
+    fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
         let req =
             command::ReadCommand::Members(self.cluster.clone(), self.tenant.name().to_string());
 
         match self
             .client
-            .read::<command::CommonResp<HashSet<Oid>>>(&req)?
+            .read::<command::CommonResp<HashMap<String, TenantRoleIdentifier>>>(&req)?
         {
             command::CommonResp::Ok(e) => Ok(e),
             command::CommonResp::Err(status) => {
@@ -728,13 +735,13 @@ impl MetaClient for RemoteMetaClient {
         if rsp.status.code == command::META_REQUEST_SUCCESS {
             Ok(())
         } else if rsp.status.code == command::META_REQUEST_DB_EXIST {
-            return Err(MetaError::DatabaseAlreadyExists {
+            Err(MetaError::DatabaseAlreadyExists {
                 database: schema.database_name().to_string(),
-            });
+            })
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.status.to_string(),
-            });
+            })
         }
     }
 
@@ -751,9 +758,9 @@ impl MetaClient for RemoteMetaClient {
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.to_string(),
-            });
+            })
         }
     }
 
@@ -792,9 +799,9 @@ impl MetaClient for RemoteMetaClient {
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(exist)
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.to_string(),
-            });
+            })
         }
     }
 
@@ -816,13 +823,13 @@ impl MetaClient for RemoteMetaClient {
         if rsp.status.code == command::META_REQUEST_SUCCESS {
             Ok(())
         } else if rsp.status.code == command::META_REQUEST_TABLE_EXIST {
-            return Err(MetaError::TableAlreadyExists {
+            Err(MetaError::TableAlreadyExists {
                 table_name: schema.name(),
-            });
+            })
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.status.to_string(),
-            });
+            })
         }
     }
 
@@ -894,9 +901,9 @@ impl MetaClient for RemoteMetaClient {
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.to_string(),
-            });
+            })
         }
     }
 
