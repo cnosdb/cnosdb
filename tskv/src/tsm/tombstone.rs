@@ -122,7 +122,7 @@ impl TsmTombstone {
             let max_ts = byte_utils::decode_be_i64(&data[16..24]);
             tombstones
                 .entry(field_id)
-                .or_insert(Vec::new())
+                .or_default()
                 .push(TimeRange { min_ts, max_ts });
         }
 

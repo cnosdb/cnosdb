@@ -51,6 +51,6 @@ pub struct Opt {
 
 impl Default for Opt {
     fn default() -> Self {
-        <Self as Parser>::parse_from(&Vec::<&'static str>::new())
+        <Self as Parser>::parse_from(Vec::<&'static str>::new())
     }
 }

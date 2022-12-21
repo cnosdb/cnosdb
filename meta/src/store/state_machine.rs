@@ -107,7 +107,7 @@ where
             Err(_) => continue,
             Ok(t) => {
                 if let Some(val) = t {
-                    if let Some(info) = from_slice(&val).ok() {
+                    if let Ok(info) = from_slice(&val) {
                         if let Some(key) = it.strip_prefix(path.as_str()) {
                             result.insert(key.to_string(), info);
                         }
@@ -582,7 +582,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, db_name);
-        let _ = self.db.remove(&key);
+        let _ = self.db.remove(key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -603,7 +603,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
-        let _ = self.db.remove(&key);
+        let _ = self.db.remove(key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -686,7 +686,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
-        if !self.db.contains_key(&key).unwrap() {
+        if !self.db.contains_key(key).unwrap() {
             return TenaneMetaDataResp::new_from_data(
                 META_REQUEST_DB_EXIST,
                 "database not found".to_string(),
@@ -975,7 +975,7 @@ impl StateMachine {
     fn process_drop_user(&mut self, cluster: &str, user_name: &str) -> CommandResp {
         let key = KeyPath::user(cluster, user_name);
 
-        let success = self.db.remove(&key).is_ok();
+        let success = self.db.remove(key).is_ok();
 
         CommonResp::Ok(success).to_string()
     }
@@ -1055,7 +1055,7 @@ impl StateMachine {
     fn process_drop_tenant(&mut self, cluster: &str, name: &str) -> CommandResp {
         let key = KeyPath::tenant(cluster, name);
 
-        let success = self.db.remove(&key).is_ok();
+        let success = self.db.remove(key).is_ok();
 
         CommonResp::Ok(success).to_string()
     }
@@ -1094,7 +1094,7 @@ impl StateMachine {
     ) -> CommandResp {
         let key = KeyPath::member(cluster, tenant_name, user_id);
 
-        if self.db.remove(&key).unwrap().is_none() {
+        if self.db.remove(key).unwrap().is_none() {
             let status = StatusResponse::new(META_REQUEST_USER_NOT_FOUND, user_id.to_string());
             return CommonResp::<()>::Err(status).to_string();
         }
@@ -1174,7 +1174,7 @@ impl StateMachine {
     ) -> CommandResp {
         let key = KeyPath::role(cluster, tenant_name, role_name);
 
-        let success = self.db.remove(&key).unwrap().is_some();
+        let success = self.db.remove(key).unwrap().is_some();
 
         CommonResp::Ok(success).to_string()
     }
@@ -1196,14 +1196,14 @@ impl StateMachine {
             return CommonResp::<()>::Err(status).to_string();
         }
 
-        let val = self.db.get(&key).unwrap().and_then(|e| {
+        let val = self.db.get(&key).unwrap().map(|e| {
             let mut old_role =
                 unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
             for (privilege, database_name) in privileges {
                 let _ = old_role.grant_privilege(database_name.clone(), privilege.clone());
             }
-            let ret = unsafe { serde_json::to_string(&old_role).unwrap_unchecked() };
-            Some(ret)
+            
+            unsafe { serde_json::to_string(&old_role).unwrap_unchecked() }
         });
         let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());
 
@@ -1227,14 +1227,14 @@ impl StateMachine {
             return CommonResp::<()>::Err(status).to_string();
         }
 
-        let val = self.db.get(&key).unwrap().and_then(|e| {
+        let val = self.db.get(&key).unwrap().map(|e| {
             let mut old_role =
                 unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
             for (privilege, database_name) in privileges {
                 let _ = old_role.revoke_privilege(database_name, privilege);
             }
-            let ret = unsafe { serde_json::to_string(&old_role).unwrap_unchecked() };
-            Some(ret)
+            
+            unsafe { serde_json::to_string(&old_role).unwrap_unchecked() }
         });
 
         let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());
