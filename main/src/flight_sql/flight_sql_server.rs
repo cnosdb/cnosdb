@@ -892,7 +892,7 @@ mod test {
         let mut req = Request::new(futures::stream::iter(vec![HandshakeRequest::default()]));
         req.metadata_mut().insert(
             AUTHORIZATION.as_str(),
-            MetadataValue::from_static("Basic eHg6eHgK"),
+            MetadataValue::from_static("Basic cm9vdDo="),
         );
         let resp = client.handshake(req).await.expect("handshake");
         println!("handshake resp: {:?}", resp.metadata());

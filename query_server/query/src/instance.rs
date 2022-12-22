@@ -272,6 +272,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_simple_sql() {
         let config = get_config("../../config/config.toml");
         let opt = Options::from(&config);
@@ -370,6 +371,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_topk_desc_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
         let config = get_config("../../config/config.toml");

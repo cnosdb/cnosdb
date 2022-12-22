@@ -1149,8 +1149,8 @@ mod test {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     pub async fn test_read_with_tomb() {
-        let cluster_options = ClusterConfig::default();
-        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let config = get_config("../config/config_31001.toml");
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster));
         let dir = PathBuf::from("db/tsm/test/0".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();

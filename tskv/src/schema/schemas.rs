@@ -1,5 +1,6 @@
 use crate::schema::error::{MetaSnafu, Result, SchemaError};
 use meta::meta_client::{MetaClientRef, MetaRef};
+use models::auth::AuthError::Metadata;
 use models::codec::Encoding;
 use models::schema::{
     ColumnType, DatabaseSchema, TableColumn, TableSchema, TenantOptions, TskvTableSchema,
@@ -29,6 +30,13 @@ impl DBschemas {
             .ok_or(SchemaError::TenantNotFound {
                 tenant: db_schema.tenant_name().to_string(),
             })?;
+        if client
+            .get_db_schema(db_schema.database_name())
+            .context(MetaSnafu)?
+            .is_none()
+        {
+            client.create_db(&db_schema).context(MetaSnafu)?;
+        }
         Ok(Self {
             tenant_name: db_schema.tenant_name().to_string(),
             database_name: db_schema.database_name().to_string(),

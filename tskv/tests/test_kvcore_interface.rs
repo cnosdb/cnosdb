@@ -9,9 +9,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use config::get_config;
-    
-    
-    
+
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
@@ -20,7 +18,7 @@ mod tests {
 
     fn get_tskv(dir: impl AsRef<Path>) -> (Arc<Runtime>, TsKv) {
         let dir = dir.as_ref();
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;
@@ -92,7 +90,7 @@ mod tests {
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush/data/db/tsm/0"
+            "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/tsm/0"
         ))
     }
 
@@ -145,10 +143,10 @@ mod tests {
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/db/tsm/0"
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/tsm/0"
         ));
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/db/delta/0"
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/delta/0"
         ));
     }
 

@@ -412,9 +412,7 @@ impl StateMachine {
 
                 let members = children_data::<TenantRoleIdentifier>(&path, self.db.clone());
                 let users: HashMap<String, UserDesc> =
-                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone())
-                        .into_iter()
-                        .map(|(_, desc)| (format!("{}", desc.id()), desc))
+                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone()).into_values().map(|desc| (format!("{}", desc.id()), desc))
                         .collect();
 
                 trace::trace!("members of path {}: {:?}", path, members);
@@ -887,7 +885,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_bucket_id(cluster, tenant, db, id);
-        let _ = self.db.remove(&key);
+        let _ = self.db.remove(key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -1202,7 +1200,7 @@ impl StateMachine {
             for (privilege, database_name) in privileges {
                 let _ = old_role.grant_privilege(database_name.clone(), privilege.clone());
             }
-            
+
             unsafe { serde_json::to_string(&old_role).unwrap_unchecked() }
         });
         let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());
@@ -1233,7 +1231,7 @@ impl StateMachine {
             for (privilege, database_name) in privileges {
                 let _ = old_role.revoke_privilege(database_name, privilege);
             }
-            
+
             unsafe { serde_json::to_string(&old_role).unwrap_unchecked() }
         });
 

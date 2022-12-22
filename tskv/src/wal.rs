@@ -690,7 +690,7 @@ mod test {
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4/wal";
         let _ = std::fs::remove_dir_all(dir);
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.to_string();
         global_config.storage.path = "/tmp/test/wal/4".to_string();
         let wal_config = WalOptions::from(&global_config);

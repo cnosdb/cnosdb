@@ -2,8 +2,7 @@
 
 use meta::store::Store;
 
-
-use openraft::{Config};
+use openraft::Config;
 use std::sync::Arc;
 
 pub async fn new_async() -> Arc<Store> {
