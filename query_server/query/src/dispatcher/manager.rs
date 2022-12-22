@@ -132,7 +132,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 }
 
 impl SimpleQueryDispatcher {
-    async fn execute_statement<S: ContextProviderExtension>(
+    async fn execute_statement<S: ContextProviderExtension + Send + Sync>(
         &self,
         stmt: ExtStatement,
         logical_planner: &DefaultLogicalPlanner<S>,
