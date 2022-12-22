@@ -419,8 +419,8 @@ impl RaftStorage<TypeConfig> for Arc<Store> {
     ) -> Result<Vec<CommandResp>, StorageError<ClusterNodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
-        let mut sm = self.state_machine.write().await;
         let mut watch = self.watch.write().await;
+        let sm = self.state_machine.read().await;
 
         for entry in entries {
             sm.set_last_applied_log(entry.log_id).await?;

@@ -468,7 +468,7 @@ impl StateMachine {
     }
 
     pub fn process_write_command(
-        &mut self,
+        &self,
         req: &WriteCommand,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
@@ -563,7 +563,7 @@ impl StateMachine {
         }
     }
 
-    fn process_add_date_node(&mut self, cluster: &str, node: &NodeInfo) -> CommandResp {
+    fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         let _ = self.db.insert(key.as_bytes(), value.as_bytes());
@@ -573,7 +573,7 @@ impl StateMachine {
     }
 
     fn process_drop_db(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db_name: &str,
@@ -593,7 +593,7 @@ impl StateMachine {
     }
 
     fn process_drop_table(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db_name: &str,
@@ -614,7 +614,7 @@ impl StateMachine {
     }
 
     fn process_create_db(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
@@ -650,7 +650,7 @@ impl StateMachine {
     }
 
     fn process_alter_db(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
@@ -677,7 +677,7 @@ impl StateMachine {
     }
 
     fn process_create_table(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &TableSchema,
@@ -722,7 +722,7 @@ impl StateMachine {
     }
 
     fn process_update_table(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &TableSchema,
@@ -775,7 +775,7 @@ impl StateMachine {
     }
 
     fn process_create_bucket(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db: &str,
@@ -877,7 +877,7 @@ impl StateMachine {
     }
 
     fn process_delete_bucket(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db: &str,
@@ -898,7 +898,7 @@ impl StateMachine {
     }
 
     fn process_create_user(
-        &mut self,
+        &self,
         cluster: &str,
         user_name: &str,
         user_options: &UserOptions,
@@ -927,7 +927,7 @@ impl StateMachine {
     }
 
     fn process_alter_user(
-        &mut self,
+        &self,
         cluster: &str,
         user_name: &str,
         user_options: &UserOptions,
@@ -970,7 +970,7 @@ impl StateMachine {
         CommonResp::<()>::Err(status).to_string()
     }
 
-    fn process_drop_user(&mut self, cluster: &str, user_name: &str) -> CommandResp {
+    fn process_drop_user(&self, cluster: &str, user_name: &str) -> CommandResp {
         let key = KeyPath::user(cluster, user_name);
 
         let success = self.db.remove(key).is_ok();
@@ -979,7 +979,7 @@ impl StateMachine {
     }
 
     fn process_create_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         name: &str,
         options: &TenantOptions,
@@ -1007,7 +1007,7 @@ impl StateMachine {
     }
 
     fn process_alter_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         name: &str,
         options: &TenantOptions,
@@ -1050,7 +1050,7 @@ impl StateMachine {
         CommonResp::<()>::Err(status).to_string()
     }
 
-    fn process_drop_tenant(&mut self, cluster: &str, name: &str) -> CommandResp {
+    fn process_drop_tenant(&self, cluster: &str, name: &str) -> CommandResp {
         let key = KeyPath::tenant(cluster, name);
 
         let success = self.db.remove(key).is_ok();
@@ -1059,7 +1059,7 @@ impl StateMachine {
     }
 
     fn process_add_member_to_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         user_id: &Oid,
         role: &TenantRoleIdentifier,
@@ -1085,7 +1085,7 @@ impl StateMachine {
     }
 
     fn process_remove_member_to_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         user_id: &Oid,
         tenant_name: &str,
@@ -1101,7 +1101,7 @@ impl StateMachine {
     }
 
     fn process_reasign_member_role(
-        &mut self,
+        &self,
         cluster: &str,
         user_id: &Oid,
         role: &TenantRoleIdentifier,
@@ -1127,7 +1127,7 @@ impl StateMachine {
     }
 
     fn process_create_role(
-        &mut self,
+        &self,
         cluster: &str,
         role_name: &str,
         sys_role: &SystemTenantRole,
@@ -1165,7 +1165,7 @@ impl StateMachine {
     }
 
     fn process_drop_role(
-        &mut self,
+        &self,
         cluster: &str,
         role_name: &str,
         tenant_name: &str,
@@ -1178,7 +1178,7 @@ impl StateMachine {
     }
 
     fn process_grant_privileges(
-        &mut self,
+        &self,
         cluster: &str,
         privileges: &[(DatabasePrivilege, String)],
         role_name: &str,
@@ -1209,7 +1209,7 @@ impl StateMachine {
     }
 
     fn process_revoke_privileges(
-        &mut self,
+        &self,
         cluster: &str,
         privileges: &[(DatabasePrivilege, String)],
         role_name: &str,

@@ -51,7 +51,7 @@ pub async fn watch_tenant(
         };
 
         let mut watch = app.store.watch.write().await;
-        let sm = app.store.state_machine.write().await;
+        let sm = app.store.state_machine.read().await;
         if let Some(item) = watch.get_mut(&client_id) {
             item.sender.closed().await;
             watch_data.delta = item.delta.clone();
