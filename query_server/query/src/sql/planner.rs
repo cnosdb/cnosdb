@@ -63,7 +63,7 @@ use spi::Result;
 use trace::{debug, warn};
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
-use crate::metadata::{ContextProviderExtension, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
+use crate::metadata::{ContextProviderExtension, DatabaseSet, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
 use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 use crate::table::ClusterTable;
 
@@ -86,9 +86,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         match statement {
-            ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt),
-            ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt),
-            ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt),
+            ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session),
+            ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt, session),
+            ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt, session),
             ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt, session),
             ExtStatement::CreateTenant(stmt) => self.create_tenant_to_plan(stmt),
             ExtStatement::CreateUser(stmt) => self.create_user_to_plan(stmt),
@@ -96,20 +96,20 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ExtStatement::DropDatabaseObject(s) => self.drop_database_object_to_plan(s, session),
             ExtStatement::DropTenantObject(s) => self.drop_tenant_object_to_plan(s, session),
             ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
-            ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt),
+            ExtStatement::DescribeTable(stmt) => self.table_to_describe(stmt, session),
             ExtStatement::DescribeDatabase(stmt) => self.database_to_describe(stmt, session),
             ExtStatement::ShowDatabases() => self.database_to_show(session),
-            ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
+            ExtStatement::ShowTables(stmt) => self.table_to_show(stmt, session),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
-            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt),
+            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
             ExtStatement::Explain(stmt) => self.explain_statement_to_plan(
                 stmt.analyze,
                 stmt.verbose,
                 *stmt.ext_statement,
                 session,
             ),
-            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt),
-            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
+            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
+            ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
@@ -131,24 +131,32 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         }
     }
 
-    fn df_sql_to_plan(&self, stmt: Statement) -> Result<PlanWithPrivileges> {
+    fn df_sql_to_plan(
+        &self,
+        stmt: Statement,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
         match stmt {
             Statement::Query(_) => {
                 let df_planner = SqlToRel::new(&self.schema_provider);
                 let df_plan = df_planner.sql_statement_to_plan(stmt)?;
                 let plan = Plan::Query(QueryPlan { df_plan });
-                // TODO privileges
-                Ok(PlanWithPrivileges {
-                    plan,
-                    privileges: vec![],
-                })
+
+                // privileges
+                let access_databases = self.schema_provider.reset_access_databases();
+                let privileges = databases_privileges(
+                    DatabasePrivilege::Read,
+                    *session.tenant_id(),
+                    access_databases,
+                );
+                Ok(PlanWithPrivileges { plan, privileges })
             }
             Statement::Insert {
                 table_name: ref sql_object_name,
                 columns: ref sql_column_names,
                 source,
                 ..
-            } => self.insert_to_plan(sql_object_name, sql_column_names, source),
+            } => self.insert_to_plan(sql_object_name, sql_column_names, source, session),
             Statement::Kill { id, .. } => {
                 let plan = Plan::SYSTEM(SYSPlan::KillQuery(id.into()));
                 // TODO privileges
@@ -171,9 +179,9 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         statement: ExtStatement,
         session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let plan = self.statement_to_plan(statement, session)?;
+        let PlanWithPrivileges { plan, privileges } = self.statement_to_plan(statement, session)?;
 
-        let input_df_plan = match plan.plan {
+        let input_df_plan = match plan {
             Plan::Query(query) => Arc::new(query.df_plan),
             _ => {
                 return Err(QueryError::NotImplemented {
@@ -203,10 +211,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
         let plan = Plan::Query(QueryPlan { df_plan });
 
-        Ok(PlanWithPrivileges {
-            plan,
-            privileges: Default::default(),
-        })
+        Ok(PlanWithPrivileges { plan, privileges })
     }
 
     /// Add a projection operation (if necessary)
@@ -277,10 +282,19 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         sql_object_name: &ObjectName,
         sql_column_names: &[Ident],
         source: Box<Query>,
+        session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         // Transform subqueries
         let source_plan =
             SqlToRel::new(&self.schema_provider).query_to_plan(*source, &mut HashMap::new())?;
+
+        // save database read privileges
+        // This operation must be done before fetching the target table metadata
+        let mut read_privileges = databases_privileges(
+            DatabasePrivilege::Read,
+            *session.tenant_id(),
+            self.schema_provider.reset_access_databases(),
+        );
 
         let table_name = normalize_sql_object_name(sql_object_name);
         let columns = sql_column_names
@@ -308,10 +322,16 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
         let plan = Plan::Query(QueryPlan { df_plan });
 
-        // TODO privileges
+        // privileges
+        let mut write_privileges = databases_privileges(
+            DatabasePrivilege::Write,
+            *session.tenant_id(),
+            self.schema_provider.reset_access_databases(),
+        );
+        write_privileges.append(&mut read_privileges);
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: write_privileges,
         })
     }
 
@@ -455,18 +475,24 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
     pub fn external_table_to_plan(
         &self,
         statement: AstCreateExternalTable,
+        session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let df_planner = SqlToRel::new(&self.schema_provider);
 
+        let table_name = statement.name.clone();
+        let (database_name, _) = extract_database_table_name(table_name.as_str(), session);
+
         let logical_plan = df_planner.external_table_to_plan(statement)?;
-        // .context(spi::DatafusionSnafu)?;
 
         if let LogicalPlan::CreateExternalTable(plan) = logical_plan {
             let plan = Plan::DDL(DDLPlan::CreateExternalTable(plan));
-            // TODO privileges
+            // privileges
             return Ok(PlanWithPrivileges {
                 plan,
-                privileges: vec![],
+                privileges: vec![Privilege::TenantObject(
+                    TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+                    Some(*session.tenant_id()),
+                )],
             });
         }
 
@@ -476,7 +502,11 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         .context(DatafusionSnafu)
     }
 
-    pub fn create_table_to_plan(&self, statement: ASTCreateTable) -> Result<PlanWithPrivileges> {
+    pub fn create_table_to_plan(
+        &self,
+        statement: ASTCreateTable,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
         let ASTCreateTable {
             name,
             if_not_exists,
@@ -506,15 +536,22 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             }
         }
 
+        let table_name = normalize_sql_object_name(&name);
+        let (database_name, _) = extract_database_table_name(table_name.as_str(), session);
+
         let plan = Plan::DDL(DDLPlan::CreateTable(CreateTable {
             schema,
-            name: normalize_sql_object_name(&name),
+            name: table_name,
             if_not_exists,
         }));
-        // TODO privilege
+
+        // privilege
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+                Some(*session.tenant_id()),
+            )],
         })
     }
 
@@ -559,18 +596,30 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         })
     }
 
-    fn table_to_describe(&self, opts: DescribeTableOptions) -> Result<PlanWithPrivileges> {
-        let plan = Plan::DDL(DDLPlan::DescribeTable(DescribeTable {
-            table_name: normalize_sql_object_name(&opts.table_name),
-        }));
-        // TODO privileges
+    fn table_to_describe(
+        &self,
+        opts: DescribeTableOptions,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let table_name = normalize_sql_object_name(&opts.table_name);
+        let (database_name, _) = extract_database_table_name(&table_name, session);
+
+        let plan = Plan::DDL(DDLPlan::DescribeTable(DescribeTable { table_name }));
+        // privileges
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(database_name)),
+                Some(*session.tenant_id()),
+            )],
         })
     }
 
-    fn table_to_alter(&self, statement: ASTAlterTable) -> Result<PlanWithPrivileges> {
+    fn table_to_alter(
+        &self,
+        statement: ASTAlterTable,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
         let table_name = normalize_sql_object_name(&statement.table_name);
         let table_schema = self.get_tskv_schema(&table_name)?;
 
@@ -643,10 +692,17 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             table_name,
             alter_action,
         }));
-        // TODO privileges
+
+        // privileges
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(
+                    DatabasePrivilege::Full,
+                    Some(table_schema.db.clone()),
+                ),
+                Some(*session.tenant_id()),
+            )],
         })
     }
 
@@ -664,26 +720,33 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         })
     }
 
-    fn table_to_show(&self, database: Option<ObjectName>) -> Result<PlanWithPrivileges> {
-        let plan = Plan::DDL(DDLPlan::ShowTables(
-            database.map(|db_name| normalize_sql_object_name(&db_name)),
-        ));
-        // TODO privileges
+    fn table_to_show(
+        &self,
+        database: Option<ObjectName>,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        let db_name = database.map(|db_name| normalize_sql_object_name(&db_name));
+        let plan = Plan::DDL(DDLPlan::ShowTables(db_name.clone()));
+        // privileges
         Ok(PlanWithPrivileges {
             plan,
-            privileges: vec![],
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(DatabasePrivilege::Read, db_name),
+                Some(*session.tenant_id()),
+            )],
         })
     }
 
     fn show_tag_body(
         &self,
+        session: &IsiphoSessionCtx,
         body: ShowTagBody,
         projection_function: impl FnOnce(
             &TskvTableSchema,
             LogicalPlanBuilder,
             bool,
         ) -> Result<LogicalPlan>,
-    ) -> Result<LogicalPlan> {
+    ) -> Result<PlanWithPrivileges> {
         // merge db a.b table b.c to a.b.c
         let table = match merge_object_name(body.database_name.clone(), Some(body.table.clone())) {
             Some(table) => table,
@@ -744,33 +807,41 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 self.limit_offset_to_plan(body.limit, body.offset, plan_builder, &table_df_schema)?;
         }
 
-        plan_builder.build().context(DatafusionSnafu)
-    }
+        let df_plan = plan_builder
+            .build()
+            .context(DatafusionSnafu)?;
+        let db_name = &table_schema.db;
 
-    fn show_series_to_plan(&self, stmt: ASTShowSeries) -> Result<PlanWithPrivileges> {
-        let plan = Plan::Query(QueryPlan {
-            df_plan: self.show_tag_body(stmt.body, show_series_projection)?,
-        });
         Ok(PlanWithPrivileges {
-            plan,
-            privileges: vec![],
+            plan: Plan::Query(QueryPlan { df_plan }),
+            privileges: vec![Privilege::TenantObject(
+                TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(db_name.to_string())),
+                Some(*session.tenant_id()),
+            )],
         })
     }
 
-    fn show_tag_values(&self, stmt: ASTShowTagValues) -> Result<PlanWithPrivileges> {
+    fn show_series_to_plan(
+        &self,
+        stmt: ASTShowSeries,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
+        self.show_tag_body(session, stmt.body, show_series_projection)
+    }
+
+    fn show_tag_values(
+        &self,
+        stmt: ASTShowTagValues,
+        session: &IsiphoSessionCtx,
+    ) -> Result<PlanWithPrivileges> {
         // merge db a.b table b.c to a.b.c
-        let plan = Plan::Query(QueryPlan {
-            df_plan: self.show_tag_body(
-                stmt.body,
-                |schema, plan_builder, where_contain_time| {
-                    show_tag_value_projections(schema, plan_builder, where_contain_time, stmt.with)
-                },
-            )?,
-        });
-        Ok(PlanWithPrivileges {
-            plan,
-            privileges: vec![],
-        })
+        self.show_tag_body(
+            session,
+            stmt.body,
+            |schema, plan_builder, where_contain_time| {
+                show_tag_value_projections(schema, plan_builder, where_contain_time, stmt.with)
+            },
+        )
     }
 
     fn database_to_plan(
@@ -1657,6 +1728,33 @@ impl<S: ContextProviderExtension> LogicalPlanner for SqlPlaner<S> {
     }
 }
 
+fn databases_privileges(
+    db_priv: DatabasePrivilege,
+    tenant_id: Oid,
+    databases: DatabaseSet,
+) -> Vec<Privilege<Oid>> {
+    databases
+        .dbs()
+        .into_iter()
+        .cloned()
+        .map(|db| {
+            Privilege::TenantObject(
+                TenantObjectPrivilege::Database(db_priv.clone(), Some(db)),
+                Some(tenant_id),
+            )
+        })
+        .collect()
+}
+
+fn extract_database_table_name(full_name: &str, session: &IsiphoSessionCtx) -> (String, String) {
+    let table_ref = TableReference::from(full_name);
+    let resloved_table = table_ref.resolve(session.tenant(), session.default_database());
+    let table_name = resloved_table.table.to_string();
+    let database_name = resloved_table.schema.to_string();
+
+    (database_name, table_name)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::sql::parser::ExtParser;
@@ -1686,6 +1784,10 @@ mod tests {
         }
 
         fn get_tenant(&self, _name: &str) -> std::result::Result<Tenant, MetaError> {
+            todo!()
+        }
+
+        fn reset_access_databases(&self) -> crate::metadata::DatabaseSet {
             todo!()
         }
     }

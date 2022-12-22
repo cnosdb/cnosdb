@@ -11,6 +11,7 @@ use datafusion::{
 use models::auth::user::UserDesc;
 use models::schema::{TableSchema, Tenant};
 
+use parking_lot::RwLock;
 use spi::query::session::IsiphoSessionCtx;
 use spi::query::DEFAULT_CATALOG;
 
@@ -21,6 +22,7 @@ use datafusion::datasource::provider_as_source;
 
 use meta::error::MetaError;
 use spi::query::function::FuncMetaManagerRef;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
@@ -37,6 +39,8 @@ pub struct RemoteCatalogMeta {}
 pub trait ContextProviderExtension: ContextProvider {
     fn get_user(&self, name: &str) -> Result<UserDesc, MetaError>;
     fn get_tenant(&self, name: &str) -> Result<Tenant, MetaError>;
+    /// Clear the access record and return the content before clearing
+    fn reset_access_databases(&self) -> DatabaseSet;
 }
 
 pub struct MetadataProvider {
@@ -45,6 +49,7 @@ pub struct MetadataProvider {
     func_manager: FuncMetaManagerRef,
     information_schema_provider: InformationSchemaProvider,
     cluster_schema_provider: ClusterSchemaProvider,
+    access_databases: RwLock<DatabaseSet>,
 }
 
 impl MetadataProvider {
@@ -60,6 +65,7 @@ impl MetadataProvider {
             func_manager: Arc::new(func_manager),
             information_schema_provider: InformationSchemaProvider::new(query_tracker),
             cluster_schema_provider: ClusterSchemaProvider::new(),
+            access_databases: Default::default(),
         }
     }
 }
@@ -84,6 +90,12 @@ impl ContextProviderExtension for MetadataProvider {
                 tenant: name.to_string(),
             })
     }
+
+    fn reset_access_databases(&self) -> DatabaseSet {
+        let result = self.access_databases.read().clone();
+        self.access_databases.write().reset();
+        result
+    }
 }
 
 impl ContextProvider for MetadataProvider {
@@ -96,6 +108,19 @@ impl ContextProvider for MetadataProvider {
         let table_name = name.table;
         let database_name = name.schema;
         let tenant_name = name.catalog;
+
+        // Cannot query across tenants
+        if self.session.tenant() != tenant_name {
+            return Err(DataFusionError::Plan(format!(
+                "Tenant conflict, the current connection's tenant is {}",
+                self.session.tenant()
+            )));
+        }
+
+        // save access table
+        self.access_databases
+            .write()
+            .push_table(database_name, table_name);
 
         let client = self
             .coord
@@ -166,5 +191,42 @@ impl ContextProvider for MetadataProvider {
     fn get_variable_type(&self, _variable_names: &[String]) -> Option<DataType> {
         // TODO
         None
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct DatabaseSet {
+    dbs: HashMap<String, TableSet>,
+}
+
+impl DatabaseSet {
+    pub fn reset(&mut self) {
+        self.dbs.clear();
+    }
+
+    pub fn push_table(&mut self, db: impl Into<String>, tbl: impl Into<String>) {
+        self.dbs
+            .entry(db.into())
+            .or_insert(TableSet::default())
+            .push_table(tbl);
+    }
+
+    pub fn dbs(&self) -> Vec<&String> {
+        self.dbs.keys().collect()
+    }
+
+    pub fn table_set(&self, db_name: &str) -> Option<&TableSet> {
+        self.dbs.get(db_name)
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct TableSet {
+    tables: HashSet<String>,
+}
+
+impl TableSet {
+    pub fn push_table(&mut self, tbl: impl Into<String>) {
+        self.tables.insert(tbl.into());
     }
 }
