@@ -48,16 +48,15 @@ sleep 1
 
 echo "Start 3 uninitialized metasrv_test servers..."
 
-nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > ./1.log &
+nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > /tmp/cnosdb/logs/meta_node.1.log &
 echo "Server 1 started"
 sleep 1
 
-nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > ./2.log &
+nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
 echo "Server 2 started"
 sleep 1
-#
-nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > ./3.log &
 
+nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
 echo "Server 3 started"
 sleep 1
 
@@ -85,37 +84,38 @@ echo "Get metrics from the leader"
 rpc 21001/metrics
 sleep 1
 
-echo "Changing membership from [1] to 3 nodes cluster: [1, 2, 3]"
-echo
-rpc 21001/change-membership '[1, 2, 3]'
-sleep 1
-echo "Membership changed"
-sleep 1
+#####################################################################
+# echo "Changing membership from [1] to 3 nodes cluster: [1, 2, 3]"
+# echo
+# rpc 21001/change-membership '[1, 2, 3]'
+# sleep 1
+# echo "Membership changed"
+# sleep 1
 
-echo "Get metrics from the leader again"
-sleep 1
-echo
-rpc 21001/metrics
-sleep 1
+# echo "Get metrics from the leader again"
+# sleep 1
+# echo
+# rpc 21001/metrics
+# sleep 1
 
-echo "Write data on leader 1"
-sleep 1
-echo
-rpc 21001/write '{"Set":{"key":"foo3","value":"bar3"}}'
-sleep 1
-echo "Data written"
-sleep 1
+# echo "Write data on leader 1"
+# sleep 1
+# echo
+# rpc 21001/write '{"Set":{"key":"foo3","value":"bar3"}}'
+# sleep 1
+# echo "Data written"
+# sleep 1
 
-echo "Read on every node, including the leader"
-sleep 1
-echo "Read from node 1"
-echo
-rpc 21001/debug
-echo "Read from node 2"
-echo
-rpc 21002/debug
-echo "Read from node 3"
-echo
-rpc 21003/debug
+# echo "Read on every node, including the leader"
+# sleep 1
+# echo "Read from node 1"
+# echo
+# rpc 21001/debug
+# echo "Read from node 2"
+# echo
+# rpc 21002/debug
+# echo "Read from node 3"
+# echo
+# rpc 21003/debug
 
-kill
+# kill

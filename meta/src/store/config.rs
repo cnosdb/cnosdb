@@ -22,22 +22,30 @@ pub struct Opt {
     pub rpc_addr: String,
 
     /// The application specific name of this Raft cluster
-    #[clap(long, env = "RAFT_SNAPSHOT_PATH", default_value = "./snapshot")]
+    #[clap(
+        long,
+        env = "RAFT_SNAPSHOT_PATH",
+        default_value = "/tmp/cnosdb/meta/snapshot"
+    )]
     pub snapshot_path: String,
 
     #[clap(long, env = "RAFT_INSTANCE_PREFIX", default_value = "meta_node")]
     pub instance_prefix: String,
 
-    #[clap(long, env = "RAFT_JOURNAL_PATH", default_value = "./journal")]
+    #[clap(
+        long,
+        env = "RAFT_JOURNAL_PATH",
+        default_value = "/tmp/cnosdb/meta/journal"
+    )]
     pub journal_path: String,
 
     #[clap(long, env = "RAFT_SNAPSHOT_PER_EVENTS", default_value = "500")]
     pub snapshot_per_events: u32,
 
-    #[clap(long, env = "META_LOGS_PATH", default_value = "./logs")]
+    #[clap(long, env = "META_LOGS_PATH", default_value = "/tmp/cnosdb/logs")]
     pub logs_path: String,
 
-    #[clap(long, env = "META_LOGS_LEVEL", default_value = "debug")]
+    #[clap(long, env = "META_LOGS_LEVEL", default_value = "info")]
     pub logs_level: String,
 }
 

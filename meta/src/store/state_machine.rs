@@ -331,7 +331,7 @@ impl StateMachine {
         tenant: &str,
     ) -> StorageIOResult<TenantMetaData> {
         let mut meta = TenantMetaData::new();
-        //meta.version = self.version();
+        meta.version = self.version();
         meta.users =
             children_data::<UserInfo>(&KeyPath::tenant_users(cluster, tenant), self.db.clone());
         // meta.data_nodes = children_data::<NodeInfo>(&KeyPath::data_nodes(cluster), self.db.clone());

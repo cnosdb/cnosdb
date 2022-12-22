@@ -5,6 +5,7 @@ use actix_web::web::Data;
 use actix_web::Responder;
 use openraft::error::Infallible;
 use tokio::sync::mpsc;
+use trace::info;
 use web::Json;
 
 use crate::store::command::*;
@@ -69,6 +70,7 @@ pub async fn watch_tenant(
 
             let res = serde_json::to_string(&data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(res);
+
             return Ok(Json(response));
         }
 
