@@ -1,0 +1,143 @@
+-- EXECUTE SQL: CREATE DATABASE show_series; --
+200 OK
+
+
+-- WRITE LINE PROTOCOL --
+test,t0=a,t1=b,t2=c f0=1,f1="2" 0
+test,t0=a f0=1 1
+test,t1=b f1="2" 2
+test,t2=c f0=1 3
+test,t0=a,t1=b f0=1 4
+test,t1=b,t2=c f0=1 5
+-- LINE PROTOCOL END --
+200 OK
+
+-- EXECUTE SQL: INSERT INTO test(TIME, t0, f0) VALUES (6, '', 1); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: SHOW SERIES; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do parse. err: sql parser error: Expected FROM, found: ;"}
+-- ERROR:  --
+
+-- EXECUTE SQL: SHOW SERIES ON public FROM show_series.test; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: db conflict with table"}
+-- ERROR:  --
+
+-- EXECUTE SQL: SHOW SERIES FROM test; --
+-- AFTER_SORT --
+200 OK
+key
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+-- EXECUTE SQL: SHOW SERIES ON show_series FROM test; --
+-- AFTER_SORT --
+200 OK
+key
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+-- EXECUTE SQL: SHOW SERIES FROM test ORDER BY f0; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'f0'. Valid fields are 'key'."}
+-- ERROR:  --
+
+-- EXECUTE SQL: SHOW SERIES FROM test ORDER BY time; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: External err: Schema error: No field named 'time'. Valid fields are 'key'."}
+-- ERROR:  --
+
+-- EXECUTE SQL: SHOW SERIES FROM test ORDER BY key; --
+200 OK
+key
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+
+-- EXECUTE SQL: SHOW SERIES FROM test ORDER BY key ASC; --
+200 OK
+key
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+
+-- EXECUTE SQL: SHOW SERIES FROM test ORDER BY key DESC; --
+200 OK
+key
+"test,t2=c"
+"test,t1=b,t2=c"
+"test,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t0=a,t1=b"
+"test,t0=a"
+"test,t0="
+
+
+-- EXECUTE SQL: SHOW SERIES FROM test WHERE time < now() ORDER BY key; --
+200 OK
+key
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+
+-- EXECUTE SQL: SHOW SERIES FROM test WHERE f1 IS NOT NULL ORDER BY key; --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical plan. err: Semantic err: SHOW SERIES does not support where clause contains field f1"}
+-- ERROR:  --
+
+-- EXECUTE SQL: SHOW SERIES FROM test WHERE t0 != '' ORDER BY key; --
+200 OK
+key
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+
+
+-- EXECUTE SQL: SHOW SERIES FROM test WHERE t0 IS NOT NULL ORDER BY key; --
+200 OK
+key
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+
+
+-- EXECUTE SQL: SHOW SERIES FROM test WHERE t1 = 'b' ORDER BY key; --
+200 OK
+key
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+
+

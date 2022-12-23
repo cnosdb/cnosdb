@@ -107,7 +107,7 @@ where
             Err(_) => continue,
             Ok(t) => {
                 if let Some(val) = t {
-                    if let Some(info) = from_slice(&val).ok() {
+                    if let Ok(info) = from_slice(&val) {
                         if let Some(key) = it.strip_prefix(path.as_str()) {
                             result.insert(key.to_string(), info);
                         }
@@ -412,9 +412,7 @@ impl StateMachine {
 
                 let members = children_data::<TenantRoleIdentifier>(&path, self.db.clone());
                 let users: HashMap<String, UserDesc> =
-                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone())
-                        .into_iter()
-                        .map(|(_, desc)| (format!("{}", desc.id()), desc))
+                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone()).into_values().map(|desc| (format!("{}", desc.id()), desc))
                         .collect();
 
                 trace::trace!("members of path {}: {:?}", path, members);
@@ -470,7 +468,7 @@ impl StateMachine {
     }
 
     pub fn process_write_command(
-        &mut self,
+        &self,
         req: &WriteCommand,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
@@ -565,7 +563,7 @@ impl StateMachine {
         }
     }
 
-    fn process_add_date_node(&mut self, cluster: &str, node: &NodeInfo) -> CommandResp {
+    fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> CommandResp {
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = serde_json::to_string(node).unwrap();
         let _ = self.db.insert(key.as_bytes(), value.as_bytes());
@@ -575,14 +573,14 @@ impl StateMachine {
     }
 
     fn process_drop_db(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db_name: &str,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, db_name);
-        let _ = self.db.remove(&key);
+        let _ = self.db.remove(key);
 
         let buckets_path = KeyPath::tenant_db_buckets(cluster, tenant, db_name);
         for it in children_fullpath(&buckets_path, self.db.clone()).iter() {
@@ -605,7 +603,7 @@ impl StateMachine {
     }
 
     fn process_drop_table(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db_name: &str,
@@ -613,7 +611,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
-        let _ = self.db.remove(&key);
+        let _ = self.db.remove(key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -626,7 +624,7 @@ impl StateMachine {
     }
 
     fn process_create_db(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
@@ -662,7 +660,7 @@ impl StateMachine {
     }
 
     fn process_alter_db(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &DatabaseSchema,
@@ -689,14 +687,14 @@ impl StateMachine {
     }
 
     fn process_create_table(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &TableSchema,
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_db_name(cluster, tenant, &schema.db());
-        if !self.db.contains_key(&key).unwrap() {
+        if !self.db.contains_key(key).unwrap() {
             return TenaneMetaDataResp::new_from_data(
                 META_REQUEST_DB_EXIST,
                 "database not found".to_string(),
@@ -734,7 +732,7 @@ impl StateMachine {
     }
 
     fn process_update_table(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         schema: &TableSchema,
@@ -787,7 +785,7 @@ impl StateMachine {
     }
 
     fn process_create_bucket(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db: &str,
@@ -889,7 +887,7 @@ impl StateMachine {
     }
 
     fn process_delete_bucket(
-        &mut self,
+        &self,
         cluster: &str,
         tenant: &str,
         db: &str,
@@ -897,7 +895,7 @@ impl StateMachine {
         watch: &mut HashMap<String, WatchTenantMetaData>,
     ) -> CommandResp {
         let key = KeyPath::tenant_bucket_id(cluster, tenant, db, id);
-        let _ = self.db.remove(&key);
+        let _ = self.db.remove(key);
 
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
@@ -910,7 +908,7 @@ impl StateMachine {
     }
 
     fn process_create_user(
-        &mut self,
+        &self,
         cluster: &str,
         user_name: &str,
         user_options: &UserOptions,
@@ -939,7 +937,7 @@ impl StateMachine {
     }
 
     fn process_alter_user(
-        &mut self,
+        &self,
         cluster: &str,
         user_name: &str,
         user_options: &UserOptions,
@@ -982,16 +980,16 @@ impl StateMachine {
         CommonResp::<()>::Err(status).to_string()
     }
 
-    fn process_drop_user(&mut self, cluster: &str, user_name: &str) -> CommandResp {
+    fn process_drop_user(&self, cluster: &str, user_name: &str) -> CommandResp {
         let key = KeyPath::user(cluster, user_name);
 
-        let success = self.db.remove(&key).is_ok();
+        let success = self.db.remove(key).is_ok();
 
         CommonResp::Ok(success).to_string()
     }
 
     fn process_create_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         name: &str,
         options: &TenantOptions,
@@ -1019,7 +1017,7 @@ impl StateMachine {
     }
 
     fn process_alter_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         name: &str,
         options: &TenantOptions,
@@ -1062,16 +1060,16 @@ impl StateMachine {
         CommonResp::<()>::Err(status).to_string()
     }
 
-    fn process_drop_tenant(&mut self, cluster: &str, name: &str) -> CommandResp {
+    fn process_drop_tenant(&self, cluster: &str, name: &str) -> CommandResp {
         let key = KeyPath::tenant(cluster, name);
 
-        let success = self.db.remove(&key).is_ok();
+        let success = self.db.remove(key).is_ok();
 
         CommonResp::Ok(success).to_string()
     }
 
     fn process_add_member_to_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         user_id: &Oid,
         role: &TenantRoleIdentifier,
@@ -1097,14 +1095,14 @@ impl StateMachine {
     }
 
     fn process_remove_member_to_tenant(
-        &mut self,
+        &self,
         cluster: &str,
         user_id: &Oid,
         tenant_name: &str,
     ) -> CommandResp {
         let key = KeyPath::member(cluster, tenant_name, user_id);
 
-        if self.db.remove(&key).unwrap().is_none() {
+        if self.db.remove(key).unwrap().is_none() {
             let status = StatusResponse::new(META_REQUEST_USER_NOT_FOUND, user_id.to_string());
             return CommonResp::<()>::Err(status).to_string();
         }
@@ -1113,7 +1111,7 @@ impl StateMachine {
     }
 
     fn process_reasign_member_role(
-        &mut self,
+        &self,
         cluster: &str,
         user_id: &Oid,
         role: &TenantRoleIdentifier,
@@ -1139,7 +1137,7 @@ impl StateMachine {
     }
 
     fn process_create_role(
-        &mut self,
+        &self,
         cluster: &str,
         role_name: &str,
         sys_role: &SystemTenantRole,
@@ -1177,20 +1175,20 @@ impl StateMachine {
     }
 
     fn process_drop_role(
-        &mut self,
+        &self,
         cluster: &str,
         role_name: &str,
         tenant_name: &str,
     ) -> CommandResp {
         let key = KeyPath::role(cluster, tenant_name, role_name);
 
-        let success = self.db.remove(&key).unwrap().is_some();
+        let success = self.db.remove(key).unwrap().is_some();
 
         CommonResp::Ok(success).to_string()
     }
 
     fn process_grant_privileges(
-        &mut self,
+        &self,
         cluster: &str,
         privileges: &[(DatabasePrivilege, String)],
         role_name: &str,
@@ -1206,14 +1204,14 @@ impl StateMachine {
             return CommonResp::<()>::Err(status).to_string();
         }
 
-        let val = self.db.get(&key).unwrap().and_then(|e| {
+        let val = self.db.get(&key).unwrap().map(|e| {
             let mut old_role =
                 unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
             for (privilege, database_name) in privileges {
                 let _ = old_role.grant_privilege(database_name.clone(), privilege.clone());
             }
-            let ret = unsafe { serde_json::to_string(&old_role).unwrap_unchecked() };
-            Some(ret)
+
+            unsafe { serde_json::to_string(&old_role).unwrap_unchecked() }
         });
         let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());
 
@@ -1221,7 +1219,7 @@ impl StateMachine {
     }
 
     fn process_revoke_privileges(
-        &mut self,
+        &self,
         cluster: &str,
         privileges: &[(DatabasePrivilege, String)],
         role_name: &str,
@@ -1237,14 +1235,14 @@ impl StateMachine {
             return CommonResp::<()>::Err(status).to_string();
         }
 
-        let val = self.db.get(&key).unwrap().and_then(|e| {
+        let val = self.db.get(&key).unwrap().map(|e| {
             let mut old_role =
                 unsafe { serde_json::from_slice::<CustomTenantRole<Oid>>(&e).unwrap_unchecked() };
             for (privilege, database_name) in privileges {
                 let _ = old_role.revoke_privilege(database_name, privilege);
             }
-            let ret = unsafe { serde_json::to_string(&old_role).unwrap_unchecked() };
-            Some(ret)
+
+            unsafe { serde_json::to_string(&old_role).unwrap_unchecked() }
         });
 
         let _ = self.db.insert(key.as_bytes(), val.unwrap().as_bytes());

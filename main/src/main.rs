@@ -108,7 +108,7 @@ use crate::report::ReportService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::tcp::tcp_service::TcpService;
 use mem_allocator::Jemalloc;
-use metrics::{init_query_metrics_recorder, init_tskv_metrics_recorder};
+use metrics::init_tskv_metrics_recorder;
 
 #[global_allocator]
 static A: Jemalloc = Jemalloc;
@@ -171,7 +171,6 @@ fn main() -> Result<(), std::io::Error> {
         .expect("Invalid http_host");
 
     init_tskv_metrics_recorder();
-    init_query_metrics_recorder();
 
     runtime.clone().block_on(async move {
         match &cli.subcmd {
@@ -190,7 +189,8 @@ fn main() -> Result<(), std::io::Error> {
                     kv_inst.clone(),
                     global_config.cluster.clone(),
                     global_config.hintedoff.clone(),
-                );
+                )
+                .await;
 
                 let dbms = Arc::new(
                     make_cnosdbms(kv_inst.clone(), coord_service.clone(), query_options)

@@ -215,7 +215,7 @@ impl Database {
         point: Point,
         sid: u64,
     ) -> Result<()> {
-        let table_name = String::from_utf8(point.tab().unwrap().to_vec()).unwrap();
+        let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
         let table_schema = self
             .schemas
             .get_table_schema(&table_name)
@@ -391,7 +391,8 @@ impl Database {
     }
 }
 
-pub(crate) fn delete_table_async(
+#[allow(clippy::await_holding_lock)]
+pub(crate) async fn delete_table_async(
     tenant: String,
     database: String,
     table: String,
@@ -420,7 +421,6 @@ pub(crate) fn delete_table_async(
             .del_table_schema(&table)
             .context(error::SchemaSnafu)?;
 
-        println!("{:?}", &sids);
         for sid in sids.iter() {
             index.del_series_info(*sid).context(error::IndexErrSnafu)?;
         }
@@ -442,10 +442,12 @@ pub(crate) fn delete_table_async(
             };
 
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
+                // TODO: Concurrent delete on ts_family.
+                // TODO: Limit parallel delete to 1.
                 ts_family.write().delete_series(&sids, time_range);
                 let version = ts_family.read().super_version();
                 for column_file in version.version.column_files(&storage_fids, time_range) {
-                    column_file.add_tombstone(&storage_fids, time_range)?;
+                    column_file.add_tombstone(&storage_fids, time_range).await?;
                 }
             }
         }

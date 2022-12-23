@@ -16,7 +16,7 @@ use datafusion::{
     },
 };
 use models::predicate::domain::PredicateRef;
-use models::schema::TskvTableSchema;
+use models::schema::TskvTableSchemaRef;
 
 use crate::stream::TableScanStream;
 use tskv::iterator::TableScanMetrics;
@@ -25,7 +25,7 @@ use tskv::iterator::TableScanMetrics;
 pub struct TskvExec {
     // connection
     // db: CustomDataSource,
-    table_schema: TskvTableSchema,
+    table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     filter: PredicateRef,
     coord: CoordinatorRef,
@@ -36,7 +36,7 @@ pub struct TskvExec {
 
 impl TskvExec {
     pub(crate) fn new(
-        table_schema: TskvTableSchema,
+        table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         filter: PredicateRef,
         coord: CoordinatorRef,
@@ -112,7 +112,7 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
-    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default => {
                 let filter = self.filter();

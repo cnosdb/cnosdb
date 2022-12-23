@@ -9,11 +9,10 @@ use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 
-use crate::file_system::file_manager;
+use crate::file_system::{file_manager, AsyncFile, IFile};
 use crate::{
     byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64},
     error::{self, Error, Result},
-    file_system::DmaFile,
     file_utils,
     tseries_family::TimeRange,
     tsm::{
@@ -53,7 +52,7 @@ impl From<ReadTsmError> for Error {
 
 /// Disk-based index reader
 pub struct IndexFile {
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     buf: [u8; 8],
 
     index_offset: u64,
@@ -64,10 +63,13 @@ pub struct IndexFile {
 }
 
 impl IndexFile {
-    pub fn open(reader: Arc<DmaFile>) -> ReadTsmResult<Self> {
+    pub async fn open(reader: Arc<AsyncFile>) -> ReadTsmResult<Self> {
         let file_len = reader.len();
         let mut buf = [0_u8; 8];
-        reader.read_at(file_len - 8, &mut buf).context(IOSnafu)?;
+        reader
+            .read_at(file_len - 8, &mut buf)
+            .await
+            .context(IOSnafu)?;
         let index_offset = u64::from_be_bytes(buf);
         Ok(Self {
             reader,
@@ -81,17 +83,19 @@ impl IndexFile {
     }
 
     // TODO: not implemented
-    pub fn next_index_entry(&mut self) -> ReadTsmResult<Option<()>> {
+    pub async fn next_index_entry(&mut self) -> ReadTsmResult<Option<()>> {
         if self.pos >= self.end_pos {
             return Ok(None);
         }
         self.reader
             .read_at(self.pos, &mut self.buf[..])
+            .await
             .context(IOSnafu)?;
         let field_id = u64::from_be_bytes(self.buf);
         self.pos += 8;
         self.reader
             .read_at(self.pos, &mut self.buf[..3])
+            .await
             .context(IOSnafu)?;
         self.pos += 3;
         let field_type = ValueType::from(self.buf[0]);
@@ -103,13 +107,14 @@ impl IndexFile {
     }
 
     // TODO: not implemented
-    pub fn next_block_entry(&mut self) -> ReadTsmResult<Option<()>> {
+    pub async fn next_block_entry(&mut self) -> ReadTsmResult<Option<()>> {
         if self.index_block_idx >= self.index_block_count {
             return Ok(None);
         }
         // read min time on block entry
         self.reader
             .read_at(self.pos, &mut self.buf[..])
+            .await
             .context(IOSnafu)?;
         self.pos += 8;
         let min_ts = i64::from_be_bytes(self.buf);
@@ -117,6 +122,7 @@ impl IndexFile {
         // read max time on block entry
         self.reader
             .read_at(self.pos, &mut self.buf[..])
+            .await
             .context(IOSnafu)?;
         self.pos += 8;
         let max_ts = i64::from_be_bytes(self.buf);
@@ -124,6 +130,7 @@ impl IndexFile {
         // read count on block entry
         self.reader
             .read_at(self.pos, &mut self.buf[..4])
+            .await
             .context(IOSnafu)?;
         self.pos += 4;
         let count = decode_be_u32(&self.buf[..4]);
@@ -131,6 +138,7 @@ impl IndexFile {
         // read block data offset
         self.reader
             .read_at(self.pos, &mut self.buf[..])
+            .await
             .context(IOSnafu)?;
         self.pos += 8;
         let offset = u64::from_be_bytes(self.buf);
@@ -138,6 +146,7 @@ impl IndexFile {
         // read block size
         self.reader
             .read_at(self.pos, &mut self.buf[..])
+            .await
             .context(IOSnafu)?;
         self.pos += 8;
         let size = u64::from_be_bytes(self.buf);
@@ -145,6 +154,7 @@ impl IndexFile {
         // read value offset
         self.reader
             .read_at(self.pos, &mut self.buf[..])
+            .await
             .context(IOSnafu)?;
         self.pos += 8;
         let val_off = u64::from_be_bytes(self.buf);
@@ -153,8 +163,8 @@ impl IndexFile {
     }
 }
 
-pub fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) {
-    let reader = TsmReader::open(path).unwrap();
+pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) {
+    let reader = TsmReader::open(path).await.unwrap();
     let mut points_cnt = 0_usize;
     println!("============================================================");
     for idx in reader.index_iterator() {
@@ -209,7 +219,7 @@ pub fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) {
     println!("PointsCount: {}", points_cnt);
 }
 
-pub fn load_index(reader: Arc<DmaFile>) -> ReadTsmResult<Index> {
+pub async fn load_index(reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
     let len = reader.len();
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
@@ -219,7 +229,7 @@ pub fn load_index(reader: Arc<DmaFile>) -> ReadTsmResult<Index> {
     let mut buf = [0u8; 8];
 
     // Read index data offset
-    reader.read_at(len - 8, &mut buf).context(IOSnafu)?;
+    reader.read_at(len - 8, &mut buf).await.context(IOSnafu)?;
     let offset = u64::from_be_bytes(buf);
     if offset > len - FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
@@ -229,7 +239,7 @@ pub fn load_index(reader: Arc<DmaFile>) -> ReadTsmResult<Index> {
     let data_len = (len - offset - FOOTER_SIZE as u64) as usize;
     let mut data = vec![0_u8; data_len];
     // Read index data
-    reader.read_at(offset, &mut data).context(IOSnafu)?;
+    reader.read_at(offset, &mut data).await.context(IOSnafu)?;
 
     // Decode index data
     let mut offsets = Vec::new();
@@ -263,8 +273,8 @@ pub struct IndexReader {
 }
 
 impl IndexReader {
-    pub fn open(reader: Arc<DmaFile>) -> Result<Self> {
-        let idx = load_index(reader).context(error::ReadTsmSnafu)?;
+    pub async fn open(reader: Arc<AsyncFile>) -> Result<Self> {
+        let idx = load_index(reader).await.context(error::ReadTsmSnafu)?;
 
         Ok(Self {
             index_ref: Arc::new(idx),
@@ -426,19 +436,19 @@ impl Iterator for BlockMetaIterator {
 
 #[derive(Clone)]
 pub struct TsmReader {
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     index_reader: Arc<IndexReader>,
     tombstone: Arc<RwLock<TsmTombstone>>,
 }
 
 impl TsmReader {
-    pub fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
         let path = tsm_path.as_ref().to_path_buf();
         let tsm_id = file_utils::get_tsm_file_id_by_path(&path)?;
-        let tsm = Arc::new(file_manager::open_file(tsm_path)?);
-        let tsm_idx = IndexReader::open(tsm.clone())?;
+        let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
+        let tsm_idx = IndexReader::open(tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
-        let tombstone = TsmTombstone::new(tombstone_path, tsm_id)?;
+        let tombstone = TsmTombstone::open(tombstone_path, tsm_id).await?;
         Ok(Self {
             reader: tsm,
             index_reader: Arc::new(tsm_idx),
@@ -455,7 +465,7 @@ impl TsmReader {
     }
 
     /// Returns a DataBlock without tombstone
-    pub fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
         let mut blk = read_data_block(
@@ -464,7 +474,8 @@ impl TsmReader {
             block_meta.field_type(),
             block_meta.offset(),
             block_meta.val_off(),
-        )?;
+        )
+        .await?;
         self.tombstone
             .read()
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
@@ -472,13 +483,18 @@ impl TsmReader {
     }
 
     // Reads raw data from file and returns the read data size.
-    pub fn get_raw_data(&self, block_meta: &BlockMeta, dst: &mut Vec<u8>) -> ReadTsmResult<usize> {
+    pub async fn get_raw_data(
+        &self,
+        block_meta: &BlockMeta,
+        dst: &mut Vec<u8>,
+    ) -> ReadTsmResult<usize> {
         let data_len = block_meta.size() as usize;
         if dst.len() < data_len {
             dst.resize(data_len, 0);
         }
         self.reader
             .read_at(block_meta.offset(), &mut dst[..data_len])
+            .await
             .context(IOSnafu)?;
         Ok(data_len)
     }
@@ -509,13 +525,13 @@ impl TsmReader {
 }
 
 pub struct ColumnReader {
-    reader: Arc<DmaFile>,
+    reader: Arc<AsyncFile>,
     inner: BlockMetaIterator,
     buf: Vec<u8>,
 }
 
 impl ColumnReader {
-    pub fn new(reader: Arc<DmaFile>, inner: BlockMetaIterator) -> Self {
+    pub fn new(reader: Arc<AsyncFile>, inner: BlockMetaIterator) -> Self {
         Self {
             reader,
             inner,
@@ -523,7 +539,7 @@ impl ColumnReader {
         }
     }
 
-    fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    async fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let (offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
         read_data_block(
@@ -533,29 +549,28 @@ impl ColumnReader {
             block_meta.offset(),
             block_meta.val_off(),
         )
+        .await
     }
 }
 
-impl Iterator for ColumnReader {
-    type Item = Result<DataBlock>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl ColumnReader {
+    pub async fn next(&mut self) -> Option<Result<DataBlock>> {
         if let Some(dbm) = self.inner.next() {
-            return Some(self.decode(&dbm).context(error::ReadTsmSnafu));
+            let res = self.decode(&dbm).await.context(error::ReadTsmSnafu);
+            return Some(res);
         }
-
         None
     }
 }
 
-fn read_data_block(
-    reader: Arc<DmaFile>,
+async fn read_data_block(
+    reader: Arc<AsyncFile>,
     buf: &mut [u8],
     field_type: ValueType,
     offset: u64,
     val_off: u64,
 ) -> ReadTsmResult<DataBlock> {
-    reader.read_at(offset, buf).context(IOSnafu)?;
+    reader.read_at(offset, buf).await.context(IOSnafu)?;
     decode_data_block(buf, field_type, val_off - offset)
 }
 
@@ -672,7 +687,7 @@ pub mod tsm_reader_tests {
         tsm::{DataBlock, TsmReader, TsmTombstone, TsmWriter},
     };
 
-    fn prepare(path: impl AsRef<Path>) -> (PathBuf, PathBuf) {
+    async fn prepare(path: impl AsRef<Path>) -> (PathBuf, PathBuf) {
         if !file_manager::try_exists(&path) {
             std::fs::create_dir_all(&path).unwrap();
         }
@@ -694,30 +709,33 @@ pub mod tsm_reader_tests {
                 DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
             ]),
         ]);
-        let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).unwrap();
+        let mut writer = TsmWriter::open(&tsm_file, 1, false, 0).await.unwrap();
         for (fid, blks) in ori_data.iter() {
             for blk in blks.iter() {
-                writer.write_block(*fid, blk).unwrap();
+                writer.write_block(*fid, blk).await.unwrap();
             }
         }
-        writer.write_index().unwrap();
-        writer.finish().unwrap();
+        writer.write_index().await.unwrap();
+        writer.finish().await.unwrap();
 
-        let mut tombstone = TsmTombstone::with_path(&tombstone_file).unwrap();
-        tombstone.add_range(&[1], &TimeRange::new(2, 4)).unwrap();
-        tombstone.flush().unwrap();
+        let mut tombstone = TsmTombstone::with_path(&tombstone_file).await.unwrap();
+        tombstone
+            .add_range(&[1], &TimeRange::new(2, 4))
+            .await
+            .unwrap();
+        tombstone.flush().await.unwrap();
 
         (tsm_file, tombstone_file)
     }
 
-    pub(crate) fn read_and_check(
+    pub(crate) async fn read_and_check(
         reader: &TsmReader,
         expected_data: HashMap<FieldId, Vec<DataBlock>>,
     ) {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
-                let data_blk = reader.get_data_block(&blk).unwrap();
+                let data_blk = reader.get_data_block(&blk).await.unwrap();
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }
@@ -731,17 +749,17 @@ pub mod tsm_reader_tests {
         }
     }
 
-    #[test]
-    fn test_tsm_reader_1() {
-        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/1");
+    #[tokio::test]
+    async fn test_tsm_reader_1() {
+        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/1").await;
         println!(
             "Reading file: {}, {}",
             tsm_file.to_str().unwrap(),
             tombstone_file.to_str().unwrap()
         );
-        print_tsm_statistics(&tsm_file, true);
+        print_tsm_statistics(&tsm_file, true).await;
 
-        let reader = TsmReader::open(&tsm_file).unwrap();
+        let reader = TsmReader::open(&tsm_file).await.unwrap();
 
         #[rustfmt::skip]
         let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
@@ -753,10 +771,10 @@ pub mod tsm_reader_tests {
                 DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
             ]),
         ]);
-        read_and_check(&reader, expected_data);
+        read_and_check(&reader, expected_data).await;
     }
 
-    pub(crate) fn read_opt_and_check(
+    pub(crate) async fn read_opt_and_check(
         reader: &TsmReader,
         field_id: FieldId,
         time_range: (Timestamp, Timestamp),
@@ -765,7 +783,7 @@ pub mod tsm_reader_tests {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator_opt(2) {
             for blk in idx.block_iterator_opt(&TimeRange::from(time_range)) {
-                let data_blk = reader.get_data_block(&blk).unwrap();
+                let data_blk = reader.get_data_block(&blk).await.unwrap();
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }
@@ -776,17 +794,17 @@ pub mod tsm_reader_tests {
         }
     }
 
-    #[test]
-    fn test_tsm_reader_2() {
-        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/2");
+    #[tokio::test]
+    async fn test_tsm_reader_2() {
+        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/2").await;
         println!(
             "Reading file: {}, {}",
             tsm_file.to_str().unwrap(),
             tombstone_file.to_str().unwrap()
         );
-        print_tsm_statistics(&tsm_file, true);
+        print_tsm_statistics(&tsm_file, true).await;
 
-        let reader = TsmReader::open(&tsm_file).unwrap();
+        let reader = TsmReader::open(&tsm_file).await.unwrap();
 
         {
             #[rustfmt::skip]
@@ -795,7 +813,7 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (2, 3), expected_data);
+            read_opt_and_check(&reader, 2, (2, 3), expected_data).await;
         }
 
         {
@@ -805,18 +823,7 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (5, 8), expected_data);
-        }
-
-        {
-            #[rustfmt::skip]
-            let expected_data = HashMap::from([
-                (2, vec![
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
-                ])
-            ]);
-            read_opt_and_check(&reader, 2, (6, 10), expected_data);
+            read_opt_and_check(&reader, 2, (5, 8), expected_data).await;
         }
 
         {
@@ -827,7 +834,7 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (8, 9), expected_data);
+            read_opt_and_check(&reader, 2, (6, 10), expected_data).await;
         }
 
         {
@@ -838,7 +845,18 @@ pub mod tsm_reader_tests {
                     DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
                 ])
             ]);
-            read_opt_and_check(&reader, 2, (5, 12), expected_data);
+            read_opt_and_check(&reader, 2, (8, 9), expected_data).await;
+        }
+
+        {
+            #[rustfmt::skip]
+            let expected_data = HashMap::from([
+                (2, vec![
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
+                ])
+            ]);
+            read_opt_and_check(&reader, 2, (5, 12), expected_data).await;
         }
     }
 }

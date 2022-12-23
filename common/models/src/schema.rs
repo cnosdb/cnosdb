@@ -17,9 +17,8 @@ use std::str::FromStr;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use arrow_schema::Schema;
 use datafusion::arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, SchemaRef, TimeUnit,
+    DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
@@ -34,7 +33,7 @@ use crate::codec::Encoding;
 use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
-pub type TableSchemaRef = Arc<TskvTableSchema>;
+pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
 pub const TIME_FIELD_NAME: &str = "time";
 
@@ -152,7 +151,6 @@ impl Default for TskvTableSchema {
 impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
-
         Arc::new(Schema::new(fields))
     }
 
@@ -217,8 +215,8 @@ impl TskvTableSchema {
     }
 
     /// Get the index of the column
-    pub fn column_index(&self, name: &str) -> Option<&usize> {
-        self.columns_index.get(name)
+    pub fn column_index(&self, name: &str) -> Option<usize> {
+        self.columns_index.get(name).cloned()
     }
 
     pub fn column_name(&self, id: ColumnId) -> Option<&str> {

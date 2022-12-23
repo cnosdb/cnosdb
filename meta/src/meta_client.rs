@@ -972,9 +972,9 @@ impl MetaClient for RemoteMetaClient {
         if rsp.code == command::META_REQUEST_SUCCESS {
             Ok(())
         } else {
-            return Err(MetaError::CommonError {
+            Err(MetaError::CommonError {
                 msg: rsp.to_string(),
-            });
+            })
         }
     }
 

@@ -40,21 +40,30 @@ rows
 
 -- EXECUTE SQL: select time from m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: External error: Invalid schema: If the projection contains the time column, it must contain the field column."}
--- ERROR:  --
+200 OK
+time
+1970-01-01T00:00:00.000000101
+1970-01-01T00:00:00.000000102
+1970-01-01T00:00:00.000000103
+1970-01-01T00:00:00.000000104
 
 -- EXECUTE SQL: select time, t0 from m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: External error: Invalid schema: If the projection contains the time column, it must contain the field column."}
--- ERROR:  --
+200 OK
+time,t0
+1970-01-01T00:00:00.000000101,tag11
+1970-01-01T00:00:00.000000102,tag12
+1970-01-01T00:00:00.000000103,tag13
+1970-01-01T00:00:00.000000104,tag14
 
 -- EXECUTE SQL: select time, t0, t1 from m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: External error: Invalid schema: If the projection contains the time column, it must contain the field column."}
--- ERROR:  --
+200 OK
+time,t0,t1
+1970-01-01T00:00:00.000000101,tag11,tag21
+1970-01-01T00:00:00.000000102,tag12,tag22
+1970-01-01T00:00:00.000000103,tag13,tag23
+1970-01-01T00:00:00.000000104,tag14,tag24
 
 -- EXECUTE SQL: select time, f0 from m2; --
 -- AFTER_SORT --

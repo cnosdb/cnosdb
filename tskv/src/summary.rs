@@ -6,7 +6,6 @@ use std::{borrow::Borrow, collections::HashMap, sync::Arc};
 
 use futures::TryFutureExt;
 use libc::write;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch::Receiver;
@@ -24,7 +23,7 @@ use crate::{
     error::{Error, Result},
     file_utils,
     kv_option::{Options, StorageOptions},
-    record_file::{Reader, RecordFileError, Writer},
+    record_file::{Reader, RecordDataType, RecordDataVersion, Writer},
     tseries_family::{ColumnFile, LevelInfo, Version},
     version_set::VersionSet,
     LevelId, TseriesFamilyId,
@@ -194,12 +193,6 @@ impl Display for VersionEdit {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, IntoPrimitive, TryFromPrimitive)]
-#[repr(u8)]
-enum EditType {
-    SummaryEdit, // 0
-}
-
 pub struct Summary {
     file_no: u64,
     version_set: Arc<RwLock<VersionSet>>,
@@ -215,16 +208,17 @@ impl Summary {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let db = VersionEdit::new();
-        let mut w =
-            Writer::new(&file_utils::make_summary_file(opt.storage.summary_dir(), 0)).unwrap();
+        let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
+        let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
         let buf = db.encode()?;
         let _ = w
-            .write_record(1, EditType::SummaryEdit.into(), &buf)
-            .map_err(|e| Error::LogRecordErr { source: (e) })
+            .write_record(
+                RecordDataVersion::V1.into(),
+                RecordDataType::Summary.into(),
+                &[&buf],
+            )
             .await?;
-        w.hard_sync()
-            .map_err(|e| Error::LogRecordErr { source: e })
-            .await?;
+        w.sync().await?;
 
         Ok(Self {
             file_no: 0,
@@ -241,9 +235,14 @@ impl Summary {
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
-        let writer = Writer::new(&file_utils::make_summary_file(&summary_path, 0)).unwrap();
+        let path = file_utils::make_summary_file(&summary_path, 0);
+        let writer = Writer::open(path, RecordDataType::Summary).await.unwrap();
         let ctx = Arc::new(GlobalContext::default());
-        let rd = Box::new(Reader::new(file_utils::make_summary_file(&summary_path, 0)).unwrap());
+        let rd = Box::new(
+            Reader::open(&file_utils::make_summary_file(&summary_path, 0))
+                .await
+                .unwrap(),
+        );
         let vs = Self::recover_version(meta, rd, &ctx, opt.clone(), flush_task_sender).await?;
 
         Ok(Self {
@@ -268,10 +267,7 @@ impl Summary {
 
         let mut tsf_id = 0;
         loop {
-            let res = reader
-                .read_record()
-                .await
-                .map_err(|e| Error::LogRecordErr { source: (e) });
+            let res = reader.read_record().await;
             match res {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
@@ -286,7 +282,11 @@ impl Summary {
                         data.push(ed);
                     }
                 }
-                Err(_) => break,
+                Err(Error::Eof) => break,
+                Err(e) => {
+                    println!("Error reading record: {:?}", e);
+                    break;
+                }
             }
         }
         ctx.set_tsfamily_id(tsf_id);
@@ -362,13 +362,13 @@ impl Summary {
             let buf = edit.encode()?;
             let _ = self
                 .writer
-                .write_record(1, EditType::SummaryEdit.into(), &buf)
-                .map_err(|e| Error::LogRecordErr { source: (e) })
+                .write_record(
+                    RecordDataVersion::V1.into(),
+                    RecordDataType::Summary.into(),
+                    &[&buf],
+                )
                 .await?;
-            self.writer
-                .hard_sync()
-                .map_err(|e| Error::LogRecordErr { source: e })
-                .await?;
+            self.writer.sync().await?;
 
             tsf_version_edits
                 .entry(edit.tsf_id)
@@ -419,7 +419,9 @@ impl Summary {
                     }
                 };
             }
-            self.writer = Writer::new(new_path).unwrap();
+            self.writer = Writer::open(new_path, RecordDataType::Summary)
+                .await
+                .unwrap();
             self.write_summary(edits).await?;
             match rename(new_path, old_path) {
                 Ok(_) => (),
@@ -430,7 +432,9 @@ impl Summary {
                     );
                 }
             };
-            self.writer = Writer::new(old_path).unwrap();
+            self.writer = Writer::open(old_path, RecordDataType::Summary)
+                .await
+                .unwrap();
         }
         Ok(())
     }
@@ -444,76 +448,66 @@ impl Summary {
     }
 }
 
-pub fn print_summary_statistics(path: impl AsRef<Path>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(async move {
-        let mut reader = Reader::new(&path).unwrap();
-        println!("============================================================");
-        let mut i = 0_usize;
-        loop {
-            match reader.read_record().await {
-                Ok(record) => {
-                    let ve = VersionEdit::decode(&record.data).unwrap();
-                    println!("VersionEdit #{}", i);
+pub async fn print_summary_statistics(path: impl AsRef<Path>) {
+    let mut reader = Reader::open(&path).await.unwrap();
+    println!("============================================================");
+    let mut i = 0_usize;
+    loop {
+        match reader.read_record().await {
+            Ok(record) => {
+                let ve = VersionEdit::decode(&record.data).unwrap();
+                println!("VersionEdit #{}", i);
+                println!("------------------------------------------------------------");
+                i += 1;
+                if ve.add_tsf {
+                    println!("  Add ts_family: {}", ve.tsf_id);
                     println!("------------------------------------------------------------");
-                    i += 1;
-                    if ve.add_tsf {
-                        println!("  Add ts_family: {}", ve.tsf_id);
-                        println!("------------------------------------------------------------");
+                }
+                if ve.del_tsf {
+                    println!("  Delete ts_family: {}", ve.tsf_id);
+                    println!("------------------------------------------------------------");
+                }
+                if ve.has_seq_no {
+                    println!("  Presist sequence: {}", ve.seq_no);
+                    println!("------------------------------------------------------------");
+                }
+                if ve.has_file_id {
+                    if ve.add_files.is_empty() && ve.del_files.is_empty() {
+                        println!("  Add file: None. Delete file: None.");
                     }
-                    if ve.del_tsf {
-                        println!("  Delete ts_family: {}", ve.tsf_id);
-                        println!("------------------------------------------------------------");
-                    }
-                    if ve.has_seq_no {
-                        println!("  Presist sequence: {}", ve.seq_no);
-                        println!("------------------------------------------------------------");
-                    }
-                    if ve.has_file_id {
-                        if ve.add_files.is_empty() && ve.del_files.is_empty() {
-                            println!("  Add file: None. Delete file: None.");
-                        }
-                        if !ve.add_files.is_empty() {
-                            let mut buffer = String::new();
-                            ve.add_files.iter().for_each(|f| {
-                                buffer.push_str(
-                                    format!(
-                                        "{} (level: {}, {} B), ",
-                                        f.file_id, f.level, f.file_size
-                                    )
+                    if !ve.add_files.is_empty() {
+                        let mut buffer = String::new();
+                        ve.add_files.iter().for_each(|f| {
+                            buffer.push_str(
+                                format!("{} (level: {}, {} B), ", f.file_id, f.level, f.file_size)
                                     .as_str(),
-                                )
-                            });
-                            if !buffer.is_empty() {
-                                buffer.truncate(buffer.len() - 2);
-                            }
-                            println!("  Add file:[ {} ]", buffer);
+                            )
+                        });
+                        if !buffer.is_empty() {
+                            buffer.truncate(buffer.len() - 2);
                         }
-                        if !ve.del_files.is_empty() {
-                            let mut buffer = String::new();
-                            ve.del_files.iter().for_each(|f| {
-                                buffer.push_str(
-                                    format!("{} (level: {}), ", f.file_id, f.level).as_str(),
-                                )
-                            });
-                            if !buffer.is_empty() {
-                                buffer.truncate(buffer.len() - 2);
-                            }
-                            println!("  Delete file:[ {} ]", buffer);
+                        println!("  Add file:[ {} ]", buffer);
+                    }
+                    if !ve.del_files.is_empty() {
+                        let mut buffer = String::new();
+                        ve.del_files.iter().for_each(|f| {
+                            buffer
+                                .push_str(format!("{} (level: {}), ", f.file_id, f.level).as_str())
+                        });
+                        if !buffer.is_empty() {
+                            buffer.truncate(buffer.len() - 2);
                         }
+                        println!("  Delete file:[ {} ]", buffer);
                     }
                 }
-                Err(err) => match err {
-                    RecordFileError::Eof => break,
-                    _ => panic!("Errors when read summary file: {}", err),
-                },
             }
-            println!("============================================================");
+            Err(err) => match err {
+                Error::Eof => break,
+                _ => panic!("Errors when read summary file: {}", err),
+            },
         }
-    });
+        println!("============================================================");
+    }
 }
 
 pub struct SummaryProcessor {
@@ -589,84 +583,126 @@ mod test {
     use tokio::sync::mpsc::UnboundedSender;
     use trace::debug;
 
-    use config::{get_config, ClusterConfig};
+    use config::{get_config, ClusterConfig, Config};
     use meta::meta_client::{MetaRef, RemoteMetaManager};
-    use models::schema::DatabaseSchema;
+    use models::schema::{make_owner, DatabaseSchema};
 
     use crate::file_system::file_manager;
     use crate::tseries_family::LevelInfo;
     use crate::{
+        compaction::FlushReq,
         error,
         kv_option::{Options, StorageOptions},
-        summary::{CompactMeta, EditType, Summary, VersionEdit},
+        summary::{CompactMeta, Summary, SummaryTask, VersionEdit},
     };
 
     #[tokio::test]
     async fn test_summary() {
         let base_dir = "/tmp/test/summary/1".to_string();
-        let _ = fs::remove_dir_all(&base_dir);
-
-        let mut config = get_config("../config/config.toml");
+        let mut config = get_config("../config/config_31001.toml");
         config.storage.path = base_dir.clone();
         let opt = Arc::new(Options::from(&config));
 
+        let (summary_task_sender, mut summary_task_receiver) =
+            mpsc::unbounded_channel::<SummaryTask>();
+        let summary_job_mock = tokio::spawn(async move {
+            println!("Mock summary job started (test_summary).");
+            while let Some(t) = summary_task_receiver.recv().await {
+                // Do nothing
+                let _ = t.cb.send(Ok(()));
+            }
+            println!("Mock summary job finished (test_summary).");
+        });
+        let (flush_task_sender, mut flush_task_receiver) = mpsc::unbounded_channel::<FlushReq>();
+        let flush_job_mock = tokio::spawn(async move {
+            println!("Mock flush job started (test_summary).");
+            while let Some(t) = flush_task_receiver.recv().await {
+                // Do nothing
+            }
+            println!("Mock flush job finished (test_summary).");
+        });
+
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_summary_recover");
-        test_summary_recover(opt.clone()).await;
+        test_summary_recover(
+            opt.clone(),
+            flush_task_sender.clone(),
+            config.cluster.clone(),
+        )
+        .await;
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_tsf_num_recover");
-        test_tsf_num_recover(opt.clone()).await;
+        test_tsf_num_recover(
+            opt.clone(),
+            flush_task_sender.clone(),
+            config.cluster.clone(),
+        )
+        .await;
 
         println!("Running test: test_version_edit");
         test_version_edit();
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_0");
-        test_recover_summary_with_roll_0(opt.clone()).await;
+        test_recover_summary_with_roll_0(
+            opt.clone(),
+            summary_task_sender.clone(),
+            flush_task_sender.clone(),
+            config.cluster.clone(),
+        )
+        .await;
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_1");
-        test_recover_summary_with_roll_1(opt).await;
+        test_recover_summary_with_roll_1(
+            opt,
+            summary_task_sender,
+            flush_task_sender,
+            config.cluster.clone(),
+        )
+        .await;
+
+        let _ = tokio::join!(summary_job_mock, flush_job_mock);
     }
 
-    async fn test_summary_recover(opt: Arc<Options>) {
-        let cluster_options = ClusterConfig::default();
+    async fn test_summary_recover(
+        opt: Arc<Options>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
+    ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "hello".to_string());
+        edit.add_tsfamily(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
+        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender)
             .await
             .unwrap();
     }
 
-    async fn test_tsf_num_recover(opt: Arc<Options>) {
-        let cluster_options = ClusterConfig::default();
+    async fn test_tsf_num_recover(
+        opt: Arc<Options>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
+    ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
 
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "hello".to_string());
+        edit.add_tsfamily(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
         let mut summary =
             Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
@@ -674,14 +710,12 @@ mod test {
                 .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
-
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-        let summary =
-            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
-                .await
-                .unwrap();
+        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
+            .await
+            .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
     }
 
@@ -703,23 +737,22 @@ mod test {
     }
 
     // tips : we can use a small max_summary_size
-    async fn test_recover_summary_with_roll_0(opt: Arc<Options>) {
-        let cluster_options = ClusterConfig::default();
+    async fn test_recover_summary_with_roll_0(
+        opt: Arc<Options>,
+        summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
+    ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
 
-        let (summary_task_sender, _) = mpsc::unbounded_channel();
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let mut edits = vec![];
         let db = summary
             .version_set
@@ -733,7 +766,7 @@ mod test {
             db.write()
                 .add_tsfamily(i, 0, summary_task_sender.clone(), flush_task_sender.clone());
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(i, database.clone());
+            edit.add_tsfamily(i, make_owner("cnosdb", &database));
             edits.push(edit.clone());
         }
 
@@ -755,23 +788,22 @@ mod test {
         assert_eq!(summary.version_set.read().tsf_num(), 20);
     }
 
-    async fn test_recover_summary_with_roll_1(opt: Arc<Options>) {
-        let cluster_options = ClusterConfig::default();
+    async fn test_recover_summary_with_roll_1(
+        opt: Arc<Options>,
+        summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
+        flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
+    ) {
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let mut summary = Summary::new(opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
 
-        let (summary_task_sender, _) = mpsc::unbounded_channel();
-        let (flush_task_sender, _) = mpsc::unbounded_channel();
         let db = summary
             .version_set
             .write()
@@ -789,7 +821,7 @@ mod test {
 
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(10, "hello".to_string());
+        edit.add_tsfamily(10, "cnosdb.hello".to_string());
         edits.push(edit);
 
         for _ in 0..100 {

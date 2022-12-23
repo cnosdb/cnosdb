@@ -2,6 +2,9 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
+use datafusion::sql::sqlparser::ast::Expr;
+use datafusion::sql::sqlparser::ast::Ident;
+use datafusion::sql::sqlparser::ast::{Offset, OrderByExpr};
 use datafusion::sql::sqlparser::{
     ast::{DataType, ObjectName},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -14,11 +17,10 @@ use spi::query::ast::{
     parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
     AlterTenantOperation, AlterUser, AlterUserOperation, ColumnOption, CreateDatabase, CreateRole,
     CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
-    DropDatabaseObject, DropGlobalObject, DropTenantObject, ExtStatement, GrantRevoke, Privilege,
+    DropDatabaseObject, DropGlobalObject, DropTenantObject, Explain, ExtStatement, GrantRevoke,
+    Privilege, ShowSeries, ShowTagBody, ShowTagValues, With,
 };
-use spi::query::logical_planner::{
-    normalize_sql_object_name, DatabaseObjectType, GlobalObjectType, TenantObjectType,
-};
+use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
 use trace::debug;
@@ -65,6 +67,8 @@ enum CnosKeyWord {
 
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     REMOVE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    SERIES,
 }
 
 impl FromStr for CnosKeyWord {
@@ -88,6 +92,7 @@ impl FromStr for CnosKeyWord {
             "WRITE" => Ok(CnosKeyWord::WRITE),
             "ALL" => Ok(CnosKeyWord::ALL),
             "REMOVE" => Ok(CnosKeyWord::REMOVE),
+            "SERIES" => Ok(CnosKeyWord::SERIES),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -140,6 +145,7 @@ impl<'a> ExtParser<'a> {
         let dialect = &GenericDialect {};
         ExtParser::parse_sql_with_dialect(sql, dialect)
     }
+
     /// Parse a SQL statement and produce a set of statements
     pub fn parse_sql_with_dialect(
         sql: &str,
@@ -203,6 +209,10 @@ impl<'a> ExtParser<'a> {
                     self.parser.next_token();
                     self.parse_revoke()
                 }
+                Keyword::EXPLAIN => {
+                    self.parser.next_token();
+                    self.parse_explain()
+                }
                 _ => Ok(ExtStatement::SqlStatement(Box::new(
                     self.parser.parse_statement()?,
                 ))),
@@ -227,10 +237,171 @@ impl<'a> ExtParser<'a> {
             self.parse_show_tables()
         } else if self.parse_cnos_keyword(CnosKeyWord::DATABASES) {
             self.parse_show_databases()
+        } else if self.parse_cnos_keyword(CnosKeyWord::SERIES) {
+            self.parse_show_series()
+        } else if self.parse_cnos_keyword(CnosKeyWord::TAG) {
+            if self.parser.parse_keyword(Keyword::VALUES) {
+                self.parse_show_tag_values()
+            } else {
+                self.expected("VALUES", self.parser.peek_token())
+            }
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else {
-            self.expected("tables/databases", self.parser.peek_token())
+            self.expected(
+                "TABLES or DATABASES or SERIES or TAG or QUERIES",
+                self.parser.peek_token(),
+            )
+        }
+    }
+
+    fn parse_on_database(&mut self) -> Result<Option<ObjectName>> {
+        if self.parser.parse_keyword(Keyword::ON) {
+            Ok(Some(self.parser.parse_object_name()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_where(&mut self) -> Result<Option<Expr>> {
+        if self.parser.parse_keyword(Keyword::WHERE) {
+            Ok(Some(self.parser.parse_expr()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_limit_offset(&mut self) -> Result<(Option<Expr>, Option<Offset>)> {
+        let mut limit = None;
+        let mut offset = None;
+        for _x in 0..2 {
+            if limit.is_none() && self.parser.parse_keyword(Keyword::LIMIT) {
+                limit = self.parser.parse_limit()?
+            }
+
+            if offset.is_none() && self.parser.parse_keyword(Keyword::OFFSET) {
+                offset = Some(self.parser.parse_offset()?)
+            }
+        }
+        Ok((limit, offset))
+    }
+
+    fn parse_order_by(&mut self) -> Result<Vec<OrderByExpr>> {
+        Ok(
+            if self.parser.parse_keywords(&[Keyword::ORDER, Keyword::BY]) {
+                self.parser
+                    .parse_comma_separated(Parser::parse_order_by_expr)?
+            } else {
+                vec![]
+            },
+        )
+    }
+
+    fn parse_with(&mut self) -> Result<With> {
+        self.parser
+            .expect_keywords(&[Keyword::WITH, Keyword::KEY])?;
+
+        match self.parser.next_token() {
+            Token::Eq => Ok(With::Equal(self.parser.parse_identifier()?)),
+            Token::Neq => Ok(With::UnEqual(self.parser.parse_identifier()?)),
+            Token::Word(word) => match &word.keyword {
+                Keyword::IN => {
+                    self.parser.expect_token(&Token::LParen)?;
+                    let idents = self
+                        .parser
+                        .parse_comma_separated(Parser::parse_identifier)?;
+                    self.parser.expect_token(&Token::RParen)?;
+                    Ok(With::In(idents))
+                }
+                Keyword::NOT => {
+                    self.parser.expect_keyword(Keyword::IN)?;
+                    self.parser.expect_token(&Token::LParen)?;
+                    let idents = self
+                        .parser
+                        .parse_comma_separated(Parser::parse_identifier)?;
+                    self.parser.expect_token(&Token::RParen)?;
+                    Ok(With::NotIn(idents))
+                }
+                _ => self.expected("=, !=, <>, IN, NOT IN", Token::Word(word)),
+            },
+            token => self.expected("=, !=, <>, IN, NOT IN", token),
+        }
+    }
+
+    fn parse_show_series(&mut self) -> Result<ExtStatement> {
+        let database_name = self.parse_on_database()?;
+        self.parser.expect_keyword(Keyword::FROM)?;
+        let table = self.parser.parse_object_name()?;
+        let selection = self.parse_where()?;
+        let order_by = self.parse_order_by()?;
+        let (limit, offset) = self.parse_limit_offset()?;
+
+        Ok(ExtStatement::ShowSeries(Box::new(ShowSeries {
+            body: ShowTagBody {
+                database_name,
+                table,
+                selection,
+                order_by,
+                limit,
+                offset,
+            },
+        })))
+    }
+
+    fn parse_show_tag_values(&mut self) -> Result<ExtStatement> {
+        let database_name = self.parse_on_database()?;
+        self.parser.expect_keyword(Keyword::FROM)?;
+        let table = self.parser.parse_object_name()?;
+        let with = self.parse_with()?;
+        let selection = self.parse_where()?;
+        let order_by = self.parse_order_by()?;
+        let (limit, offset) = self.parse_limit_offset()?;
+        Ok(ExtStatement::ShowTagValues(Box::new(ShowTagValues {
+            body: ShowTagBody {
+                database_name,
+                table,
+                selection,
+                order_by,
+                limit,
+                offset,
+            },
+            with,
+        })))
+    }
+
+    fn parse_explain(&mut self) -> Result<ExtStatement> {
+        let analyze = self.parser.parse_keyword(Keyword::ANALYZE);
+        let verbose = self.parser.parse_keyword(Keyword::VERBOSE);
+        let mut format = None;
+        if self.parser.parse_keyword(Keyword::FORMAT) {
+            format = Some(self.parser.parse_analyze_format()?);
+        }
+        if self.parser.parse_keyword(Keyword::EXPLAIN) {
+            return Err(ParserError::ParserError(
+                "EXPLAIN can only appear once".to_string(),
+            ));
+        }
+        match self.parse_statement()? {
+            ExtStatement::SqlStatement(statement) => Ok(ExtStatement::Explain(Explain {
+                analyze,
+                verbose,
+                format,
+                ext_statement: Box::new(ExtStatement::SqlStatement(statement)),
+            })),
+            ExtStatement::ShowSeries(statement) => Ok(ExtStatement::Explain(Explain {
+                analyze,
+                verbose,
+                format,
+                ext_statement: Box::new(ExtStatement::ShowSeries(statement)),
+            })),
+            ExtStatement::ShowTagValues(statement) => Ok(ExtStatement::Explain(Explain {
+                analyze,
+                verbose,
+                format,
+                ext_statement: Box::new(ExtStatement::ShowTagValues(statement)),
+            })),
+
+            _ => Err(ParserError::ParserError("Not Implemented".to_string())),
         }
     }
 
@@ -243,12 +414,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_show_tables(&mut self) -> Result<ExtStatement> {
-        if self.consume_token(&Token::make_keyword("ON")) {
-            let database_name = self.parser.parse_object_name()?;
-            Ok(ExtStatement::ShowTables(Some(database_name)))
-        } else {
-            Ok(ExtStatement::ShowTables(None))
-        }
+        Ok(ExtStatement::ShowTables(self.parse_on_database()?))
     }
 
     /// Parse a SQL DESCRIBE DATABASE statement
@@ -981,6 +1147,62 @@ fn parse_file_type(s: &str) -> Result<String, ParserError> {
     Ok(s.to_uppercase())
 }
 
+/// Normalize a SQL object name
+pub fn normalize_sql_object_name(sql_object_name: &ObjectName) -> String {
+    sql_object_name
+        .0
+        .iter()
+        .map(normalize_ident)
+        .collect::<Vec<String>>()
+        .join(".")
+}
+
+// Normalize an identifier to a lowercase string unless the identifier is quoted.
+pub fn normalize_ident(id: &Ident) -> String {
+    match id.quote_style {
+        Some(_) => id.value.clone(),
+        None => id.value.to_ascii_lowercase(),
+    }
+}
+
+// merge "catalog.db" and "db.table" to "catalog.db.table"
+// if a.b and b.c => a.b.c
+// if a.b and c.d => None
+pub fn merge_object_name(db: Option<ObjectName>, table: Option<ObjectName>) -> Option<ObjectName> {
+    let (db, table) = match (db, table) {
+        (Some(db), Some(table)) => (db, table),
+        (Some(db), None) => return Some(db),
+        (None, Some(table)) => return Some(table),
+        (None, None) => return None,
+    };
+
+    let mut db: Vec<Ident> = db.0;
+    let mut table: Vec<Ident> = table.0;
+    debug!("merge_object_name: db: {:#?} table: {:#?}", db, table);
+
+    if db.is_empty() {
+        return Some(ObjectName(table));
+    }
+
+    if table.len() == 1 {
+        db.append(&mut table);
+        return Some(ObjectName(db));
+    }
+
+    if let Some(db_name) = db.last() {
+        if let Some(table_db_name) = table.get(table.len() - 2) {
+            if !db_name.eq(table_db_name) {
+                return None;
+            } else {
+                let ident = table.remove(table.len() - 1);
+                db.push(ident);
+                return Some(ObjectName(db));
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Deref;
@@ -988,6 +1210,7 @@ mod tests {
     use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
     use spi::query::ast::AlterTable;
     use spi::query::ast::{DropDatabaseObject, ExtStatement};
+    use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
 
     use super::*;
 

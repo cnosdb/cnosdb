@@ -1,7 +1,7 @@
 -- normal
 -- public.test(time timestamp(ns), ta string, tb string, fa double, fb double)
 --#LP_BEGIN
-test_double_conv,ta=a1,tb=b1 fa=1,fb=2 3
+test_double_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
 --#LP_END
 
 -- binary

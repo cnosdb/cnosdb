@@ -37,7 +37,7 @@ impl MetaHttpClient {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp:CommandResp = self.send_rpc_to_leader("read", Some(req))?;
+        let rsp: CommandResp = self.send_rpc_to_leader("read", Some(req))?;
 
         let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
@@ -63,7 +63,7 @@ impl MetaHttpClient {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let rsp: CommandResp= self.send_rpc_to_leader("watch_tenant", Some(req))?;
+        let rsp: CommandResp = self.send_rpc_to_leader("watch_tenant", Some(req))?;
 
         let rsp = serde_json::from_str::<T>(&rsp).map_err(|err| MetaError::MetaClientErr {
             msg: err.to_string(),
@@ -193,6 +193,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_watch_tenant() {
         watch_tenant("cluster_xxx", "tenant_test").await;
     }

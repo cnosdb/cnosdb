@@ -7,7 +7,7 @@ use std::{
 
 use super::unix::check_err;
 
-pub fn open(path: impl AsRef<Path>, options: &OpenOptions) -> Result<File> {
+pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<File> {
     let file = options.open(path)?;
     check_err(unsafe {
         const F_NOCACHE: libc::c_int = 48;

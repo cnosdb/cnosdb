@@ -15,7 +15,7 @@ meta = { path = "../meta" }
 datafusion = { workspace = true }
 async-channel = "1.7.1"
 snafu = "0.7"
-flatbuffers = "2.1"
+flatbuffers = { workspace = true }
 async-trait = "0.1"
 bincode = "1.3.3"
 tracing = "0.1"

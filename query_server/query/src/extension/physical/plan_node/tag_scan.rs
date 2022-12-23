@@ -26,7 +26,7 @@ use meta::error::MetaError;
 use models::{
     arrow_array::{build_arrow_array_builders, WriteArrow},
     predicate::domain::{ColumnDomains, PredicateRef},
-    schema::{ColumnType, TableSchemaRef},
+    schema::{ColumnType, TskvTableSchemaRef},
     SeriesKey, TagValue,
 };
 
@@ -36,7 +36,7 @@ use trace::debug;
 pub struct TagScanExec {
     // connection
     // db: CustomDataSource,
-    table_schema: TableSchemaRef,
+    table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     predicate: PredicateRef,
     coord: CoordinatorRef,
@@ -47,7 +47,7 @@ pub struct TagScanExec {
 
 impl TagScanExec {
     pub(crate) fn new(
-        table_schema: TableSchemaRef,
+        table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         predicate: PredicateRef,
         coord: CoordinatorRef,
@@ -184,7 +184,7 @@ impl<'a> Display for PredicateDisplay<'a> {
 }
 
 fn do_tag_scan(
-    table_schema: TableSchemaRef,
+    table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     tags_filter: ColumnDomains<String>,
     coord: CoordinatorRef,
@@ -289,7 +289,7 @@ impl TagRecordBatchStreamBuilder {
                 // TODO improve, to return Option
                 let tag_val = series_key.tag_val(tag_key);
 
-                vals_container.push(Some(tag_val));
+                vals_container.push(tag_val);
             })
     }
 

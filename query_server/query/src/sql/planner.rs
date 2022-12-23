@@ -1,21 +1,25 @@
+use datafusion::arrow::datatypes::DataType;
 use std::collections::{HashMap, HashSet};
+use std::iter;
 use std::option::Option;
 use std::sync::Arc;
 
-use datafusion::common::{DFField, ToDFSchema};
+use datafusion::common::{Column, DFField, DFSchema, ToDFSchema};
 use datafusion::datasource::{source_as_provider, TableProvider};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::logical_plan::Analyze;
+use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
-    Explain, Extension, LogicalPlan, LogicalPlanBuilder, PlanType, Projection, TableSource,
-    ToStringifiedPlan,
+    cast, lit, BinaryExpr, BuiltinScalarFunction, Case, EmptyRelation, Explain, Expr, Extension,
+    LogicalPlan, LogicalPlanBuilder, Operator, PlanType, Projection, TableSource,
+    ToStringifiedPlan, Union,
 };
-use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::SqlToRel;
 use datafusion::sql::sqlparser::ast::{
-    DataType as SQLDataType, Ident, ObjectName, Query, Statement,
+    DataType as SQLDataType, Expr as ASTExpr, Ident, ObjectName, Offset, OrderByExpr, Query,
+    Statement,
 };
 use datafusion::sql::TableReference;
 use meta::error::MetaError;
@@ -25,36 +29,39 @@ use models::auth::privilege::{
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::object_reference::ObjectReference;
 use models::oid::{Identifier, Oid};
-use models::schema::{ColumnType, TableColumn, TIME_FIELD_NAME};
+use models::schema::{
+    ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME,
+};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use snafu::ResultExt;
 use spi::query::ast::{
-    self, AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
+    AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
     ColumnOption, CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
     DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
-    DescribeTable as DescribeTableOptions, ExtStatement,
+    DescribeTable as DescribeTableOptions, ExtStatement, ShowSeries as ASTShowSeries, ShowTagBody,
+    ShowTagValues as ASTShowTagValues, With,
 };
 use spi::query::logical_planner::{
-    self, affected_row_expr, merge_affected_row_expr, normalize_ident, normalize_sql_object_name,
-    sql_options_to_tenant_options, sql_options_to_user_options, AlterDatabase, AlterTable,
-    AlterTableAction, AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
-    AlterUser, AlterUserAction, CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser,
-    DDLPlan, DatabaseObjectType, DescribeDatabase, DescribeTable, DropDatabaseObject,
-    DropGlobalObject, DropTenantObject, ExternalSnafu, GlobalObjectType, GrantRevoke,
-    LogicalPlanner, LogicalPlannerError, Plan, PlanWithPrivileges, QueryPlan, SYSPlan,
-    TenantObjectType, MISMATCHED_COLUMNS, MISSING_COLUMN,
+    self, affected_row_expr, merge_affected_row_expr, sql_options_to_tenant_options,
+    sql_options_to_user_options, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser, AlterUser, AlterUserAction,
+    CreateDatabase, CreateRole, CreateTable, CreateTenant, CreateUser, DDLPlan, DatabaseObjectType,
+    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
+    ExternalSnafu, GlobalObjectType, GrantRevoke, LogicalPlanner, LogicalPlannerError, Plan,
+    PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType, MISMATCHED_COLUMNS, MISSING_COLUMN,
 };
 use spi::query::session::IsiphoSessionCtx;
 
 use models::schema::{DatabaseOptions, Duration, Precision};
 use spi::query::logical_planner::Result;
-use spi::query::UNEXPECTED_EXTERNAL_PLAN;
+use spi::query::{ast, UNEXPECTED_EXTERNAL_PLAN};
 use trace::{debug, warn};
 
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 use crate::metadata::{ContextProviderExtension, CLUSTER_SCHEMA, INFORMATION_SCHEMA};
+use crate::sql::parser::{merge_object_name, normalize_ident, normalize_sql_object_name};
 use crate::table::ClusterTable;
 use spi::query::logical_planner::MetadataSnafu;
 
@@ -92,6 +99,14 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             ExtStatement::ShowDatabases() => self.database_to_show(session),
             ExtStatement::ShowTables(stmt) => self.table_to_show(stmt),
             ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
+            ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt),
+            ExtStatement::Explain(stmt) => self.explain_statement_to_plan(
+                stmt.analyze,
+                stmt.verbose,
+                *stmt.ext_statement,
+                session,
+            ),
+            ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt),
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt),
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt),
@@ -122,13 +137,6 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                     privileges: vec![],
                 })
             }
-            Statement::Explain {
-                verbose,
-                statement,
-                analyze,
-                describe_alias: _,
-                format: _,
-            } => self.explain_statement_to_plan(verbose, analyze, *statement),
             Statement::Insert {
                 table_name: ref sql_object_name,
                 columns: ref sql_column_names,
@@ -150,14 +158,14 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
     }
 
     /// Generate a plan for EXPLAIN ... that will print out a plan
-    ///
     pub fn explain_statement_to_plan(
         &self,
         verbose: bool,
         analyze: bool,
-        statement: Statement,
+        statement: ExtStatement,
+        session: &IsiphoSessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let plan = self.df_sql_to_plan(statement)?;
+        let plan = self.statement_to_plan(statement, session)?;
 
         let input_df_plan = match plan.plan {
             Plan::Query(query) => Arc::new(query.df_plan),
@@ -562,15 +570,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
     fn table_to_alter(&self, statement: ASTAlterTable) -> Result<PlanWithPrivileges> {
         let table_name = normalize_sql_object_name(&statement.table_name);
-        let table_provider = self.get_table_provider(&table_name)?;
-        let table_schema = table_provider
-            .as_any()
-            .downcast_ref::<ClusterTable>()
-            .ok_or_else(|| MetaError::TableNotFound {
-                table: table_name.to_string(),
-            })
-            .context(MetadataSnafu)?
-            .table_schema();
+        let table_schema = self.get_tskv_schema(&table_name)?;
 
         let alter_action = match statement.alter_action {
             ASTAlterTableAction::AddColumn { column } => {
@@ -686,6 +686,111 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
         })
     }
 
+    fn show_tag_body(
+        &self,
+        body: ShowTagBody,
+        projection_function: impl FnOnce(
+            &TskvTableSchema,
+            LogicalPlanBuilder,
+            bool,
+        ) -> Result<LogicalPlan>,
+    ) -> Result<LogicalPlan> {
+        // merge db a.b table b.c to a.b.c
+        let table = match merge_object_name(body.database_name, Some(body.table)) {
+            Some(table) => table,
+            None => {
+                return Err(LogicalPlannerError::Semantic {
+                    err: "db conflict with table".to_string(),
+                })
+            }
+        };
+
+        let table_name = normalize_sql_object_name(&table);
+        let table_source = self.get_table_source(&table_name)?;
+        let table_schema = self.get_tskv_schema(&table_name)?;
+        let table_df_schema = table_source
+            .schema()
+            .to_dfschema_ref()
+            .context(logical_planner::ExternalSnafu)?;
+        let sql_to_rel = SqlToRel::new(&self.schema_provider);
+
+        // build from
+        let mut plan_builder =
+            LogicalPlanBuilder::scan(&table_schema.name, table_source.clone(), None)
+                .context(ExternalSnafu)?;
+
+        // build where
+        let selection = match body.selection {
+            Some(expr) => Some(
+                sql_to_rel
+                    .sql_to_rex(expr, &table_df_schema, &mut HashMap::new())
+                    .context(logical_planner::ExternalSnafu)?,
+            ),
+            None => None,
+        };
+
+        // get all columns in expr
+        let mut columns = HashSet::new();
+        if let Some(selection) = &selection {
+            expr_to_columns(selection, &mut columns).context(ExternalSnafu)?;
+        }
+
+        // check column
+        check_show_series_expr(&columns, &table_schema)?;
+
+        if let Some(selection) = selection {
+            plan_builder = plan_builder
+                .filter(selection)
+                .context(logical_planner::ExternalSnafu)?;
+        }
+
+        // get where has time column
+        let where_contain_time = columns
+            .iter()
+            .flat_map(|c: &Column| table_schema.column(&c.name))
+            .any(|c: &TableColumn| c.column_type.is_time());
+
+        // build projection
+        let plan = projection_function(&table_schema, plan_builder, where_contain_time)?;
+
+        // build order by
+        let mut plan_builder = self.order_by(body.order_by, plan)?;
+
+        // build limit
+        if body.limit.is_some() || body.offset.is_some() {
+            plan_builder =
+                self.limit_offset_to_plan(body.limit, body.offset, plan_builder, &table_df_schema)?;
+        }
+
+        plan_builder.build().context(logical_planner::ExternalSnafu)
+    }
+
+    fn show_series_to_plan(&self, stmt: ASTShowSeries) -> Result<PlanWithPrivileges> {
+        let plan = Plan::Query(QueryPlan {
+            df_plan: self.show_tag_body(stmt.body, show_series_projection)?,
+        });
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![],
+        })
+    }
+
+    fn show_tag_values(&self, stmt: ASTShowTagValues) -> Result<PlanWithPrivileges> {
+        // merge db a.b table b.c to a.b.c
+        let plan = Plan::Query(QueryPlan {
+            df_plan: self.show_tag_body(
+                stmt.body,
+                |schema, plan_builder, where_contain_time| {
+                    show_tag_value_projections(schema, plan_builder, where_contain_time, stmt.with)
+                },
+            )?,
+        });
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![],
+        })
+    }
+
     fn database_to_plan(
         &self,
         stmt: ASTCreateDatabase,
@@ -724,6 +829,99 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
             plan,
             privileges: vec![privilege],
         })
+    }
+
+    fn order_by(&self, exprs: Vec<OrderByExpr>, plan: LogicalPlan) -> Result<LogicalPlanBuilder> {
+        if exprs.is_empty() {
+            return Ok(LogicalPlanBuilder::from(plan));
+        }
+        let schema = plan.schema();
+        let sql_to_rel = SqlToRel::new(&self.schema_provider);
+
+        let mut sort_exprs = Vec::new();
+        for OrderByExpr {
+            expr,
+            asc,
+            nulls_first,
+        } in exprs
+        {
+            let expr = sql_to_rel
+                .sql_to_rex(expr, schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?;
+            let asc = asc.unwrap_or(true);
+            let sort_expr = Expr::Sort {
+                expr: Box::new(expr),
+                asc,
+                // when asc is true, by default nulls last to be consistent with postgres
+                // postgres rule: https://www.postgresql.org/docs/current/queries-order.html
+                nulls_first: nulls_first.unwrap_or(!asc),
+            };
+            sort_exprs.push(sort_expr);
+        }
+
+        LogicalPlanBuilder::from(plan)
+            .sort(sort_exprs)
+            .context(logical_planner::ExternalSnafu)
+    }
+
+    fn limit_offset_to_plan(
+        &self,
+        limit: Option<ASTExpr>,
+        offset: Option<Offset>,
+        plan_builder: LogicalPlanBuilder,
+        schema: &DFSchema,
+    ) -> Result<LogicalPlanBuilder> {
+        let sql_to_rel = SqlToRel::new(&self.schema_provider);
+        let skip = match offset {
+            Some(offset) => match sql_to_rel
+                .sql_to_rex(offset.value, schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?
+            {
+                Expr::Literal(ScalarValue::Int64(Some(m))) => {
+                    if m < 0 {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!("OFFSET must be >= 0, '{}' was provided.", m),
+                        });
+                    } else {
+                        m as usize
+                    }
+                }
+                _ => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The OFFSET clause must be a constant of BIGINT type".to_string(),
+                    })
+                }
+            },
+            None => 0,
+        };
+
+        let fetch = match limit {
+            Some(exp) => match sql_to_rel
+                .sql_to_rex(exp, schema, &mut HashMap::new())
+                .context(logical_planner::ExternalSnafu)?
+            {
+                Expr::Literal(ScalarValue::Int64(Some(n))) => {
+                    if n < 0 {
+                        return Err(LogicalPlannerError::Semantic {
+                            err: format!("LIMIT must be >= 0, '{}' was provided.", n),
+                        });
+                    } else {
+                        Some(n as usize)
+                    }
+                }
+                _ => {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: "The LIMIT clause must be a constant of BIGINT type".to_string(),
+                    })
+                }
+            },
+            None => None,
+        };
+
+        let plan_builder = plan_builder
+            .limit(skip, fetch)
+            .context(logical_planner::ExternalSnafu)?;
+        Ok(plan_builder)
     }
 
     fn database_to_alter(
@@ -1177,6 +1375,18 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
         Ok(PlanWithPrivileges { plan, privileges })
     }
+
+    fn get_tskv_schema(&self, table_name: &str) -> Result<TskvTableSchemaRef> {
+        Ok(self
+            .get_table_provider(table_name)?
+            .as_any()
+            .downcast_ref::<ClusterTable>()
+            .ok_or_else(|| MetaError::TableNotFound {
+                table: table_name.to_string(),
+            })
+            .context(MetadataSnafu)?
+            .table_schema())
+    }
 }
 
 fn semantic_check(
@@ -1222,6 +1432,195 @@ fn semantic_check(
     }
 
     Ok(())
+}
+
+// check
+// show series can't include field column
+fn check_show_series_expr(columns: &HashSet<Column>, table_schema: &TskvTableSchema) -> Result<()> {
+    for column in columns.iter() {
+        match table_schema.column(&column.name) {
+            Some(table_column) => {
+                if table_column.column_type.is_field() {
+                    return Err(LogicalPlannerError::Semantic {
+                        err: format!(
+                            "SHOW SERIES does not support where clause contains field {}",
+                            column
+                        ),
+                    });
+                }
+            }
+
+            None => {
+                return Err(LogicalPlannerError::Semantic {
+                    err: format!("column {} does not exits", column),
+                })
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn show_series_projection(
+    table_schema: &TskvTableSchema,
+    mut plan_builder: LogicalPlanBuilder,
+    where_contain_time: bool,
+) -> Result<LogicalPlan> {
+    let tags = table_schema
+        .columns()
+        .iter()
+        .filter(|c| c.column_type.is_tag())
+        .collect::<Vec<&TableColumn>>();
+
+    // If the time column is included,
+    //   all field columns will be scanned at rewrite_tag_scan,
+    //   so this projection needs to be added
+    if where_contain_time {
+        let exp = tags
+            .iter()
+            .map(|tag| table_column_to_expr(table_schema, tag))
+            .collect::<Vec<Expr>>();
+        plan_builder = plan_builder
+            .project(exp)
+            .context(logical_planner::ExternalSnafu)?;
+    };
+
+    plan_builder = plan_builder
+        .distinct()
+        .context(logical_planner::ExternalSnafu)?;
+
+    // concat tag_key=tag_value projection
+    let tag_concat_expr_iter = tags.iter().map(|tag| {
+        let column_expr = Box::new(Expr::Column(Column::new(
+            Some(&table_schema.name),
+            &tag.name,
+        )));
+        let is_null_expr = Box::new(column_expr.clone().is_null());
+        let when_then_expr = vec![(is_null_expr, Box::new(lit(ScalarValue::Null)))];
+        let else_expr = Some(Box::new(Expr::BinaryExpr(BinaryExpr {
+            left: Box::new(lit(format!("{}=", &tag.name))),
+            op: Operator::StringConcat,
+            right: column_expr,
+        })));
+        Expr::Case(Case::new(None, when_then_expr, else_expr))
+    });
+
+    let concat_ws_args = iter::once(lit(","))
+        .chain(iter::once(lit(&table_schema.name)))
+        .chain(tag_concat_expr_iter)
+        .collect::<Vec<Expr>>();
+    let concat_ws = Expr::ScalarFunction {
+        fun: BuiltinScalarFunction::ConcatWithSeparator,
+        args: concat_ws_args,
+    }
+    .alias("key");
+    plan_builder
+        .project(iter::once(concat_ws))
+        .context(logical_planner::ExternalSnafu)?
+        .build()
+        .context(logical_planner::ExternalSnafu)
+}
+
+fn show_tag_value_projections(
+    table_schema: &TskvTableSchema,
+    mut plan_builder: LogicalPlanBuilder,
+    where_contain_time: bool,
+    with: With,
+) -> Result<LogicalPlan> {
+    let mut tag_key_filter: Box<dyn FnMut(&TableColumn) -> bool> = match with {
+        With::Equal(ident) => Box::new(move |column| normalize_ident(&ident).eq(&column.name)),
+        With::UnEqual(ident) => Box::new(move |column| normalize_ident(&ident).ne(&column.name)),
+        With::In(idents) => Box::new(move |column| {
+            idents
+                .iter()
+                .map(normalize_ident)
+                .any(|name| column.name.eq(&name))
+        }),
+        With::NotIn(idents) => Box::new(move |column| {
+            idents
+                .iter()
+                .map(normalize_ident)
+                .all(|name| column.name.ne(&name))
+        }),
+        _ => {
+            return Err(LogicalPlannerError::NotImplemented {
+                err: "Not implemented Match, UnMatch".to_string(),
+            })
+        }
+    };
+
+    let tags = table_schema
+        .columns()
+        .iter()
+        .filter(|column| column.column_type.is_tag())
+        .filter(|column| tag_key_filter(column))
+        .collect::<Vec<&TableColumn>>();
+
+    if tags.is_empty() {
+        return Ok(LogicalPlan::EmptyRelation(EmptyRelation {
+            produce_one_row: false,
+            schema: Arc::new(
+                DFSchema::new_with_metadata(
+                    vec![
+                        DFField::new(None, "key", DataType::Utf8, false),
+                        DFField::new(None, "value", DataType::Utf8, false),
+                    ],
+                    HashMap::new(),
+                )
+                .context(logical_planner::ExternalSnafu)?,
+            ),
+        }));
+    }
+
+    // If the time column is included,
+    //   all field columns will be scanned at rewrite_tag_scan,
+    //   so this projection needs to be added
+    if where_contain_time {
+        let exprs = tags
+            .iter()
+            .map(|tag| table_column_to_expr(table_schema, tag))
+            .collect::<Vec<Expr>>();
+
+        plan_builder = plan_builder
+            .project(exprs)
+            .context(logical_planner::ExternalSnafu)?;
+    };
+
+    plan_builder = plan_builder
+        .distinct()
+        .context(logical_planner::ExternalSnafu)?;
+
+    let mut projections = Vec::new();
+    for tag in tags {
+        let key_column = lit(&tag.name).alias("key");
+        let value_column = table_column_to_expr(table_schema, tag).alias("value");
+        let projection = plan_builder
+            .project(vec![key_column, value_column.clone()])
+            .context(logical_planner::ExternalSnafu)?;
+        let filter_expr = value_column.is_not_null();
+        let projection = projection
+            .filter(filter_expr)
+            .context(logical_planner::ExternalSnafu)?
+            .build()
+            .context(logical_planner::ExternalSnafu)?;
+        projections.push(Arc::new(projection));
+    }
+    let df_schema = projections[0].schema().clone();
+
+    let union = LogicalPlan::Union(Union {
+        inputs: projections,
+        schema: df_schema,
+        alias: None,
+    });
+
+    Ok(union)
+}
+
+fn table_column_to_expr(table_schema: &TskvTableSchema, column: &TableColumn) -> Expr {
+    Expr::Column(Column::new(
+        Some(table_schema.name.to_string()),
+        column.name.to_string(),
+    ))
 }
 
 fn table_write_plan_node(

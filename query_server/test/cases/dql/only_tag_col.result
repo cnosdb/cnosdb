@@ -48,9 +48,24 @@ tag29
 
 -- EXECUTE SQL: select time, t0 from m2; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do physical plan. err: External error: Invalid schema: If the projection contains the time column, it must contain the field column."}
--- ERROR:  --
+200 OK
+time,t0
+1970-01-01T00:00:00.000000101,tag11
+1970-01-01T00:00:00.000000101,tag16
+1970-01-01T00:00:00.000000102,tag12
+1970-01-01T00:00:00.000000102,tag17
+1970-01-01T00:00:00.000000103,tag13
+1970-01-01T00:00:00.000000103,tag18
+1970-01-01T00:00:00.000000104,tag14
+1970-01-01T00:00:00.000000104,tag19
+1970-01-01T00:00:00.000000201,tag11
+1970-01-01T00:00:00.000000202,tag12
+1970-01-01T00:00:00.000000203,tag13
+1970-01-01T00:00:00.000000204,tag14
+1970-01-01T00:00:00.000000301,tag11
+1970-01-01T00:00:00.000000302,tag12
+1970-01-01T00:00:00.000000303,tag13
+1970-01-01T00:00:00.000000304,tag14
 
 -- EXECUTE SQL: select t0, f0 from m2; --
 -- AFTER_SORT --

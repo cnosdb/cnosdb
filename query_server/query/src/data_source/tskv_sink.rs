@@ -6,7 +6,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use models::consistency_level::ConsistencyLevel;
 
-use models::schema::TskvTableSchema;
+use models::schema::TskvTableSchemaRef;
 use protos::kv_service::WritePointsRpcRequest;
 use snafu::ResultExt;
 use spi::query::DEFAULT_CATALOG;
@@ -24,7 +24,7 @@ use super::PointUtilSnafu;
 pub struct TskvRecordBatchSink {
     coord: CoordinatorRef,
     partition: usize,
-    schema: TskvTableSchema,
+    schema: TskvTableSchemaRef,
 
     metrics: TskvSinkMetrics,
 }
@@ -61,11 +61,11 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
 pub struct TskvRecordBatchSinkProvider {
     coord: CoordinatorRef,
-    schema: TskvTableSchema,
+    schema: TskvTableSchemaRef,
 }
 
 impl TskvRecordBatchSinkProvider {
-    pub fn new(coord: CoordinatorRef, schema: TskvTableSchema) -> Self {
+    pub fn new(coord: CoordinatorRef, schema: TskvTableSchemaRef) -> Self {
         Self { coord, schema }
     }
 }

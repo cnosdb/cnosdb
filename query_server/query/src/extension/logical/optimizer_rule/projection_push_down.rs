@@ -96,12 +96,15 @@ fn get_projected_schema(
                     e.table_schema()
                         .fields()
                         .get(0)
-                        .map(|f| e.table_schema().column_index(&f.name).unwrap_or(&0))
-                        .unwrap_or(&0)
+                        .map(|f| {
+                            let schema = e.table_schema();
+                            schema.column_index(&f.name).unwrap_or(0)
+                        })
+                        .unwrap_or(0)
                 })
-                .unwrap_or(&0);
+                .unwrap_or(0);
 
-            projection.insert(*idx);
+            projection.insert(idx);
         } else {
             // for table scan without projection, we default to return all columns
             projection = schema
