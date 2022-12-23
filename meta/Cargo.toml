@@ -38,6 +38,7 @@ sled = "0.34.7"
 tracing-futures = "0.2"
 ureq = { version = "2.5.0", features = ["json", "charset"] }
 backoff = "0.4"
+sys-info = "0.9.1"
 [dev-dependencies]
 anyhow = "1.0.32"
 maplit = "1.0.2"

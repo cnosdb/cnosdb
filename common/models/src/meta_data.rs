@@ -5,11 +5,10 @@ use serde::{Deserialize, Serialize};
 use crate::schema::{DatabaseSchema, TableSchema};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct Resource {
-    pub id: u64,
-    pub cpu: u64,
-    pub disk: u64,
-    pub memory: u64,
+pub struct SysInfo {
+    pub cpu_load: f64,
+    pub disk_free: u64,
+    pub mem_free: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

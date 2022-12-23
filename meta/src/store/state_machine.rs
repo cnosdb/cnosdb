@@ -584,6 +584,16 @@ impl StateMachine {
         let key = KeyPath::tenant_db_name(cluster, tenant, db_name);
         let _ = self.db.remove(&key);
 
+        let buckets_path = KeyPath::tenant_db_buckets(cluster, tenant, db_name);
+        for it in children_fullpath(&buckets_path, self.db.clone()).iter() {
+            let _ = self.db.remove(&it);
+        }
+
+        let schemas_path = KeyPath::tenant_schemas(cluster, tenant, db_name);
+        for it in children_fullpath(&schemas_path, self.db.clone()).iter() {
+            let _ = self.db.remove(&it);
+        }
+
         for (_, item) in watch.iter_mut() {
             if item.interesting(cluster, tenant) {
                 item.delta.delete_db(self.version(), db_name);

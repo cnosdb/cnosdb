@@ -73,7 +73,7 @@ pub trait AdminMeta: Send + Sync + Debug {
     // fn add_meta_node(&self, node: &NodeInfo) -> MetaResult<()>;
     // fn del_meta_node(&self, id: u64) -> MetaResult<()>;
 
-    // fn heartbeat(&self); // update node status
+    fn heartbeat(&self); // update node status
 
     fn node_info_by_id(&self, id: u64) -> MetaResult<NodeInfo>;
     async fn get_node_conn(&self, node_id: u64) -> MetaResult<TcpStream>;
@@ -286,6 +286,24 @@ impl RemoteAdminMeta {
             client: MetaHttpClient::new(1, meta_url),
         }
     }
+
+    pub fn sys_info() -> SysInfo {
+        let mut info = SysInfo::default();
+
+        if let Ok(val) = sys_info::disk_info() {
+            info.disk_free = val.free;
+        }
+
+        if let Ok(val) = sys_info::mem_info() {
+            info.mem_free = val.free;
+        }
+
+        if let Ok(val) = sys_info::loadavg() {
+            info.cpu_load = val.one;
+        }
+
+        info
+    }
 }
 
 #[async_trait::async_trait]
@@ -369,6 +387,8 @@ impl AdminMeta for RemoteAdminMeta {
             entry.push_back(conn);
         }
     }
+
+    fn heartbeat(&self) {}
 }
 
 #[derive(Debug)]
@@ -1010,5 +1030,23 @@ impl MetaClient for RemoteMetaClient {
         info!("****** Meta Data: {:#?}", self.data);
 
         format!("{:#?}", self.data.read())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[tokio::test]
+    async fn test_sys_info() {
+        let info = sys_info::disk_info();
+        println!("Disk: {:?}", info);
+
+        let info = sys_info::mem_info();
+        println!("Mem: {:?}", info);
+
+        let info = sys_info::cpu_num();
+        println!("Cpu Num: {:?}", info);
+
+        let info = sys_info::loadavg();
+        println!("Cpu Num: {:?}", info);
     }
 }

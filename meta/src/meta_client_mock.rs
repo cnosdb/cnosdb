@@ -51,6 +51,8 @@ impl AdminMeta for MockAdminMeta {
     }
 
     fn put_node_conn(&self, node_id: u64, conn: TcpStream) {}
+
+    fn heartbeat(&self) {}
 }
 
 #[derive(Debug)]
