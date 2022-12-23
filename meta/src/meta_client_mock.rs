@@ -5,6 +5,8 @@ use std::{
     sync::Arc,
 };
 
+use models::limiter::LimiterConfig;
+use models::oid::Identifier;
 use models::{
     auth::{
         privilege::DatabasePrivilege,
@@ -20,6 +22,7 @@ use models::{
 use tokio::net::TcpStream;
 
 use crate::error::{MetaError, MetaResult};
+use crate::limiter::{Limiter, LimiterImpl};
 use crate::{
     meta_client::{
         AdminMeta, AdminMetaRef, MetaClient, MetaClientRef, MetaManager, TenantManager,
@@ -72,11 +75,7 @@ impl MetaClient for MockMetaClient {
         &self.tenant
     }
 
-    fn tenant_mut(&mut self) -> &mut Tenant {
-        &mut self.tenant
-    }
-
-    fn create_db(&self, info: &DatabaseSchema) -> MetaResult<()> {
+    fn create_db(&self, info: DatabaseSchema) -> MetaResult<()> {
         Ok(())
     }
     fn alter_db_schema(&self, info: &DatabaseSchema) -> MetaResult<()> {
@@ -216,6 +215,10 @@ impl MetaClient for MockMetaClient {
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         vec![]
     }
+
+    fn limiter(&self) -> Arc<dyn Limiter> {
+        todo!()
+    }
 }
 
 #[derive(Default, Debug)]
@@ -280,6 +283,14 @@ impl TenantManager for TenantManagerMock {
     }
 
     fn tenants(&self) -> MetaResult<Vec<Tenant>> {
+        todo!()
+    }
+
+    fn tenant_set_limiter(
+        &self,
+        tenant_name: &str,
+        limiter_config: Option<LimiterConfig>,
+    ) -> MetaResult<()> {
         todo!()
     }
 }

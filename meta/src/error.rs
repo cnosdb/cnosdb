@@ -87,9 +87,15 @@ pub enum MetaError {
     },
     #[snafu(display("module raft network error reason: {}", source))]
     RaftConnect { source: tonic::transport::Error },
-    // RaftRPC{
-    //     source: RPCError<ClusterNodeId, ClusterNode, Err>
-    // }
+
+    #[snafu(display("{} fail: {} reached limit, the maximum is {}", action, name, max))]
+    Limit {
+        action: String,
+        name: String,
+        max: String,
+    }, // RaftRPC{
+       //     source: RPCError<ClusterNodeId, ClusterNode, Err>
+       // }
 }
 
 pub fn sm_r_err<E: Error + 'static>(e: E) -> StorageIOError<ClusterNodeId> {

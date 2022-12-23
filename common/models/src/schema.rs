@@ -30,6 +30,7 @@ use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
 use crate::codec::Encoding;
+pub use crate::limiter::LimiterConfig;
 use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
@@ -686,6 +687,13 @@ impl fmt::Display for Duration {
 }
 
 impl Duration {
+    pub fn new_with_day(day: u64) -> Self {
+        Self {
+            time_num: day,
+            unit: DurationUnit::Day,
+        }
+    }
+
     // with default DurationUnit day
     pub fn new(text: &str) -> Option<Self> {
         if text.is_empty() {
@@ -766,13 +774,12 @@ impl Tenant {
 #[builder(setter(into, strip_option), default)]
 pub struct TenantOptions {
     pub comment: Option<String>,
+    pub limiter_config: Option<LimiterConfig>,
 }
 
 impl TenantOptions {
-    pub fn merge(self, other: Self) -> Self {
-        Self {
-            comment: self.comment.or(other.comment),
-        }
+    pub fn set_limiter(&mut self, limiter_config: Option<LimiterConfig>) {
+        self.limiter_config = limiter_config;
     }
 }
 

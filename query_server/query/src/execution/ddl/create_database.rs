@@ -84,7 +84,7 @@ fn create_database(
     let mut database_schema = DatabaseSchema::new(machine.session.tenant(), name);
     database_schema.config = options.clone();
     client
-        .create_db(&database_schema)
+        .create_db(database_schema)
         .context(execution::MetadataSnafu)?;
     Ok(())
 }

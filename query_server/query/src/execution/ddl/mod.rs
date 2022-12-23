@@ -140,7 +140,7 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::CreateDatabase(sub_plan) => {
                 Box::new(CreateDatabaseTask::new(sub_plan.clone()))
             }
-            DDLPlan::CreateTenant(sub_plan) => Box::new(CreateTenantTask::new(sub_plan.clone())),
+            DDLPlan::CreateTenant(sub_plan) => Box::new(CreateTenantTask::new(*sub_plan.clone())),
             DDLPlan::CreateUser(sub_plan) => Box::new(CreateUserTask::new(sub_plan.clone())),
             DDLPlan::CreateRole(sub_plan) => Box::new(CreateRoleTask::new(sub_plan.clone())),
             DDLPlan::DescribeDatabase(sub_plan) => {

@@ -22,7 +22,7 @@ datafusion-proto = { workspace = true }
 uuid = { workspace = true }
 derive_builder = { workspace = true }
 openssl = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-chrono = { workspace = true }
 flatbuffers = { workspace = true }

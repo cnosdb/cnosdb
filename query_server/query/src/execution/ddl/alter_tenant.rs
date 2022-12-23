@@ -100,7 +100,7 @@ impl DDLDefinitionTask for AlterTenantTask {
                 // ) -> Result<()>;
                 debug!("Alter tenant {} with options [{}]", tenant_name, options);
                 tenant_manager
-                    .alter_tenant(tenant_name, options.clone())
+                    .alter_tenant(tenant_name, *options.clone())
                     .context(MetadataSnafu)?;
             }
         }

@@ -210,7 +210,7 @@ fn init_metadata(coord: CoordinatorRef) -> Result<()> {
                 tenant: DEFAULT_CATALOG.to_string(),
             })
             .context(MetaDataSnafu)?;
-        let res = client.create_db(&DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE));
+        let res = client.create_db(DatabaseSchema::new(DEFAULT_CATALOG, DEFAULT_DATABASE));
         if let Err(err) = res {
             match err {
                 MetaError::DatabaseAlreadyExists { .. } => {}

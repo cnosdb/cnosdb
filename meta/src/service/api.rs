@@ -63,9 +63,11 @@ pub async fn watch_tenant(
             watch_data.delta.update_version(sm.version());
             watch.insert(client_id.clone(), watch_data);
 
-            let mut data = TenantMetaDataDelta::default();
-            data.full_load = true;
-            data.update = sm.to_tenant_meta_data(&cluster, &tenant).unwrap();
+            let data = TenantMetaDataDelta {
+                full_load: true,
+                update: sm.to_tenant_meta_data(&cluster, &tenant).unwrap(),
+                ..Default::default()
+            };
 
             let res = serde_json::to_string(&data).unwrap();
             let response: Result<CommandResp, Infallible> = Ok(res);
