@@ -412,7 +412,9 @@ impl StateMachine {
 
                 let members = children_data::<TenantRoleIdentifier>(&path, self.db.clone());
                 let users: HashMap<String, UserDesc> =
-                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone()).into_values().map(|desc| (format!("{}", desc.id()), desc))
+                    children_data::<UserDesc>(&KeyPath::users(cluster), self.db.clone())
+                        .into_values()
+                        .map(|desc| (format!("{}", desc.id()), desc))
                         .collect();
 
                 trace::trace!("members of path {}: {:?}", path, members);
@@ -1027,10 +1029,8 @@ impl StateMachine {
         let resp = if let Some(e) = self.db.remove(&key).unwrap() {
             match serde_json::from_slice::<Tenant>(&e) {
                 Ok(tenant) => {
-                    let old_options = tenant.options().to_owned();
-                    let new_options = old_options.merge(options.clone());
-
-                    let new_tenant = Tenant::new(*tenant.id(), name.to_string(), new_options);
+                    let new_tenant =
+                        Tenant::new(*tenant.id(), name.to_string(), options.to_owned());
                     let value = serde_json::to_string(&new_tenant).unwrap();
                     let _ = self.db.insert(key.as_bytes(), value.as_bytes());
 
@@ -1174,12 +1174,7 @@ impl StateMachine {
         }
     }
 
-    fn process_drop_role(
-        &self,
-        cluster: &str,
-        role_name: &str,
-        tenant_name: &str,
-    ) -> CommandResp {
+    fn process_drop_role(&self, cluster: &str, role_name: &str, tenant_name: &str) -> CommandResp {
         let key = KeyPath::role(cluster, tenant_name, role_name);
 
         let success = self.db.remove(key).unwrap().is_some();

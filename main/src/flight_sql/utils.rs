@@ -69,7 +69,7 @@ where
         None => format!("{}:", username),
     };
 
-    let token = format!("Basic {}", base64::encode(&auth));
+    let token = format!("Basic {}", base64::encode(auth));
 
     let token = AsciiMetadataValue::try_from(token).map_err(|e| e.to_string())?;
 

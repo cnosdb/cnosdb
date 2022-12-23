@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 use std::{collections::HashMap, sync::Arc};
 
+use models::schema::LimiterConfig;
 use models::{
     meta_data::ExpiredBucketInfo,
     oid::{Identifier, Oid},
@@ -9,6 +10,7 @@ use models::{
 use parking_lot::RwLock;
 
 use crate::error::{MetaError, MetaResult};
+use crate::limiter::{Limiter, LimiterImpl, NoneLimiter};
 use crate::{
     client::MetaHttpClient,
     meta_client::{MetaClient, MetaClientRef, RemoteMetaClient, TenantManager},
@@ -163,6 +165,53 @@ impl TenantManager for RemoteTenantManager {
                 self.node_id,
             ) as MetaClientRef
         })
+    }
+
+    fn tenant_set_limiter(
+        &self,
+        tenant_name: &str,
+        limiter_config: Option<LimiterConfig>,
+    ) -> MetaResult<()> {
+        let mut tenants = self.tenants.write();
+        let old_client = match tenants.remove(tenant_name) {
+            Some(client) => client,
+            None => {
+                return Err(MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                })
+            }
+        };
+
+        let mut options = old_client.tenant().options().to_owned();
+        options.set_limiter(limiter_config);
+
+        let req = command::WriteCommand::AlterTenant(
+            self.cluster_name.to_owned(),
+            tenant_name.to_string(),
+            options,
+        );
+
+        match self.client.write::<command::CommonResp<Tenant>>(&req)? {
+            command::CommonResp::Ok(tenant) => {
+                let client = RemoteMetaClient::new(
+                    self.cluster_name.to_owned(),
+                    tenant,
+                    self.cluster_meta.to_owned(),
+                    self.node_id,
+                );
+                tenants.insert(tenant_name.to_string(), client);
+
+                Ok(())
+            }
+            command::CommonResp::Err(status) => {
+                // TODO improve response
+                if status.code == META_REQUEST_TENANT_NOT_FOUND {
+                    Err(MetaError::TenantNotFound { tenant: status.msg })
+                } else {
+                    Err(MetaError::CommonError { msg: status.msg })
+                }
+            }
+        }
     }
 
     fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {

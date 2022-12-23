@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -198,6 +199,32 @@ impl CoordService {
     }
 
     async fn write_point_request(coord: Arc<CoordService>, req: WritePointsRequest) {
+        let tenant = req.tenant.as_str();
+        if let Some(meta_client) = coord.meta.tenant_manager().tenant_meta(req.tenant.as_str()) {
+            let res =
+                meta_client
+                    .limiter()
+                    .check_write()
+                    .map_err(|e| CoordinatorError::MetaRequest {
+                        msg: format!("{}", e),
+                    });
+            if res.is_err() {
+                req.sender.send(res).expect("send write result");
+                return;
+            }
+
+            let data_len = req.request.points.len();
+            let res = meta_client.limiter().check_data_in(data_len).map_err(|e| {
+                CoordinatorError::MetaRequest {
+                    msg: format!("{}", e),
+                }
+            });
+            if res.is_err() {
+                req.sender.send(res).expect("send write result");
+                return;
+            }
+        }
+
         let result = coord.writer.write_points(&req).await;
         req.sender.send(result).expect("successful");
     }
@@ -224,6 +251,21 @@ impl CoordService {
     }
 
     async fn select_statement_request(coord: Arc<CoordService>, req: SelectStatementRequest) {
+        let tenant = req.option.tenant.as_str();
+
+        if let Some(meta_client) = coord.meta.tenant_manager().tenant_meta(tenant) {
+            if let Err(e) =
+                meta_client
+                    .limiter()
+                    .check_query()
+                    .map_err(|e| CoordinatorError::MetaRequest {
+                        msg: format!("{}", e),
+                    })
+            {
+                let _ = req.sender.send(Err(e)).await;
+            }
+        }
+
         let executor = QueryExecutor::new(
             req.option,
             coord.kv_inst.clone(),

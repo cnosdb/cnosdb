@@ -129,9 +129,20 @@ impl QueryExecutor {
                 }
 
                 CoordinatorTcpCmd::RecordBatchResponseCmd(rsp) => {
+                    let tenant = self.option.tenant.clone();
+                    if let Some(meta_client) =
+                        self.meta_manager.tenant_manager().tenant_meta(&tenant)
+                    {
+                        meta_client
+                            .limiter()
+                            .check_data_out(get_record_batch_memory_size(&rsp.record))
+                            .map_err(|e| CoordinatorError::MetaRequest {
+                                msg: format!("{}", e),
+                            })?;
+                    }
+
                     self.sender.send(Ok(rsp.record)).await?;
                 }
-
                 _ => {
                     return Err(CoordinatorError::UnExpectResponse);
                 }
@@ -155,11 +166,24 @@ impl QueryExecutor {
     }
 
     async fn local_vnode_executor(&self, vnode: VnodeInfo) -> CoordinatorResult<()> {
+        let tenant = self.option.tenant.clone();
         let mut iterator = RowIterator::new(self.kv_inst.clone(), self.option.clone(), vnode.id)?;
 
         while let Some(data) = iterator.next().await {
             match data {
                 Ok(val) => {
+                    if let Some(meta_client) = self
+                        .meta_manager
+                        .tenant_manager()
+                        .tenant_meta(tenant.as_str())
+                    {
+                        meta_client
+                            .limiter()
+                            .check_data_out(get_record_batch_memory_size(&val))
+                            .map_err(|e| CoordinatorError::MetaRequest {
+                                msg: format!("{}", e),
+                            })?;
+                    }
                     self.sender.send(Ok(val)).await?;
                 }
                 Err(err) => {
@@ -209,4 +233,12 @@ impl QueryExecutor {
 
         Ok(vnode_mapping)
     }
+}
+
+fn get_record_batch_memory_size(record_batch: &RecordBatch) -> usize {
+    record_batch
+        .columns()
+        .iter()
+        .map(|array| array.get_array_memory_size())
+        .sum()
 }

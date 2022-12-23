@@ -87,7 +87,7 @@ pub enum DDLPlan {
 
     CreateDatabase(CreateDatabase),
 
-    CreateTenant(CreateTenant),
+    CreateTenant(Box<CreateTenant>),
 
     CreateUser(CreateUser),
 
@@ -328,7 +328,7 @@ pub enum AlterTenantAction {
     AddUser(AlterTenantAddUser),
     SetUser(AlterTenantSetUser),
     RemoveUser(Oid),
-    Set(TenantOptions),
+    Set(Box<TenantOptions>),
 }
 
 #[derive(Debug, Clone)]

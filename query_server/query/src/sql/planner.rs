@@ -1081,11 +1081,11 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
         let privileges = vec![Privilege::Global(GlobalPrivilege::Tenant(None))];
 
-        let plan = Plan::DDL(DDLPlan::CreateTenant(CreateTenant {
+        let plan = Plan::DDL(DDLPlan::CreateTenant(Box::new(CreateTenant {
             name,
             if_not_exists,
             options,
-        }));
+        })));
 
         Ok(PlanWithPrivileges { plan, privileges })
     }
@@ -1242,7 +1242,7 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
                 let tenant_options = sql_options_to_tenant_options(vec![sql_option])
                     .map_err(|err| LogicalPlannerError::Semantic { err })?;
 
-                (AlterTenantAction::Set(tenant_options), privilege)
+                (AlterTenantAction::Set(Box::new(tenant_options)), privilege)
             }
         };
 
@@ -1344,21 +1344,16 @@ impl<S: ContextProviderExtension> SqlPlaner<S> {
 
         let database_privileges = privileges
             .iter()
-            .map(
-                |&ast::Privilege {
-                     ref action,
-                     ref database,
-                 }| {
-                    let database_privilege = match action {
-                        ast::Action::Read => DatabasePrivilege::Read,
-                        ast::Action::Write => DatabasePrivilege::Write,
-                        ast::Action::All => DatabasePrivilege::Full,
-                    };
-                    let database_name = normalize_ident(database);
+            .map(|ast::Privilege { action, database }| {
+                let database_privilege = match action {
+                    ast::Action::Read => DatabasePrivilege::Read,
+                    ast::Action::Write => DatabasePrivilege::Write,
+                    ast::Action::All => DatabasePrivilege::Full,
+                };
+                let database_name = normalize_ident(database);
 
-                    (database_privilege, database_name)
-                },
-            )
+                (database_privilege, database_name)
+            })
             .collect::<Vec<(DatabasePrivilege, String)>>();
 
         let privileges = vec![Privilege::TenantObject(
