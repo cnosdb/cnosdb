@@ -303,6 +303,11 @@ pub enum QueryError {
     ShowSeriesWhereContainsField {
         column: String,
     },
+
+    #[error_code(code = 47)]
+    ObjectStore {
+        source: object_store::Error,
+    },
 }
 
 impl From<ParserError> for QueryError {
@@ -390,6 +395,12 @@ impl From<ArrowError> for QueryError {
             }
             other => QueryError::Arrow { source: other },
         }
+    }
+}
+
+impl From<object_store::Error> for QueryError {
+    fn from(source: object_store::Error) -> Self {
+        QueryError::ObjectStore { source }
     }
 }
 

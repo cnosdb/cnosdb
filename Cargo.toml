@@ -105,6 +105,8 @@ derive_builder = "0.11"
 openssl = { version = "0.10.28", features = ["vendored"] }
 moka = "0.9.6"
 prost-types = { version = "0.11.2" }
+object_store = { version = "0.5.2", features = ["aws", "gcp", "azure"] }
+url = "2.2"
 
 
 [profile.dev]
