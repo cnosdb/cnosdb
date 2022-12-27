@@ -159,7 +159,7 @@ impl<'a> DataTypeRewriter<'a> {
         };
 
         // Only processing of column op literal
-        match (left.as_ref(), right.as_ref()) {
+        let (left, right) = match (left.as_ref(), right.as_ref()) {
             // Convert the data on the right of op to the data type corresponding to the left column
             (Expr::Column(col), Expr::Literal(value)) => {
                 let casted_right = Self::cast_scalar_value(value, left_type)?;
@@ -173,13 +173,16 @@ impl<'a> DataTypeRewriter<'a> {
                         col, value
                     )));
                 }
-                if reverse {
-                    Ok((Box::new(Expr::Literal(casted_right)), left))
-                } else {
-                    Ok((left, Box::new(Expr::Literal(casted_right))))
-                }
+
+                (left, Box::new(Expr::Literal(casted_right)))
             }
-            _ => Ok((left, right)),
+            _ => (left, right),
+        };
+
+        if reverse {
+            Ok((right, left))
+        } else {
+            Ok((left, right))
         }
     }
 
