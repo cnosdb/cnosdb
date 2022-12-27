@@ -18,9 +18,6 @@ use protos::models::{FieldBuilder, FieldType, PointArgs, Points, PointsArgs, Tag
 use spi::QueryError;
 use spi::Result;
 
-use trace::debug;
-// define_result!(PointUtilError);
-
 type Datum<'fbb> = WIPOffset<Vector<'fbb, u8>>;
 
 macro_rules! arrow_array_to_specific_offset_array {
@@ -116,7 +113,7 @@ pub fn record_batch_to_points_flat_buffer(
         msg: "Column {} Not Found".to_string(),
     })?;
 
-    debug!(
+    trace::trace!(
         "time: {:?}, record num: {}, col num: {}",
         time_col_array,
         record_batch.num_rows(),

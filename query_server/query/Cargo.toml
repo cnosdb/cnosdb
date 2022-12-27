@@ -36,6 +36,13 @@ snafu = { workspace = true }
 derive_builder = { workspace = true }
 lazy_static = { workspace = true }
 serde_json = { workspace = true }
+object_store = { workspace = true }
+url = { workspace = true }
+async-recursion = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+bytes = { workspace = true }
 
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]

@@ -1,0 +1,55 @@
+-- EXECUTE SQL: DROP TABLE IF EXISTS inner_csv; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE inner_csv( bigint_c BIGINT, string_c STRING, ubigint_c BIGINT UNSIGNED, boolean_c BOOLEAN, double_c DOUBLE, TAGS(tag1, tag2) ); --
+200 OK
+
+
+-- EXECUTE SQL: COPY INTO inner_csv FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: select * from inner_csv order by time; --
+200 OK
+time,tag1,tag2,bigint_c,string_c,ubigint_c,boolean_c,double_c
+2022-12-22T09:26:56.000000000,tt1,tt2,-512512,hello word,512,true,1.11
+
+
+-- EXECUTE SQL: CREATE TABLE inner_csv_v2( string_c STRING, bigint_c BIGINT, boolean_c BOOLEAN, ubigint_c BIGINT UNSIGNED, double_c DOUBLE, TAGS(tag1, tag2) ); --
+200 OK
+
+
+-- EXECUTE SQL: COPY INTO inner_csv_v2(time, tag1, tag2, bigint_c, string_c, ubigint_c, boolean_c, double_c) FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
+200 OK
+rows
+1
+
+
+-- EXECUTE SQL: COPY INTO inner_csv_v2 FROM 'query_server/query/tests/data/csv/full_data_type.csv' file_format = (type = 'csv'); --
+422 Unprocessable Entity
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Arrow err: External error: Arrow error: Cast error: Cannot cast string 'hello word' to value of Int64 type"}
+-- ERROR:  --
+
+-- EXECUTE SQL: drop table if EXISTS inner_parquet; --
+200 OK
+
+
+-- EXECUTE SQL: create table inner_parquet( latitude double, longitude double, elevation double, velocity double, heading double, grade double, fuel_consumption double, load_capacity double, fuel_capacity double, nominal_fuel_consumption double, tags(name, fleet, driver, model, device_version) ); --
+200 OK
+
+
+-- EXECUTE SQL: COPY INTO inner_parquet FROM '/Users/yukkit/VCWorkspace/cnosdb/query_server/test/resource/parquet/part-0.parquet' file_format = (type = 'parquet'); --
+200 OK
+rows
+8192
+
+
+-- EXECUTE SQL: select count(time) from inner_parquet; --
+200 OK
+COUNT(inner_parquet.time)
+8192
+
+

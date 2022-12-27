@@ -6,7 +6,10 @@ use std::str::FromStr;
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::Expr;
 use datafusion::sql::sqlparser::ast::Ident;
+use datafusion::sql::sqlparser::ast::SqlOption;
+use datafusion::sql::sqlparser::ast::TableFactor;
 use datafusion::sql::sqlparser::ast::{Offset, OrderByExpr};
+use datafusion::sql::sqlparser::parser::IsOptional;
 use datafusion::sql::sqlparser::{
     ast::{DataType, ObjectName},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
@@ -16,6 +19,11 @@ use datafusion::sql::sqlparser::{
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
+use spi::query::ast;
+use spi::query::ast::CopyIntoLocation;
+use spi::query::ast::CopyIntoTable;
+use spi::query::ast::CopyTarget;
+use spi::query::ast::UriLocation;
 use spi::query::ast::{
     parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
     AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
@@ -30,7 +38,7 @@ use spi::ParserSnafu;
 use trace::debug;
 
 // support tag token
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 enum CnosKeyWord {
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
@@ -75,6 +83,15 @@ enum CnosKeyWord {
     SERIES,
 
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    FILES,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    PATTERN,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    FILE_FORMAT,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    COPY_OPTIONS,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     VNODE,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     NODE,
@@ -110,6 +127,10 @@ impl FromStr for CnosKeyWord {
             "ALL" => Ok(CnosKeyWord::ALL),
             "REMOVE" => Ok(CnosKeyWord::REMOVE),
             "SERIES" => Ok(CnosKeyWord::SERIES),
+            "FILES" => Ok(CnosKeyWord::FILES),
+            "PATTERN" => Ok(CnosKeyWord::PATTERN),
+            "FILE_FORMAT" => Ok(CnosKeyWord::FILE_FORMAT),
+            "COPY_OPTIONS" => Ok(CnosKeyWord::COPY_OPTIONS),
             "VNODE" => Ok(CnosKeyWord::VNODE),
             "NODE" => Ok(CnosKeyWord::NODE),
             "MOVE" => Ok(CnosKeyWord::MOVE),
@@ -204,6 +225,10 @@ impl<'a> ExtParser<'a> {
     fn parse_statement(&mut self) -> Result<ExtStatement> {
         match self.parser.peek_token() {
             Token::Word(w) => match w.keyword {
+                Keyword::COPY => {
+                    self.parser.next_token();
+                    self.parse_copy()
+                }
                 Keyword::DROP => {
                     self.parser.next_token();
                     self.parse_drop()
@@ -235,10 +260,6 @@ impl<'a> ExtParser<'a> {
                 Keyword::EXPLAIN => {
                     self.parser.next_token();
                     self.parse_explain()
-                }
-                Keyword::COPY => {
-                    self.parser.next_token();
-                    self.parse_copy()
                 }
                 _ => {
                     if let Ok(word) = CnosKeyWord::from_str(&w.to_string()) {
@@ -978,6 +999,181 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    /// Parse a copy statement
+    fn parse_copy(&mut self) -> Result<ExtStatement> {
+        if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
+            let vnode_id = self.parse_number::<VnodeId>()?;
+            self.parser.expect_keyword(Keyword::TO)?;
+            if self.parse_cnos_keyword(CnosKeyWord::NODE).not() {
+                return parser_err!("expected NODE, after TO");
+            }
+            let node_id = self.parse_number::<NodeId>()?;
+            Ok(ExtStatement::CopyVnode(CopyVnode { vnode_id, node_id }))
+        } else if self.parser.parse_keyword(Keyword::INTO) {
+            self.parse_copy_into()
+        } else {
+            parser_err!("expected VNODE, after COPY")
+        }
+    }
+
+    fn parse_copy_into_table(&mut self, table_name: ObjectName) -> Result<CopyTarget> {
+        // COPY INTO <table> [(columns,...)] FROM <location>
+        let columns = self
+            .parser
+            .parse_parenthesized_column_list(IsOptional::Optional)?;
+
+        self.parser.expect_keyword(Keyword::FROM)?;
+
+        // external location's path
+        let path = self.parser.parse_literal_string()?;
+
+        let mut connection_options = vec![];
+        // let mut files = vec![];
+        // let mut pattern = None;
+        loop {
+            if self.parser.parse_keyword(Keyword::CONNECTION) {
+                // external location's connection options
+                //   CONNECTION = (
+                //         ENDPOINT_URL = 'https://<endpoint>',
+                //         CREDENTIAL = '<credential>'
+                //   )
+                connection_options = self.parse_options()?;
+            // } else if self.parse_cnos_keyword(CnosKeyWord::FILES) {
+            //     //   FILES = (
+            //     //         '<file_name>' [ , '<file_name>' ] [ , ... ]
+            //     //   )
+            //     files = self.parse_files_of_copy_into()?;
+            // } else if self.parse_cnos_keyword(CnosKeyWord::PATTERN) {
+            //     //   PATTERN = '<regex_pattern>'
+            //     self.parser.expect_token(&Token::Eq)?;
+            //     pattern = Some(self.parser.parse_literal_string()?);
+            } else {
+                break;
+            };
+        }
+
+        Ok(CopyTarget::IntoTable(CopyIntoTable {
+            location: UriLocation {
+                path,
+                connection_options,
+                // files,
+                // pattern,
+            },
+            table_name,
+            columns,
+        }))
+    }
+
+    fn parse_copy_into_location(&mut self, path: String) -> Result<CopyTarget> {
+        self.parser.expect_keyword(Keyword::FROM)?;
+
+        let from = if self.parser.consume_token(&Token::LParen) {
+            let subquery = Box::new(self.parser.parse_query()?);
+            self.parser.expect_token(&Token::RParen)?;
+
+            TableFactor::Derived {
+                lateral: false,
+                subquery,
+                alias: None,
+            }
+        } else {
+            let name = self.parser.parse_object_name()?;
+            TableFactor::Table {
+                name,
+                alias: None,
+                args: None,
+                with_hints: vec![],
+            }
+        };
+
+        // external location's connection options
+        let connection_options = if self.parser.parse_keyword(Keyword::CONNECTION) {
+            self.parse_options()?
+        } else {
+            Default::default()
+        };
+
+        Ok(CopyTarget::IntoLocation(CopyIntoLocation {
+            from,
+            location: UriLocation {
+                path,
+                connection_options,
+            },
+        }))
+    }
+
+    /// Parse a copy into statement
+    fn parse_copy_into(&mut self) -> Result<ExtStatement> {
+        let copy_target = match self.parser.peek_token() {
+            Token::SingleQuotedString(path) => {
+                // COPY INTO <location> FROM <table>
+                let _ = self.parser.next_token();
+                self.parse_copy_into_location(path)?
+            }
+            _ => {
+                // COPY INTO <table> FROM <location>
+                let table_name = self.parser.parse_object_name()?;
+                self.parse_copy_into_table(table_name)?
+            }
+        };
+
+        let mut copy_options = vec![];
+        let mut file_format_options = vec![];
+        loop {
+            if self.parse_cnos_keyword(CnosKeyWord::FILE_FORMAT) {
+                // parse file format & format options
+                // FILE_FORMAT = ({
+                //     TYPE = { CSV | JSON | AVRO | ORC | PARQUET | XML }
+                //     | DELIMITER = '<character>'
+                //     | WITH_HEADER = { true | false }
+                //     | ...
+                // } [, ...])
+                file_format_options = self.parse_options()?;
+            } else if self.parse_cnos_keyword(CnosKeyWord::COPY_OPTIONS) {
+                // COPY_OPTIONS = ({
+                //     ON_ERROR = { continue | abort }
+                //     | , ...
+                // } [, ...])
+                copy_options = self.parse_options()?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(ExtStatement::Copy(ast::Copy {
+            copy_target,
+            file_format_options,
+            copy_options,
+        }))
+    }
+
+    fn _parse_files_of_copy_into(&mut self) -> Result<Vec<String>> {
+        self.parser.expect_token(&Token::Eq)?;
+        self.parser.expect_token(&Token::LParen)?;
+        let files = self
+            .parser
+            .parse_comma_separated(Parser::parse_literal_string)?;
+        self.parser.expect_token(&Token::RParen)?;
+
+        Ok(files)
+    }
+
+    /// = (
+    ///     key1 = value1 [, keyN = valueN] [, ......]
+    /// )
+    fn parse_options(&mut self) -> Result<Vec<SqlOption>> {
+        self.parser.expect_token(&Token::Eq)?;
+        self.parser.expect_token(&Token::LParen)?;
+
+        let options = self
+            .parser
+            .parse_comma_separated(Parser::parse_sql_option)?;
+
+        self.parser.expect_token(&Token::RParen)?;
+
+        Ok(options)
+    }
+
     /// Parse a SQL DROP statement
     fn parse_drop(&mut self) -> Result<ExtStatement> {
         let ast = if self.parser.parse_keyword(Keyword::TABLE) {
@@ -1031,20 +1227,6 @@ impl<'a> ExtParser<'a> {
         };
 
         Ok(ast)
-    }
-
-    fn parse_copy(&mut self) -> Result<ExtStatement> {
-        if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
-            let vnode_id = self.parse_number::<VnodeId>()?;
-            self.parser.expect_keyword(Keyword::TO)?;
-            if self.parse_cnos_keyword(CnosKeyWord::NODE).not() {
-                return parser_err!("expected NODE, after TO");
-            }
-            let node_id = self.parse_number::<NodeId>()?;
-            Ok(ExtStatement::CopyVnode(CopyVnode { vnode_id, node_id }))
-        } else {
-            parser_err!("expected VNODE, after COPY")
-        }
     }
 
     fn parse_move(&mut self) -> Result<ExtStatement> {
@@ -1312,8 +1494,10 @@ pub fn merge_object_name(db: Option<ObjectName>, table: Option<ObjectName>) -> O
 mod tests {
     use std::ops::Deref;
 
-    use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
-    use spi::query::ast::AlterTable;
+    use datafusion::sql::sqlparser::ast::{
+        Ident, ObjectName, SetExpr, Statement, TableFactor, Value,
+    };
+    use spi::query::ast::{AlterTable, UriLocation};
     use spi::query::ast::{DropDatabaseObject, ExtStatement};
     use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
 
@@ -1679,6 +1863,38 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_copy_into() {
+        let sql = r#"
+        copy into mytable from 's3://bucket/path' file_format = (type = 'csv');
+        "#;
+        let statement = ExtParser::parse_sql(sql)
+            .unwrap()
+            .into_iter()
+            .last()
+            .unwrap();
+
+        let copy_target = ast::CopyTarget::IntoTable(CopyIntoTable {
+            location: UriLocation {
+                path: "s3://bucket/path".to_string(),
+                connection_options: vec![],
+            },
+            table_name: ObjectName(vec!["mytable".into()]),
+            columns: vec![],
+        });
+
+        let expected = ExtStatement::Copy(ast::Copy {
+            copy_target,
+            file_format_options: vec![SqlOption {
+                name: "type".into(),
+                value: Value::SingleQuotedString("csv".to_string()),
+            }],
+            copy_options: vec![],
+        });
+
+        assert_eq!(expected, statement)
+    }
+
+    #[test]
     fn test_vnode_sql() {
         let sql1 = "move vnode 1 to node 2;";
         let statement = ExtParser::parse_sql(sql1).unwrap();
@@ -1720,5 +1936,76 @@ mod tests {
                 replication_set_id: 10
             })
         );
+    }
+
+    #[test]
+    fn test_parse_copy_into_table_no_error() {
+        let sql = r#"
+            copy into mytable from 's3://bucket/path' file_format = (type = 'csv');
+            copy into mytable from 's3://bucket/path' file_format = (type = 'csv') COPY_OPTIONS = (ON_ERROR = 'abort');
+            copy into mytable from 's3://bucket/path' COPY_OPTIONS = (ON_ERROR = 'abort') file_format = (type = 'csv');
+            copy into mytable from 's3://bucket/path' CONNECTION = (xx='a', sss='ss') file_format = (type = 'csv');
+            copy into mytable from 's3://bucket/path' CONNECTION = (xx='a', sss='ss') file_format = (type = 'csv') copy_options = (on_error = 'abort');
+        "#;
+
+        let _ = ExtParser::parse_sql(sql).unwrap();
+    }
+
+    #[test]
+    fn test_parse_copy_into_location() {
+        let sql = r#"
+            copy into 's3://bucket/path' from mytable CONNECTION = (xx='a', sss='ss') file_format = (type = 'csv');
+        "#;
+        let statement = ExtParser::parse_sql(sql)
+            .unwrap()
+            .into_iter()
+            .last()
+            .unwrap();
+
+        let copy_target = ast::CopyTarget::IntoLocation(CopyIntoLocation {
+            from: TableFactor::Table {
+                name: ObjectName(vec!["mytable".into()]),
+                alias: None,
+                args: None,
+                with_hints: vec![],
+            },
+            location: UriLocation {
+                path: "s3://bucket/path".to_string(),
+                connection_options: vec![
+                    SqlOption {
+                        name: "xx".into(),
+                        value: Value::SingleQuotedString("a".to_string()),
+                    },
+                    SqlOption {
+                        name: "sss".into(),
+                        value: Value::SingleQuotedString("ss".to_string()),
+                    },
+                ],
+            },
+        });
+
+        let expected = ExtStatement::Copy(ast::Copy {
+            copy_target,
+            file_format_options: vec![SqlOption {
+                name: "type".into(),
+                value: Value::SingleQuotedString("csv".to_string()),
+            }],
+            copy_options: vec![],
+        });
+
+        assert_eq!(expected, statement)
+    }
+
+    #[test]
+    fn test_parse_copy_into_location_no_error() {
+        let sql = r#"
+            copy into 's3://bucket/path' from mytable file_format = (type = 'csv');
+            copy into 's3://bucket/path' from mytable file_format = (type = 'csv') COPY_OPTIONS = (ON_ERROR = 'abort');
+            copy into 's3://bucket/path' from mytable COPY_OPTIONS = (ON_ERROR = 'abort') file_format = (type = 'csv');
+            copy into 's3://bucket/path' from mytable CONNECTION = (xx='a', sss='ss') file_format = (type = 'csv');
+            copy into 's3://bucket/path' from mytable CONNECTION = (xx='a', sss='ss') file_format = (type = 'csv') copy_options = (on_error = 'abort');
+        "#;
+
+        let _ = ExtParser::parse_sql(sql).unwrap();
     }
 }

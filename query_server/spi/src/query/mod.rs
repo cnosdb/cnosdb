@@ -2,6 +2,7 @@ use datafusion::arrow::datatypes::DataType;
 
 pub mod ast;
 pub mod auth;
+pub mod datasource;
 pub mod dispatcher;
 pub mod execution;
 pub mod function;
