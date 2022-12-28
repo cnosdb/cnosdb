@@ -799,7 +799,7 @@ mod test {
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::UnboundedReceiver;
 
-    use models::schema::DatabaseSchema;
+    use models::schema::{DatabaseSchema, TenantOptions};
     use models::{Timestamp, ValueType};
     use trace::info;
 
@@ -1151,6 +1151,9 @@ mod test {
     pub async fn test_read_with_tomb() {
         let config = get_config("../config/config_31001.toml");
         let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(config.cluster));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let dir = PathBuf::from("db/tsm/test/0".to_string());
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();

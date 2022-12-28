@@ -1,6 +1,10 @@
 -- normal
 -- public.test(time i64, ta utf8, tb utf8, fa , fb)
 --#LP_BEGIN
+test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 3
+--#LP_END
+
+--#LP_BEGIN
 test_timestamp_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
 --#LP_END
 

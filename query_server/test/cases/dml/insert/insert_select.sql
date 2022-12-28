@@ -9,11 +9,16 @@ CREATE DATABASE public;
 --#LP_BEGIN
 test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
 --#LP_END
+
+--#LP_BEGIN
+test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
+--#LP_END
+
 insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
 select column1, column2, column3, column4, column5
 from
 (values
-    (7, '7a', '7b', 7, 7));
+    (1667456411000000007, '7a', '7b', 7, 7));
 
 select * from public.test_insert_subquery order by fa, fb;
 
@@ -24,7 +29,7 @@ insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
 select TIME, ta, tb, fa, fb
 from
 (values
-    (8, '8a', '8b', 8, 8)) as t (TIME, ta, tb, fa, fb);
+    (1667456411000000008, '8a', '8b', 8, 8)) as t (TIME, ta, tb, fa, fb);
 
 select * from public.test_insert_subquery order by fa, fb;
 
@@ -35,7 +40,7 @@ insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
 select *
 from
 (values
-    (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb);
+    (1667456411000000009, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb);
 
 select * from public.test_insert_subquery order by fa, fb;
 
@@ -47,7 +52,7 @@ insert public.test_insert_subquery
 select *
 from
 (values
-    (9, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb);
+    (1667456411000000009, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb);
 
 select * from public.test_insert_subquery order by fa, fb;
 
@@ -59,7 +64,7 @@ insert public.test_insert_subquery
 select TIME, ta
 from
 (values
-    (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb);
+    (1667456411000000010, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb);
 
 select * from public.test_insert_subquery order by fa, fb;
 
@@ -71,6 +76,6 @@ insert public.test_insert_subquery(TIME, fa)
 select TIME, ta
 from
 (values
-    (10, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb);
+    (1667456411000000010, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb);
 
 select * from public.test_insert_subquery order by fa, fb;

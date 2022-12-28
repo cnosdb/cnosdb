@@ -1,7 +1,7 @@
 --#DATABASE=filter_push_down
 --#SORT=true
 DROP DATABASE IF EXISTS filter_push_down;
-CREATE DATABASE filter_push_down WITH TTL '1000000d';
+CREATE DATABASE filter_push_down WITH TTL '100000d';
 
 CREATE TABLE m0(
     f0 BIGINT CODEC(DELTA),

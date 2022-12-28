@@ -1,6 +1,6 @@
 -- EXECUTE SQL: ALTER DATABASE test Set TTL '30d'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Metadata operator err: Database test not exists."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Metadata operator err: Database not found: \"test\""}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE DATABASE test WITH TTl '10d' SHARD 5 VNOdE_DURATiON '3d' REPLICA 10 pRECISIOn 'us'; --
