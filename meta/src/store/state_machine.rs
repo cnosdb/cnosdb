@@ -184,7 +184,11 @@ impl StateMachine {
     }
     //todo: temp it will be removed
     pub fn version(&self) -> u64 {
-        self.get_last_applied_log().ok().unwrap().unwrap().index
+        self.get_last_applied_log()
+            .ok()
+            .unwrap_or_default()
+            .unwrap_or_default()
+            .index
     }
     pub(crate) fn get_last_membership(
         &self,
@@ -586,12 +590,12 @@ impl StateMachine {
 
         let buckets_path = KeyPath::tenant_db_buckets(cluster, tenant, db_name);
         for it in children_fullpath(&buckets_path, self.db.clone()).iter() {
-            let _ = self.db.remove(&it);
+            let _ = self.db.remove(it);
         }
 
         let schemas_path = KeyPath::tenant_schemas(cluster, tenant, db_name);
         for it in children_fullpath(&schemas_path, self.db.clone()).iter() {
-            let _ = self.db.remove(&it);
+            let _ = self.db.remove(it);
         }
 
         for (_, item) in watch.iter_mut() {
@@ -1077,7 +1081,7 @@ impl StateMachine {
     ) -> CommandResp {
         let key = KeyPath::member(cluster, tenant_name, user_id);
 
-        if self.db.contains_key(&key).is_ok() {
+        if self.db.contains_key(&key).unwrap() {
             let status = StatusResponse::new(META_REQUEST_USER_EXIST, user_id.to_string());
             return CommonResp::<()>::Err(status).to_string();
         }

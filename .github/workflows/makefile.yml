@@ -29,22 +29,28 @@ jobs:
           make clippy_check
           make fmt_check
 
-  build:
+  unit-test:
 
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [ stable ]
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: dep
+    - name: Prepare Rust Builder
+      uses: ./.github/actions/setup-builder
+      with:
+          rust-version: ${{ matrix.rust }}
+
+    - name: start meta
+      shell: bash
       run: |
-        git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git
-        cd flatbuffers
-        cmake .
-        make
-        sudo make install
-        sudo ldconfig
-        flatc --version
+        cargo build
+        mkdir -p /tmp/cnosdb/logs
+        cd meta
+        bash ./cluster.sh
 
     - name: test
       run: make test
@@ -70,6 +76,14 @@ jobs:
         uses: ./.github/actions/setup-builder
         with:
           rust-version: ${{ matrix.rust }}
+
+      - name: start meta
+        shell: bash
+        run: |
+          cargo build
+          mkdir -p /tmp/cnosdb/logs
+          cd meta
+          bash ./cluster.sh
       - name: Test
         shell: bash
         run: |

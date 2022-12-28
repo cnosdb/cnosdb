@@ -2,7 +2,7 @@
 200 OK
 
 
--- EXECUTE SQL: CREATE DATABASE create_external_table; --
+-- EXECUTE SQL: CREATE DATABASE create_external_table WITH TTL '100000d'; --
 200 OK
 
 

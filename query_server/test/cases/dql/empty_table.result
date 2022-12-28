@@ -8,6 +8,5 @@
 
 -- EXECUTE SQL: SELECT * FROM empty; --
 200 OK
-time,t,f
 
 

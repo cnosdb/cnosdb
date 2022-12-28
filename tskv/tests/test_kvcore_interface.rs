@@ -9,6 +9,8 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use config::get_config;
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use models::schema::TenantOptions;
 
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
@@ -24,6 +26,10 @@ mod tests {
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(global_config.cluster.clone()));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         rt.block_on(async {
             (
                 rt.clone(),

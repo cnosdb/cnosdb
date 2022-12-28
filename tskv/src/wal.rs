@@ -493,7 +493,9 @@ mod test {
     use tokio::time::sleep;
 
     use config::get_config;
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::codec::Encoding;
+    use models::schema::TenantOptions;
     use protos::{models as fb_models, models_helper};
     use trace::{info, init_default_global_tracing};
 
@@ -720,6 +722,10 @@ mod test {
         rt.block_on(check_wal_files(dir, data_vec, true)).unwrap();
 
         let opt = kv_option::Options::from(&global_config);
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(global_config.cluster.clone()));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let tskv = rt
             .block_on(TsKv::open(global_config.cluster, opt, rt.clone()))
             .unwrap();

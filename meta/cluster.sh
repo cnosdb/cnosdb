@@ -1,6 +1,8 @@
 #!/bin/sh
 
 rm -rf /tmp/cnosdb/meta
+rm -rf /tmp/cnosdb/1001
+rm -rf /tmp/cnosdb/2001
 
 set -o errexit
 cargo build
@@ -48,17 +50,19 @@ sleep 1
 
 echo "Start 3 uninitialized metasrv_test servers..."
 
+mkdir -p /tmp/cnosdb/logs
+
 nohup ../target/debug/metasrv_test  --id 1 --http-addr 127.0.0.1:21001 > /tmp/cnosdb/logs/meta_node.1.log &
 echo "Server 1 started"
 sleep 1
 
-nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
-echo "Server 2 started"
-sleep 1
-
-nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
-echo "Server 3 started"
-sleep 1
+#nohup ../target/debug/metasrv_test  --id 2 --http-addr 127.0.0.1:21002 > /tmp/cnosdb/logs/meta_node.2.log &
+#echo "Server 2 started"
+#sleep 1
+#
+#nohup ../target/debug/metasrv_test  --id 3 --http-addr 127.0.0.1:21003 > /tmp/cnosdb/logs/meta_node.3.log &
+#echo "Server 3 started"
+#sleep 1
 
 echo "Initialize server 1 as a single-node cluster"
 rpc 21001/init '{}'
@@ -70,15 +74,15 @@ echo "Get metrics from the leader"
 rpc 21001/metrics
 sleep 1
 
-echo "Adding node 2 and node 3 as learners, to receive log from leader node 1"
-
-rpc 21001/add-learner       '[2, "127.0.0.1:21002"]'
-echo "Node 2 added as leaner"
-sleep 3
-
-rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
-echo "Node 3 added as leaner"
-sleep 3
+#echo "Adding node 2 and node 3 as learners, to receive log from leader node 1"
+#
+#rpc 21001/add-learner       '[2, "127.0.0.1:21002"]'
+#echo "Node 2 added as leaner"
+#sleep 3
+#
+#rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
+#echo "Node 3 added as leaner"
+#sleep 3
 
 echo "Get metrics from the leader"
 rpc 21001/metrics
