@@ -51,6 +51,7 @@ static_assertions = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 walkdir = { workspace = true }
 zstd = { workspace = true }
+
 [target.'cfg(any(target_os = "linux"))'.dependencies]
 tokio-uring = { version = "0.4", optional = true }
 rio = { version = "0.9", optional = true }

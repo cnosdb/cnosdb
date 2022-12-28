@@ -202,7 +202,7 @@ impl AsyncFile {
             check_err(unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) })?;
             let stat = unsafe { stat.assume_init() };
             let size = stat.st_size as u64;
-            let inner = Arc::new(RawFile(file, ctx.rio.clone()));
+            let inner = RawFile(Arc::new(file), ctx.rio.clone());
             Ok(AsyncFile { inner, ctx, size })
         }
         #[cfg(not(feature = "io_uring"))]
