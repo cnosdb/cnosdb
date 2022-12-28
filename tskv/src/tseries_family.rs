@@ -1203,6 +1203,7 @@ mod test {
                 HashMap::new(),
                 flush_task_sender.clone(),
             )
+            .await
             .unwrap(),
         ));
         version_set

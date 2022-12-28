@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::{
     errors::{Error, Result},
-    FieldId, FieldName, SeriesId, Tag,
+    FieldId, FieldName, Tag,
 };
 
 const FIELD_NAME_MAX_LEN: usize = 512;
@@ -117,7 +117,7 @@ impl PartialEq for FieldInfo {
 }
 
 impl FieldInfo {
-    pub fn new(id: SeriesId, name: FieldName, value_type: ValueType, code_type: u8) -> Self {
+    pub fn new(id: FieldId, name: FieldName, value_type: ValueType, code_type: u8) -> Self {
         Self {
             id,
             name,

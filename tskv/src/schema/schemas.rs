@@ -44,12 +44,16 @@ impl DBschemas {
         })
     }
 
+    pub fn database_name(&self) -> String {
+        self.database_name.clone()
+    }
+
     pub fn alter_db_schema(&self, db_schema: DatabaseSchema) -> Result<()> {
         // todo: client need alter db action
         Ok(())
     }
 
-    pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> Result<()> {
+    pub fn check_field_type_from_cache(&self, info: &Point) -> Result<()> {
         let table_name =
             unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
         let schema = self
@@ -88,7 +92,7 @@ impl DBschemas {
         Ok(())
     }
 
-    pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> Result<()> {
+    pub fn check_field_type_or_else_add(&self, info: &Point) -> Result<()> {
         //load schema first from cache,or else from storage and than cache it!
         let table_name =
             unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };

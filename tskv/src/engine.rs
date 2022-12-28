@@ -108,22 +108,18 @@ pub trait Engine: Send + Sync + Debug {
 
     fn get_series_id_by_filter(
         &self,
+        id: u32,
         tenant: &str,
         db: &str,
         tab: &str,
         filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u64>>;
-    fn get_series_id_list(
-        &self,
-        tenant: &str,
-        db: &str,
-        tab: &str,
-        tags: &[Tag],
-    ) -> IndexResult<Vec<u64>>;
+    ) -> IndexResult<Vec<u32>>;
+
     fn get_series_key(
         &self,
         tenant: &str,
         db: &str,
+        vnode_id: u32,
         sid: SeriesId,
     ) -> IndexResult<Option<SeriesKey>>;
     fn get_db_version(
@@ -243,25 +239,22 @@ impl Engine for MockEngine {
 
     fn get_series_id_by_filter(
         &self,
+        id: u32,
         tenant: &str,
         db: &str,
         tab: &str,
         filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u64>> {
+    ) -> IndexResult<Vec<u32>> {
         Ok(vec![])
     }
 
-    fn get_series_id_list(
+    fn get_series_key(
         &self,
         tenant: &str,
         db: &str,
-        tab: &str,
-        tags: &[Tag],
-    ) -> IndexResult<Vec<u64>> {
-        Ok(vec![])
-    }
-
-    fn get_series_key(&self, tenant: &str, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {
+        vnode_id: u32,
+        sid: u32,
+    ) -> IndexResult<Option<SeriesKey>> {
         Ok(None)
     }
 

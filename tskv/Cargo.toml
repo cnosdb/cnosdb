@@ -51,6 +51,10 @@ static_assertions = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 walkdir = { workspace = true }
 zstd = { workspace = true }
+radixdb = {version = "0.2.5", features = ["custom-store"] }
+roaring = "0.10.1"
+rand = { workspace = true }
+
 [target.'cfg(any(target_os = "linux"))'.dependencies]
 tokio-uring = { version = "0.4", optional = true }
 rio = { version = "0.9", optional = true }

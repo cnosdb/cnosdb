@@ -42,7 +42,7 @@ use trace::{debug, error, info, trace, warn};
 use crate::database::Database;
 use crate::error::SchemaSnafu;
 use crate::file_system::file_manager::{self, FileManager};
-use crate::index::index_manger;
+
 use crate::tseries_family::TseriesFamily;
 use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{
@@ -52,7 +52,7 @@ use crate::{
     engine::Engine,
     error::{self, IndexErrSnafu, Result},
     file_utils,
-    index::{db_index, IndexResult},
+    index::IndexResult,
     kv_option::Options,
     memcache::{DataType, MemCache},
     record_file::Reader,
@@ -409,7 +409,17 @@ impl Engine for TsKv {
             Some(database) => database,
             None => self.create_database(&DatabaseSchema::new(tenant_name, &db_name))?,
         };
-        let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
+
+        let opt_index = db.read().get_ts_index(id);
+        let ts_index = match opt_index {
+            Some(v) => v,
+            None => db.write().get_ts_index_or_add(id).await?,
+        };
+
+        let write_group = db
+            .read()
+            .build_write_group(fb_points.points().unwrap(), ts_index)
+            .await?;
 
         let mut seq = 0;
         if self.options.wal.enabled {
@@ -467,7 +477,16 @@ impl Engine for TsKv {
             self.meta_manager.clone(),
         )?;
 
-        let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
+        let opt_index = db.read().get_ts_index(id);
+        let ts_index = match opt_index {
+            Some(v) => v,
+            None => db.write().get_ts_index_or_add(id).await?,
+        };
+
+        let write_group = db
+            .read()
+            .build_write_group(fb_points.points().unwrap(), ts_index)
+            .await?;
 
         let opt_tsf = db.read().get_tsfamily(id);
         let tsf = match opt_tsf {
@@ -507,19 +526,9 @@ impl Engine for TsKv {
                 .map(|(tsf_id, tsf)| *tsf_id)
                 .collect();
             for ts_family_id in ts_family_ids {
+                db_wlock.del_ts_index(ts_family_id);
                 db_wlock.del_tsfamily(ts_family_id, self.summary_task_sender.clone());
             }
-            index_manger(db_wlock.get_index().path())
-                .write()
-                .remove_db_index(database);
-        }
-
-        let idx_dir = self
-            .options
-            .storage
-            .index_dir(&make_owner(tenant, database));
-        if let Err(e) = std::fs::remove_dir_all(&idx_dir) {
-            error!("Failed to remove dir '{}', e: {}", idx_dir.display(), e);
         }
 
         let db_dir = self
@@ -556,7 +565,7 @@ impl Engine for TsKv {
     ) -> Result<()> {
         let storage_field_ids: Vec<u64> = series_ids
             .iter()
-            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
+            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
             .collect();
 
         if let Some(db) = self.version_set.read().get_db(tenant, database) {
@@ -586,27 +595,27 @@ impl Engine for TsKv {
         field_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()> {
-        let storage_field_ids: Vec<u64> = series_ids
-            .iter()
-            .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
-            .collect();
-        let res = self.version_set.read().get_db(tenant, database);
-        if let Some(db) = res {
-            let readable_db = db.read();
-            for (ts_family_id, ts_family) in readable_db.ts_families() {
-                // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
-                ts_family
-                    .write()
-                    .delete_series(&storage_field_ids, time_range);
+        // let storage_field_ids: Vec<u64> = series_ids
+        //     .iter()
+        //     .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid, *sid)))
+        //     .collect();
+        // let res = self.version_set.read().get_db(tenant, database);
+        // if let Some(db) = res {
+        //     let readable_db = db.read();
+        //     for (ts_family_id, ts_family) in readable_db.ts_families() {
+        //         // TODO Cancel current and prevent next flush or compaction in TseriesFamily provisionally.
+        //         ts_family
+        //             .write()
+        //             .delete_series(&storage_field_ids, time_range);
 
-                let version = ts_family.read().super_version();
-                for column_file in version.version.column_files(&storage_field_ids, time_range) {
-                    self.runtime
-                        .block_on(column_file.add_tombstone(&storage_field_ids, time_range))?;
-                }
-                // TODO Start next flush or compaction.
-            }
-        }
+        //         let version = ts_family.read().super_version();
+        //         for column_file in version.version.column_files(&storage_field_ids, time_range) {
+        //             self.runtime
+        //                 .block_on(column_file.add_tombstone(&storage_field_ids, time_range))?;
+        //         }
+        //         // TODO Start next flush or compaction.
+        //     }
+        // }
         Ok(())
     }
 
@@ -623,59 +632,46 @@ impl Engine for TsKv {
         Ok(None)
     }
 
-    fn get_series_id_list(
-        &self,
-        tenant: &str,
-        database: &str,
-        tab: &str,
-        tags: &[Tag],
-    ) -> IndexResult<Vec<u64>> {
-        if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            return db.read().get_index().get_series_id_list(tab, tags);
-        }
-
-        Ok(vec![])
-    }
-
     fn get_series_id_by_filter(
         &self,
+        id: u32,
         tenant: &str,
         database: &str,
         tab: &str,
         filter: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u64>> {
-        let result = if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            if filter.is_all() {
-                // Match all records
-                debug!("pushed tags filter is All.");
-                db.read().get_index().get_series_id_list(tab, &[])
-            } else if filter.is_none() {
-                // Does not match any record, return null
-                debug!("pushed tags filter is None.");
-                Ok(vec![])
-            } else {
-                // No error will be reported here
-                debug!("pushed tags filter is {:?}.", filter);
-                let domains = unsafe { filter.domains_unsafe() };
-                db.read()
-                    .get_index()
-                    .get_series_ids_by_domains(tab, domains)
+    ) -> IndexResult<Vec<u32>> {
+        if let Some(db) = self.version_set.read().get_db(tenant, database) {
+            let opt_index = db.read().get_ts_index(id);
+            if let Some(ts_index) = opt_index {
+                if filter.is_all() {
+                    // Match all records
+                    debug!("pushed tags filter is All.");
+                    return ts_index.read().get_series_id_list(tab, &[]);
+                } else if filter.is_none() {
+                    // Does not match any record, return null
+                    debug!("pushed tags filter is None.");
+                    return Ok(vec![]);
+                } else {
+                    // No error will be reported here
+                    debug!("pushed tags filter is {:?}.", filter);
+                    let domains = unsafe { filter.domains_unsafe() };
+                    return ts_index.read().get_series_ids_by_domains(tab, domains);
+                }
             }
-        } else {
-            Ok(vec![])
-        };
+        }
 
-        result
+        return Ok(vec![]);
     }
 
     fn get_series_key(
         &self,
         tenant: &str,
         database: &str,
-        sid: u64,
+        vnode_id: u32,
+        sid: u32,
     ) -> IndexResult<Option<SeriesKey>> {
         if let Some(db) = self.version_set.read().get_db(tenant, database) {
-            return db.read().get_series_key(sid);
+            return db.read().get_series_key(vnode_id, sid);
         }
 
         Ok(None)
@@ -734,11 +730,13 @@ impl Engine for TsKv {
             })?
             .id;
         db.read().drop_table_column(table, column_name)?;
-        let sid = db
-            .read()
-            .get_index()
-            .get_series_id_list(table, &[])
-            .context(IndexErrSnafu)?;
+
+        let mut sid = vec![];
+        for (_, ts_index) in db.read().ts_indexes().iter() {
+            let mut list = ts_index.read().get_series_id_list(table, &[])?;
+            sid.append(&mut list);
+        }
+
         self.delete_columns(tenant, database, &sid, &[column_id])?;
         Ok(())
     }

@@ -319,10 +319,11 @@ impl HintedOffWriter {
             file_manager::get_file_manager().create_file(path).await?
         };
 
+        let mut size = file.len();
         if new_file {
+            size = 8;
             HintedOffWriter::write_header(&file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
         }
-        let size = file.len();
 
         Ok(Self { id, file, size })
     }

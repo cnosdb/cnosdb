@@ -5,7 +5,7 @@ use std::{path::PathBuf, sync::Arc};
 use config::Config;
 use serde::{Deserialize, Serialize};
 
-use crate::{file_system, index::IndexConfig, summary};
+use crate::{file_system, summary};
 
 const SUMMARY_PATH: &str = "summary";
 const INDEX_PATH: &str = "index";
@@ -43,6 +43,9 @@ pub struct StorageOptions {
     pub strict_write: bool,
 }
 
+// database/data/ts_family_id/tsm
+// database/data/ts_family_id/delta
+// database/data/ts_family_id/index
 impl StorageOptions {
     pub fn level_file_size(&self, lvl: u32) -> u64 {
         self.base_file_size * lvl as u64 * self.compact_trigger as u64
@@ -52,28 +55,26 @@ impl StorageOptions {
         self.path.join(SUMMARY_PATH)
     }
 
-    pub fn index_base_dir(&self) -> PathBuf {
-        self.path.join(INDEX_PATH)
-    }
-
-    pub fn index_dir(&self, database: &str) -> PathBuf {
-        self.path.join(INDEX_PATH).join(database)
-    }
-
     pub fn database_dir(&self, database: &str) -> PathBuf {
         self.path.join(DATA_PATH).join(database)
     }
 
+    pub fn index_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
+        self.database_dir(database)
+            .join(ts_family_id.to_string())
+            .join(INDEX_PATH)
+    }
+
     pub fn tsm_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
         self.database_dir(database)
-            .join(TSM_PATH)
             .join(ts_family_id.to_string())
+            .join(TSM_PATH)
     }
 
     pub fn delta_dir(&self, database: &str, ts_family_id: u32) -> PathBuf {
         self.database_dir(database)
-            .join(DELTA_PATH)
             .join(ts_family_id.to_string())
+            .join(DELTA_PATH)
     }
 }
 
