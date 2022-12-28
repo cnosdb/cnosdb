@@ -2,7 +2,7 @@
 set -e
 
 # define environment
-export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:31007"}
+export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:31001"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
 source "$HOME/.cargo/env"
 
