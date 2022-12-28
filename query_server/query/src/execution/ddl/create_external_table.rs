@@ -18,11 +18,9 @@ use datafusion::logical_expr::CreateExternalTable;
 use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
-use spi::query::execution::MetadataSnafu;
-
-use spi::query::execution::ExecutionError;
-use spi::query::execution::{self, ExternalSnafu};
 use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::DatafusionSnafu;
+use spi::Result;
 
 use super::DDLDefinitionTask;
 
@@ -39,10 +37,7 @@ impl CreateExternalTableTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateExternalTableTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let CreateExternalTable {
             ref name,
             ref if_not_exists,
@@ -60,12 +55,11 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             .tenant_meta(table_name.catalog)
             .ok_or(MetaError::TenantNotFound {
                 tenant: table_name.catalog.to_string(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
+        // .context(spi::MetaSnafu)?;
 
-        let table = client
-            .get_external_table_schema(table_name.schema, table_name.table)
-            .context(MetadataSnafu)?;
+        let table = client.get_external_table_schema(table_name.schema, table_name.table)?;
+        // .context(spi::MetaSnafu)?;
 
         match (if_not_exists, table) {
             // do not create if exists
@@ -73,8 +67,8 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TableAlreadyExists {
                 table_name: name.clone(),
-            })
-            .context(execution::MetadataSnafu),
+            })?,
+            // .context(spi::MetaSnafu),
             // does not exist, create
             (_, None) => {
                 create_exernal_table(&self.stmt, query_state_machine).await?;
@@ -88,7 +82,7 @@ impl DDLDefinitionTask for CreateExternalTableTask {
 async fn create_exernal_table(
     stmt: &CreateExternalTable,
     query_state_machine: QueryStateMachineRef,
-) -> Result<(), ExecutionError> {
+) -> Result<()> {
     let state = query_state_machine.session.inner().state();
 
     let schema = build_table_schema(
@@ -106,12 +100,11 @@ async fn create_exernal_table(
         .tenant_meta(tenant)
         .ok_or(MetaError::TenantNotFound {
             tenant: tenant.to_string(),
-        })
-        .context(MetadataSnafu)?;
+        })?;
+    // .context(MetaSnafu)?;
 
-    client
-        .create_table(&TableSchema::ExternalTableSchema(schema))
-        .context(MetadataSnafu)
+    Ok(client.create_table(&TableSchema::ExternalTableSchema(schema))?)
+    // .context(MetaSnafu)
 }
 
 async fn build_table_schema(
@@ -119,9 +112,8 @@ async fn build_table_schema(
     tenant: String,
     db: String,
     state: &SessionState,
-) -> Result<ExternalTableSchema, ExecutionError> {
-    let options =
-        build_external_table_config(stmt, state.config.target_partitions).context(ExternalSnafu)?;
+) -> Result<ExternalTableSchema> {
+    let options = build_external_table_config(stmt, state.config.target_partitions)?;
 
     let schema = construct_listing_table_schema(stmt, state, &options)
         .await?
@@ -148,7 +140,7 @@ async fn construct_listing_table_schema(
     stmt: &CreateExternalTable,
     state: &SessionState,
     options: &ListingOptions,
-) -> Result<SchemaRef, ExecutionError> {
+) -> Result<SchemaRef> {
     let CreateExternalTable {
         ref schema,
         ref location,
@@ -162,12 +154,12 @@ async fn construct_listing_table_schema(
         Some(Arc::new(schema.as_ref().to_owned().into()))
     };
 
-    let table_path = ListingTableUrl::parse(location).context(ExternalSnafu)?;
+    let table_path = ListingTableUrl::parse(location).context(DatafusionSnafu)?;
     Ok(match provided_schema {
         None => options
             .infer_schema(state, &table_path)
             .await
-            .context(execution::ExternalSnafu)?,
+            .context(spi::DatafusionSnafu)?,
         Some(s) => s,
     })
 }
@@ -175,7 +167,7 @@ async fn construct_listing_table_schema(
 fn build_external_table_config(
     stmt: &CreateExternalTable,
     target_partitions: usize,
-) -> Result<ListingOptions, DataFusionError> {
+) -> Result<ListingOptions> {
     let file_format: Arc<dyn FileFormat> = match FileType::from_str(&stmt.file_type)? {
         FileType::CSV => Arc::new(
             CsvFormat::default()

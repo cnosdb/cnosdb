@@ -4,10 +4,9 @@ use datafusion::sql::TableReference;
 use meta::error::MetaError;
 use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
+use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::Result;
 
-use spi::query::execution;
-use spi::query::execution::MetadataSnafu;
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTable;
 use spi::query::session::IsiphoSessionCtx;
 
@@ -23,10 +22,7 @@ impl CreateTableTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateTableTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let CreateTable {
             ref name,
             ref if_not_exists,
@@ -40,13 +36,10 @@ impl DDLDefinitionTask for CreateTableTask {
             .tenant_meta(tenant)
             .ok_or(MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            })
-            .context(MetadataSnafu)?;
+            })?;
         let table_ref = TableReference::from(name.as_str())
             .resolve(tenant, query_state_machine.session.default_database());
-        let table = client
-            .get_tskv_table_schema(table_ref.schema, table_ref.table)
-            .context(MetadataSnafu)?;
+        let table = client.get_tskv_table_schema(table_ref.schema, table_ref.table)?;
 
         match (if_not_exists, table) {
             // do not create if exists
@@ -54,8 +47,7 @@ impl DDLDefinitionTask for CreateTableTask {
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TableAlreadyExists {
                 table_name: name.clone(),
-            })
-            .context(execution::MetadataSnafu),
+            })?,
             // does not exist, create
             (_, None) => {
                 create_table(&self.stmt, query_state_machine)?;
@@ -65,21 +57,22 @@ impl DDLDefinitionTask for CreateTableTask {
     }
 }
 
-fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<(), ExecutionError> {
+fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<()> {
     let CreateTable { .. } = stmt;
     let table_schema = build_schema(stmt, &machine.session);
     let tenant = machine.session.tenant();
-    let client = machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(tenant)
-        .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        })
-        .context(MetadataSnafu)?;
+    let client =
+        machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })?;
+    // .context(MetaSnafu)?;
     client
         .create_table(&TableSchema::TsKvTableSchema(table_schema))
-        .context(execution::MetadataSnafu)
+        .context(spi::MetaSnafu)
 }
 
 fn build_schema(stmt: &CreateTable, session: &IsiphoSessionCtx) -> TskvTableSchema {

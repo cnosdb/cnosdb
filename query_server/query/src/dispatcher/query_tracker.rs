@@ -1,10 +1,7 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use parking_lot::RwLock;
-use spi::{
-    query::{execution::QueryExecution, QueryError},
-    service::protocol::QueryId,
-};
+use spi::{query::execution::QueryExecution, service::protocol::QueryId, QueryError};
 use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
 use trace::{debug, warn};
 

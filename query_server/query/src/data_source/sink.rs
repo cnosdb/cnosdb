@@ -3,7 +3,7 @@ use datafusion::{
     arrow::record_batch::RecordBatch, physical_plan::metrics::ExecutionPlanMetricsSet,
 };
 
-use super::Result;
+use spi::Result;
 
 #[async_trait]
 pub trait RecordBatchSink: Send + Sync {

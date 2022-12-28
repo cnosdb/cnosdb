@@ -111,17 +111,11 @@ pub enum Error {
     #[snafu(display("character set error"))]
     ErrCharacterSet,
 
-    #[snafu(display("panics in thread: {}", reason))]
-    ThreadJoin { reason: String },
-
     #[snafu(display("data fusion RecordBatch::try_new {}", reason))]
     DataFusionNew { reason: String },
 
     #[snafu(display("can't find field name: {}", reason))]
     NotFoundField { reason: String },
-
-    #[snafu(display("unknown type"))]
-    UnKnowType,
 
     #[snafu(display("tags or fields can't be empty"))]
     InvalidPoint,
@@ -129,7 +123,7 @@ pub enum Error {
     #[snafu(display("table not found for {}", table_name))]
     NotFoundTable { table_name: String },
 
-    #[snafu(display("common error: {}", reason))]
+    #[snafu(display("{}", reason))]
     CommonError { reason: String },
 
     #[snafu(display("Error with schema action {}", source))]

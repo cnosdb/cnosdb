@@ -1,9 +1,10 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
 use meta::error::MetaError;
-use snafu::ResultExt;
-use spi::query::execution::{ExecutionError, MetadataSnafu, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::GrantRevoke;
+use spi::QueryError;
+use spi::Result;
 use trace::debug;
 
 pub struct GrantRevokeTask {
@@ -18,10 +19,7 @@ impl GrantRevokeTask {
 
 #[async_trait]
 impl DDLDefinitionTask for GrantRevokeTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let GrantRevoke {
             is_grant,
             ref database_privileges,
@@ -33,7 +31,7 @@ impl DDLDefinitionTask for GrantRevokeTask {
             .meta
             .tenant_manager()
             .tenant_meta(tenant_name)
-            .ok_or_else(|| ExecutionError::Metadata {
+            .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {
                     tenant: tenant_name.to_string(),
                 },
@@ -56,8 +54,7 @@ impl DDLDefinitionTask for GrantRevokeTask {
                 role_name, tenant_name
             );
 
-            meta.grant_privilege_to_custom_role(database_privileges.clone(), role_name)
-                .context(MetadataSnafu)?;
+            meta.grant_privilege_to_custom_role(database_privileges.clone(), role_name)?;
         } else {
             // 给租户下的自定义角色撤销若干权限
             // fn revoke_privilege_from_custom_role_of_tenant(
@@ -72,8 +69,7 @@ impl DDLDefinitionTask for GrantRevokeTask {
                 role_name, tenant_name
             );
 
-            meta.revoke_privilege_from_custom_role(database_privileges.clone(), role_name)
-                .context(MetadataSnafu)?;
+            meta.revoke_privilege_from_custom_role(database_privileges.clone(), role_name)?;
         }
 
         return Ok(Output::Nil(()));

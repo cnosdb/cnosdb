@@ -7,10 +7,9 @@ use std::{
 };
 
 use coordinator::service::CoordinatorRef;
+use datafusion::error::DataFusionError;
 use datafusion::{
-    arrow::{
-        array::ArrayBuilder, datatypes::SchemaRef, error::ArrowError, record_batch::RecordBatch,
-    },
+    arrow::{array::ArrayBuilder, datatypes::SchemaRef, record_batch::RecordBatch},
     arrow::{array::ArrayRef, error::Result as ArrowResult},
     error::Result,
     execution::context::TaskContext,
@@ -23,13 +22,13 @@ use datafusion::{
 };
 use futures::Stream;
 use meta::error::MetaError;
+use models::arrow_array::WriteArrow;
 use models::{
-    arrow_array::{build_arrow_array_builders, WriteArrow},
+    arrow_array::build_arrow_array_builders,
     predicate::domain::{ColumnDomains, PredicateRef},
     schema::{ColumnType, TskvTableSchemaRef},
     SeriesKey, TagValue,
 };
-
 use trace::debug;
 
 #[derive(Debug, Clone)]
@@ -201,7 +200,7 @@ fn do_tag_scan(
     let tenant = &table_schema.tenant;
 
     let _client = coord.tenant_meta(tenant).ok_or_else(|| {
-        ArrowError::ExternalError(Box::new(MetaError::TenantNotFound {
+        DataFusionError::External(Box::new(MetaError::TenantNotFound {
             tenant: tenant.to_string(),
         }))
     })?;

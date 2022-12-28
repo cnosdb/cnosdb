@@ -4,6 +4,7 @@ use datafusion::sql::sqlparser::ast::SqlOption;
 use datafusion::sql::sqlparser::ast::{
     AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Value,
 };
+use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::{parser::CreateExternalTable, sqlparser::ast::Statement};
 use models::codec::Encoding;
 
@@ -302,16 +303,22 @@ impl fmt::Display for ObjectType {
     }
 }
 
-pub fn parse_bool_value(value: Value) -> std::result::Result<bool, String> {
+pub fn parse_bool_value(value: Value) -> std::result::Result<bool, ParserError> {
     match value {
         Value::Boolean(s) => Ok(s),
-        _ => Err(format!("expected boolean value, but found : {}", value)),
+        _ => Err(ParserError::ParserError(format!(
+            "expected boolean value, but found : {}",
+            value
+        ))),
     }
 }
 
-pub fn parse_string_value(value: Value) -> std::result::Result<String, String> {
+pub fn parse_string_value(value: Value) -> std::result::Result<String, ParserError> {
     match value {
         Value::SingleQuotedString(s) => Ok(s),
-        _ => Err(format!("expected string value, but found : {}", value)),
+        _ => Err(ParserError::ParserError(format!(
+            "expected string value, but found : {}",
+            value
+        ))),
     }
 }

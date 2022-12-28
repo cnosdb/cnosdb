@@ -10,13 +10,14 @@ mod series_info;
 pub mod tag;
 pub mod utils;
 #[macro_use]
-pub mod error_code;
+// pub mod error_code;
 pub mod arrow_array;
 pub mod auth;
 pub mod limiter;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;
+pub use error_code;
 
 use parking_lot::RwLock;
 use std::sync::Arc;

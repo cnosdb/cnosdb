@@ -1,3 +1,5 @@
+use crate::Error;
+use arrow_schema::Field;
 use datafusion::arrow::{
     array::{
         ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
@@ -7,7 +9,6 @@ use datafusion::arrow::{
     datatypes::{DataType, SchemaRef, TimeUnit},
     error::ArrowError,
 };
-use std::str;
 
 pub trait WriteArrow {
     fn write(self, builder: &mut Box<dyn ArrayBuilder>) -> Result<(), ArrowError>;
@@ -25,9 +26,13 @@ impl WriteArrow for Vec<Option<Vec<u8>>> {
                 )
             })?;
 
-        for e in self {
-            let val = if let Some(ref e) = e {
-                Some(str::from_utf8(e).map_err(|e| ArrowError::ExternalError(Box::new(e)))?)
+        for arrow in self {
+            let val = if let Some(ref vec) = arrow {
+                Some(
+                    std::str::from_utf8(vec)
+                        .map_err(|_| Error::EncodingError)
+                        .map_err(|e| ArrowError::ExternalError(Box::new(e)))?,
+                )
             } else {
                 None
             };
@@ -47,7 +52,7 @@ pub fn build_arrow_array_builders(
     schema
         .fields()
         .iter()
-        .map(|e| build_arrow_array_builder(e.data_type(), batch_size))
+        .map(|f: &Field| build_arrow_array_builder(f.data_type(), batch_size))
         .collect::<Result<Vec<_>, ArrowError>>()
 }
 

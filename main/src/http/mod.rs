@@ -1,17 +1,16 @@
 use std::net::AddrParseError;
 
-use models::error_code::ErrorCode;
+use models::error_code::{ErrorCode, ErrorCoder, UnknownCode};
 use snafu::Snafu;
-use spi::server::ServerError;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError;
 
-// use async_channel as channel;
 use warp::reject;
 use warp::reply::Response;
 
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::UNPROCESSABLE_ENTITY;
+use spi::QueryError;
 
 use self::response::ResponseBuilder;
 
@@ -20,7 +19,8 @@ pub mod http_service;
 mod response;
 mod result_format;
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, ErrorCoder)]
+#[error_code(mod_code = "04")]
 #[snafu(visibility(pub))]
 pub enum Error {
     #[snafu(display("Failed to parse address. err: {}", source))]
@@ -46,7 +46,7 @@ pub enum Error {
     //     source: channel::SendError<tskv::Task>,
     // },
     #[snafu(display("Error executiong query: {}", source))]
-    Query { source: ServerError },
+    Query { source: QueryError },
 
     #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
@@ -55,6 +55,9 @@ pub enum Error {
     Coordinator {
         source: coordinator::errors::CoordinatorError,
     },
+
+    #[snafu(display("MetaError: {}", source))]
+    Meta { source: meta::error::MetaError },
 
     #[snafu(display("Invalid header: {}", reason))]
     InvalidHeader { reason: String },
@@ -69,6 +72,20 @@ pub enum Error {
     NotFoundTenant { name: String },
 }
 
+// use std::error::Error;
+impl Error {
+    // pub fn flatten(self) -> Error {
+    //     if let Some(source) = std::error::Error::source(&self) {
+    //
+    //     } else {
+    //         self
+    //     }
+    //
+    // }
+}
+
+
+
 impl reject::Reject for Error {}
 
 impl From<&Error> for Response {
@@ -76,33 +93,33 @@ impl From<&Error> for Response {
         let error_message = format!("{}", e);
 
         match e {
-            Error::Query { source: _ } => {
-                let error_resp = ErrorResponse::new(ErrorCode::QueryUnknown, error_message);
+            Error::Query { source } => {
+                let error_resp = ErrorResponse::new(source);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::FetchResult { reason: _ } => {
-                let error_resp = ErrorResponse::new(ErrorCode::QueryUnknown, error_message);
+                let error_resp = ErrorResponse::new(&UnknownCode);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::Tskv { source: _ } => {
-                let error_resp = ErrorResponse::new(ErrorCode::TskvUnknown, error_message);
+                let error_resp = ErrorResponse::new(&UnknownCode);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::Coordinator { source: _ } => {
-                let error_resp = ErrorResponse::new(ErrorCode::CoordinatorUnknown, error_message);
+                let error_resp = ErrorResponse::new(&UnknownCode);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::NotFoundTenant { name } => {
-                let error_resp = ErrorResponse::new(ErrorCode::TenantNotFound, error_message);
+                let error_resp = ErrorResponse::new(&UnknownCode);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::InvalidHeader { reason: _ } | Error::ParseAuth { reason: _ } => {
-                let error_resp = ErrorResponse::new(ErrorCode::Unknown, error_message);
+                let error_resp = ErrorResponse::new(&UnknownCode);
 
                 ResponseBuilder::bad_request(&error_resp)
             }

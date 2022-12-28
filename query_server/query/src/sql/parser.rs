@@ -22,7 +22,7 @@ use spi::query::ast::{
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
-use spi::query::ParserSnafu;
+use spi::ParserSnafu;
 use trace::debug;
 
 // support tag token
@@ -114,7 +114,7 @@ macro_rules! parser_err {
 pub struct DefaultParser {}
 
 impl CnosdbParser for DefaultParser {
-    fn parse(&self, sql: &str) -> spi::query::Result<VecDeque<ExtStatement>> {
+    fn parse(&self, sql: &str) -> spi::Result<VecDeque<ExtStatement>> {
         ExtParser::parse_sql(sql).context(ParserSnafu)
     }
 }
@@ -773,7 +773,7 @@ impl<'a> ExtParser<'a> {
 
     fn parse_string_value(&mut self) -> Result<String> {
         let value = self.parser.parse_value()?;
-        parse_string_value(value).map_err(ParserError::ParserError)
+        parse_string_value(value)
     }
 
     fn parse_create_database(&mut self) -> Result<ExtStatement> {

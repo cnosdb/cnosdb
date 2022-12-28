@@ -7,9 +7,14 @@ use datafusion::arrow::{
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use snafu::ResultExt;
+use spi::Result;
 use spi::{
-    query::execution::{ArrowSnafu, ExecutionError, Output, QueryState, QueryStateMachineRef},
+    query::execution::{
+        // ArrowSnafu, ExecutionError,
+        Output,
+        QueryState,
+        QueryStateMachineRef,
+    },
     service::protocol::QueryId,
 };
 use std::time::Duration;
@@ -30,10 +35,7 @@ impl ShowQueriesTask {
 
 #[async_trait]
 impl SystemTask for ShowQueriesTask {
-    async fn execute(
-        &self,
-        _query_state_machine: QueryStateMachineRef,
-    ) -> std::result::Result<Output, ExecutionError> {
+    async fn execute(&self, _query_state_machine: QueryStateMachineRef) -> Result<Output> {
         let mut result_builder = ShowQueriesResultBuilder::new();
 
         self.query_tracker.running_queries().iter().for_each(|e| {
@@ -50,7 +52,7 @@ impl SystemTask for ShowQueriesTask {
 
         Ok(Output::StreamData(
             result_builder.schema(),
-            result_builder.build().context(ArrowSnafu)?,
+            result_builder.build()?,
         ))
     }
 }
@@ -105,7 +107,7 @@ impl ShowQueriesResultBuilder {
         self.schema.clone()
     }
 
-    fn build(self) -> Result<Vec<RecordBatch>, ArrowError> {
+    fn build(self) -> std::result::Result<Vec<RecordBatch>, ArrowError> {
         let ShowQueriesResultBuilder {
             schema,
             mut query_ids,

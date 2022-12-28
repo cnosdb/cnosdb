@@ -14,8 +14,10 @@ use datafusion::{
     },
 };
 use snafu::ResultExt;
-use spi::query::{physical_planner::PhysicalPlanner, Result};
-use spi::query::{session::IsiphoSessionCtx, PhysicalPlanerSnafu};
+use spi::query::physical_planner::PhysicalPlanner;
+use spi::query::session::IsiphoSessionCtx;
+use spi::PhysicalPlanerSnafu;
+use spi::Result;
 
 use crate::extension::physical::transform_rule::{
     table_writer::TableWriterPlanner, tag_scan::TagScanPlanner, topk::TopKPlanner,

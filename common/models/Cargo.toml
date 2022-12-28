@@ -23,6 +23,7 @@ uuid = { workspace = true }
 derive_builder = { workspace = true }
 openssl = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+error_code = {path = "../error_code"}
 
 [dev-dependencies]
 flatbuffers = { workspace = true }

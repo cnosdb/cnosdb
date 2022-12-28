@@ -7,7 +7,7 @@ use models::auth::user::UserDesc;
 use models::oid::{Identifier, Oid};
 
 use super::execution::QueryState;
-use super::Result;
+use crate::Result;
 
 #[async_trait]
 pub trait QueryDispatcher: Send + Sync {

@@ -763,7 +763,7 @@ impl RowIterator {
 
             match self.columns[i].val_type() {
                 ValueType::Unknown => {
-                    return Err(Error::UnKnowType);
+                    return Err(Error::CommonError {reason: format!("unknown type of {}", self.columns[i].name())} );
                 }
                 ValueType::Float => {
                     let field_builder = builder[i]

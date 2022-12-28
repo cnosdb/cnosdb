@@ -1,7 +1,8 @@
 mod bottom;
 mod topk;
 
-use spi::query::function::{FunctionMetadataManager, Result};
+use spi::query::function::FunctionMetadataManager;
+use spi::Result;
 
 pub fn register_selector_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
     // extend function...

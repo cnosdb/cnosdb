@@ -6,7 +6,8 @@ mod function_utils;
 mod scalar_function;
 pub mod selector_function;
 
-use spi::query::function::{FunctionMetadataManager, Result};
+use spi::query::function::FunctionMetadataManager;
+use spi::Result;
 
 /// load all cnosdb's built-in function
 pub fn load_all_functions(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {

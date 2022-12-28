@@ -3,14 +3,12 @@ use async_trait::async_trait;
 use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::error::DataFusionError;
-use snafu::ResultExt;
+use spi::Result;
 
 use meta::error::MetaError;
-use spi::query::execution;
-use spi::query::execution::MetadataSnafu;
-use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
+use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
+use spi::QueryError;
 use std::sync::Arc;
 
 pub struct DescribeDatabaseTask {
@@ -25,34 +23,26 @@ impl DescribeDatabaseTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DescribeDatabaseTask {
-    async fn execute(
-        &self,
-        query_state_machine: QueryStateMachineRef,
-    ) -> Result<Output, ExecutionError> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
         describe_database(self.stmt.database_name.as_str(), query_state_machine)
     }
 }
 
-fn describe_database(
-    database_name: &str,
-    machine: QueryStateMachineRef,
-) -> Result<Output, ExecutionError> {
+fn describe_database(database_name: &str, machine: QueryStateMachineRef) -> Result<Output> {
     let tenant = machine.session.tenant();
-    let client = machine
-        .meta
-        .tenant_manager()
-        .tenant_meta(tenant)
-        .ok_or(MetaError::TenantNotFound {
-            tenant: tenant.to_string(),
-        })
-        .context(MetadataSnafu)?;
+    let client =
+        machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })?;
     let db_cfg = client
-        .get_db_schema(database_name)
-        .context(execution::MetadataSnafu)?
+        .get_db_schema(database_name)?
         .ok_or(MetaError::DatabaseNotFound {
             database: database_name.to_string(),
-        })
-        .context(MetadataSnafu)?;
+        })?;
     let schema = Arc::new(Schema::new(vec![
         Field::new("TTL", DataType::Utf8, false),
         Field::new("SHARD", DataType::Utf8, false),
@@ -77,9 +67,7 @@ fn describe_database(
             Arc::new(StringArray::from(vec![precision.as_str()])),
         ],
     )
-    .map_err(|e| ExecutionError::External {
-        source: DataFusionError::ArrowError(e),
-    })?;
+    .map_err(|e| QueryError::Arrow { source: e })?;
 
     let batches = vec![batch];
 
