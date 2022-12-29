@@ -41,7 +41,7 @@ path = 'data/log'
 [cluster]
 node_id = 100
 name = 'cluster_xxx'
-meta = '127.0.0.1,22001'
+meta = '127.0.0.1:21001'
 
 flight_rpc_server = '127.0.0.1:31006'
 http_server = '127.0.0.1:31007'

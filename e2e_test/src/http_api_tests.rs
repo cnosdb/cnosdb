@@ -8,7 +8,7 @@ mod test {
     };
 
     fn client() -> HttpClient {
-        HttpClient::from_addr("127.0.0.1".to_string(), 31007)
+        HttpClient::from_addr("127.0.0.1".to_string(), 31001)
     }
 
     #[tokio::test]
@@ -16,7 +16,7 @@ mod test {
         let path = "/api/v1/sql";
         let invalid_path = "/api/v1/xx";
         let param = &[("db", "public")];
-        let username = "cnosdb";
+        let username = "root";
 
         let client = client();
 
