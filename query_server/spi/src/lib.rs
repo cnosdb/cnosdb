@@ -70,7 +70,7 @@ pub enum QueryError {
         name: String,
     },
 
-    #[snafu(display("Failed to do parse. err: {}", source))]
+    #[snafu(display("{}", source))]
     Parser {
         source: ParserError,
     },
@@ -112,7 +112,7 @@ pub enum QueryError {
         source: flatbuffers::InvalidFlatbuffer,
     },
 
-    #[snafu(display("error msg: {}", msg))]
+    #[snafu(display("{}", msg))]
     CommonError {
         msg: String,
     },
@@ -234,6 +234,10 @@ impl From<ArrowError> for QueryError {
                 QueryError::Coordinator {
                     source: *e.downcast::<CoordinatorError>().unwrap(),
                 }
+            }
+            ArrowError::ExternalError(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                arrow_error.into()
             }
             other => QueryError::Arrow { source: other },
         }

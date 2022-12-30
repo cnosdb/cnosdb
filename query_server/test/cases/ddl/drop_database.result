@@ -18,7 +18,7 @@ rows
 
 -- EXECUTE SQL: CREATE TABLE test0( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Metadata operator err: Error: {\"code\":1,\"msg\":\"database not found\"}"}
+{"error_code":"030016","error_message":"Error: {\"code\":1,\"msg\":\"database not found\"}"}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE DATABASE dropdatabase WITH TTL '100000d'; --

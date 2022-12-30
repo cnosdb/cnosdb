@@ -2,7 +2,7 @@
 test_double_conv,ta=a1,tb=b1 fa=1,fb=2 3
 -- LINE PROTOCOL END --
 422 Unprocessable Entity
-{"error_code":"0300000","error_message":"Error from coordinator: error msg: write expired time data not permit"}
+{"error_code":"050014","error_message":"write expired time data not permit"}
 -- ERROR:  --
 
 -- WRITE LINE PROTOCOL --
@@ -124,12 +124,12 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= '1997-01-31'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '1997-01-31' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010000","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string '1997-01-31' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa >= 'xxx'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010000","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between '12345678865' and 12345678869; --
@@ -162,7 +162,7 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa between 12345678865 and 'xxx'; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010000","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xxx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, '12345678869'); --
@@ -181,6 +181,6 @@ physical_plan,"ProjectionExec: expr=[time@0 as time]
 
 -- EXECUTE SQL: explain select time from test_double_conv where fa in (12345678865, 'xx'); --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do logical optimization. err: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
+{"error_code":"010000","error_message":"Datafusion: Internal error: Optimizer rule 'implicit_type_conversion' failed due to unexpected error: Arrow error: Cast error: Cannot cast string 'xx' to value of Float64 type. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker"}
 -- ERROR:  --
 

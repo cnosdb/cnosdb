@@ -23,18 +23,14 @@ mod result_format;
 #[error_code(mod_code = "04")]
 #[snafu(visibility(pub))]
 pub enum Error {
-    #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
 
-    #[snafu(display("Error from coordinator: {}", source))]
     Coordinator {
         source: coordinator::errors::CoordinatorError,
     },
 
-    #[snafu(display("MetaError: {}", source))]
     Meta { source: meta::error::MetaError },
 
-    #[snafu(display("Error execution query: {}", source))]
     Query { source: QueryError },
 
     #[snafu(display("Failed to parse address. err: {}", source))]

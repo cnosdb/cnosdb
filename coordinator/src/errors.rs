@@ -1,3 +1,5 @@
+use datafusion::arrow::error::ArrowError;
+use datafusion::error::DataFusionError;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
@@ -16,7 +18,7 @@ pub enum CoordinatorError {
     },
 
     ArrowErrError {
-        source: datafusion::arrow::error::ArrowError,
+        source: ArrowError,
     },
 
     #[snafu(display("meta request error: {}", msg))]
@@ -61,12 +63,6 @@ pub enum CoordinatorError {
         source: models::Error,
     },
 
-    #[snafu(display("Error from tskv index: {}", source))]
-    #[error_code(code = 8)]
-    TskvIndexError {
-        source: tskv::index::IndexError,
-    },
-
     #[snafu(display("not found tenant: {}", name))]
     #[error_code(code = 9)]
     TenantNotFound {
@@ -93,7 +89,7 @@ pub enum CoordinatorError {
     #[error_code(code = 13)]
     UnExpectResponse,
 
-    #[snafu(display("error msg: {}", msg))]
+    #[snafu(display("{}", msg))]
     #[error_code(code = 14)]
     CommonError {
         msg: String,
@@ -122,9 +118,33 @@ impl From<tskv::Error> for CoordinatorError {
     }
 }
 
-impl From<datafusion::arrow::error::ArrowError> for CoordinatorError {
-    fn from(err: datafusion::arrow::error::ArrowError) -> Self {
-        CoordinatorError::ArrowErrError { source: err }
+impl From<ArrowError> for CoordinatorError {
+    fn from(err: ArrowError) -> Self {
+        match err {
+            ArrowError::ExternalError(e) if e.downcast_ref::<CoordinatorError>().is_some() => {
+                *e.downcast::<CoordinatorError>().unwrap()
+            }
+            ArrowError::ExternalError(e) if e.downcast_ref::<MetaError>().is_some() => {
+                CoordinatorError::Meta {
+                    source: *e.downcast::<MetaError>().unwrap(),
+                }
+            }
+            ArrowError::ExternalError(e) if e.downcast_ref::<tskv::Error>().is_some() => {
+                CoordinatorError::TskvError {
+                    source: *e.downcast::<tskv::Error>().unwrap(),
+                }
+            }
+            // ArrowError::ExternalError(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+            //     let df_error = *e.downcast::<DataFusionError>().unwrap();
+            //     df_error.into()
+            // }
+            ArrowError::ExternalError(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                arrow_error.into()
+            }
+
+            other => CoordinatorError::ArrowErrError { source: other },
+        }
     }
 }
 
@@ -144,12 +164,6 @@ impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
     }
 }
 
-// impl From<tskv::index::IndexError> for CoordinatorError {
-//     fn from(err: tskv::index::IndexError) -> Self {
-//         CoordinatorError::TskvIndexError { source: err }
-//     }
-// }
-
 impl From<models::Error> for CoordinatorError {
     fn from(err: models::Error) -> Self {
         CoordinatorError::ModelsError { source: err }
@@ -160,6 +174,7 @@ impl CoordinatorError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
             CoordinatorError::Meta { source } => source.error_code(),
+            CoordinatorError::TskvError { source } => source.error_code(),
             _ => self,
         }
     }
