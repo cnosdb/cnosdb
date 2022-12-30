@@ -13,6 +13,7 @@ path = "src/bin/main.rs"
 config = { path = "../config" }
 trace = { path = "../common/trace" }
 models = { path = "../common/models" }
+error_code = {path = "../common/error_code"}
 
 async-trait = { workspace = true }
 clap = { workspace = true }

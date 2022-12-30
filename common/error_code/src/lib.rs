@@ -10,6 +10,20 @@ pub trait ErrorCode: std::error::Error {
 
 pub struct UnknownCode;
 
+pub struct UnknownCodeWithMessage(String);
+
+impl Debug for UnknownCodeWithMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown error {}", self.0)
+    }
+}
+
+impl Display for UnknownCodeWithMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
 impl Debug for UnknownCode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "unknown error")
@@ -23,6 +37,7 @@ impl Display for UnknownCode {
 }
 
 impl std::error::Error for UnknownCode {}
+impl std::error::Error for UnknownCodeWithMessage {}
 
 impl ErrorCode for UnknownCode {
     fn code(&self) -> &'static str {
@@ -30,6 +45,15 @@ impl ErrorCode for UnknownCode {
     }
     fn message(&self) -> String {
         "unknow_error".to_string()
+    }
+}
+
+impl ErrorCode for UnknownCodeWithMessage {
+    fn code(&self) -> &'static str {
+        "000000"
+    }
+    fn message(&self) -> String {
+        self.0.to_owned()
     }
 }
 

@@ -921,7 +921,7 @@ impl RowIterator {
             match RecordBatch::try_new(self.option.df_schema.clone(), cols) {
                 Ok(batch) => Some(Ok(batch)),
                 Err(err) => Some(Err(Error::CommonError {
-                    reason: format!("iterator fail, {}", err.to_string()),
+                    reason: format!("iterator fail, {}", err),
                 })),
             }
         };

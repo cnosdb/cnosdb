@@ -117,9 +117,9 @@ mod tests {
         query::{
             dispatcher::{QueryInfo, QueryStatus},
             execution::{Output, QueryExecution, QueryState, RUNNING},
-            QueryError,
         },
         service::protocol::QueryId,
+        QueryError,
     };
     use std::time::Duration;
 

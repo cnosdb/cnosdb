@@ -151,3 +151,12 @@ impl From<SchemaError> for Error {
         }
     }
 }
+
+impl Error {
+    pub fn error_code(&self) -> &dyn ErrorCode {
+        match self {
+            Error::Meta { source } => source.error_code(),
+            _ => self,
+        }
+    }
+}

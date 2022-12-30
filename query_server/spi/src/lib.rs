@@ -29,7 +29,7 @@ pub enum QueryError {
     },
 
     Coordinator {
-        source: Box<CoordinatorError>,
+        source: CoordinatorError,
     },
 
     Datafusion {
@@ -184,7 +184,7 @@ impl From<DataFusionError> for QueryError {
 
             DataFusionError::External(e) if e.downcast_ref::<CoordinatorError>().is_some() => {
                 QueryError::Coordinator {
-                    source: Box::new(*e.downcast::<CoordinatorError>().unwrap()),
+                    source: *e.downcast::<CoordinatorError>().unwrap(),
                 }
             }
             v => QueryError::Datafusion { source: v },
@@ -200,9 +200,7 @@ impl From<MetaError> for QueryError {
 
 impl From<CoordinatorError> for QueryError {
     fn from(value: CoordinatorError) -> Self {
-        QueryError::Coordinator {
-            source: Box::new(value),
-        }
+        QueryError::Coordinator { source: value }
     }
 }
 
@@ -234,10 +232,20 @@ impl From<ArrowError> for QueryError {
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<CoordinatorError>().is_some() => {
                 QueryError::Coordinator {
-                    source: Box::new(*e.downcast::<CoordinatorError>().unwrap()),
+                    source: *e.downcast::<CoordinatorError>().unwrap(),
                 }
             }
             other => QueryError::Arrow { source: other },
+        }
+    }
+}
+impl QueryError {
+    pub fn error_code(&self) -> &dyn ErrorCode {
+        match self {
+            QueryError::Meta { source } => source.error_code(),
+            QueryError::TsKv { source } => source.error_code(),
+            QueryError::Coordinator { source } => source.error_code(),
+            _ => self,
         }
     }
 }

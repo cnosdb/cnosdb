@@ -187,8 +187,9 @@ pub struct AdminStatementRequest {
 
 impl AdminStatementRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        let d = bincode::serialize(&self)
-            .map_err(|e| CoordinatorError::CommonError { msg: format!("e") })?;
+        let d = bincode::serialize(&self).map_err(|e| CoordinatorError::CommonError {
+            msg: "e".to_string(),
+        })?;
         conn.write_all(&(d.len() as u32).to_be_bytes()).await?;
         conn.write_all(&d).await?;
 
