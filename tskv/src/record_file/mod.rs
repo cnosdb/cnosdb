@@ -40,6 +40,7 @@ mod writer;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub use reader::*;
 pub use record::*;
+use snafu::Snafu;
 pub use writer::*;
 
 pub const FILE_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'R', b'E', b'C', b'O']);
@@ -83,3 +84,6 @@ pub enum RecordDataType {
     Tombstone = 4,
     Wal = 8,
 }
+
+#[derive(Snafu, Debug)]
+pub enum RecordFileError {}

@@ -84,8 +84,6 @@ impl Error {
     // }
 }
 
-
-
 impl reject::Reject for Error {}
 
 impl From<&Error> for Response {
@@ -176,9 +174,14 @@ mod tests {
     #[test]
     fn test_tskv_error() {
         let resp: Response = Error::Tskv {
-            source: tskv::Error::Cancel,
+            source: tskv::Error::CommonError {
+                reason: "".to_string(),
+            },
         }
         .into();
+
+        // #[snafu(display("fails to send to channel"))]
+        // Send,
 
         assert_eq!(resp.status(), UNPROCESSABLE_ENTITY);
 

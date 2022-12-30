@@ -43,8 +43,8 @@ use crate::database::Database;
 use crate::error::SchemaSnafu;
 use crate::file_system::file_manager::{self, FileManager};
 use crate::index::index_manger;
+use crate::schema::error::SchemaError;
 use crate::tseries_family::TseriesFamily;
-use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
     context::GlobalContext,
@@ -361,13 +361,11 @@ impl TsKv {
     }
 
     pub fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
-        let db = self
-            .version_set
-            .read()
-            .get_db(tenant, database)
-            .ok_or(DatabaseNotFound {
+        let db = self.version_set.read().get_db(tenant, database).ok_or(
+            SchemaError::DatabaseNotFound {
                 database: database.to_string(),
-            })?;
+            },
+        )?;
         Ok(db)
     }
 
@@ -377,9 +375,10 @@ impl TsKv {
             .read()
             .db_exists(schema.tenant_name(), schema.database_name())
         {
-            return Err(Error::DatabaseAlreadyExists {
+            return Err(SchemaError::DatabaseAlreadyExists {
                 database: schema.database_name().to_string(),
-            });
+            }
+            .into());
         }
         let db = self
             .version_set
@@ -689,9 +688,10 @@ impl Engine for TsKv {
     ) -> Result<Option<Arc<SuperVersion>>> {
         let version_set = self.version_set.read();
         if !version_set.db_exists(tenant, database) {
-            return Err(Error::DatabaseNotFound {
+            return Err(SchemaError::DatabaseNotFound {
                 database: database.to_string(),
-            });
+            }
+            .into());
         }
         if let Some(tsf) = version_set.get_tsfamily_by_name_id(tenant, database, vnode_id) {
             Ok(Some(tsf.read().super_version()))
@@ -724,13 +724,13 @@ impl Engine for TsKv {
         let schema = db
             .read()
             .get_table_schema(table)?
-            .ok_or(Error::NotFoundTable {
-                table_name: table.to_string(),
+            .ok_or(SchemaError::TableNotFound {
+                table: table.to_string(),
             })?;
         let column_id = schema
             .column(column_name)
-            .ok_or(Error::NotFoundField {
-                reason: column_name.to_string(),
+            .ok_or(SchemaError::NotFoundField {
+                field: column_name.to_string(),
             })?
             .id;
         db.read().drop_table_column(table, column_name)?;

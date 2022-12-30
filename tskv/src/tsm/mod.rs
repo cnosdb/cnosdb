@@ -8,6 +8,7 @@ mod writer;
 pub use block::*;
 pub use index::*;
 pub use reader::*;
+use snafu::Snafu;
 pub use tombstone::{Tombstone, TsmTombstone};
 pub use writer::*;
 
@@ -20,6 +21,9 @@ const BLOCK_META_SIZE: usize = 44;
 const BLOOM_FILTER_SIZE: usize = 64;
 const BLOOM_FILTER_BITS: u64 = 512; // 64 * 8
 const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8; // 72
+
+#[derive(Debug, Snafu)]
+pub enum TsmError {}
 
 pub trait BlockReader {
     fn decode(&mut self, block: &BlockMeta) -> crate::error::Result<DataBlock>;

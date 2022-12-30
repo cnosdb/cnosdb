@@ -187,7 +187,8 @@ pub struct AdminStatementRequest {
 
 impl AdminStatementRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        let d = bincode::serialize(&self).map_err(|e| tskv::Error::Encode { source: (e) })?;
+        let d = bincode::serialize(&self)
+            .map_err(|e| CoordinatorError::CommonError { msg: format!("e") })?;
         conn.write_all(&(d.len() as u32).to_be_bytes()).await?;
         conn.write_all(&d).await?;
 
@@ -211,7 +212,9 @@ pub struct QueryRecordBatchRequest {
 
 impl QueryRecordBatchRequest {
     pub async fn send_cmd(&self, conn: &mut TcpStream) -> CoordinatorResult<()> {
-        let d = bincode::serialize(&self.args).map_err(|e| tskv::Error::Encode { source: (e) })?;
+        let d = bincode::serialize(&self.args).map_err(|e| CoordinatorError::CommonError {
+            msg: format!("{}", e),
+        })?;
         conn.write_all(&(d.len() as u32).to_be_bytes()).await?;
         conn.write_all(&d).await?;
 

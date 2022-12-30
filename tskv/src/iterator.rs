@@ -35,6 +35,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 
+use crate::schema::error::SchemaError;
 use models::predicate::domain::{ColumnDomains, Domain, PredicateRef, Range, ValueEntry};
 use models::schema::{ColumnType, TskvTableSchema, TIME_FIELD, TIME_FIELD_NAME};
 
@@ -763,7 +764,9 @@ impl RowIterator {
 
             match self.columns[i].val_type() {
                 ValueType::Unknown => {
-                    return Err(Error::CommonError {reason: format!("unknown type of {}", self.columns[i].name())} );
+                    return Err(Error::CommonError {
+                        reason: format!("unknown type of {}", self.columns[i].name()),
+                    });
                 }
                 ValueType::Float => {
                     let field_builder = builder[i]
@@ -917,8 +920,8 @@ impl RowIterator {
 
             match RecordBatch::try_new(self.option.df_schema.clone(), cols) {
                 Ok(batch) => Some(Ok(batch)),
-                Err(err) => Some(Err(Error::DataFusionNew {
-                    reason: err.to_string(),
+                Err(err) => Some(Err(Error::CommonError {
+                    reason: format!("iterator fail, {}", err.to_string()),
                 })),
             }
         };

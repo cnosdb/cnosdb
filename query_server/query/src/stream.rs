@@ -15,9 +15,8 @@ use models::{
 };
 
 use spi::query::DEFAULT_CATALOG;
+use spi::{QueryError, Result};
 use tskv::iterator::{QueryOption, TableScanMetrics};
-use spi::Result;
-use tskv::Error;
 
 #[allow(dead_code)]
 pub struct TableScanStream {
@@ -59,9 +58,12 @@ impl TableScanStream {
             if let Some(v) = table_schema.column(field_name) {
                 proj_fileds.push(v.clone());
             } else {
-                return Err(Error::NotFoundField {
-                    reason: field_name.clone(),
-                })?;
+                return Err(QueryError::CommonError {
+                    msg: format!(
+                        "table stream build fail, because can't found field: {}",
+                        field_name
+                    ),
+                });
             }
         }
 

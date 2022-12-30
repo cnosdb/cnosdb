@@ -58,7 +58,7 @@ impl Database {
                 .write()
                 .get_db_index(&schema.owner()),
             owner: schema.owner(),
-            schemas: Arc::new(DBschemas::new(schema, meta).context(SchemaSnafu)?),
+            schemas: Arc::new(DBschemas::new(schema, meta)?),
             ts_families: HashMap::new(),
             opt,
         };
@@ -66,7 +66,7 @@ impl Database {
     }
 
     pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
-        self.schemas.alter_db_schema(schema).context(SchemaSnafu)
+        Ok(self.schemas.alter_db_schema(schema)?)
     }
 
     pub fn open_tsfamily(
@@ -195,13 +195,12 @@ impl Database {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
-            match self.schemas.check_field_type_from_cache(sid, &point) {
-                Ok(_) => {}
-                Err(_) => {
-                    self.schemas
-                        .check_field_type_or_else_add(sid, &point)
-                        .context(error::SchemaSnafu)?;
-                }
+            if self
+                .schemas
+                .check_field_type_from_cache(sid, &point)
+                .is_err()
+            {
+                self.schemas.check_field_type_or_else_add(sid, &point)?;
             }
 
             self.build_row_data(&mut map, point, sid)?
@@ -216,10 +215,7 @@ impl Database {
         sid: u64,
     ) -> Result<()> {
         let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
-        let table_schema = self
-            .schemas
-            .get_table_schema(&table_name)
-            .context(SchemaSnafu)?;
+        let table_schema = self.schemas.get_table_schema(&table_name)?;
         let table_schema = match table_schema {
             Some(v) => v,
             None => return Ok(()),
@@ -300,17 +296,11 @@ impl Database {
     }
 
     pub fn add_table_column(&self, table: &str, column: TableColumn) -> Result<()> {
-        self.schemas
-            .add_table_column(table, column)
-            .context(SchemaSnafu)?;
-        Ok(())
+        Ok(self.schemas.add_table_column(table, column)?)
     }
 
     pub fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
-        self.schemas
-            .drop_table_column(table, column_name)
-            .context(SchemaSnafu)?;
-        Ok(())
+        Ok(self.schemas.drop_table_column(table, column_name)?)
     }
 
     pub fn change_table_column(
@@ -319,10 +309,9 @@ impl Database {
         column_name: &str,
         new_column: TableColumn,
     ) -> Result<()> {
-        self.schemas
-            .change_table_column(table, column_name, new_column)
-            .context(SchemaSnafu)?;
-        Ok(())
+        Ok(self
+            .schemas
+            .change_table_column(table, column_name, new_column)?)
     }
 
     pub fn get_series_key(&self, sid: u64) -> IndexResult<Option<SeriesKey>> {
@@ -330,19 +319,14 @@ impl Database {
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchema>> {
-        self.schemas
-            .get_table_schema(table_name)
-            .context(SchemaSnafu)
+        Ok(self.schemas.get_table_schema(table_name)?)
     }
 
     pub fn get_table_schema_by_series_id(&self, sid: u64) -> Result<Option<TskvTableSchema>> {
         let key = self.index.get_series_key(sid).context(IndexErrSnafu)?;
         match key {
             None => Ok(None),
-            Some(series_key) => self
-                .schemas
-                .get_table_schema(&series_key.table)
-                .context(SchemaSnafu),
+            Some(series_key) => Ok(self.schemas.get_table_schema(&series_key.table)?),
         }
     }
 
@@ -387,7 +371,7 @@ impl Database {
     }
 
     pub fn get_schema(&self) -> Result<DatabaseSchema> {
-        self.schemas.db_schema().context(SchemaSnafu)
+        Ok(self.schemas.db_schema()?)
     }
 }
 
@@ -414,12 +398,8 @@ pub(crate) async fn delete_table_async(
             "Drop table: deleting index in table: {}.{}",
             &database, &table
         );
-        let field_infos = schemas
-            .get_table_schema(&table)
-            .context(error::SchemaSnafu)?;
-        schemas
-            .del_table_schema(&table)
-            .context(error::SchemaSnafu)?;
+        let field_infos = schemas.get_table_schema(&table)?;
+        schemas.del_table_schema(&table)?;
 
         for sid in sids.iter() {
             index.del_series_info(*sid).context(error::IndexErrSnafu)?;

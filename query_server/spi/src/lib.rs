@@ -60,11 +60,6 @@ pub enum QueryError {
         err: String,
     },
 
-    // #[snafu(display("Failed to build Function Meta, err: {}", source))]
-    // BuildFunctionMeta { source: function::Error },
-
-    // #[snafu(display("DataFusion Error, caused:{}", source))]
-    // CausedDataFusion { source: DataFusionError },
     #[snafu(display("Udf already exists, name:{}.", name))]
     FunctionExists {
         name: String,
@@ -73,26 +68,6 @@ pub enum QueryError {
     #[snafu(display("Udf not exists, name:{}.", name))]
     FunctionNotExists {
         name: String,
-    },
-
-    #[snafu(display("Failed to do logical optimization. err: {}", source))]
-    LogicalOptimize {
-        source: DataFusionError,
-    },
-
-    #[snafu(display("Failed to do physical plan. err: {}", source))]
-    PhysicalPlaner {
-        source: DataFusionError,
-    },
-
-    #[snafu(display("Failed to do optimizer. err: {}", source))]
-    Optimizer {
-        source: DataFusionError,
-    },
-
-    #[snafu(display("Failed to do schedule. err: {}", source))]
-    Schedule {
-        source: DataFusionError,
     },
 
     #[snafu(display("Failed to do parse. err: {}", source))]
@@ -119,15 +94,6 @@ pub enum QueryError {
         sql: String,
     },
 
-    #[snafu(display(
-        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
-    code and we would welcome that you file an bug report in our issue tracker",
-        err
-    ))]
-    Internal {
-        err: String,
-    },
-
     #[snafu(display("The query has been canceled"))]
     Cancel,
 
@@ -141,11 +107,6 @@ pub enum QueryError {
         source: AuthError,
     },
 
-    // #[snafu(display("Failed to build server, err:{}", source))]
-    // Build { source: QueryError },
-
-    // #[snafu(display("Failed to load functions, err:{}", source))]
-    // LoadFunction { source: function::Error },
     #[snafu(display("invalid flatbuffers: {}", source))]
     InvalidFlatbuffer {
         source: flatbuffers::InvalidFlatbuffer,
@@ -180,6 +141,19 @@ pub enum QueryError {
     #[snafu(display("Column {} cannot be null.", col))]
     PointErrorNotNullConstraint {
         col: String,
+    },
+
+    #[snafu(display("Invalid parameter : {}", reason))]
+    InvalidParam {
+        reason: String,
+    },
+
+    #[snafu(display("file has no footer"))]
+    NoFooter,
+
+    #[snafu(display("read/write record file block: {}", reason))]
+    RecordFileIo {
+        reason: String,
     },
 }
 
@@ -234,9 +208,7 @@ impl From<CoordinatorError> for QueryError {
 
 impl From<tskv::Error> for QueryError {
     fn from(value: tskv::Error) -> Self {
-        QueryError::TsKv {
-            source: value
-        }
+        QueryError::TsKv { source: value }
     }
 }
 
@@ -253,7 +225,7 @@ impl From<ArrowError> for QueryError {
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<tskv::Error>().is_some() => {
                 QueryError::TsKv {
-                    source:*e.downcast::<tskv::Error>().unwrap(),
+                    source: *e.downcast::<tskv::Error>().unwrap(),
                 }
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<DataFusionError>().is_some() => {

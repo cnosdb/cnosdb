@@ -18,7 +18,7 @@ use datafusion::{
 };
 
 use spi::query::session::IsiphoSessionCtx;
-use spi::{QueryError, Result};
+use spi::Result;
 
 use crate::extension::logical::optimizer_rule::{
     implicit_type_conversion::ImplicitTypeConversion,
@@ -93,7 +93,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
             .state()
             .with_optimizer_rules(self.rules.clone())
             .optimize(plan)
-            .map_err(|e| QueryError::LogicalOptimize { source: e })
+            .map_err(|e| e.into())
     }
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>) {
