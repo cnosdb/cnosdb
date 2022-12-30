@@ -1,4 +1,5 @@
 --#SORT=true
+--#SLEEP=100
 -- normal
 DROP DATABASE IF EXISTS public;
 CREATE DATABASE public;

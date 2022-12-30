@@ -1,5 +1,6 @@
 --#DATABASE=show_series
-CREATE DATABASE show_series WITH TTL '100000d';;
+--#SLEEP=100
+CREATE DATABASE show_series WITH TTL '100000d';
 
 
 --#LP_BEGIN

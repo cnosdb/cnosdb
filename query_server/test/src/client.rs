@@ -1,4 +1,3 @@
-
 use reqwest::{Method, Request};
 use reqwest::{Response, Url};
 use std::time::Duration;

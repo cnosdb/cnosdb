@@ -35,7 +35,7 @@ impl Default for Instruction {
             pretty: true,
             user_name: "root".to_string(),
             time_out: None,
-            sleep: None
+            sleep: None,
         }
     }
 }
