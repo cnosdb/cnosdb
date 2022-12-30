@@ -1,4 +1,5 @@
 --#DATABASE=only_time_col
+--#SLEEP=100
 --#SORT=true
 DROP DATABASE IF EXISTS only_time_col;
 CREATE DATABASE only_time_col WITH TTL '100000d';

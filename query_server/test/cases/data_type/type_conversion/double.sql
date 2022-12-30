@@ -1,4 +1,5 @@
 -- normal
+--#SLEEP=100
 -- public.test(time timestamp(ns), ta string, tb string, fa double, fb double)
 --#LP_BEGIN
 test_double_conv,ta=a1,tb=b1 fa=1,fb=2 3

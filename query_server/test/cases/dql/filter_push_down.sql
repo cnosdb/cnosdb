@@ -1,4 +1,5 @@
 --#DATABASE=filter_push_down
+--#SLEEP=100
 --#SORT=true
 DROP DATABASE IF EXISTS filter_push_down;
 CREATE DATABASE filter_push_down WITH TTL '100000d';

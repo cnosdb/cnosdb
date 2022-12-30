@@ -1,4 +1,5 @@
 --#DATABASE=only_tag_col
+--#SLEEP=100
 --#SORT=true
 drop database if exists only_tag_col;
 create database only_tag_col WITH TTL '100000d';

@@ -1,5 +1,5 @@
 --#DATABASE=empty_table
---#SLEEP=0
+--#SLEEP=100
 CREATE DATABASE empty_table;
 
 CREATE TABLE empty (

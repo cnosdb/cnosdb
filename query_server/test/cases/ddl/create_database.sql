@@ -1,4 +1,5 @@
 --#DATABASE=createdatabase
+--#SLEEP=100
 DROP DATABASE IF EXISTS createdatabase;
 
 CREATE TABLE test0(

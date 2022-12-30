@@ -1,4 +1,5 @@
 --#DATABASE=topk_func
+--#SLEEP=100
 --#SORT=true
 drop database if exists topk_func;
 create database topk_func WITH TTL '100000d';

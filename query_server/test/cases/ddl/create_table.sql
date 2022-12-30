@@ -1,5 +1,6 @@
 --#DATABASE=createtable
 --#SORT = true
+--#SLEEP=100
 DROP DATABASE IF EXISTS createtable;
 CREATE DATABASE createtable WITH TTL '100000d';
 CREATE TABLE createtable."tesT";

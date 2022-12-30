@@ -1,4 +1,5 @@
 --#DATABASE=tc_between
+--#SLEEP=100
 --#SORT=true
 DROP DATABASE IF EXISTS tc_between;
 CREATE DATABASE tc_between;

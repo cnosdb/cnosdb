@@ -1,4 +1,5 @@
 --#DATABASE=dropdatabase
+--#SLEEP=100
 CREATE DATABASE dropdatabase WITH TTL '100000d';
 
 CREATE TABLE test0(

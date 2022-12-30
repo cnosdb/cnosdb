@@ -1,4 +1,5 @@
 --#DATABASE=bottom_func
+--#SLEEP=100
 --#SORT=true
 drop database if exists bottom_func;
 create database bottom_func WITH TTL '100000d';
