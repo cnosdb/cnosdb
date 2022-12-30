@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+
     use serial_test::serial;
     use std::path::Path;
     use std::sync::Arc;
@@ -9,11 +9,9 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use config::get_config;
-    use models::codec::Encoding;
-    use models::schema::{
-        ColumnType, DatabaseSchema, ExternalTableSchema, TableColumn, TableSchema, TskvTableSchema,
-    };
-    use models::ValueType;
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use models::schema::TenantOptions;
+
     use protos::{kv_service, models_helper};
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::engine::Engine;
@@ -22,13 +20,24 @@ mod tests {
 
     fn get_tskv(dir: impl AsRef<Path>) -> (Arc<Runtime>, TsKv) {
         let dir = dir.as_ref();
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;
         let opt = kv_option::Options::from(&global_config);
         let rt = Arc::new(runtime::Runtime::new().unwrap());
-        rt.block_on(async { (rt.clone(), TsKv::open(opt, rt.clone()).await.unwrap()) })
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(global_config.cluster.clone()));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+        rt.block_on(async {
+            (
+                rt.clone(),
+                TsKv::open(global_config.cluster.clone(), opt, rt.clone())
+                    .await
+                    .unwrap(),
+            )
+        })
     }
 
     #[test]
@@ -53,7 +62,7 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.spawn(async move {
-            tskv.write(request).await.unwrap();
+            tskv.write(0, "cnosdb", request).await.unwrap();
         });
     }
 
@@ -70,24 +79,24 @@ mod tests {
         let points = fbb.finished_data().to_vec();
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush/data/db/tsm/0"
+            "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/tsm/0"
         ))
     }
 
@@ -106,7 +115,7 @@ mod tests {
             let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
             rt.block_on(async {
-                tskv.write(request).await.unwrap();
+                tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             });
         }
     }
@@ -123,27 +132,27 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(request.clone()).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
         rt.block_on(async {
-            tskv.write(request).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/db/tsm/0"
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/tsm/0"
         ));
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/db/delta/0"
+            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.db/delta/0"
         ));
     }
 
@@ -169,65 +178,9 @@ mod tests {
         let request = kv_service::WritePointsRpcRequest { version: 1, points };
 
         rt.block_on(async {
-            tskv.write(request).await.unwrap();
+            tskv.write(0, "cnosdb", request.clone()).await.unwrap();
         });
         println!("{:?}", tskv)
-    }
-
-    #[test]
-    #[serial]
-    fn test_kvcore_create_table() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let (_rt, tskv) = get_tskv("/tmp/test/kvcore/kvcore_create_table");
-        tskv.create_database(&DatabaseSchema::new("public"))
-            .unwrap();
-        tskv.create_database(&DatabaseSchema::new("test")).unwrap();
-        let schema = Schema::new(vec![
-            Field::new("cpu_hz", DataType::Decimal128(10, 6), false),
-            Field::new("temp", DataType::Float64, false),
-            Field::new("version_num", DataType::Int64, false),
-            Field::new("is_old", DataType::Boolean, false),
-            Field::new("weight", DataType::Decimal128(12, 7), false),
-        ]);
-        let expected = TableSchema::ExternalTableSchema(ExternalTableSchema {
-            db: "public".to_string(),
-            name: "cpu".to_string(),
-            file_compression_type: "".to_string(),
-            file_type: "CSV".to_string(),
-            location: "tests/data/csv/decimal_data.csv".to_string(),
-            target_partitions: 100,
-            table_partition_cols: vec![],
-            has_header: true,
-            delimiter: 44,
-            schema,
-        });
-        tskv.create_table(&expected).unwrap();
-        let table_schema = tskv.get_table_schema("public", "cpu").unwrap().unwrap();
-        assert_eq!(expected, table_schema);
-        let expected = TableSchema::TsKvTableSchema(TskvTableSchema::new(
-            "test".to_string(),
-            "test0".to_string(),
-            vec![
-                TableColumn::new(0, "time".to_string(), ColumnType::Time, Encoding::Default),
-                TableColumn::new(1, "ta".to_string(), ColumnType::Tag, Encoding::Default),
-                TableColumn::new(2, "tb".to_string(), ColumnType::Tag, Encoding::Default),
-                TableColumn::new(
-                    3,
-                    "fa".to_string(),
-                    ColumnType::Field(ValueType::Integer),
-                    Encoding::Default,
-                ),
-                TableColumn::new(
-                    4,
-                    "fb".to_string(),
-                    ColumnType::Field(ValueType::Float),
-                    Encoding::Default,
-                ),
-            ],
-        ));
-        tskv.create_table(&expected).unwrap();
-        let table_schema = tskv.get_table_schema("test", "test0").unwrap().unwrap();
-        assert_eq!(expected, table_schema);
     }
 
     async fn async_func1() {

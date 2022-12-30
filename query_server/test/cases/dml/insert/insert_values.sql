@@ -1,4 +1,5 @@
 --#SORT=true
+--#SLEEP=100
 -- normal
 DROP DATABASE IF EXISTS public;
 CREATE DATABASE public;
@@ -7,18 +8,23 @@ CREATE DATABASE public;
 --#LP_BEGIN
 test,ta=a1,tb=b1 fa=1,fb=2 3
 --#LP_END
+
+--#LP_BEGIN
+test,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
+--#LP_END
+
 insert public.test(TIME, ta, tb, fa, fb)
 values
-    (7, '7a', '7b', 7, 7);
+    (1667456411000000007, '7a', '7b', 7, 7);
 
 select * from public.test order by fa, fb;
 
 -- insert all columns with multi records
 insert public.test(TIME, ta, tb, fa, fb)
 values
-    (8, '8a', '8b', 8, 8),
-    (9, '9a', '9b', 9, 9),
-    (10, '10a', '10b', 10, 10);
+    (1667456411000000008, '8a', '8b', 8, 8),
+    (1667456411000000009, '9a', '9b', 9, 9),
+    (1667456411000000010, '10a', '10b', 10, 10);
 
 -- query all columns
 select * from public.test order by fa, fb;

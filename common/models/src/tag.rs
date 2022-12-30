@@ -2,6 +2,7 @@ use std::{cmp::Ordering, hash::Hash};
 
 use protos::models as fb_models;
 use serde::{Deserialize, Serialize};
+use utils::BkdrHasher;
 
 use crate::{
     errors::{Error, Result},
@@ -13,6 +14,17 @@ const TAG_VALUE_MAX_LEN: usize = 4096;
 
 pub fn sort_tags(tags: &mut [Tag]) {
     tags.sort_by(|a, b| -> Ordering { a.key.partial_cmp(&b.key).unwrap() })
+}
+
+pub fn tags_hash_id(name: &String, tags: &[Tag]) -> u64 {
+    let mut hasher = BkdrHasher::new();
+    hasher.hash_with(name.as_bytes());
+    for tag in tags {
+        hasher.hash_with(&tag.key);
+        hasher.hash_with(&tag.value);
+    }
+
+    hasher.number()
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Hash, Clone, Eq)]

@@ -1,7 +1,8 @@
 --#DATABASE=only_time_col
+--#SLEEP=100
 --#SORT=true
 DROP DATABASE IF EXISTS only_time_col;
-CREATE DATABASE only_time_col;
+CREATE DATABASE only_time_col WITH TTL '100000d';
 
 drop table if exists m2;
 CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) );

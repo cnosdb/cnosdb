@@ -1,4 +1,5 @@
 use snafu::Snafu;
+use std::{fmt::Debug, io};
 
 #[macro_export]
 macro_rules! define_result {
@@ -27,10 +28,24 @@ pub enum Error {
     #[snafu(display("Invalid serde message: {}", err))]
     InvalidSerdeMessage { err: String },
 
+    #[snafu(display("Invalid query expr message: {}", err))]
+    InvalidQueryExprMsg { err: String },
+
     #[snafu(display(
         "Internal error: {}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
         err
     ))]
     Internal { err: String },
+
+    #[snafu(display("Invalid query expr message: {}", err))]
+    IOErrors { err: String },
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::IOErrors {
+            err: err.to_string(),
+        }
+    }
 }

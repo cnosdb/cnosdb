@@ -84,9 +84,9 @@ pub fn or_u64(arr1: &[u64], arr2: &[u64]) -> Vec<u64> {
     result
 }
 
-pub fn now_timestamp() -> u64 {
+pub fn now_timestamp() -> i64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(n) => n.as_millis() as u64,
+        Ok(n) => n.as_nanos() as i64,
         Err(_) => panic!("SystemTime before UNIX EPOCH!"),
     }
 }

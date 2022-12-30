@@ -14,6 +14,7 @@ members = [
     "e2e_test",
     "coordinator",
     "config",
+    "meta",
     "tskv",
     "main",
     "client",
@@ -22,7 +23,7 @@ default-members = ["main"]
 
 [workspace.dependencies]
 actix-rt = "2.7.0"
-arrow-schema = {version = "26.0.0", features = ["serde"]}
+arrow-schema = { version = "26.0.0", features = ["serde"] }
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"
@@ -41,6 +42,8 @@ crossbeam = "0.8"
 crossbeam-channel = "0.5"
 ctrlc = "3"
 dashmap = "5.2"
+arrow-flight = { version = "26.0.0" }
+datafusion-proto = { version = "14.0.0" }
 datafusion = { version = "14.0.0", features = ["scheduler"] }
 diff = "0.1.13"
 dirs = "4.0.0"
@@ -65,12 +68,12 @@ parking_lot = { version = "0.12" }
 paste = "1.0"
 pin-project = "1.0"
 priority-queue = "1.2.3"
-prost = "0.10"
-prost-build = "0.10"
+prost = "0.11.0"
+prost-build = "0.11.0"
 q_compress = "0.11.1"
 rand = "0.8"
 regex = "1.5"
-reqwest = { version = "0.11.11" }
+reqwest = { version = "0.11.11", features = ["json"] }
 rustyline = "9.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -84,8 +87,8 @@ tokio = { version = "1.21" }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7.0" }
 toml = "0.5.9"
-tonic = "0.7"
-tonic-build = "0.7"
+tonic = "0.8"
+tonic-build = "0.8"
 tracing = "0.1.35"
 tracing-subscriber = "0.2.25"
 tracing-appender = "0.1.2"
@@ -93,8 +96,12 @@ tracing-error = "0.1.2"
 warp = { version = "0.3" }
 walkdir = "2.3.2"
 zstd = "0.11.2"
-os_info = {version = "3"}
-# exclude = ["client"]
+os_info = { version = "3" }
+uuid = { version = "1.1", features = ["v4"] }
+derive_builder = "0.11"
+openssl = "0.10.28"
+moka = "0.9.6"
+prost-types = { version = "0.11.2" }
 
 [profile.dev]
 lto = false

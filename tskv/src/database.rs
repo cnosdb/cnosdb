@@ -12,6 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use ::models::{FieldInfo, InMemPoint, Tag, ValueType};
+use meta::meta_client::MetaRef;
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::utils::{split_id, unite_id};
 use models::{ColumnId, SchemaId, SeriesId, SeriesKey, Timestamp};
@@ -19,7 +20,9 @@ use protos::models::{Point, Points};
 use trace::{debug, error, info};
 
 use crate::compaction::FlushReq;
+use crate::error::SchemaSnafu;
 use crate::index::{index_manger, IndexError, IndexResult};
+use crate::schema::schemas::DBschemas;
 use crate::tseries_family::LevelInfo;
 use crate::Error::{IndexErr, InvalidPoint};
 use crate::{
@@ -40,20 +43,22 @@ pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 
 #[derive(Debug)]
 pub struct Database {
-    name: String,
+    //tenant_name.database_name => owner
+    owner: String,
     index: Arc<db_index::DBIndex>,
+    schemas: Arc<DBschemas>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     opt: Arc<Options>,
 }
 
 impl Database {
-    pub fn new(schema: DatabaseSchema, opt: Arc<Options>) -> Result<Self> {
+    pub fn new(schema: DatabaseSchema, opt: Arc<Options>, meta: MetaRef) -> Result<Self> {
         let db = Self {
-            index: db_index::index_manger(opt.storage.index_base_dir())
+            index: index_manger(opt.storage.index_base_dir())
                 .write()
-                .get_db_index(schema.clone())
-                .context(IndexErrSnafu)?,
-            name: schema.name,
+                .get_db_index(&schema.owner()),
+            owner: schema.owner(),
+            schemas: Arc::new(DBschemas::new(schema, meta).context(SchemaSnafu)?),
             ts_families: HashMap::new(),
             opt,
         };
@@ -61,8 +66,7 @@ impl Database {
     }
 
     pub fn alter_db_schema(&self, schema: DatabaseSchema) -> Result<()> {
-        self.index.alter_db_schema(schema).context(IndexErrSnafu)?;
-        Ok(())
+        self.schemas.alter_db_schema(schema).context(SchemaSnafu)
     }
 
     pub fn open_tsfamily(
@@ -108,16 +112,16 @@ impl Database {
     ) -> Arc<RwLock<TseriesFamily>> {
         let ver = Arc::new(Version::new(
             tsf_id,
-            self.name.clone(),
+            self.owner.clone(),
             self.opt.storage.clone(),
             seq_no,
-            LevelInfo::init_levels(self.name.clone(), self.opt.storage.clone()),
+            LevelInfo::init_levels(self.owner.clone(), self.opt.storage.clone()),
             i64::MIN,
         ));
 
         let tf = TseriesFamily::new(
             tsf_id,
-            self.name.clone(),
+            self.owner.clone(),
             MemCache::new(tsf_id, self.opt.cache.max_buffer_size, seq_no),
             ver,
             self.opt.cache.clone(),
@@ -128,7 +132,7 @@ impl Database {
         self.ts_families.insert(tsf_id, tf.clone());
 
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(tsf_id, self.name.clone());
+        edit.add_tsfamily(tsf_id, self.owner.clone());
 
         let edits = vec![edit];
         let (task_state_sender, task_state_receiver) = oneshot::channel();
@@ -191,12 +195,12 @@ impl Database {
         let mut map = HashMap::new();
         for point in points {
             let sid = self.build_index(&point)?;
-            match self.index.check_field_type_from_cache(sid, &point) {
+            match self.schemas.check_field_type_from_cache(sid, &point) {
                 Ok(_) => {}
                 Err(_) => {
-                    self.index
+                    self.schemas
                         .check_field_type_or_else_add(sid, &point)
-                        .context(error::IndexErrSnafu)?;
+                        .context(error::SchemaSnafu)?;
                 }
             }
 
@@ -213,16 +217,12 @@ impl Database {
     ) -> Result<()> {
         let table_name = String::from_utf8(point.tab().unwrap().bytes().to_vec()).unwrap();
         let table_schema = self
-            .index
+            .schemas
             .get_table_schema(&table_name)
-            .context(IndexErrSnafu)?;
+            .context(SchemaSnafu)?;
         let table_schema = match table_schema {
             Some(v) => v,
             None => return Ok(()),
-        };
-        let table_schema = match table_schema {
-            TableSchema::TsKvTableSchema(schema) => schema,
-            _ => return Err(Error::NotFoundTable { table_name }),
         };
 
         let row = RowData::point_to_row_data(point, &table_schema);
@@ -278,7 +278,7 @@ impl Database {
         for (id, ts) in &self.ts_families {
             //tsfamily edit
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(*id, self.name.clone());
+            edit.add_tsfamily(*id, self.owner.clone());
             edits.push(edit);
 
             // file edit
@@ -299,13 +299,17 @@ impl Database {
         (edits, files)
     }
 
-    pub fn add_table_column(&self, table: &str, column: TableColumn) -> IndexResult<()> {
-        self.index.add_table_column(table, column)?;
+    pub fn add_table_column(&self, table: &str, column: TableColumn) -> Result<()> {
+        self.schemas
+            .add_table_column(table, column)
+            .context(SchemaSnafu)?;
         Ok(())
     }
 
-    pub fn drop_table_column(&self, table: &str, column_name: &str) -> IndexResult<()> {
-        self.index.drop_table_column(table, column_name)?;
+    pub fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
+        self.schemas
+            .drop_table_column(table, column_name)
+            .context(SchemaSnafu)?;
         Ok(())
     }
 
@@ -314,9 +318,10 @@ impl Database {
         table: &str,
         column_name: &str,
         new_column: TableColumn,
-    ) -> IndexResult<()> {
-        self.index
-            .change_table_column(table, column_name, new_column)?;
+    ) -> Result<()> {
+        self.schemas
+            .change_table_column(table, column_name, new_column)
+            .context(SchemaSnafu)?;
         Ok(())
     }
 
@@ -324,20 +329,29 @@ impl Database {
         self.index.get_series_key(sid)
     }
 
-    pub fn get_table_schema(&self, table_name: &str) -> IndexResult<Option<TableSchema>> {
-        self.index.get_table_schema(table_name)
+    pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchema>> {
+        self.schemas
+            .get_table_schema(table_name)
+            .context(SchemaSnafu)
     }
 
-    pub fn get_tskv_table_schema(&self, table_name: &str) -> IndexResult<TskvTableSchema> {
-        self.index.get_tskv_table_schema(table_name)
+    pub fn get_table_schema_by_series_id(&self, sid: u64) -> Result<Option<TskvTableSchema>> {
+        let key = self.index.get_series_key(sid).context(IndexErrSnafu)?;
+        match key {
+            None => Ok(None),
+            Some(series_key) => self
+                .schemas
+                .get_table_schema(&series_key.table)
+                .context(SchemaSnafu),
+        }
     }
 
-    pub fn get_table_schema_by_series_id(&self, sid: u64) -> IndexResult<Option<TableSchema>> {
-        self.index.get_table_schema_by_series_id(sid)
-    }
+    pub fn get_tsfamily(&self, id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
+        if let Some(v) = self.ts_families.get(&id) {
+            return Some(v.clone());
+        }
 
-    pub fn get_tsfamily(&self, id: u32) -> Option<&Arc<RwLock<TseriesFamily>>> {
-        self.ts_families.get(&id)
+        None
     }
 
     pub fn tsf_num(&self) -> usize {
@@ -359,6 +373,10 @@ impl Database {
         self.index.clone()
     }
 
+    pub fn get_schemas(&self) -> Arc<DBschemas> {
+        self.schemas.clone()
+    }
+
     // todo: will delete in cluster version
     pub fn get_tsfamily_random(&self) -> Option<Arc<RwLock<TseriesFamily>>> {
         if let Some((_, v)) = self.ts_families.iter().next() {
@@ -368,13 +386,14 @@ impl Database {
         None
     }
 
-    pub fn get_schema(&self) -> DatabaseSchema {
-        self.index.db_schema()
+    pub fn get_schema(&self) -> Result<DatabaseSchema> {
+        self.schemas.db_schema().context(SchemaSnafu)
     }
 }
 
 #[allow(clippy::await_holding_lock)]
 pub(crate) async fn delete_table_async(
+    tenant: String,
     database: String,
     table: String,
     version_set: Arc<RwLock<VersionSet>>,
@@ -382,11 +401,12 @@ pub(crate) async fn delete_table_async(
     info!("Drop table: '{}.{}'", &database, &table);
     let version_set_rlock = version_set.read();
     let options = version_set_rlock.options();
-    let db_instance = version_set_rlock.get_db(&database);
+    let db_instance = version_set_rlock.get_db(&tenant, &database);
     drop(version_set_rlock);
 
     if let Some(db) = db_instance {
         let index = db.read().get_index();
+        let schemas = db.read().get_schemas();
         let sids = index
             .get_series_id_list(&table, &[])
             .context(error::IndexErrSnafu)?;
@@ -394,12 +414,12 @@ pub(crate) async fn delete_table_async(
             "Drop table: deleting index in table: {}.{}",
             &database, &table
         );
-        let field_infos = index
+        let field_infos = schemas
             .get_table_schema(&table)
-            .context(error::IndexErrSnafu)?;
-        index
+            .context(error::SchemaSnafu)?;
+        schemas
             .del_table_schema(&table)
-            .context(error::IndexErrSnafu)?;
+            .context(error::SchemaSnafu)?;
 
         for sid in sids.iter() {
             index.del_series_info(*sid).context(error::IndexErrSnafu)?;
@@ -411,10 +431,6 @@ pub(crate) async fn delete_table_async(
                 "Drop table: deleting series in table: {}.{}",
                 &database, &table
             );
-            let fields = match fields {
-                TableSchema::TsKvTableSchema(schema) => schema,
-                _ => return Err(Error::NotFoundTable { table_name: table }),
-            };
             let fids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             let storage_fids: Vec<u64> = sids
                 .iter()

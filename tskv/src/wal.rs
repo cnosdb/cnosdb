@@ -20,8 +20,10 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
+use datafusion::parquet::data_type::AsBytes;
 use std::{
     path::{Path, PathBuf},
+    string::String,
     sync::Arc,
 };
 
@@ -31,32 +33,37 @@ use snafu::ResultExt;
 use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
+use crate::byte_utils::{decode_be_u32, decode_be_u64};
+use crate::file_system::file_manager::{self, FileManager};
 use crate::{
     byte_utils,
     context::GlobalContext,
-    engine,
     error::{self, Error, Result},
-    file_system::file_manager,
     file_utils,
     kv_option::WalOptions,
     record_file::{self, Record, RecordDataType, RecordDataVersion},
     tsm::{codec::get_str_codec, DecodeSnafu, EncodeSnafu},
 };
+use crate::{engine, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
-const ENTRY_HEADER_LEN: usize = 9; // 1 + 8
+const ENTRY_VNODE_LEN: usize = 4;
+const ENTRY_TENANT_LEN: usize = 8;
+const ENTRY_HEADER_LEN: usize = 21; // 1 + 8 + 4 + 8
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
 const SEGMENT_SIZE: u64 = 1073741824; // 1 GiB
 
-const BLOCK_HEADER_SIZE: usize = 17;
+const BLOCK_HEADER_SIZE: usize = 25;
 
 pub enum WalTask {
     Write {
+        id: TseriesFamilyId,
         points: Arc<Vec<u8>>,
+        tenant: Arc<Vec<u8>>,
         // (seq_no, written_size)
         cb: oneshot::Sender<Result<(u64, usize)>>,
     },
@@ -93,11 +100,21 @@ impl WalEntryBlock {
     }
 
     pub fn seq(&self) -> u64 {
-        byte_utils::decode_be_u64(&self.buf[1..9])
+        decode_be_u64(&self.buf[1..9])
+    }
+
+    pub fn vnode_id(&self) -> TseriesFamilyId {
+        decode_be_u32(&self.buf[9..13])
+    }
+
+    pub fn tenant(&self) -> &[u8] {
+        let tenant_len = decode_be_u64(&self.buf[13..21]) as usize;
+        &self.buf[ENTRY_HEADER_LEN..(ENTRY_HEADER_LEN + tenant_len)]
     }
 
     pub fn data(&self) -> &[u8] {
-        &self.buf[ENTRY_HEADER_LEN..]
+        let tenant_len = decode_be_u64(&self.buf[13..21]) as usize;
+        &self.buf[(ENTRY_HEADER_LEN + tenant_len)..]
     }
 }
 
@@ -171,15 +188,30 @@ impl WalWriter {
     }
 
     /// Writes data, returns data sequence and data size.
-    pub async fn write(&mut self, typ: WalEntryType, data: Arc<Vec<u8>>) -> Result<(u64, usize)> {
+    pub async fn write(
+        &mut self,
+        typ: WalEntryType,
+        data: Arc<Vec<u8>>,
+        id: TseriesFamilyId,
+        tenant: Arc<Vec<u8>>,
+    ) -> Result<(u64, usize)> {
         let mut seq = self.max_sequence;
+        let tenant_len = tenant.len() as u64;
 
         let written_size = self
             .inner
             .write_record(
                 RecordDataVersion::V1 as u8,
                 RecordDataType::Wal as u8,
-                [&[typ as u8][..], &seq.to_be_bytes(), &data].as_slice(),
+                [
+                    &[typ as u8][..],
+                    &seq.to_be_bytes(),
+                    &id.to_be_bytes(),
+                    &tenant_len.to_be_bytes(),
+                    &tenant,
+                    &data,
+                ]
+                .as_slice(),
             )
             .await?;
         seq += 1;
@@ -271,9 +303,15 @@ impl WalManager {
     }
 
     /// Checks if wal file is full then writes data. Return data sequence and data size.
-    pub async fn write(&mut self, typ: WalEntryType, data: Arc<Vec<u8>>) -> Result<(u64, usize)> {
+    pub async fn write(
+        &mut self,
+        typ: WalEntryType,
+        data: Arc<Vec<u8>>,
+        id: TseriesFamilyId,
+        tenant: Arc<Vec<u8>>,
+    ) -> Result<(u64, usize)> {
         self.roll_wal_file().await?;
-        self.current_file.write(typ, data).await
+        self.current_file.write(typ, data, id, tenant).await
     }
 
     pub async fn recover(
@@ -329,7 +367,10 @@ impl WalManager {
                                 version: 1,
                                 points: dst[0].to_vec(),
                             };
-                            engine.write_from_wal(req, seq).await.unwrap();
+                            let id = e.vnode_id();
+                            let tenant =
+                                unsafe { String::from_utf8_unchecked(e.tenant().to_vec()) };
+                            engine.write_from_wal(id, &tenant, req, seq).await.unwrap();
                         }
                         WalEntryType::Delete => {
                             // TODO delete a memcache entry
@@ -413,7 +454,6 @@ impl WalReader {
             error!("Error reading wal: block length too small: {}", data.len());
             return Ok(None);
         }
-
         Ok(Some(WalEntryBlock::new(data[0].into(), data)))
     }
 
@@ -441,18 +481,23 @@ impl WalReader {
 mod test {
     use core::panic;
     use std::path::Path;
+    use std::time::Duration;
     use std::{borrow::BorrowMut, path::PathBuf, sync::Arc};
 
     use chrono::Utc;
+    use datafusion::parquet::data_type::AsBytes;
     use flatbuffers::{self, Vector, WIPOffset};
     use lazy_static::lazy_static;
     use serial_test::serial;
     use tokio::runtime;
+    use tokio::time::sleep;
 
     use config::get_config;
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
     use models::codec::Encoding;
+    use models::schema::TenantOptions;
     use protos::{models as fb_models, models_helper};
-    use trace::init_default_global_tracing;
+    use trace::{info, init_default_global_tracing};
 
     use crate::engine::Engine;
     use crate::file_system::file_manager::{self, list_file_names, FileManager};
@@ -546,9 +591,14 @@ mod test {
             let mut dec_points = Vec::new();
             coder.decode(&enc_points, &mut dec_points).unwrap();
 
-            mgr.write(WalEntryType::Write, Arc::new(enc_points))
-                .await
-                .unwrap();
+            mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                0,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            )
+            .await
+            .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -585,9 +635,14 @@ mod test {
                 .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, Arc::new(enc_points))
-                .await
-                .unwrap();
+            mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                0,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            )
+            .await
+            .unwrap();
         }
         mgr.close().await.unwrap();
 
@@ -616,9 +671,14 @@ mod test {
                 .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            mgr.write(WalEntryType::Write, Arc::new(enc_points))
-                .await
-                .unwrap();
+            mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                0,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            )
+            .await
+            .unwrap();
         }
         // Do not close wal manager, so footer won't write.
 
@@ -632,7 +692,7 @@ mod test {
         let rt = Arc::new(runtime::Runtime::new().unwrap());
         let dir = "/tmp/test/wal/4/wal";
         let _ = std::fs::remove_dir_all(dir);
-        let mut global_config = get_config("../config/config.toml");
+        let mut global_config = get_config("../config/config_31001.toml");
         global_config.wal.path = dir.to_string();
         global_config.storage.path = "/tmp/test/wal/4".to_string();
         let wal_config = WalOptions::from(&global_config);
@@ -650,15 +710,27 @@ mod test {
                 .encode(&[&data], &mut enc_points)
                 .map_err(|_| Error::Send)
                 .unwrap();
-            rt.block_on(mgr.write(WalEntryType::Write, Arc::new(enc_points)))
-                .expect("write succeed");
+            rt.block_on(mgr.write(
+                WalEntryType::Write,
+                Arc::new(enc_points),
+                10,
+                Arc::new("cnosdb".as_bytes().to_vec()),
+            ))
+            .expect("write succeed");
         }
         rt.block_on(mgr.close()).unwrap();
         rt.block_on(check_wal_files(dir, data_vec, true)).unwrap();
 
         let opt = kv_option::Options::from(&global_config);
-        let tskv = rt.block_on(TsKv::open(opt, rt.clone())).unwrap();
-        let ver = tskv.get_db_version("db0").unwrap().unwrap();
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(global_config.cluster.clone()));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
+        let tskv = rt
+            .block_on(TsKv::open(global_config.cluster, opt, rt.clone()))
+            .unwrap();
+        let ver = tskv.get_db_version("cnosdb", "db0", 10).unwrap().unwrap();
+        assert_eq!(ver.ts_family_id, 10);
         let expected = r#"[RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }, RowData { ts: 1, fields: [Some(Integer(100)), Some(Float(4.94e-321))] }]"#;
         let ans = format!(
             "{:?}",

@@ -1,0 +1,87 @@
+-- EXECUTE SQL: drop tenant if exists test_cols_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_cols_u1; --
+200 OK
+
+
+-- EXECUTE SQL: drop user if exists test_cols_u2; --
+200 OK
+
+
+-- EXECUTE SQL: create tenant if not exists test_cols_tenant1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_cols_u1; --
+200 OK
+
+
+-- EXECUTE SQL: create user if not exists test_cols_u2; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_cols_tenant1 add user root as member; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_cols_tenant1 add user test_cols_u1 as owner; --
+200 OK
+
+
+-- EXECUTE SQL: alter tenant test_cols_tenant1 add user test_cols_u2 as member; --
+200 OK
+
+
+-- EXECUTE SQL: drop database if exists public2; --
+200 OK
+
+
+-- EXECUTE SQL: create database if not exists public2; --
+200 OK
+
+
+-- EXECUTE SQL: CREATE TABLE IF NOT EXISTS public2.test_info_schema_tbl2( column1 BIGINT CODEC(DELTA), column2 STRING CODEC(GZIP), column3 BIGINT UNSIGNED CODEC(NULL), column4 BOOLEAN, column5 DOUBLE CODEC(GORILLA), TAGS(column6, column7)); --
+200 OK
+
+
+-- EXECUTE SQL: select * from information_schema.columns; --
+-- AFTER_SORT --
+200 OK
+tenant_name,database_name,table_name,column_name,column_type,ordinal_position,column_default,is_nullable,data_type,compression_codec
+test_cols_tenant1,public2,test_info_schema_tbl2,column1,FIELD,3,NULL,true,BIGINT,DELTA
+test_cols_tenant1,public2,test_info_schema_tbl2,column2,FIELD,4,NULL,true,STRING,GZIP
+test_cols_tenant1,public2,test_info_schema_tbl2,column3,FIELD,5,NULL,true,BIGINT UNSIGNED,NULL
+test_cols_tenant1,public2,test_info_schema_tbl2,column4,FIELD,6,NULL,true,BOOLEAN,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,column5,FIELD,7,NULL,true,DOUBLE,GORILLA
+test_cols_tenant1,public2,test_info_schema_tbl2,column6,TAG,1,NULL,true,STRING,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,column7,TAG,2,NULL,true,STRING,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP,DEFAULT
+
+-- EXECUTE SQL: select * from information_schema.columns; --
+-- AFTER_SORT --
+200 OK
+tenant_name,database_name,table_name,column_name,column_type,ordinal_position,column_default,is_nullable,data_type,compression_codec
+test_cols_tenant1,public2,test_info_schema_tbl2,column1,FIELD,3,NULL,true,BIGINT,DELTA
+test_cols_tenant1,public2,test_info_schema_tbl2,column2,FIELD,4,NULL,true,STRING,GZIP
+test_cols_tenant1,public2,test_info_schema_tbl2,column3,FIELD,5,NULL,true,BIGINT UNSIGNED,NULL
+test_cols_tenant1,public2,test_info_schema_tbl2,column4,FIELD,6,NULL,true,BOOLEAN,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,column5,FIELD,7,NULL,true,DOUBLE,GORILLA
+test_cols_tenant1,public2,test_info_schema_tbl2,column6,TAG,1,NULL,true,STRING,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,column7,TAG,2,NULL,true,STRING,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP,DEFAULT
+
+-- EXECUTE SQL: select * from information_schema.columns; --
+-- AFTER_SORT --
+200 OK
+tenant_name,database_name,table_name,column_name,column_type,ordinal_position,column_default,is_nullable,data_type,compression_codec
+test_cols_tenant1,public2,test_info_schema_tbl2,column1,FIELD,3,NULL,true,BIGINT,DELTA
+test_cols_tenant1,public2,test_info_schema_tbl2,column2,FIELD,4,NULL,true,STRING,GZIP
+test_cols_tenant1,public2,test_info_schema_tbl2,column3,FIELD,5,NULL,true,BIGINT UNSIGNED,NULL
+test_cols_tenant1,public2,test_info_schema_tbl2,column4,FIELD,6,NULL,true,BOOLEAN,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,column5,FIELD,7,NULL,true,DOUBLE,GORILLA
+test_cols_tenant1,public2,test_info_schema_tbl2,column6,TAG,1,NULL,true,STRING,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,column7,TAG,2,NULL,true,STRING,DEFAULT
+test_cols_tenant1,public2,test_info_schema_tbl2,time,TIME,0,NULL,false,TIMESTAMP,DEFAULT
+

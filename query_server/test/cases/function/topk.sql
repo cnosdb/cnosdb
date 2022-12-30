@@ -1,7 +1,8 @@
 --#DATABASE=topk_func
+--#SLEEP=100
 --#SORT=true
 drop database if exists topk_func;
-create database topk_func;
+create database topk_func WITH TTL '100000d';
 
 drop table if exists m2;
 CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) ); -- 1ms;

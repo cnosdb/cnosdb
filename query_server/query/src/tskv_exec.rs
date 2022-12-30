@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use coordinator::service::CoordinatorRef;
 use datafusion::{
     arrow::datatypes::SchemaRef,
     error::{DataFusionError, Result},
@@ -17,8 +18,8 @@ use datafusion::{
 use models::predicate::domain::PredicateRef;
 use models::schema::TskvTableSchemaRef;
 
-use crate::stream::{TableScanMetrics, TableScanStream};
-use tskv::engine::EngineRef;
+use crate::stream::TableScanStream;
+use tskv::iterator::TableScanMetrics;
 
 #[derive(Debug, Clone)]
 pub struct TskvExec {
@@ -27,7 +28,7 @@ pub struct TskvExec {
     table_schema: TskvTableSchemaRef,
     proj_schema: SchemaRef,
     filter: PredicateRef,
-    engine: EngineRef,
+    coord: CoordinatorRef,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -38,7 +39,7 @@ impl TskvExec {
         table_schema: TskvTableSchemaRef,
         proj_schema: SchemaRef,
         filter: PredicateRef,
-        engine: EngineRef,
+        coord: CoordinatorRef,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
 
@@ -46,7 +47,7 @@ impl TskvExec {
             table_schema,
             proj_schema,
             filter,
-            engine,
+            coord,
             metrics,
         }
     }
@@ -84,7 +85,7 @@ impl ExecutionPlan for TskvExec {
             table_schema: self.table_schema.clone(),
             proj_schema: self.proj_schema.clone(),
             filter: self.filter.clone(),
-            engine: self.engine.clone(),
+            coord: self.coord.clone(),
             metrics: self.metrics.clone(),
         }))
     }
@@ -101,9 +102,9 @@ impl ExecutionPlan for TskvExec {
         let table_stream = TableScanStream::new(
             self.table_schema.clone(),
             self.schema(),
+            self.coord.clone(),
             self.filter(),
             batch_size,
-            self.engine.clone(),
             metrics,
         )
         .map_err(|err| DataFusionError::External(Box::new(err)))?;

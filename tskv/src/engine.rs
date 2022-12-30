@@ -1,14 +1,16 @@
+use crate::database::Database;
 use crate::error::Result;
 use crate::index::IndexResult;
 use crate::tseries_family::SuperVersion;
 use crate::tsm::DataBlock;
-use crate::{Options, TimeRange, TsKv};
+use crate::{Options, TimeRange, TsKv, TseriesFamilyId};
 use async_trait::async_trait;
 use datafusion::prelude::Column;
 use models::codec::Encoding;
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use models::schema::{DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, Timestamp, ValueType};
+use parking_lot::RwLock;
 use protos::{
     kv_service::{WritePointsRpcRequest, WritePointsRpcResponse, WriteRowsRpcRequest},
     models as fb_models,
@@ -22,36 +24,58 @@ pub type EngineRef = Arc<dyn Engine>;
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
-    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse>;
+    async fn write(
+        &self,
+        id: u32,
+        tenant_name: &str,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse>;
 
     async fn write_from_wal(
         &self,
+        id: u32,
+        tenant_name: &str,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse>;
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<()>;
+    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>>;
 
-    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
+    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()>;
 
-    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema>;
+    // fn get_db_schema(&self, tenant: &str, database: &str) -> Result<Option<DatabaseSchema>>;
 
-    fn drop_database(&self, database: &str) -> Result<()>;
+    fn drop_database(&self, tenant: &str, database: &str) -> Result<()>;
 
-    fn create_table(&self, schema: &TableSchema) -> Result<()>;
+    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()>;
 
-    fn drop_table(&self, database: &str, table: &str) -> Result<()>;
+    fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
-    fn list_databases(&self) -> Result<Vec<String>>;
+    // fn list_databases(&self) -> Result<Vec<String>>;
 
-    fn list_tables(&self, database: &str) -> Result<Vec<String>>;
+    // fn list_tables(&self, tenant_name: &str, database: &str) -> Result<Vec<String>>;
 
-    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()>;
+    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
 
-    fn drop_table_column(&self, database: &str, table: &str, column: &str) -> Result<()>;
+    fn add_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column: TableColumn,
+    ) -> Result<()>;
+
+    fn drop_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column: &str,
+    ) -> Result<()>;
 
     fn change_table_column(
         &self,
+        tenant: &str,
         database: &str,
         table: &str,
         column_name: &str,
@@ -60,6 +84,7 @@ pub trait Engine: Send + Sync + Debug {
 
     fn delete_columns(
         &self,
+        tenant: &str,
         database: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
@@ -67,23 +92,46 @@ pub trait Engine: Send + Sync + Debug {
 
     fn delete_series(
         &self,
+        tenant: &str,
         database: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()>;
 
-    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>>;
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>>;
 
     fn get_series_id_by_filter(
         &self,
+        tenant: &str,
         db: &str,
         tab: &str,
         filter: &ColumnDomains<String>,
     ) -> IndexResult<Vec<u64>>;
-    fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>>;
-    fn get_series_key(&self, db: &str, sid: SeriesId) -> IndexResult<Option<SeriesKey>>;
-    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>>;
+    fn get_series_id_list(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+        tags: &[Tag],
+    ) -> IndexResult<Vec<u64>>;
+    fn get_series_key(
+        &self,
+        tenant: &str,
+        db: &str,
+        sid: SeriesId,
+    ) -> IndexResult<Option<SeriesKey>>;
+    fn get_db_version(
+        &self,
+        tenant: &str,
+        db: &str,
+        vnode_id: u32,
+    ) -> Result<Option<Arc<SuperVersion>>>;
 }
 
 #[derive(Debug, Default)]
@@ -91,7 +139,12 @@ pub struct MockEngine {}
 
 #[async_trait]
 impl Engine for MockEngine {
-    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
+    async fn write(
+        &self,
+        id: u32,
+        tenant: &str,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse> {
         debug!("writing point");
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points).unwrap();
@@ -106,6 +159,8 @@ impl Engine for MockEngine {
 
     async fn write_from_wal(
         &self,
+        id: u32,
+        tenant: &str,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
@@ -116,38 +171,43 @@ impl Engine for MockEngine {
         })
     }
 
-    fn drop_database(&self, database: &str) -> Result<()> {
+    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        Ok(())
+    }
+
+    fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
         println!("drop_database.sql {:?}", database);
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) -> Result<()> {
-        todo!()
-    }
+    // fn create_table(&self, schema: &TskvTableSchema) -> Result<()> {
+    //     todo!()
+    // }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
-        Ok(())
-    }
+    // fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    //     todo!()
+    // }
 
-    fn list_databases(&self) -> Result<Vec<String>> {
-        todo!()
-    }
+    // fn list_databases(&self) -> Result<Vec<String>> {
+    //     todo!()
+    // }
 
-    fn list_tables(&self, database: &str) -> Result<Vec<String>> {
-        todo!()
-    }
+    // fn list_tables(&self, tenant: &str, database: &str) -> Result<Vec<String>> {
+    //     todo!()
+    // }
 
-    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
-        Some(DatabaseSchema::new(name))
-    }
+    // fn get_db_schema(&self, tenant: &str, name: &str) -> Result<Option<DatabaseSchema>> {
+    //     Ok(Some(DatabaseSchema::new(tenant, name)))
+    // }
 
-    fn drop_table(&self, database: &str, table: &str) -> Result<()> {
+    fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         println!("drop_table db:{:?}, table:{:?}", database, table);
         Ok(())
     }
 
     fn delete_columns(
         &self,
+        tenant: &str,
         database: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
@@ -157,6 +217,7 @@ impl Engine for MockEngine {
 
     fn delete_series(
         &self,
+        tenant: &str,
         database: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
@@ -165,17 +226,24 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    fn get_table_schema(&self, db: &str, tab: &str) -> Result<Option<TableSchema>> {
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>> {
         debug!("get_table_schema db:{:?}, table:{:?}", db, tab);
-        Ok(Some(TableSchema::TsKvTableSchema(TskvTableSchema::new(
+        Ok(Some(TskvTableSchema::new(
+            tenant.to_string(),
             db.to_string(),
             tab.to_string(),
             Default::default(),
-        ))))
+        )))
     }
 
     fn get_series_id_by_filter(
         &self,
+        tenant: &str,
         db: &str,
         tab: &str,
         filter: &ColumnDomains<String>,
@@ -183,32 +251,56 @@ impl Engine for MockEngine {
         Ok(vec![])
     }
 
-    fn get_series_id_list(&self, db: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
+    fn get_series_id_list(
+        &self,
+        tenant: &str,
+        db: &str,
+        tab: &str,
+        tags: &[Tag],
+    ) -> IndexResult<Vec<u64>> {
         Ok(vec![])
     }
 
-    fn get_series_key(&self, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {
+    fn get_series_key(&self, tenant: &str, db: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {
         Ok(None)
     }
 
-    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
+    fn get_db_version(
+        &self,
+        tenant: &str,
+        db: &str,
+        vnode_id: u32,
+    ) -> Result<Option<Arc<SuperVersion>>> {
         todo!()
     }
 
-    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
+    // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
+    //     todo!()
+    // }
+
+    fn add_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column: TableColumn,
+    ) -> Result<()> {
         todo!()
     }
 
-    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
-        todo!()
-    }
-
-    fn drop_table_column(&self, database: &str, table: &str, column: &str) -> Result<()> {
+    fn drop_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column: &str,
+    ) -> Result<()> {
         todo!()
     }
 
     fn change_table_column(
         &self,
+        tenant: &str,
         database: &str,
         table: &str,
         column_name: &str,

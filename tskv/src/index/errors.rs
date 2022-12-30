@@ -29,9 +29,6 @@ pub enum IndexError {
     #[snafu(display("index storage error: {}", msg))]
     IndexStroage { msg: String },
 
-    #[snafu(display("table '{}' not found", table))]
-    TableNotFound { table: String },
-
     #[snafu(display("column '{}' already exists", column))]
     ColumnAlreadyExists { column: String },
 }

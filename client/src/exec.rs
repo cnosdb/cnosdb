@@ -138,9 +138,16 @@ async fn exec_and_print(
     print_options: &PrintOptions,
     sql: String,
 ) -> Result<(), String> {
-    let now = Instant::now();
-    let results = ctx.sql(sql).await?;
-    print_options.print_batches(&results, now)?;
+    let strs: Vec<&str> = sql.split(';').collect();
+    for tmp in strs.iter() {
+        if tmp.trim().is_empty() {
+            continue;
+        }
+
+        let now = Instant::now();
+        let results = ctx.sql(tmp.to_string() + ";").await?;
+        print_options.print_batches(&results, now)?;
+    }
 
     Ok(())
 }

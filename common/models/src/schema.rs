@@ -8,12 +8,13 @@
 //!         - Column #4
 
 use std::collections::HashMap;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::{collections::BTreeMap, sync::Arc};
 
 use std::mem::size_of_val;
 use std::str::FromStr;
 
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use datafusion::arrow::datatypes::{
@@ -29,6 +30,8 @@ use datafusion::datasource::listing::ListingOptions;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
 
 use crate::codec::Encoding;
+pub use crate::limiter::LimiterConfig;
+use crate::oid::{Identifier, Oid};
 use crate::{ColumnId, SchemaId, ValueType};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
@@ -59,10 +62,18 @@ impl TableSchema {
             TableSchema::ExternalTableSchema(schema) => schema.db.clone(),
         }
     }
+
+    pub fn engine_name(&self) -> &str {
+        match self {
+            TableSchema::TsKvTableSchema(_) => "TSKV",
+            TableSchema::ExternalTableSchema(_) => "EXTERNAL",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ExternalTableSchema {
+    pub tenant: String,
     pub db: String,
     pub name: String,
     pub file_compression_type: String,
@@ -113,6 +124,7 @@ impl ExternalTableSchema {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TskvTableSchema {
+    pub tenant: String,
     pub db: String,
     pub name: String,
     pub schema_id: SchemaId,
@@ -126,6 +138,7 @@ pub struct TskvTableSchema {
 impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
+            tenant: "cnosdb".to_string(),
             db: "public".to_string(),
             name: "".to_string(),
             schema_id: 0,
@@ -142,7 +155,7 @@ impl TskvTableSchema {
         Arc::new(Schema::new(fields))
     }
 
-    pub fn new(db: String, name: String, columns: Vec<TableColumn>) -> Self {
+    pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
         let columns_index = columns
             .iter()
             .enumerate()
@@ -150,6 +163,7 @@ impl TskvTableSchema {
             .collect();
 
         Self {
+            tenant,
             db,
             name,
             schema_id: 0,
@@ -452,8 +466,8 @@ impl ColumnType {
     }
 }
 
-impl std::fmt::Display for ColumnType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for ColumnType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         let s = self.as_str();
         write!(f, "{}", s)
     }
@@ -473,19 +487,60 @@ impl ColumnType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct DatabaseSchema {
-    pub name: String,
+    tenant: String,
+    database: String,
     pub config: DatabaseOptions,
 }
 
 impl DatabaseSchema {
-    pub fn new(name: &str) -> Self {
+    pub fn new(tenant_name: &str, database_name: &str) -> Self {
         DatabaseSchema {
-            name: name.to_string(),
+            tenant: tenant_name.to_string(),
+            database: database_name.to_string(),
             config: DatabaseOptions::default(),
         }
     }
+
+    pub fn database_name(&self) -> &str {
+        &self.database
+    }
+
+    pub fn tenant_name(&self) -> &str {
+        &self.tenant
+    }
+
+    pub fn owner(&self) -> String {
+        format!("{}.{}", self.tenant, self.database)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        if self.tenant.is_empty() && self.database.is_empty() {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn options(&self) -> &DatabaseOptions {
+        &self.config
+    }
+}
+
+pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
+    format!("{}.{}", tenant_name, database_name)
+}
+
+pub fn split_owner(owner: &str) -> (&str, &str) {
+    owner
+        .find('.')
+        .map(|index| {
+            (index < owner.len())
+                .then(|| (&owner[..index], &owner[(index + 1)..]))
+                .unwrap_or((owner, ""))
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
@@ -632,6 +687,13 @@ impl fmt::Display for Duration {
 }
 
 impl Duration {
+    pub fn new_with_day(day: u64) -> Self {
+        Self {
+            time_num: day,
+            unit: DurationUnit::Day,
+        }
+    }
+
     // with default DurationUnit day
     pub fn new(text: &str) -> Option<Self> {
         if text.is_empty() {
@@ -663,5 +725,70 @@ impl Duration {
             time_num,
             unit: time_unit,
         })
+    }
+
+    pub fn new_inf() -> Self {
+        Self {
+            time_num: 100000,
+            unit: DurationUnit::Day,
+        }
+    }
+
+    pub fn time_stamp(&self) -> i64 {
+        match self.unit {
+            DurationUnit::Minutes => self.time_num as i64 * 60 * 1000000000,
+            DurationUnit::Hour => self.time_num as i64 * 3600 * 1000000000,
+            DurationUnit::Day => self.time_num as i64 * 24 * 3600 * 1000000000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tenant {
+    id: Oid,
+    name: String,
+    options: TenantOptions,
+}
+
+impl Identifier<Oid> for Tenant {
+    fn id(&self) -> &Oid {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Tenant {
+    pub fn new(id: Oid, name: String, options: TenantOptions) -> Self {
+        Self { id, name, options }
+    }
+
+    pub fn options(&self) -> &TenantOptions {
+        &self.options
+    }
+}
+
+#[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
+#[builder(setter(into, strip_option), default)]
+pub struct TenantOptions {
+    pub comment: Option<String>,
+    pub limiter_config: Option<LimiterConfig>,
+}
+
+impl TenantOptions {
+    pub fn set_limiter(&mut self, limiter_config: Option<LimiterConfig>) {
+        self.limiter_config = limiter_config;
+    }
+}
+
+impl Display for TenantOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref e) = self.comment {
+            write!(f, "comment={},", e)?;
+        }
+
+        Ok(())
     }
 }

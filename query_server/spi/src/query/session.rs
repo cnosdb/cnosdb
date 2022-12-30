@@ -3,6 +3,7 @@ use datafusion::{
     execution::context,
     prelude::{SessionConfig, SessionContext},
 };
+use models::{auth::user::User, oid::Oid};
 
 use crate::service::protocol::Context;
 
@@ -10,8 +11,12 @@ use crate::service::protocol::Context;
 pub struct IsiphoSessionCtx {
     // todo
     // ...
-    catalog: String,
-    database: String,
+    user: User,
+
+    tenant_id: Oid,
+    tenant: String,
+    default_database: String,
+
     inner: SessionContext,
 }
 
@@ -20,12 +25,20 @@ impl IsiphoSessionCtx {
         &self.inner
     }
 
-    pub fn catalog(&self) -> &str {
-        &self.catalog
+    pub fn tenant_id(&self) -> &Oid {
+        &self.tenant_id
     }
 
-    pub fn database(&self) -> &str {
-        &self.database
+    pub fn tenant(&self) -> &str {
+        &self.tenant
+    }
+
+    pub fn default_database(&self) -> &str {
+        &self.default_database
+    }
+
+    pub fn user(&self) -> &User {
+        &self.user
     }
 }
 
@@ -35,15 +48,17 @@ pub struct IsiphoSessionCtxFactory {
 }
 
 impl IsiphoSessionCtxFactory {
-    pub fn create_isipho_session_ctx(&self, context: Context) -> IsiphoSessionCtx {
+    pub fn create_isipho_session_ctx(&self, context: Context, tenant_id: Oid) -> IsiphoSessionCtx {
         let isipho_ctx = context.session_config().to_owned();
         // TODO Use global configuration as the default configuration for session
         let df_session_state = context::default_session_builder(isipho_ctx.inner);
         let df_session_ctx = SessionContext::with_state(df_session_state);
 
         IsiphoSessionCtx {
-            catalog: context.user_info().to_owned().user,
-            database: context.database().to_owned(),
+            user: context.user_info().to_owned(),
+            tenant_id,
+            tenant: context.tenant().to_owned(),
+            default_database: context.database().to_owned(),
             inner: df_session_ctx,
         }
     }

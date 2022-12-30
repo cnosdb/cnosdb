@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::{
     array::{StringBuilder, UInt64Builder},
-    datatypes::{DataType, Field, Schema},
+    datatypes::{DataType, Field, Schema, SchemaRef},
     error::ArrowError,
     record_batch::RecordBatch,
 };
@@ -41,7 +41,7 @@ impl SystemTask for ShowQueriesTask {
             let status = e.status();
             result_builder.add_column(
                 info.query_id(),
-                info.user(),
+                info.user_name(),
                 info.query(),
                 status.query_state(),
                 status.duration(),
@@ -49,12 +49,15 @@ impl SystemTask for ShowQueriesTask {
         });
 
         Ok(Output::StreamData(
+            result_builder.schema(),
             result_builder.build().context(ArrowSnafu)?,
         ))
     }
 }
 
 struct ShowQueriesResultBuilder {
+    schema: SchemaRef,
+
     query_ids: StringBuilder,
     users: StringBuilder,
     queries: StringBuilder,
@@ -64,7 +67,16 @@ struct ShowQueriesResultBuilder {
 
 impl ShowQueriesResultBuilder {
     fn new() -> Self {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("query_id", DataType::Utf8, false),
+            Field::new("user", DataType::Utf8, false),
+            Field::new("query", DataType::Utf8, false),
+            Field::new("state", DataType::Utf8, false),
+            Field::new("duration", DataType::UInt64, false),
+        ]));
+
         Self {
+            schema,
             query_ids: StringBuilder::new(),
             users: StringBuilder::new(),
             queries: StringBuilder::new(),
@@ -85,20 +97,17 @@ impl ShowQueriesResultBuilder {
         self.query_ids.append_value(query_id.to_string());
         self.users.append_value(user.as_ref());
         self.queries.append_value(query.as_ref());
-        self.states.append_value(state.to_string());
+        self.states.append_value(state.as_ref());
         self.durations.append_value(duration.as_millis() as u64);
     }
 
-    fn build(self) -> Result<Vec<RecordBatch>, ArrowError> {
-        let schema = Schema::new(vec![
-            Field::new("query_id", DataType::Utf8, false),
-            Field::new("user", DataType::Utf8, false),
-            Field::new("query", DataType::Utf8, false),
-            Field::new("state", DataType::Utf8, false),
-            Field::new("duration", DataType::UInt64, false),
-        ]);
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
 
+    fn build(self) -> Result<Vec<RecordBatch>, ArrowError> {
         let ShowQueriesResultBuilder {
+            schema,
             mut query_ids,
             mut users,
             mut queries,
@@ -106,7 +115,6 @@ impl ShowQueriesResultBuilder {
             mut durations,
         } = self;
 
-        let schema = Arc::new(schema);
         let batch = RecordBatch::try_new(
             schema,
             vec![

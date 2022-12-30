@@ -4,7 +4,7 @@
 
 -- EXECUTE SQL: DESCRIBE DATABASE test1; --
 422 Unprocessable Entity
-{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Metadata operator err: Database test1 not exists."}
+{"error_code":"0100000","error_message":"Error executiong query: Failed to do execute statement, err:Failed to do execution. err: Metadata operator err: Database not found: \"test1\""}
 -- ERROR:  --
 
 -- EXECUTE SQL: CREATE DATABASE IF NOT EXISTS test1; --

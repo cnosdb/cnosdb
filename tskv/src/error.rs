@@ -1,8 +1,9 @@
-use std::path::{Path, PathBuf};
-
+use meta::error::MetaError;
 use models::SeriesId;
 use snafu::Snafu;
+use std::path::{Path, PathBuf};
 
+use crate::schema::error::SchemaError;
 use crate::{
     tsm::{ReadTsmError, WriteTsmError},
     wal,
@@ -36,6 +37,9 @@ pub enum Error {
 
     #[snafu(display("Unable to sync file: {}", source))]
     SyncFile { source: std::io::Error },
+
+    #[snafu(display("Error with apply to meta: {}", source))]
+    Meta { source: MetaError },
 
     #[snafu(display("File {} has wrong name format: {}", file_name, message))]
     InvalidFileName { file_name: String, message: String },
@@ -124,6 +128,12 @@ pub enum Error {
 
     #[snafu(display("table not found for {}", table_name))]
     NotFoundTable { table_name: String },
+
+    #[snafu(display("common error: {}", reason))]
+    CommonError { reason: String },
+
+    #[snafu(display("Error with schema action {}", source))]
+    Schema { source: SchemaError },
 
     #[snafu(display("Invalid parameter : {}", reason))]
     InvalidParam { reason: String },

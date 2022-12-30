@@ -67,7 +67,9 @@ impl QueryExecution for SystemExecution {
         QueryInfo::new(
             qsm.query_id,
             qsm.query.content().to_string(),
-            qsm.query.context().user_info().user.to_string(),
+            *qsm.session.tenant_id(),
+            qsm.session.tenant().to_string(),
+            qsm.query.context().user_info().desc().clone(),
         )
     }
     // 运行时信息

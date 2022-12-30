@@ -12,6 +12,7 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::{mpsc::UnboundedSender, oneshot::Sender};
 
 use config::get_config;
+use meta::meta_client::MetaRef;
 use models::Timestamp;
 use trace::{debug, error, info};
 
@@ -221,11 +222,7 @@ impl Summary {
 
         Ok(Self {
             file_no: 0,
-            version_set: Arc::new(RwLock::new(VersionSet::new(
-                opt.clone(),
-                HashMap::new(),
-                flush_task_sender,
-            )?)),
+            version_set: Arc::new(RwLock::new(VersionSet::empty(opt.clone()))),
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
@@ -233,6 +230,7 @@ impl Summary {
     }
 
     pub async fn recover(
+        meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> Result<Self> {
@@ -245,7 +243,7 @@ impl Summary {
                 .await
                 .unwrap(),
         );
-        let vs = Self::recover_version(rd, &ctx, opt.clone(), flush_task_sender).await?;
+        let vs = Self::recover_version(meta, rd, &ctx, opt.clone(), flush_task_sender).await?;
 
         Ok(Self {
             file_no: 0,
@@ -258,6 +256,7 @@ impl Summary {
 
     // recover from summary file
     pub async fn recover_version(
+        meta: MetaRef,
         mut reader: Box<Reader>,
         ctx: &GlobalContext,
         opt: Arc<Options>,
@@ -345,7 +344,7 @@ impl Summary {
             ctx.set_file_id(file_id + 1);
         }
 
-        let vs = VersionSet::new(opt.clone(), versions, flush_task_sender)?;
+        let vs = VersionSet::new(meta, opt.clone(), versions, flush_task_sender)?;
         Ok(vs)
     }
 
@@ -584,8 +583,9 @@ mod test {
     use tokio::sync::mpsc::UnboundedSender;
     use trace::debug;
 
-    use config::get_config;
-    use models::schema::DatabaseSchema;
+    use config::{get_config, ClusterConfig, Config};
+    use meta::meta_client::{MetaRef, RemoteMetaManager};
+    use models::schema::{make_owner, DatabaseSchema, TenantOptions};
 
     use crate::file_system::file_manager;
     use crate::tseries_family::LevelInfo;
@@ -599,7 +599,7 @@ mod test {
     #[tokio::test]
     async fn test_summary() {
         let base_dir = "/tmp/test/summary/1".to_string();
-        let mut config = get_config("../config/config.toml");
+        let mut config = get_config("../config/config_31001.toml");
         config.storage.path = base_dir.clone();
         let opt = Arc::new(Options::from(&config));
 
@@ -624,11 +624,21 @@ mod test {
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_summary_recover");
-        test_summary_recover(opt.clone(), flush_task_sender.clone()).await;
+        test_summary_recover(
+            opt.clone(),
+            flush_task_sender.clone(),
+            config.cluster.clone(),
+        )
+        .await;
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_tsf_num_recover");
-        test_tsf_num_recover(opt.clone(), flush_task_sender.clone()).await;
+        test_tsf_num_recover(
+            opt.clone(),
+            flush_task_sender.clone(),
+            config.cluster.clone(),
+        )
+        .await;
 
         println!("Running test: test_version_edit");
         test_version_edit();
@@ -639,12 +649,19 @@ mod test {
             opt.clone(),
             summary_task_sender.clone(),
             flush_task_sender.clone(),
+            config.cluster.clone(),
         )
         .await;
 
         let _ = fs::remove_dir_all(&base_dir);
         println!("Running test: test_recover_summary_with_roll_1");
-        test_recover_summary_with_roll_1(opt, summary_task_sender, flush_task_sender).await;
+        test_recover_summary_with_roll_1(
+            opt,
+            summary_task_sender,
+            flush_task_sender,
+            config.cluster.clone(),
+        )
+        .await;
 
         let _ = tokio::join!(summary_job_mock, flush_job_mock);
     }
@@ -652,7 +669,12 @@ mod test {
     async fn test_summary_recover(
         opt: Arc<Options>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
     ) {
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -661,10 +683,9 @@ mod test {
             .await
             .unwrap();
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "hello".to_string());
+        edit.add_tsfamily(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-
-        let summary = Summary::recover(opt.clone(), flush_task_sender)
+        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender)
             .await
             .unwrap();
     }
@@ -672,7 +693,12 @@ mod test {
     async fn test_tsf_num_recover(
         opt: Arc<Options>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
     ) {
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
@@ -682,19 +708,18 @@ mod test {
             .unwrap();
 
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(100, "hello".to_string());
+        edit.add_tsfamily(100, "cnosdb.hello".to_string());
         summary.apply_version_edit(vec![edit]).await.unwrap();
-
-        let mut summary = Summary::recover(opt.clone(), flush_task_sender.clone())
-            .await
-            .unwrap();
+        let mut summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 1);
         assert_eq!(summary.ctx.tsfamily_id(), 100);
         let mut edit = VersionEdit::new();
         edit.del_tsfamily(100);
         summary.apply_version_edit(vec![edit]).await.unwrap();
-
-        let summary = Summary::recover(opt.clone(), flush_task_sender)
+        let summary = Summary::recover(meta_manager, opt.clone(), flush_task_sender.clone())
             .await
             .unwrap();
         assert_eq!(summary.version_set.read().tsf_num(), 0);
@@ -722,7 +747,12 @@ mod test {
         opt: Arc<Options>,
         summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
     ) {
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -736,13 +766,16 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database))
+            .create_db(
+                DatabaseSchema::new("cnosdb", &database),
+                meta_manager.clone(),
+            )
             .unwrap();
         for i in 0..40 {
             db.write()
                 .add_tsfamily(i, 0, summary_task_sender.clone(), flush_task_sender.clone());
             let mut edit = VersionEdit::new();
-            edit.add_tsfamily(i, database.clone());
+            edit.add_tsfamily(i, make_owner("cnosdb", &database));
             edits.push(edit.clone());
         }
 
@@ -756,9 +789,11 @@ mod test {
         }
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone(), flush_task_sender)
-            .await
-            .unwrap();
+        let summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
+
         assert_eq!(summary.version_set.read().tsf_num(), 20);
     }
 
@@ -766,7 +801,12 @@ mod test {
         opt: Arc<Options>,
         summary_task_sender: mpsc::UnboundedSender<SummaryTask>,
         flush_task_sender: mpsc::UnboundedSender<FlushReq>,
+        cluster_options: ClusterConfig,
     ) {
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
+        let _ = meta_manager
+            .tenant_manager()
+            .create_tenant("cnosdb".to_string(), TenantOptions::default());
         let database = "test".to_string();
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
@@ -779,7 +819,10 @@ mod test {
         let db = summary
             .version_set
             .write()
-            .create_db(DatabaseSchema::new(&database))
+            .create_db(
+                DatabaseSchema::new("cnosdb", &database),
+                meta_manager.clone(),
+            )
             .unwrap();
         db.write().add_tsfamily(
             10,
@@ -790,7 +833,7 @@ mod test {
 
         let mut edits = vec![];
         let mut edit = VersionEdit::new();
-        edit.add_tsfamily(10, "hello".to_string());
+        edit.add_tsfamily(10, "cnosdb.hello".to_string());
         edits.push(edit);
 
         for _ in 0..100 {
@@ -829,9 +872,11 @@ mod test {
 
         summary.apply_version_edit(edits).await.unwrap();
 
-        let summary = Summary::recover(opt.clone(), flush_task_sender)
-            .await
-            .unwrap();
+        let summary =
+            Summary::recover(meta_manager.clone(), opt.clone(), flush_task_sender.clone())
+                .await
+                .unwrap();
+
         let vs = summary.version_set.read();
         let tsf = vs.get_tsfamily_by_tf_id(10).unwrap();
         assert_eq!(tsf.read().version().last_seq, 1);

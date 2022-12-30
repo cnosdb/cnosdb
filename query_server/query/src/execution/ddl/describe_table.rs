@@ -6,7 +6,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::TableReference;
 use models::schema::TableSchema;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
+
+use meta::error::MetaError;
 use spi::query::execution::ExternalSnafu;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
@@ -29,16 +30,32 @@ impl DDLDefinitionTask for DescribeTableTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        describe_table(
-            self.stmt.table_name.as_str(),
-            query_state_machine.catalog.clone(),
-        )
+        describe_table(self.stmt.table_name.as_str(), query_state_machine)
     }
 }
 
-fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    let table_name = TableReference::from(table_name);
-    let table_schema = catalog.table(table_name).context(MetadataSnafu)?;
+fn describe_table(
+    table_name: &str,
+    machine: QueryStateMachineRef,
+) -> Result<Output, ExecutionError> {
+    let tenant = machine.session.tenant();
+    let table_name =
+        TableReference::from(table_name).resolve(tenant, machine.session.default_database());
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })
+        .context(MetadataSnafu)?;
+    let table_schema = client
+        .get_table_schema(table_name.schema, table_name.table)
+        .context(MetadataSnafu)?
+        .ok_or(MetaError::TableNotFound {
+            table: table_name.table.to_string(),
+        })
+        .context(MetadataSnafu)?;
 
     match table_schema {
         TableSchema::TsKvTableSchema(tskv_schema) => {
@@ -61,7 +78,7 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
             ]));
 
             let batch = RecordBatch::try_new(
-                schema,
+                schema.clone(),
                 vec![
                     Arc::new(name.finish()),
                     Arc::new(data_type.finish()),
@@ -72,7 +89,7 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
             .map_err(datafusion::error::DataFusionError::ArrowError)
             .context(ExternalSnafu)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(batches))
+            Ok(Output::StreamData(schema, batches))
         }
         TableSchema::ExternalTableSchema(external_schema) => {
             let mut name = StringBuilder::new();
@@ -86,13 +103,13 @@ fn describe_table(table_name: &str, catalog: MetaDataRef) -> Result<Output, Exec
                 Field::new("DATA_TYPE", DataType::Utf8, false),
             ]));
             let batch = RecordBatch::try_new(
-                schema,
+                schema.clone(),
                 vec![Arc::new(name.finish()), Arc::new(data_type.finish())],
             )
             .map_err(datafusion::error::DataFusionError::ArrowError)
             .context(ExternalSnafu)?;
             let batches = vec![batch];
-            Ok(Output::StreamData(batches))
+            Ok(Output::StreamData(schema, batches))
         }
     }
 }

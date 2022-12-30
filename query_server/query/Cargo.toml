@@ -8,7 +8,10 @@ protos = { path = "../../common/protos" }
 trace = { path = "../../common/trace" }
 tskv = { path = "../../tskv" }
 models = { path = "../../common/models" }
+utils = { path = "../../common/utils" }
 config = { path = "../../config" }
+meta = { path = "../../meta" }
+coordinator = { path = "../../coordinator" }
 spi = { path = "../spi" }
 
 async-trait = { workspace = true }
@@ -30,6 +33,9 @@ rand = { workspace = true }
 serde = { workspace = true }
 sled = { workspace = true }
 snafu = { workspace = true }
+derive_builder = { workspace = true }
+lazy_static = { workspace = true }
+serde_json = { workspace = true }
 
 # use libc on unix like platforms to set worker priority in DedicatedExecutor
 [target."cfg(unix)".dependencies.libc]

@@ -23,7 +23,6 @@ use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
 use datafusion::parquet::data_type::AsBytes;
 use models::codec::Encoding;
-use models::schema::{ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
     tag::TagFromParts, utils, ColumnId, FieldId, FieldInfo, SeriesId, SeriesKey, Tag, ValueType,
 };
@@ -36,7 +35,6 @@ use super::{errors, IndexEngine, IndexError, IndexResult};
 
 const SERIES_KEY_PREFIX: &str = "_series_key_";
 const TABLE_SCHEMA_PREFIX: &str = "_table_schema_";
-const TIME_STAMP_NAME: &str = "time";
 const DATABASE_SCHEMA_PREFIX: &str = "_database_schema_";
 
 #[derive(Debug, Clone)]
@@ -72,18 +70,15 @@ impl DbIndexMgr {
         }
     }
 
-    pub fn get_db_index(&mut self, schema: DatabaseSchema) -> IndexResult<Arc<DBIndex>> {
-        let index = self.indexs.get(&schema.name);
+    pub fn get_db_index(&mut self, name: &str) -> Arc<DBIndex> {
+        let index = self.indexs.get(name);
         match index {
             None => {
-                let index = Arc::new(DBIndex::new(
-                    self.base_path.join(schema.name.clone()),
-                    schema.clone(),
-                )?);
-                self.indexs.insert(schema.name, index.clone());
-                Ok(index)
+                let index = Arc::new(DBIndex::new(self.base_path.join(name)));
+                self.indexs.insert(name.to_string(), index.clone());
+                index
             }
-            Some(index) => Ok(index.clone()),
+            Some(index) => index.clone(),
         }
     }
 
@@ -96,61 +91,19 @@ impl DbIndexMgr {
 pub struct DBIndex {
     path: PathBuf,
     storage: IndexEngine,
-    db_schema: RwLock<DatabaseSchema>,
     //The u32 comes from split(SeriesKey.hash())
     series_cache: RwLock<HashMap<u32, Vec<SeriesKey>>>,
-    // TableName -> TableSchema
-    table_schema: RwLock<HashMap<String, TableSchema>>,
 }
 
 impl DBIndex {
-    pub fn new(path: impl AsRef<Path>, db_schema: DatabaseSchema) -> IndexResult<Self> {
+    pub fn new(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
         let storage = IndexEngine::new(path);
-        let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
-        let schema = match storage.get(key.as_bytes())? {
-            None => {
-                store_db_schema(&key, &db_schema, &storage)?;
-                db_schema
-            }
-            Some(v) => bincode::deserialize::<DatabaseSchema>(&v).map_err(|e| {
-                IndexError::IndexStroage {
-                    msg: format!(
-                        "failed to deserialize db schema, because {}, maybe file damage",
-                        e
-                    ),
-                }
-            })?,
-        };
-        let mut table_schemas = HashMap::new();
-        let tables = storage.prefix(TABLE_SCHEMA_PREFIX.as_bytes());
-        for kv in tables.flatten() {
-            let schema_str =
-                String::from_utf8(kv.1.to_vec()).map_err(|e| IndexError::IndexStroage {
-                    msg: "storage data is invalid".to_string(),
-                })?;
-            let table_schema = serde_json::from_str::<TableSchema>(&schema_str).map_err(|e| {
-                IndexError::IndexStroage {
-                    msg: "storage data is invalid".to_string(),
-                }
-            })?;
-            table_schemas.insert(table_schema.name(), table_schema);
-        }
-        let index = Self {
+        Self {
             storage,
-            db_schema: RwLock::new(schema),
             series_cache: RwLock::new(HashMap::new()),
-            table_schema: RwLock::new(table_schemas),
             path: path.into(),
-        };
-        Ok(index)
-    }
-
-    pub fn alter_db_schema(&self, db_schema: DatabaseSchema) -> IndexResult<()> {
-        let key = format!("{}{}", DATABASE_SCHEMA_PREFIX, db_schema.name);
-        store_db_schema(&key, &db_schema, &self.storage)?;
-        *self.db_schema.write() = db_schema;
-        Ok(())
+        }
     }
 
     pub fn get_sid_from_cache(&self, info: &Point) -> IndexResult<Option<u64>> {
@@ -206,301 +159,6 @@ impl DBIndex {
             self.storage.push(&key, id.to_be_bytes().as_ref())?;
         }
         Ok(id)
-    }
-
-    pub fn check_field_type_from_cache(&self, series_id: u64, info: &Point) -> IndexResult<()> {
-        let table_name =
-            unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
-        if let Some(schema) = self.table_schema.read().get(&table_name) {
-            let schema = match schema {
-                TableSchema::TsKvTableSchema(schema) => schema,
-                TableSchema::ExternalTableSchema(_) => {
-                    return Err(IndexError::TableNotFound { table: table_name })
-                }
-            };
-            for field in info.fields().unwrap() {
-                let field_name = String::from_utf8(field.name().unwrap().bytes().to_vec()).unwrap();
-                if let Some(v) = schema.column(&field_name) {
-                    if field.type_().0 != v.column_type.field_type() as i32 {
-                        trace::debug!(
-                            "type mismatch, point: {}, schema: {}",
-                            field.type_().0,
-                            v.column_type.field_type()
-                        );
-                        return Err(IndexError::FieldType {
-                            msg: format!(
-                                "type mismatch, point: {}, schema: {}",
-                                field.type_().0,
-                                v.column_type.field_type()
-                            ),
-                        });
-                    }
-                } else {
-                    return Err(IndexError::NotFoundField);
-                }
-            }
-            for tag in info.tags().unwrap() {
-                let tag_name: String =
-                    String::from_utf8(tag.key().unwrap().bytes().to_vec()).unwrap();
-                if let Some(v) = schema.column(&tag_name) {
-                    if ColumnType::Tag != v.column_type {
-                        trace::debug!("type mismatch, point: tag, schema: {}", &v.column_type);
-                        return Err(IndexError::FieldType {
-                            msg: format!("type mismatch, point: tag, schema: {}", &v.column_type),
-                        });
-                    }
-                } else {
-                    return Err(IndexError::NotFoundField);
-                }
-            }
-            Ok(())
-        } else {
-            Err(IndexError::NotFoundField)
-        }
-    }
-
-    pub fn check_field_type_or_else_add(&self, series_id: u64, info: &Point) -> IndexResult<()> {
-        //load schema first from cache,or else from storage and than cache it!
-        let mut schema = &mut TskvTableSchema::default();
-        let table_name =
-            unsafe { String::from_utf8_unchecked(info.tab().unwrap().bytes().to_vec()) };
-        let db_name = unsafe { String::from_utf8_unchecked(info.db().unwrap().bytes().to_vec()) };
-        let mut fields = self.table_schema.write();
-        let mut new_schema = false;
-        match fields.get_mut(&table_name) {
-            Some(fields) => {
-                schema = match fields {
-                    TableSchema::TsKvTableSchema(schema) => schema,
-                    _ => return Err(IndexError::TableNotFound { table: table_name }),
-                };
-            }
-            None => {
-                let key = format!("{}{}", TABLE_SCHEMA_PREFIX, table_name);
-                if let Some(data) = self.storage.get(key.as_bytes())? {
-                    if let Ok(list) = bincode::deserialize(&data) {
-                        fields.insert(table_name.clone(), list);
-                        schema = match fields
-                            .get_mut(&table_name)
-                            .ok_or(IndexError::NotFoundField)?
-                        {
-                            TableSchema::TsKvTableSchema(schema) => schema,
-                            _ => return Err(IndexError::TableNotFound { table: table_name }),
-                        };
-                    }
-                } else {
-                    schema.name = table_name.clone();
-                    schema.db = db_name;
-                    new_schema = true;
-                }
-            }
-        }
-
-        let mut schema_change = false;
-        let mut check_fn = |field: &mut TableColumn| -> IndexResult<()> {
-            let encoding = match schema.column(&field.name) {
-                None => Encoding::Default,
-                Some(v) => v.encoding,
-            };
-            field.encoding = encoding;
-
-            match schema.column(&field.name) {
-                Some(v) => {
-                    if field.column_type != v.column_type {
-                        trace::debug!(
-                            "type mismatch, point: {}, schema: {}",
-                            &field.column_type,
-                            &v.column_type
-                        );
-                        trace::debug!("type mismatch, schema: {:?}", &schema);
-                        return Err(IndexError::FieldType {
-                            msg: format!(
-                                "type mismatch, point: {}, schema: {}, schema: {:?}",
-                                &field.column_type, &v.column_type, &schema
-                            ),
-                        });
-                    }
-                }
-                None => {
-                    schema_change = true;
-                    field.id = schema.next_column_id();
-                    schema.add_column(field.clone());
-                }
-            }
-            Ok(())
-        };
-        //check timestamp
-        check_fn(&mut TableColumn::new_with_default(
-            TIME_STAMP_NAME.to_string(),
-            ColumnType::Time,
-        ))?;
-
-        //check tags
-        for tag in info.tags().unwrap() {
-            let tag_key =
-                unsafe { String::from_utf8_unchecked(tag.key().unwrap().bytes().to_vec()) };
-            check_fn(&mut TableColumn::new_with_default(tag_key, ColumnType::Tag))?
-        }
-
-        //check fields
-        for field in info.fields().unwrap() {
-            let field_name =
-                unsafe { String::from_utf8_unchecked(field.name().unwrap().bytes().to_vec()) };
-            check_fn(&mut TableColumn::new_with_default(
-                field_name,
-                ColumnType::from_i32(field.type_().0),
-            ))?
-        }
-        //schema changed store it
-        if new_schema {
-            schema.schema_id = 0;
-        } else if schema_change {
-            schema.schema_id += 1;
-        }
-        let data =
-            serde_json::to_string(&TableSchema::TsKvTableSchema(schema.clone())).map_err(|_| {
-                IndexError::IndexStroage {
-                    msg: "failed to store schema in sled".to_string(),
-                }
-            })?;
-
-        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, &table_name);
-        self.storage.set(key.as_bytes(), data.as_bytes())?;
-        Ok(())
-    }
-
-    pub fn get_tskv_table_schema(&self, tab: &str) -> IndexResult<TskvTableSchema> {
-        let mut table_schema = self.table_schema.write();
-        let schema = table_schema.get_mut(tab).ok_or(IndexError::TableNotFound {
-            table: tab.to_string(),
-        })?;
-        let schema = match schema {
-            TableSchema::TsKvTableSchema(schema) => schema,
-            _ => {
-                return Err(IndexError::TableNotFound {
-                    table: tab.to_string(),
-                })
-            }
-        };
-        Ok(schema.clone())
-    }
-
-    pub fn store_table_schema(&self, tab: &str, schema: &TableSchema) -> IndexResult<()> {
-        self.table_schema
-            .write()
-            .insert(schema.name(), schema.clone());
-        let data = serde_json::to_string(schema).map_err(|_| IndexError::IndexStroage {
-            msg: "failed to store schema in sled".to_string(),
-        })?;
-        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
-        self.storage.set(key.as_bytes(), data.as_bytes())?;
-        self.flush()?;
-        Ok(())
-    }
-
-    pub fn add_table_column(&self, tab: &str, mut column: TableColumn) -> IndexResult<()> {
-        let mut schema = self.get_tskv_table_schema(tab)?;
-        if schema.column(&column.name).is_some() {
-            return Err(IndexError::ColumnAlreadyExists {
-                column: column.name,
-            });
-        }
-        column.id = schema.next_column_id();
-        schema.add_column(column);
-        schema.schema_id += 1;
-        self.store_table_schema(tab, &TableSchema::TsKvTableSchema(schema))?;
-        Ok(())
-    }
-
-    pub fn drop_table_column(&self, tab: &str, name: &str) -> IndexResult<()> {
-        let mut schema = self.get_tskv_table_schema(tab)?;
-        if schema.column(name).is_none() {
-            return Err(IndexError::NotFoundField);
-        }
-        schema.drop_column(name);
-        schema.schema_id += 1;
-        self.store_table_schema(tab, &TableSchema::TsKvTableSchema(schema))?;
-        Ok(())
-    }
-
-    pub fn change_table_column(
-        &self,
-        tab: &str,
-        name: &str,
-        new_column: TableColumn,
-    ) -> IndexResult<()> {
-        let mut schema = self.get_tskv_table_schema(tab)?;
-        if schema.column(name).is_none() {
-            return Err(IndexError::NotFoundField);
-        }
-        schema.change_column(name, new_column);
-        schema.schema_id += 1;
-        self.store_table_schema(tab, &TableSchema::TsKvTableSchema(schema))?;
-        Ok(())
-    }
-
-    pub fn get_table_schema(&self, tab: &str) -> IndexResult<Option<TableSchema>> {
-        if let Some(fields) = self.table_schema.read().get(tab) {
-            return Ok(Some(fields.clone()));
-        }
-
-        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
-        if let Some(data) = self.storage.get(key.as_bytes())? {
-            let data = String::from_utf8(data).map_err(|_| IndexError::DecodeTableSchema {
-                table: tab.to_string(),
-            })?;
-            if let Ok(list) = serde_json::from_str::<TableSchema>(&data) {
-                //todo: remove copy
-                self.table_schema
-                    .write()
-                    .insert(tab.to_string(), list.clone());
-                return Ok(Some(list));
-            } else {
-                return Err(IndexError::DecodeTableSchema {
-                    table: tab.to_string(),
-                });
-            }
-        }
-
-        Ok(None)
-    }
-
-    pub fn list_tables(&self) -> Vec<String> {
-        self.table_schema.read().keys().cloned().collect()
-    }
-
-    pub fn get_table_schema_by_series_id(
-        &self,
-        series_id: SeriesId,
-    ) -> IndexResult<Option<TableSchema>> {
-        match self.get_series_key(series_id) {
-            Ok(Some(key)) => match self.get_table_schema(key.table()) {
-                Ok(None) => {
-                    warn!(
-                        "Schema for table ('{}') not found, get empty schema",
-                        key.table()
-                    );
-                    Ok(None)
-                }
-                other => other,
-            },
-            Ok(None) => {
-                warn!(
-                    "Table for series id('{}') not found, get empty schema",
-                    series_id
-                );
-                Ok(None)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    pub fn del_table_schema(&self, tab: &str) -> IndexResult<()> {
-        self.table_schema.write().remove(tab);
-
-        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, tab);
-        self.storage.delete(key.as_bytes())?;
-
-        Ok(())
     }
 
     pub fn flush(&self) -> IndexResult<()> {
@@ -635,21 +293,6 @@ impl DBIndex {
         Ok(result)
     }
 
-    pub fn create_table(&self, schema: &TableSchema) -> IndexResult<()> {
-        let data = serde_json::to_string(schema).unwrap();
-        let key = format!("{}{}", TABLE_SCHEMA_PREFIX, schema.name());
-        self.table_schema
-            .write()
-            .insert(schema.name(), schema.clone());
-        self.storage.set(key.as_bytes(), data.as_bytes())?;
-        self.flush()?;
-        Ok(())
-    }
-
-    pub fn db_schema(&self) -> DatabaseSchema {
-        self.db_schema.read().clone()
-    }
-
     pub fn get_series_ids_by_domain(
         &self,
         tab: &str,
@@ -713,21 +356,6 @@ impl DBIndex {
     }
 }
 
-fn store_db_schema(
-    key: &str,
-    db_schema: &DatabaseSchema,
-    storage: &IndexEngine,
-) -> IndexResult<()> {
-    storage.set(
-        key.as_bytes(),
-        &bincode::serialize(db_schema).map_err(|e| IndexError::IndexStroage {
-            msg: "failed serialized db schema".to_string(),
-        })?,
-    )?;
-    storage.flush();
-    Ok(())
-}
-
 pub fn filter_range_to_index_key_range(
     tab: &str,
     tag_key: &str,
@@ -776,6 +404,7 @@ mod test {
         ]);
 
         let schema = ExternalTableSchema {
+            tenant: "cnosdb".to_string(),
             db: "hello".to_string(),
             name: "world".to_string(),
             file_compression_type: "test".to_string(),

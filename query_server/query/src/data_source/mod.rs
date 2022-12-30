@@ -1,3 +1,4 @@
+use coordinator::errors;
 use models::define_result;
 use snafu::Snafu;
 
@@ -15,4 +16,15 @@ pub enum DataSourceError {
 
     #[snafu(display("Tskv operator, err: {}", source))]
     Tskv { source: tskv::Error },
+
+    #[snafu(display("Coordinator operator, err: {}", source))]
+    Coordinator { source: errors::CoordinatorError },
+
+    #[snafu(display("invalid flatbuffers: {}", source))]
+    InvalidFlatbuffer {
+        source: flatbuffers::InvalidFlatbuffer,
+    },
+
+    #[snafu(display("error msg: {}", msg))]
+    CommonError { msg: String },
 }

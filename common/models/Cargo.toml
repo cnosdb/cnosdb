@@ -8,15 +8,21 @@ edition = "2021"
 [dependencies]
 protos = { path = "../protos" }
 utils = { path = "../utils" }
+trace = { path = "../trace" }
 
-arrow-schema = { workspace = true }
+arrow-schema = { workspace = true,  features = ["serde"] }
 async-trait = { workspace = true }
 bincode = { workspace = true }
 datafusion = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
+serde_json = { workspace = true }
+datafusion-proto = { workspace = true }
+uuid = { workspace = true }
+derive_builder = { workspace = true }
+openssl = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-chrono = { workspace = true }
 flatbuffers = { workspace = true }

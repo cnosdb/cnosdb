@@ -15,7 +15,7 @@ use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 
 use self::response::ResponseBuilder;
 
-mod header;
+pub mod header;
 pub mod http_service;
 mod response;
 mod result_format;
@@ -51,6 +51,11 @@ pub enum Error {
     #[snafu(display("Error from tskv: {}", source))]
     Tskv { source: tskv::Error },
 
+    #[snafu(display("Error from coordinator: {}", source))]
+    Coordinator {
+        source: coordinator::errors::CoordinatorError,
+    },
+
     #[snafu(display("Invalid header: {}", reason))]
     InvalidHeader { reason: String },
 
@@ -59,6 +64,9 @@ pub enum Error {
 
     #[snafu(display("Fetch result: {}", reason))]
     FetchResult { reason: String },
+
+    #[snafu(display("Can't find tenant: {}", name))]
+    NotFoundTenant { name: String },
 }
 
 impl reject::Reject for Error {}
@@ -80,6 +88,16 @@ impl From<&Error> for Response {
             }
             Error::Tskv { source: _ } => {
                 let error_resp = ErrorResponse::new(ErrorCode::TskvUnknown, error_message);
+
+                ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
+            }
+            Error::Coordinator { source: _ } => {
+                let error_resp = ErrorResponse::new(ErrorCode::CoordinatorUnknown, error_message);
+
+                ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
+            }
+            Error::NotFoundTenant { name } => {
+                let error_resp = ErrorResponse::new(ErrorCode::TenantNotFound, error_message);
 
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }

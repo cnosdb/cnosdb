@@ -9,10 +9,10 @@ use utils::BkdrHasher;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SeriesKey {
-    id: SeriesId,
-    tags: Vec<Tag>,
-    table: String,
-    db: String,
+    pub id: SeriesId,
+    pub tags: Vec<Tag>,
+    pub table: String,
+    pub db: String,
 }
 
 impl SeriesKey {

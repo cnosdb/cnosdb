@@ -1,15 +1,18 @@
 use std::time::Duration;
 use std::{collections::HashMap, panic, sync::Arc};
 
+use crate::error::MetaSnafu;
 use crate::tsm::codec::get_str_codec;
+use config::ClusterConfig;
 use datafusion::prelude::Column;
 use flatbuffers::FlatBufferBuilder;
 use futures::stream::SelectNextSome;
 use futures::FutureExt;
 use libc::printf;
+use meta::meta_client::{MetaRef, RemoteMetaManager};
 use models::predicate::domain::{ColumnDomains, PredicateRef};
 use parking_lot::{Mutex, RwLock};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use tokio::sync::watch;
 use tokio::sync::watch::{Receiver, Sender};
 use tokio::{
@@ -25,7 +28,7 @@ use tokio::{
 use crate::error::SendSnafu;
 use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
-use models::schema::{DatabaseSchema, TableColumn, TableSchema};
+use models::schema::{make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema};
 use models::{
     utils::unite_id, ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp,
     ValueType,
@@ -37,10 +40,10 @@ use protos::{
 use trace::{debug, error, info, trace, warn};
 
 use crate::database::Database;
-use crate::file_system::file_manager;
-use crate::file_system::file_manager::FileManager;
+use crate::error::SchemaSnafu;
+use crate::file_system::file_manager::{self, FileManager};
 use crate::index::index_manger;
-use crate::index::IndexError::TableNotFound;
+use crate::tseries_family::TseriesFamily;
 use crate::Error::{DatabaseNotFound, IndexErr};
 use crate::{
     compaction::{self, run_flush_memtable_job, CompactReq, FlushReq},
@@ -68,6 +71,7 @@ pub struct TsKv {
     options: Arc<Options>,
     global_ctx: Arc<GlobalContext>,
     version_set: Arc<RwLock<VersionSet>>,
+    meta_manager: MetaRef,
 
     runtime: Arc<Runtime>,
     wal_sender: UnboundedSender<WalTask>,
@@ -78,15 +82,24 @@ pub struct TsKv {
 }
 
 impl TsKv {
-    pub async fn open(opt: Options, runtime: Arc<Runtime>) -> Result<TsKv> {
+    pub async fn open(
+        cluster_options: ClusterConfig,
+        opt: Options,
+        runtime: Arc<Runtime>,
+    ) -> Result<TsKv> {
+        let meta_manager: MetaRef = Arc::new(RemoteMetaManager::new(cluster_options));
         let shared_options = Arc::new(opt);
         let (flush_task_sender, flush_task_receiver) = mpsc::unbounded_channel();
         let (compact_task_sender, compact_task_receiver) = mpsc::unbounded_channel();
         let (wal_sender, wal_receiver) = mpsc::unbounded_channel();
         let (summary_task_sender, summary_task_receiver) = mpsc::unbounded_channel();
         let (close_sender, _close_receiver) = broadcast::channel(1);
-        let (version_set, summary) =
-            Self::recover_summary(shared_options.clone(), flush_task_sender.clone()).await;
+        let (version_set, summary) = Self::recover_summary(
+            meta_manager.clone(),
+            shared_options.clone(),
+            flush_task_sender.clone(),
+        )
+        .await;
         let wal_cfg = shared_options.wal.clone();
         let core = Self {
             version_set,
@@ -98,6 +111,7 @@ impl TsKv {
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
             close_sender,
+            meta_manager,
         };
 
         let wal_manager = core.recover_wal().await;
@@ -131,6 +145,7 @@ impl TsKv {
     }
 
     async fn recover_summary(
+        meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: UnboundedSender<FlushReq>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
@@ -142,7 +157,7 @@ impl TsKv {
         }
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(opt.clone(), flush_task_sender)
+            Summary::recover(meta, opt.clone(), flush_task_sender)
                 .await
                 .unwrap()
         } else {
@@ -172,9 +187,9 @@ impl TsKv {
                 tokio::select! {
                     wal_task = receiver.recv() => {
                         match wal_task {
-                            Some(WalTask::Write { points, cb }) => {
+                            Some(WalTask::Write { id, points, tenant, cb }) => {
                                 // write wal
-                                let ret = wal_manager.write(WalEntryType::Write, points).await;
+                                let ret = wal_manager.write(WalEntryType::Write, points, id, tenant).await;
                                 let send_ret = cb.send(ret);
                                 match send_ret {
                                     Ok(wal_result) => {}
@@ -316,8 +331,8 @@ impl TsKv {
 
     // Compact TSM files in database into bigger TSM files.
     #[allow(clippy::await_holding_lock)]
-    pub async fn compact(&self, database: &str) {
-        let database = self.version_set.read().get_db(database);
+    pub async fn compact(&self, tenant: &str, database: &str) {
+        let database = self.version_set.read().get_db(tenant, database);
         if let Some(db) = database {
             // TODO: stop current and prevent next flush and compaction.
             for (ts_family_id, ts_family) in db.read().ts_families() {
@@ -345,21 +360,43 @@ impl TsKv {
         }
     }
 
-    pub fn get_db(&self, database: &str) -> Result<Arc<RwLock<Database>>> {
+    pub fn get_db(&self, tenant: &str, database: &str) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .version_set
             .read()
-            .get_db(database)
+            .get_db(tenant, database)
             .ok_or(DatabaseNotFound {
                 database: database.to_string(),
             })?;
+        Ok(db)
+    }
+
+    fn create_database(&self, schema: &DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+        if self
+            .version_set
+            .read()
+            .db_exists(schema.tenant_name(), schema.database_name())
+        {
+            return Err(Error::DatabaseAlreadyExists {
+                database: schema.database_name().to_string(),
+            });
+        }
+        let db = self
+            .version_set
+            .write()
+            .create_db(schema.clone(), self.meta_manager.clone())?;
         Ok(db)
     }
 }
 
 #[async_trait::async_trait]
 impl Engine for TsKv {
-    async fn write(&self, write_batch: WritePointsRpcRequest) -> Result<WritePointsRpcResponse> {
+    async fn write(
+        &self,
+        id: TseriesFamilyId,
+        tenant_name: &str,
+        write_batch: WritePointsRpcRequest,
+    ) -> Result<WritePointsRpcResponse> {
         let points = Arc::new(write_batch.points);
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
@@ -367,13 +404,10 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db_warp = self.version_set.read().get_db(&db_name);
+        let db_warp = self.version_set.read().get_db(tenant_name, &db_name);
         let db = match db_warp {
             Some(database) => database,
-            None => self
-                .version_set
-                .write()
-                .create_db(DatabaseSchema::new(&db_name))?,
+            None => self.create_database(&DatabaseSchema::new(tenant_name, &db_name))?,
         };
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
@@ -386,18 +420,20 @@ impl Engine for TsKv {
                 .map_err(|_| Error::Send)?;
             self.wal_sender
                 .send(WalTask::Write {
+                    id,
                     cb,
                     points: Arc::new(enc_points),
+                    tenant: Arc::new(tenant_name.as_bytes().to_vec()),
                 })
                 .map_err(|err| Error::Send)?;
             seq = rx.await.context(error::ReceiveSnafu)??.0;
         }
 
-        let opt_tsf = db.read().get_tsfamily_random();
+        let opt_tsf = db.read().get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
-                self.global_ctx.tsfamily_id_next(),
+                id,
                 seq,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
@@ -414,6 +450,8 @@ impl Engine for TsKv {
 
     async fn write_from_wal(
         &self,
+        id: TseriesFamilyId,
+        tenant_name: &str,
         write_batch: WritePointsRpcRequest,
         seq: u64,
     ) -> Result<WritePointsRpcResponse> {
@@ -424,18 +462,18 @@ impl Engine for TsKv {
         let db_name = String::from_utf8(fb_points.db().unwrap().bytes().to_vec())
             .map_err(|err| Error::ErrCharacterSet)?;
 
-        let db = self
-            .version_set
-            .write()
-            .create_db(DatabaseSchema::new(&db_name))?;
+        let db = self.version_set.write().create_db(
+            DatabaseSchema::new(tenant_name, &db_name),
+            self.meta_manager.clone(),
+        )?;
 
         let write_group = db.read().build_write_group(fb_points.points().unwrap())?;
 
-        let opt_tsf = db.read().get_tsfamily_random();
+        let opt_tsf = db.read().get_tsfamily(id);
         let tsf = match opt_tsf {
             Some(v) => v,
             None => db.write().add_tsfamily(
-                self.global_ctx.tsfamily_id_next(),
+                id,
                 seq,
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
@@ -450,59 +488,18 @@ impl Engine for TsKv {
         });
     }
 
-    fn create_database(&self, schema: &DatabaseSchema) -> Result<()> {
-        if self.version_set.read().db_exists(&schema.name) {
-            return Err(Error::DatabaseAlreadyExists {
-                database: schema.name.clone(),
-            });
+    fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+        if let Some(db) = self.version_set.read().get_db(tenant, database) {
+            let mut db_wlock = db.write();
+
+            db_wlock.del_tsfamily(id, self.summary_task_sender.clone());
         }
-        self.version_set.write().create_db(schema.clone())?;
+
         Ok(())
     }
 
-    fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
-        let db = self
-            .version_set
-            .write()
-            .get_db(&schema.name)
-            .ok_or(DatabaseNotFound {
-                database: schema.name.clone(),
-            })?;
-        db.write().alter_db_schema(schema.clone())?;
-        Ok(())
-    }
-
-    fn list_databases(&self) -> Result<Vec<String>> {
-        let version_set = self.version_set.read();
-        let dbs = version_set.get_all_db();
-
-        let mut db = Vec::new();
-        for (name, _) in dbs.iter() {
-            db.push(name.clone())
-        }
-
-        Ok(db)
-    }
-
-    fn list_tables(&self, database: &str) -> Result<Vec<String>> {
-        if let Some(db) = self.version_set.read().get_db(database) {
-            Ok(db.read().get_index().list_tables())
-        } else {
-            error!("Database {}, not found", database);
-            Err(Error::DatabaseNotFound {
-                database: database.to_string(),
-            })
-        }
-    }
-
-    fn get_db_schema(&self, name: &str) -> Option<DatabaseSchema> {
-        self.version_set.read().get_db_schema(name)
-    }
-
-    fn drop_database(&self, database: &str) -> Result<()> {
-        let database = database.to_string();
-
-        if let Some(db) = self.version_set.write().delete_db(&database) {
+    fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
+        if let Some(db) = self.version_set.write().delete_db(tenant, database) {
             let mut db_wlock = db.write();
             let ts_family_ids: Vec<TseriesFamilyId> = db_wlock
                 .ts_families()
@@ -514,14 +511,21 @@ impl Engine for TsKv {
             }
             index_manger(db_wlock.get_index().path())
                 .write()
-                .remove_db_index(&database);
+                .remove_db_index(database);
         }
 
-        let idx_dir = self.options.storage.index_dir(&database);
+        let idx_dir = self
+            .options
+            .storage
+            .index_dir(&make_owner(tenant, database));
         if let Err(e) = std::fs::remove_dir_all(&idx_dir) {
             error!("Failed to remove dir '{}', e: {}", idx_dir.display(), e);
         }
-        let db_dir = self.options.storage.database_dir(&database);
+
+        let db_dir = self
+            .options
+            .storage
+            .database_dir(&make_owner(tenant, database));
         if let Err(e) = std::fs::remove_dir_all(&db_dir) {
             error!("Failed to remove dir '{}', e: {}", db_dir.display(), e);
         }
@@ -529,34 +533,23 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn create_table(&self, schema: &TableSchema) -> Result<()> {
-        if let Some(db) = self.version_set.write().get_db(&schema.db()) {
-            db.read()
-                .get_index()
-                .create_table(schema)
-                .map_err(|e| {
-                    error!("failed create database '{:?}'", e);
-                    e
-                })
-                .context(IndexErrSnafu)
-        } else {
-            error!("Database {}, not found", schema.db());
-            Err(Error::DatabaseNotFound {
-                database: schema.db(),
-            })
-        }
-    }
-
-    fn drop_table(&self, database: &str, table: &str) -> Result<()> {
+    fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let version_set = self.version_set.clone();
         let database = database.to_string();
         let table = table.to_string();
-        futures::executor::block_on(database::delete_table_async(database, table, version_set))
+        let tenant = tenant.to_string();
+        futures::executor::block_on(database::delete_table_async(
+            tenant,
+            database,
+            table,
+            version_set,
+        ))
     }
 
     fn delete_columns(
         &self,
+        tenant: &str,
         database: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
@@ -566,7 +559,7 @@ impl Engine for TsKv {
             .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
             .collect();
 
-        if let Some(db) = self.version_set.read().get_db(database) {
+        if let Some(db) = self.version_set.read().get_db(tenant, database) {
             for (ts_family_id, ts_family) in db.read().ts_families().iter() {
                 ts_family.write().delete_columns(&storage_field_ids);
 
@@ -587,6 +580,7 @@ impl Engine for TsKv {
 
     fn delete_series(
         &self,
+        tenant: &str,
         database: &str,
         series_ids: &[SeriesId],
         field_ids: &[ColumnId],
@@ -596,7 +590,7 @@ impl Engine for TsKv {
             .iter()
             .flat_map(|sid| field_ids.iter().map(|fid| unite_id(*fid as u64, *sid)))
             .collect();
-        let res = self.version_set.read().get_db(database);
+        let res = self.version_set.read().get_db(tenant, database);
         if let Some(db) = res {
             let readable_db = db.read();
             for (ts_family_id, ts_family) in readable_db.ts_families() {
@@ -616,20 +610,27 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    fn get_table_schema(&self, name: &str, tab: &str) -> Result<Option<TableSchema>> {
-        if let Some(db) = self.version_set.read().get_db(name) {
-            let val = db
-                .read()
-                .get_table_schema(tab)
-                .context(error::IndexErrSnafu)?;
+    fn get_table_schema(
+        &self,
+        tenant: &str,
+        database: &str,
+        tab: &str,
+    ) -> Result<Option<TskvTableSchema>> {
+        if let Some(db) = self.version_set.read().get_db(tenant, database) {
+            let val = db.read().get_table_schema(tab)?;
             return Ok(val);
         }
-
         Ok(None)
     }
 
-    fn get_series_id_list(&self, name: &str, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u64>> {
-        if let Some(db) = self.version_set.read().get_db(name) {
+    fn get_series_id_list(
+        &self,
+        tenant: &str,
+        database: &str,
+        tab: &str,
+        tags: &[Tag],
+    ) -> IndexResult<Vec<u64>> {
+        if let Some(db) = self.version_set.read().get_db(tenant, database) {
             return db.read().get_index().get_series_id_list(tab, tags);
         }
 
@@ -638,11 +639,12 @@ impl Engine for TsKv {
 
     fn get_series_id_by_filter(
         &self,
-        name: &str,
+        tenant: &str,
+        database: &str,
         tab: &str,
         filter: &ColumnDomains<String>,
     ) -> IndexResult<Vec<u64>> {
-        let result = if let Some(db) = self.version_set.read().get_db(name) {
+        let result = if let Some(db) = self.version_set.read().get_db(tenant, database) {
             if filter.is_all() {
                 // Match all records
                 debug!("pushed tags filter is All.");
@@ -666,72 +668,92 @@ impl Engine for TsKv {
         result
     }
 
-    fn get_series_key(&self, name: &str, sid: u64) -> IndexResult<Option<SeriesKey>> {
-        if let Some(db) = self.version_set.read().get_db(name) {
+    fn get_series_key(
+        &self,
+        tenant: &str,
+        database: &str,
+        sid: u64,
+    ) -> IndexResult<Option<SeriesKey>> {
+        if let Some(db) = self.version_set.read().get_db(tenant, database) {
             return db.read().get_series_key(sid);
         }
 
         Ok(None)
     }
 
-    fn get_db_version(&self, db: &str) -> Result<Option<Arc<SuperVersion>>> {
+    fn get_db_version(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: u32,
+    ) -> Result<Option<Arc<SuperVersion>>> {
         let version_set = self.version_set.read();
-        if !version_set.db_exists(db) {
+        if !version_set.db_exists(tenant, database) {
             return Err(Error::DatabaseNotFound {
-                database: db.to_string(),
+                database: database.to_string(),
             });
         }
-        if let Some(tsf) = version_set.get_tsfamily_by_name(db) {
+        if let Some(tsf) = version_set.get_tsfamily_by_name_id(tenant, database, vnode_id) {
             Ok(Some(tsf.read().super_version()))
         } else {
-            warn!("ts_family with db name '{}' not found.", db);
+            warn!("ts_family with db name '{}' not found.", database);
             Ok(None)
         }
     }
 
-    fn add_table_column(&self, database: &str, table: &str, column: TableColumn) -> Result<()> {
-        let db = self.get_db(database)?;
-        db.read()
-            .add_table_column(table, column)
-            .context(IndexErrSnafu)?;
+    fn add_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column: TableColumn,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database)?;
+        db.read().add_table_column(table, column)?;
         Ok(())
     }
 
-    fn drop_table_column(&self, database: &str, table: &str, column_name: &str) -> Result<()> {
-        let db = self.get_db(database)?;
+    fn drop_table_column(
+        &self,
+        tenant: &str,
+        database: &str,
+        table: &str,
+        column_name: &str,
+    ) -> Result<()> {
+        let db = self.get_db(tenant, database)?;
         let schema = db
             .read()
-            .get_tskv_table_schema(table)
-            .context(IndexErrSnafu)?;
+            .get_table_schema(table)?
+            .ok_or(Error::NotFoundTable {
+                table_name: table.to_string(),
+            })?;
         let column_id = schema
             .column(column_name)
             .ok_or(Error::NotFoundField {
                 reason: column_name.to_string(),
             })?
             .id;
-        db.read()
-            .drop_table_column(table, column_name)
-            .context(IndexErrSnafu)?;
+        db.read().drop_table_column(table, column_name)?;
         let sid = db
             .read()
             .get_index()
             .get_series_id_list(table, &[])
             .context(IndexErrSnafu)?;
-        self.delete_columns(database, &sid, &[column_id])?;
+        self.delete_columns(tenant, database, &sid, &[column_id])?;
         Ok(())
     }
 
     fn change_table_column(
         &self,
+        tenant: &str,
         database: &str,
         table: &str,
         column_name: &str,
         new_column: TableColumn,
     ) -> Result<()> {
-        let db = self.get_db(database)?;
+        let db = self.get_db(tenant, database)?;
         db.read()
-            .change_table_column(table, column_name, new_column)
-            .context(IndexErrSnafu)?;
+            .change_table_column(table, column_name, new_column)?;
         Ok(())
     }
 }
@@ -757,84 +779,13 @@ mod test {
         trace::init_default_global_tracing("tskv_log", "tskv.log", "info");
         let config = get_config("/tmp/test/config/config.toml");
         let opt = Options::from(&config);
-        let tskv = TsKv::open(opt, Arc::new(Runtime::new().unwrap()))
-            .await
-            .unwrap();
-        tskv.compact("public").await;
+        let tskv = TsKv::open(
+            config.cluster.clone(),
+            opt,
+            Arc::new(Runtime::new().unwrap()),
+        )
+        .await
+        .unwrap();
+        tskv.compact("cnosdb", "public").await;
     }
-
-    // async fn prepare(tskv: &TsKv, database: &str, table: &str, time_range: &TimeRange) {
-    //     let mut fbb = FlatBufferBuilder::new();
-    //     let points = models_helper::create_random_points_with_delta(&mut fbb, 10);
-    //     fbb.finish(points, None);
-    //     let points_data = fbb.finished_data();
-    //
-    //     let write_batch = protos::kv_service::WritePointsRpcRequest {
-    //         version: 1,
-    //         points: points_data.to_vec(),
-    //     };
-    //     tskv.write(write_batch).await.unwrap();
-    //
-    //     {
-    //         let table_schema = tskv.get_table_schema(database, table).unwrap().unwrap();
-    //         let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
-    //
-    //         let field_ids: Vec<ColumnId> = table_schema.columns().iter().map(|f| f.id).collect();
-    //         // let result: HashMap<SeriesId, HashMap<ColumnId, Vec<DataBlock>>> =
-    //         // tskv.read(database, series_ids, time_range, field_ids);
-    //         // println!("Result items: {}", result.len());
-    //     }
-    // }
-    // #[test]
-    // #[ignore]
-    // fn test_drop_table_database() {
-    //     let base_dir = "/tmp/test/tskv/drop_table".to_string();
-    //     let _ = std::fs::remove_dir_all(&base_dir);
-    //     trace::init_default_global_tracing("tskv_log", "tskv.log", "debug");
-    //
-    //     let runtime = Arc::new(
-    //         runtime::Builder::new_multi_thread()
-    //             .enable_all()
-    //             .build()
-    //             .unwrap(),
-    //     );
-    //
-    //     runtime.clone().block_on(async move {
-    //         let mut config = get_config("../config/config.toml").clone();
-    //         config.storage.path = base_dir;
-    //         // TODO Add test case for `max_buffer_size = 0`.
-    //         // config.cache.max_buffer_size = 0;
-    //         let opt = Options::from(&config);
-    //         let tskv = TsKv::open(opt, runtime).await.unwrap();
-    //
-    //         let database = "db";
-    //         let table = "table";
-    //         let time_range = TimeRange::new(i64::MIN, i64::MAX);
-    //
-    //         prepare(&tskv, database, table, &time_range).await;
-    //
-    //         tskv.drop_table(database, table).unwrap();
-    //
-    //         {
-    //             let table_schema = tskv.get_table_schema(database, table).unwrap();
-    //             assert!(table_schema.is_none());
-    //
-    //             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
-    //             assert!(series_ids.is_empty());
-    //         }
-    //
-    //         tskv.drop_database(database).unwrap();
-    //
-    //         {
-    //             let db = tskv.version_set.read().get_db(database);
-    //             assert!(db.is_none());
-    //
-    //             let table_schema = tskv.get_table_schema(database, table).unwrap();
-    //             assert!(table_schema.is_none());
-    //
-    //             let series_ids = tskv.get_series_id_list(database, table, &[]).unwrap();
-    //             assert!(series_ids.is_empty());
-    //         }
-    //     });
-    // }
 }

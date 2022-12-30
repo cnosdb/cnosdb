@@ -5,17 +5,20 @@ use trace::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    pub cluster: ClusterConfig,
     pub query: QueryConfig,
     pub storage: StorageConfig,
     pub wal: WalConfig,
     pub cache: CacheConfig,
     pub log: LogConfig,
     pub security: SecurityConfig,
+    pub hintedoff: HintedOffConfig,
     pub reporting_disabled: Option<bool>,
 }
 
 impl Config {
     pub fn override_by_env(&mut self) {
+        self.cluster.override_by_env();
         self.storage.override_by_env();
         self.wal.override_by_env();
         self.cache.override_by_env();
@@ -28,6 +31,7 @@ pub struct QueryConfig {
     pub max_server_connections: u32,
     pub query_sql_limit: u64,
     pub write_sql_limit: u64,
+    pub auth_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +120,9 @@ impl QueryConfig {
         if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
             self.write_sql_limit = size.parse::<u64>().unwrap();
         }
+        if let Ok(val) = std::env::var("AUTH_ENABLED") {
+            self.auth_enabled = val.parse::<bool>().unwrap();
+        }
     }
 }
 
@@ -164,29 +171,98 @@ pub fn get_config(path: &str) -> Config {
     config
 }
 
+#[derive(Debug, Clone, Serialize, Default, Deserialize)]
+pub struct ClusterConfig {
+    pub node_id: u64,
+    pub name: String,
+    pub meta: String,
+
+    pub http_server: String,
+    pub grpc_server: String,
+    pub tcp_server: String,
+    pub flight_rpc_server: String,
+}
+
+impl ClusterConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(name) = std::env::var("CNOSDB_CLUSTER_NAME") {
+            self.name = name;
+        }
+        if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
+            self.meta = meta;
+        }
+        if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
+            self.node_id = id.parse::<u64>().unwrap();
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_HTTP_SERVER") {
+            self.http_server = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_GRPC_SERVER") {
+            self.grpc_server = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_TCP_SERVER") {
+            self.tcp_server = val;
+        }
+
+        if let Ok(val) = std::env::var("CNOSDB_FLIGHT_RPC_SERVER") {
+            self.flight_rpc_server = val;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HintedOffConfig {
+    pub enable: bool,
+    pub path: String,
+}
+
+impl HintedOffConfig {
+    pub fn override_by_env(&mut self) {
+        if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
+            self.enable = enable.parse::<bool>().unwrap();
+        }
+        if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
+            self.path = path;
+        }
+    }
+}
+
 #[test]
 fn test() {
     let config_str = r#"
+
+
+#reporting_disabled = false
+
 [query]
 max_server_connections = 10240
 query_sql_limit = 16777216   # 16 * 1024 * 1024
 write_sql_limit = 167772160   # 160 * 1024 * 1024
+auth_enabled = false
+
 [storage]
+# Directory for summary: $path/summary/
+# Directory for index: $path/index/$database/
+# Directory for tsm: $path/data/$database/tsm/
+# Directory for delta: $path/data/$database/delta/
 path = 'data/db'
 max_summary_size = 134217728 # 128 * 1024 * 1024
 max_level = 4
 base_file_size = 16777216 # 16 * 1024 * 1024
 compact_trigger = 4
 max_compact_size = 2147483648 # 2 * 1024 * 1024 * 1024
-strict_write = true
+strict_write = false
 
 [wal]
 enabled = true
 path = 'data/wal'
-sync = true
+sync = false
 
 [cache]
-max_buffer_size = 1048576 # 134217728 # 128 * 1024 * 1024
+max_buffer_size = 134217728 # 128 * 1024 * 1024
 max_immutable_number = 4
 
 [log]
@@ -194,6 +270,23 @@ level = 'info'
 path = 'data/log'
 
 [security]
+# [security.tls_config]
+# certificate = "./config/tls/server.crt"
+# private_key = "./config/tls/server.key"
+
+[cluster]
+node_id = 100
+name = 'cluster_xxx'
+meta = '127.0.0.1,22001'
+
+flight_rpc_server = '127.0.0.1:31006'
+http_server = '127.0.0.1:31007'
+grpc_server = '127.0.0.1:31008'
+tcp_server = '127.0.0.1:31009'
+
+[hintedoff]
+enable = true
+path = '/tmp/cnosdb/hh'
 
 "#;
 

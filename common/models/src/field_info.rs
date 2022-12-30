@@ -19,6 +19,19 @@ pub enum ValueType {
     String,
 }
 
+impl ValueType {
+    pub fn to_fb_type(&self) -> protos::models::FieldType {
+        match *self {
+            ValueType::Float => protos::models::FieldType::Float,
+            ValueType::Integer => protos::models::FieldType::Integer,
+            ValueType::Unsigned => protos::models::FieldType::Unsigned,
+            ValueType::Boolean => protos::models::FieldType::Boolean,
+            ValueType::String => protos::models::FieldType::String,
+            ValueType::Unknown => protos::models::FieldType::Unknown,
+        }
+    }
+}
+
 impl Display for ValueType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

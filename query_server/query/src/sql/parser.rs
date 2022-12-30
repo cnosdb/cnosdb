@@ -2,11 +2,11 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 
 use datafusion::sql::parser::CreateExternalTable;
-
 use datafusion::sql::sqlparser::ast::Expr;
+use datafusion::sql::sqlparser::ast::Ident;
 use datafusion::sql::sqlparser::ast::{Offset, OrderByExpr};
 use datafusion::sql::sqlparser::{
-    ast::{DataType, Ident, ObjectName, Value},
+    ast::{DataType, ObjectName},
     dialect::{keywords::Keyword, Dialect, GenericDialect},
     parser::{Parser, ParserError},
     tokenizer::{Token, Tokenizer},
@@ -14,10 +14,13 @@ use datafusion::sql::sqlparser::{
 use models::codec::Encoding;
 use snafu::ResultExt;
 use spi::query::ast::{
-    AlterDatabase, AlterTable, AlterTableAction, ColumnOption, CreateDatabase, CreateTable,
-    DatabaseOptions, DescribeDatabase, DescribeTable, DropObject, Explain, ExtStatement,
-    ObjectType, ShowSeries, ShowTagBody, ShowTagValues, With,
+    parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
+    AlterTenantOperation, AlterUser, AlterUserOperation, ColumnOption, CreateDatabase, CreateRole,
+    CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase, DescribeTable,
+    DropDatabaseObject, DropGlobalObject, DropTenantObject, Explain, ExtStatement, GrantRevoke,
+    Privilege, ShowSeries, ShowTagBody, ShowTagValues, With,
 };
+use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
 use spi::query::ParserSnafu;
 use trace::debug;
@@ -36,6 +39,8 @@ enum CnosKeyWord {
     FIELD,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     DATABASES,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    TENANT,
 
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     TTL,
@@ -51,6 +56,17 @@ enum CnosKeyWord {
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     QUERIES,
 
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    INHERIT,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    READ,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    WRITE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    ALL,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    REMOVE,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     SERIES,
 }
@@ -69,6 +85,13 @@ impl FromStr for CnosKeyWord {
             "REPLICA" => Ok(CnosKeyWord::REPLICA),
             "PRECISION" => Ok(CnosKeyWord::PRECISION),
             "DATABASES" => Ok(CnosKeyWord::DATABASES),
+            "QUERIES" => Ok(CnosKeyWord::QUERIES),
+            "TENANT" => Ok(CnosKeyWord::TENANT),
+            "INHERIT" => Ok(CnosKeyWord::INHERIT),
+            "READ" => Ok(CnosKeyWord::READ),
+            "WRITE" => Ok(CnosKeyWord::WRITE),
+            "ALL" => Ok(CnosKeyWord::ALL),
+            "REMOVE" => Ok(CnosKeyWord::REMOVE),
             "SERIES" => Ok(CnosKeyWord::SERIES),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
@@ -149,7 +172,7 @@ impl<'a> ExtParser<'a> {
             expecting_statement_delimiter = true;
         }
 
-        debug!("Parser sql:{}, stmts:{:#?}", sql, stmts);
+        debug!("Parser sql: {}, stmts: {:#?}", sql, stmts);
 
         Ok(stmts)
     }
@@ -177,6 +200,14 @@ impl<'a> ExtParser<'a> {
                 Keyword::CREATE => {
                     self.parser.next_token();
                     self.parse_create()
+                }
+                Keyword::GRANT => {
+                    self.parser.next_token();
+                    self.parse_grant()
+                }
+                Keyword::REVOKE => {
+                    self.parser.next_token();
+                    self.parse_revoke()
                 }
                 Keyword::EXPLAIN => {
                     self.parser.next_token();
@@ -421,8 +452,12 @@ impl<'a> ExtParser<'a> {
             self.parse_alter_table()
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             self.parse_alter_database()
+        } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
+            self.parse_alter_tenant()
+        } else if self.parser.parse_keyword(Keyword::USER) {
+            self.parse_alter_user()
         } else {
-            self.expected("TABLE or DATABASE", self.parser.peek_token())
+            self.expected("TABLE/DATABASE/TENANT/USER", self.parser.peek_token())
         }
     }
 
@@ -501,6 +536,53 @@ impl<'a> ExtParser<'a> {
             name: database_name,
             options,
         }))
+    }
+
+    fn parse_alter_tenant(&mut self) -> Result<ExtStatement> {
+        let name = self.parser.parse_identifier()?;
+
+        let operation = if self.parser.parse_keyword(Keyword::ADD) {
+            self.parser.expect_keyword(Keyword::USER)?;
+            let user_name = self.parser.parse_identifier()?;
+            self.parser.expect_keyword(Keyword::AS)?;
+            let role_name = self.parser.parse_identifier()?;
+            AlterTenantOperation::AddUser(user_name, role_name)
+        } else if self.parse_cnos_keyword(CnosKeyWord::REMOVE) {
+            self.parser.expect_keyword(Keyword::USER)?;
+            let user_name = self.parser.parse_identifier()?;
+            AlterTenantOperation::RemoveUser(user_name)
+        } else if self.parser.parse_keyword(Keyword::SET) {
+            if self.parser.parse_keyword(Keyword::USER) {
+                let user_name = self.parser.parse_identifier()?;
+                self.parser.expect_keyword(Keyword::AS)?;
+                let role_name = self.parser.parse_identifier()?;
+                AlterTenantOperation::SetUser(user_name, role_name)
+            } else {
+                let sql_option = self.parser.parse_sql_option()?;
+                AlterTenantOperation::Set(sql_option)
+            }
+        } else {
+            self.expected("ADD,REMOVE,SET", self.parser.peek_token())?
+        };
+
+        Ok(ExtStatement::AlterTenant(AlterTenant { name, operation }))
+    }
+
+    fn parse_alter_user(&mut self) -> Result<ExtStatement> {
+        let name = self.parser.parse_identifier()?;
+
+        let operation = if self.parser.parse_keyword(Keyword::RENAME) {
+            self.parser.expect_keyword(Keyword::TO)?;
+            let new_name = self.parser.parse_identifier()?;
+            AlterUserOperation::RenameTo(new_name)
+        } else if self.parser.parse_keyword(Keyword::SET) {
+            let sql_option = self.parser.parse_sql_option()?;
+            AlterUserOperation::Set(sql_option)
+        } else {
+            self.expected("RENAME,SET", self.parser.peek_token())?
+        };
+
+        Ok(ExtStatement::AlterUser(AlterUser { name, operation }))
     }
 
     /// Parses the set of
@@ -691,10 +773,7 @@ impl<'a> ExtParser<'a> {
 
     fn parse_string_value(&mut self) -> Result<String> {
         let value = self.parser.parse_value()?;
-        match value {
-            Value::SingleQuotedString(s) => Ok(s),
-            _ => parser_err!(format!("expected value, but found : {}", value)),
-        }
+        parse_string_value(value).map_err(ParserError::ParserError)
     }
 
     fn parse_create_database(&mut self) -> Result<ExtStatement> {
@@ -710,6 +789,127 @@ impl<'a> ExtParser<'a> {
         }))
     }
 
+    fn parse_grant_permission(&mut self) -> Result<Action, ParserError> {
+        if self.parse_cnos_keyword(CnosKeyWord::READ) {
+            Ok(Action::Read)
+        } else if self.parse_cnos_keyword(CnosKeyWord::WRITE) {
+            Ok(Action::Write)
+        } else if self.parse_cnos_keyword(CnosKeyWord::ALL) {
+            Ok(Action::All)
+        } else {
+            self.expected(
+                "a privilege keyword [Read, Write, All]",
+                self.parser.peek_token(),
+            )?
+        }
+    }
+
+    fn parse_privilege(&mut self) -> Result<Privilege, ParserError> {
+        let action = self.parse_grant_permission()?;
+        self.parser.expect_keyword(Keyword::ON)?;
+        self.parser.expect_keyword(Keyword::DATABASE)?;
+        let database = self.parser.parse_identifier()?;
+        Ok(Privilege { action, database })
+    }
+
+    fn parse_grant(&mut self) -> Result<ExtStatement> {
+        // grant read on database "db1" to [role] rrr;
+        // grant write on database "db2" to rrr;
+        // grant all on database "db3" to rrr;
+        let privileges = self.parse_comma_separated(ExtParser::parse_privilege)?;
+
+        self.parser.expect_keyword(Keyword::TO)?;
+        let _ = self.parser.parse_keyword(Keyword::ROLE);
+
+        let role_name = self.parser.parse_identifier()?;
+
+        Ok(ExtStatement::GrantRevoke(GrantRevoke {
+            is_grant: true,
+            privileges,
+            role_name,
+        }))
+    }
+
+    fn parse_revoke(&mut self) -> Result<ExtStatement> {
+        // revoke read on database "db1" from [role] rrr;
+        // revoke write on database "db2" from rrr;
+        // revoke all on database "db3" from rrr;
+        let privileges = self.parse_comma_separated(ExtParser::parse_privilege)?;
+
+        self.parser.expect_keyword(Keyword::FROM)?;
+        let _ = self.parser.parse_keyword(Keyword::ROLE);
+
+        let role_name = self.parser.parse_identifier()?;
+
+        Ok(ExtStatement::GrantRevoke(GrantRevoke {
+            is_grant: false,
+            privileges,
+            role_name,
+        }))
+    }
+
+    fn parse_create_user(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+
+        let name = self.parser.parse_identifier()?;
+
+        let with_options = if self.parser.parse_keyword(Keyword::WITH) {
+            self.parser
+                .parse_comma_separated(Parser::parse_sql_option)?
+        } else {
+            vec![]
+        };
+
+        Ok(ExtStatement::CreateUser(CreateUser {
+            if_not_exists,
+            name,
+            with_options,
+        }))
+    }
+
+    fn parse_create_role(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+
+        let name = self.parser.parse_identifier()?;
+
+        let inherit = if self.parse_cnos_keyword(CnosKeyWord::INHERIT) {
+            self.parser.parse_identifier().ok()
+        } else {
+            None
+        };
+
+        Ok(ExtStatement::CreateRole(CreateRole {
+            if_not_exists,
+            name,
+            inherit,
+        }))
+    }
+
+    fn parse_create_tenant(&mut self) -> Result<ExtStatement> {
+        let if_not_exists =
+            self.parser
+                .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+
+        let name = self.parser.parse_identifier()?;
+
+        let with_options = if self.parser.parse_keyword(Keyword::WITH) {
+            self.parser
+                .parse_comma_separated(Parser::parse_sql_option)?
+        } else {
+            vec![]
+        };
+
+        Ok(ExtStatement::CreateTenant(CreateTenant {
+            if_not_exists,
+            name,
+            with_options,
+        }))
+    }
+
     /// Parse a SQL CREATE statement
     fn parse_create(&mut self) -> Result<ExtStatement> {
         // Currently only supports the creation of external tables
@@ -719,6 +919,12 @@ impl<'a> ExtParser<'a> {
             self.parse_create_table()
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             self.parse_create_database()
+        } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
+            self.parse_create_tenant()
+        } else if self.parser.parse_keyword(Keyword::USER) {
+            self.parse_create_user()
+        } else if self.parser.parse_keyword(Keyword::ROLE) {
+            self.parse_create_role()
         } else {
             self.expected("an object type after CREATE", self.parser.peek_token())
         }
@@ -726,21 +932,54 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a SQL DROP statement
     fn parse_drop(&mut self) -> Result<ExtStatement> {
-        let obj_type = if self.parser.parse_keyword(Keyword::TABLE) {
-            ObjectType::Table
+        let ast = if self.parser.parse_keyword(Keyword::TABLE) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_object_name()?;
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
+                object_name,
+                if_exist,
+                obj_type: DatabaseObjectType::Table,
+            })
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
-            ObjectType::Database
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::DropTenantObject(DropTenantObject {
+                object_name,
+                if_exist,
+                obj_type: TenantObjectType::Database,
+            })
+        } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type: GlobalObjectType::Tenant,
+            })
+        } else if self.parser.parse_keyword(Keyword::USER) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::DropGlobalObject(DropGlobalObject {
+                object_name,
+                if_exist,
+                obj_type: GlobalObjectType::User,
+            })
+        } else if self.parser.parse_keyword(Keyword::ROLE) {
+            let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+            let object_name = self.parser.parse_identifier()?;
+            ExtStatement::DropTenantObject(DropTenantObject {
+                object_name,
+                if_exist,
+                obj_type: TenantObjectType::Role,
+            })
         } else {
-            return self.expected("TABLE,DATABASE after DROP", self.parser.peek_token());
+            return self.expected(
+                "TABLE,DATABASE,TENANT,USER,ROLE after DROP",
+                self.parser.peek_token(),
+            );
         };
-        let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-        let object_name = self.parser.parse_object_name()?;
 
-        Ok(ExtStatement::Drop(DropObject {
-            object_name,
-            if_exist,
-            obj_type,
-        }))
+        Ok(ast)
     }
 
     fn consume_token(&mut self, expected: &Token) -> bool {
@@ -750,6 +989,21 @@ impl<'a> ExtParser<'a> {
         } else {
             false
         }
+    }
+
+    /// Parse a comma-separated list of 1+ items accepted by `F`
+    pub fn parse_comma_separated<T, F>(&mut self, mut f: F) -> Result<Vec<T>, ParserError>
+    where
+        F: FnMut(&mut ExtParser<'a>) -> Result<T, ParserError>,
+    {
+        let mut values = vec![];
+        loop {
+            values.push(f(self)?);
+            if !self.consume_token(&Token::Comma) {
+                break;
+            }
+        }
+        Ok(values)
     }
 
     fn peek_cnos_keyword(&self) -> Result<CnosKeyWord> {
@@ -955,7 +1209,8 @@ mod tests {
 
     use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SetExpr, Statement};
     use spi::query::ast::AlterTable;
-    use spi::query::ast::{DropObject, ExtStatement};
+    use spi::query::ast::{DropDatabaseObject, ExtStatement};
+    use spi::query::logical_planner::{DatabaseObjectType, TenantObjectType};
 
     use super::*;
 
@@ -965,14 +1220,14 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::Drop(DropObject {
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
                 object_name,
                 if_exist,
                 obj_type,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type.to_string(), "TABLE".to_string());
+                assert_eq!(obj_type, &DatabaseObjectType::Table);
             }
             _ => panic!("failed"),
         }
@@ -981,14 +1236,14 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::Drop(DropObject {
+            ExtStatement::DropDatabaseObject(DropDatabaseObject {
                 object_name,
                 if_exist,
                 obj_type,
             }) => {
                 assert_eq!(object_name.to_string(), "test_tb".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type.to_string(), "TABLE".to_string());
+                assert_eq!(obj_type, &DatabaseObjectType::Table);
             }
             _ => panic!("failed"),
         }
@@ -997,14 +1252,14 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::Drop(DropObject {
+            ExtStatement::DropTenantObject(DropTenantObject {
                 object_name,
                 if_exist,
                 obj_type,
             }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type.to_string(), "DATABASE".to_string());
+                assert_eq!(obj_type, &TenantObjectType::Database);
             }
             _ => panic!("failed"),
         }
@@ -1013,14 +1268,14 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::Drop(DropObject {
+            ExtStatement::DropTenantObject(DropTenantObject {
                 object_name,
                 if_exist,
                 obj_type,
             }) => {
                 assert_eq!(object_name.to_string(), "test_db".to_string());
                 assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type.to_string(), "DATABASE".to_string());
+                assert_eq!(obj_type, &TenantObjectType::Database);
             }
             _ => panic!("failed"),
         }

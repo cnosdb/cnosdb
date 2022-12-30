@@ -1,8 +1,12 @@
-use std::{collections::HashMap, convert::Infallible, net::SocketAddr};
+#![allow(clippy::too_many_arguments)]
 
+use std::{collections::HashMap, convert::Infallible, net::SocketAddr, sync::Arc};
+
+use coordinator::service::CoordinatorRef;
 use http_protocol::header::{ACCEPT, AUTHORIZATION};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
+use spi::query::DEFAULT_CATALOG;
 
 use super::header::Header;
 use super::Error as HttpError;
@@ -12,15 +16,20 @@ use crate::http::result_format::fetch_record_batches;
 use crate::http::result_format::ResultFormat;
 use crate::http::Error;
 use crate::http::ParseLineProtocolSnafu;
-use crate::http::TskvSnafu;
+use crate::http::{CoordinatorSnafu, TskvSnafu};
 use crate::server;
 use crate::server::{Service, ServiceHandle};
 use chrono::Local;
 use config::TLSConfig;
+use coordinator::hh_queue::HintedOffManager;
+use coordinator::writer::{PointWriter, VnodeMapping};
+use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::parquet::data_type::AsBytes;
 use flatbuffers::FlatBufferBuilder;
 use line_protocol::{line_protocol_to_lines, Line};
+use meta::meta_client::MetaClientRef;
 use metrics::{gather_metrics, sample_point_write_duration, sample_query_read_duration};
+use models::consistency_level::ConsistencyLevel;
 use models::error_code::ErrorCode;
 use protos::kv_service::WritePointsRpcRequest;
 use protos::models as fb_models;
@@ -49,6 +58,7 @@ pub struct HttpService {
     addr: SocketAddr,
     dbms: DBMSRef,
     kv_inst: EngineRef,
+    coord: CoordinatorRef,
     handle: Option<ServiceHandle<()>>,
     query_body_limit: u64,
     write_body_limit: u64,
@@ -58,6 +68,7 @@ impl HttpService {
     pub fn new(
         dbms: DBMSRef,
         kv_inst: EngineRef,
+        coord: CoordinatorRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         query_body_limit: u64,
@@ -68,6 +79,7 @@ impl HttpService {
             addr,
             dbms,
             kv_inst,
+            coord,
             handle: None,
             query_body_limit,
             write_body_limit,
@@ -95,6 +107,10 @@ impl HttpService {
         let kv_inst = self.kv_inst.clone();
         warp::any().map(move || kv_inst.clone())
     }
+    fn with_coord(&self) -> impl Filter<Extract = (CoordinatorRef,), Error = Infallible> + Clone {
+        let coord = self.coord.clone();
+        warp::any().map(move || coord.clone())
+    }
 
     fn routes(
         &self,
@@ -103,6 +119,7 @@ impl HttpService {
             .or(self.query())
             .or(self.write_line_protocol())
             .or(self.metrics())
+            .or(self.print_meta())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -134,19 +151,20 @@ impl HttpService {
                     );
 
                     // Parse req、header and param to construct query request
-                    let query = construct_query(req, &header, param).map_err(|e| {
-                        sample_query_read_duration("", "", false, 0.0);
-                        reject::custom(e)
-                    })?;
+                    let query =
+                        construct_query(req, &header, param, dbms.clone()).map_err(|e| {
+                            sample_query_read_duration("", "", false, 0.0);
+                            reject::custom(e)
+                        })?;
                     let result = sql_handle(&query, header, dbms).await.map_err(|e| {
                         trace::error!("Failed to handle http sql request, err: {}", e);
                         reject::custom(e)
                     });
-                    let user = query.context().user_info().user.as_str();
+                    let tenant = query.context().tenant();
                     let db = query.context().database();
 
                     sample_query_read_duration(
-                        user,
+                        tenant,
                         db,
                         result.is_ok(),
                         start.elapsed().as_millis() as f64,
@@ -166,31 +184,66 @@ impl HttpService {
             .and(self.handle_header())
             .and(warp::query::<WriteParam>())
             .and(self.with_kv_inst())
+            .and(self.with_coord())
             .and_then(
-                |req: Bytes, header: Header, param: WriteParam, kv_inst: EngineRef| async move {
+                |req: Bytes,
+                 header: Header,
+                 param: WriteParam,
+                 kv_inst: EngineRef,
+                 coord: CoordinatorRef| async move {
                     let start = Instant::now();
-                    let user = match header.try_get_basic_auth() {
-                        Ok(u) => u.user,
+                    let user_info = match header.try_get_basic_auth() {
+                        Ok(u) => u,
                         Err(e) => return Err(reject::custom(e)),
                     };
-                    let db = &param.db;
+
                     let lines = String::from_utf8_lossy(req.as_ref());
-                    let line_protocol_lines =
+                    let mut line_protocol_lines =
                         line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
                             .context(ParseLineProtocolSnafu)?;
-                    let points = parse_lines_to_points(db, &line_protocol_lines)?;
+
+                    let points = parse_lines_to_points(&param.db, &mut line_protocol_lines)?;
+
                     let req = WritePointsRpcRequest { version: 1, points };
-                    let resp = kv_inst.write(req).await.context(TskvSnafu);
+                    // we should get tenant from token
+                    let tenant = param.tenant.as_deref().unwrap_or(DEFAULT_CATALOG);
+
+                    let resp = coord
+                        .write_points(DEFAULT_CATALOG.to_string(), ConsistencyLevel::Any, req)
+                        .await
+                        .context(CoordinatorSnafu);
 
                     sample_point_write_duration(
-                        &user,
-                        db,
+                        tenant,
+                        &param.db,
                         resp.is_ok(),
                         start.elapsed().as_millis() as f64,
                     );
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
+    }
+
+    fn print_meta(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "meta")
+            .and(self.handle_header())
+            .and(self.with_coord())
+            .and_then(|header: Header, coord: CoordinatorRef| async move {
+                let tenant = DEFAULT_CATALOG.to_string();
+
+                let meta_client = match coord.tenant_meta(&tenant) {
+                    Some(client) => client,
+                    None => {
+                        return Err(reject::custom(HttpError::NotFoundTenant { name: tenant }));
+                    }
+                };
+                let data = meta_client.print_data();
+
+                //Ok(warp::reply::json(&data))
+                Ok(data)
+            })
     }
 
     fn metrics(
@@ -244,10 +297,10 @@ impl Service for HttpService {
     }
 }
 
-fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
+fn parse_lines_to_points<'a>(db: &'a str, lines: &'a mut [Line]) -> Result<Vec<u8>, Error> {
     let mut fbb = FlatBufferBuilder::new();
     let mut point_offsets = Vec::with_capacity(lines.len());
-    for line in lines.iter() {
+    for line in lines.iter_mut() {
         let mut tags = Vec::with_capacity(line.tags.len());
         for (k, v) in line.tags.iter() {
             let fbk = fbb.create_vector(k.as_bytes());
@@ -298,6 +351,7 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
             fields: Some(fbb.create_vector(&fields)),
             timestamp: line.timestamp,
         };
+
         point_offsets.push(Point::create(&mut fbb, &point_args));
     }
 
@@ -314,10 +368,21 @@ fn parse_lines_to_points(db: &str, lines: &[Line]) -> Result<Vec<u8>, Error> {
     Ok(fbb.finished_data().to_vec())
 }
 
-fn construct_query(req: Bytes, header: &Header, param: SqlParam) -> Result<Query, HttpError> {
+fn construct_query(
+    req: Bytes,
+    header: &Header,
+    param: SqlParam,
+    dbms: DBMSRef,
+) -> Result<Query, HttpError> {
     let user_info = header.try_get_basic_auth()?;
 
-    let context = ContextBuilder::new(user_info)
+    let tenant = param.tenant;
+    let user = dbms
+        .authenticate(&user_info, tenant.as_deref())
+        .context(QuerySnafu)?;
+
+    let context = ContextBuilder::new(user)
+        .with_tenant(tenant)
         .with_database(param.db)
         .with_target_partitions(param.target_partitions)
         .build();
@@ -333,9 +398,9 @@ async fn sql_handle(query: &Query, header: Header, dbms: DBMSRef) -> Result<Resp
 
     let fmt = ResultFormat::try_from(header.get_accept())?;
 
-    let mut result = dbms.execute(query).await.context(QuerySnafu)?;
+    let result = dbms.execute(query).await.context(QuerySnafu)?;
 
-    let batches = fetch_record_batches(&mut result)
+    let batches = fetch_record_batches(result)
         .await
         .map_err(|e| HttpError::FetchResult {
             reason: format!("{}", e),

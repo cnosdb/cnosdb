@@ -5,8 +5,10 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::DataFusionError;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
+
+use meta::error::MetaError;
 use spi::query::execution;
+use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::DescribeDatabase;
 use std::sync::Arc;
@@ -27,17 +29,30 @@ impl DDLDefinitionTask for DescribeDatabaseTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        describe_database(
-            self.stmt.database_name.as_str(),
-            query_state_machine.catalog.clone(),
-        )
+        describe_database(self.stmt.database_name.as_str(), query_state_machine)
     }
 }
 
-fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    let db_cfg = catalog
-        .database(database_name)
-        .context(execution::MetadataSnafu)?;
+fn describe_database(
+    database_name: &str,
+    machine: QueryStateMachineRef,
+) -> Result<Output, ExecutionError> {
+    let tenant = machine.session.tenant();
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })
+        .context(MetadataSnafu)?;
+    let db_cfg = client
+        .get_db_schema(database_name)
+        .context(execution::MetadataSnafu)?
+        .ok_or(MetaError::DatabaseNotFound {
+            database: database_name.to_string(),
+        })
+        .context(MetadataSnafu)?;
     let schema = Arc::new(Schema::new(vec![
         Field::new("TTL", DataType::Utf8, false),
         Field::new("SHARD", DataType::Utf8, false),
@@ -53,7 +68,7 @@ fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output
     let precision = db_cfg.config.precision_or_default().to_string();
 
     let batch = RecordBatch::try_new(
-        schema,
+        schema.clone(),
         vec![
             Arc::new(StringArray::from(vec![ttl.as_str()])),
             Arc::new(StringArray::from(vec![shard.as_str()])),
@@ -68,5 +83,5 @@ fn describe_database(database_name: &str, catalog: MetaDataRef) -> Result<Output
 
     let batches = vec![batch];
 
-    Ok(Output::StreamData(batches))
+    Ok(Output::StreamData(schema, batches))
 }

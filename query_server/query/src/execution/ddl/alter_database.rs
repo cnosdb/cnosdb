@@ -1,8 +1,10 @@
 use crate::execution::ddl::DDLDefinitionTask;
 use async_trait::async_trait;
+use meta::error::MetaError;
 use models::schema::DatabaseOptions;
 use snafu::ResultExt;
 use spi::query::execution;
+use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
 use spi::query::logical_planner::AlterDatabase;
 
@@ -22,15 +24,28 @@ impl DDLDefinitionTask for AlterDatabaseTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        let mut schema = query_state_machine
-            .catalog
-            .database(&self.stmt.database_name)
-            .context(execution::MetadataSnafu)?;
+        let tenant = query_state_machine.session.tenant();
+        let client = query_state_machine
+            .meta
+            .tenant_manager()
+            .tenant_meta(tenant)
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })
+            .context(MetadataSnafu)?;
+        let mut schema = client
+            .get_db_schema(&self.stmt.database_name)
+            .context(execution::MetadataSnafu)?
+            .ok_or(MetaError::DatabaseNotFound {
+                database: self.stmt.database_name.clone(),
+            })
+            .context(MetadataSnafu)?;
         build_database_schema(&self.stmt.database_options, &mut schema.config);
-        query_state_machine
-            .catalog
-            .alter_database(schema)
-            .context(execution::MetadataSnafu)?;
+        // client
+        //     .alter_database(schema)
+        //     .context(execution::MetadataSnafu)?;
+
+        client.alter_db_schema(&schema).context(MetadataSnafu)?;
         return Ok(Output::Nil(()));
     }
 }

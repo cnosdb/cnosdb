@@ -4,7 +4,8 @@ use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
-use spi::catalog::MetaDataRef;
+
+use meta::error::MetaError;
 use spi::query::execution::ExternalSnafu;
 use spi::query::execution::MetadataSnafu;
 use spi::query::execution::{ExecutionError, Output, QueryStateMachineRef};
@@ -24,22 +25,31 @@ impl DDLDefinitionTask for ShowDatabasesTask {
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Output, ExecutionError> {
-        show_databases(query_state_machine.catalog.clone())
+        show_databases(query_state_machine)
     }
 }
 
-fn show_databases(catalog: MetaDataRef) -> Result<Output, ExecutionError> {
-    let databases = catalog.database_names().context(MetadataSnafu)?;
+fn show_databases(machine: QueryStateMachineRef) -> Result<Output, ExecutionError> {
+    let tenant = machine.session.tenant();
+    let client = machine
+        .meta
+        .tenant_manager()
+        .tenant_meta(tenant)
+        .ok_or(MetaError::TenantNotFound {
+            tenant: tenant.to_string(),
+        })
+        .context(MetadataSnafu)?;
+    let databases = client.list_databases().context(MetadataSnafu)?;
     let schema = Arc::new(Schema::new(vec![Field::new(
         "Database",
         DataType::Utf8,
         false,
     )]));
 
-    let batch = RecordBatch::try_new(schema, vec![Arc::new(StringArray::from(databases))])
+    let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(StringArray::from(databases))])
         .map_err(datafusion::error::DataFusionError::ArrowError)
         .context(ExternalSnafu)?;
     let batches = vec![batch];
 
-    Ok(Output::StreamData(batches))
+    Ok(Output::StreamData(schema, batches))
 }

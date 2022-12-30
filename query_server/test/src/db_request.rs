@@ -10,6 +10,8 @@ use nom::IResult;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
+    /// set the requested tenant
+    tenant_name: String,
     /// set the requested database
     db_name: String,
     /// set sort or not
@@ -20,16 +22,20 @@ pub struct Instruction {
     user_name: String,
     /// set how long to timeout
     time_out: Option<u64>,
+
+    sleep: Option<u64>,
 }
 
 impl Default for Instruction {
     fn default() -> Self {
         Self {
+            tenant_name: "cnosdb".to_string(),
             db_name: "public".to_string(),
             sort: false,
             pretty: true,
-            user_name: "cnosdb".to_string(),
+            user_name: "root".to_string(),
             time_out: None,
+            sleep: None,
         }
     }
 }
@@ -72,6 +78,10 @@ fn instruction_parse_to<'a, T: FromStr>(
 }
 
 impl Instruction {
+    pub fn tenant_name(&self) -> &str {
+        &self.tenant_name
+    }
+
     pub fn db_name(&self) -> &str {
         &self.db_name
     }
@@ -92,8 +102,16 @@ impl Instruction {
         self.time_out
     }
 
+    pub fn sleep(&self) -> Option<u64> {
+        self.sleep
+    }
+
     /// parse line to modify instruction
     pub fn parse_and_change(&mut self, line: &str) {
+        if let Ok((_, tenant_name)) = instruction_parse_identity("TENANT")(line) {
+            self.tenant_name = tenant_name.to_string();
+        }
+
         if let Ok((_, dbname)) = instruction_parse_identity("DATABASE")(line) {
             self.db_name = dbname.to_string();
         }
@@ -112,6 +130,10 @@ impl Instruction {
 
         if let Ok((_, timeout)) = instruction_parse_to::<u64>("TIMEOUT")(line) {
             self.time_out = Some(timeout)
+        }
+
+        if let Ok((_, slepp)) = instruction_parse_to::<u64>("SLEEP")(line) {
+            self.sleep = Some(slepp)
         }
     }
 }

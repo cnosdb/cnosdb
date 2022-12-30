@@ -16,6 +16,10 @@ impl FileCursor {
         self.file
     }
 
+    pub fn file_ref(&self) -> &AsyncFile {
+        &self.file
+    }
+
     pub fn pos(&self) -> u64 {
         self.pos
     }

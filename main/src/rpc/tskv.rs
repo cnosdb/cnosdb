@@ -9,6 +9,7 @@ use protos::{
     },
     models::{PingBody, PingBodyBuilder},
 };
+use spi::query::DEFAULT_CATALOG;
 use tokio::sync::mpsc::{self};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
@@ -121,9 +122,12 @@ impl TskvService for TskvServiceImpl {
                     //     .send(tskv::Task::WritePoints { req, tx })
                     //     .await
                     //     .map_err(|err| Status::internal(err.to_string()));
+
+                    // todo : we should get tenant from token
+                    let mock_tenant = DEFAULT_CATALOG;
                     let ret = self
                         .kv_engine
-                        .write(req)
+                        .write(0, mock_tenant, req)
                         .await
                         .map_err(|err| Status::internal(err.to_string()));
                     // 2. if something wrong when sending Request

@@ -1,5 +1,5 @@
 use super::Error as HttpError;
-use spi::service::protocol::UserInfo;
+use models::auth::user::UserInfo;
 use warp::http::header::{HeaderName, HeaderValue};
 
 use http_protocol::header::{APPLICATION_CSV, BASIC_PREFIX};
@@ -49,6 +49,7 @@ impl Header {
                     return Ok(UserInfo {
                         user: str[0..idx].to_string(),
                         password: str[idx + 1..].to_string(),
+                        private_key: None,
                     });
                 }
             }

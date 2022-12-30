@@ -94,12 +94,14 @@ impl From<&Config> for StorageOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryOptions {
     pub max_server_connections: u32,
+    pub auth_enabled: bool,
 }
 
 impl From<&Config> for QueryOptions {
     fn from(config: &Config) -> Self {
         Self {
             max_server_connections: config.query.max_server_connections,
+            auth_enabled: config.query.auth_enabled,
         }
     }
 }

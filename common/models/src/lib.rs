@@ -1,7 +1,8 @@
 pub mod codec;
-mod consistency_level;
+pub mod consistency_level;
 mod errors;
 mod field_info;
+pub mod meta_data;
 mod node_info;
 mod points;
 pub mod schema;
@@ -11,6 +12,10 @@ pub mod utils;
 #[macro_use]
 pub mod error_code;
 pub mod arrow_array;
+pub mod auth;
+pub mod limiter;
+pub mod object_reference;
+pub mod oid;
 pub mod predicate;
 
 use parking_lot::RwLock;
