@@ -1,4 +1,5 @@
 --#DATABASE=alter_table
+--#SLEEP=0
 DROP DATABASE IF EXISTS alter_table;
 CREATE DATABASE alter_table WITH TTL '100000d';
 CREATE TABLE test (

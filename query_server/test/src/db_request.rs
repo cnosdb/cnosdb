@@ -22,6 +22,8 @@ pub struct Instruction {
     user_name: String,
     /// set how long to timeout
     time_out: Option<u64>,
+
+    sleep: Option<u64>,
 }
 
 impl Default for Instruction {
@@ -33,6 +35,7 @@ impl Default for Instruction {
             pretty: true,
             user_name: "root".to_string(),
             time_out: None,
+            sleep: None
         }
     }
 }
@@ -99,6 +102,10 @@ impl Instruction {
         self.time_out
     }
 
+    pub fn sleep(&self) -> Option<u64> {
+        self.sleep
+    }
+
     /// parse line to modify instruction
     pub fn parse_and_change(&mut self, line: &str) {
         if let Ok((_, tenant_name)) = instruction_parse_identity("TENANT")(line) {
@@ -123,6 +130,10 @@ impl Instruction {
 
         if let Ok((_, timeout)) = instruction_parse_to::<u64>("TIMEOUT")(line) {
             self.time_out = Some(timeout)
+        }
+
+        if let Ok((_, slepp)) = instruction_parse_to::<u64>("SLEEP")(line) {
+            self.sleep = Some(slepp)
         }
     }
 }
