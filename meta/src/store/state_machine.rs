@@ -843,7 +843,7 @@ impl StateMachine {
             .to_string();
         }
 
-        if *ts < now - db_schema.config.ttl_or_default().time_stamp() {
+        if *ts < now - db_schema.config.ttl_or_default().to_nanoseconds() {
             return TenaneMetaDataResp::new(
                 META_REQUEST_FAILED,
                 format!("database {} create expired bucket not permit!", db),
@@ -859,7 +859,10 @@ impl StateMachine {
         };
         (bucket.start_time, bucket.end_time) = get_time_range(
             *ts,
-            db_schema.config.vnode_duration_or_default().time_stamp(),
+            db_schema
+                .config
+                .vnode_duration_or_default()
+                .to_nanoseconds(),
         );
         let (group, used) = allocation_replication_set(
             node_list,

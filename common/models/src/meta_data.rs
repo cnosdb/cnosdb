@@ -157,7 +157,7 @@ impl TenantMetaData {
 
     pub fn database_min_ts(&self, name: &str) -> Option<i64> {
         if let Some(db) = self.dbs.get(name) {
-            let ttl = db.schema.config.ttl_or_default().time_stamp();
+            let ttl = db.schema.config.ttl_or_default().to_nanoseconds();
             let now = crate::utils::now_timestamp();
 
             return Some(now - ttl);

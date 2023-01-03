@@ -140,9 +140,9 @@ impl Limiter for LimiterImpl {
 
         match (db_schema.config.ttl(), self.max_retention_time) {
             (Some(ttl), Some(day)) => {
-                let ttl = ttl.time_stamp();
+                let ttl = ttl.to_nanoseconds();
                 let max = models::schema::Duration::new_with_day(day as u64);
-                if ttl > max.time_stamp() {
+                if ttl > max.to_nanoseconds() {
                     return Err(MetaError::Limit {
                         action: "create database".to_string(),
                         name: "retention time".to_string(),
