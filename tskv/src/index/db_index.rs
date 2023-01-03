@@ -18,6 +18,7 @@ use parking_lot::RwLock;
 use sled::Error;
 use snafu::ResultExt;
 
+use crate::index::utils::{encode_inverted_max_index_key, encode_inverted_min_index_key};
 use crate::Error::IndexErr;
 use config::Config;
 use datafusion::arrow::datatypes::{DataType, ToByteSlice};
@@ -368,13 +369,23 @@ pub fn filter_range_to_index_key_range(
     let generate_index_key = |v: &ScalarValue| tag_value_to_index_key(tab, tag_key, v);
 
     // Convert the tag value in Bound to the inverted index key
-    let translate_bound = |bound: Bound<&ScalarValue>| match bound {
-        Bound::Unbounded => Bound::Unbounded,
+    let translate_bound = |bound: Bound<&ScalarValue>, is_lower: bool| match bound {
+        Bound::Unbounded => {
+            let buf = if is_lower {
+                encode_inverted_min_index_key(tab, tag_key.as_bytes())
+            } else {
+                encode_inverted_max_index_key(tab, tag_key.as_bytes())
+            };
+            Bound::Included(buf)
+        }
         Bound::Included(v) => Bound::Included(generate_index_key(v)),
         Bound::Excluded(v) => Bound::Excluded(generate_index_key(v)),
     };
 
-    (translate_bound(start_bound), translate_bound(end_bound))
+    (
+        translate_bound(start_bound, true),
+        translate_bound(end_bound, false),
+    )
 }
 
 pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<u8> {

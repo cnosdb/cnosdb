@@ -9,11 +9,35 @@ use crate::byte_utils;
 
 use super::*;
 
+pub fn encode_inverted_max_index_key(tab: &str, tag_key: &[u8]) -> Vec<u8> {
+    tab.as_bytes()
+        .iter()
+        .chain(".".as_bytes())
+        .chain(tag_key)
+        .chain(">".as_bytes())
+        .cloned()
+        .collect()
+}
+
+pub fn encode_inverted_min_index_key(tab: &str, tag_key: &[u8]) -> Vec<u8> {
+    tab.as_bytes()
+        .iter()
+        .chain(".".as_bytes())
+        .chain(tag_key)
+        .chain("<".as_bytes())
+        .cloned()
+        .collect()
+}
+
 pub fn encode_inverted_index_key(tab: &str, tag_key: &[u8], tag_val: &[u8]) -> Vec<u8> {
-    let mut buf: Vec<u8> = Vec::with_capacity(tab.len() + 1 + tag_key.len() + 1 + tag_val.len());
-    let str = format!("{}.{:?}={:?}", tab, tag_key, tag_val);
-    buf.put_slice(str.as_bytes());
-    buf
+    tab.as_bytes()
+        .iter()
+        .chain(".".as_bytes())
+        .chain(tag_key)
+        .chain("=".as_bytes())
+        .chain(tag_val)
+        .cloned()
+        .collect()
 }
 
 pub fn decode_series_id_list(data: &[u8]) -> IndexResult<Vec<u64>> {
